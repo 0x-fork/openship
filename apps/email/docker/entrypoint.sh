@@ -143,6 +143,36 @@ if [ -n "$FIRST_DOMAIN" ]; then
   esac
 fi
 
+# 3c. reconcile SSL certificates from /etc/letsencrypt into daemon paths.
+#     The image is built with fallback self-signed certificates at
+#     /etc/ssl/certs/iRedMail.crt and /etc/ssl/private/iRedMail.key.
+#     In containerized mode, /etc/ssl is ephemeral (not a bind mount), so
+#     recreating the container or pulling an updated image reverts them.
+#     If a valid Let's Encrypt certificate is mounted at /etc/letsencrypt for
+#     mail.$FIRST_DOMAIN (or $FIRST_DOMAIN), link it in place of the self-signed
+#     placeholders so Postfix and Dovecot reliably serve the trusted certificate.
+if [ -n "$FIRST_DOMAIN" ]; then
+  MAIL_CERT_DIR=""
+  if [ -s "/etc/letsencrypt/live/mail.${FIRST_DOMAIN}/fullchain.pem" ] && \
+     [ -s "/etc/letsencrypt/live/mail.${FIRST_DOMAIN}/privkey.pem" ]; then
+    MAIL_CERT_DIR="/etc/letsencrypt/live/mail.${FIRST_DOMAIN}"
+  elif [ -s "/etc/letsencrypt/live/${FIRST_DOMAIN}/fullchain.pem" ] && \
+       [ -s "/etc/letsencrypt/live/${FIRST_DOMAIN}/privkey.pem" ]; then
+    MAIL_CERT_DIR="/etc/letsencrypt/live/${FIRST_DOMAIN}"
+  fi
+
+  if [ -n "$MAIL_CERT_DIR" ]; then
+    CURRENT_CERT="$(readlink -f /etc/ssl/certs/iRedMail.crt 2>/dev/null || true)"
+    if [ "$CURRENT_CERT" != "$MAIL_CERT_DIR/fullchain.pem" ]; then
+      log "reconciling Let's Encrypt certificates from $MAIL_CERT_DIR"
+      mv -f /etc/ssl/certs/iRedMail.crt /etc/ssl/certs/iRedMail.crt.bak 2>/dev/null || true
+      mv -f /etc/ssl/private/iRedMail.key /etc/ssl/private/iRedMail.key.bak 2>/dev/null || true
+      ln -sf "$MAIL_CERT_DIR/fullchain.pem" /etc/ssl/certs/iRedMail.crt
+      ln -sf "$MAIL_CERT_DIR/privkey.pem" /etc/ssl/private/iRedMail.key
+    fi
+  fi
+fi
+
 # 4. bootstrap the mail databases (idempotent; skips if the vmail schema exists).
 #
 # The wait for the sidecar lives INSIDE db-bootstrap.sh, which polls `SELECT 1` until
