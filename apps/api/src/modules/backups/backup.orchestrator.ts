@@ -58,7 +58,7 @@ import { notification } from "../../lib/notification-dispatcher";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
 import crypto from "node:crypto";
-import { safeErrorMessage } from "@repo/core";
+import { detectDbImage, safeErrorMessage } from "@repo/core";
 import {
   boundedStorableText,
   sanitizeStorableStringsExceptKeys,
@@ -81,6 +81,31 @@ const TRUNCATE_ERROR = 4096;
 const TRUNCATE_HOOK_LOG = 64 * 1024;
 /** Cap on waiting for a finished hook's stdout to drain (see runHook). */
 const HOOK_DRAIN_TIMEOUT_MS = 500;
+
+/**
+ * A service is eligible for project-level backup fan-out if:
+ * 1. The policy specifies custom_command or path payloads, OR
+ * 2. The service runs a recognized database engine (PostgreSQL, MySQL, Redis, MongoDB), OR
+ * 3. The service has declared volumes in its service definition.
+ *
+ * Stateless services without volumes or databases are skipped during project fan-out
+ * so they do not fail the backup batch (#611).
+ */
+export function isBackupCandidateService(
+  service: Pick<Service, "image" | "volumes">,
+  policy: Pick<BackupPolicy, "payloadKind">,
+): boolean {
+  if (policy.payloadKind === "custom_command" || policy.payloadKind === "path") {
+    return true;
+  }
+  if (detectDbImage(service.image) !== null) {
+    return true;
+  }
+  if (Array.isArray(service.volumes) && service.volumes.length > 0) {
+    return true;
+  }
+  return false;
+}
 /** Short form for the notification payload + destination verify note. */
 const TRUNCATE_ERROR_SUMMARY = 500;
 /** A `PutResult.etag` in this shape is a sha256 we can compare ours against. */
@@ -204,8 +229,14 @@ export class BackupOrchestrator {
     if (services.length === 0) {
       throw new Error("Project has no services to back up — add a service or pick one.");
     }
+    const candidates = services.filter((svc) => isBackupCandidateService(svc, policy));
+    if (candidates.length === 0) {
+      throw new Error(
+        "Project has no services with persistent storage (volumes or databases) to back up.",
+      );
+    }
     const runIds: string[] = [];
-    for (const svc of services) {
+    for (const svc of candidates) {
       try {
         runIds.push(
           await this.spawnRun(

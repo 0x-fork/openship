@@ -73,13 +73,17 @@ export async function syncPolicySchedule(policyId: string): Promise<void> {
       // between schedule + tick are honored.
       const fresh = await repos.backupPolicy.findById(policyId);
       if (!fresh || !fresh.enabled) return;
-      await backupOrchestrator.enqueue({
-        policyId,
-        trigger: {
-          source: "cron",
-          userId: fresh.createdBy ?? "system",
-        },
-      });
+      try {
+        await backupOrchestrator.enqueue({
+          policyId,
+          trigger: {
+            source: "cron",
+            userId: fresh.createdBy ?? "system",
+          },
+        });
+      } catch (err) {
+        console.warn(`[cron-trigger] policy ${policyId} skipped: ${safeErrorMessage(err)}`);
+      }
     },
   });
 }
