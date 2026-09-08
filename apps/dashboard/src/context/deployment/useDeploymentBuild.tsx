@@ -762,6 +762,9 @@ export function useDeploymentBuild(
               : {}),
           });
           await persistProjectEnvDiff(projectId, envPlan.merge);
+          if (!isSourceless) {
+            await projectsApi.setBranch(projectId, config.branch);
+          }
           showToast("Configuration saved", "success", "Saved");
           return projectId;
         } catch (err) {
@@ -930,13 +933,10 @@ export function useDeploymentBuild(
           config.projectType === "docker" || isServiceDeployment
             ? "docker"
             : (overrides?.runtimeMode ?? config.runtimeMode),
-        // Send the mode for BOTH multi-app shapes so the operator's per-app vs
-        // single choice reaches the backend. Monorepo was previously omitted,
-        // leaving the backend to guess via shouldUseProjectServicePipeline.
-        serviceDeploymentMode:
-          config.projectType === "services" || config.projectType === "monorepo"
-            ? config.serviceDeploymentMode
-            : undefined,
+        // A branch scan can replace Compose with a single app. Send that choice
+        // explicitly so retained service rows from the previous branch cannot
+        // route this deployment back through the service pipeline.
+        serviceDeploymentMode: config.serviceDeploymentMode,
         // Cloud resource tier sizes a long-lived container — a web app OR a
         // worker (#538). Only a static (Pages) deploy has no workspace to size,
         // so gate on the workload, not the legacy hasServer boolean (a worker
