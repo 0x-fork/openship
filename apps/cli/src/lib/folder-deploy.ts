@@ -12,9 +12,9 @@
  * self-hosted — we handle both.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, relative, isAbsolute, sep } from "node:path";
 import { apiRequest, apiRaw } from "./api-client";
 
 interface UploadTarget {
@@ -106,7 +106,18 @@ export async function deployFolder(opts: {
   serviceIds?: string[];
   onStep?: (message: string) => void;
 }): Promise<FolderDeployResult> {
-  const { cwd } = opts;
+  const cwd = realpathSync(opts.cwd);
+  const tempRoot = realpathSync(tmpdir());
+  const tempRelative = relative(cwd, tempRoot);
+  if (
+    tempRelative === "" ||
+    (!isAbsolute(tempRelative) && tempRelative !== ".." && !tempRelative.startsWith(`..${sep}`))
+  ) {
+    throw new Error(
+      "Cannot upload the temporary directory or a folder containing it. " +
+        "Run from your project's source directory, or set TMPDIR outside that directory.",
+    );
+  }
   const step = opts.onStep ?? (() => {});
   const name = opts.name || basename(cwd) || "app";
 
@@ -137,27 +148,28 @@ export async function deployFolder(opts: {
   // 404'd. When a build DOES run it overwrites its own output directory anyway, so
   // shipping it costs upload bytes and nothing else.
   step("Packaging folder");
-  const tarball = join(tmpdir(), `openship-upload-${session.sessionId}.tar.gz`);
-  execFileSync(
-    "tar",
-    [
-      "-czf",
-      tarball,
-      "--exclude=./node_modules",
-      "--exclude=./.git",
-      "--exclude=./.DS_Store",
-      "-C",
-      cwd,
-      ".",
-    ],
-    { stdio: "ignore" },
-  );
-
-  // 3. Upload the tarball to the server-owned target. Absolute URL → cloud
-  //    workspace (send as-is with its token headers); relative → self-hosted
-  //    relay (apiRaw prepends the API base + Bearer auth).
-  step("Uploading source");
+  // The guard above keeps this directory outside the archive root, including
+  // when cwd or TMPDIR is a symlink. Each run owns its cleanup independently.
+  const stagingDir = mkdtempSync(join(tempRoot, "openship-upload-"));
+  const tarball = join(stagingDir, "source.tar.gz");
   try {
+    execFileSync(
+      "tar",
+      [
+        "-czf",
+        tarball,
+        "--exclude=./node_modules",
+        "--exclude=./.git",
+        "--exclude=./.DS_Store",
+        "-C",
+        cwd,
+        ".",
+      ],
+      { stdio: "ignore" },
+    );
+
+    // 3. Upload to the server-owned cloud URL or self-hosted API relay.
+    step("Uploading source");
     const body = readFileSync(tarball);
     const up = session.upload;
     const method = up.method || "POST";
@@ -167,7 +179,7 @@ export async function deployFolder(opts: {
     if (!res.ok) throw new Error(`upload failed (HTTP ${res.status})`);
   } finally {
     try {
-      rmSync(tarball, { force: true });
+      rmSync(stagingDir, { recursive: true, force: true });
     } catch {
       /* temp file — best-effort cleanup */
     }

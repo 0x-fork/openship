@@ -16,13 +16,19 @@ explicit `--project`.
 
 ## `openship deploy`
 
-Triggers a deployment for the current project. The path is auto-selected by your working directory:
+Triggers a deployment for the current project:
 
 - **Inside a git repo** — builds the linked project from its git source.
-- **Outside a git repo** — packages the current folder and uploads it (the same folder-deploy pipeline the
+- **With `--folder`** — packages the current folder and uploads it (the same folder-deploy pipeline the
   dashboard uses; see [Deploy a local folder](/docs/guides/deploy-local-folder)).
 
-Passing any git-only flag (`--commit`, `--service-ids`, `--smart-route`, `--refresh`) forces the git path.
+Outside Git, uploading requires `--folder` or `--name <name>`. A project ID alone never opts into
+uploading the current directory. For a Git redeploy from another directory, pass `--branch <name>`.
+Folder uploads refuse the system temporary directory and any ancestor of it; staging must stay
+outside the source tree. Choose the app's source directory, or set `TMPDIR` outside it.
+
+Passing a git-only flag (`--branch`, `--commit`, `--smart-route`, `--refresh`) selects the Git path.
+These flags cannot be combined with `--folder`. `--service-ids` scopes either deployment path.
 
 ```bash
 # Ship the linked project on the current branch
@@ -49,6 +55,7 @@ openship deploy --project proj_123 --server srv_123 --watch
 | `--smart-route`       | Rebuild only services changed since the active deploy.                                 |
 | `--refresh`           | Re-apply current env to the active deploy — no git pull, no rebuild.                   |
 | `--name <name>`       | Project name for a folder (non-git) deploy. Defaults to the directory name.            |
+| `--folder`            | Upload the current directory, including when it is a Git checkout.                    |
 | `--server <id>`       | Target a registered server (`openship server list`); works for Git and folder deploys. |
 | `--watch`             | Stream the deployment logs until it finishes.                                          |
 

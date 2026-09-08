@@ -1,10 +1,10 @@
 /**
  * `openship deploy` — deploy the current project.
  *
- * Two paths, auto-selected by whether the cwd is a git repository:
+ * Two paths:
  *   - Git repo  → POST /api/deployments (git-source build of the linked project).
- *   - No git    → folder-upload: package the cwd and drive the same pipeline the
- *                 MCP / dashboard folder deploy uses (see lib/folder-deploy.ts).
+ *   - --folder (or --name outside Git) → upload the cwd through the same pipeline
+ *                 the MCP / dashboard uses (see lib/folder-deploy.ts).
  *
  * The git path's controller accepts an allowlist body ({ projectId, branch,
  * commitSha, environment, serverId, forceAll, serviceIds, smartRoute, refresh }) and
@@ -47,6 +47,7 @@ export const deployCommand = new Command("deploy")
   .option("--service-ids <ids>", "Comma-separated service IDs to deploy (smart routing)")
   .option("--smart-route", "Rebuild only services changed since the active deploy")
   .option("--refresh", "Re-apply current env to the active deploy (no git pull, no rebuild)")
+  .option("--folder", "Upload the current folder as source (also works inside a Git repository)")
   .option(
     "--name <name>",
     "Project name for a folder (non-git) deploy (defaults to the directory name)",
@@ -62,14 +63,24 @@ export const deployCommand = new Command("deploy")
       process.exit(1);
     }
 
-    // Auto-detect: outside a git repo, deploy the folder via the upload flow
-    // (same pipeline as the MCP / dashboard folder deploy). The git-only flags
-    // don't apply to a fresh upload, so they force the git path if set.
+    // Never turn a redeploy from the wrong directory into an implicit upload.
+    // --name remains an opt-in for existing folder-deploy scripts outside Git.
     const inGitRepo = git(["rev-parse", "--is-inside-work-tree"]) === "true";
     // --service-ids scopes BOTH a git redeploy and a folder redeploy (so a
     // backend-only change doesn't recreate stateful services), so it is NOT
     // git-only; commit/smart-route/refresh genuinely need git history.
-    const gitOnlyFlags = opts.commit || opts.smartRoute || opts.refresh;
+    const gitOnlyFlags = opts.branch || opts.commit || opts.smartRoute || opts.refresh;
+    if (opts.folder && gitOnlyFlags) {
+      err("--folder cannot be combined with --branch, --commit, --smart-route, or --refresh.");
+      process.exit(1);
+    }
+    if (!inGitRepo && !gitOnlyFlags && !opts.folder && !opts.name) {
+      err(
+        "Not inside a Git repository. Run from your checkout, or pass --branch <name> " +
+          "to redeploy a Git project. To upload this directory, pass --folder or --name <name>.",
+      );
+      process.exit(1);
+    }
     const serviceIds: string[] | undefined = opts.serviceIds
       ? opts.serviceIds
           .split(",")
@@ -80,7 +91,7 @@ export const deployCommand = new Command("deploy")
     let deploymentId: string | undefined;
     let payload: Record<string, unknown> | undefined;
 
-    if (!inGitRepo && !gitOnlyFlags) {
+    if (opts.folder || (!inGitRepo && !gitOnlyFlags)) {
       const spinner = isJsonMode() ? null : ora("Deploying folder").start();
       try {
         const result = await deployFolder({
