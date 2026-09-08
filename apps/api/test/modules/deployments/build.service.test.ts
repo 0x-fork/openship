@@ -2323,6 +2323,41 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     );
   });
 
+  it.each(["upload", "stored"])(
+    "#854: restores build-arg-only masks from the %s before saving the deploy snapshot",
+    async (source) => {
+      const service = {
+        name: "api",
+        image: "ghcr.io/acme/api:1",
+        build: ".",
+        ports: [],
+        dependsOn: [],
+        environment: {},
+        volumes: [],
+        buildArgs: { TOKEN: "original-token", INHERITED: null },
+      };
+      const uploadSessionId = seedSession({ services: source === "upload" ? [service] : [] });
+      if (source === "stored") {
+        repos.service.listByProject.mockResolvedValue([
+          { ...service, id: "svc-1", kind: "compose", enabled: true },
+        ]);
+      }
+      await requestBuildAccess(ctx, {
+        projectId: "project-1",
+        uploadSessionId,
+        services: [
+          { ...service, buildArgs: { TOKEN: ENV_MASK, INHERITED: null, GHOST: ENV_MASK } },
+        ],
+      } as any);
+      const meta = repos.deployment.create.mock.calls.at(-1)?.[0].meta as any;
+      expect(meta.composeServices[0].buildArgs).toEqual({
+        TOKEN: "original-token",
+        INHERITED: null,
+      });
+      expect(JSON.stringify(meta)).not.toContain(ENV_MASK);
+    },
+  );
+
   it("leaves an existing services project's own rows alone", async () => {
     const uploadSessionId = seedSession();
     repos.service.listByProject.mockResolvedValue([

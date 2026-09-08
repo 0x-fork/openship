@@ -59,7 +59,7 @@ import {
 } from "./prepare.service";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 import { getFolderSession } from "../projects/folder/session-store";
-import { hasMaskedValue, isMaskedValue, unmaskEnv } from "../../lib/secret-env";
+import { hasMaskedValue, isMaskedValue, unmaskEnv, unmaskBuildArgs } from "../../lib/secret-env";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import {
   assertBuildMinutesAvailable,
@@ -1676,19 +1676,28 @@ export async function requestBuildAccess(
   // captured pre-mask) and the stored service rows — which reconcileComposeSource
   // above just refreshed from a git repo's compose, so this also covers a git
   // first-deploy. A revealed-and-edited value arrives real and passes through.
-  if (effectiveServices?.length && effectiveServices.some((s) => hasMaskedValue(s.environment))) {
+  if (
+    effectiveServices?.some((s) => hasMaskedValue(s.environment) || hasMaskedValue(s.buildArgs))
+  ) {
     const realEnvByName = new Map<string, Record<string, string>>();
+    const realArgsByName = new Map<string, Record<string, string | null>>();
     for (const s of await listProjectComposeServices(project.id)) {
       realEnvByName.set(s.name, (s.environment as Record<string, string> | null) ?? {});
+      realArgsByName.set(s.name, s.buildArgs ?? {});
     }
     for (const s of uploadSession?.services ?? []) {
       if (s.name && s.environment) realEnvByName.set(s.name, s.environment);
+      if (s.name && s.buildArgs) realArgsByName.set(s.name, s.buildArgs);
     }
-    effectiveServices = effectiveServices.map((s) =>
-      s.environment && hasMaskedValue(s.environment)
-        ? { ...s, environment: unmaskEnv(s.environment, realEnvByName.get(s.name) ?? null) }
-        : s,
-    );
+    effectiveServices = effectiveServices.map((s) => ({
+      ...s,
+      ...(hasMaskedValue(s.environment) && {
+        environment: unmaskEnv(s.environment, realEnvByName.get(s.name)),
+      }),
+      ...(hasMaskedValue(s.buildArgs) && {
+        buildArgs: unmaskBuildArgs(s.buildArgs, realArgsByName.get(s.name)),
+      }),
+    }));
   }
 
   const projectDomains = await listProjectRouteRows(project.id);

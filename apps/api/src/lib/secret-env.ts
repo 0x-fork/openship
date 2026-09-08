@@ -1,8 +1,8 @@
 /**
- * Compose-service `environment` masking (#336).
+ * Compose-service `environment` and `buildArgs` masking (#336, #854).
  *
- * A compose service's `environment` map is BOTH the deploy spec (injected into
- * the container) AND display data. It routinely holds secrets (DB passwords, API
+ * A compose service's env and build-arg maps are BOTH the deploy spec AND
+ * display data. They routinely hold secrets (DB passwords, API
  * tokens), yet — unlike project env vars, which carry an explicit `isSecret`
  * flag — it's a flat `Record<string,string>` with no secret marker. So instead
  * of a fragile key-name heuristic we mask *every* value on output and offer an
@@ -22,6 +22,7 @@
 // The mask sentinel + predicate live in @repo/core so the dashboard's env editor
 // shares the exact same string (the reveal/round-trip contract depends on it).
 import { ENV_MASK, isMaskedValue } from "@repo/core";
+import { fingerprintBuildArgs } from "./build-arg-fingerprint";
 export { ENV_MASK, isMaskedValue };
 
 /**
@@ -34,6 +35,32 @@ export function maskEnv(env: Record<string, string> | null | undefined): Record<
   if (!env) return out;
   for (const key of Object.keys(env)) out[key] = maskValue(env[key]);
   return out;
+}
+
+/** Null build args inherit from the build environment; empty strings stay empty. */
+export function maskBuildArgs(args: Record<string, string | null> | null | undefined) {
+  return Object.fromEntries(
+    Object.entries(args ?? {}).map(([key, value]) => [
+      key,
+      value === null ? null : maskValue(value),
+    ]),
+  );
+}
+
+/** Whole-map replacement, like buildArgs before masking, with sentinel recovery. */
+export function unmaskBuildArgs(
+  incoming: Record<string, string | null> | null | undefined,
+  stored: Record<string, string | null> | null | undefined,
+): Record<string, string | null> {
+  const result: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(incoming ?? {})) {
+    if (isMaskedValue(value)) {
+      if (stored && Object.hasOwn(stored, key)) result[key] = stored[key];
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 /**
@@ -128,31 +155,40 @@ export function mergeServiceEnv(
 }
 
 /** Whether an env map contains any mask sentinel (i.e. an un-revealed value). */
-export function hasMaskedValue(env: Record<string, string> | null | undefined): boolean {
+export function hasMaskedValue(env: Record<string, string | null> | null | undefined): boolean {
   if (!env) return false;
   return Object.values(env).some(isMaskedValue);
 }
 
 /**
- * Mask the `environment` field of a single compose/deployable service. Returns a
+ * Mask the env and build-arg fields of a single compose/deployable service. Returns a
  * shallow copy — the caller's stored object is left untouched. It also removes
  * server-owned interpolation provenance before the service crosses an API
  * boundary, even when the service has no runtime environment map.
  */
 export function maskServiceEnv<
   T extends {
+    name?: string;
+    projectId?: string;
+    buildArgs?: Record<string, string | null> | null;
+    importedSpec?: unknown;
+    driftSpec?: unknown;
     environment?: Record<string, string> | null;
     environmentTemplates?: Record<string, string> | null;
     advanced?: {
       imageTemplate?: unknown;
       environmentTemplateKeys?: string[];
+      buildArgTemplateKeys?: string[];
       [key: string]: unknown;
     } | null;
   },
->(svc: T | null | undefined): T | null | undefined {
+>(svc: T | null | undefined, projectId?: string): T | null | undefined {
   if (!svc) return svc;
   if (
     !svc.environment &&
+    !svc.buildArgs &&
+    !svc.importedSpec &&
+    !svc.driftSpec &&
     !svc.environmentTemplates &&
     !svc.advanced?.imageTemplate &&
     !svc.advanced?.environmentTemplateKeys
@@ -162,7 +198,12 @@ export function maskServiceEnv<
   // `environmentTemplates` is transient parser provenance. Its expressions can
   // contain literal defaults, so never serialize it even though the persisted
   // raw copy is already protected by blanket environment masking.
-  const { environmentTemplates: _templates, ...publicService } = svc;
+  const {
+    environmentTemplates: _templates,
+    importedSpec: _importedSpec,
+    driftSpec: _driftSpec,
+    ...publicService
+  } = svc;
   const advanced = svc.advanced ? { ...svc.advanced } : svc.advanced;
   if (advanced) {
     // Parser provenance is server-owned. Besides preventing a client from
@@ -174,6 +215,17 @@ export function maskServiceEnv<
   return {
     ...publicService,
     ...(svc.environment ? { environment: maskEnv(svc.environment) } : {}),
+    ...(svc.buildArgs ? { buildArgs: maskBuildArgs(svc.buildArgs) } : {}),
+    ...(svc.buildArgs && (projectId || svc.projectId) && svc.name
+      ? {
+          buildArgsFingerprints: fingerprintBuildArgs(
+            (projectId || svc.projectId)!,
+            svc.name,
+            svc.buildArgs,
+            svc.advanced?.buildArgTemplateKeys,
+          ),
+        }
+      : {}),
     ...(advanced !== undefined ? { advanced } : {}),
   } as T;
 }
@@ -185,10 +237,10 @@ export function maskServicesEnv<
     environmentTemplates?: Record<string, string> | null;
     advanced?: { environmentTemplateKeys?: string[]; [key: string]: unknown } | null;
   },
->(svcs: T[] | null | undefined): T[] {
+>(svcs: T[] | null | undefined, projectId?: string): T[] {
   if (!svcs) return [];
   // Elements are concrete services, so the masked result is never null/undefined.
-  return svcs.map((s) => maskServiceEnv(s) as T);
+  return svcs.map((s) => maskServiceEnv(s, projectId) as T);
 }
 
 /** The value-bearing fields of a compose `environmentMeta` entry. */
@@ -256,7 +308,7 @@ export function maskScanService<
 
 /**
  * Mask the compose-service env carried in a deployment's `meta` snapshot
- * (`meta.composeServices[].environment`). Returns a copy — the stored row/meta
+ * (`meta.composeServices[].environment` and `buildArgs`). Returns a copy — the stored row/meta
  * is untouched (rollback/redeploy read the real values back). Apply at the
  * CONTROLLER boundary only: `getDeployment` is also used internally and must
  * keep plaintext. No-op when there's no `meta.composeServices`.
@@ -279,6 +331,7 @@ export function maskDeploymentEnv<T extends { meta?: unknown } | null | undefine
       ...meta,
       composeServices: maskServicesEnv(
         meta.composeServices as { environment?: Record<string, string> | null }[],
+        (dep as { projectId?: string }).projectId,
       ),
     },
   };
@@ -299,6 +352,13 @@ export function maskDriftChanges<T extends { field: string; from: unknown; to: u
         ...c,
         from: maskEnv(c.from as Record<string, string> | null),
         to: maskEnv(c.to as Record<string, string> | null),
+      };
+    }
+    if (c.field === "buildArgs") {
+      return {
+        ...c,
+        from: maskBuildArgs(c.from as Record<string, string | null> | null),
+        to: maskBuildArgs(c.to as Record<string, string | null> | null),
       };
     }
     if (c.field === "advanced") {

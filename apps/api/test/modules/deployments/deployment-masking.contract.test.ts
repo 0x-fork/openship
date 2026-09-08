@@ -48,11 +48,16 @@ import { getById, list } from "../../../src/modules/deployments/deployment.contr
 
 const depWithSecret = (id: string) => ({
   id,
+  projectId: "project-1",
   status: "ready",
   meta: {
     previousActiveDeploymentId: "dep_0",
     composeServices: [
-      { name: "web", environment: { API_TOKEN: SECRET, NODE_ENV: "production" } },
+      {
+        name: "web",
+        environment: { API_TOKEN: SECRET, NODE_ENV: "production" },
+        buildArgs: { API_TOKEN: SECRET, EMPTY: "", INHERITED: null },
+      },
       { name: "db", environment: { POSTGRES_PASSWORD: SECRET } },
     ],
   },
@@ -86,6 +91,11 @@ describe("#336 deployment controller masks env in responses", () => {
     const body = read() as any;
     expect(JSON.stringify(body)).not.toContain(SECRET);
     expect(body.data.meta.composeServices[0].environment.API_TOKEN).toBe(ENV_MASK);
+    expect(body.data.meta.composeServices[0].buildArgs).toEqual({
+      API_TOKEN: ENV_MASK,
+      EMPTY: "",
+      INHERITED: null,
+    });
     expect(body.data.meta.composeServices[0].environment.NODE_ENV).toBe(ENV_MASK);
     expect(body.data.meta.composeServices[1].environment.POSTGRES_PASSWORD).toBe(ENV_MASK);
     // non-env meta preserved

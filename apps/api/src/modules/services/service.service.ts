@@ -41,10 +41,12 @@ import { encrypt, decrypt } from "../../lib/encryption";
 import {
   ENV_MASK,
   hasMaskedValue,
+  isMaskedValue,
   maskDriftChanges,
   maskServiceEnv,
   mergeServiceEnv,
   unmaskEnv,
+  unmaskBuildArgs,
 } from "../../lib/secret-env";
 import {
   assertNotControlPlane,
@@ -673,7 +675,7 @@ export async function createService(
     image: trimOrNull(data.image),
     build: trimOrNull(data.build),
     dockerfile: trimOrNull(data.dockerfile),
-    buildArgs: data.buildArgs ?? {},
+    buildArgs: unmaskBuildArgs(data.buildArgs, null),
     ports: data.ports ?? [],
     dependsOn: data.dependsOn ?? [],
     environment: data.environment ?? {},
@@ -752,6 +754,9 @@ export async function updateService(
       patch.environment,
     );
   }
+  if ("buildArgs" in patch) {
+    patch.buildArgs = unmaskBuildArgs(patch.buildArgs, svc.buildArgs);
+  }
 
   // `advanced` is ONE blob holding independent, separately-owned keys —
   // `healthcheck` (edited in the service form), `readiness` (the deploy gate),
@@ -784,7 +789,11 @@ export async function updateService(
     // and be expanded on the next deploy.
     patch.advanced = mergeAdvanced(
       ("advanced" in patch ? patch.advanced : svc.advanced) as ComposeAdvanced | null,
-      { buildArgTemplateKeys: [] },
+      {
+        buildArgTemplateKeys: (
+          (svc.advanced as ComposeAdvanced | null)?.buildArgTemplateKeys ?? []
+        ).filter((key) => isMaskedValue(data.buildArgs?.[key])),
+      },
     );
   }
 
@@ -1368,6 +1377,7 @@ export async function syncComposeServices(
   const storedEnvByName = new Map(
     stored.map((s) => [s.name, (s.environment as Record<string, string> | null) ?? {}]),
   );
+  const storedArgsByName = new Map(stored.map((s) => [s.name, s.buildArgs]));
 
   // Import path, but the hostnames are still client-authored — same gate as the
   // create/update editors (normalizeRoutingPatch); `syncFromCompose` writes the
@@ -1410,6 +1420,9 @@ export async function syncComposeServices(
 
     return {
       ...svc,
+      ...(svc.buildArgs && {
+        buildArgs: unmaskBuildArgs(svc.buildArgs, storedArgsByName.get(svc.name)),
+      }),
       ...(environment && { environment }),
       ...(persistTemplateProvenance && { environmentTemplates }),
     };
@@ -1484,7 +1497,7 @@ export async function syncComposeServices(
     }
   }
 
-  return synced.map(maskServiceEnv);
+  return synced.map((svc) => maskServiceEnv(svc));
 }
 
 // ─── Service Deployments (per-deployment state) ──────────────────────────────

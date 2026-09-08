@@ -157,6 +157,22 @@ describe("syncComposeServices — hands the command to the repo untouched", () =
     expect(synced()[0]).not.toHaveProperty("commandArgv");
   });
 
+  it("#854: restores build args during compose sync and masks its response", async () => {
+    serviceRepo.listByProject.mockResolvedValue([row({ buildArgs: { TOKEN: "stored-token" } })]);
+    serviceRepo.syncFromCompose.mockImplementation(async (_project, services) =>
+      services.map((service: object) => row(service)),
+    );
+    const response = await syncComposeServices(ctx, project.id, [
+      {
+        name: "web",
+        buildArgs: { TOKEN: "••••••••", INHERITED: null, GHOST: "••••••••" },
+      },
+    ]);
+    expect(synced()[0].buildArgs).toEqual({ TOKEN: "stored-token", INHERITED: null });
+    expect(response[0]?.buildArgs).toEqual({ TOKEN: "••••••••", INHERITED: null });
+    expect(JSON.stringify(response)).not.toContain("stored-token");
+  });
+
   it("preserves Compose env expressions and resolves them from project env at deploy (#751)", async () => {
     await syncComposeServices(ctx, project.id, [
       {

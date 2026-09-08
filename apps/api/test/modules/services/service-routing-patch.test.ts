@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ENV_MASK } from "../../../src/lib/secret-env";
 
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const serviceRepo = vi.hoisted(() => ({
@@ -367,6 +368,41 @@ describe("service routing patch", () => {
         },
       }),
     );
+  });
+
+  it("restores masked build args and their interpolation provenance on an unrelated edit", async () => {
+    serviceRepo.findById.mockResolvedValue({
+      ...multiRouteService(),
+      buildArgs: { TOKEN: "stored-secret", REF: "${BUILD_REF}", REMOVED: "old" },
+      advanced: { buildArgTemplateKeys: ["REF"], readiness: { enabled: true } },
+    });
+    await updateService(ctx, project.id, "svc_1", {
+      buildArgs: { TOKEN: ENV_MASK, REF: ENV_MASK, INHERITED: null, EMPTY: "", GHOST: ENV_MASK },
+      restart: "always",
+    } as never);
+    expect(writtenPatch().buildArgs).toEqual({
+      TOKEN: "stored-secret",
+      REF: "${BUILD_REF}",
+      INHERITED: null,
+      EMPTY: "",
+    });
+    expect(writtenPatch().advanced).toEqual({
+      buildArgTemplateKeys: ["REF"],
+      readiness: { enabled: true },
+    });
+  });
+
+  it("drops source-less masks on create and masks the returned build args", async () => {
+    const response = await createService(ctx, project.id, {
+      name: "api",
+      build: ".",
+      buildArgs: { TOKEN: "new-secret", GHOST: ENV_MASK, INHERITED: null },
+    } as never);
+    expect(serviceRepo.create.mock.calls.at(-1)?.[0].buildArgs).toEqual({
+      TOKEN: "new-secret",
+      INHERITED: null,
+    });
+    expect(response?.buildArgs).toEqual({ TOKEN: ENV_MASK, INHERITED: null });
   });
 
   it("makes a manual image update literal without dropping other advanced config", async () => {

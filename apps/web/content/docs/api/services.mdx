@@ -11,6 +11,24 @@ services, syncing them from a `docker-compose` file, starting/stopping/restartin
 resolving compose drift, and setting per-service environment variables. In the dashboard this is a project's
 **Services** tab; from the terminal it's [`openship service`](/docs/cli/projects).
 
+Service and deployment responses mask non-empty `buildArgs` values as `••••••••`, just like
+`environment`. This also covers retained deployment snapshots and Compose drift previews. Empty strings
+stay empty and `null` still means inherit from the build environment. On write, echoing a mask keeps
+that key's stored value; a mask without a stored source is dropped. `buildArgs` remains a whole-map
+replacement: omit a key to remove it, or send `{}` to clear the map.
+
+For literal build args, responses also include `buildArgsFingerprints`, keyed by argument name. After
+rotating a literal value, compare the fingerprint in the service write response with the same service's
+fingerprint in deployment history (`meta.composeServices[]`) or build status (`config.composeServices[]`).
+Equal fingerprints mean the stored literal values match; a rotation changes the fingerprint without
+returning either value. They are HMAC-SHA256 values scoped to the project, service name and argument key,
+so they cannot be computed offline or compared across services. Rotating the instance's auth secret
+also changes them.
+
+Fingerprints describe the stored build configuration, not a running container. Inherited (`null`) and
+interpolated args have no fingerprint because their effective values depend on the build environment.
+Snapshots remain intact internally for rollback; existing history is masked when read, without a migration.
+
 <Callout title="Base path & auth">
 Every path is nested under a project — relative to your instance, under **`/api/projects/:id/services`**,
 where `:id` is the project id (e.g. `https://your-host/api/projects/proj_123/services`).

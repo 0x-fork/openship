@@ -184,6 +184,7 @@ export async function getBuildSessionStatus(deploymentId: string) {
           // values on the way back in).
           composeServices: maskServicesEnv(
             (snapshot?.composeServices ?? []).filter((s) => serviceKind(s) === "compose"),
+            project.id,
           ),
         }
       : {};
