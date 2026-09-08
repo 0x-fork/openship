@@ -380,12 +380,13 @@
     "noPublicDomainTitle": "No hay ningún dominio público conectado",
     "noPublicDomainDescOne": "Este proyecto tiene {count} servicio con puertos expuestos, pero ninguno está configurado con un dominio accesible. Si despliegas ahora, la pila puede ejecutarse internamente, pero los usuarios no podrán acceder a ella desde una URL pública.",
     "noPublicDomainDescOther": "Este proyecto tiene {count} servicios con puertos expuestos, pero ninguno está configurado con un dominio accesible. Si despliegas ahora, la pila puede ejecutarse internamente, pero los usuarios no podrán acceder a ella desde una URL pública.",
+    "openDomains": "Abrir dominios",
     "openServices": "Abrir servicios",
     "deployAnyway": "Desplegar de todos modos",
     "suggestedFix": "Solución sugerida",
-    "fixStep1": "Abre la pestaña Servicios.",
-    "fixStep2": "Elige el servicio que debe ser público.",
-    "fixStep3": "Habilita la exposición del dominio y elige el puerto público."
+    "fixStep1": "Abre la pestaña Dominios.",
+    "fixStep2": "Añade una ruta o dominio personalizado para el puerto del servicio.",
+    "fixStep3": "Verifica el dominio y despliega."
   },
   "connections": {
     "useInProject": "Usar en un proyecto",

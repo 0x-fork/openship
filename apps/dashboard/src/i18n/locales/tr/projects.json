@@ -380,12 +380,13 @@
     "noPublicDomainTitle": "Bağlı herkese açık alan adı yok",
     "noPublicDomainDescOne": "Bu projenin dışa açık portları olan {count} servisi var ancak hiçbiri erişilebilir bir alan adı ile yapılandırılmamış. Şimdi dağıtırsanız yığın dahili olarak çalışabilir ancak kullanıcılar buna herkese açık bir URL'den erişemez.",
     "noPublicDomainDescOther": "Bu projenin dışa açık portları olan {count} servisi var ancak hiçbiri erişilebilir bir alan adı ile yapılandırılmamış. Şimdi dağıtırsanız yığın dahili olarak çalışabilir ancak kullanıcılar buna herkese açık bir URL'den erişemez.",
+    "openDomains": "Alan Adlarını Aç",
     "openServices": "Servisleri Aç",
     "deployAnyway": "Yine de dağıt",
     "suggestedFix": "Önerilen çözüm",
-    "fixStep1": "Servisler sekmesini açın.",
-    "fixStep2": "Herkese açık hâle getirilecek servisi seçin.",
-    "fixStep3": "Alan adı dışa açmayı etkinleştirin ve herkese açılacak portu seçin."
+    "fixStep1": "Alan Adları sekmesini açın.",
+    "fixStep2": "Servis portu için bir rota veya özel alan adı ekleyin.",
+    "fixStep3": "Alan adını doğrulayın ve dağıtın."
   },
   "incomingWebhooks": {
     "title": "Gelen webhook'lar",

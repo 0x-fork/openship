@@ -380,12 +380,13 @@
     "noPublicDomainTitle": "Keine öffentliche Domain verbunden",
     "noPublicDomainDescOne": "Dieses Projekt hat {count} Dienst mit exponierten Ports, aber keiner ist mit einer erreichbaren Domain konfiguriert. Wenn du jetzt bereitstellst, kann der Stack intern laufen, aber Nutzer können nicht über eine öffentliche URL darauf zugreifen.",
     "noPublicDomainDescOther": "Dieses Projekt hat {count} Dienste mit exponierten Ports, aber keiner ist mit einer erreichbaren Domain konfiguriert. Wenn du jetzt bereitstellst, kann der Stack intern laufen, aber Nutzer können nicht über eine öffentliche URL darauf zugreifen.",
+    "openDomains": "Domains öffnen",
     "openServices": "Dienste öffnen",
     "deployAnyway": "Trotzdem bereitstellen",
     "suggestedFix": "Vorgeschlagene Lösung",
-    "fixStep1": "Öffne den Tab „Dienste“.",
-    "fixStep2": "Wähle den Dienst, der öffentlich sein soll.",
-    "fixStep3": "Aktiviere die Domain-Freigabe und wähle den öffentlichen Port."
+    "fixStep1": "Öffne den Tab „Domains“.",
+    "fixStep2": "Füge eine Route oder Custom-Domain für den Service-Port hinzu.",
+    "fixStep3": "Verifiziere die Domain und stelle bereit."
   },
   "connections": {
     "useInProject": "In einem Projekt verwenden",

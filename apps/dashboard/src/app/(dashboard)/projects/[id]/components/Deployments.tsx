@@ -14,7 +14,11 @@ import { useRouter } from "next/navigation";
 import { Rocket, ChevronDown, RefreshCw, Layers } from "lucide-react";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
-
+import {
+  hasConnectedDomain,
+  isPotentiallyPublicService,
+  shouldWarnAboutUnreachableServices,
+} from "./redeploy-unreachable-warning";
 export const Deployments = () => {
   const {
     id,
@@ -23,6 +27,7 @@ export const Deployments = () => {
     servicesData,
     refreshServices,
     hasMultipleServices,
+    domainsData,
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
@@ -179,8 +184,10 @@ export const Deployments = () => {
       if (hasMultipleServices) {
         const services =
           servicesData.services.length > 0 ? servicesData.services : await refreshServices();
-        if (shouldWarnAboutUnreachableServices(services)) {
-          const candidateServices = services.filter(isPotentiallyPublicService);
+        if (shouldWarnAboutUnreachableServices(services, domainsData.domains)) {
+          const candidateServices = services.filter(
+            (s) => isPotentiallyPublicService(s) && !hasConnectedDomain(s, domainsData.domains),
+          );
           let modalId = "";
           modalId = showModal({
             customContent: (
@@ -200,10 +207,10 @@ export const Deployments = () => {
                         className="rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                         onClick={() => {
                           hideModal(modalId);
-                          setActiveTab("services");
+                          setActiveTab("domains");
                         }}
                       >
-                        {t.projects.redeploy.openServices}
+                        {t.projects.redeploy.openDomains ?? t.projects.redeploy.openServices}
                       </button>
                       <button
                         type="button"
@@ -443,18 +450,3 @@ export const Deployments = () => {
   );
 };
 
-function hasConnectedDomain(service: Service) {
-  if (!service.exposed) return false;
-  if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
-  return Boolean(service.domain?.trim());
-}
-
-function isPotentiallyPublicService(service: Service) {
-  return service.enabled && (service.ports?.length ?? 0) > 0;
-}
-
-function shouldWarnAboutUnreachableServices(services: Service[]) {
-  const candidateServices = services.filter(isPotentiallyPublicService);
-  if (candidateServices.length === 0) return false;
-  return candidateServices.every((service) => !hasConnectedDomain(service));
-}

@@ -428,12 +428,13 @@
     "noPublicDomainTitle": "No public domain is connected",
     "noPublicDomainDescOne": "This project has {count} service with exposed ports, but none are configured with a reachable domain. If you deploy now, the stack can run internally, but users will not be able to access it from a public URL.",
     "noPublicDomainDescOther": "This project has {count} services with exposed ports, but none are configured with a reachable domain. If you deploy now, the stack can run internally, but users will not be able to access it from a public URL.",
+    "openDomains": "Open Domains",
     "openServices": "Open Services",
     "deployAnyway": "Deploy anyway",
     "suggestedFix": "Suggested fix",
-    "fixStep1": "Open the Services tab.",
-    "fixStep2": "Pick the service that should be public.",
-    "fixStep3": "Enable domain exposure and choose the public port."
+    "fixStep1": "Open the Domains tab.",
+    "fixStep2": "Add a route or custom domain for the service port.",
+    "fixStep3": "Verify the domain and deploy."
   },
   "incomingWebhooks": {
     "title": "Incoming webhooks",
