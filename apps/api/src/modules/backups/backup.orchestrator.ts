@@ -316,6 +316,7 @@ export class BackupOrchestrator {
     this.publishTransition(runId, "preparing");
 
     let policy = null as Awaited<ReturnType<typeof repos.backupPolicy.findById>> | null;
+    let ctx: RunContext | null = null;
     let executor: BackupExecutor | null = null;
     let serviceHandle: ServiceHandle | null = null;
     // The runtime the BackupExecutor wraps. Held for the whole run (it shells into
@@ -364,7 +365,7 @@ export class BackupOrchestrator {
       // 3. Materialize the SOURCE — a deployed project service, or a bare
       //    mail server. Both yield an opaque ServiceHandle + an executor +
       //    the key/manifest metadata the shared pipeline below needs.
-      let ctx: RunContext;
+
       if (policy.sourceKind === "mail_server") {
         if (!policy.mailServerId) throw new Error("mail_server policy has no mailServerId");
         const built = await this.buildMailSource(
@@ -622,6 +623,8 @@ export class BackupOrchestrator {
         payload: {
           projectName: ctx.projectName,
           serviceName: ctx.serviceName,
+          policyName: (policy as { name?: string } | null)?.name ?? policy.id,
+          policyId: policy.id,
           destinationName: destinationRow.name,
           bytesTransferred: totalBytes,
           artifactCount: artifactsRecorded.length,
@@ -707,25 +710,28 @@ export class BackupOrchestrator {
         bytesTransferred: 0,
       });
 
-      // Fan-out to subscribers. We re-fetch destination if needed —
-      // the catch block may have lost the closure depending on where
-      // we threw, so look it up by policy.
-      if (policy?.destinationId) {
-        const destForNotify = await repos.backupDestination
-          .findById(policy.destinationId)
-          .catch(() => null);
-        if (destForNotify) {
-          notification.emit({
-            organizationId: destForNotify.organizationId,
-            eventType: "backup_run.failed",
-            resourceType: "backup_run",
-            resourceId: runId,
-            payload: {
-              destinationName: destForNotify.name,
-              errorMessage: summary,
-            },
-          });
-        }
+      // Fan-out to subscribers. Look up destination by policy or run.
+      const destId = policy?.destinationId ?? run.destinationId;
+      const destForNotify = destId
+        ? await repos.backupDestination.findById(destId).catch(() => null)
+        : null;
+      const organizationId = run.organizationId ?? destForNotify?.organizationId;
+      if (organizationId) {
+        notification.emit({
+          organizationId,
+          eventType: "backup_run.failed",
+          resourceType: "backup_run",
+          resourceId: runId,
+          payload: {
+            destinationName: destForNotify?.name ?? null,
+            policyName:
+              (policy as { name?: string } | null)?.name ?? policy?.id ?? run.policyId ?? null,
+            policyId: policy?.id ?? run.policyId ?? null,
+            projectName: ctx?.projectName ?? null,
+            serviceName: ctx?.serviceName ?? null,
+            errorMessage: summary,
+          },
+        });
       }
     } finally {
       disposeRuntime(sourceRuntime);

@@ -60,6 +60,10 @@ export function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   const description = own?.description ?? cat?.description;
   if (description) lines.push(description);
   if (payload.message) lines.push(String(payload.message));
+  if (payload.projectName) lines.push(`Project: ${payload.projectName}`);
+  if (payload.serviceName) lines.push(`Service: ${payload.serviceName}`);
+  if (payload.policyName) lines.push(`Policy: ${payload.policyName}`);
+  if (payload.destinationName) lines.push(`Destination: ${payload.destinationName}`);
 
   if (payload.branch) lines.push(`Branch: ${payload.branch}`);
   if (payload.commitSha) {
@@ -471,7 +475,9 @@ async function sendTelegram(
     return; // 200 with an unparseable body: accept rather than retry forever.
   }
   if (parsed && parsed.ok === false) {
-    throw new Error(`Telegram rejected the message: ${(parsed.description ?? "unknown error").slice(0, 200)}`);
+    throw new Error(
+      `Telegram rejected the message: ${(parsed.description ?? "unknown error").slice(0, 200)}`,
+    );
   }
 }
 
