@@ -1502,10 +1502,10 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       // See fetchCommand above for env-var rationale; --progress keeps
       // the clone visible in the streamed log even though stdout/stderr
       // are pipes, not a tty.
-      `GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/echo git -c credential.helper= clone --progress ${depthArgs}--branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(cloneTarget)}`,
+      `GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/echo git -c credential.helper= clone --progress ${depthArgs}--recurse-submodules --shallow-submodules --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(cloneTarget)}`,
     ].join("\n");
     const checkoutCommand = config.commitSha
-      ? `cd ${sq(cloneTarget)} && git -c credential.helper= -c advice.detachedHead=false checkout ${sq(config.commitSha)}`
+      ? `cd ${sq(cloneTarget)} && git -c credential.helper= -c advice.detachedHead=false checkout ${sq(config.commitSha)} && GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/echo git -c credential.helper= submodule update --init --recursive`
       : "";
     // No name-based pruning: a fresh clone already contains only git-tracked
     // files (gitignored output was never committed), so pruning by name here
@@ -1513,7 +1513,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     // A tracked `.dockerignore` still applies at `docker build` on the worker.
     const prepareCommand = [
       "set -e",
-      `rm -rf ${sq(joinWorkspacePath(cloneTarget, ".git"))}`,
+      `find ${sq(cloneTarget)} -name .git -prune -exec rm -rf {} +`,
       ...prepareContextCommands,
       'echo "Dockerfile context prepared."',
     ].join("\n");

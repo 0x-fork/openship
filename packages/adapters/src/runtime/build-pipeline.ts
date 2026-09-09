@@ -319,7 +319,7 @@ export async function runBuildPipeline(
               await exec(
                 gitShellCommand(
                   gitInvocation,
-                  `clone --progress --depth 50 --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)}`,
+                  `clone --progress --depth 50 --recurse-submodules --shallow-submodules --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)}`,
                 ),
               );
               const commitPresent = await exec(
@@ -343,11 +343,17 @@ export async function runBuildPipeline(
                   `-c advice.detachedHead=false checkout ${sq(config.commitSha)}`,
                 )}`,
               );
+              await exec(
+                `cd ${sq(env.projectDir)} && ${gitShellCommand(
+                  gitInvocation,
+                  "submodule update --init --recursive",
+                )}`,
+              );
             } else {
               await exec(
                 gitShellCommand(
                   gitInvocation,
-                  `clone --progress --depth 1 --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)}`,
+                  `clone --progress --depth 1 --recurse-submodules --shallow-submodules --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)}`,
                 ),
               );
             }
