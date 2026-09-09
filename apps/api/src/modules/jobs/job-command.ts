@@ -29,7 +29,12 @@ import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
 import { jobRunBus } from "./job-run.sse";
 import { boundedStorableText } from "../deployments/build-log-sanitize";
-import { resolveServerIds, type CommandConfig, type JobNotifyConfig, type JobRunState } from "./job.types";
+import {
+  resolveServerIds,
+  type CommandConfig,
+  type JobNotifyConfig,
+  type JobRunState,
+} from "./job.types";
 
 /** Cap stored output so a chatty command can't bloat the row. */
 const MAX_OUTPUT = 200_000;
@@ -118,7 +123,10 @@ async function executeAttempt(
     let code: number;
     let output: string;
     if (servers.length === 1) {
-      const r = await withTimeout(runOnServer(servers[0], command, (e) => publish(e.message, e.level)), cfg.timeoutMs);
+      const r = await withTimeout(
+        runOnServer(servers[0], command, (e) => publish(e.message, e.level)),
+        cfg.timeoutMs,
+      );
       output = r.output;
       code = r.code;
     } else {
@@ -203,10 +211,18 @@ async function runLoop(row: Job, run: JobRun): Promise<void> {
   try {
     jobRunBus.publish(run.id, { type: "complete", status: finalStatus, error: lastError });
   } catch (err) {
-    console.error(`[job] ${row.key} run ${run.id}: terminal SSE publish failed: ${safeErrorMessage(err)}`);
+    console.error(
+      `[job] ${row.key} run ${run.id}: terminal SSE publish failed: ${safeErrorMessage(err)}`,
+    );
   }
 
-  await emitJobRun(row, run.id, finalStatus);
+  const durationMs = Date.now() - startedMs;
+  await emitJobRun(row, run.id, finalStatus, {
+    durationMs,
+    exitCode,
+    error: lastError,
+    output: chunks.join("\n"),
+  });
   if (finalStatus === "success") await fireDependents(row.key);
 }
 
@@ -262,7 +278,12 @@ export async function runCommandJobTick(key: string): Promise<void> {
   if (!row || row.actionType !== "command") return;
   const cfg = (row.actionConfig ?? {}) as CommandConfig;
   const single = primaryServerId(cfg);
-  const run = await repos.jobRun.start({ jobId: key, kind: "custom", trigger: "schedule", serverId: single });
+  const run = await repos.jobRun.start({
+    jobId: key,
+    kind: "custom",
+    trigger: "schedule",
+    serverId: single,
+  });
   await runLoop(row, run);
 }
 
@@ -274,7 +295,12 @@ export async function startCommandRun(
 ): Promise<string> {
   const cfg = (row.actionConfig ?? {}) as CommandConfig;
   const single = primaryServerId(cfg);
-  const run = await repos.jobRun.start({ jobId: row.key, kind: "custom", trigger, serverId: single });
+  const run = await repos.jobRun.start({
+    jobId: row.key,
+    kind: "custom",
+    trigger,
+    serverId: single,
+  });
   setImmediate(() => {
     void runLoop(row, run).catch((err) =>
       console.error(`[job] ${row.key} run failed:`, safeErrorMessage(err)),
@@ -312,11 +338,45 @@ async function resolveOrgIdForUser(userId: string): Promise<string | null> {
   return members[0]?.organizationId ?? null;
 }
 
+const MAX_NOTIFY_LOG_LINES = 20;
+const MAX_NOTIFY_LOG_CHARS = 2000;
+
+function extractLogExcerpt(output?: string): string | undefined {
+  if (!output) return undefined;
+  const trimmed = output.trim();
+  if (!trimmed) return undefined;
+  const lines = trimmed.split("\n");
+  const tail = lines.slice(-MAX_NOTIFY_LOG_LINES).join("\n");
+  if (tail.length <= MAX_NOTIFY_LOG_CHARS) return tail;
+  return `…\n${tail.slice(-MAX_NOTIFY_LOG_CHARS)}`;
+}
+
 /** Notify on a run state. Per-job `notifyConfig` (if present) OVERRIDES the
  *  global Settings subscriptions — its channels/states win, no double-fire. */
-async function emitJobRun(row: Job, runId: string, status: JobRunState): Promise<void> {
+async function emitJobRun(
+  row: Job,
+  runId: string,
+  status: JobRunState,
+  meta?: {
+    durationMs?: number;
+    exitCode?: number;
+    error?: string;
+    output?: string;
+  },
+): Promise<void> {
   try {
-    const payload = { label: row.label, jobKey: row.key, status, runId };
+    const logExcerpt = extractLogExcerpt(meta?.output);
+    const payload: Record<string, unknown> = {
+      label: row.label,
+      jobName: row.label,
+      jobKey: row.key,
+      status,
+      runId,
+      ...(meta?.durationMs !== undefined ? { durationMs: meta.durationMs } : {}),
+      ...(meta?.exitCode !== undefined ? { exitCode: meta.exitCode } : {}),
+      ...(meta?.error ? { errorMessage: meta.error } : {}),
+      ...(logExcerpt ? { logExcerpt } : {}),
+    };
     const notify = row.notifyConfig as JobNotifyConfig | null;
 
     if (notify?.channels?.length) {
