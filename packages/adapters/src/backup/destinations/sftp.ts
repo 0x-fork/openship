@@ -203,6 +203,17 @@ class SftpDestinationImpl implements BackupDestination {
     }
   }
 
+  /** Best-effort cleanup that never masks the upload or rename error. */
+  private async unlinkIfPresent(sftp: SFTPWrapper, path: string): Promise<void> {
+    await new Promise<void>((resolve) => {
+      try {
+        sftp.unlink(path, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
   // ── BackupDestination interface ──────────────────────────────────────
 
   async preflight(): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -316,6 +327,9 @@ class SftpDestinationImpl implements BackupDestination {
         onSettled.push(() => clearInterval(trackProgress));
         body.on("error", (err) => finish(err));
         body.pipe(ws);
+      }).catch(async (err) => {
+        await this.unlinkIfPresent(sftp, tmp);
+        throw err;
       });
 
       // Atomic finalize.
@@ -330,6 +344,9 @@ class SftpDestinationImpl implements BackupDestination {
             );
           });
         });
+      }).catch(async (err) => {
+        await this.unlinkIfPresent(sftp, tmp);
+        throw err;
       });
     });
 
