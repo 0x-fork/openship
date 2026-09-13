@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -191,31 +191,46 @@ const Sidebar: React.FC = () => {
   // connect-account flow, local builds don't need a remote credential.
   const cloneGate = useCloneStrategyGate();
 
-  // Lazy branch list. In config-edit mode the wizard hydrates from saved data
-  // with only the current branch seeded (no repo round-trip on load). The full
-  // list is fetched once, on first open of the branch dropdown — never for
-  // local-sourced projects (no remote repo to list).
-  const branchesFetchedRef = useRef(false);
+  const branchesLoadingRef = useRef(false);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   const loadBranches = useCallback(async () => {
-    if (branchesFetchedRef.current) return;
-    if (!config.projectId || !config.owner || config.owner === "local") return;
-    // Only when the list is "thin" (config-edit seeds just the current branch);
-    // the first-deploy path already preloads the full list via prepare.
-    if (config.branches.length > 1) return;
-    branchesFetchedRef.current = true;
+    if (branchesLoadingRef.current || !config.branchesHasMore) return;
+    if (!config.owner || !config.repo || config.owner === "local") return;
+
+    branchesLoadingRef.current = true;
+    setBranchesLoading(true);
     try {
-      const res = await projectsApi.getBranches(config.projectId);
+      const page = config.branchPage + 1;
+      const res = config.projectId
+        ? await projectsApi.getBranchPage(config.projectId, page)
+        : await githubApi.listBranches(config.owner, config.repo, page);
       const names: string[] = (res?.data ?? [])
         .map((b: { name?: string }) => b?.name)
         .filter((n: unknown): n is string => typeof n === "string" && n.length > 0);
-      if (names.length) {
-        const merged = Array.from(new Set([config.branch, ...names].filter(Boolean)));
-        updateConfig({ branches: merged });
-      }
+      const merged = Array.from(
+        new Set([config.branch, ...config.branches, ...names].filter(Boolean)),
+      );
+      updateConfig({
+        branches: merged,
+        branchPage: res.pagination.page,
+        branchesHasMore: res.pagination.hasMore,
+      });
     } catch {
-      branchesFetchedRef.current = false; // allow a retry on next open
+      return;
+    } finally {
+      branchesLoadingRef.current = false;
+      setBranchesLoading(false);
     }
-  }, [config.projectId, config.owner, config.branch, config.branches.length, updateConfig]);
+  }, [
+    config.branch,
+    config.branchPage,
+    config.branches,
+    config.branchesHasMore,
+    config.owner,
+    config.projectId,
+    config.repo,
+    updateConfig,
+  ]);
 
   const handleOpenEnvironmentCreator = useCallback(() => {
     if (!config.projectId) return;
@@ -481,7 +496,10 @@ const Sidebar: React.FC = () => {
               <CustomSelect
                 value={config.branch}
                 onChange={(val) => updateConfig({ branch: val })}
-                onOpen={loadBranches}
+                onOpen={config.branchPage === 0 ? () => void loadBranches() : undefined}
+                onLoadMore={() => void loadBranches()}
+                hasMore={config.branchesHasMore}
+                isLoadingMore={branchesLoading}
                 options={config.branches.map(branch => ({
                   value: branch,
                   label: branch,
@@ -495,6 +513,9 @@ const Sidebar: React.FC = () => {
                     }
                   : undefined}
                 placeholder={t.deploy.sidebar.selectBranch}
+                searchPlaceholder={t.deploy.sidebar.searchBranches}
+                emptyMessage={t.deploy.sidebar.noBranchesMatch}
+                loadingMessage={t.deploy.sidebar.loadingBranches}
                 className="w-full"
               />
             </div>

@@ -1961,9 +1961,8 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branches = await listGitHubBranches(ctx, base.gitOwner, base.gitRepo);
-    const exists = branches.some((branch) => branch.name === gitBranch);
-    if (!exists) {
+    const commit = await getLatestCommit(ctx, base.gitOwner, base.gitRepo, gitBranch);
+    if (!commit) {
       throw new ValidationError(
         `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
       );

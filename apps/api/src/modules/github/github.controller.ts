@@ -823,9 +823,17 @@ export async function listBranches(c: Context) {
   const ctx = getRequestContext(c);
   const owner = param(c, "owner");
   const repo = param(c, "repo");
+  const page = Number(c.req.query("page") ?? 1);
 
-  const data = await githubService.listBranches(ctx, owner, repo);
-  return c.json({ data });
+  const result = await githubService.listBranches(ctx, owner, repo, { page });
+  return c.json({
+    data: result.branches,
+    pagination: {
+      page: result.page,
+      perPage: result.perPage,
+      hasMore: result.hasMore,
+    },
+  });
 }
 
 /**

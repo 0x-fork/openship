@@ -1591,14 +1591,20 @@ export async function listBranches(c: Context) {
     return c.json({ success: false, error: "No repository connected" }, 400);
   }
 
-  const branches = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo);
+  const page = Number(c.req.query("page") ?? 1);
+  const result = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo, { page });
   return c.json({
     success: true,
-    data: branches.map((branch) => ({
+    data: result.branches.map((branch) => ({
       name: branch.name,
       sha: branch.commit.sha,
       protected: branch.protected,
     })),
+    pagination: {
+      page: result.page,
+      perPage: result.perPage,
+      hasMore: result.hasMore,
+    },
   });
 }
 

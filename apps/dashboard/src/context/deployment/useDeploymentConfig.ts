@@ -53,6 +53,8 @@ interface PreparedConfigArgs {
   owner: string;
   branch: string;
   branches: string[];
+  branchPage?: number;
+  branchesHasMore?: boolean;
   projectId?: string;
   localPath?: string;
   uploadSessionId?: string;
@@ -807,6 +809,8 @@ export function useDeploymentConfig() {
         owner,
         branch,
         branches,
+        branchPage,
+        branchesHasMore,
         projectId,
         localPath,
         uploadSessionId,
@@ -908,6 +912,8 @@ export function useDeploymentConfig() {
           buildImage: runtimeConfig.buildImage,
           branch,
           branches,
+          branchPage: branchPage ?? 0,
+          branchesHasMore: branchesHasMore ?? false,
           services: response.services || [],
           publicEndpoints: routingState.publicEndpoints,
           // openship.json is an explicit deploy contract, so its env is already
@@ -1016,6 +1022,8 @@ export function useDeploymentConfig() {
               owner: response.repository.owner?.login || sourceOwner,
               branch: selectedBranch,
               branches: branchOptions,
+              branchPage: 1,
+              branchesHasMore: Boolean(response.repository.branches_has_more),
               projectId: context?.projectId,
             },
           ),
@@ -1384,6 +1392,8 @@ export function useDeploymentConfig() {
               owner: project.gitOwner || (project.localPath ? "local" : repoName),
               branch,
               branches: branch ? [branch] : [],
+              branchPage: 0,
+              branchesHasMore: Boolean(project.gitOwner && project.gitRepo),
               projectId,
               localPath: project.localPath || undefined,
             }),

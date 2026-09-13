@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Loader2, Search } from "lucide-react";
 
 const MENU_OFFSET = 8;
-const MENU_MAX_HEIGHT = 256;
+const MENU_MAX_HEIGHT = 320;
 const VIEWPORT_PADDING = 12;
+
+const SEARCH_AUTO_THRESHOLD = 8;
 
 interface Option<T extends string> {
   value: T;
@@ -40,6 +42,13 @@ interface CustomSelectProps<T extends string> {
   /** Fired once each time the menu opens — use to lazily load options. */
   onOpen?: () => void;
   disabled?: boolean;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
+  loadingMessage?: string;
 }
 
 export function CustomSelect<T extends string>({
@@ -51,23 +60,41 @@ export function CustomSelect<T extends string>({
   footerAction,
   onOpen,
   disabled = false,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
+  searchable,
+  searchPlaceholder = "Search...",
+  emptyMessage = "No matches",
+  loadingMessage = "Loading...",
 }: CustomSelectProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const didInitialScroll = useRef(false);
   const [menuPosition, setMenuPosition] = useState<DropdownPosition | null>(null);
 
   const selectedOption = options.find((opt) => opt.value === value);
+  const showSearch = searchable ?? options.length >= SEARCH_AUTO_THRESHOLD;
+
+  const filteredOptions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(
+      (opt) => opt.label.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q),
+    );
+  }, [options, query]);
 
   const updateMenuPosition = useCallback(() => {
     if (!triggerRef.current || typeof window === "undefined") return;
 
     const rect = triggerRef.current.getBoundingClientRect();
-    const width = Math.min(
-      Math.max(rect.width, 220),
-      window.innerWidth - VIEWPORT_PADDING * 2,
-    );
+    const width = Math.min(Math.max(rect.width, 220), window.innerWidth - VIEWPORT_PADDING * 2);
     const left = Math.min(
       Math.max(VIEWPORT_PADDING, rect.left),
       Math.max(VIEWPORT_PADDING, window.innerWidth - width - VIEWPORT_PADDING),
@@ -75,10 +102,7 @@ export function CustomSelect<T extends string>({
     const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_PADDING;
     const spaceAbove = rect.top - VIEWPORT_PADDING;
     const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow;
-    const availableHeight = Math.max(
-      120,
-      (openAbove ? spaceAbove : spaceBelow) - MENU_OFFSET,
-    );
+    const availableHeight = Math.max(120, (openAbove ? spaceAbove : spaceBelow) - MENU_OFFSET);
 
     setMenuPosition(
       openAbove
@@ -98,11 +122,9 @@ export function CustomSelect<T extends string>({
   }, []);
 
   useEffect(() => {
-    const isInside = (target: EventTarget | null) => (
-      target instanceof Node && (
-        !!containerRef.current?.contains(target) || !!menuRef.current?.contains(target)
-      )
-    );
+    const isInside = (target: EventTarget | null) =>
+      target instanceof Node &&
+      (!!containerRef.current?.contains(target) || !!menuRef.current?.contains(target));
 
     const handleClickOutside = (event: MouseEvent) => {
       if (!isInside(event.target)) {
@@ -130,6 +152,7 @@ export function CustomSelect<T extends string>({
   useEffect(() => {
     if (!isOpen) {
       setMenuPosition(null);
+      setQuery("");
       return;
     }
 
@@ -146,6 +169,27 @@ export function CustomSelect<T extends string>({
     };
   }, [isOpen, updateMenuPosition]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      didInitialScroll.current = false;
+      return;
+    }
+    if (didInitialScroll.current || !listRef.current) return;
+    didInitialScroll.current = true;
+
+    const selectedIndex = filteredOptions.findIndex((opt) => opt.value === value);
+    const start = selectedIndex >= 0 ? selectedIndex : 0;
+    setHighlight(start);
+    listRef.current.querySelector(`[data-index="${start}"]`)?.scrollIntoView({ block: "nearest" });
+    if (showSearch) inputRef.current?.focus();
+  }, [filteredOptions, isOpen, menuPosition, showSearch, value]);
+
+  const handleSearch = (nextQuery: string) => {
+    setQuery(nextQuery);
+    setHighlight(0);
+    listRef.current?.scrollTo({ top: 0 });
+  };
+
   const handleSelect = (optionValue: T) => {
     onChange(optionValue);
     setIsOpen(false);
@@ -156,83 +200,149 @@ export function CustomSelect<T extends string>({
     setIsOpen(false);
   };
 
-  const dropdownMenu = isOpen && menuPosition && typeof document !== "undefined"
-    ? createPortal(
-        <div
-          ref={menuRef}
-          role="listbox"
-          className="fixed z-[10050] flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
-          style={{
-            left: menuPosition.left,
-            width: menuPosition.width,
-            maxHeight: menuPosition.maxHeight,
-            ...(menuPosition.top !== undefined
-              ? { top: menuPosition.top }
-              : { bottom: menuPosition.bottom }),
-          }}
-        >
-          {/*
-            `max-h-full` does not constrain a percentage-sized child when its
-            parent only has `max-height`. With a long branch list the options
-            therefore grew past the menu and were clipped by the outer
-            `overflow-hidden`, leaving no scrollable area (#710). A flex child
-            with `min-h-0` takes the remaining bounded menu height instead;
-            the footer stays visible and the list owns vertical scrolling.
-          */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5 touch-pan-y">
-            {options.map((option) => {
-              const isSelected = option.value === value;
-              return (
-                <button
-                  key={option.value}
-                  role="option"
-                  aria-selected={isSelected}
-                  onClick={() => handleSelect(option.value)}
-                  className={`
-                    w-full px-4 py-2.5 text-start flex items-center justify-between gap-2
-                    text-sm transition-all duration-150
-                    ${isSelected
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                    }
-                  `}
-                  type="button"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    {option.icon}
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate">{option.label}</span>
-                      {option.description && (
-                        <span className="truncate text-xs text-muted-foreground/70">
-                          {option.description}
-                        </span>
-                      )}
-                    </span>
-                  </span>
-                  {isSelected && (
-                    <Check className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+  const moveHighlight = (delta: number) => {
+    if (filteredOptions.length === 0) return;
+    setHighlight((prev) => {
+      const next = Math.min(Math.max(prev + delta, 0), filteredOptions.length - 1);
+      listRef.current
+        ?.querySelector(`[data-index="${next}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+      return next;
+    });
+  };
 
-          {footerAction && (
-            <div className="border-t border-border/50 p-1.5">
-              <button
-                type="button"
-                onClick={handleFooterAction}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-start text-sm font-medium text-foreground transition-colors hover:bg-accent/50"
-              >
-                {footerAction.icon}
-                {footerAction.label}
-              </button>
+  const handleMenuKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveHighlight(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveHighlight(-1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const option = filteredOptions[highlight];
+      if (option) handleSelect(option.value);
+    }
+  };
+
+  const handleListScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (!onLoadMore || !hasMore || isLoadingMore) return;
+    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight <= 64) onLoadMore();
+  };
+
+  const dropdownMenu =
+    isOpen && menuPosition && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={menuRef}
+            onKeyDown={handleMenuKeyDown}
+            className="fixed z-[10050] flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
+            style={{
+              left: menuPosition.left,
+              width: menuPosition.width,
+              maxHeight: menuPosition.maxHeight,
+              ...(menuPosition.top !== undefined
+                ? { top: menuPosition.top }
+                : { bottom: menuPosition.bottom }),
+            }}
+          >
+            {showSearch && (
+              <div className="flex-none border-b border-border/50 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={query}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    placeholder={searchPlaceholder}
+                    aria-label={searchPlaceholder}
+                    className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div
+              ref={listRef}
+              role="listbox"
+              onScroll={handleListScroll}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5 touch-pan-y"
+            >
+              {filteredOptions.length === 0 && !isLoadingMore ? (
+                <div className="px-4 py-3 text-sm text-muted-foreground">{emptyMessage}</div>
+              ) : (
+                filteredOptions.map((option, index) => {
+                  const isSelected = option.value === value;
+                  const isHighlighted = index === highlight;
+                  return (
+                    <button
+                      key={option.value}
+                      data-index={index}
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => handleSelect(option.value)}
+                      onMouseEnter={() => setHighlight(index)}
+                      className={`
+                      w-full px-4 py-2.5 text-start flex items-center justify-between gap-2
+                      text-sm transition-all duration-150
+                      ${
+                        isSelected
+                          ? "bg-accent text-accent-foreground font-medium"
+                          : isHighlighted
+                            ? "text-foreground bg-accent/50"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      }
+                    `}
+                      type="button"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        {option.icon}
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{option.label}</span>
+                          {option.description && (
+                            <span className="truncate text-xs text-muted-foreground/70">
+                              {option.description}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                      {isSelected && (
+                        <Check className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      )}
+                    </button>
+                  );
+                })
+              )}
             </div>
-          )}
-        </div>,
-        document.body,
-      )
-    : null;
+
+            {isLoadingMore && (
+              <div
+                role="status"
+                className="flex flex-none items-center justify-center gap-2 border-t border-border/50 px-4 py-2 text-xs text-muted-foreground"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {loadingMessage}
+              </div>
+            )}
+
+            {footerAction && (
+              <div className="flex-none border-t border-border/50 p-1.5">
+                <button
+                  type="button"
+                  onClick={handleFooterAction}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-start text-sm font-medium text-foreground transition-colors hover:bg-accent/50"
+                >
+                  {footerAction.icon}
+                  {footerAction.label}
+                </button>
+              </div>
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>

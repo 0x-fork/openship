@@ -292,8 +292,11 @@ export async function getRepository(
   });
 
   let branches: GitHubBranch[] | undefined;
+  let branchesHasMore: boolean | undefined;
   if (opts.withBranches) {
-    branches = await listBranches(ctx, owner, repo);
+    const branchPage = await listBranches(ctx, owner, repo);
+    branches = branchPage.branches;
+    branchesHasMore = branchPage.hasMore;
   }
 
   return {
@@ -307,6 +310,7 @@ export async function getRepository(
     ssh_url: data.ssh_url,
     html_url: data.html_url,
     branches,
+    branches_has_more: branchesHasMore,
   };
 }
 
@@ -429,21 +433,37 @@ export async function revokeDeployKey(
 
 // ─── Branches ────────────────────────────────────────────────────────────────
 
-/**
- * List branches for a repository.
- */
+export const GITHUB_BRANCH_PAGE_SIZE = 100;
+
+export interface GitHubBranchPage {
+  branches: GitHubBranch[];
+  page: number;
+  perPage: number;
+  hasMore: boolean;
+}
+
 export async function listBranches(
   ctx: RequestContext,
   owner: string,
   repo: string,
-): Promise<GitHubBranch[]> {
-  return githubFetch<GitHubBranch[]>({
+  opts: { page?: number } = {},
+): Promise<GitHubBranchPage> {
+  const requestedPage = opts.page ?? 1;
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const branches = await githubFetch<GitHubBranch[]>({
     ctx,
     owner,
     repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
-    params: { per_page: 100 },
+    params: { per_page: GITHUB_BRANCH_PAGE_SIZE, page },
   });
+
+  return {
+    branches,
+    page,
+    perPage: GITHUB_BRANCH_PAGE_SIZE,
+    hasMore: branches.length === GITHUB_BRANCH_PAGE_SIZE,
+  };
 }
 
 /**

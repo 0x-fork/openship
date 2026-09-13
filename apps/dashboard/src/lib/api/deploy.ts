@@ -176,6 +176,7 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
     clone_url?: string;
     html_url?: string;
     branches?: Array<{ name: string }>;
+    branches_has_more?: boolean;
   };
   singleAppCandidate?: PrepareSingleAppCandidate;
   /** The compose path this scan used (request value, or the one openship.json
