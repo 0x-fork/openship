@@ -21,6 +21,7 @@
     "@repo/core": "workspace:*",
     "@repo/onboarding": "workspace:*",
     "@repo/ui": "workspace:*",
+    "@xyflow/react": "^12.11.6",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { checkMailHealth } from "../../../src/modules/mail/mail-health.service";
-import { parseMailUnitProbe } from "../../../src/modules/mail/mail-engine";
+import { checkMailHealth } from "@repo/platform/engine/modules/mail/mail-health.service";
+import { parseMailUnitProbe } from "@repo/platform/engine/modules/mail/mail-engine";
 import type { CommandExecutor } from "@repo/adapters";
 
 /**

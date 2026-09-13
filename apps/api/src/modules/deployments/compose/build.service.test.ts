@@ -14,12 +14,12 @@ const { listByProjectMock } = vi.hoisted(() => ({ listByProjectMock: vi.fn() }))
 vi.mock("@repo/db", () => ({
   repos: { service: { listByProject: listByProjectMock } },
 }));
-vi.mock("../session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
 }));
 
-import { buildComposeImages, resolveComposeBuildArgs, resolveComposeImage } from "./build.service";
+import { buildComposeImages, resolveComposeBuildArgs, resolveComposeImage } from "@repo/platform/engine/modules/deployments/compose/build.service";
 
 /**
  * These pin the AUTHOR-FACING contract of an inline catalog build (`advanced.build`):

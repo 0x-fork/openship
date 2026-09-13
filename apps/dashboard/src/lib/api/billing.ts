@@ -8,7 +8,7 @@ import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 
 /**
  * Per-org billing snapshot rendered on the dashboard's billing overview.
- * Mirrors `BillingState` in `apps/api/src/modules/billing/billing.repository.ts`
+ * Mirrors `BillingState` in `packages/platform/src/engine/modules/billing/billing.repository.ts`
  * — keep the shapes in sync when the API contract changes.
  *
  * Period dates arrive over JSON as ISO strings (not `Date`).

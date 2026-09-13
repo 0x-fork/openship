@@ -16,9 +16,9 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { syncComposeServices, updateService } from "../../../src/modules/services/service.service";
+import { syncComposeServices, updateService } from "@repo/platform/engine/modules/services/service.service";
 import { toComposeSpec } from "@repo/db";
-import { mergeServiceDeployEnv } from "../../../src/modules/deployments/compose/service-env-layers";
+import { mergeServiceDeployEnv } from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
 
 /**
  * #332 left the EDITORS behind: the compose parser produced `commandArgv`, but

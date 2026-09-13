@@ -451,32 +451,42 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   });
 
   // Runtime
-  let runtime: RuntimeAdapter;
-  if (runtimeMode === "bare") {
-    const { BareRuntime } = await import("./runtime/bare");
-    runtime = new BareRuntime({ ...config.bare, executor, systemManager: system });
-  } else {
-    const { DockerRuntime } = await import("./runtime/docker");
-    runtime = await DockerRuntime.create(config.docker, system, config.provisionLock);
+  let runtime: RuntimeAdapter | undefined;
+  try {
+    if (runtimeMode === "bare") {
+      const { BareRuntime } = await import("./runtime/bare");
+      runtime = new BareRuntime({ ...config.bare, executor, systemManager: system });
+    } else {
+      const { DockerRuntime } = await import("./runtime/docker");
+      runtime = await DockerRuntime.create(config.docker, system, config.provisionLock);
+    }
+
+    // Infrastructure - runtime implies the reverse proxy
+    const { routing, ssl } = await createInfraProvider(
+      runtimeMode,
+      config,
+      executor,
+      useDockerEdge ? edgeContainer : undefined,
+    );
+
+    return {
+      target: "selfhosted",
+      runtime,
+      routing,
+      ssl,
+      system,
+      executor,
+      localHost: targetIsThisMachine,
+    };
+  } catch (error) {
+    // Construction may fail after opening a runtime transport. Release the
+    // resources created here; an injected executor still belongs to its caller.
+    await Promise.allSettled([
+      Promise.resolve().then(() => runtime?.dispose?.()),
+      Promise.resolve().then(() => config.executor ? undefined : executor.dispose()),
+    ]);
+    throw error;
   }
-
-  // Infrastructure - runtime implies the reverse proxy
-  const { routing, ssl } = await createInfraProvider(
-    runtimeMode,
-    config,
-    executor,
-    useDockerEdge ? edgeContainer : undefined,
-  );
-
-  return {
-    target: "selfhosted",
-    runtime,
-    routing,
-    ssl,
-    system,
-    executor,
-    localHost: targetIsThisMachine,
-  };
 }
 
 // ─── Singleton ───────────────────────────────────────────────────────────────

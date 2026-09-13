@@ -5,7 +5,7 @@ import {
   deriveOblienEventId,
   extractNamespace,
   type OblienEventEnvelope,
-} from "./oblien-webhook-crypto";
+} from "@repo/platform/engine/modules/billing/oblien-webhook-crypto";
 
 const SECRET = "whsec_test_oblien_123";
 

@@ -1,0 +1,168 @@
+---
+title: Remote and Cloud clients
+description: Configure OpenshipClient for a self-hosted or Cloud API, keep organization scopes fixed, and handle transport errors.
+---
+
+`OpenshipClient` calls an existing Openship HTTP API. It owns no server, database, or deployment worker and
+needs no `start()` or `close()`. See [installation and release availability](/docs/api/sdk#install) before
+using these imports.
+
+## Configure the client
+
+```ts title="remote-client.mts"
+import { OpenshipClient } from "openship/client";
+
+export function connectToOpenship(baseUrl: string, organizationId: string) {
+  return new OpenshipClient({
+    baseUrl,
+    organizationId,
+    token: () => process.env.OPENSHIP_TOKEN,
+    timeoutMs: 30_000,
+    userAgent: "my-product/1.0",
+  });
+}
+```
+
+The token callback runs when a request needs credentials, so your application can supply a rotated token.
+It may be asynchronous. A missing token does not create an identity; the API applies its normal
+authentication rules.
+
+| Option           | Behavior                                                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseUrl`        | Required HTTP(S) instance URL. A trailing `/api` and reverse-proxy prefixes are supported. Credentials, query strings, and fragments are rejected in this URL. |
+| `token`          | Bearer token string, or a function returning a token. Use a verified PAT or an appropriately authorized OAuth token.                                           |
+| `organizationId` | Pins the client to one organization and requires server support for fixed scopes.                                                                              |
+| `timeoutMs`      | Request deadline in milliseconds. `0` disables the configured request deadline. Stream lifetime is controlled separately by its abort signal.                  |
+| `userAgent`      | Optional application identification. It does not affect permissions.                                                                                           |
+| `fetch`          | Optional implementation with the same interface as `globalThis.fetch`, for your transport integration or tests.                                                |
+
+The client targets the configured instance API and refuses redirects. It does not automatically retry
+mutations. If a response is lost after submission, inspect stored state before deciding to submit again.
+
+## Organization scope
+
+```ts title="organization-views.mts"
+import type { OpenshipClient } from "openship/client";
+
+export async function listTwoOrganizations(
+  client: OpenshipClient,
+  firstOrganizationId: string,
+  secondOrganizationId: string,
+) {
+  const first = client.scope(firstOrganizationId);
+  const second = client.scope(secondOrganizationId);
+  return Promise.all([first.projects.list(), second.projects.list()]);
+}
+```
+
+`scope()` returns a new client. It does not change existing clients or elevate the credential. The caller
+must have access to each requested organization, and a token bound to one organization cannot select another.
+
+With an explicit organization, the transport sends `X-Organization-Id` and `X-Openship-Scope: fixed` on
+application requests. The server authenticates the caller, checks current membership and grants, and
+rejects access to resources outside that fixed organization. Caller-supplied request headers cannot
+override the client's configured scope.
+
+Omitting `organizationId` preserves the HTTP API's resource-derived scope behavior. Use an explicit scope
+when your integration must stay within a selected tenant. The fixed-scope header itself grants no access;
+the server rejects invalid values or `fixed` without an explicit organization with `400 VALIDATION_ERROR`.
+
+## Server compatibility
+
+Before a scoped application request, the client checks `/api/health` for:
+
+```json
+{
+  "sdk": {
+    "protocol": 1,
+    "fixedOrganizationScope": true
+  }
+}
+```
+
+An older server that does not advertise this support is rejected with `SDK_SCOPE_UNSUPPORTED` before the
+application request is sent. Upgrade to a compatible API version. Removing the organization changes the
+scope guarantee and is not an equivalent compatibility fix.
+
+## Openship Cloud
+
+Connect directly to the Cloud API with your Cloud credential and the Cloud organization's ID:
+
+```ts title="cloud-client.mts"
+import { OpenshipClient } from "openship/client";
+
+export function connectToCloud(token: string, organizationId: string) {
+  return new OpenshipClient({
+    baseUrl: "https://api.openship.io",
+    token,
+    organizationId,
+  });
+}
+```
+
+The Cloud server must pass the same compatibility check. SDK support in a local checkout does not imply
+that the deployed Cloud API has been upgraded.
+
+A self-hosted owner's Cloud account link does not currently establish a verified mapping between local
+and Cloud organizations. Fixed scoped operations refuse that forwarding with `CLOUD_SCOPE_UNAVAILABLE`.
+Use a direct Cloud client and a verified Cloud organization for supported Cloud operations. Provider- and
+mode-specific restrictions still apply; a client cannot enable self-hosted host-management features in Cloud.
+
+## Results and errors
+
+Named methods return their documented data rather than a `Response`. For example, `projects.get(id)`
+returns a project, while `projects.list()` returns a page with `data`, `total`, `page`, and `perPage`.
+Some methods return arrays or status objects; the public operation types describe each result.
+
+```ts title="remote-errors.mts"
+import { ApiError, type OpenshipClient } from "openship/client";
+
+export async function readProject(client: OpenshipClient, projectId: string) {
+  try {
+    return await client.projects.get(projectId);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.error(error.status, error.code, error.message);
+    }
+    throw error;
+  }
+}
+```
+
+`ApiError` retains the HTTP `status`, optional application `code`, and response `body`. It extends
+`OperationError`, which also exposes `statusCode` and public `details`. Invalid input can fail locally
+with `ValidationError`; configuration mistakes, cancellation, and network failures can throw other errors.
+Handle those according to your application's policy. See the [HTTP error reference](/docs/api#error-shape)
+for authentication, validation, and rate-limit responses.
+
+## HTTP access for additional endpoints
+
+The remote client exposes its configured transport when an endpoint does not yet have a named method:
+
+```ts title="http-access.mts"
+import type { OpenshipClient } from "openship/client";
+
+export async function readPublicHealth(client: OpenshipClient) {
+  return client.http.request<{ status: string }>("/health");
+}
+```
+
+`http.request()` returns the HTTP JSON body without a named method's result projection. `http.raw()`
+returns a `Response`; `http.events()` reads server-sent events; `http.paginate()` iterates HTTP pages.
+They retain the same instance and scope restrictions. Native scopes do not expose an HTTP transport.
+
+## Installation operator
+
+Ordinary clients use user credentials. Installation notice administration has a separate client:
+
+```ts title="operator-client.mts"
+import { OpenshipOperatorClient } from "openship/client";
+
+export function connectOperator(baseUrl: string, internalToken: string) {
+  return new OpenshipOperatorClient({ baseUrl, internalToken });
+}
+```
+
+Its current surface is `operator.notices.listAll()`, `create(input)`, and `remove(id)`. An internal operator
+credential cannot be combined with a bearer credential or organization scope. Keep this client in trusted
+installation-management code; ordinary organization access does not grant publishing authority.

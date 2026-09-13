@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { CreateSubscriptionBody, CreateTopupBody } from "@repo/contracts";
 import { authMiddleware } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
 import * as billingController from "./billing.controller";
@@ -48,41 +49,42 @@ r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
 r.use("/cancel", authMiddleware);
 r.use("/usage", authMiddleware);
+r.use("/allowances", authMiddleware);
 // /webhook/stripe is intentionally unauthed — Stripe signs the request;
 // signature verification happens inside the handler.
 
 /* ---------- Dashboard state snapshot ---------- */
-r.get("/state", { tag: "billing:read" }, billingController.getState);
+r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getState);
 
 /* ---------- Raw metered usage (Oblien usageUnits proxy) ---------- */
 // Powers the dashboard usage chart. Reads only — no Stripe / Oblien
 // mutation, just a passthrough to namespaces.usageUnits.
-r.get("/usage", { tag: "billing:read" }, billingController.getUsage);
+r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getUsage);
 
 /* ---------- Allowance detail ---------- */
 // WHICH resources are consuming a quota, not just how many. The capacity meters
 // give a number; this gives the list a user can act on (each free subdomain with
 // the project holding it), which nothing else in the product exposes org-wide.
-r.get("/allowances", { tag: "billing:read" }, billingController.listAllowanceDetail);
+r.get("/allowances", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.listAllowanceDetail);
 
 /* ---------- Subscription ---------- */
 // GET returns the per-org subscription slice (tier + status + period).
 // POST starts a Stripe Checkout session for an upgrade — the
 // `customer.subscription.*` webhooks finalize the local row.
-r.get("/subscription", { tag: "billing:read" }, billingController.getSubscription);
-r.post("/subscription", { tag: "billing:write" }, billingController.createSubscription);
+r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getSubscription);
+r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingController.createSubscription);
 
 /* ---------- Cancellation ---------- */
 // Destructive — admin tier per the same precedent as the domain DELETE
 // flow. Flips `cancel_at_period_end=true` on Stripe; the deletion
 // webhook downgrades the local row when the period ends.
-r.post("/cancel", { tag: "billing:admin" }, billingController.cancelSubscription);
+r.post("/cancel", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingController.cancelSubscription);
 
 /* ---------- One-shot top-ups ---------- */
-r.get("/topup-packs", { tag: "billing:read" }, billingController.listTopupPacks);
+r.get("/topup-packs", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.listTopupPacks);
 r.post(
   "/topup",
-  { tag: "billing:write", rateLimit: "billing-portal" },
+  { body: CreateTopupBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingController.createTopup,
 );
 
@@ -93,7 +95,7 @@ r.post(
 // otherwise rack up Stripe API spend.
 r.post(
   "/portal",
-  { tag: "billing:write", rateLimit: "billing-portal" },
+  { tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingController.createPortal,
 );
 

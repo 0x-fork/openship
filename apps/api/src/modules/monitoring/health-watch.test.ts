@@ -260,16 +260,16 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("../../lib/notification-dispatcher", () => ({ notification: { emit: h.emit } }));
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({ notification: { emit: h.emit } }));
 
-vi.mock("../../lib/public-url", () => ({
+vi.mock("@repo/platform/engine/lib/public-url", () => ({
   resolveDashboardPublicUrl: () => "https://ops.example.com",
 }));
 
 // The event accelerator has its own suite (container-events.test.ts). Here it
 // would only pull a module graph — and live SSH/timer state — into a suite about
 // the sweep itself.
-vi.mock("./container-events", () => ({ renewEventWatchers: h.renew }));
+vi.mock("@repo/platform/engine/modules/monitoring/container-events", () => ({ renewEventWatchers: h.renew }));
 
 /**
  * Faithful copies of the two routing functions for self-hosted and desktop bases.
@@ -289,7 +289,7 @@ vi.mock("./container-events", () => ({ renewEventWatchers: h.renew }));
  * makes the mis-keyed group unrepresentable: every daemon answers alike, so the fixture
  * agrees with a sweep that is reading the wrong box.
  */
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveEffectiveTarget: (base: string, meta: Record<string, unknown>) => {
     if (base !== "cloud" && meta.serverId) return "server";
     if (base === "desktop") return meta.deployTarget ?? "cloud";
@@ -534,13 +534,13 @@ vi.useFakeTimers({ toFake: ["Date"], now: START });
 
 async function tick(opts?: { onlyServerKeys?: ReadonlySet<string>; afterMs?: number }) {
   vi.setSystemTime(Date.now() + (opts?.afterMs ?? TICK_SPACING_MS));
-  const { runHealthWatch } = await import("./health-watch");
+  const { runHealthWatch } = await import("@repo/platform/engine/modules/monitoring/health-watch");
   return runHealthWatch(opts?.onlyServerKeys ? { onlyServerKeys: opts.onlyServerKeys } : undefined);
 }
 
 async function checkCurrent(organizationId = "org1", afterMs = TICK_SPACING_MS) {
   vi.setSystemTime(Date.now() + afterMs);
-  const { runCurrentHealthScan } = await import("./health-watch");
+  const { runCurrentHealthScan } = await import("@repo/platform/engine/modules/monitoring/health-watch");
   return runCurrentHealthScan(organizationId);
 }
 
@@ -564,7 +564,7 @@ function restart() {
 
 /** The sweep's grouping key for a box, via the real helper the accelerator uses. */
 async function groupKey(serverId: string | null) {
-  const { watchGroupKey } = await import("./health-watch");
+  const { watchGroupKey } = await import("@repo/platform/engine/modules/monitoring/health-watch");
   return watchGroupKey(serverId, "org1");
 }
 
@@ -619,7 +619,7 @@ describe("current-state check", () => {
 
     const result = await checkCurrent();
     const { isTrackedHealthContainer, listWorkloadHealthSnapshots, watchGroupKey } =
-      await import("./health-watch");
+      await import("@repo/platform/engine/modules/monitoring/health-watch");
 
     expect(result.summary).toMatchObject({ servers: 1, projects: 1, workloads: 1 });
     expect(listWorkloadHealthSnapshots("org1").find((row) => row.projectId === projectId)?.state).toBe("healthy");
@@ -636,7 +636,7 @@ describe("current-state check", () => {
     setState(down.containerId, "exited", { exitCode: 1 });
 
     const result = await checkCurrent();
-    const { listWorkloadHealthSnapshots, getCurrentHealthScan } = await import("./health-watch");
+    const { listWorkloadHealthSnapshots, getCurrentHealthScan } = await import("@repo/platform/engine/modules/monitoring/health-watch");
     const states = new Map(
       listWorkloadHealthSnapshots("org1").map((row) => [row.projectId, row.state]),
     );
@@ -657,7 +657,7 @@ describe("current-state check", () => {
     setState(other.containerId, "exited", { exitCode: 1 });
 
     const result = await checkCurrent("org1");
-    const { listWorkloadHealthSnapshots } = await import("./health-watch");
+    const { listWorkloadHealthSnapshots } = await import("@repo/platform/engine/modules/monitoring/health-watch");
 
     expect(result.summary).toMatchObject({ servers: 1, projects: 1, workloads: 1 });
     expect(h.inspects).toBe(1);
@@ -694,7 +694,7 @@ describe("current-state check", () => {
 
   it("reports an unreachable host and replaces stale certainty with unknown", async () => {
     const { projectId } = seedApp();
-    const { listWorkloadHealthSnapshots } = await import("./health-watch");
+    const { listWorkloadHealthSnapshots } = await import("@repo/platform/engine/modules/monitoring/health-watch");
 
     await checkCurrent();
     expect(listWorkloadHealthSnapshots("org1").find((item) => item.projectId === projectId)?.state).toBe("healthy");
@@ -713,7 +713,7 @@ describe("current-state check", () => {
 
   it("deduplicates concurrent checks for the same organization", async () => {
     seedApp();
-    const { runCurrentHealthScan } = await import("./health-watch");
+    const { runCurrentHealthScan } = await import("@repo/platform/engine/modules/monitoring/health-watch");
 
     const [first, second] = await Promise.all([
       runCurrentHealthScan("org1"),
@@ -1430,7 +1430,7 @@ describe("unreachable server", () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: Date.now() });
     let summary: Awaited<ReturnType<typeof tick>>;
     try {
-      const { runHealthWatch } = await import("./health-watch");
+      const { runHealthWatch } = await import("@repo/platform/engine/modules/monitoring/health-watch");
       const run = runHealthWatch();
       await vi.advanceTimersByTimeAsync(120_000);
       summary = await run;
@@ -1470,7 +1470,7 @@ describe("unreachable server", () => {
     let summary: Awaited<ReturnType<typeof tick>>;
     let atDeadline = 0;
     try {
-      const { runHealthWatch } = await import("./health-watch");
+      const { runHealthWatch } = await import("@repo/platform/engine/modules/monitoring/health-watch");
       const run = runHealthWatch();
       await vi.advanceTimersByTimeAsync(120_000);
       summary = await run;
@@ -1508,7 +1508,7 @@ describe("unreachable server", () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: Date.now() });
     let summary: Awaited<ReturnType<typeof tick>>;
     try {
-      const { runHealthWatch } = await import("./health-watch");
+      const { runHealthWatch } = await import("@repo/platform/engine/modules/monitoring/health-watch");
       const run = runHealthWatch();
       await vi.advanceTimersByTimeAsync(120_000);
       summary = await run;
@@ -1993,7 +1993,7 @@ describe("filtered run", () => {
     // The accelerator parses keys the sweep built, and container-events.test.ts
     // mirrors this pair to stay off the sweep's module graph. Both rely on the
     // round-trip holding — including for the local daemon, whose id is null.
-    const { watchGroupKey, parseWatchGroupKey } = await import("./health-watch");
+    const { watchGroupKey, parseWatchGroupKey } = await import("@repo/platform/engine/modules/monitoring/health-watch");
     for (const serverId of ["srv1", null]) {
       expect(parseWatchGroupKey(watchGroupKey(serverId, "org1"))).toEqual({
         serverId,

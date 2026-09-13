@@ -1,6 +1,6 @@
 ---
 title: System API
-description: Self-hosted instance administration — onboarding, SSH servers, component install, tunnels, filesystem browse, team-mode migration, and whole-instance data transfer.
+description: Self-hosted instance administration — onboarding, SSH servers, component install, tunnels, filesystem browse, team-mode migration, and scoped data transfer.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -8,7 +8,7 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 The System API runs the machinery behind a self-hosted Openship box: first-run onboarding, the SSH
 **servers** you deploy onto, installing the components those servers need (Docker, OpenResty, certbot…),
 port-forward tunnels, browsing the host filesystem, migrating a single-user instance into team mode, and
-exporting or importing the entire instance. In the dashboard this is spread across the onboarding wizard and
+exporting or importing the instance or selected projects. In the dashboard this is spread across the onboarding wizard and
 the **Settings → Servers** area; from the terminal it's [`openship server`](/docs/cli/self-host) and
 [`openship system`](/docs/cli/self-host).
 
@@ -67,8 +67,11 @@ user or session exists), and the two `/setup` routes are public to the user sess
 | `POST /api/system/migration/start-cloud` | `settings:admin` | Migrate → Openship Cloud. |
 | `POST /api/system/migration/start-tunnel` | `settings:admin` | Expose this instance via an edge tunnel. |
 | `POST /api/system/migration/switch-back` | `settings:admin` | Reverse a migration back to single-user. |
-| `POST /api/system/data-transfer/export` | `settings:admin` | Export the whole instance (owner only). |
-| `POST /api/system/data-transfer/import` | `settings:admin` | Import a whole-instance file, ≤500 MB (owner only). |
+| `GET /api/system/data-transfer/preview` | `settings:admin` | List exportable projects and instance row counts (instance administrator). |
+| `POST /api/system/data-transfer/preview` | `settings:admin` | Preview a project selection and its dependencies (instance administrator). |
+| `POST /api/system/data-transfer/export` | `settings:admin` | Export the instance or selected projects (instance administrator). |
+| `POST /api/system/data-transfer/import` | `settings:admin` | Import an export file, ≤500 MB, with scope and conflict options (instance administrator). |
+| `POST /api/system/data-transfer/import/session/:sessionId/preview` | `settings:admin` | Preview an uploaded file's selection, conflicts, and server mappings. |
 
 <Callout title="Server routes are org-scoped and IDOR-safe">
 A `:id` that isn't a server in your active organization returns **404**, indistinguishable from a missing
@@ -360,11 +363,11 @@ Reversing to single-user mode revokes teammate access. The remote keeps a copy f
 you can recover if you change your mind.
 </Callout>
 
-## Whole-instance data transfer
+## Instance and project data transfer
 
-Export or import the **entire** database — every organization's data. Both routes are **owner-only**
-(`requireRole("owner")` on top of the `settings:admin` tag), because the tag alone would also admit admins and
-members.
+Export the entire instance or a dependency-complete selection of projects and environments. These
+routes require **instance administrator** access (`requireInstanceAdmin()` plus a handler-level check).
+A workspace owner role alone does not grant access to instance credentials.
 
 ```
 POST /api/system/data-transfer/export
@@ -373,6 +376,7 @@ POST /api/system/data-transfer/export
 <TypeTable
   type={{
     passphrase: { type: 'string', description: 'Seal secrets (SSH keys, tokens) under this passphrase. Omit to export without secrets.' },
+    selection: { type: 'object', description: 'scope: instance or projects; projectIds for project scope; history: analytics, activity, backups, incidents, migrations. Project options include includeEnvironments, includeLinkedProjects, includeServers, includeSecrets, includeDomains, includeBackups, and includeIntegrations.' },
   }}
 />
 
@@ -384,9 +388,31 @@ POST /api/system/data-transfer/import
   type={{
     file: { type: 'object', description: 'A DataTransferFile produced by export.', required: true },
     passphrase: { type: 'string', description: 'The passphrase used at export time, if secrets were sealed.' },
-    mode: { type: '"wipe" | "merge"', description: 'wipe replaces the current data; merge keeps existing rows.', default: 'wipe' },
+    mode: { type: '"wipe" | "merge"', description: 'wipe replaces the entire instance; merge adds records. Project scope requires merge.', default: 'merge' },
+    selection: { type: 'object', description: 'scope, projectIds, history, conflictPolicy (skip or overwrite), per-project projectActions, serverMappings, includeSecrets, includeDomains, includeBackups, includeIntegrations, and overwriteDependencies.' },
   }}
 />
+
+Project imports remap ownership to the active request workspace. They omit instance accounts/settings,
+reuse matching server connections, and skip existing projects by default. Overwrite updates matching
+project records while preserving destination-only records; shared dependencies are kept unless
+`overwriteDependencies` is explicitly enabled. Source local hosts require an explicit `serverMappings`
+entry (`local` for a project without a server row). Cloud projects require the same connected cloud
+account. A project archive cannot be used with `wipe`.
+
+Use the chunk-upload endpoints for large files. After uploading, POST `{ selection }` to the session's
+`preview` endpoint. It returns `projects`, `servers`, `availableServers`, row counts, `warnings`, and
+`blockers` without consuming the upload. POST `{ mode, passphrase, selection }` to
+`/api/system/data-transfer/import/session/:sessionId/finalize/stream` to apply. Validation is repeated
+inside the import transaction. A failed review or password attempt retains the uploaded chunks.
+
+Exports use envelope version 2; imports also accept version 1 instance files. Credentials, deployment snapshots, and inline
+Compose configuration are encrypted under the transfer password and re-encrypted for the destination.
+Volume data, source folders, and host TLS files remain on their server.
+
+Loopback server connections require explicit mapping. Backup policies that point at source-local storage
+or a changed backup host are disabled until the operator verifies the destination storage. Direct transfer
+supports whole-instance exports; project selections use the file review and import endpoints.
 
 ```bash
 openship system data-transfer export --passphrase "$SECRET" --out instance.json
@@ -395,6 +421,8 @@ openship system data-transfer import --file instance.json --passphrase "$SECRET"
 
 <Callout title="Import limits & errors" type="error">
 The import body is capped at **500 MB** (**413 `PAYLOAD_TOO_LARGE`** above it). A wrong or missing passphrase
-or a malformed file returns **400**; primary-key collisions in `merge` mode return **409 `PK_COLLISION`** (use
-`wipe`, or clear the conflicting data first); a concurrent migration/import returns **503 `BUSY`**.
+or a malformed file returns **400**. Project dependency/mapping conflicts return **409
+`PROJECT_IMPORT_REQUIRES_REVIEW`**; whole-instance merge collisions return **409 `PK_COLLISION`**. Select
+project scope and explicit overwrite options to resolve project conflicts. A concurrent migration/import
+returns **503 `BUSY`**.
 </Callout>

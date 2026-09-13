@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AppError } from "@repo/core";
-import { assertBillingEnabled, assertTopupsEnabled } from "./billing.service";
+import { assertBillingEnabled, assertTopupsEnabled } from "@repo/platform/engine/modules/billing/billing.service";
 
 /**
  * The master billing switch (`BILLING_ENABLED`) and the top-ups sub-switch

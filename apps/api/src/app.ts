@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { env, trustedOrigins } from "./config/env";
+import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { handleApiError } from "./middleware/error-handler";
 import { authRouteLimiter } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
@@ -11,13 +11,13 @@ import { originGuard } from "./middleware/origin-guard";
 import { migrationGuard } from "./middleware/migration-guard";
 import { initPlatform } from "@repo/adapters";
 import { validatePlanPriceIds } from "@repo/core";
-import { resolvePlatformConfig } from "./lib/controller-helpers";
-import { runWithRequestStore } from "./lib/request-store";
+import { resolvePlatformConfig } from "@repo/platform/engine/lib/platform-config";
+import { runWithRequestStore } from "@repo/platform/engine/lib/request-store";
 import { runWithCallSource } from "./lib/call-source";
 import { sanitizeRequestLogLine } from "./lib/request-log-redaction";
 
 import { authRoutes } from "./modules/auth/auth.routes";
-import { auth } from "./lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import {
   MCP_RESOURCE_PATHS,
@@ -44,7 +44,7 @@ import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
 import { githubRoutes } from "./modules/github";
-import * as githubAuth from "./modules/github/github.auth";
+import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
 import { tokenRoutes } from "./modules/tokens/token.routes";
 import { mcpRoutes } from "./modules/mcp/mcp.routes";
@@ -55,14 +55,14 @@ import { backupRoutes } from "./modules/backups/backup.routes";
 import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
-import { reconcileAllSchedules } from "./modules/backups/triggers/cron";
-import { reconcileJobs } from "./modules/jobs/job.service";
-import { scheduleBillingAnniversary } from "./modules/billing/billing-anniversary.cron";
-import { ensureOblienWebhook } from "./lib/openship-cloud";
-import { ensureOblienDefaultQuota } from "./modules/billing/billing-oblien-quota";
-import { backfillWebhookSecrets } from "./modules/github/github.service";
-import { backupOrchestrator } from "./modules/backups/backup.orchestrator";
-import { getJobRunner } from "./lib/job-runner";
+import { reconcileAllSchedules } from "@repo/platform/engine/modules/backups/triggers/cron";
+import { reconcileJobs } from "@repo/platform/engine/modules/jobs/job.service";
+import { scheduleBillingAnniversary } from "@repo/platform/engine/modules/billing/billing-anniversary.cron";
+import { ensureOblienWebhook } from "@repo/platform/engine/lib/openship-cloud";
+import { ensureOblienDefaultQuota } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
+import { backfillWebhookSecrets } from "@repo/platform/engine/modules/github/github.service";
+import { backupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 import { repos } from "@repo/db";
 
 /* ---------- Initialize platform (runtime + infra + system) ---------- */
@@ -387,7 +387,7 @@ if (env.CLOUD_MODE) {
   // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
   // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
   if (!env.CLOUD_MODE) {
-    const { migrationOrchestrator } = await import("./modules/migration/migration.orchestrator");
+    const { migrationOrchestrator } = await import("@repo/platform/engine/modules/migration/migration.orchestrator");
     await migrationOrchestrator.recoverInterruptedMigrations();
   }
 
@@ -442,7 +442,7 @@ if (env.CLOUD_MODE) {
   // namespace persistence (the column was read in eleven places and written in
   // none), so until this sweep finishes their credit quotas and resource
   // ceilings do not exist on Oblien's side. Bounded per boot.
-  void import("./modules/billing/billing-namespace.provision")
+  void import("@repo/platform/engine/modules/billing/billing-namespace.provision")
     .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
     .then((stats) => {
       if (stats.done > 0 || stats.failed > 0) {
@@ -466,7 +466,7 @@ if (env.CLOUD_MODE) {
   // A live campaign must match its Stripe coupon, or the page advertises a
   // discount the customer won't get. Only reaches Stripe when a campaign is
   // actually running, so the common case costs nothing.
-  void import("./modules/billing/billing.service")
+  void import("@repo/platform/engine/modules/billing/billing.service")
     .then(({ verifyCampaigns }) => verifyCampaigns())
     .then((problems) => {
       for (const p of problems) console.error(`[boot] pricing campaign: ${p}`);
@@ -509,7 +509,7 @@ if (env.CLOUD_MODE) {
 // dispatches them to per-channel workers (email/webhook/in_app/slack).
 // Lightweight in-process timer — fine for the cluster sizes we target.
 {
-  const { startNotificationRunner } = await import("./lib/notification-workers");
+  const { startNotificationRunner } = await import("@repo/platform/engine/lib/notification-workers");
   startNotificationRunner();
   console.log("[boot] notification runner started");
 }
@@ -523,7 +523,7 @@ if (env.CLOUD_MODE) {
 // stay as-is (some are cloud); new self-hosted boot work belongs here.
 {
   const { registerStartupHooks } = await import("./lib/startup/register");
-  const { runStartupHooks } = await import("./lib/startup");
+  const { runStartupHooks } = await import("@repo/platform/engine/lib/startup/index");
   registerStartupHooks();
   await runStartupHooks();
 }

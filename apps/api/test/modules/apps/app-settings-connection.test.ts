@@ -38,26 +38,26 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/modules/apps/catalog-source", () => ({ getTemplateForOrg }));
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({ getTemplateForOrg }));
 
 vi.mock("../../../src/lib/controller-helpers", () => ({
   assertResourceInOrg: () => undefined,
 }));
 
 // Rows are encrypt()-ed at rest; the prefix keeps "was decrypted" observable.
-vi.mock("../../../src/lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   encrypt: (v: string) => `enc:${v}`,
   decrypt: (v: string) => (v.startsWith("enc:") ? v.slice(4) : v),
 }));
 
 // Only the server lookup is faked — isLoopbackHost stays REAL, since "is this
 // host usable" is the behaviour under test.
-vi.mock("../../../src/lib/server-target", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/server-target")>()),
+vi.mock("@repo/platform/engine/lib/server-target", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/server-target")>()),
   resolveProjectServerHost,
 }));
 
-import { getAppConnectionView } from "../../../src/modules/apps/app-settings.service";
+import { getAppConnectionView } from "@repo/platform/engine/modules/apps/app-settings.service";
 import type { RequestContext } from "../../../src/lib/request-context";
 
 const ctx = { organizationId: "org1", userId: "u1" } as RequestContext;
@@ -508,3 +508,12 @@ describe("synthesized internal view (no template connection)", () => {
     expect(view).toEqual({ outputs: [] });
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  assertResourceInOrg: () => undefined,
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  assertResourceInOrg: () => undefined,
+}));

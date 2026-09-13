@@ -54,25 +54,25 @@ vi.mock("@repo/db", async (importOriginal) => {
 
 // Only the network half is faked — evaluateDrift, hasDeployedSide and
 // upstreamMatchesSource stay real, because they are what's under test with it.
-vi.mock("../../../src/modules/projects/project-crud.service", async (importOriginal) => {
+vi.mock("@repo/platform/engine/modules/projects/project-crud.service", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../../src/modules/projects/project-crud.service")>();
+    await importOriginal<typeof import("@repo/platform/engine/modules/projects/project-crud.service")>();
   return { ...actual, resolveUpstreamDrift };
 });
 
 // Never reached here; stubbed so the module graph doesn't drag in the build pipeline.
-vi.mock("../../../src/modules/deployments/build.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   redeployBuildSession: vi.fn(),
 }));
 
 import {
   getProjectDrift,
   listOrganizationUpdates,
-} from "../../../src/modules/updates/updates.service";
+} from "@repo/platform/engine/modules/updates/updates.service";
 import {
   commitSourceKey,
   type UpstreamDrift,
-} from "../../../src/modules/projects/project-crud.service";
+} from "@repo/platform/engine/modules/projects/project-crud.service";
 import type { RequestContext } from "../../../src/lib/request-context";
 import type { Project, UpdateStatus } from "@repo/db";
 

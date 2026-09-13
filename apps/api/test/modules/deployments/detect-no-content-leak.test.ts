@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   projectInfoToPublicResponse,
   projectInfoToScanResponse,
-} from "../../../src/modules/deployments/prepare.service";
+} from "@repo/platform/engine/modules/deployments/prepare.service";
 
 /**
  * `/github/repos/:owner/:repo/detect` sits at METADATA tier — it is what makes

@@ -372,6 +372,8 @@ export const endpoints = {
       export: "system/data-transfer/export",
       import: "system/data-transfer/import",
       importSession: "system/data-transfer/import/session",
+      importPreview: (sessionId: string) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/preview`,
       importChunk: (sessionId: string, index: number) =>
         `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/chunk/${index}`,
       importFinalizeStream: (sessionId: string) =>

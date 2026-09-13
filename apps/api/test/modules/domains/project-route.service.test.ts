@@ -38,8 +38,8 @@ vi.mock("@repo/db", () => ({
 // drift silently, which is the thing sharing it prevents.
 // Adapts the flat `resolveRuntime` stub to the platform shape the re-apply now
 // resolves (and releases): `{ platform: { routing, runtime }, effectiveTarget, serverId }`.
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/deployment-runtime")>()),
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>()),
   disposePlatform: () => {},
   resolveDeploymentPlatform: async (...args: unknown[]) => {
     const flat = (await resolveRuntime(...args)) as Record<string, unknown>;
@@ -47,17 +47,17 @@ vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => ({
   },
 }));
 
-vi.mock("../../../src/lib/route-apply.service", () => ({
+vi.mock("@repo/platform/engine/lib/route-apply.service", () => ({
   reconcileProjectRoutes: reconcile,
 }));
 
-vi.mock("../../../src/modules/route-rules/route-rule.service", () => ({
+vi.mock("@repo/platform/engine/modules/route-rules/route-rule.service", () => ({
   pushProjectRules: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The managed-edge sync is awaited inside the re-apply; mocked so no test reaches
 // the network and so the "which domains got synced" half is assertable.
-vi.mock("../../../src/lib/managed-edge-proxy", () => ({
+vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   syncManagedEdgeRoutes: syncManagedEdge,
   deregisterManagedEdgeRoutes: deregisterManagedEdge,
 }));
@@ -68,7 +68,7 @@ import {
   deriveProjectRouteState,
   reapplyProjectLiveRoutes,
   shouldRefuseLoopbackRoute,
-} from "../../../src/modules/domains/project-route.service";
+} from "@repo/platform/engine/modules/domains/project-route.service";
 
 const domainRow = (over: Partial<Domain> & Pick<Domain, "id" | "hostname">): Domain => ({
   id: over.id,

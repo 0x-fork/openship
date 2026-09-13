@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dumpSubgraph } from "@repo/db";
-import { sshManager } from "../../../lib/ssh-manager";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { exportInstance } from "../data-transfer/export.service";
 
 export interface DumpRemoteRestoreInput {

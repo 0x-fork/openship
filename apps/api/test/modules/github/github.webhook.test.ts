@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GitHubPushPayload } from "../../../src/modules/github/github.types";
+import type { GitHubPushPayload } from "@repo/contracts";
 
 const { findByGitRepo, getRepository, triggerDeployment } = vi.hoisted(() => ({
   findByGitRepo: vi.fn(),
@@ -29,11 +29,11 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/modules/deployments/build.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   triggerDeployment,
 }));
 
-vi.mock("../../../src/modules/github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   getRepository,
 }));
 

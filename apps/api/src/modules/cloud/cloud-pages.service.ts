@@ -23,8 +23,8 @@
  *   thin pass-through. No master client. No namespace-membership probe.
  */
 
-import type { RequestContext } from "../../lib/request-context";
-import { getNamespaceClient } from "../../lib/openship-cloud";
+import type { ExecutionContext as RequestContext } from "@repo/platform";
+import { getNamespaceClient } from "@repo/platform/engine/lib/openship-cloud";
 
 export async function createCloudPage(
   ctx: RequestContext,

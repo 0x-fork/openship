@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project-connection.controller";
-import { CreateConnectionBody, CreateBundleBody } from "./project-connection.schema";
+import { CreateConnectionBody, CreateBundleBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -46,6 +46,7 @@ r.post(
   "/",
   {
     tag: "project:write",
+    auditHandledByOperation: true,
     body: CreateConnectionBody,
     mcp: { description: "Connect a database app into this project (inject its connection URL as a secret env)." },
   },
@@ -57,6 +58,7 @@ r.post(
   "/bundle",
   {
     tag: "project:write",
+    auditHandledByOperation: true,
     body: CreateBundleBody,
     mcp: { description: "Wire several outputs from one source app into this project atomically (all-or-nothing)." },
   },
@@ -68,6 +70,7 @@ r.delete(
   "/:linkId",
   {
     tag: "project:admin",
+    auditHandledByOperation: true,
     mcp: { description: "Remove a database/app connection and its injected env var." },
   },
   cloudProjectProxy,

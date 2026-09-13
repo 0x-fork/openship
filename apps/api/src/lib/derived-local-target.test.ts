@@ -49,7 +49,7 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   createHostExecutor: () => h.hostExecutor(),
 }));
 
-vi.mock("./startup/self-server", () => ({
+vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({
   findLocalServer: async () => {
     h.findCalls++;
     if (h.findRejects) throw new Error("db unavailable");
@@ -80,20 +80,20 @@ vi.mock("@repo/db", () => ({
 
 // The row IS this box; keyed off the flag so the test doesn't depend on loopback
 // resolution or env.
-vi.mock("./box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
   isLocalHostRow: async (row: { isLocal?: boolean }) => Boolean(row?.isLocal),
 }));
 
-vi.mock("./ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { acquire: h.acquire, acquireHostChannel: h.acquireHostChannel },
   buildSshConfig: async () => ({ host: "127.0.0.1", port: 22, username: "root" }),
 }));
 
-vi.mock("./provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: (name: string) => ({ name, run: (f: () => unknown) => f() }),
 }));
 
-const { resolveTargetPlatform } = await import("./deployment-runtime");
+const { resolveTargetPlatform } = await import("@repo/platform/engine/lib/deployment-runtime");
 const { HostChannelUnavailableError } = await import("@repo/adapters");
 
 const last = () => h.configs[h.configs.length - 1] as Record<string, unknown>;

@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import type { ExecutionAuthority } from "@repo/core";
 import { user } from "./auth";
 
 /**
@@ -80,6 +81,7 @@ export const invitation = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    executionAuthority: jsonb("execution_authority").$type<ExecutionAuthority>(),
   },
   (t) => [
     index("invitation_org_idx").on(t.organizationId),

@@ -113,35 +113,35 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("./project-connection.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-connection.service", () => ({
   unlinkConsumersOfSource: h.unlinkConsumersOfSource,
 }));
 
-vi.mock("./project-cleanup.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-cleanup.service", () => ({
   collectProjectManifest: h.collectProjectManifest,
   executeCleanup: h.executeCleanup,
   disposeManifestRuntimes: h.disposeManifestRuntimes,
   hasPendingTimedOutCleanup: vi.fn(() => false),
 }));
-vi.mock("../../lib/project-runtime-lock", () => ({
+vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
   withProjectRuntimeLock: async (_projectId: string, run: () => Promise<unknown>) => run(),
 }));
-vi.mock("../../lib/openship-manifest-sync", () => ({
+vi.mock("@repo/platform/engine/lib/openship-manifest-sync", () => ({
   removeProjectFromServerManifests: h.removeProjectFromServerManifests,
 }));
-vi.mock("../deployments/build.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   cancelBuildSession: h.cancelBuildSession,
 }));
-vi.mock("../migration/migration.orchestrator", () => ({
+vi.mock("@repo/platform/engine/modules/migration/migration.orchestrator", () => ({
   migrationOrchestrator: { cancel: h.cancelMigration },
 }));
-vi.mock("../github/github.service", () => ({ deleteWebhook: h.deleteGitHubWebhook }));
-vi.mock("../mail/webmail/webmail-install.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({ deleteWebhook: h.deleteGitHubWebhook }));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   cleanupWebmailInstall: h.cleanupWebmailInstall,
 }));
-vi.mock("../../config", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/config/index", () => ({ env: { CLOUD_MODE: false } }));
 
-import { teardownProject, type TeardownStep } from "./project-teardown";
+import { teardownProject, type TeardownStep } from "@repo/platform/engine/modules/projects/project-teardown";
 
 const ctx = { organizationId: "org1", userId: "u1" } as never;
 

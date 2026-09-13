@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   healed: [] as Array<{ rowId: string; containerId: string }>,
   listByProjectCalls: 0,
   listByDeploymentCalls: 0,
+  stream: vi.fn(), dispose: vi.fn(), stop: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -68,7 +69,7 @@ vi.mock("@repo/db", () => ({
 // The seam: a runtime that can enumerate the host's containers. The real matcher
 // (services/live-state) runs against it unmocked — the label tiers are the thing
 // under test as much as the picker is.
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   withDeploymentRuntime: async (_dep: unknown, fn: (runtime: unknown) => Promise<unknown>) =>
     fn({
       supports: (cap: string) => cap === "hostContainerQuery",
@@ -79,8 +80,13 @@ vi.mock("../../lib/deployment-runtime", () => ({
       },
     }),
   resolveDeploymentRuntimeForRead: async () => {
-    throw new Error("not used by getRuntimeLogs");
+    return { serverId: "srv_1", runtime: {
+      supports: (cap: string) => cap === "hostContainerQuery",
+      listAllContainers: async () => h.live,
+      streamRuntimeLogs: h.stream,
+    } };
   },
+  disposeRuntime: h.dispose,
   deploymentContainerIds: async () => [],
   withDeploymentPlatform: async () => {
     throw new Error("not used by getRuntimeLogs");
@@ -93,7 +99,7 @@ vi.mock("@repo/adapters", () => ({
   isRuntimeNotFoundError: () => false,
 }));
 
-const { getRuntimeLogs } = await import("./project-runtime.service");
+const { getRuntimeLogs, streamRuntimeLogs } = await import("@repo/platform/engine/modules/projects/project-runtime.service");
 
 /** `openship.service` carries the service NAME, not its id — see live-state's
  *  label tier. */
@@ -114,9 +120,27 @@ beforeEach(() => {
   h.healed = [];
   h.listByProjectCalls = 0;
   h.listByDeploymentCalls = 0;
+  h.stream.mockReset().mockResolvedValue(h.stop);
+  h.stop.mockReset();
+  h.dispose.mockReset();
 });
 
 describe("project logs target the primary service, not the recorded database", () => {
+  it("disposes a runtime when establishing its log stream fails", async () => {
+    h.stream.mockRejectedValueOnce(new Error("stream setup failed"));
+    await expect(streamRuntimeLogs("proj_1", "org_1", () => {})).rejects.toThrow("stream setup failed");
+    expect(h.dispose).toHaveBeenCalledOnce();
+    expect(h.stop).not.toHaveBeenCalled();
+  });
+  it("keeps streaming resources alive until cleanup and disposes them once", async () => {
+    const result = await streamRuntimeLogs("proj_1", "org_1", () => {}, { tail: 10 });
+    expect(h.stream).toHaveBeenCalledWith("cid-db", expect.any(Function), { tail: 10 });
+    expect(h.dispose).not.toHaveBeenCalled();
+    result.cleanup();
+    result.cleanup();
+    expect(h.stop).toHaveBeenCalledOnce();
+    expect(h.dispose).toHaveBeenCalledOnce();
+  });
   it("streams the exposed app even though the deployment row records the db", async () => {
     h.services = [
       { id: "svc_db", name: "db", enabled: true, exposed: false },

@@ -56,7 +56,7 @@ vi.mock("@repo/adapters", () => {
   return { DockerRuntime };
 });
 
-vi.mock("../../../lib/deployment-runtime", async () => {
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async () => {
   const { DockerRuntime } = await import("@repo/adapters");
   return {
     // The production class intentionally has a private constructor; the mock
@@ -66,12 +66,12 @@ vi.mock("../../../lib/deployment-runtime", async () => {
   };
 });
 
-vi.mock("../build.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   checkNoActiveBuild: vi.fn(),
   triggerDeployment: h.triggerDeployment,
 }));
 
-import { rollback } from "./rollback-orchestrator";
+import { rollback } from "@repo/platform/engine/modules/deployments/rollback/rollback-orchestrator";
 
 beforeEach(() => {
   h.imagePresent = false;

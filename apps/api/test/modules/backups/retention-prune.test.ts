@@ -49,13 +49,13 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
 }));
 
 // Registering a real cron schedule is the JobRunner's business, not retention's.
-vi.mock("../../../src/modules/backups/triggers/cron", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/modules/backups/triggers/cron")>()),
+vi.mock("@repo/platform/engine/modules/backups/triggers/cron", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/modules/backups/triggers/cron")>()),
   syncPolicySchedule: h.syncPolicySchedule,
 }));
 
-import { createPolicy } from "../../../src/modules/backups/backup.service";
-import { prunePolicy, runRetentionSweep } from "../../../src/modules/backups/retention-prune";
+import { createPolicy } from "@repo/platform/engine/modules/backups/backup.service";
+import { prunePolicy, runRetentionSweep } from "@repo/platform/engine/modules/backups/retention-prune";
 import {
   seedBackupDestination,
   seedBackupPolicy,

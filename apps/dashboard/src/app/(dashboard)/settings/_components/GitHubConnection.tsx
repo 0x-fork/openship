@@ -40,7 +40,7 @@ const EMPTY_STATE: GitHubConnectionState = {
 
 /**
  * What the backend says is offerable here. Mirrors GitHubCapabilities in
- * apps/api/src/modules/github/github.capabilities.ts.
+ * packages/platform/src/engine/modules/github/github.capabilities.ts.
  *
  * The dashboard deliberately derives NOTHING about availability itself anymore —
  * it used to branch on `selfHosted` / `deployMode` and drifted from the resolver

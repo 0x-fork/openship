@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "@repo/core";
-import { MAX_REVEAL_KEYS, parseRevealKeys, pickRevealed } from "../../src/lib/env-reveal";
+import { MAX_REVEAL_KEYS, parseRevealKeys, pickRevealed } from "@repo/platform/engine/lib/env-reveal";
 
 /**
  * Per-key reveal (#336 follow-up): opening ONE row's eye must disclose ONE secret.

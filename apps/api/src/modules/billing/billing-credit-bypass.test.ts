@@ -31,7 +31,7 @@ const h = vi.hoisted(() => ({
   memo: new Map<string, unknown>(),
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     CLOUD_MODE: true,
     OBLIEN_CLIENT_ID: "cid_test",
@@ -46,7 +46,7 @@ vi.mock("@repo/db", () => ({
     },
   },
 }));
-vi.mock("../../lib/cache-store", () => ({
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
   cacheStore: async (ns: string) =>
     ns === "oblien-quota-asserted"
       ? {
@@ -68,13 +68,13 @@ vi.mock("@repo/adapters", () => ({
 // The quota wrapper is reached through a DYNAMIC import inside
 // ensureNamespaceWithQuota (it imports getOblienClient from openship-cloud, so a
 // static import would be a cycle). vi.mock intercepts it either way.
-vi.mock("./billing-oblien-quota", () => ({ setQuotaForTier: h.setQuotaForTier }));
+vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ setQuotaForTier: h.setQuotaForTier }));
 
 import {
   ensureNamespaceWithQuota,
   issueNamespaceToken,
   __resetQuotaAssertedForTests,
-} from "../../lib/openship-cloud";
+} from "@repo/platform/engine/lib/openship-cloud";
 
 describe("credit bypass — namespace cannot precede its ceiling", () => {
   beforeEach(async () => {

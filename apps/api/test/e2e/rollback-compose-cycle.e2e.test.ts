@@ -36,7 +36,7 @@ import {
   type CommandExecutor,
 } from "@repo/adapters";
 import { repos } from "@repo/db";
-import { LOCAL_HOST_PORT_TARGET } from "../../src/lib/host-port-target";
+import { LOCAL_HOST_PORT_TARGET } from "@repo/platform/engine/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import {
   seedOrg,
@@ -170,7 +170,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
       // must contend in the same physical host-port namespace.
       hostPortTarget: LOCAL_HOST_PORT_TARGET,
     };
-    vi.doMock("../../src/lib/deployment-runtime", async (importOriginal) => {
+    vi.doMock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
@@ -201,7 +201,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
         }),
       };
     });
-    vi.doMock("../../src/modules/deployments/service-checks", async (importOriginal) => {
+    vi.doMock("@repo/platform/engine/modules/deployments/service-checks", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
@@ -212,7 +212,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
       };
     });
 
-    rollbackMod = await import("../../src/modules/deployments/rollback");
+    rollbackMod = await import("@repo/platform/engine/modules/deployments/rollback/index");
     ready = true;
   }, 300_000);
 
@@ -403,7 +403,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     });
     const controller = new AbortController();
     const { deployComposeServices } = await import(
-      "../../src/modules/deployments/compose/deploy.service"
+      "@repo/platform/engine/modules/deployments/compose/deploy.service"
     );
     let activationStarted = false;
     const cancelled = deployComposeServices(
@@ -518,3 +518,14 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     throw new Error(`deploy never finished (last status: ${last || "no new row"})`);
   }
 });
+
+// The application seams moved with the shared engine.
+vi.doMock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+      const actual = (await importOriginal()) as Record<string, unknown>;
+      return { ...actual, platform: () => localPlatform.platform };
+    });
+
+vi.doMock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+      const actual = (await importOriginal()) as Record<string, unknown>;
+      return { ...actual, platform: () => localPlatform.platform };
+    });

@@ -14,7 +14,7 @@ import {
   resolveReleaseDist,
   resolveReleaseDistOrNull,
   type ReleaseDistSpec,
-} from "../../../lib/release-resolver";
+} from "@repo/platform/engine/lib/release-resolver";
 
 /**
  * The asset name is a literal, and `linux-amd64` in it is NOT a host assumption.

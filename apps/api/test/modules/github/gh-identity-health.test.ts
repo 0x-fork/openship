@@ -21,24 +21,24 @@ const { cacheGet, cacheSet, cacheDelete } = vi.hoisted(() => ({
   cacheDelete: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/github/github.auth", () => ({ getGitHubAuthMode }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({ getGitHubAuthMode }));
 
-vi.mock("../../../src/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github.http", () => ({ ghFetchSoft: vi.fn() }));
 
 vi.mock("@repo/db", () => ({
   repos: { instanceSettings: { get: instanceSettingsGet, upsert: vi.fn() } },
 }));
 
-vi.mock("../../../src/lib/encryption", () => ({ decrypt, encrypt: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt, encrypt: vi.fn() }));
 
-vi.mock("../../../src/lib/system-debug", () => ({ systemDebug: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({ systemDebug: vi.fn() }));
 
-vi.mock("../../../src/lib/cache-store", () => ({
+vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({
   cacheStore: vi.fn(async () => ({ get: cacheGet, set: cacheSet, delete: cacheDelete })),
 }));
 
 // Not CLOUD_MODE → the gh path is live (the SaaS hard-floor is covered elsewhere).
-vi.mock("../../../src/config/env", () => ({ env: {}, runtimeTarget: { id: "local" } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: {}, runtimeTarget: { id: "local" } }));
 
 vi.mock("@octokit/auth-oauth-device", () => ({ createOAuthDeviceAuth: vi.fn() }));
 
@@ -46,7 +46,7 @@ import {
   getLocalGhStatus,
   ghAuthTokenViaConfig,
   resolveGhHostsPath,
-} from "../../../src/modules/github/github.local-auth";
+} from "@repo/platform/engine/modules/github/github.local-auth";
 
 /** GitHub's /user answering with `status`. */
 function githubUserReturns(status: number, body: unknown = {}) {

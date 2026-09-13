@@ -81,47 +81,47 @@ vi.mock("@repo/db", async (importOriginal) => ({
   repos,
 }));
 
-vi.mock("../../../src/modules/deployments/preflight", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/preflight", () => ({
   runPreflightChecks,
 }));
 
-vi.mock("../../../src/modules/deployments/prepare.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/prepare.service", () => ({
   resolveProjectInfo,
   resolveProjectSourceEnv,
 }));
 
-vi.mock("../../../src/modules/projects/folder/folder.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/folder/folder.service", () => ({
   scanFolderSession,
   resolveFolderSessionSourceEnv,
 }));
 
-vi.mock("../../../src/modules/deployments/build-pipeline", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build-pipeline", () => ({
   kickoffBuild,
   resolveServicePipelineMode,
 }));
 
-vi.mock("../../../src/modules/domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   listProjectRouteRows: vi.fn(),
   resolveProjectRouteState,
   syncProjectRouteState,
 }));
 
-vi.mock("../../../src/modules/github/github-access", () => ({
+vi.mock("@repo/platform/engine/modules/github/github-access", () => ({
   assertGitHubRepoAccess,
 }));
 
-vi.mock("../../../src/modules/github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   getCommitByRef,
   getLatestCommit,
   getRepository: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/settings/settings.service", () => ({
+vi.mock("@repo/platform/engine/modules/settings/settings.service", () => ({
   resolveStrategy,
   getForwardGitToServer,
 }));
 
-vi.mock("../../../src/modules/deployments/smart-route", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/smart-route", () => ({
   resolveSmartRoute,
 }));
 
@@ -133,15 +133,15 @@ import {
   resolveSnapshotTarget,
   triggerDeployment,
   type DeploymentConfigSnapshot,
-} from "../../../src/modules/deployments/build.service";
+} from "@repo/platform/engine/modules/deployments/build.service";
 import { createServiceRepo, toComposeSpec, type Database } from "@repo/db";
 import { ENV_MASK, type ReleaseSource } from "@repo/core";
 import {
   newFolderSessionId,
   putFolderSession,
-} from "../../../src/modules/projects/folder/session-store";
-import { ComposeConfigurationError } from "../../../src/modules/deployments/compose-configuration-error";
-import { decrypt, encrypt } from "../../../src/lib/encryption";
+} from "@repo/platform/engine/modules/projects/folder/session-store";
+import { ComposeConfigurationError } from "@repo/platform/engine/modules/deployments/compose-configuration-error";
+import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
 
 const ctx = { userId: "user-1", organizationId: "org-1" } as any;
 
@@ -579,6 +579,15 @@ describe("triggerDeployment", () => {
     );
   });
 
+  it("rejects a project that moved out of the authorized tenant before the engine read it", async () => {
+    repos.project.findById.mockResolvedValue(baseProject({ organizationId: "another-org" }));
+    await expect(triggerDeployment(ctx, { projectId: "project-1" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(assertGitHubRepoAccess).not.toHaveBeenCalled();
+    expect(repos.project.getEnvMap).not.toHaveBeenCalled();
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
+  });
+
   it("uses the same frozen project env for Compose reconciliation and the deployment", async () => {
     const encryptedVersion = encrypt("1.2.3");
     repos.project.getEnvMap.mockResolvedValue({ MY_VERSION: encryptedVersion });
@@ -851,8 +860,8 @@ describe("triggerDeployment", () => {
       return { services: storedRows, driftedNames: [] };
     });
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     repos.project.findById.mockResolvedValue(
       baseProject({
@@ -924,8 +933,8 @@ describe("triggerDeployment", () => {
       return { services: storedRows, driftedNames: [] };
     });
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     repos.project.findById.mockResolvedValue(
       baseProject({
@@ -1125,8 +1134,8 @@ describe("triggerDeployment", () => {
     };
     resolveProjectInfo.mockResolvedValue({ services: [proposed] });
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     runPreflightChecks.mockRejectedValueOnce(new Error("blocked after compose reconciliation"));
 
@@ -2405,8 +2414,8 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
   it("does not parse or materialize compose for an explicit single-app deploy (#689)", async () => {
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     repos.project.findById.mockResolvedValue(
       baseProject({

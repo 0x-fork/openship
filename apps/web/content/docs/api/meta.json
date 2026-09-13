@@ -2,6 +2,7 @@
   "title": "API",
   "pages": [
     "index",
+    "sdk",
     "---Core resources---",
     "projects",
     "deployments",

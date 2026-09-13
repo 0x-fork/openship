@@ -142,7 +142,7 @@ export function createDeploymentRepo(db: Database) {
      * of soft-deleted projects stay out of the counts, matching what the
      * org-scoped project listings show.
      */
-    async countByStatusForOrganization(organizationId: string): Promise<Record<string, number>> {
+    async countByStatusForOrganization(organizationId: string, projectIds?: readonly string[]): Promise<Record<string, number>> {
       const rows = await db
         .select({
           status: deployment.status,
@@ -150,7 +150,7 @@ export function createDeploymentRepo(db: Database) {
         })
         .from(deployment)
         .innerJoin(project, eq(deployment.projectId, project.id))
-        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)))
+        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt), projectIds ? inArray(project.id, [...projectIds]) : undefined))
         .groupBy(deployment.status);
 
       const out: Record<string, number> = {};

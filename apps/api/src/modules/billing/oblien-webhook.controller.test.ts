@@ -21,22 +21,22 @@ const h = vi.hoisted(() => ({
   existingRows: [] as Array<{ processedAt: Date | null }>,
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     get OBLIEN_WEBHOOK_SECRET() {
       return h.secret;
     },
   },
 }));
-vi.mock("../../lib/mail", () => ({ sendMail: h.sendMail }));
+vi.mock("@repo/platform/engine/lib/mail", () => ({ sendMail: h.sendMail }));
 vi.mock("../../lib/audit", () => ({ audit: { record: h.auditRecord } }));
-vi.mock("../../lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: h.notificationEmit },
 }));
-vi.mock("../../lib/org-actor", () => ({
+vi.mock("@repo/platform/engine/lib/org-actor", () => ({
   resolveOrgOwner: async () => ({ user: { email: "owner@example.com", name: "Owner" } }),
 }));
-vi.mock("./billing-oblien-quota", () => ({
+vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({
   fromOblienCredits: (c: number) => c * 1000,
 }));
 vi.mock("@repo/db", () => {
@@ -188,3 +188,6 @@ describe("oblienWebhook — dispatch", () => {
     expect(h.usageUpsert).not.toHaveBeenCalled();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { record: h.auditRecord } }));

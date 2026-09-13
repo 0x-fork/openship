@@ -28,7 +28,7 @@ const h = vi.hoisted(() => ({
   nsUpdate: vi.fn(async () => ({})),
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { CLOUD_MODE: true, OBLIEN_CLIENT_ID: "cid", OBLIEN_CLIENT_SECRET: "csec" },
 }));
 vi.mock("@repo/db", () => ({
@@ -39,7 +39,7 @@ vi.mock("@repo/db", () => ({
     },
   },
 }));
-vi.mock("../../lib/oblien-client", () => ({
+vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienClient: () => ({
     namespaces: {
       getDetails: h.getDetails,
@@ -49,7 +49,7 @@ vi.mock("../../lib/oblien-client", () => ({
   }),
 }));
 
-import { reconcileOblienEntitlement } from "./billing-oblien-quota";
+import { reconcileOblienEntitlement } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
 
 /** starter = 150,000 compute + 3,000 build×8 = 174,000 units → 174,000,000 milli */
 const STARTER_MILLI = 174_000_000;

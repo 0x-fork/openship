@@ -5,11 +5,11 @@ const h = vi.hoisted(() => ({
   safeFetch: vi.fn(),
 }));
 
-vi.mock("../../../src/config/env", () => ({ env: h.env }));
-vi.mock("../../../src/lib/safe-fetch", () => ({ safeFetch: h.safeFetch }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env }));
+vi.mock("@repo/platform/engine/lib/safe-fetch", () => ({ safeFetch: h.safeFetch }));
 
 import { getCredentialProvider } from "@repo/core";
-import { verifyCredentialValues } from "../../../src/modules/credentials/verify";
+import { verifyCredentialValues } from "@repo/platform/engine/modules/credentials/verify";
 
 const provider = getCredentialProvider("docker-registry")!;
 

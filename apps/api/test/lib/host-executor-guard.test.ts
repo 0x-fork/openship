@@ -55,11 +55,11 @@ describe("host-control executor guard", () => {
  * that has quietly stopped guarding anything).
  */
 describe("createHostExecutor has one owner", () => {
-  const OWNER = "src/lib/ssh-manager.ts";
+  const OWNER = "packages/platform/src/engine/lib/ssh-manager.ts";
 
   it(`only ${OWNER} constructs the host executor`, () => {
-    const root = fileURLToPath(new URL("../../", import.meta.url));
-    const files = execFileSync("git", ["ls-files", "--", "src"], { cwd: root, encoding: "utf8" })
+    const root = fileURLToPath(new URL("../../../../", import.meta.url));
+    const files = execFileSync("rg", ["--files", "apps/api/src", "packages/platform/src/engine"], { cwd: root, encoding: "utf8" })
       .split("\n")
       // `git ls-files` includes a tracked file deleted in the working tree until
       // that deletion is staged. Local pre-commit runs must scan the tree being
@@ -90,7 +90,7 @@ describe("createHostExecutor has one owner", () => {
  */
 describe("target resolution never registers this box", () => {
   it("deployment-runtime.ts reads the row, it does not ensure it", () => {
-    const src = code(read("../../src/lib/deployment-runtime.ts"));
+    const src = code(read("../../../../packages/platform/src/engine/lib/deployment-runtime.ts"));
     expect(src).toContain("findLocalServer(");
     expect(src, "ensureLocalServer() on a resolve path — use findLocalServer()").not.toContain(
       "ensureLocalServer(",
@@ -112,11 +112,11 @@ describe("target resolution never registers this box", () => {
  */
 const PIPELINES = [
   {
-    file: "../../src/modules/deployments/build-pipeline.ts",
+    file: "../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts",
     executionScope: "async function executeBuildAndDeploy",
   },
   {
-    file: "../../src/modules/deployments/compose/deploy.service.ts",
+    file: "../../../../packages/platform/src/engine/modules/deployments/compose/deploy.service.ts",
     executionScope: "async function deployComposeServicesUnlocked",
   },
 ];

@@ -1,0 +1,177 @@
+---
+title: Deployment workflows
+description: Deploy generated files, local directories, or linked Git projects through the same SDK interface, and handle progress, cancellation, and prompts.
+---
+
+The examples on this page accept either an `OpenshipClient` or a native `ScopedShip`. Create one using the
+[remote guide](/docs/api/sdk/client) or [native guide](/docs/api/sdk/native). Both call the same source and
+deployment operations.
+
+## Deploy generated files
+
+Use `deploy()` for files produced by your application or an AI coding workflow. It stages the source,
+detects build configuration, creates or selects the project, and submits the deployment.
+
+```ts title="deploy-generated.mts"
+import type { OpenshipClient, ScopedShip } from "openship";
+
+export async function deployGenerated(api: OpenshipClient | ScopedShip) {
+  const submitted = await api.deploy({
+    name: "generated-site",
+    source: {
+      type: "files",
+      files: {
+        "index.html": "<h1>Deployed from code</h1>",
+        "style.css": "body { font-family: system-ui; }",
+      },
+    },
+    onStep: (message) => console.log(message),
+  });
+  const outcome = await api.deployment(submitted.deployment_id).wait({ timeoutMs: 120_000 });
+  return { submitted, outcome };
+}
+```
+
+File keys are relative source paths. Values may be strings or `Uint8Array` data. Generated inputs are
+copied before asynchronous identity checks and dispatch. Execution still requires a configured provider
+and appropriate project/deployment permissions.
+
+`deploy()` returns `deployment_id`, `project_id`, and optional `configDiagnostics`. Submission does not
+mean the workload is ready. Inspect `wait()`'s outcome before reporting success to your user.
+
+## Deploy a directory
+
+```ts title="deploy-directory.mts"
+import { resolve } from "node:path";
+import type { OpenshipClient, ScopedShip } from "openship";
+
+export async function deployDirectory(
+  api: OpenshipClient | ScopedShip,
+  directory: string,
+  projectId?: string,
+) {
+  return api.deploy({
+    projectId,
+    source: { type: "directory", path: resolve(directory) },
+  });
+}
+```
+
+The remote client packages files on the calling machine and uploads them to the API. Native directory
+sources must be inside an explicit `policy.sourceRoots` entry. Directory packing enforces path, entry,
+and size limits, rejects escaping or cyclic symlinks and special files, and excludes `.git`,
+`node_modules`, and `.DS_Store` while retaining build outputs. A system `tar` executable is not required.
+
+| `deploy()` option | Purpose                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- |
+| `source`          | Required `{ type: "files", files }` or `{ type: "directory", path }`.                                           |
+| `name`            | Suggested project name; source detection can provide a name.                                                    |
+| `projectId`       | Target an existing authorized project instead of creating a new one.                                            |
+| `environment`     | `production` or `preview`.                                                                                      |
+| `serverId`        | Target a registered, authorized server. Omit to use the configured target.                                      |
+| `serviceIds`      | Select detected services to deploy.                                                                             |
+| `onStep`          | Receive source-workflow progress messages. Deployment runtime logs use the event methods below.                 |
+| `signal`          | Abort source-workflow work where supported. It does not roll back a deployment that has already been submitted. |
+
+## Deploy a linked Git project
+
+Git deployments use `deployments.create()` after the project has a configured source:
+
+```ts title="deploy-git.mts"
+import type { OpenshipClient, ScopedShip } from "openship";
+
+export async function deployGit(api: OpenshipClient | ScopedShip, projectId: string) {
+  const submitted = await api.deployments.create({
+    projectId,
+    branch: "main",
+    environment: "production",
+  });
+  return api.deployment(submitted.deployment_id).wait({ timeoutMs: 120_000 });
+}
+```
+
+`CreateDeploymentInput` also supports `commitSha`, `serverId`, `forceAll`, `serviceIds`, `smartRoute`, and
+`refresh`. Use `deployments.prepare()` to inspect source configuration before submission. Advanced build
+flows can use `sources.stage()`, `sources.scan()`, `projects.ensure()`, and `deployments.buildAccess()`;
+the high-level `deploy()` composes those existing operations.
+
+## Wait, decisions, and cancellation
+
+`deployment(id)` returns a handle with `get()`, `status()`, `wait()`, `events()`, `cancel()`, `respond()`,
+and `rollback()`. The handle does not own the deployment or an installation.
+
+`wait()` polls persisted build status. Its outcome includes `status`, `success`, `decisionPending`,
+`cancellationPending`, and optional `prompt`, `message`, or `warning`. `ready` and `no_changes` are successful;
+failure, cancellation, rejection, partial failure, or an unanswered decision must be handled by your caller.
+
+Without `onPrompt`, an outstanding prompt returns an `action_required` outcome so your application can
+ask for a decision. To integrate your own decision UI:
+
+```ts title="deployment-decisions.mts"
+import type { OpenshipClient, PromptPayload, ScopedShip } from "openship";
+
+export async function waitWithDecisions(
+  api: OpenshipClient | ScopedShip,
+  deploymentId: string,
+  chooseAction: (prompt: PromptPayload) => Promise<string>,
+  signal?: AbortSignal,
+) {
+  return api.deployment(deploymentId).wait({
+    timeoutMs: 120_000,
+    signal,
+    onPrompt: chooseAction,
+  });
+}
+```
+
+Return an action ID offered by the prompt; the SDK validates it before submitting the response. A callback
+should reflect your application's explicit decision policy. It need not automatically approve a build gate.
+
+Aborting a wait or reaching its timeout stops observation. To request execution cancellation, call
+`deployment(id).cancel()` and inspect the subsequent status. Cancellation may remain pending while the
+underlying operation settles. It is not a rollback of resources created before submission.
+
+## Read progress events
+
+```ts title="deployment-events.mts"
+import { consumeDeploymentEvents, type OpenshipClient, type ScopedShip } from "openship";
+
+export async function readDeploymentLogs(
+  api: OpenshipClient | ScopedShip,
+  deploymentId: string,
+  signal: AbortSignal,
+) {
+  return consumeDeploymentEvents(api.deployment(deploymentId).events({ signal }), (event) => {
+    if (event.log) process.stdout.write(event.log);
+  });
+}
+```
+
+Raw events have an `event` name and serialized `data`. `consumeDeploymentEvents()` decodes payloads and
+log chunks and collects stream hints. An event stream ending is not proof of deployment success; use
+persisted status or `wait()` for the outcome. Pass an abort signal, or stop iteration, to release the stream.
+Durable event replay across worker restarts is not implemented.
+
+Other operation groups expose streams for service/project logs, server installation, analytics usage,
+jobs, and backup/restore progress. See the [method reference](/docs/api/sdk/reference).
+
+## Iterate paginated results
+
+```ts title="iterate-projects.mts"
+import { iteratePages, type OpenshipClient, type ScopedShip } from "openship";
+
+export async function listProjectIds(api: OpenshipClient | ScopedShip, signal?: AbortSignal) {
+  const ids: string[] = [];
+  for await (const project of iteratePages((page) => api.projects.list(page), {
+    perPage: 50,
+    signal,
+  })) {
+    ids.push(project.id);
+  }
+  return ids;
+}
+```
+
+`iteratePages()` accepts a named list method returning a page with `data` and optional pagination metadata.
+It does not apply to methods that return a plain array. Access filtering remains part of the shared list
+operation on every page.

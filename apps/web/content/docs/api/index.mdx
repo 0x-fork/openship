@@ -1,12 +1,15 @@
 ---
 title: API overview
-description: The Openship HTTP API — base URL, authentication, permissions, rate limits, and the standard JSON error shape.
+description: Control Openship through HTTP or the Node.js SDK. Authentication, permissions, API modules, and integration guides.
 ---
 
-Everything the dashboard and the [`openship`](/docs/cli) CLI can do is a call to the same HTTP API: create
-projects, trigger deployments, attach domains, read analytics, manage backups. It's a plain JSON API built on
-[Hono](https://hono.dev), so you can drive it from a script, a CI job, or an AI agent exactly the way the
-first-party clients do.
+Use the Openship API to create projects, trigger deployments, attach domains, read analytics, and manage
+backups from a script, CI job, or AI agent. The dashboard and remote [`openship`](/docs/cli) CLI use the JSON
+HTTP API. The [Node.js SDK](/docs/api/sdk) provides a typed HTTP client and a native interface that runs the
+shared platform services inside your Node application.
+
+Start with the [SDK guide](/docs/api/sdk) for imports, release availability, native identity scopes, and the
+current method reference. The module pages below describe the HTTP endpoints and their payloads.
 
 <Callout title="Base URL & auth">
 Every route lives under **`/api`** on your own instance — e.g. `https://your-host/api/projects`. There is no
@@ -43,9 +46,9 @@ mismatched `X-Organization-Id` with `TOKEN_ORG_SCOPE`) and **read-only** (reject
 
 ## Permissions
 
-Once you're authenticated, every route runs one permission check. Each route declares a tag of the form
+Authenticated application routes declare a permission tag of the form
 `resource:action` — `project:read`, `domain:write`, `deployment:admin` — and sub-resources add a middle segment
-(`project:service:write`). The action lines up with the HTTP method: `read` (GET one), `write`
+(`project:service:write`). Shared operations also enforce access for native SDK callers. The action usually lines up with the HTTP method: `read` (GET one), `write`
 (POST/PUT/PATCH), `admin` (DELETE and destructive), `list` (GET a collection).
 
 Access is decided **per organization**. Openship resolves which org you mean from the `X-Organization-Id`
@@ -140,6 +143,7 @@ route set by mode.
 ## Module reference
 
 <Cards>
+  <Card title="Node.js SDK" href="/docs/api/sdk" description="Native and remote clients, deployment workflows, tenant scopes, and the public method reference." />
   <Card title="Health" href="/docs/api/health" description="Public liveness and deployment-info probes." />
   <Card title="Auth" href="/docs/api/auth" description="Sessions, OAuth, and organization management." />
   <Card title="Projects" href="/docs/api/projects" description="Create and configure projects, env vars, and deploy settings." />

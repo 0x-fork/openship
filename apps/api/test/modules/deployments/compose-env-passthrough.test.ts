@@ -11,11 +11,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseComposeFile } from "../../../src/lib/compose-parser";
+import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
 import {
   mergeServiceDeployEnv,
   type ServiceEnvLayers,
-} from "../../../src/modules/deployments/compose/service-env-layers";
+} from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
 
 const layers = (over: Partial<ServiceEnvLayers> = {}): ServiceEnvLayers => ({
   project: {},

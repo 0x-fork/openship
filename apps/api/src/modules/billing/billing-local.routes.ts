@@ -13,9 +13,10 @@
  */
 
 import { Hono } from "hono";
+import { CreateSubscriptionBody, CreateTopupBody } from "@repo/contracts";
 import { authMiddleware } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
-import * as billingLocal from "./billing-local.controller";
+import * as billingLocal from "./billing.controller";
 
 export const billingLocalRoutes = new Hono();
 const r = secureRouter(billingLocalRoutes, {
@@ -39,29 +40,31 @@ r.use("/state", authMiddleware);
 r.use("/subscription", authMiddleware);
 r.use("/cancel", authMiddleware);
 r.use("/usage", authMiddleware);
+r.use("/allowances", authMiddleware);
 r.use("/topup", authMiddleware);
 r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
 
 /* ---------- Dashboard state snapshot ---------- */
-r.get("/state", { tag: "billing:read" }, billingLocal.getState);
+r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getState);
 
 /* ---------- Subscriptions ---------- */
-r.get("/subscription", { tag: "billing:read" }, billingLocal.getSubscription);
-r.post("/subscription", { tag: "billing:write" }, billingLocal.createSubscription);
+r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getSubscription);
+r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingLocal.createSubscription);
 
 /* ---------- Cancellation ---------- */
 // Destructive — admin tier per the same precedent as the SaaS sibling.
-r.post("/cancel", { tag: "billing:admin" }, billingLocal.cancelSubscription);
+r.post("/cancel", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingLocal.cancelSubscription);
 
 /* ---------- Usage ---------- */
-r.get("/usage", { tag: "billing:read" }, billingLocal.getUsage);
+r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getUsage);
+r.get("/allowances", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.listAllowanceDetail);
 
 /* ---------- Top-ups ---------- */
-r.get("/topup-packs", { tag: "billing:read" }, billingLocal.listTopupPacks);
+r.get("/topup-packs", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.listTopupPacks);
 r.post(
   "/topup",
-  { tag: "billing:write", rateLimit: "billing-portal" },
+  { body: CreateTopupBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingLocal.createTopup,
 );
 
@@ -70,6 +73,6 @@ r.post(
 // stops a runaway frontend retry loop from racking up Stripe API spend.
 r.post(
   "/portal",
-  { tag: "billing:write", rateLimit: "billing-portal" },
+  { tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingLocal.createPortal,
 );

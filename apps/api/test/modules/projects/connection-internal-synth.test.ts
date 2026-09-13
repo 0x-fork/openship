@@ -37,11 +37,11 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
   isLocalHostRow: h.isLocalHostRow,
 }));
 
-vi.mock("../../../src/modules/apps/catalog-source", () => ({
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({
   getTemplateForOrg: h.getTemplateForOrg,
 }));
 
@@ -53,11 +53,11 @@ vi.mock("../../../src/lib/permission", () => ({
   permission: { assert: vi.fn(async () => undefined) },
 }));
 
-vi.mock("../../../src/modules/apps/app-settings.service", () => ({
+vi.mock("@repo/platform/engine/modules/apps/app-settings.service", () => ({
   getAppConnectionView: h.getAppConnectionView,
 }));
 
-vi.mock("../../../src/modules/projects/project-env.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/project-env.service", () => ({
   mergeEnvVars: h.mergeEnvVars,
 }));
 
@@ -65,14 +65,14 @@ vi.mock("../../../src/modules/projects/project-env.service", () => ({
 // `isNetworkUrl`, which decides whether a value even HAS a host to rewrite — must
 // be the shipped implementation: a hand-copy inside the factory would keep these
 // tests green while the production predicate rotted.
-vi.mock("../../../src/modules/projects/project-connection.util", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/projects/project-connection.util", async (importOriginal) => ({
   ...(await importOriginal<
-    typeof import("../../../src/modules/projects/project-connection.util")
+    typeof import("@repo/platform/engine/modules/projects/project-connection.util")
   >()),
   toInternalUrl: h.toInternalUrl,
 }));
 
-import { createConnection } from "../../../src/modules/projects/project-connection.service";
+import { createConnection } from "@repo/platform/engine/modules/projects/project-connection.service";
 
 const ctx = { organizationId: "org1", userId: "u1" } as never;
 
@@ -432,4 +432,20 @@ describe("createConnection — synthesized internal source", () => {
       }),
     );
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  assertResourceInOrg: () => undefined,
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  assertResourceInOrg: () => undefined,
+}));
+
+vi.mock("@repo/platform/engine/lib/authorization", async (importOriginal) => {
+  const mocked = await (() => ({
+  permission: { assert: vi.fn(async () => undefined) },
+}))(importOriginal);
+  return { ...mocked, authorization: mocked.authorization ?? { authorize: async (ctx, input) => { await mocked.permission.assert(ctx, input); return ctx; } } };
 });

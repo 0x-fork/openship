@@ -1,0 +1,710 @@
+---
+title: SDK method reference
+description: The current native and remote operation groups, argument order, public TypeScript contracts, and capability limits.
+---
+
+This reference lists the current 25 operation groups on both `OpenshipClient` and native `ScopedShip`.
+Use `client.projects.get(id)` remotely or `scope.projects.get(id)` natively. The same public operation
+interfaces describe both. See [release availability](/docs/api/sdk#install) before installing.
+
+The tables show argument order; `?` means optional. Input and result types come from the public TypeScript
+interfaces named in each section. A method returning a promise is awaited; an async iterable is consumed
+with `for await`. Existing HTTP module references provide the underlying field descriptions. SDK methods
+project the HTTP envelopes into the result declared by their operation type.
+
+## Workflows and types
+
+The client and native scope also expose `deploy(input)` and `deployment(id)`. The native installation
+provides `scope({ identity, organizationId })`; the remote client provides `scope(organizationId)`.
+See [deployment workflows](/docs/api/sdk/deployments) and [native lifecycle](/docs/api/sdk/native).
+
+Import operation interfaces and DTOs from the public package. You can derive a method's exact input or
+result type without maintaining another schema:
+
+```ts title="operation-types.mts"
+import type { ProjectOperations, DeploymentOperations } from "openship";
+
+export type ProjectUpdate = Parameters<ProjectOperations["update"]>[1];
+export type ProjectPage = Awaited<ReturnType<ProjectOperations["list"]>>;
+export type DeploymentSubmission = Awaited<ReturnType<DeploymentOperations["create"]>>;
+```
+
+Shared helpers exported from `openship` include `iteratePages`, `createDeploymentHandle`,
+`waitForDeployment`, `consumeDeploymentEvents`, and `normalizeComposeServices`. `openship/client` also
+exposes `HttpClient` and `parseSSE` for transport integrations. Prefer the named operations for their
+validated inputs and result types.
+
+## Availability
+
+An exposed method is not a guarantee that every deployment mode can execute it. User grants, credential
+restrictions, provider configuration, installation authority, host policy, and API version still apply.
+Unsupported capabilities fail explicitly.
+
+| Area                      | Current boundary                                                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Native and remote clients | Share the groups below; remote calls require compatible server routes.                                                                                       |
+| Cloud                     | Use the canonical Cloud API and its organization ID. Verified local-to-Cloud tenant mapping and promotion/reconciliation remain incomplete.                  |
+| Jobs, backups, and scans  | Native scheduling is opt-in. Constrained saved principals and distributed scheduler ownership remain migration work.                                         |
+| System and accounts       | Existing methods are listed below; setup/onboarding, self-app management, complete edge/terminal support, and organization/account lifecycle are incomplete. |
+| Mail and data transfer    | No complete named SDK groups yet. An existing HTTP endpoint may be called through the remote client's transport.                                             |
+| Delivery and replay       | Durable distributed dispatch, idempotency, event replay, and complete billing webhook replay/accounting guarantees remain unfinished.                        |
+
+Browser authentication redirects, cookies, provider webhook signature verification, and interactive
+terminal handshakes remain transport-specific boundaries. SDK imports do not replace those protocols.
+
+## Projects
+
+`projects` · `ProjectOperations`
+
+Project lifecycle, environments, configuration, connections, storage, and logs. Resource methods take a project ID. Local scan/import operations require host policy. Transfer methods are exposed, but fixed local-to-Cloud forwarding remains unavailable without verified tenant mapping.
+
+[Related guide](/docs/api/projects).
+
+| Method                                    | Returns        |
+| ----------------------------------------- | -------------- |
+| `getHome()`                               | Promise        |
+| `create(input)`                           | Promise        |
+| `ensure(input)`                           | Promise        |
+| `list(input?)`                            | Promise        |
+| `get(id)`                                 | Promise        |
+| `update(id, input)`                       | Promise        |
+| `remove(id, input?)`                      | Promise        |
+| `getInfo(id)`                             | Promise        |
+| `getGitInfo(id)`                          | Promise        |
+| `listBranches(id)`                        | Promise        |
+| `linkRepo(id, input)`                     | Promise        |
+| `setReleaseImageSource(id, input)`        | Promise        |
+| `setAutoDeploy(id, input)`                | Promise        |
+| `setWebhookDomain(id, input)`             | Promise        |
+| `listDeployments(id, input?)`             | Promise        |
+| `deploymentSession(id)`                   | Promise        |
+| `clearBuildCache(id)`                     | Promise        |
+| `getRollbackCapacity(id)`                 | Promise        |
+| `checkPorts(id)`                          | Promise        |
+| `checkOutput(id)`                         | Promise        |
+| `getPendingActions(id)`                   | Promise        |
+| `getCommitStatus(id)`                     | Promise        |
+| `listEnvironments(id)`                    | Promise        |
+| `createEnvironment(id, input)`            | Promise        |
+| `listEnvVars(id, input?)`                 | Promise        |
+| `mergeEnvVars(id, input)`                 | Promise        |
+| `getResources(id)`                        | Promise        |
+| `updateResources(id, input)`              | Promise        |
+| `setSleepMode(id, input)`                 | Promise        |
+| `setOptions(id, input)`                   | Promise        |
+| `setBranch(id, input)`                    | Promise        |
+| `enable(id)`                              | Promise        |
+| `disable(id)`                             | Promise        |
+| `retryRouting(id)`                        | Promise        |
+| `runtimeLogs(id, input?)`                 | Promise        |
+| `getCloneToken(id)`                       | Promise        |
+| `updateCloneToken(id, input)`             | Promise        |
+| `deletionPreview(id)`                     | Promise        |
+| `listRouteRules(id)`                      | Promise        |
+| `createRouteRule(id, input)`              | Promise        |
+| `updateRouteRule(id, input)`              | Promise        |
+| `removeRouteRule(id, input)`              | Promise        |
+| `getIncidents(id)`                        | Promise        |
+| `connectDomain(id, input)`                | Promise        |
+| `listConnections(id)`                     | Promise        |
+| `listConnectionConsumers(id)`             | Promise        |
+| `createConnection(id, input)`             | Promise        |
+| `connectBundle(id, input)`                | Promise        |
+| `removeConnection(id, input)`             | Promise        |
+| `getStorage(id)`                          | Promise        |
+| `bindStorage(id, input)`                  | Promise        |
+| `unbindStorage(id)`                       | Promise        |
+| `getEdgeConfig(id)`                       | Promise        |
+| `getServerLogStreamToken(id, input?)`     | Promise        |
+| `recentServerLogs(id, input?)`            | Promise        |
+| `transferToCloud(id)`                     | Promise        |
+| `transferToSelfHosted(id)`                | Promise        |
+| `getAppSettings(id)`                      | Promise        |
+| `updateAppSettings(id, input)`            | Promise        |
+| `getAppConnection(id)`                    | Promise        |
+| `scanLocal(input)`                        | Promise        |
+| `importLocal(input)`                      | Promise        |
+| `listLocal()`                             | Promise        |
+| `streamRuntimeLogs(id, input?, options?)` | Async iterable |
+| `streamServerLogs(id, input?, options?)`  | Async iterable |
+
+## Sources
+
+`sources` · `SourceOperations`
+
+Stage files or directories, open an upload session, scan its configuration, or reveal explicitly authorized source values. `scan` and `reveal` take a source session ID. Prefer `deploy()` for the complete source-to-deployment workflow.
+
+[Related guide](/docs/api/sdk/deployments).
+
+| Method                   | Returns |
+| ------------------------ | ------- |
+| `stage(input, options?)` | Promise |
+| `open(input?)`           | Promise |
+| `scan(id)`               | Promise |
+| `reveal(id, input)`      | Promise |
+
+## Deployments
+
+`deployments` · `DeploymentOperations`
+
+Create, inspect, control, and observe deployments. Resource methods, including `start(id)`, take a deployment ID. Collection commands accept their typed input objects. Cancellation and rollback retain their additional permission checks.
+
+[Related guide](/docs/api/deployments).
+
+| Method                     | Returns        |
+| -------------------------- | -------------- |
+| `create(input)`            | Promise        |
+| `get(id)`                  | Promise        |
+| `list(input?)`             | Promise        |
+| `logs(id, input?)`         | Promise        |
+| `buildStatus(id)`          | Promise        |
+| `restorePlan(id)`          | Promise        |
+| `cancel(id)`               | Promise        |
+| `respond(id, input)`       | Promise        |
+| `rollback(id)`             | Promise        |
+| `redeploy(id, input?)`     | Promise        |
+| `pin(id, input?)`          | Promise        |
+| `keep(id)`                 | Promise        |
+| `reject(id)`               | Promise        |
+| `remove(id)`               | Promise        |
+| `restart(id)`              | Promise        |
+| `skipPortCheck(id, input)` | Promise        |
+| `events(id, options?)`     | Async iterable |
+| `containerInfo(id)`        | Promise        |
+| `containerUsage(id)`       | Promise        |
+| `pendingActions(id)`       | Promise        |
+| `sslStatus(input)`         | Promise        |
+| `renewSsl(input)`          | Promise        |
+| `prepare(input)`           | Promise        |
+| `buildAccess(input)`       | Promise        |
+| `start(id)`                | Promise        |
+
+## Services
+
+`services` · `ServiceOperations`
+
+Service configuration, runtime controls, environment variables, and logs. For child methods, `parentId` is the project ID and `id` is the service ID; `list`, `create`, `sync`, and `activeContainers` take a project ID.
+
+[Related guide](/docs/api/services).
+
+| Method                                               | Returns        |
+| ---------------------------------------------------- | -------------- |
+| `streamLogs(projectId, serviceId, input?, options?)` | Async iterable |
+| `list(id)`                                           | Promise        |
+| `create(id, input)`                                  | Promise        |
+| `sync(id, input)`                                    | Promise        |
+| `activeContainers(id)`                               | Promise        |
+| `get(parentId, id)`                                  | Promise        |
+| `update(parentId, id, input)`                        | Promise        |
+| `remove(parentId, id)`                               | Promise        |
+| `acceptDrift(parentId, id)`                          | Promise        |
+| `keepDrift(parentId, id)`                            | Promise        |
+| `listEnvVars(parentId, id, input?)`                  | Promise        |
+| `setEnvVars(parentId, id, input)`                    | Promise        |
+| `revealEnv(parentId, id, input)`                     | Promise        |
+| `volumeSizes(parentId, id)`                          | Promise        |
+| `start(parentId, id)`                                | Promise        |
+| `stop(parentId, id)`                                 | Promise        |
+| `restart(parentId, id, input?)`                      | Promise        |
+| `runtimeLogs(parentId, id, input?)`                  | Promise        |
+| `exec(parentId, id, input)`                          | Promise        |
+
+## Domains
+
+`domains` · `DomainOperations`
+
+Domain records, routing, DNS plans, certificates, and verification. `list` and `create` take a project ID; individual domain methods take a domain ID. Collection-wide operations remain subject to their scope and permission requirements.
+
+[Related guide](/docs/api/domains).
+
+| Method                               | Returns        |
+| ------------------------------------ | -------------- |
+| `verifyStream(id, input?, options?)` | Async iterable |
+| `list(id)`                           | Promise        |
+| `create(id, input)`                  | Promise        |
+| `get(id)`                            | Promise        |
+| `remove(id)`                         | Promise        |
+| `verify(id, input?)`                 | Promise        |
+| `records(id, input?)`                | Promise        |
+| `dnsPlan(id, input?)`                | Promise        |
+| `dnsApply(id, input?)`               | Promise        |
+| `setPrimary(id)`                     | Promise        |
+| `renewSsl(id)`                       | Promise        |
+| `verifySsl(id)`                      | Promise        |
+| `uploadCert(id, input)`              | Promise        |
+| `preview(input)`                     | Promise        |
+| `renewAllSsl()`                      | Promise        |
+| `verifyPending(input?)`              | Promise        |
+
+## DNS
+
+`dns` · `DnsOperations`
+
+Discover DNS providers and manage or verify DNS credentials and zones. These methods take typed input objects where shown; they do not use the generic resource-ID calling convention.
+
+[Related guide](/docs/api/dns).
+
+| Method                    | Returns |
+| ------------------------- | ------- |
+| `listProviders()`         | Promise |
+| `listCredentials()`       | Promise |
+| `getCredential(input)`    | Promise |
+| `addCredential(input)`    | Promise |
+| `removeCredential(input)` | Promise |
+| `verifyZone(input)`       | Promise |
+
+## Provider credentials
+
+`credentials` · `CredentialOperations`
+
+Discover providers and manage stored provider credentials. Reads and mutations use the existing authorization and secret projections.
+
+[Related guide](/docs/api/settings).
+
+| Method              | Returns |
+| ------------------- | ------- |
+| `listProviders()`   | Promise |
+| `list()`            | Promise |
+| `create(input)`     | Promise |
+| `get(id)`           | Promise |
+| `update(id, input)` | Promise |
+| `remove(id)`        | Promise |
+| `verify(id)`        | Promise |
+
+## Servers
+
+`servers` · `ServerOperations`
+
+Registered servers, SSH commands, modules, installation progress, server Git connections, tunnels, and container operations. Resource IDs refer to servers. Host access, server grants, instance authority, and provider availability apply to the relevant methods.
+
+[Related guide](/docs/api/system).
+
+| Method                                      | Returns        |
+| ------------------------------------------- | -------------- |
+| `applyContainer(id, input, options?)`       | Async iterable |
+| `containerApplyEvents(id, input, options?)` | Async iterable |
+| `getInstallSession(input?)`                 | Promise        |
+| `respondToInstall(input)`                   | Promise        |
+| `installComponents(id, input, options?)`    | Async iterable |
+| `installEvents(input?, options?)`           | Async iterable |
+| `monitor(id, options?)`                     | Async iterable |
+| `listAllContainers()`                       | Promise        |
+| `scanAllContainers()`                       | Promise        |
+| `containersBehind()`                        | Promise        |
+| `containerIssues()`                         | Promise        |
+| `applyingContainers()`                      | Promise        |
+| `applyAllContainers(input?)`                | Promise        |
+| `list()`                                    | Promise        |
+| `create(input)`                             | Promise        |
+| `testConnection(input)`                     | Promise        |
+| `githubStatus(id)`                          | Promise        |
+| `connectGitHub(id)`                         | Promise        |
+| `pollGitHubConnection(id)`                  | Promise        |
+| `setGitHubToken(id, input)`                 | Promise        |
+| `generateGitHubKey(id)`                     | Promise        |
+| `useGitHubDeployKeys(id)`                   | Promise        |
+| `disconnectGitHub(id)`                      | Promise        |
+| `listTunnels(id)`                           | Promise        |
+| `saveTunnel(id, input)`                     | Promise        |
+| `startTunnel(id, input)`                    | Promise        |
+| `stopTunnel(id, input)`                     | Promise        |
+| `removeTunnel(id, input)`                   | Promise        |
+| `listContainers(id)`                        | Promise        |
+| `scanContainers(id)`                        | Promise        |
+| `containerApplySession(id, input)`          | Promise        |
+| `get(id)`                                   | Promise        |
+| `reachability(id)`                          | Promise        |
+| `update(id, input)`                         | Promise        |
+| `deletionPreview(id)`                       | Promise        |
+| `remove(id, input?)`                        | Promise        |
+| `exec(id, input)`                           | Promise        |
+| `listModules(id)`                           | Promise        |
+| `scanModules(id)`                           | Promise        |
+| `applyModule(id, input)`                    | Promise        |
+| `getRateLimit(id)`                          | Promise        |
+| `updateRateLimit(id, input)`                | Promise        |
+| `check(id, input?)`                         | Promise        |
+| `installComponent(id, input)`               | Promise        |
+| `removeComponent(id, input)`                | Promise        |
+| `scanPorts(id)`                             | Promise        |
+
+## Installation settings
+
+`system` · `SystemOperations`
+
+Public installation metadata, health, filesystem browsing, settings, SMTP configuration, and untracked edge-site management. Whole-instance mutations require installation authority; organization ownership alone does not grant it. Setup, self-app, and full edge/terminal coverage remain incomplete.
+
+[Related guide](/docs/api/system).
+
+| Method                           | Returns |
+| -------------------------------- | ------- |
+| `info()`                         | Promise |
+| `browse(input?)`                 | Promise |
+| `health()`                       | Promise |
+| `getSettings()`                  | Promise |
+| `updateSettings(input)`          | Promise |
+| `getEmailSettings()`             | Promise |
+| `updateEmailSettings(input)`     | Promise |
+| `sendTestEmail(input)`           | Promise |
+| `resetSettings()`                | Promise |
+| `listUntrackedEdgeSites()`       | Promise |
+| `removeUntrackedEdgeSite(input)` | Promise |
+
+## App catalog
+
+`apps` · `AppOperations`
+
+Browse the built-in and custom app catalogs, assess host fit, and install configured apps. Resource IDs identify catalog entries or custom apps as appropriate.
+
+[Related guide](/docs/api/apps).
+
+| Method                | Returns |
+| --------------------- | ------- |
+| `listCatalog()`       | Promise |
+| `listCustom()`        | Promise |
+| `saveCustom(input)`   | Promise |
+| `install(input)`      | Promise |
+| `getCatalogEntry(id)` | Promise |
+| `hostFit(id, input?)` | Promise |
+| `removeCustom(id)`    | Promise |
+
+## Backup destinations
+
+`backupDestinations` · `BackupDestinationOperations`
+
+Create, inspect, validate, and manage backup targets. Resource IDs identify destinations.
+
+[Related guide](/docs/api/backup-destinations).
+
+| Method                  | Returns |
+| ----------------------- | ------- |
+| `list()`                | Promise |
+| `create(input)`         | Promise |
+| `preflightDraft(input)` | Promise |
+| `get(id)`               | Promise |
+| `usage(id)`             | Promise |
+| `update(id, input)`     | Promise |
+| `remove(id)`            | Promise |
+| `preflight(id)`         | Promise |
+
+## Backups and restores
+
+`backups` · `BackupOperations`
+
+`listPolicies`, `createPolicy`, and `listRuns` take a project ID. `updatePolicy`, `removePolicy`, and `run` take a policy ID. `getRun`, `protectRun`, `prepareRestore`, and `streamRun` take a run ID. Restore methods and `streamRestore` take a restore ID. Native execution depends on the opted-in runner and configured storage/provider capabilities.
+
+[Related guide](/docs/api/backups).
+
+| Method                        | Returns        |
+| ----------------------------- | -------------- |
+| `streamRun(id, options?)`     | Async iterable |
+| `streamRestore(id, options?)` | Async iterable |
+| `listPolicies(id)`            | Promise        |
+| `createPolicy(id, input)`     | Promise        |
+| `listRuns(id, input?)`        | Promise        |
+| `updatePolicy(id, input)`     | Promise        |
+| `removePolicy(id)`            | Promise        |
+| `run(id)`                     | Promise        |
+| `getRun(id)`                  | Promise        |
+| `protectRun(id, input?)`      | Promise        |
+| `prepareRestore(id, input?)`  | Promise        |
+| `getRestore(id)`              | Promise        |
+| `applyRestore(id, input)`     | Promise        |
+| `cancelRestore(id)`           | Promise        |
+
+## Jobs
+
+`jobs` · `JobOperations`
+
+Create and manage jobs, execute them, inspect runs, and observe progress. Resource IDs normally identify jobs; `getRun` and `streamRun` identify runs. The native runner requires `jobs: true`. Target-server and installation checks remain in effect.
+
+[Related guide](/docs/guides/jobs).
+
+| Method                    | Returns        |
+| ------------------------- | -------------- |
+| `streamRun(id, options?)` | Async iterable |
+| `list()`                  | Promise        |
+| `create(input)`           | Promise        |
+| `triggerEvents()`         | Promise        |
+| `backupSchedules()`       | Promise        |
+| `get(id)`                 | Promise        |
+| `update(id, input)`       | Promise        |
+| `remove(id)`              | Promise        |
+| `run(id)`                 | Promise        |
+| `listRuns(id, input?)`    | Promise        |
+| `getRun(id)`              | Promise        |
+
+## Analytics
+
+`analytics` · `AnalyticsOperations`
+
+Authorized project and server analytics. Project methods take a project ID; `serverBuckets`, `serverGeo`, and `serverLive` take a server ID. Date ranges and provider capabilities are validated by the shared operations.
+
+[Related guide](/docs/api/analytics).
+
+| Method                             | Returns        |
+| ---------------------------------- | -------------- |
+| `streamUsage(projectId, options?)` | Async iterable |
+| `summary(id, input?)`              | Promise        |
+| `periods(id, input?)`              | Promise        |
+| `overview(id, input?)`             | Promise        |
+| `geo(id, input?)`                  | Promise        |
+| `deploymentStats(id)`              | Promise        |
+| `usage(id)`                        | Promise        |
+| `containerInfo(id)`                | Promise        |
+| `resources(id)`                    | Promise        |
+| `usageHistory(id, input?)`         | Promise        |
+| `setPathsCollection(id, input)`    | Promise        |
+| `serverBuckets(id, input)`         | Promise        |
+| `serverGeo(id, input)`             | Promise        |
+| `serverLive(id, input)`            | Promise        |
+| `dashboard()`                      | Promise        |
+
+## Issues and health
+
+`issues` · `IssueOperations`
+
+Read filtered issues, counts, and health snapshots, or request scans. Broader scans and rescan jobs require the corresponding collection or installation authority.
+
+[Related guide](/docs/api/analytics).
+
+| Method           | Returns |
+| ---------------- | ------- |
+| `list(input?)`   | Promise |
+| `summary()`      | Promise |
+| `health()`       | Promise |
+| `scanHealth()`   | Promise |
+| `rescan()`       | Promise |
+| `rescanStatus()` | Promise |
+
+## Notifications
+
+`notifications` · `NotificationOperations`
+
+Channels, subscriptions, delivery history, verification, and acknowledgement. IDs identify the channel, subscription, or delivery indicated by the method. Delivery configuration and secret handling follow the shared notification services.
+
+[Related guide](/docs/api/notifications).
+
+| Method                      | Returns |
+| --------------------------- | ------- |
+| `categories()`              | Promise |
+| `listChannels()`            | Promise |
+| `createChannel(input)`      | Promise |
+| `listSubscriptions()`       | Promise |
+| `upsertSubscription(input)` | Promise |
+| `listDefaults()`            | Promise |
+| `upsertDefault(input)`      | Promise |
+| `listDeliveries(input?)`    | Promise |
+| `unseenCount()`             | Promise |
+| `updateChannel(id, input)`  | Promise |
+| `testChannel(id)`           | Promise |
+| `removeChannel(id)`         | Promise |
+| `removeSubscription(id)`    | Promise |
+| `markSeen(id)`              | Promise |
+
+## User settings
+
+`settings` · `UserSettingsOperations`
+
+The current user's build, deployment, clone, transfer, and Git-forwarding preferences. These differ from installation-wide `system` settings.
+
+[Related guide](/docs/api/settings).
+
+| Method                          | Returns |
+| ------------------------------- | ------- |
+| `get()`                         | Promise |
+| `update(input)`                 | Promise |
+| `setBuildMode(input)`           | Promise |
+| `setRouteStrategy(input)`       | Promise |
+| `setDeployDefaults(input)`      | Promise |
+| `setCloneCredentials(input)`    | Promise |
+| `setCloneStrategy(input)`       | Promise |
+| `setTransferPreferences(input)` | Promise |
+| `setGitForwarding(input)`       | Promise |
+
+## Audit
+
+`audit` · `AuditOperations`
+
+Authorized audit pages, facets, and retention settings. Filtering, pagination, and actor attribution use the shared audit services.
+
+[Related guide](/docs/api/audit).
+
+| Method                  | Returns |
+| ----------------------- | ------- |
+| `list(input?)`          | Promise |
+| `facets(input?)`        | Promise |
+| `getSettings()`         | Promise |
+| `updateSettings(input)` | Promise |
+
+## Updates
+
+`updates` · `UpdateOperations`
+
+Inspect available project updates, refresh the upstream scan, and apply an update through the existing redeployment flow. `apply` takes a project ID.
+
+[Related guide](/docs/guides/updating).
+
+| Method         | Returns |
+| -------------- | ------- |
+| `list(input?)` | Promise |
+| `scan()`       | Promise |
+| `apply(id)`    | Promise |
+
+## Incoming webhooks
+
+`webhooks` · `WebhookOperations`
+
+`list`, `create`, and `deliveries` take a project ID. Child methods take the project ID as `parentId` and webhook ID as `id`. `listDeliveries` lists authorized organization deliveries. Native invocation shares dispatch with HTTP ingress; legacy hooks without saved authority require explicit reauthorization.
+
+[Related guide](/docs/api/webhooks).
+
+| Method                                 | Returns |
+| -------------------------------------- | ------- |
+| `list(id)`                             | Promise |
+| `create(id, input)`                    | Promise |
+| `deliveries(id, input?)`               | Promise |
+| `update(parentId, id, input)`          | Promise |
+| `rotate(parentId, id)`                 | Promise |
+| `remove(parentId, id)`                 | Promise |
+| `hookDeliveries(parentId, id, input?)` | Promise |
+| `invoke(parentId, id)`                 | Promise |
+| `listDeliveries(input?)`               | Promise |
+
+## Tokens and MCP clients
+
+`tokens` · `TokenOperations`
+
+Personal access tokens and MCP bindings. `revoke` takes a token ID; MCP resource methods take a client ID. Token creation requires explicit grants or full-access intent, and scoped credentials cannot mint unrestricted peers. Newly created token secrets are returned at creation.
+
+[Related guide](/docs/api/tokens).
+
+| Method                      | Returns |
+| --------------------------- | ------- |
+| `list()`                    | Promise |
+| `create(input)`             | Promise |
+| `authorizeMcpClient(input)` | Promise |
+| `listMcpClients()`          | Promise |
+| `revoke(id)`                | Promise |
+| `getMcpClient(id)`          | Promise |
+| `disconnectMcpClient(id)`   | Promise |
+
+## Permissions and invitations
+
+`permissions` · `PermissionOperations`
+
+Organizations, resource catalogs, grants, members, and invitation lifecycle. Resource IDs identify the relevant grant, invitation, or member. The shared operation checks organization ownership of each row and the caller's current authority.
+
+[Related guide](/docs/api/permissions).
+
+| Method                         | Returns |
+| ------------------------------ | ------- |
+| `orgMeta()`                    | Promise |
+| `listResources(input)`         | Promise |
+| `createTeamOrg(input)`         | Promise |
+| `listGrants(input)`            | Promise |
+| `upsertGrant(input)`           | Promise |
+| `replaceGrants(input)`         | Promise |
+| `listInvitations()`            | Promise |
+| `inviteWithGrants(input)`      | Promise |
+| `listMembers()`                | Promise |
+| `materializeInvitation(id)`    | Promise |
+| `deleteGrant(id)`              | Promise |
+| `acceptInvitation(id)`         | Promise |
+| `rejectInvitation(id)`         | Promise |
+| `cancelInvitation(id)`         | Promise |
+| `resendInvitation(id, input?)` | Promise |
+| `setMemberRole(id, input)`     | Promise |
+| `removeMember(id)`             | Promise |
+
+## GitHub
+
+`github` · `GitHubOperations`
+
+Git sources, connection/device flows, repository metadata/content, webhooks, clone tokens, and installation manifests. Source mutations take a source ID; repository operations use typed owner/repository inputs. Browser redirects and cookie handoffs remain HTTP boundaries.
+
+[Related guide](/docs/api/github).
+
+| Method                      | Returns |
+| --------------------------- | ------- |
+| `getStatus()`               | Promise |
+| `getHome()`                 | Promise |
+| `connect(input?)`           | Promise |
+| `claimInstallation(input)`  | Promise |
+| `getLocalStatus()`          | Promise |
+| `pollConnect()`             | Promise |
+| `setInstanceToken(input)`   | Promise |
+| `disconnect(input?)`        | Promise |
+| `listRepos(input?)`         | Promise |
+| `listOrgRepos(input)`       | Promise |
+| `getRepo(input)`            | Promise |
+| `createRepo(input)`         | Promise |
+| `deleteRepo(input)`         | Promise |
+| `listBranches(input)`       | Promise |
+| `getCloneToken(input)`      | Promise |
+| `detectStack(input)`        | Promise |
+| `listFiles(input)`          | Promise |
+| `listTree(input)`           | Promise |
+| `getFile(input)`            | Promise |
+| `listWebhooks(input)`       | Promise |
+| `registerWebhook(input)`    | Promise |
+| `deleteWebhook(input)`      | Promise |
+| `listSources()`             | Promise |
+| `beginManifest(input)`      | Promise |
+| `convertManifest(input)`    | Promise |
+| `createManualSource(input)` | Promise |
+| `updateSource(id, input)`   | Promise |
+| `verifySource(id)`          | Promise |
+| `setDefaultSource(id)`      | Promise |
+| `createInstallUrl(id)`      | Promise |
+| `deleteSource(id)`          | Promise |
+
+## Public notices
+
+`notices` · `NoticeOperations`
+
+Read active installation announcements. Publishing and deactivation belong to the separate installation operator described below.
+
+| Method   | Returns |
+| -------- | ------- |
+| `list()` | Promise |
+
+## Billing
+
+`billing` · `BillingOperations`
+
+Plans, subscriptions, top-ups, portal sessions, usage, and allowance detail. Local catalog access is supported; account and payment operations require configured hosted billing or a compatible canonical Cloud API. Fixed scopes refuse unverified owner-account forwarding.
+
+[Related guide](/docs/api/billing).
+
+| Method                      | Returns |
+| --------------------------- | ------- |
+| `listPlans(input?)`         | Promise |
+| `getState()`                | Promise |
+| `getSubscription()`         | Promise |
+| `createSubscription(input)` | Promise |
+| `cancelSubscription()`      | Promise |
+| `createTopup(input)`        | Promise |
+| `listTopupPacks()`          | Promise |
+| `createPortal()`            | Promise |
+| `getUsage(input?)`          | Promise |
+| `listAllowanceDetail()`     | Promise |
+
+## Installation operator
+
+The operator is separate from the 25 ordinary operation groups. Native hosts must enable
+`administration: true`; an ordinary scope never includes the operator. Remote operator access uses
+`OpenshipOperatorClient` with an explicit internal token.
+
+| Capability                             | Native operator | Remote operator |
+| -------------------------------------- | --------------- | --------------- |
+| `ensureIdentity(input)`                | Yes             | Not exposed     |
+| `resolveIdentity({ issuer, subject })` | Yes             | Not exposed     |
+| `ensureNamespace(input)`               | Yes             | Not exposed     |
+| `setMembership(input)`                 | Yes             | Not exposed     |
+| `notices.listAll()`                    | Yes             | Yes             |
+| `notices.create(input)`                | Yes             | Yes             |
+| `notices.remove(id)`                   | Yes             | Yes             |
+
+See [native provisioning](/docs/api/sdk/native#users-namespaces-and-membership) and
+[remote operator configuration](/docs/api/sdk/client#installation-operator).
