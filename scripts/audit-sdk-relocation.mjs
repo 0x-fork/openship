@@ -43,19 +43,31 @@ const baselineGitHead =
         cwd: root,
         encoding: "utf8",
       }).trim());
-const committedApiFiles = new Map(
-  execFileSync("git", ["ls-tree", "-r", "-z", baselineGitHead, "--", "apps/api/src"], {
-    cwd: root,
-    encoding: "utf8",
-  })
-    .split("\0")
-    .filter(Boolean)
-    .map((entry) => {
-      const split = entry.indexOf("\t");
-      return [entry.slice(split + 1), entry.slice(0, split).split(" ")[2]];
-    }),
-);
-const baselineApiFiles =
+function committedApiFilesAt(commit) {
+  return new Map(
+    execFileSync("git", ["ls-tree", "-r", "-z", commit, "--", "apps/api/src"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .split("\0")
+      .filter(Boolean)
+      .map((entry) => {
+        const split = entry.indexOf("\t");
+        return [entry.slice(split + 1), entry.slice(0, split).split(" ")[2]];
+      }),
+  );
+}
+const committedApiFiles = committedApiFilesAt(baselineGitHead);
+// A rebase can introduce a new API file after the original migration checkpoint.
+// Pin its own committed baseline without replacing the older files' evidence.
+const additionalBaselines = new Map();
+for (const { baselineCommit } of moves) {
+  if (!baselineCommit || additionalBaselines.has(baselineCommit)) continue;
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baselineCommit))
+    throw new Error("Per-file baselines must use a full immutable commit ID.");
+  additionalBaselines.set(baselineCommit, committedApiFilesAt(baselineCommit));
+}
+const originalApiFiles =
   baselineReport?.baselineApiFiles ??
   [
     ...new Set([
@@ -70,6 +82,12 @@ const baselineApiFiles =
         : []),
     ]),
   ].sort();
+const baselineApiFiles = [
+  ...new Set([
+    ...originalApiFiles,
+    ...[...additionalBaselines.values()].flatMap((files) => [...files.keys()]),
+  ]),
+].sort();
 const pinnedFiles = new Map(baselineReport?.fileDetails.map((file) => [file.from, file]) ?? []);
 const tracked = new Set(
   [
@@ -190,8 +208,26 @@ function compareForm(file, text) {
   return { body: tokens(printer.printFile(body)), imports: imports.join("\n") };
 }
 
+function gitOriginal(ref) {
+  try {
+    const bytes = execFileSync("git", ["show", ref], {
+      cwd: root,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const blob = execFileSync("git", ["rev-parse", "--verify", ref], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return { bytes, ref, blob };
+  } catch {
+    return null;
+  }
+}
+
 function original(move) {
   const path = move.from;
+  if (move.baselineCommit) return gitOriginal(`${move.baselineCommit}:${path}`);
   if (baselineReport) {
     const pinned = pinnedFiles.get(path);
     if (
@@ -220,20 +256,8 @@ function original(move) {
     }
   }
   for (const ref of baseline === "index" ? [":" + path, "HEAD:" + path] : [baseline + ":" + path]) {
-    try {
-      const bytes = execFileSync("git", ["show", ref], {
-        cwd: root,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      const blob = execFileSync("git", ["rev-parse", "--verify", ref], {
-        cwd: root,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-      return { bytes, ref, blob };
-    } catch {
-      /* Try the committed original if it is absent from the index. */
-    }
+    const previous = gitOriginal(ref);
+    if (previous) return previous;
   }
   return null;
 }
@@ -311,10 +335,11 @@ for (const move of moves) {
       "other-text-changes": "otherTextChanges",
     }[comparison]
   ].push(move.to);
+  const sourceFiles = additionalBaselines.get(move.baselineCommit) ?? committedApiFiles;
   const baselineOrigin =
-    committedApiFiles.get(move.from) === previous.blob
+    sourceFiles.get(move.from) === previous.blob
       ? "commit"
-      : committedApiFiles.has(move.from)
+      : sourceFiles.has(move.from)
         ? "staged-modified"
         : "staged-only";
   report.fileDetails.push({
@@ -322,6 +347,7 @@ for (const move of moves) {
     to: move.to,
     baselineRef: previous.ref,
     baselineBlob: previous.blob,
+    ...(move.baselineCommit ? { baselineCommit: move.baselineCommit } : {}),
     baselineOrigin,
     ...(baselineOrigin === "commit"
       ? {}

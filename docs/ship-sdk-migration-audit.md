@@ -6,7 +6,7 @@ The [SDK plan](ship-sdk-plan.md) remains in progress. Preserving the existing ba
 
 ## File accounting
 
-The [relocation manifest](ship-sdk-relocations.json) maps 384 destinations, including schemas now held in contracts and eight extracted helpers. The [recorded comparison](ship-sdk-preservation-checkpoint.json) contains each old/new path, baseline provenance, original Git blob, source SHA-256 hashes, and comparison result. Of the 376 files with standalone originals, 375 match committed sources at `541ba903`; `apps/api/src/lib/platform.ts` existed only in the saved staging area. That composition module is not presented as part of the original committed API.
+The [relocation manifest](ship-sdk-relocations.json) now maps 386 destinations. The table below describes the **384-file checkpoint before the rebase**; the two later upstream relocations are documented in the rebase section below. The [recorded comparison](ship-sdk-preservation-checkpoint.json) preserves that earlier checkpoint's old/new paths, baseline provenance, original Git blobs, source SHA-256 hashes, and comparison results. Of its 376 files with standalone originals, 375 match committed sources at `541ba903`; `apps/api/src/lib/platform.ts` existed only in the saved staging area. That composition module is not presented as part of the original committed API.
 
 The stricter September 14 comparison preserves comments, types, formatting, line endings and import declarations:
 
@@ -23,13 +23,13 @@ The stricter September 14 comparison preserves comments, types, formatting, line
 | Duplicate source/destination mappings                          |       0 |
 | Mapped files still present at their old source paths           |       0 |
 
-The earlier normalized comparison still reports **291 unchanged runtime bodies and 85 changed runtime bodies**. It removes comments, types and static imports, normalizes relocated module paths, and compares emitted JavaScript tokens. Of the 118 files with other source-text changes, 33 still have equal normalized runtime bodies. These 291 files must not be described as byte-identical copies.
+That checkpoint's normalized comparison reported **291 unchanged runtime bodies and 85 changed runtime bodies**. It removes comments, types and static imports, normalizes relocated module paths, and compares emitted JavaScript tokens. Of the 118 files with other source-text changes, 33 still had equal normalized runtime bodies. These 291 files must not be described as byte-identical copies.
 
-There are also **94 files with changed normalized static imports**, overlapping the other categories. Twenty-four are among the 64 module-path-only files: their imports now point at extracted helpers, a shared constant, or the platform version manifest. Module-path-only equality proves the rest of the source text was retained; dependency behavior still requires review. The existing import review covers shared helper extraction, shared schemas/factories, background-work tracking, operation composition, and the version manifest. The private platform version is included in release version synchronization. The engine scan found no static or literal dynamic imports of Hono or application files.
+It also recorded **94 files with changed normalized static imports**, overlapping the other categories. Twenty-four were among the 64 module-path-only files: their imports point at extracted helpers, a shared constant, or the platform version manifest. Module-path-only equality proves the rest of the source text was retained; dependency behavior still requires review. The existing import review covers shared helper extraction, shared schemas/factories, background-work tracking, operation composition, and the version manifest. The private platform version is included in release version synchronization. The engine scan found no static or literal dynamic imports of Hono or application files.
 
-The deletion check compares all **769 baseline API source paths** with the filesystem, independently of Git rename detection. Every absent baseline path has a relocation entry. This accounts for whole-file removal; it does not prove that every branch inside a changed file was preserved.
+That checkpoint's deletion check compared all **769 baseline API source paths** with the filesystem, independently of Git rename detection. Every absent baseline path had a relocation entry. This accounts for whole-file removal; it does not prove that every branch inside a changed file was preserved.
 
-The engine contains **442 TypeScript files**: 364 mapped destinations and **78 additional files outside the relocation comparison** (44 operation modules, 11 service modules, and 23 helpers/policies). The other 20 mapped destinations are contract files. Some additional services extract business logic from controllers that still exist as thin HTTP adapters, so they need function-level review and behavioral coverage. New SDK facades, database changes, HTTP adapters, and tests elsewhere also have separate coverage. The relocation totals cannot establish complete migration safety.
+At that checkpoint, the engine contained **442 TypeScript files**: 364 mapped destinations and **78 additional files outside the relocation comparison** (44 operation modules, 11 service modules, and 23 helpers/policies). The other 20 mapped destinations are contract files. Some additional services extract business logic from controllers that still exist as thin HTTP adapters, so they need function-level review and behavioral coverage. New SDK facades, database changes, HTTP adapters, and tests elsewhere also have separate coverage. The relocation totals cannot establish complete migration safety.
 
 ## Reproduce the comparison
 
@@ -43,6 +43,8 @@ node scripts/audit-sdk-relocation.mjs \
 ```
 
 The [audit script](../scripts/audit-sdk-relocation.mjs) can use the recorded Git blobs and API file inventory, so staging deletions or committing the moves does not silently change the baseline. It verifies the original SHA-256 and Git object hash before comparison. Committed originals require the original Git history; the single staged-only original is embedded as exact base64 bytes in the checkpoint so it survives Git garbage collection. A missing or inconsistent original fails the audit instead of falling back to a different version.
+
+Files introduced by a later upstream merge use a full immutable `baselineCommit` in the relocation manifest. The audit reads those originals from that commit and includes its API file inventory. Existing checkpoint baselines remain unchanged. The command above therefore reports the current expanded migration while retaining the earlier evidence.
 
 Without `--baseline-report`, the default still reads staged pre-move sources where available and falls back to `HEAD`; `--baseline=<git-ref>` explicitly selects a revision. These options can produce different results after staging or changing revisions. The recorded checkpoint was generated using a temporary copy of the saved pre-move index, with `HEAD` at `541ba903fdcd8959054b1fb8805749632a1dafe9`. The script never edits application source or the Git index.
 
@@ -71,7 +73,7 @@ Paths below are relative to `packages/platform/src/engine`, except the two contr
 
 ## Changes since that checkpoint
 
-The current comparison has 85 mapped files with changed runtime bodies. The JSON audit lists each file and its import differences. The table below summarizes the additional preservation and policy work; it is not a claim that all changed files are byte-identical or that tests prove every provider behavior.
+The pre-rebase comparison had 85 mapped files with changed runtime bodies. Its JSON audit lists each file and its import differences. The table below summarizes the additional preservation and policy work; it is not a claim that all changed files are byte-identical or that tests prove every provider behavior.
 
 | Area                                     | Retained behavior and deliberate changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +131,7 @@ The audit found and corrected an invalid PGlite-lock reclamation regression whil
 
 The September 11 artifact was approximately **11.6 MB packed / 57.8 MB unpacked**, before installed dependencies. Nothing was published by this work.
 
-## Current validation checkpoint
+## Full validation checkpoint before the rebase
 
 | Check after subsequent migrations             | Evidence                                                                                                                                                                                                                                                                                              |
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -205,6 +207,24 @@ The published npm `openship@0.7.2` still lacks SDK exports. These results apply 
 The stricter file accounting and recorded source hashes above were produced during this review. Fresh runs passed all **189 API/SDK parity tests across 12 files**, all **92 shared-platform tests across 15 files**, and the **13 audit-comparison tests**. The parity suites exercise both entry points and authorization boundaries; some use real repositories and retained services while others stub services or external providers. The platform suite includes retained ciphertext compatibility and instance-state checks. These results verify the tested cases, not every migrated branch or live-provider behavior.
 
 This review changed audit tooling and documentation only. It preserved the Git index and did not rewrite retained services. The earlier complete API, SDK, CLI, database, adapter, and packed-package results remain the separately dated checkpoints above. Complete semantic equivalence of the changed implementations and the additional engine files is not established by the literal comparison or these focused tests.
+
+## Rebase integration — September 14
+
+The SDK commit `994c35e2`, originally based on `541ba903`, was rebased onto `main` at `30ae48a4` as `6143f580`. Git's range comparison reports the SDK patch unchanged. The before/after trees differ in exactly the 20 paths changed upstream, accounting for the existing service relocations; no additional SDK files changed during the rebase.
+
+The rebase left one integration gap: `main` added `ServiceBuildDnsDiagnostics` and its test under `apps/api/src/modules/deployments/compose`. Git applied its caller changes to the relocated engine service, leaving the two new files at the old API location. The native build failed to resolve `./build-service-dns`; the API test also failed to resolve its moved `./build.service`. Both failures were reproduced locally.
+
+The [helper](../packages/platform/src/engine/modules/deployments/compose/build-service-dns.ts) and [its 18-test suite](../packages/platform/src/engine/modules/deployments/compose/build-service-dns.test.ts) now live beside the retained Compose build service. Both files are byte-identical to their originals in `30ae48a4`, including the test bodies and relative imports. There is one shared implementation. No build orchestration, DNS matching, error handling, or upstream mail logic was rewritten for this fix.
+
+Every upstream patch was independently applied to copies of the pre-rebase SDK files in a temporary directory. All 20 resulting files match the repaired working tree byte-for-byte after relocation. This covers the mail port-25/health changes, Docker output observation and diagnostics, tests, dashboard changes, and documentation. The replay created no branch or registered worktree and did not modify the repository index.
+
+The expanded relocation audit passes with **386 mappings**: 193 byte-identical files, 64 module-path-only files, 121 other text changes, and 8 extracted helpers. The separate normalized comparison reports 291 unchanged runtime bodies, 87 changed bodies, and 95 changed static imports. There are zero missing targets/baselines, unmapped API deletions, duplicate mappings, remaining old source files, or forbidden engine imports. The two new entries pin `30ae48a4d67aabe8502df2a8393753443cb0637a`; the original checkpoint JSON is retained without rewriting its historical results.
+
+The relocated 18-test suite and all 147 SDK tests passed, including all 12 owned-native-runtime tests. All 22 workspace type/build tasks also passed. An initial full test run overlapped with the type command's dependency builds; a platform clean build removed native worker output mid-suite. This was a local verification collision, so full tests and artifact builds must run sequentially.
+
+The full workspace rerun then passed **all 10 tasks with caching disabled: 12,827 tests passed and 3 were skipped**. This includes 5,889 API tests, 147 SDK tests, 110 platform tests, 526 CLI tests, 3,637 adapter tests, and the database, contracts, core, desktop, and dashboard suites. The 18 upstream DNS tests are included in the platform total. All 13 literal-audit tests passed, and rerunning the expanded audit reproduced every source hash, comparison, and baseline inventory while retaining all 384 earlier source baselines.
+
+The public package was rebuilt and passed fresh external-install checks on **Node 22.21.1 and 24.21.0**: ESM/CommonJS imports, NodeNext declarations, passive imports, real native deployment and persistence, remote submission, the npm-installed command, and native CLI persistence/cleanup. These checks use the locally built tarball and do not publish it. The correction preserves the Git index; committing and pushing the two relocations and audit updates is still required to update the remote branch.
 
 ## Remaining limits
 

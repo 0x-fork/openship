@@ -1025,6 +1025,18 @@
     "hadBaseline": true
   },
   {
+    "from": "apps/api/src/modules/deployments/compose/build-service-dns.test.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/build-service-dns.test.ts",
+    "hadBaseline": true,
+    "baselineCommit": "30ae48a4d67aabe8502df2a8393753443cb0637a"
+  },
+  {
+    "from": "apps/api/src/modules/deployments/compose/build-service-dns.ts",
+    "to": "packages/platform/src/engine/modules/deployments/compose/build-service-dns.ts",
+    "hadBaseline": true,
+    "baselineCommit": "30ae48a4d67aabe8502df2a8393753443cb0637a"
+  },
+  {
     "from": "apps/api/src/modules/deployments/compose/build.service.ts",
     "to": "packages/platform/src/engine/modules/deployments/compose/build.service.ts",
     "hadBaseline": true
