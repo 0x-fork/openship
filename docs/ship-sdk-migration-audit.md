@@ -248,6 +248,12 @@ Fresh checks passed for **160 MDX pages**, their navigation and internal links, 
 
 These documentation changes do not alter API, retained service, or SDK runtime implementations. Example type checks and browser checks are documentation evidence; the runtime and live-provider limits remain separately recorded below. The website was not published, and the Git index was preserved.
 
+## Documentation CI portability — September 14
+
+The first [CI run for `e75eedbc`](https://github.com/oblien/openship/actions/runs/34793818637) passed the Test, Typecheck, and webmail jobs, but Documentation failed before validating pages. The checker assumed dependencies existed under `apps/web/node_modules`; CI's install layout did not provide that path. The scripts now resolve the website's parser and plugins through Node's package resolver and resolve Node declarations from the public package's dependency context.
+
+A temporary workspace with dependencies at the repository root reproduced both the original parser failure and the SDK example checker's missing Node declarations. After the correction, the complete documentation check passed in that workspace and in the normal local installation: 160 pages, 365 SDK methods, 555 HTTP routes, 204 CLI command paths, 224 CLI examples, and 104 SDK examples. The temporary workspace was removed. These script changes still need a new CI run after they reach the remote branch; the earlier browser and Node 22/24 installed-package results remain separate evidence.
+
 ## Remaining limits
 
 No mapped implementations are missing, and the engine import audit passes. Full platform SDK coverage is still incomplete: organization/account lifecycle, remaining system/setup/edge/channel operations, verified cloud tenant mapping/promotion, mail, and migration/data transfer. Native CLI mode is implemented; edge/mail/parts of system still need named SDK adoption. Durable multi-worker dispatch/idempotency/replay, billing webhook replay/accounting review, constrained job/backup/scan principals, distributed scheduler ownership, compatibility examples and live-provider gates remain open. Imported authority beyond project hook imports requires a deliberate restore policy. The [plan](ship-sdk-plan.md) and [SDK README](../packages/sdk/README.md) describe the current supported surface.

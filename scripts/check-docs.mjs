@@ -1,5 +1,5 @@
 /** Validate navigation, links, MDX, and the published SDK/CLI documentation surface. */
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -11,15 +11,13 @@ import { checkCliExamples } from "./check-docs-cli.mjs";
 
 // Resolve the actual website's parser and heading plugin. No separate parser,
 // global CLI, Git executable, or search utility is needed on CI runners.
-const webRequire = createRequire(
-  join(realpathSync(join(root, "apps/web/node_modules/fumadocs-mdx")), "package.json"),
-);
-const { createProcessor } = await import(pathToFileURL(webRequire.resolve("@mdx-js/mdx")).href);
-const { default: remarkGfm } = await import(pathToFileURL(webRequire.resolve("remark-gfm")).href);
+const webRequire = createRequire(join(root, "apps/web/package.json"));
+const mdxRequire = createRequire(webRequire.resolve("fumadocs-mdx/package.json"));
+const coreRequire = createRequire(webRequire.resolve("fumadocs-core/package.json"));
+const { createProcessor } = await import(pathToFileURL(mdxRequire.resolve("@mdx-js/mdx")).href);
+const { default: remarkGfm } = await import(pathToFileURL(coreRequire.resolve("remark-gfm")).href);
 const { remarkHeading } = await import(
-  pathToFileURL(
-    join(root, "apps/web/node_modules/fumadocs-core/dist/mdx-plugins/remark-heading.js"),
-  ).href
+  pathToFileURL(webRequire.resolve("fumadocs-core/mdx-plugins/remark-heading")).href
 );
 const failures = [];
 const pages = new Map();

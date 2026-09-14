@@ -1,7 +1,8 @@
 /** Type-check documented SDK usage against the public package declarations. */
 import ts from "typescript";
 import { readFileSync, existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { docsDirectory, filesUnder, root } from "./docs-surface.mjs";
 
@@ -9,6 +10,8 @@ export function checkDocExamples() {
   const declarations = join(root, "packages/openship/dist/sdk/index.d.ts");
   if (!existsSync(declarations))
     throw new Error("Build the public package first: bun run build:sdk");
+  const packageRequire = createRequire(join(root, "packages/openship/package.json"));
+  const nodeTypesRoot = dirname(dirname(packageRequire.resolve("@types/node/package.json")));
   const snippets = new Map();
   for (const file of filesUnder(docsDirectory, ".mdx")) {
     const raw = readFileSync(file, "utf8");
@@ -64,7 +67,7 @@ export function checkDocExamples() {
     types: ["node"],
     allowJs: true,
     checkJs: true,
-    typeRoots: [join(root, "packages/openship/node_modules/@types")],
+    typeRoots: [nodeTypesRoot],
     paths: {
       openship: [declarations],
       "openship/client": [join(root, "packages/openship/dist/sdk/client.d.ts")],
