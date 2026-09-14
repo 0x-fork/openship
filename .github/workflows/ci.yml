@@ -66,9 +66,27 @@ jobs:
             exit 1
           fi
 
-  test:
-    name: Test
+  test_suites:
+    name: Tests (${{ matrix.suite }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: API 1/2
+            command: bun run --cwd apps/api test --shard=1/2
+          - suite: API 2/2
+            command: bun run --cwd apps/api test --shard=2/2
+          - suite: Database
+            command: bun run --cwd packages/db test
+          # Both suites rebuild the same native bundle. Keep them sequential on
+          # their own runner; the other packages do not share that filesystem.
+          - suite: SDK and CLI
+            command: bun run test --filter=@repo/sdk --filter=@repo/cli --log-order=stream
+          # Exclusions keep new workspace test scripts included automatically.
+          - suite: Other packages
+            command: bun run test --filter=!@repo/api --filter=!@repo/db --filter=!@repo/sdk --filter=!@repo/cli --log-order=stream
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -89,13 +107,29 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Runs `turbo run test` → vitest across every package that defines a test
-      # script (@repo/core, @repo/adapters, @repo/db [PGlite — no external DB],
-      # apps/api, apps/dashboard). Packages resolve to src, so no build needed.
-      # apps/api excludes test/e2e/** here — those need a daemon and run in the
-      # e2e-docker job in release-gate.yml, where they gate the publish.
+      # Run every workspace test, with the large API suite split across runners.
+      # Direct Vitest runs and Turbo's stream mode expose progress immediately.
+      # API test/e2e/** still runs in release-gate.yml against a real daemon.
       - name: Run tests
-        run: bun run test
+        run: ${{ matrix.command }}
+
+  # Preserve the existing required "Test" check. A failed, skipped, or canceled
+  # matrix must fail this check; no individual shard can make the PR green.
+  test:
+    name: Test
+    needs: test_suites
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every test suite to pass
+        env:
+          TEST_SUITES_RESULT: ${{ needs.test_suites.result }}
+        run: |
+          if [ "$TEST_SUITES_RESULT" != "success" ]; then
+            echo "::error::Test suites finished with status: $TEST_SUITES_RESULT"
+            exit 1
+          fi
 
   docs:
     name: Documentation
