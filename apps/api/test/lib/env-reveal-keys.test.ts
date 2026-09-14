@@ -29,6 +29,14 @@ describe("env reveal keys", () => {
     expect(pickRevealed(env, ["constructor", "toString", "__proto__"])).toEqual({});
   });
 
+  it("preserves explicitly stored keys that also name prototype properties", () => {
+    const stored = JSON.parse('{"__proto__":"literal-value","constructor":"literal-constructor","UNREQUESTED":"hidden"}');
+    const result = pickRevealed(stored, ["__proto__", "constructor"]);
+    expect(Object.keys(result)).toEqual(["__proto__", "constructor"]);
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    expect(JSON.stringify(result)).toBe('{"__proto__":"literal-value","constructor":"literal-constructor"}');
+  });
+
   it("rejects a request that names nothing", () => {
     for (const bad of [undefined, null, [], {}, "SMTP_PASS"]) {
       expect(() => parseRevealKeys(bad)).toThrow(AppError);

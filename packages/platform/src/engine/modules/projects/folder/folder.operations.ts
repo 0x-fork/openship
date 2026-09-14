@@ -8,6 +8,7 @@ import { prepareSourceDirectory, archiveSourceDirectory, validateSourceDirectory
 import { assertNativeSourcePath } from "../../../native/source-policy";
 import { getFolderSession, deleteFolderSession } from "./session-store";
 import { audit } from "../../../lib/audit-emitter";
+import { pickRevealed } from "../../../lib/env-reveal";
 
 function sessionFor(id: string, organizationId: string) {
   const session = getFolderSession(id);
@@ -71,8 +72,7 @@ export const sourceDependencies: SourceDependencies = {
     const session = sessionFor(id, ctx.organizationId);
     const service = session.services?.find(row => row.name === input.service);
     if (!service) throw new NotFoundError("Service in upload session", input.service);
-    const values = Object.fromEntries(input.keys.filter(key => Object.hasOwn(service.environment ?? {}, key)).map(key => [key, service.environment[key]!]));
-    return values;
+    return pickRevealed(service.environment, input.keys);
   },
   recordAudit(ctx, operation, sessionId, after) {
     audit.recordAsync({ organizationId: ctx.organizationId, actorUserId: ctx.userId, source: ctx.source ?? "api", ipAddress: ctx.clientIp, userAgent: ctx.userAgent, sourceClientId: ctx.sourceClientId }, {

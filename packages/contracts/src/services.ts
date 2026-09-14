@@ -8,6 +8,7 @@ import {
 } from "./service-inputs";
 import { AgentExecBody } from "./exec";
 import { EnvironmentScopeSchema } from "./environment-scope";
+import { EnvRevealKeysSchema } from "./env-reveal";
 import { EnvironmentVariableSchema } from "./project-controls";
 import { LogEntrySchema, type DeploymentEvent } from "./deployment-resources";
 import type {
@@ -127,7 +128,7 @@ export interface StreamOptions {
 }
 export const RevealServiceEnvSchema = Type.Object(
   {
-    keys: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { minItems: 1, maxItems: 500 }),
+    keys: EnvRevealKeysSchema,
     environment: Type.Optional(EnvironmentScopeSchema),
   },
   { additionalProperties: false },

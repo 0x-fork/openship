@@ -1,5 +1,5 @@
-import { AppError, BuildAccessBody, PrepareDeployBody, ResourceIdSchema, parseInput, isCreateDeploymentResult,
-  type BuildOperations, type PrepareDeploymentInput, type BuildAccessInput, type PreparedProject, type CreateDeploymentResult } from "@repo/contracts";
+import { AppError, BuildAccessBody, PrepareDeployBody, RevealPreparedEnvBody, ResourceIdSchema, parseInput, isCreateDeploymentResult,
+  type BuildOperations, type PrepareDeploymentInput, type RevealPreparedEnvInput, type BuildAccessInput, type PreparedProject, type CreateDeploymentResult } from "@repo/contracts";
 import type { ExecutionContext } from "./context";
 import type { Authorization } from "./authorization";
 import type { DeploymentExecutionOptions, OperationResult } from "./deployments";
@@ -9,9 +9,10 @@ export type PlatformBuildOperations = {
 };
 export interface BuildDependencies {
   prepare(ctx: ExecutionContext, input: PrepareDeploymentInput): Promise<PreparedProject>;
+  revealPreparedEnv(ctx: ExecutionContext, input: RevealPreparedEnvInput): Promise<Record<string, string>>;
   access(ctx: ExecutionContext, input: BuildAccessInput, options?: DeploymentExecutionOptions): Promise<CreateDeploymentResult>;
   start(ctx: ExecutionContext, id: string): Promise<CreateDeploymentResult>;
-  recordAudit(ctx: ExecutionContext, id: string): void;
+  recordAudit(ctx: ExecutionContext, id: string, after?: Record<string, unknown>): void;
 }
 export function createBuildOperations(authorization: Authorization, dependencies?: BuildDependencies): PlatformBuildOperations {
   const resources = () => {
@@ -24,14 +25,26 @@ export function createBuildOperations(authorization: Authorization, dependencies
     resources().recordAudit(context, data.deployment_id);
     return { context, data };
   }
+  // Preserve the API's deployment collection rule. A grant on existing
+  // projects does not authorize inspection of an arbitrary source.
+  const authorizePreparation = (ctx: ExecutionContext) => authorization.authorize(ctx, {
+    resourceType: "deployment", resourceId: "*", action: "write", scope: "list",
+  });
   return Object.freeze({
     async prepare(ctx, value) {
       const input = parseInput(PrepareDeployBody, value);
-      // Preserve the API's deployment collection rule. A grant on existing
-      // projects does not authorize preparation of an arbitrary source.
-      const context = await authorization.authorize(ctx, { resourceType: "deployment", resourceId: "*", action: "write", scope: "list" });
+      const context = await authorizePreparation(ctx);
       const data = await resources().prepare(context, input);
       resources().recordAudit(context, "*");
+      return { context, data };
+    },
+    async revealPreparedEnv(ctx, value) {
+      const input = parseInput(RevealPreparedEnvBody, value);
+      const context = await authorizePreparation(ctx);
+      const data = await resources().revealPreparedEnv(context, input);
+      resources().recordAudit(context, "*", {
+        operation: "prepare.env.reveal", service: input.service, revealedEnvKeys: Object.keys(data),
+      });
       return { context, data };
     },
     async buildAccess(ctx, value) {

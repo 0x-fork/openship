@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { envRevealSource } from "./env-reveal-source";
+import type { PrepareProjectSource } from "@/lib/api/deploy";
 
 const base = { serviceName: "postgres" };
 
@@ -36,10 +37,26 @@ describe("envRevealSource", () => {
     expect(envRevealSource({ ...base, serviceId: "s1" })).toBeNull();
   });
 
-  it("has no source for a first compose deploy off git", () => {
-    // Not a gap: nothing is stored yet, so the values in hand came from the compose
-    // file and were never masked. Inventing a source would ask the server about a
-    // service that doesn't exist.
+  it.each<PrepareProjectSource>([
+    { owner: "acme", repo: "app", branch: "preview", composePath: "deploy/stack.yml", env: { PASSWORD: "typed" } },
+    { source: "local", path: "/work/app", composePath: "deploy/stack.yml" },
+  ])("reveals a fresh scan without requiring a saved project or upload", preparedSource => {
+    expect(envRevealSource({ ...base, preparedSource })).toEqual({
+      kind: "prepared", source: preparedSource, service: "postgres",
+    });
+  });
+
+  it("uses the newly scanned source even when a service id was retained", () => {
+    const preparedSource = { owner: "acme", repo: "app", branch: "next" };
+    expect(envRevealSource({ ...base, preparedSource, projectId: "p1", serviceId: "s1" })).toEqual({
+      kind: "prepared", source: preparedSource, service: "postgres",
+    });
+    expect(envRevealSource({ ...base, preparedSource, uploadSessionId: "sess_2" })).toEqual({
+      kind: "upload", sessionId: "sess_2", service: "postgres",
+    });
+  });
+
+  it("has no source when no scan or saved row is known", () => {
     expect(envRevealSource(base)).toBeNull();
   });
 

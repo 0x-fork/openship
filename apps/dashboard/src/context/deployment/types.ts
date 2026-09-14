@@ -1,6 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
-import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
+import type { PrepareComposeService, PrepareSingleAppCandidate, PrepareProjectSource } from "@/lib/api/deploy";
 import {
   getBuildImage,
   STACKS,
@@ -368,6 +368,8 @@ export interface DeploymentConfig {
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
    *  the source. Sent to buildAccess so the build adopts that uploaded source. */
   uploadSessionId?: string;
+  /** Inputs of the Git/local scan currently shown; used only for on-demand env reveal. */
+  preparedSource?: PrepareProjectSource;
   /** Where the build runs: "server" (default, build in cloud/workspace) or "local" (build on host machine) */
   buildStrategy: BuildStrategy;
   /** Where the app deploys to: "local" (this machine), "server" (remote SSH), or "cloud" (Oblien) */
@@ -480,6 +482,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   localPath: undefined,
   composePath: undefined,
   uploadSessionId: undefined,
+  preparedSource: undefined,
   buildStrategy: "server",
   deployTarget: "cloud",
   runtimeMode: "docker",

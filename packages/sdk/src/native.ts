@@ -269,6 +269,7 @@ function createAttachedShip<Assertion>({
         restart: bind(platform.deployments.restart),
         skipPortCheck: bind(platform.deployments.skipPortCheck),
         prepare: bind(platform.deployments.prepare),
+        revealPreparedEnv: bind(platform.deployments.revealPreparedEnv),
         buildAccess: bind(platform.deployments.buildAccess),
         start: bind(platform.deployments.start),
         async *events(id, options = {}) {

@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudDeploymentProxy, cloudProjectProxyByQuery } from "../../lib/cloud/project-router";
 import * as ctrl from "./deployment.controller";
-import { TriggerDeployBody, BuildAccessBody, PrepareDeployBody, BuildRespondBody } from "@repo/contracts";
+import { TriggerDeployBody, BuildAccessBody, PrepareDeployBody, RevealPreparedEnvBody, BuildRespondBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "deployments",
@@ -60,6 +60,16 @@ r.post(
     mcp: { description: "Detect stack/build config for a git repo or local path before deploying." },
   },
   ctrl.prepare,
+);
+r.post(
+  "/prepare/env-reveal",
+  {
+    tag: "deployment:write",
+    collection: true,
+    body: RevealPreparedEnvBody,
+    auditHandledByOperation: true,
+  },
+  ctrl.revealPreparedEnv,
 );
 
 /* ── Build access (creates a new deployment - no ID yet) ───────────── */

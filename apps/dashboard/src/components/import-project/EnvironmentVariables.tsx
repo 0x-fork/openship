@@ -79,7 +79,7 @@ interface EnvironmentVariablesPropsOptional {
    * Never a "give me everything" call: the API requires the key names, so a
    * single reveal discloses a single secret. When provided and any row is masked
    * (`••••••••`), the reveal affordances appear. Omit when there's no reveal
-   * source (a new, unsaved service) — they simply won't show.
+   * source (for example, rows the user typed) — masked rows then have no reveal.
    */
   onReveal?: (keys: string[]) => Promise<Record<string, string>>;
   /**
@@ -889,6 +889,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                       <button
                         onClick={() => void toggleEnvVisibility(index)}
                         disabled={revealingKeys.has(env.key)}
+                        aria-label={showAsText ? t.projectSettings.envVars.hideValue : t.projectSettings.envVars.showValue}
                         className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors disabled:opacity-40"
                         type="button"
                       >

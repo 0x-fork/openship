@@ -195,7 +195,7 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
     });
   }
   try { await ready; } catch (error) { await worker.terminate(); throw error; }
-  const methods = ["create", "get", "list", "logs", "buildStatus", "restorePlan", "cancel", "respond", "rollback", "redeploy", "pin", "keep", "reject", "remove", "restart", "skipPortCheck", "prepare", "buildAccess", "start", "containerInfo", "containerUsage", "pendingActions", "sslStatus", "renewSsl"] as const;
+  const methods = ["create", "get", "list", "logs", "buildStatus", "restorePlan", "cancel", "respond", "rollback", "redeploy", "pin", "keep", "reject", "remove", "restart", "skipPortCheck", "prepare", "revealPreparedEnv", "buildAccess", "start", "containerInfo", "containerUsage", "pendingActions", "sslStatus", "renewSsl"] as const;
   const deployments = Object.fromEntries(methods.map(name => [name, (...args: unknown[]) => call(`deployments.${name}`, ...args)])) as Omit<PlatformDeploymentOperations, "events">;
   const projectResources = Object.fromEntries(["create", "ensure", "get", "list", "getHome", "update", "scanLocal", "importLocal", "listLocal", ...Object.keys(ProjectControlSchemas)].map(name => [name, (...args: unknown[]) => call(`projects.${name}`, ...args)])) as Omit<PlatformProjectOperations, "streamRuntimeLogs" | "openServerLogStream">;
   const sources: PlatformSourceOperations = {

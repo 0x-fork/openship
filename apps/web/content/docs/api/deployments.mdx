@@ -73,6 +73,9 @@ POST /api/deployments/prepare
 `source: "local"` is rejected with **403** in cloud mode — cloud has no host filesystem to read.
 </Callout>
 
+Preparation masks environment values. To display selected values, see
+[Reveal environment values](/docs/api/services#reveal-environment-values).
+
 ## Submit an uploaded build [#deploy-wizard-buildaccess]
 
 Create a deployment and start its build. For a folder-upload
@@ -356,6 +359,7 @@ valid IDs.
 | Submit a deployment for a configured project. | `deployments.create(input)` | `POST /api/deployments`<br />`deployment:write` |
 | Submit a new deployment based on an existing release. | `deployments.redeploy(id, input?)` | `POST /api/deployments/:id/redeploy`<br />`deployment:write` |
 | Detect and prepare source configuration before submission. | `deployments.prepare(input)` | `POST /api/deployments/prepare`<br />`deployment:write` |
+| Reveal selected Compose environment keys from a Git or local source before saving a project. | `deployments.revealPreparedEnv(input)` | `POST /api/deployments/prepare/env-reveal`<br />`deployment:write` |
 | Submit a prepared upload/build workflow. | `deployments.buildAccess(input)` | `POST /api/deployments/build/access`<br />`deployment:write` |
 | Start an already prepared deployment. | `deployments.start(id)` | `POST /api/deployments/:id/build`<br />`deployment:write` |
 

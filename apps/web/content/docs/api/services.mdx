@@ -110,8 +110,8 @@ the endpoint's keyed maps:
 | `{"environment": {}}` | nothing changes |
 
 Env values read back masked as `••••••••` (`GET /:serviceId` never returns plaintext). Echo the sentinel to
-keep a value unchanged, or send a real string to replace it. Because a masked value can't be read back
-outside the dashboard, **omitting a key never deletes it** — a delete has to be spelled `null`.
+keep a value unchanged, or send a real string to replace it. **Omitting a key never deletes it** — a delete
+has to be spelled `null`. To read a value explicitly, use [reveal](#reveal-environment-values).
 
 Every other field replaces its stored value wholesale, `ports`, `volumes`, `dependsOn` and
 `publicEndpoints` included, so send the complete list for those.
@@ -243,6 +243,55 @@ curl -X PUT "$OPENSHIP_URL/api/projects/proj_123/services/svc_456/env" \
 `PUT .../env` overwrites the environment's variable set with exactly what you send. Fetch the current vars
 with `GET .../env` first if you only mean to change one — anything you omit is removed.
 </Callout>
+
+### Reveal environment values
+
+The dashboard uses the same environment editor and **Show value / Hide value** controls when importing
+Compose services and editing saved services. Revealing a value only changes its display; it does not
+save or overwrite configuration.
+
+SDK and REST requests name 1–500 keys, each up to 512 characters. Only requested keys that exist are
+returned. Reading masked configuration does not grant permission to reveal it.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const environment = await ship.services.revealEnv("proj_123", "svc_456", {
+  keys: ["POSTGRES_PASSWORD"],
+});
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/projects/proj_123/services/svc_456/env-reveal" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"keys":["POSTGRES_PASSWORD"]}'
+```
+
+The returned values are under `environment`.
+
+</Tab>
+</Tabs>
+
+This reads saved Compose configuration and requires service write access. Add
+`environment: "production"`, `"preview"`, or `"development"` to read the service's variables for that
+environment instead.
+
+During import, the same editor reads the source supplying the displayed values:
+
+| Source | SDK | REST API |
+| --- | --- | --- |
+| Git or local scan | `deployments.revealPreparedEnv({ ...prepareInput, service: "db", keys: ["POSTGRES_PASSWORD"] })` | `POST /api/deployments/prepare/env-reveal` with the same body |
+| Uploaded snapshot | `sources.reveal("session_123", { service: "db", keys: ["POSTGRES_PASSWORD"] })` | `POST /api/projects/folder/scan/session_123/env-reveal` with `{ "service": "db", "keys": ["POSTGRES_PASSWORD"] }` |
+
+For Git or local scans, keep the source, branch, `composePath`, and interpolation `env` from `prepare`.
+The lookup rereads source files, so values can change if the source changes. It requires deployment write
+access and, for Git, whole-repository content read access. Local paths are self-hosted only. Upload
+lookups read the authorized session's snapshot. All lookups share key validation and filtering.
 
 ## Errors
 

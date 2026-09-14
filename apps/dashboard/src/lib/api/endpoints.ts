@@ -136,6 +136,7 @@ export const endpoints = {
     restorePlan: (id: string) => `deployments/${id}/restore-plan`,
     cancel: (id: string) => `deployments/${id}/cancel`,
     prepare: "deployments/prepare",
+    revealPreparedEnv: "deployments/prepare/env-reveal",
     buildAccess: "deployments/build/access",
     buildStart: (id: string) => `deployments/${id}/build`,
     buildStatus: (id: string) => `deployments/${id}/build`,

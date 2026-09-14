@@ -206,6 +206,13 @@ export async function prepare(c: Context) {
   }
 }
 
+export async function revealPreparedEnv(c: Context) {
+  const result = await getPlatformKernel().deployments.revealPreparedEnv(operationContext(c), await c.req.json());
+  applyOperationContext(c, result.context);
+  c.header("Cache-Control", "no-store");
+  return c.json({ environment: result.data });
+}
+
 export async function buildAccess(c: Context) {
   try {
     const result = await getPlatformKernel().deployments.buildAccess(operationContext(c), await c.req.json());

@@ -1,11 +1,13 @@
 import { AppError } from "@repo/core";
+import { MAX_REVEAL_KEYS, MAX_REVEAL_KEY_LENGTH } from "@repo/contracts";
+export { MAX_REVEAL_KEYS } from "@repo/contracts";
 
 /**
  * #336 per-key env reveal — the one place that turns "the whole env map" into
  * "exactly the keys the caller named".
  *
- * All three reveal sources (a service row, an upload session, a container's
- * `docker inspect`) hand back a full map, so without this every eye-press shipped
+ * Reveal sources (saved service rows, source scans, uploads and container
+ * inspection) hand back a full map, so without this every eye-press shipped
  * every secret of that service to the browser: 32 plaintext values in the network
  * response, in memory and in the devtools log to see one.
  *
@@ -14,10 +16,6 @@ import { AppError } from "@repo/core";
  * value, and the audit row (`auditAfter.revealedEnvKeys`) records exactly which
  * secrets were disclosed instead of an unqualified "revealed env".
  */
-
-/** Bound on one request. Generous for a real service, cheap abuse guard. */
-export const MAX_REVEAL_KEYS = 500;
-const MAX_KEY_LENGTH = 512;
 
 /** Validate a client-sent `keys` list. Throws AppError(400) — the global error
  *  handler renders it; callers don't need their own branch. */
@@ -30,7 +28,7 @@ export function parseRevealKeys(input: unknown): string[] {
   }
   const seen = new Set<string>();
   for (const key of input) {
-    if (typeof key !== "string" || key.length === 0 || key.length > MAX_KEY_LENGTH) {
+    if (typeof key !== "string" || key.length === 0 || key.length > MAX_REVEAL_KEY_LENGTH) {
       throw new AppError("keys must contain only non-empty env var names", 400);
     }
     seen.add(key);
@@ -47,10 +45,9 @@ export function pickRevealed(
   env: Record<string, string> | null | undefined,
   keys: string[],
 ): Record<string, string> {
-  const revealed: Record<string, string> = {};
-  if (!env) return revealed;
-  for (const key of keys) {
-    if (Object.hasOwn(env, key)) revealed[key] = env[key];
-  }
-  return revealed;
+  if (!env) return {};
+  // Define own properties even for a literal env key such as "__proto__".
+  return Object.fromEntries(
+    keys.filter(key => Object.hasOwn(env, key)).map(key => [key, env[key]!]),
+  );
 }

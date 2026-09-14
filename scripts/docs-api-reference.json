@@ -138,6 +138,12 @@
       "description": "Detect and prepare source configuration before submission.",
       "route": "POST /api/deployments/prepare"
     },
+    "deployments.revealPreparedEnv": {
+      "page": "deployments",
+      "section": "Submit",
+      "description": "Reveal selected Compose environment keys from a Git or local source before saving a project.",
+      "route": "POST /api/deployments/prepare/env-reveal"
+    },
     "deployments.buildAccess": {
       "page": "deployments",
       "section": "Submit",

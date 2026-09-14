@@ -25,6 +25,7 @@ export * from "./project-integrations";
 export * from "./project-local";
 export * from "./service-inputs";
 export * from "./environment-scope";
+export * from "./env-reveal";
 export * from "./exec";
 export * from "./services";
 export * from "./domain-inputs";

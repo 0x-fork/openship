@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { BuildServiceInput } from "./deployment-inputs";
 import { EnsureProjectBody } from "./project-inputs";
+import { EnvRevealKeysSchema } from "./env-reveal";
 
 export type CodeSource = { type: "directory"; path: string } | { type: "files"; files: Readonly<Record<string, string | Uint8Array>> };
 export interface StageSourceInput { source: CodeSource; projectId?: string; name?: string; stack?: string; packageManager?: string }
@@ -42,7 +43,7 @@ export const isFolderSessionResult = (value: unknown): value is FolderSessionRes
 export const isSourceScan = (value: unknown): value is SourceScan => Value.Check(SourceScanSchema, value);
 export const RevealSourceSchema = Type.Object({
   service: Type.String({ minLength: 1 }),
-  keys: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { minItems: 1, maxItems: 500 }),
+  keys: EnvRevealKeysSchema,
 });
 export interface SourceOperations {
   stage(input: StageSourceInput, options?: { signal?: AbortSignal; onStep?: (message: string) => void }): Promise<StagedSource>;

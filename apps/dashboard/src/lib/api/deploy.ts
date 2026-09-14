@@ -329,6 +329,12 @@ export const deployApi = {
   prepare: (body: PrepareProjectSource) =>
     api.post<PrepareProjectResponse>(endpoints.deploy.prepare, body),
 
+  /** Reveal selected Compose values before a project/service row exists. */
+  revealPreparedEnv: (source: PrepareProjectSource, service: string, keys: string[]) =>
+    api.post<{ environment: Record<string, string> }>(endpoints.deploy.revealPreparedEnv, {
+      ...source, service, keys,
+    }),
+
   /** Create deployment + build session for an existing project */
   buildAccess: (payload: {
     projectId: string;

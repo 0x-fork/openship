@@ -35,7 +35,7 @@ export interface DeploymentResourceDependencies {
   subscribe(id: string, write: Parameters<EventSubscription>[0], since?: number): ReturnType<EventSubscription>;
 }
 
-export function createDeploymentResourceOperations(deps: DeploymentDependencies): Omit<PlatformDeploymentOperations, "create" | "prepare" | "buildAccess" | "start"> {
+export function createDeploymentResourceOperations(deps: DeploymentDependencies): Omit<PlatformDeploymentOperations, "create" | keyof import("@repo/contracts").BuildOperations> {
   const resources = () => {
     if (!deps.resources) throw new AppError("Deployment resources are not configured", 501, "CAPABILITY_UNAVAILABLE");
     return deps.resources;
