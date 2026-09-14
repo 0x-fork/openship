@@ -1,57 +1,46 @@
 ---
-title: Native embedding
-description: Run the shared Openship platform inside a Node application with explicit storage, verified identities, tenant scopes, and owned shutdown.
+title: Embed Openship
+description: Create a native installation and deploy through shared platform operations.
 ---
 
-`createShip` creates an installation owned by your Node application. The installation runs the shared
-platform engine in a Node worker. Native calls do not start an HTTP server or make requests back into one.
-See [installation and release availability](/docs/api/sdk#install) first.
+Use `createShip()` when your Node application owns the installation. It creates an isolated worker,
+storage, and providers. Native operations call the shared engine without an API HTTP listener.
 
 ## Create an installation and deploy
 
-This example uses persistent PGlite storage and the bare runtime for a local, trusted workload. Set
-`OPENSHIP_ENCRYPTION_KEY` to a persistent secret of 32–4096 UTF-8 bytes before running it.
+[Install the SDK](/docs/api/sdk/installation), then set `OPENSHIP_ENCRYPTION_KEY` to a persistent
+secret of at least 32 bytes. Keep that key when reopening the database.
 
-```ts title="native-deployment.mts"
+```ts title="native.mts"
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { createShip, type VerifiedIdentity } from "openship/native";
 
 const encryptionKey = process.env.OPENSHIP_ENCRYPTION_KEY;
 if (!encryptionKey) throw new Error("Set OPENSHIP_ENCRYPTION_KEY");
-
-// This application's verified sessions; replace with your session service.
 const sessions = new Map<string, VerifiedIdentity>();
 const stateDirectory = resolve("./ship-state");
 const ship = await createShip({
   instanceId: "my-product",
   stateDirectory,
-  storage: {
-    driver: "pglite",
-    dataDir: resolve(stateDirectory, "database"),
-  },
+  storage: { driver: "pglite", dataDir: resolve(stateDirectory, "database") },
   encryptionKey,
   runtime: "bare",
   routing: "none",
   policy: { allowHostExecution: true },
   administration: true,
-  identity: {
-    resolve: async (assertion: string) => sessions.get(assertion) ?? null,
-  },
+  identity: { resolve: async (assertion: string) => sessions.get(assertion) ?? null },
 });
 
 try {
-  const operator = ship.operator;
-  if (!operator) throw new Error("Installation administration is disabled");
-
-  const person = await operator.ensureIdentity({
+  if (!ship.operator) throw new Error("Host administration is required for this example");
+  const person = await ship.operator.ensureIdentity({
     issuer: "my-product",
     subject: "customer-123",
     email: "customer@example.com",
   });
   const assertion = randomUUID();
   sessions.set(assertion, { user: person.user, sessionId: assertion });
-
   await ship.start();
   const customer = await ship.scope({
     identity: assertion,
@@ -59,133 +48,35 @@ try {
   });
   const submitted = await customer.deploy({
     name: "generated-app",
-    source: {
-      type: "files",
-      files: { "index.html": "<h1>Hello from Openship</h1>" },
-    },
+    source: { type: "files", files: { "index.html": "<h1>Hello</h1>" } },
   });
-  const outcome = await customer.deployment(submitted.deployment_id).wait({ timeoutMs: 60_000 });
-  console.log(outcome.status, outcome.success);
+  const outcome = await customer
+    .deployment(submitted.deployment_id)
+    .wait({ timeoutMs: 60_000 });
+  if (!outcome.success) throw new Error(outcome.message ?? outcome.status);
+  console.log(submitted.project_id, outcome.status);
 } finally {
   await ship.close({ mode: "drain" });
 }
 ```
 
-Host execution is disabled by default. This example explicitly allows local execution. Organization
-scopes authorize platform operations; they do not sandbox generated application code. Choose an execution
-environment suitable for the code your product accepts before enabling local builds.
+This uses a demo session map. An embedding application should verify assertions through its own
+authentication service; see [identities and scopes](/docs/api/sdk/identity).
 
-## Configuration
+## Runtime choices
 
-| Option                        | Meaning                                                                                                                                                                |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `instanceId`                  | Stable installation identifier. Reuse it when reopening the same installation.                                                                                         |
-| `stateDirectory`              | Absolute private directory for source, releases, and runtime state. It does not default to the CLI's database directory.                                               |
-| `storage`                     | Explicit PGlite or PostgreSQL configuration.                                                                                                                           |
-| `encryptionKey`               | Persistent 32–4096 byte UTF-8 secret. Existing encrypted state requires the original key.                                                                              |
-| `runtime`                     | `bare`, `docker`, or `cloud`, subject to provider configuration and policy. For an existing Cloud account, use a [remote client](/docs/api/sdk/client#openship-cloud). |
-| `routing`                     | Managed routing, or `none` with the bare runtime.                                                                                                                      |
-| `identity.resolve`            | Trusted callback that verifies an assertion and returns `VerifiedIdentity`, or `null`.                                                                                 |
-| `policy.allowHostExecution`   | Explicit permission to use host execution features. Defaults to disabled.                                                                                              |
-| `policy.sourceRoots`          | Absolute allowed roots for native directory-source inputs.                                                                                                             |
-| `policy.allowLocalForwarding` | Allows local forwarding listeners for authorized remote servers. Defaults to disabled.                                                                                 |
-| `administration`              | Exposes `ship.operator` to the trusted host. The operator is never included in a user scope.                                                                           |
-| `jobs`                        | Enables the retained job/backup runner and configured schedules at `start()`. Defaults to `false`.                                                                     |
-| `recovery`                    | `none` or `exclusive`. Exclusive recovery is limited to an owned, file-backed PGlite installation.                                                                     |
-| `diagnostics`                 | `inherit`, `stderr`, or `silent` for engine diagnostics.                                                                                                               |
-| `environment`                 | Additional provider configuration; reserved storage, identity, and ownership fields cannot be overridden here.                                                         |
-| `cloud`                       | Provider configuration for a host-operated Cloud composition. It is not a tenant login credential or an organization mapping.                                          |
-| `caller`                      | Optional trusted attribution: `source` (`api` or `cli`) and `userAgent`. It grants no permissions.                                                                     |
+| Choice | Behavior |
+| --- | --- |
+| `bare` with `routing: "none"` | Build and manage local workloads without setting up managed routing. A static release has no public URL. |
+| `bare` or `docker` with managed routing | Use the existing local runtime and edge providers. Host setup requires explicit execution policy. |
+| Registered server or Cloud provider | Use configured infrastructure and its capability checks. See [compatibility](/docs/api/sdk/compatibility). |
 
-The public `NativeShipOptions<Assertion>` and `NativePlatformOptions` types describe the exact configuration
-shape. Configuration is explicit so opening one installation does not select an existing desktop or CLI
-installation implicitly.
+`allowHostExecution: true` permits host builds. Organization scopes authorize operations; they do not
+sandbox generated application code. Choose providers suitable for the workloads your application accepts.
 
-## Storage and shutdown
+## Continue
 
-PGlite accepts `{ driver: "pglite", dataDir }`, with optional `migrations: "apply" | "verify"`. Use
-`dataDir: "memory://"` for an ephemeral installation. PostgreSQL accepts
-`{ driver: "postgres", url, migrations: "verify" | "apply" }` and defaults to verifying migrations.
-
-The database records its installation identity and encryption-key fingerprint. Reopening it with a
-different `instanceId` or key fails. Keep the database, state directory, and key together in your recovery
-plan. Runtime files live below `stateDirectory/instanceId`; PGlite's database uses its explicit `dataDir`.
-
-`start()` enables operations and configured background scheduling. Call `close({ mode: "drain" })` during
-application shutdown. It refuses new mutations, drains calls, deployments, and tracked background work,
-then releases owned resources. A close `timeoutMs` limits the caller's wait; it does not terminate work
-that is still draining. A user scope does not own or close the installation.
-
-Separate installations use separate workers. Shared-database distributed dispatch, durable event replay,
-and complete scheduler ownership remain unfinished; independent workers are not a distributed coordination
-guarantee. Saved job, backup, and scan principals also remain part of the migration, so scheduling is opt-in.
-
-## Verified identities and scopes
-
-Your host application authenticates the user. `identity.resolve(assertion)` must verify the assertion
-before returning a `VerifiedIdentity` containing a persisted `user` and `sessionId`. It is called again
-for each operation. Return `null` when the assertion has expired or been revoked.
-
-The demo's session map illustrates the callback; it is not an external authentication service. Do not
-return a caller-supplied user object without verification. For PAT/OAuth identities, the adapter must verify
-the credential and preserve its `principalKind`, `tokenScope`, and `credential` restrictions.
-
-`ship.scope({ identity, organizationId })` resolves current organization membership and returns a
-`ScopedShip`. Roles and grants come from platform state, not operation arguments. Each call rechecks the
-identity and current access. Removing membership invalidates an existing scope. A fixed scope cannot reach
-another organization's resources even when the same user belongs to both organizations.
-
-For durable work that survives the request, an external session callback cannot be replayed after restart.
-Synchronize revocation into persisted identity or membership state where your integration uses saved
-delegations. Incoming hooks, invitations, and Git device continuations recheck their saved initiating
-authority; jobs, backups, and scans still have migration work remaining.
-
-## Users, namespaces, and membership
-
-A namespace is an Openship organization with a stable mapping from your product. Projects are created
-inside the organization selected by the user scope.
-
-```ts title="provision-workspace.mts"
-import type { NativeOperator } from "openship/native";
-
-export async function provisionWorkspace(
-  operator: NativeOperator,
-  customer: { id: string; email: string; workspaceId: string },
-) {
-  const person = await operator.ensureIdentity({
-    issuer: "my-product",
-    subject: customer.id,
-    email: customer.email,
-  });
-  const workspace = await operator.ensureNamespace({
-    issuer: "my-product",
-    key: customer.workspaceId,
-    name: "Customer workspace",
-    ownerUserId: person.user.id,
-  });
-  return { user: person.user, organizationId: workspace.organizationId };
-}
-```
-
-Run provisioning only after your application verifies the customer's identity and authority over that
-workspace. Store or resolve the mapping in trusted application code, then use the verified identity and
-returned organization ID with `ship.scope()`.
-
-`operator.ensureIdentity()` and `ensureNamespace()` persist their mappings. Matching email addresses alone
-do not link existing accounts; linking requires an explicit `userId`. Installation authority can be
-requested only through the trusted operator's `instanceAdmin` option; ensuring an existing identity does
-not silently elevate it.
-
-`operator.setMembership({ organizationId, userId, role })` assigns `owner`, `admin`, `member`, or `restricted`;
-`role: null` removes membership. The final organization owner cannot be removed. `resolveIdentity()` looks
-up an existing issuer/subject mapping without provisioning a new account.
-
-Keep `ship.operator` in trusted host code. It also provides installation notice administration. Give
-application callers a verified, fixed scope with the permissions they need.
-
-## Attaching to an existing platform
-
-The overload `createShip({ platform, identity })` returns a synchronous facade over a caller-owned
-`PlatformKernel`. That host already owns initialization and shutdown, so the facade only provides
-`scope()`. It is used by integrations with an existing platform composition. Most external Node
-applications should use the owned asynchronous factory above.
+- [Lifecycle and configuration](/docs/api/sdk/lifecycle): storage, keys, startup, and shutdown.
+- [Users and organizations](/docs/api/sdk/identity): verified identities and tenant scopes.
+- [Runnable example](/docs/api/sdk/examples): deploy twice, reopen state, and remove the project.
+- [Operator reference](/docs/api/sdk/operator): trusted installation administration.

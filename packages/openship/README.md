@@ -29,6 +29,16 @@ The root and `openship/native` export `createShip`. Its asynchronous factory own
 
 Native host execution requires explicit policy. Directory inputs require allowed source roots. Optional trusted host administration maps external users and namespaces; ordinary scoped clients receive no operator access. The trusted identity adapter verifies each assertion, and the platform rereads membership/grants on each call. The host adapter must observe revocation.
 
+Try the included [native lifecycle example](examples/native-lifecycle.mjs) from a Node project with the locally built SDK package installed:
+
+```sh
+node node_modules/openship/examples/native-lifecycle.mjs
+```
+
+You can also copy the file into your project and run it there. It imports `createShip` from `openship`, creates two user scopes, deploys generated HTML, updates configuration and redeploys, checks isolation and session revocation, reopens saved state, and deletes the project. Assertions make failed operations exit with an error. It creates and removes its own temporary installation; it needs no API credentials, Docker daemon, or external database.
+
+The example uses the real bare runtime with `routing: "none"`: it produces static releases without a public URL. It does not check Cloud, SSH, Docker, or public routing. Its temporary encryption key and in-memory session map are for the demo; a persistent application must retain its key and verify sessions through its authentication service. The external package checks execute this same file on Node 22 and 24, along with ESM/CommonJS, declarations, and installed CLI checks.
+
 Native and remote modes share operations for projects/sources/deployments, services, domains/DNS, credentials, server management, catalog apps, backups/jobs, analytics/issues/notifications, settings/audit/updates, incoming webhooks, tokens, permissions/invitations, GitHub, and billing. Public announcements use `notices.list()`. Trusted native hosts can enable `operator.notices`; remote operators use `OpenshipOperatorClient` with an explicit internal token.
 
 `deploy()` returns IDs; `deployment(id)` creates a handle. Native CLI mode exists and its legacy transport/deployment helpers are removed. The full migration is still in progress: mail, data transfer, verified cloud tenant mapping, remaining system/account/channel operations, durable dispatch, billing replay/accounting review and scheduler ownership remain open. The repository's SDK README, `docs/ship-sdk-plan.md`, and `docs/ship-sdk-migration-audit.md` record current coverage and checks.

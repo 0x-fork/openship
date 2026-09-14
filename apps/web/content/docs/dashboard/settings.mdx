@@ -12,8 +12,6 @@ screen has a tab nav on the right (a horizontal strip on mobile) that switches b
 is also directly linkable with a `?tab=` query — e.g. `/settings?tab=team` — so you can bookmark or share the
 exact place you mean.
 
-<Callout title="Screenshot">Settings page with the tab nav and the General tab open. *(screenshot pending)*</Callout>
-
 <Callout title="Some tabs and sections only appear in some setups" type="info">
 The **Cloud** tab is hidden on the managed Openship Cloud — it shows on self-hosted and desktop installs
 only. The **Audit log** tab is always listed, but the log itself loads only for **admins and owners**
@@ -42,8 +40,6 @@ The **GitHub clone credentials** card stores a personal token fallback for priva
 also forward the local Git identity to remote build servers.
 
 See [Deploy from GitHub](/docs/guides/deploy-from-github) for the full walk-through.
-
-<Callout title="Screenshot">Git tab showing workspace-owned GitHub Apps, the GitHub identity card, and clone credentials. *(screenshot pending)*</Callout>
 
 ### Deploy Defaults
 
@@ -80,8 +76,6 @@ permissions unless you narrow it. When creating one you can:
 Press **Create token**, then copy it immediately — this is the only time the value is shown. Existing
 tokens are listed with **read-only** / **scoped** badges and a **Revoke** button.
 
-<Callout title="Screenshot">Tokens tab showing the Personal Access Tokens list with the create form (name, expiry, read-only, limit-to-resources). *(screenshot pending)*</Callout>
-
 <Callout title="Copy the token now" type="warn">
 A new token's value is displayed once, at creation. If you lose it you can't recover it — revoke it and
 make a new one.
@@ -103,8 +97,6 @@ Two ways to authenticate:
 **Connected clients** lists every authorized client with its access level (read-only / full control) and
 resource scope, each with a disconnect action.
 
-<Callout title="Screenshot">MCP tab showing the endpoint copy row, the per-client "Add to your client" snippets, and the Connected clients list. *(screenshot pending)*</Callout>
-
 ## Team
 
 Who can reach this organization's projects, deployments, and servers. See
@@ -119,8 +111,6 @@ Who can reach this organization's projects, deployments, and servers. See
 If you're on a personal workspace, this tab also offers **Create team** to spin up a separate, isolated
 team organization.
 
-<Callout title="Screenshot">Team tab showing Active members with role selectors and the Invite member button, plus any pending invitations. *(screenshot pending)*</Callout>
-
 ## Notifications
 
 Decide what you get told about and where it goes.
@@ -134,15 +124,11 @@ Decide what you get told about and where it goes.
 - **Organization defaults** — the subscriptions applied when a new member joins. Members can override their
   own per-channel.
 
-<Callout title="Screenshot">Notifications tab showing the delivery channels list and the event × channel subscription grid. *(screenshot pending)*</Callout>
-
 ## Audit log
 
 *(Admin or owner only.)* A running feed of every change in the organization — who did it, what changed, and
 when. Search across events, actors, and resources, filter by event type, and expand any entry to see the
 **before**/**after** of the change plus actor details (name, email, IP, user agent).
-
-<Callout title="Screenshot">Audit log tab with the search box, event-type filter, and an expanded entry showing before/after values. *(screenshot pending)*</Callout>
 
 ## Cloud
 
@@ -150,8 +136,6 @@ when. Search across events, actors, and resources, filter by event type, and exp
 global CDN. Press **Connect to Openship Cloud** and sign in; once connected the card shows your cloud
 account with a **Disconnect** option. This connection is also what enables migrating your instance to the
 cloud — see [Connect to Cloud & migrate](/docs/guides/cloud-connect-migration).
-
-<Callout title="Screenshot">Cloud tab in the disconnected state showing the "Connect to Openship Cloud" button and the features it unlocks. *(screenshot pending)*</Callout>
 
 ## Instance
 
@@ -208,5 +192,3 @@ An instance archive also offers **Entire instance**, with merge or full replacem
 all destination data and signs you out. A project archive can never wipe an instance. Only an
 **instance administrator** can export or import, and restoring credentials requires the original password.
 </Callout>
-
-<Callout title="Screenshot">Instance tab showing the type/auth cards, the Updates section, and the Export / Import data controls. *(screenshot pending)*</Callout>

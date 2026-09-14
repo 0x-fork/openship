@@ -226,6 +226,28 @@ The full workspace rerun then passed **all 10 tasks with caching disabled: 12,82
 
 The public package was rebuilt and passed fresh external-install checks on **Node 22.21.1 and 24.21.0**: ESM/CommonJS imports, NodeNext declarations, passive imports, real native deployment and persistence, remote submission, the npm-installed command, and native CLI persistence/cleanup. These checks use the locally built tarball and do not publish it. The correction preserves the Git index; committing and pushing the two relocations and audit updates is still required to update the remote branch.
 
+## Runnable consumer workflow — September 14
+
+The public package now ships a [native lifecycle example](../packages/openship/examples/native-lifecycle.mjs), also documented under [API → SDK → Native](../apps/web/content/docs/api/sdk/native.mdx). It imports `createShip` from `openship` and uses public operations to provision two user scopes, deploy generated HTML, update configuration and redeploy into the same project, inspect history, reject cross-tenant access, revoke a session, reopen persistent state, and delete the project. It drains the owned worker before removing its temporary installation.
+
+The [external-install check](../packages/openship/verify-package.ts) installs the actual tarball in a fresh Node project outside the workspace, copies the shipped example into that project, runs it, and typechecks it against the installed public declarations. Fresh complete runs passed on **Node 22.21.1 and 24.21.0**, including the existing ESM/CommonJS, passive import, CLI, and persistence checks. The native probes also verified that redeployment writes the new HTML while preserving the previous release's bytes, that the active deployment and files survive reopening, and that normal SDK project teardown removes both release directories.
+
+The updated website MDX compiled, and the installation link and existing Node 22/24 release-gate wiring were checked. This change adds an example, package contents, test assertions, and documentation. The workflow uses real PGlite and the shared bare-runtime deployment pipeline with `routing: "none"`; it does not verify a publicly served app or live Cloud, Docker, or SSH providers. Remote transport coverage in this package check still uses a fake HTTP response. The broader workspace results above remain their own earlier checkpoint.
+
+## CI source-guard portability — September 14
+
+The host-executor ownership test failed on CI with `spawnSync rg ENOENT` because its source discovery invoked an external `rg` binary. The failure was reproduced with external tools absent from `PATH`. The [guard](../apps/api/test/lib/host-executor-guard.test.ts) now enumerates the working tree using Node's filesystem APIs and retains the same owner assertion and source exclusions. Its discovered list exactly matches all **679 source files** from the previous command. All six guard tests passed both normally and with external tools unavailable; API TypeScript passed. This correction changes test discovery, not host execution or SDK runtime behavior.
+
+## Unified API and CLI documentation — September 14
+
+The website now has one reference page per resource under [API](../apps/web/content/docs/api/index.mdx). SDK and REST API examples use synchronized, persistent code tabs; behavior and field descriptions are shared. SDK setup, identity, and lifecycle guides remain under SDK setup. The former SDK reference and deployment URLs, including their Markdown variants, redirect to the shared pages.
+
+The reference catalog accounts for **365 SDK methods and 555 HTTP route entries across 36 resource pages**, including root OAuth discovery and browser callbacks. Better Auth's vendor routes are represented by its mounted catch-all. The CLI reference documents **204 command paths** from the built public CLI's help. [Documentation maintenance](documentation.md) describes regeneration and the single-owner rule; CI checks reference coverage, examples, navigation, and the production website build.
+
+Fresh checks passed for **160 MDX pages**, their navigation and internal links, **224 CLI examples**, and **104 SDK examples** type-checked against the public package declarations. The production website build passed, including TypeScript and all 541 static pages. Browser checks passed for resource and setup pages, synchronized and persistent tabs, keyboard navigation, mobile overflow, old URL redirects, and raw Markdown containing both SDK and REST examples; no page errors were reported.
+
+These documentation changes do not alter API, retained service, or SDK runtime implementations. Example type checks and browser checks are documentation evidence; the runtime and live-provider limits remain separately recorded below. The website was not published, and the Git index was preserved.
+
 ## Remaining limits
 
 No mapped implementations are missing, and the engine import audit passes. Full platform SDK coverage is still incomplete: organization/account lifecycle, remaining system/setup/edge/channel operations, verified cloud tenant mapping/promotion, mail, and migration/data transfer. Native CLI mode is implemented; edge/mail/parts of system still need named SDK adoption. Durable multi-worker dispatch/idempotency/replay, billing webhook replay/accounting review, constrained job/backup/scan principals, distributed scheduler ownership, compatibility examples and live-provider gates remain open. Imported authority beyond project hook imports requires a deliberate restore policy. The [plan](ship-sdk-plan.md) and [SDK README](../packages/sdk/README.md) describe the current supported surface.

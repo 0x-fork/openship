@@ -1,6 +1,6 @@
 /** Installs the actual tarball outside the workspace, under the caller's Node runtime. */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ try {
     devDependencies: { typescript: "^5.9.3", "@types/node": "^22.13.0" },
   }, null, 2));
   run("npm", ["install", "--ignore-scripts", "--omit=optional", "--no-audit", "--no-fund", "--no-package-lock"]);
+  const installed = join(scratch, "node_modules/openship");
   writeFileSync(join(scratch, "probe.mjs"), `
 import assert from 'node:assert/strict';
 const environment = { ...process.env };
@@ -65,7 +66,7 @@ console.log('CJS_OK');
   if (!run(node, ["probe.cjs"]).includes("CJS_OK")) throw new Error("CommonJS package probe failed");
   writeFileSync(join(scratch, "native-probe.mjs"), `
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
@@ -109,6 +110,14 @@ try {
   const tokenState = await scoped.projects.updateCloneToken(submitted.project_id, { token: 'installed-clone-secret' });
   assert.equal(tokenState.hasToken, true);
   await scoped.projects.setSleepMode(submitted.project_id, { sleep_mode: 'always_on' });
+  const updated = await scoped.deploy({ projectId: submitted.project_id, source: { type: 'files', files: { 'index.html': '<h1>Updated SDK deployment</h1>' } } });
+  assert.equal(updated.project_id, submitted.project_id);
+  assert.notEqual(updated.deployment_id, submitted.deployment_id);
+  assert.equal((await scoped.deployment(updated.deployment_id).wait({ timeoutMs: 30000, pollIntervalMs: 100 })).success, true);
+  const updatedArtifact = join(directory, 'installed/workloads/static/releases', updated.deployment_id);
+  assert.equal((await scoped.deployments.get(updated.deployment_id)).containerId, updatedArtifact);
+  assert.equal(await readFile(join(updatedArtifact, 'index.html'), 'utf8'), '<h1>Updated SDK deployment</h1>');
+  assert.equal(await readFile(join(artifact, 'index.html'), 'utf8'), '<h1>Installed SDK</h1>');
   await ship.close();
   ship = await createShip({ ...options, storage: { ...options.storage, migrations: 'verify' } });
   assert.equal((await ship.operator.resolveIdentity({ issuer: 'integration', subject: 'alice' })).user.id, mapping.user.id);
@@ -121,6 +130,12 @@ try {
   assert.deepEqual(await reopened.projects.getCloneToken(submitted.project_id), tokenState);
   assert.equal((await reopened.projects.getResources(submitted.project_id)).sleepMode, 'always_on');
   assert.equal((await reopened.projects.listEnvVars(submitted.project_id))[0].key, 'PRIVATE_TOKEN');
+  assert.equal((await reopened.projects.get(submitted.project_id)).activeDeploymentId, updated.deployment_id);
+  assert.equal(await readFile(join(updatedArtifact, 'index.html'), 'utf8'), '<h1>Updated SDK deployment</h1>');
+  const removed = await reopened.projects.remove(submitted.project_id);
+  assert.equal(removed.ok, true, JSON.stringify(removed));
+  await assert.rejects(stat(artifact), { code: 'ENOENT' });
+  await assert.rejects(stat(updatedArtifact), { code: 'ENOENT' });
   assert.deepEqual({ ...process.env }, environment);
   console.log('NATIVE_OK');
 } finally {
@@ -131,6 +146,12 @@ try {
   for (const mode of ["esm", "cjs"]) {
     if (!run(node, ["native-probe.mjs", mode]).includes("NATIVE_OK")) throw new Error(`Installed native ${mode} deployment failed`);
   }
+  // Run the exact shipped example as a consumer-owned file outside the repo.
+  // It uses public SDK imports, real storage and the real deployment pipeline.
+  cpSync(join(installed, "examples/native-lifecycle.mjs"), join(scratch, "native-example.mjs"));
+  const lifecycle = run(node, ["native-example.mjs"]);
+  if (!lifecycle.includes("Native SDK lifecycle completed; temporary installation removed."))
+    throw new Error("Installed native lifecycle example did not complete");
   const example = `import { OpenshipClient, OpenshipOperatorClient, type DeploymentHandle, type ProjectOperations, type EnvironmentVariable, type BillingOperations, type NoticeOperations, type OperatorNoticeOperations } from 'openship';
 import { createShip, type IdentityAdapter } from 'openship/native';
 const client = new OpenshipClient({ baseUrl: 'https://ship.example.test' });
@@ -159,8 +180,7 @@ void handle; void nativeExample;
 `;
   writeFileSync(join(scratch, "example.mts"), example);
   writeFileSync(join(scratch, "example.cts"), example);
-  run(node, ["node_modules/typescript/bin/tsc", "--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext", "--moduleResolution", "NodeNext", "example.mts", "example.cts"]);
-  const installed = join(scratch, "node_modules/openship");
+  run(node, ["node_modules/typescript/bin/tsc", "--noEmit", "--strict", "--allowJs", "--checkJs", "--target", "ES2022", "--module", "NodeNext", "--moduleResolution", "NodeNext", "example.mts", "example.cts", "native-example.mjs"]);
   const version = run(node, [join(installed, "dist/node-entry.js"), "--version"]).trim();
   const manifest = JSON.parse(readFileSync(join(installed, "package.json"), "utf8"));
   if (version !== manifest.version) throw new Error(`CLI version mismatch: ${version}`);
@@ -209,7 +229,8 @@ export default {
   const status = JSON.parse(cli(["status"]));
   if (status.mode !== "native" || status.instanceId !== "installed-cli" || status.organizationId !== created.organizationId)
     throw new Error("Installed native CLI scope mismatch");
-  console.log(`[openship] installed package passed on Node ${run(node, ["--version"]).trim()}: ESM, CommonJS, NodeNext types, passive imports, owned native deployment/persistence, remote submission, npm command, native CLI persistence/cleanup, CLI (${version}); ${(archive.size / 1024 / 1024).toFixed(1)} MB packed / ${(archive.unpackedSize / 1024 / 1024).toFixed(1)} MB unpacked`);
+  console.log(lifecycle.trim());
+  console.log(`[openship] installed package passed on Node ${run(node, ["--version"]).trim()}: ESM, CommonJS, NodeNext types, passive imports, owned native deployment/persistence, runnable lifecycle example (redeployment, tenant isolation, revocation, persistence, teardown), remote submission, npm command, native CLI persistence/cleanup, CLI (${version}); ${(archive.size / 1024 / 1024).toFixed(1)} MB packed / ${(archive.unpackedSize / 1024 / 1024).toFixed(1)} MB unpacked`);
 } catch (error) {
   const failure = error as Error & { stdout?: string; stderr?: string };
   console.error(failure.stdout ?? "", failure.stderr ?? "");

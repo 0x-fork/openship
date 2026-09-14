@@ -1,4 +1,18 @@
 {
-  "title": "Node.js SDK",
-  "pages": ["index", "client", "native", "deployments", "reference"]
+  "title": "SDK setup",
+  "pages": [
+    "index",
+    "installation",
+    "---Connect---",
+    "client",
+    "native",
+    "identity",
+    "lifecycle",
+    "---Integrate---",
+    "errors",
+    "utilities",
+    "operator",
+    "examples",
+    "compatibility"
+  ]
 }

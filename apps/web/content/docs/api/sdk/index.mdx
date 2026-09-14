@@ -1,141 +1,49 @@
 ---
 title: Node.js SDK
-description: Deploy and manage Openship from Node.js with native platform services or a typed client for an existing instance.
+description: Deploy and manage Openship from JavaScript or TypeScript.
 ---
 
-The `openship` package provides two ways to control the platform from code. Use `OpenshipClient` to connect
-to an existing self-hosted or Cloud API. Use `createShip` to embed the platform in your Node application,
-with storage, providers, and user scopes that your application configures.
+The `openship` package gives your application access to projects, deployments, domains, backups, and
+the other platform operations. Native SDK calls and HTTP controllers use the same shared core.
 
-Both interfaces expose the same named operation groups, including `projects`, `deployments`, `services`,
-`domains`, and `analytics`. Native calls and HTTP controllers use the shared platform operations and services.
-The [method reference](/docs/api/sdk/reference) lists the current public surface and its availability limits.
+## Choose a mode
 
-<Callout title="SDK release preview" type="info">
-  These pages describe the SDK implemented in the repository. The published `openship@0.7.2` package
-  contains the CLI and does not expose these SDK imports. The SDK requires a new npm release. Until
-  then, build and install the local package below. The examples require Node.js 22 or later.
-</Callout>
+| Mode | Use when | Start here |
+| --- | --- | --- |
+| **Remote client** | Openship already runs on a server or in Cloud. | [Connect to an API](/docs/api/sdk/client) |
+| **Native SDK** | Your Node application owns storage, providers, and the installation lifecycle. | [Embed Openship](/docs/api/sdk/native) |
+
+Both modes expose the same named operation groups. A configured provider and the caller's permissions
+determine which operations can run.
 
 ## Install
 
-From a checkout containing the SDK implementation, install dependencies and build the public package:
+The SDK is currently a repository preview. Published `openship@0.7.2` contains the CLI only.
+[Build and install the SDK tarball](/docs/api/sdk/installation) before using these imports.
 
-```bash
-bun install --frozen-lockfile
-bun run build:sdk
-```
+## A deployment in code
 
-Pack it from the package directory. `npm pack` prints the tarball filename:
+This function accepts either a remote client or a native user scope:
 
-```bash
-cd packages/openship
-npm pack
-```
+```ts title="deploy-site.mts"
+import type { OpenshipClient, ScopedShip } from "openship";
 
-Install that tarball in your Node project, using its actual path:
-
-```bash
-npm install /absolute/path/to/openship-0.7.2.tgz
-```
-
-After an SDK-enabled version is published, `npm install openship` will install both the SDK and CLI. The
-locally built tarball uses the checkout's package version; sharing a version number with the existing CLI
-release does not give that published release SDK exports.
-
-### Use the CLI and SDK together
-
-A local installation provides both the SDK imports in your project and the CLI through `npx` or npm scripts:
-
-```bash
-npx openship --help
-```
-
-The CLI and imports have separate package entry points; importing `openship` does not launch the command.
-A global installation makes the `openship` command available on your shell's path. Your Node application
-still needs its own `openship` dependency to import the SDK.
-
-## Choose an interface
-
-| Interface        | Use it when                                      | What your application supplies                                                      |
-| ---------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `OpenshipClient` | Openship already runs on a server or in Cloud.   | API URL, verified bearer credential, and an organization ID.                        |
-| `createShip`     | Your application owns the Openship installation. | Persistent storage, encryption key, runtime policy, and a trusted identity adapter. |
-
-Remote calls use HTTP. Native calls run the engine in an owned Node worker and do not start an HTTP
-listener. Importing the package does not start workers, open storage, or deploy anything.
-
-## Imports
-
-| Import            | Exposes                                                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `openship`        | `createShip`, `OpenshipClient`, `OpenshipOperatorClient`, deployment helpers, public operation types, and application errors.    |
-| `openship/native` | Native factory, lifecycle and identity types, native configuration, and scoped operations.                                       |
-| `openship/client` | Remote clients, HTTP and event helpers, public operation types, and remote errors. This entry avoids native engine dependencies. |
-
-ES modules and CommonJS both have JavaScript and TypeScript declaration exports:
-
-```ts title="imports.mts"
-import { createShip, OpenshipClient } from "openship";
-import type { ScopedShip, ProjectOperations } from "openship";
-```
-
-```js title="imports.cjs"
-const { OpenshipClient } = require("openship/client");
-const { createShip } = require("openship/native");
-```
-
-Use these public imports from application code. The repository's `@repo/*` workspaces are internal packages.
-
-## Connect to an existing instance
-
-Create a personal access token using the [access guide](/docs/cli/access). This example requires an API
-version that supports fixed organization scopes:
-
-```ts title="list-projects.mts"
-import { OpenshipClient } from "openship/client";
-
-const token = process.env.OPENSHIP_TOKEN;
-const organizationId = process.env.OPENSHIP_ORGANIZATION_ID;
-if (!token || !organizationId) {
-  throw new Error("Set OPENSHIP_TOKEN and OPENSHIP_ORGANIZATION_ID");
+export async function deploySite(ship: OpenshipClient | ScopedShip) {
+  const submitted = await ship.deploy({
+    name: "my-site",
+    source: { type: "files", files: { "index.html": "<h1>Hello from Openship</h1>" } },
+  });
+  const outcome = await ship.deployment(submitted.deployment_id).wait({ timeoutMs: 120_000 });
+  if (!outcome.success) throw new Error(outcome.message ?? outcome.status);
+  return ship.projects.get(submitted.project_id);
 }
-
-const client = new OpenshipClient({
-  baseUrl: "https://ship.example.com",
-  token,
-  organizationId,
-});
-
-const projects = await client.projects.list({ page: 1, perPage: 20 });
-console.log(projects.data);
 ```
 
-An organization ID selects the scope; it does not grant membership or permissions. The receiving API
-authenticates the token and authorizes each operation. A native application obtains the same operation
-groups from `await ship.scope({ identity, organizationId })`.
-
-## Continue
+## Next steps
 
 <Cards>
-  <Card
-    title="Remote and Cloud clients"
-    href="/docs/api/sdk/client"
-    description="Configure a client, pin an organization, handle errors, and check server compatibility."
-  />
-  <Card
-    title="Native embedding"
-    href="/docs/api/sdk/native"
-    description="Create a persistent installation, verify identities, provision namespaces, and close owned work."
-  />
-  <Card
-    title="Deployment workflows"
-    href="/docs/api/sdk/deployments"
-    description="Deploy generated files, local directories, or linked Git projects; observe progress and decisions."
-  />
-  <Card
-    title="Method reference"
-    href="/docs/api/sdk/reference"
-    description="All current operation groups, public types, operator methods, and availability limits."
-  />
+  <Card title="Deployment workflows" href="/docs/api/deployments" description="Deploy files, directories, or Git sources; follow logs and handle decisions." />
+  <Card title="Users and organizations" href="/docs/api/sdk/identity" description="Select a tenant and connect your application's verified identities." />
+  <Card title="Runnable example" href="/docs/api/sdk/examples" description="Deploy, redeploy, reopen state, and clean up using the installed package." />
+  <Card title="Method reference" href="/docs/api" description="Find every current operation, organized by resource." />
 </Cards>
