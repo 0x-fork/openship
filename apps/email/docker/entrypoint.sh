@@ -35,9 +35,8 @@ set -euo pipefail
 
 log() { echo "[openship-mail] $*"; }
 
-# No DB_HOST/DB_PORT here on purpose: db-bootstrap.sh reads the same two env vars and
-# owns every conversation with the sidecar, so duplicating them invites the two files
-# to disagree about where the database is.
+# db-bootstrap.sh reads OPENSHIP_MAIL_DB_HOST and OPENSHIP_MAIL_DB_PORT to wait for
+# and bootstrap the schema; step 3d reconciles that same port into daemon configs.
 FIRST_DOMAIN="${FIRST_DOMAIN:-}"
 SEED_DIR="/opt/openship-mail/seed"
 
@@ -146,6 +145,11 @@ fi
 # 3c. /etc/ssl is in the container layer. Restore the daemon certificate links
 #     on every boot so recreating the container retains the mounted TLS identity.
 bash /opt/openship-mail/reconcile-ssl.sh "$FIRST_DOMAIN"
+
+# 3d. Keep daemon SQL connections on the sidecar's selected host port. Only
+#     database connection fields are rewritten; mail listener ports stay intact.
+python3 /opt/openship-mail/reconcile-db-port.py "${OPENSHIP_MAIL_DB_PORT:-5432}"
+
 
 # 4. bootstrap the mail databases (idempotent; skips if the vmail schema exists).
 #
