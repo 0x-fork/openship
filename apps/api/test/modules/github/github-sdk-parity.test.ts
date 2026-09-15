@@ -9,6 +9,7 @@ import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { githubRoutes } from "../../../src/modules/github/github.routes";
+import { projectRoutes } from "../../../src/modules/projects/project.routes";
 import { systemRoutes } from "../../../src/modules/system/system.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
@@ -17,7 +18,7 @@ import { setStoredDeviceToken } from "@repo/platform/engine/modules/github/githu
 import { flushAudit } from "@repo/platform/engine/lib/audit-emitter";
 import { eq } from "@repo/db";
 installFakeRunner();
-const app = new Hono().onError(handleApiError).route("/api/health", healthRoutes).route("/api/github", githubRoutes).route("/api/system", systemRoutes);
+const app = new Hono().onError(handleApiError).route("/api/health", healthRoutes).route("/api/github", githubRoutes).route("/api/system", systemRoutes).route("/api/projects", projectRoutes);
 async function clients(actor: SeededOwner, organizationId = actor.orgId, limits: Partial<VerifiedIdentity> = {}) {
   const user = (await repos.user.findById(actor.userId))!;
   const ship = createShip({ platform: getPlatformKernel(), identity: { resolve: async () => ({ user, sessionId: "git-test", ...limits }) } });
@@ -38,6 +39,40 @@ const entry = (path: string, type = "file") => ({ name: path.split("/").pop(), p
 afterEach(async () => { vi.clearAllMocks(); await setStoredDeviceToken(null); });
 
 describe("GitHub operations shared by SDK and HTTP", () => {
+  it("returns branch pagination through native operations and HTTP without truncating later pages", async () => {
+    const c = await clients(await seedOwner());
+    const branch = { name: "main", commit: { sha: "abc", url: "https://api.github.com/commit/abc" }, protected: false };
+    provider.fetch.mockResolvedValue([branch]);
+    for (const client of [c.native, c.remote]) {
+      expect(await client.github.listBranches({ owner: "acme", repo: "app", page: 2 })).toEqual({
+        data: [branch],
+        pagination: { page: 2, perPage: 100, hasMore: false },
+      });
+      expect(provider.fetch.mock.lastCall?.[0].params).toEqual({ page: 2, per_page: 100 });
+      await expect(client.github.listBranches({ owner: "acme", repo: "app", page: -1 })).rejects.toBeDefined();
+    }
+  });
+
+  it("preserves page metadata and project authorization for linked-repository branch lists", async () => {
+    const owner = await seedOwner();
+    const c = await clients(owner);
+    const group = await repos.projectGroup.create({ organizationId: owner.orgId, name: "Branches", slug: `branches-${owner.userId}` });
+    const project = await repos.project.create({ organizationId: owner.orgId, groupId: group.id, name: "Branches", slug: `branches-${owner.userId}`, gitOwner: "acme", gitRepo: "app", gitProvider: "github" });
+    const other = await clients(await seedOwner());
+    provider.fetch.mockResolvedValue([{ name: "main", commit: { sha: "abc", url: "https://api.github.com/commit/abc" }, protected: false }]);
+    for (const client of [c.native, c.remote]) {
+      expect(await client.projects.listBranches(project.id, { page: 2 })).toMatchObject({
+        data: [{ name: "main", sha: "abc", protected: false }],
+        pagination: { page: 2, perPage: 100, hasMore: false },
+      });
+    }
+    const calls = provider.fetch.mock.calls.length;
+    for (const client of [other.native, other.remote]) {
+      await expect(client.projects.listBranches(project.id, { page: 2 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+    expect(provider.fetch).toHaveBeenCalledTimes(calls);
+  });
+
   it("preserves repository presentation and limits installation tokens to the requested repository", async () => {
     const c = await clients(await seedOwner());
     provider.fetch.mockResolvedValue(detail);

@@ -652,8 +652,8 @@ export async function listBranches(ctx: ExecutionContext, input: NonNullable<Par
   const owner = input.owner;
   const repo = input.repo;
 
-  const data = await githubService.listBranches(ctx, owner, repo);
-  return data;
+  const { branches, page, perPage, hasMore } = await githubService.listBranches(ctx, owner, repo, input);
+  return { data: branches, pagination: { page, perPage, hasMore } };
 }
 
 /**

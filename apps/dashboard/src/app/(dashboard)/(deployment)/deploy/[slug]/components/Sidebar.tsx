@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useState } from "react";
 import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { CustomSelect } from "@/components/ui/CustomSelect";
+import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
@@ -190,32 +190,6 @@ const Sidebar: React.FC = () => {
   // build vs PAT vs existing GitHub credential). Opshcloud has its own
   // connect-account flow, local builds don't need a remote credential.
   const cloneGate = useCloneStrategyGate();
-
-  // Lazy branch list. In config-edit mode the wizard hydrates from saved data
-  // with only the current branch seeded (no repo round-trip on load). The full
-  // list is fetched once, on first open of the branch dropdown — never for
-  // local-sourced projects (no remote repo to list).
-  const branchesFetchedRef = useRef(false);
-  const loadBranches = useCallback(async () => {
-    if (branchesFetchedRef.current) return;
-    if (!config.projectId || !config.owner || config.owner === "local") return;
-    // Only when the list is "thin" (config-edit seeds just the current branch);
-    // the first-deploy path already preloads the full list via prepare.
-    if (config.branches.length > 1) return;
-    branchesFetchedRef.current = true;
-    try {
-      const res = await projectsApi.getBranches(config.projectId);
-      const names: string[] = (res?.data ?? [])
-        .map((b: { name?: string }) => b?.name)
-        .filter((n: unknown): n is string => typeof n === "string" && n.length > 0);
-      if (names.length) {
-        const merged = Array.from(new Set([config.branch, ...names].filter(Boolean)));
-        updateConfig({ branches: merged });
-      }
-    } catch {
-      branchesFetchedRef.current = false; // allow a retry on next open
-    }
-  }, [config.projectId, config.owner, config.branch, config.branches.length, updateConfig]);
 
   const handleOpenEnvironmentCreator = useCallback(() => {
     if (!config.projectId) return;
@@ -478,15 +452,15 @@ const Sidebar: React.FC = () => {
           </div>
           {config.branches.length > 0 && (
             <div className="mt-3">
-              <CustomSelect
+              <RepositoryBranchSelect
+                owner={config.owner}
+                repo={config.repo}
+                projectId={config.projectId}
                 value={config.branch}
                 onChange={(val) => updateConfig({ branch: val })}
-                onOpen={loadBranches}
-                options={config.branches.map(branch => ({
-                  value: branch,
-                  label: branch,
-                  icon: <GitBranch className="w-3.5 h-3.5" />
-                }))}
+                initialBranches={config.branches}
+                initialPage={config.branchPage}
+                initialHasMore={config.branchesHasMore}
                 footerAction={config.projectId
                   ? {
                       label: t.deploy.sidebar.newEnvironment,
@@ -494,8 +468,6 @@ const Sidebar: React.FC = () => {
                       onClick: handleOpenEnvironmentCreator,
                     }
                   : undefined}
-                placeholder={t.deploy.sidebar.selectBranch}
-                className="w-full"
               />
             </div>
           )}

@@ -195,6 +195,7 @@ export interface ProjectInfo {
     clone_url?: string;
     html_url?: string;
     branches?: { name: string }[];
+    branches_has_more?: boolean;
   };
   stack: StackResult["stack"];
   projectType: ProjectType;
@@ -1035,6 +1036,7 @@ function toProjectInfo(
     clone_url?: string;
     html_url?: string;
     branches?: { name: string }[];
+    branches_has_more?: boolean;
   },
   projectRoot: ProjectRootSnapshot,
   composeContent?: string,
@@ -1124,6 +1126,7 @@ function toProjectInfo(
       clone_url: repo.clone_url,
       html_url: repo.html_url,
       branches: repo.branches,
+      branches_has_more: repo.branches_has_more,
     },
     stack: stack.stack,
     projectType,

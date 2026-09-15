@@ -71,9 +71,11 @@ export async function deleteRepo(c: Context) {
   return c.json(data, 200);
 }
 export async function listBranches(c: Context) {
-  
-  const data = await operationData(c, ops().listBranches(call(c), repo(c)));
-  return c.json({ data }, 200);
+  const data = await operationData(c, ops().listBranches(call(c), {
+    ...repo(c),
+    page: Number(c.req.query("page") ?? 1),
+  }));
+  return c.json(data, 200);
 }
 export async function getCloneToken(c: Context) {
   

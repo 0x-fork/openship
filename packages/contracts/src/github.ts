@@ -22,6 +22,12 @@ const branch = Type.Optional(Type.String({ minLength: 1, maxLength: 200 }));
 const RepoBranchInput = Type.Object({ ...OwnerRepoParams.properties, branch });
 const FileInput = Type.Object({ ...OwnerRepoParams.properties, branch, path: Type.Optional(Type.String({ maxLength: 4096 })) });
 export const GitHubBranchSchema = Type.Unsafe<GitHubBranch>(Type.Object({ name: Type.String(), commit: Type.Object({ sha: Type.String(), url: Type.String() }), protected: bool }));
+export const BranchPageInput = Type.Object({ page: Type.Optional(Type.Integer({ minimum: 1 })) });
+export const BranchPaginationSchema = Type.Object({
+  page: Type.Integer({ minimum: 1 }),
+  perPage: Type.Integer({ minimum: 1 }),
+  hasMore: Type.Boolean(),
+});
 export const GitHubRepositorySchema = Type.Unsafe<MappedRepository>(Type.Object({
   full_name: Type.String(), name: Type.String(), owner: Type.String(), description: nullableString,
   html_url: Type.String(), private: bool, visibility: Type.String(), default_branch: Type.String(),
@@ -51,7 +57,7 @@ const connection = {
 };
 const RepoDetail = Type.Unsafe<RepositoryDetail>(Type.Object({
   id: Type.Number(), name: Type.String(), full_name: Type.String(), owner: Type.String(), private: bool,
-  default_branch: Type.String(), clone_url: Type.String(), ssh_url: Type.String(), html_url: Type.String(), branches: Type.Optional(Type.Array(GitHubBranchSchema)),
+  default_branch: Type.String(), clone_url: Type.String(), ssh_url: Type.String(), html_url: Type.String(), branches: Type.Optional(Type.Array(GitHubBranchSchema)), branches_has_more: Type.Optional(bool),
 }));
 const CreatedRepository = Type.Unsafe<GitHubRepository>(Type.Object({
   id: Type.Number(), name: Type.String(), full_name: Type.String(), owner: Type.Object({ login: Type.String(), id: Type.Number(), avatar_url: Type.String() }),
@@ -97,7 +103,11 @@ export const GitHubCollectionSchemas = {
   getRepo: { action: "read", input: Type.Object({ ...OwnerRepoParams.properties, branches: Type.Optional(bool) }), output: RepoDetail },
   createRepo: { action: "write", input: CreateRepoBody, output: CreatedRepository },
   deleteRepo: { action: "admin", input: OwnerRepoParams, output: success },
-  listBranches: { action: "read", input: OwnerRepoParams, output: Type.Array(GitHubBranchSchema) },
+  listBranches: {
+    action: "read",
+    input: Type.Object({ ...OwnerRepoParams.properties, ...BranchPageInput.properties }),
+    output: Type.Object({ data: Type.Array(GitHubBranchSchema), pagination: BranchPaginationSchema }),
+  },
   getCloneToken: { action: "read", input: OwnerRepoParams, output: Type.Object({ token: Type.String(), cloneUrl: Type.String(), command: Type.String() }) },
   detectStack: { action: "read", input: Type.Object({ ...RepoBranchInput.properties, composePath: Type.Optional(Type.String({ maxLength: 4096 })) }), output: SourceScanSchema },
   listFiles: { action: "read", input: FileInput, output: Type.Union([Type.Array(FileEntry), FileEntry]) },

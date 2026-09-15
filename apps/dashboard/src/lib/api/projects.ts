@@ -1,5 +1,6 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
+import type { BranchPageResponse } from "./github";
 import type {
   RoutingConfig,
   RouteRuleSpec,
@@ -638,6 +639,8 @@ export const projectsApi = {
 
   /** List branches */
   getBranches: (id: string | number) => api.get<any>(endpoints.projects.branches(id)),
+  getBranchPage: (id: string | number, page: number) =>
+    api.get<BranchPageResponse>(endpoints.projects.branches(id), { params: { page } }),
 
   /** Set active branch */
   setBranch: (id: string | number, branch: string) =>

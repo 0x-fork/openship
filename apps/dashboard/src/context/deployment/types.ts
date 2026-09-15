@@ -411,6 +411,8 @@ export interface DeploymentConfig {
   rootEnvVars: EnvironmentVariable[];
   branch: string;
   branches: string[];
+  branchPage: number;
+  branchesHasMore: boolean;
   services: ComposeServiceInfo[];
   /**
    * Compose/import projects can either deploy each parsed service, or ignore the
@@ -492,6 +494,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   noPublicRoute: false,
   branch: "main",
   branches: [],
+  branchPage: 0,
+  branchesHasMore: false,
   services: [],
   serviceDeploymentMode: "single",
   cloudResourceTier: "low",

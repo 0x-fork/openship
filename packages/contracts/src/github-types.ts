@@ -240,6 +240,7 @@ export interface RepositoryDetail {
   ssh_url: string;
   html_url: string;
   branches?: GitHubBranch[];
+  branches_has_more?: boolean;
 }
 
 // ─── Canonical GitHub connection state ───────────────────────────────────────

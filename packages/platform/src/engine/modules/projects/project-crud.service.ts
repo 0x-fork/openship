@@ -53,7 +53,7 @@ import { assertResourceInOrg } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import {
   resolveDefaultBranch,
-  listBranches as listGitHubBranches,
+  getBranch,
   compareCommits,
   getLatestCommit,
   getWebhookStrategy,
@@ -1967,9 +1967,8 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branches = await listGitHubBranches(ctx, base.gitOwner, base.gitRepo);
-    const exists = branches.some((branch) => branch.name === gitBranch);
-    if (!exists) {
+    const branch = await getBranch(ctx, base.gitOwner, base.gitRepo, gitBranch);
+    if (!branch) {
       throw new ValidationError(
         `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
       );
