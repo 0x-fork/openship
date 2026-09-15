@@ -104,6 +104,13 @@ This means Openship couldn't add the webhook to your repository — usually beca
 
 <Callout title="I pushed, but nothing deployed" type="warn">
 Check the **Webhook** status card on the Source tab. If it says **Inactive**, delivery isn't reaching Openship — revisit the webhook endpoint above. Also confirm you pushed to the project's **deploy branch**; pushes to other branches are ignored.
+
+If another deployment is running, the new push is reported as a **failed** delivery,
+with the reason in the project's webhook events. Wait for the running deployment
+to finish or cancel it, then **Redeliver** the failed event from GitHub's webhook
+delivery history. GitHub does not automatically redeliver failures. Openship
+accepts a retry of the same failed delivery ID and skips a commit that is already
+building or live. A successful delivery remains deduplicated.
 </Callout>
 
 ## Related guides

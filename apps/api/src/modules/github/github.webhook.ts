@@ -197,7 +197,8 @@ export const githubWebhookProvider: WebhookProvider = {
       return { success: true, event: "unknown", message: "Missing x-github-event header" };
     }
 
-    // Idempotency: claim the delivery id so an at-least-once redelivery is dropped
+    // Idempotency: completed and in-flight deliveries are deduplicated; a
+    // finished failure can be reclaimed when the operator redelivers it.
     // (persistent — survives restarts/replicas). The claim row is the ANCHOR
     // (source='github', project-less); per-project feed rows are recorded later
     // by the push handler. Missing id or claim error → process (fail-open; the
@@ -215,25 +216,44 @@ export const githubWebhookProvider: WebhookProvider = {
     }
 
     let result: WebhookHandlerResult;
-    switch (event) {
-      case "installation":
-        result = await handleInstallation(payload as GitHubInstallationPayload);
-        break;
-      case "push":
-        result = await handlePush(payload as GitHubPushPayload);
-        break;
-      case "check_run":
-        result = await handleCheckRun(payload as GitHubCheckRunPayload);
-        break;
-      case "ping":
-        result = { success: true, event, message: "Pong" };
-        break;
-      default:
-        result = { success: true, event, message: `Event '${event}' not handled` };
+    try {
+      switch (event) {
+        case "installation":
+          result = await handleInstallation(payload as GitHubInstallationPayload);
+          break;
+        case "push":
+          result = await handlePush(payload as GitHubPushPayload);
+          break;
+        case "check_run":
+          result = await handleCheckRun(payload as GitHubCheckRunPayload);
+          break;
+        case "ping":
+          result = { success: true, event, message: "Pong" };
+          break;
+        default:
+          result = { success: true, event, message: `Event '${event}' not handled` };
+      }
+    } catch (error) {
+      if (anchorId) {
+        await repos.webhookDelivery
+          .markProcessed(anchorId, {
+            outcome: "failed",
+            statusCode: 500,
+            error: error instanceof Error ? error.message : "Webhook handler failed",
+          })
+          .catch(() => {});
+      }
+      throw error;
     }
 
     if (anchorId) {
-      await repos.webhookDelivery.markProcessed(anchorId, { outcome: "received" }).catch(() => {});
+      await repos.webhookDelivery
+        .markProcessed(anchorId, {
+          outcome: result.success ? "received" : "failed",
+          statusCode: result.success ? 200 : 500,
+          error: result.error,
+        })
+        .catch(() => {});
     }
     return result;
   },
