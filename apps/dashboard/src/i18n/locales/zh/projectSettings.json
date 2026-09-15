@@ -365,16 +365,16 @@
       "appliesOnDeploy": "将在下次部署时生效。"
     },
     "env": {
-      "title": "环境变量",
-      "description": "静态加密存储。密钥保持隐藏——只有你更改的值才会被写入。",
+      "title": "项目环境（构建和共享运行时）",
+      "description": "用于镜像构建和共享运行时输入。运行时优先使用 Compose 值和服务级覆盖值。密钥保持隐藏。",
       "edit": "编辑"
     }
   },
   "envVars": {
     "cancel": "取消",
     "saveChanges": "保存更改",
-    "title": "环境变量",
-    "description": "生产环境。静态加密存储。密钥显示为已设置——输入内容可替换；留空则保持不变。",
+    "title": "项目环境（构建和共享运行时）",
+    "description": "项目的生产环境变量。密钥保持隐藏；将已保存的密钥留空可保留原值。同名键优先使用服务运行时值。",
     "empty": "还没有环境变量。",
     "keyPlaceholder": "KEY",
     "secretPlaceholder": "•••••••• (已设置——输入可替换)",
@@ -401,7 +401,8 @@
     "linkedTitle": "已链接的集成",
     "linkedBody": "此值来自 {app} 连接。请在该应用中管理 — 这里的更改不会保留。",
     "unlink": "移除连接",
-    "close": "关闭"
+    "close": "关闭",
+    "applyText": "已保存。重启以应用运行时更改。镜像构建时使用的值需要重新构建并部署后才能生效。"
   },
   "gitInfo": {
     "autoDeploy": "自动部署"
@@ -854,5 +855,13 @@
       "noIndex": "{path} 存在输出，但没有 index 文件 — 请求将返回 404。请检查输出目录。",
       "notServed": "边缘代理对 {path} 返回了 HTTP {status} — 此路径未提供服务。请检查输出目录和路由。"
     }
+  },
+  "serviceEnvironment": {
+    "title": "服务运行时环境",
+    "description": "仅适用于此服务的运行时。这些值会覆盖 Compose 环境和项目中的同名变量。通过重启或部署应用更改。",
+    "overrides": "以下键在此服务中优先于项目值：{keys}。",
+    "buildArguments": "显式镜像构建参数在 Compose 文件或源配置中编辑。重新构建并部署以应用更改；此编辑器仅更改运行时变量。",
+    "projectLink": "编辑共享项目环境",
+    "loadFailed": "无法加载项目变量名称以检查覆盖关系。"
   }
 }

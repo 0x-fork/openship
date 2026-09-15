@@ -499,8 +499,8 @@
       "appliesOnDeploy": "Bir sonraki dağıtımda uygulanır."
     },
     "env": {
-      "title": "Ortam değişkenleri",
-      "description": "Depolanırken şifrelenir. Gizli veriler maskeli kalır — yalnızca değiştirdiğiniz değerler yazılır.",
+      "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+      "description": "İmaj derlemelerinde ve ortak çalışma zamanı girdisi olarak kullanılır. Çalışma zamanında Compose ve servise özel değerler önceliklidir. Gizli değerler maskeli kalır.",
       "edit": "Düzenle"
     }
   },
@@ -509,10 +509,10 @@
     "saveChanges": "Değişiklikleri kaydet",
     "close": "Kapat",
     "applyTitle": "Yeniden derleme olmadan uygula",
-    "applyText": "Kaydedildi. Bunları çalışan servise uygulayın — yeni ortam değişkenleriyle yeniden başlatılır, klonlama veya yeniden derleme yapılmaz.",
+    "applyText": "Kaydedildi. Çalışma zamanı değişikliklerini uygulamak için yeniden başlatın. İmaj derlenirken kullanılan değerler için yeniden derleyip dağıtın.",
     "applyButton": "Uygula (yeniden başlat, derleme yok)",
-    "title": "Ortam değişkenleri",
-    "description": "Canlı ortam. Depolanırken şifrelenir. Gizli veriler ayarlandı olarak görünür — değiştirmek için yazın; korumak için boş bırakın.",
+    "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+    "description": "Projenin üretim ortamı değişkenleri. Gizli değerler maskeli kalır; kayıtlı bir gizli değeri korumak için boş bırakın. Aynı anahtar için servis değerleri önceliklidir.",
     "empty": "Henüz ortam değişkeni yok.",
     "keyPlaceholder": "ANAHTAR",
     "secretPlaceholder": "•••••••• (ayarlandı — değiştirmek için yazın)",
@@ -1033,5 +1033,13 @@
       "attempts": "Şu ana kadar {count} başarısız deneme.",
       "pillHint": "Nedenini göster"
     }
+  },
+  "serviceEnvironment": {
+    "title": "Servis çalışma zamanı ortamı",
+    "description": "Yalnızca bu servisin çalışma zamanında uygulanır. Bu değerler Compose ortamını ve aynı adlı proje değişkenlerini geçersiz kılar. Yeniden başlatma veya dağıtımla uygulayın.",
+    "overrides": "Bu serviste şu anahtarlar proje değerlerinden önceliklidir: {keys}.",
+    "buildArguments": "Açık imaj derleme argümanları Compose dosyasında veya kaynak yapılandırmasında düzenlenir. Uygulamak için yeniden derleyip dağıtın; bu düzenleyici yalnızca çalışma zamanı değişkenlerini değiştirir.",
+    "projectLink": "Ortak proje ortamını düzenle",
+    "loadFailed": "Geçersiz kılmaları denetlemek için proje değişkenlerinin adları yüklenemedi."
   }
 }
