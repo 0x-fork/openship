@@ -381,12 +381,13 @@
     "noPublicDomainTitle": "Não há nenhum domínio público ligado",
     "noPublicDomainDescOne": "Este projeto tem {count} serviço com portas expostas, mas nenhum está configurado com um domínio acessível. Se implementar agora, a stack pode funcionar internamente, mas os utilizadores não conseguirão aceder a partir de um URL público.",
     "noPublicDomainDescOther": "Este projeto tem {count} serviços com portas expostas, mas nenhum está configurado com um domínio acessível. Se implementar agora, a stack pode funcionar internamente, mas os utilizadores não conseguirão aceder a partir de um URL público.",
+    "openDomains": "Abrir Domínios",
     "openServices": "Abrir Serviços",
     "deployAnyway": "Implementar mesmo assim",
     "suggestedFix": "Correção sugerida",
-    "fixStep1": "Abra o separador Serviços.",
-    "fixStep2": "Escolha o serviço que deve ser público.",
-    "fixStep3": "Ative a exposição do domínio e escolha a porta pública."
+    "fixStep1": "Abra o separador Domínios.",
+    "fixStep2": "Adicione uma rota ou domínio personalizado para a porta do serviço.",
+    "fixStep3": "Verifique o domínio e implemente."
   },
   "connections": {
     "useInProject": "Usar em um projeto",

@@ -592,8 +592,21 @@ function hasConnectedDomain(service: {
   customDomain?: string;
   domain?: string;
   name?: string;
+  publicEndpoints?: Array<{
+    domainType?: "free" | "custom";
+    customDomain?: string;
+    domain?: string;
+  }>;
 }) {
   if (!service.exposed) return false;
+  if (service.publicEndpoints && service.publicEndpoints.length > 0) {
+    const hasEndpointDomain = service.publicEndpoints.some((ep) =>
+      ep.domainType === "custom"
+        ? Boolean(ep.customDomain?.trim())
+        : Boolean(ep.domain?.trim()),
+    );
+    if (hasEndpointDomain) return true;
+  }
   if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
   return Boolean(service.domain?.trim() || service.name?.trim());
 }
