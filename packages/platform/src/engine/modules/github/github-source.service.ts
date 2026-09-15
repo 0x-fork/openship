@@ -417,7 +417,7 @@ export async function beginGitHubManifestFlow(
         pull_requests: "read",
         statuses: "write",
       },
-      default_events: ["check_run", "installation", "pull_request", "push"],
+      default_events: ["check_run", "pull_request", "push"],
     },
   };
 }
