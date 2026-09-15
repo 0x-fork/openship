@@ -530,13 +530,14 @@ describe("deployment preparation HTTP/native parity", () => {
     info.services!.push({
       name: "db", image: "postgres:16", ports: [], dependsOn: [], volumes: [],
       environment: { DB_PASSWORD: "sibling-secret" },
+      buildArgs: { TOKEN: "build-argument-secret", INHERITED: null, EMPTY: "" },
     });
     const local = await native();
     const input = { owner: "acme", repo: "app", branch: "preview", composePath: " deploy/compose.yaml ", env: { OVERRIDE: "typed-value" }, includeEnv: true };
     for (const deployments of [remote().deployments, local.deployments]) {
       expect(await deployments.prepare(input)).toMatchObject({ services: [
         { name: "web", environment: { API_TOKEN: secret } },
-        { name: "db", environment: { DB_PASSWORD: "sibling-secret" } },
+        { name: "db", environment: { DB_PASSWORD: "sibling-secret" }, buildArgs: { TOKEN: "build-argument-secret", INHERITED: null, EMPTY: "" } },
       ] });
     }
     expect(h.localInfo).toHaveBeenCalledTimes(2);
@@ -558,6 +559,12 @@ describe("deployment preparation HTTP/native parity", () => {
     });
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+    for (const deployments of [remote().deployments, local.deployments]) {
+      expect(await deployments.prepare({ ...input, includeEnv: false })).toMatchObject({ services: [
+        { name: "web", environment: { API_TOKEN: ENV_MASK } },
+        { name: "db", environment: { DB_PASSWORD: ENV_MASK }, buildArgs: { TOKEN: ENV_MASK, INHERITED: null, EMPTY: "" } },
+      ] });
+    }
   });
 
   it("does not turn deploy-only source access into permission to reveal file values", async () => {

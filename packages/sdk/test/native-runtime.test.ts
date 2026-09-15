@@ -680,15 +680,17 @@ describe("owned native platform on Node", () => {
         "services:", "  db:", "    image: postgres:16", "    environment:",
         "      POSTGRES_PASSWORD: ${PASSWORD}", "      POSTGRES_DB: app", "      EMPTY: ''",
         "  worker:", "    image: node:22", "    environment:", "      API_TOKEN: sibling-secret",
+        "    build:", "      context: .", "      args:", "        TOKEN: native-build-secret", "        INHERITED:", "        EMPTY: ''",
       ].join("\n"));
       const preparedSource = { source: "local" as const, path: source, composePath: "deploy/stack.yml", env: { PASSWORD: "typed-override" } };
       const preview = await deployments.prepare(preparedSource);
-      expect(preview).toMatchObject({ services: [{ name: "db", environment: { POSTGRES_PASSWORD: "••••••••", POSTGRES_DB: "••••••••", EMPTY: "" } }, { name: "worker" }] });
+      expect(preview).toMatchObject({ services: [{ name: "db", environment: { POSTGRES_PASSWORD: "••••••••", POSTGRES_DB: "••••••••", EMPTY: "" } }, { name: "worker", buildArgs: { TOKEN: "••••••••", INHERITED: null, EMPTY: "" } }] });
       expect(JSON.stringify(preview)).not.toContain("typed-override");
+      expect(JSON.stringify(preview)).not.toContain("native-build-secret");
       expect(await deployments.prepare({ ...preparedSource, includeEnv: true })).toMatchObject({
         services: [
           { name: "db", environment: { POSTGRES_PASSWORD: "typed-override", POSTGRES_DB: "app", EMPTY: "" } },
-          { name: "worker", environment: { API_TOKEN: "sibling-secret" } },
+          { name: "worker", environment: { API_TOKEN: "sibling-secret" }, buildArgs: { TOKEN: "native-build-secret", INHERITED: null, EMPTY: "" } },
         ],
       });
       expect(await deployments.prepare({ ...preparedSource, env: {}, includeEnv: true })).toMatchObject({ services: [
@@ -696,18 +698,19 @@ describe("owned native platform on Node", () => {
       ] });
       await expect(deployments.prepare({ ...preparedSource, path: directory, includeEnv: true })).rejects.toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED" });
 
-      const compose = "services:\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: ${PASSWORD}\n";
+      const compose = "services:\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: ${PASSWORD}\n    build:\n      context: .\n      args:\n        TOKEN: staged-build-secret\n";
       await writeFile(join(source, "docker-compose.yml"), compose);
       await writeFile(join(source, ".env"), "PASSWORD=local-scan-password\n");
       expect(await projects.scanLocal({ path: source, includeEnv: true })).toMatchObject({
-        services: [{ name: "db", environment: { POSTGRES_PASSWORD: "local-scan-password" } }],
+        services: [{ name: "db", environment: { POSTGRES_PASSWORD: "local-scan-password" }, buildArgs: { TOKEN: "staged-build-secret" } }],
       });
       const staged = await sources.stage({ source: { type: "files", files: {
         "docker-compose.yml": compose, ".env": "PASSWORD=uploaded-password\n",
       } } });
       expect(JSON.stringify(await sources.scan(staged.sessionId))).not.toContain("uploaded-password");
+      expect(await sources.scan(staged.sessionId)).toMatchObject({ services: [{ buildArgs: { TOKEN: "••••••••" } }] });
       expect(await sources.scan(staged.sessionId, { includeEnv: true })).toMatchObject({
-        services: [{ name: "db", environment: { POSTGRES_PASSWORD: "uploaded-password" } }],
+        services: [{ name: "db", environment: { POSTGRES_PASSWORD: "uploaded-password" }, buildArgs: { TOKEN: "staged-build-secret" } }],
       });
       await symlink(join(directory, "outside.txt"), join(source, "escape.txt"));
       await expect(system.browse({ path: join(source, "escape.txt") })).rejects.toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED" });

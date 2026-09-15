@@ -31,6 +31,8 @@ export const ServiceSchema = Type.Object({
   build: nullableString,
   dockerfile: nullableString,
   buildArgs: Type.Record(Type.String(), nullableString),
+  /** Instance-keyed fingerprints for stored literal arguments; never runtime attestation. */
+  buildArgsFingerprints: Type.Optional(Type.Record(Type.String(), Type.String())),
   ports: nullableStrings,
   dependsOn: nullableStrings,
   environment: Type.Union([Type.Record(Type.String(), Type.String()), Type.Null()]),
