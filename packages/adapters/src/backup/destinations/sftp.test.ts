@@ -1,6 +1,6 @@
 import { PassThrough, Readable, Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BackupDestinationRow } from "../types";
+import type { BackupDestination, BackupDestinationRow } from "../types";
 
 const fake = vi.hoisted(() => ({
   mode: "success" as
@@ -13,6 +13,7 @@ const fake = vi.hoisted(() => ({
   unlinked: [] as string[],
   renamed: [] as Array<[string, string]>,
   cleanupHang: null as null | "handshake" | "unlink",
+  channelHang: false,
   unlinkError: null as (Error & { code?: number }) | null,
   clients: [] as Array<{ emit(event: string, error?: Error): boolean; ended: boolean }>,
 }));
@@ -34,6 +35,7 @@ vi.mock("ssh2", async () => {
       }
 
       sftp(callback: (error: Error | undefined, sftp: unknown) => void) {
+        if (fake.channelHang) return;
         callback(undefined, fake.sftp);
       }
 
@@ -111,6 +113,7 @@ beforeEach(() => {
   fake.unlinked = [];
   fake.renamed = [];
   fake.cleanupHang = null;
+  fake.channelHang = false;
   fake.unlinkError = null;
   fake.clients = [];
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -122,7 +125,65 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("SFTP destination temporary upload cleanup", () => {
+describe("SFTP destination control deadlines and temporary uploads", () => {
+  it("does not report a successful preflight when the probe stream closes early", async () => {
+    fake.mode = "stream-close";
+    expect(await resolveDestination(row).preflight()).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("before all bytes were written"),
+    });
+  });
+
+  it.each(["channel", "directory"])("bounds a stalled %s before starting an upload", async (stage) => {
+    vi.useFakeTimers();
+    const sftp = makeSftp();
+    if (stage === "channel") fake.channelHang = true;
+    else sftp.mkdir.mockImplementation(() => {});
+    const body = Readable.from(["payload"]);
+    let failure: unknown;
+    const pending = resolveDestination(row).put("artifact.zst", body, {}).catch((error) => {
+      failure = error;
+    });
+    try {
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toContain("timed out");
+      expect(body.destroyed).toBe(true);
+      expect(sftp.createWriteStream).not.toHaveBeenCalled();
+      expect(fake.clients.every((client) => client.ended)).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      fake.clients.forEach((client) => client.emit("close"));
+      await pending;
+    }
+  });
+
+  it("returns failed deletion keys when the server never acknowledges an unlink", async () => {
+    vi.useFakeTimers();
+    const sftp = makeSftp();
+    sftp.unlink.mockImplementation((path, callback) => {
+      if (path.endsWith("/stalled.zst")) return;
+      callback(path.endsWith("/missing.zst") ? Object.assign(new Error("missing"), { code: 2 }) : null);
+    });
+    let result: Awaited<ReturnType<BackupDestination["deleteMany"]>> | undefined;
+    const pending = resolveDestination(row)
+      .deleteMany(["stalled.zst", "missing.zst", "healthy.zst"])
+      .then((value) => { result = value; })
+      .catch(() => {});
+    try {
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(result).toEqual({
+        deleted: ["missing.zst", "healthy.zst"],
+        failed: [{ key: "stalled.zst", error: expect.stringContaining("timed out") }],
+      });
+      expect(fake.clients.every((client) => client.ended)).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      fake.clients.forEach((client) => client.emit("close"));
+      await pending;
+    }
+  });
+
   it("removes the temporary file when the stream fails", async () => {
     fake.mode = "stream-failure";
 
