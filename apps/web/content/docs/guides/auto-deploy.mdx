@@ -109,8 +109,9 @@ If another deployment is running, the new push is reported as a **failed** deliv
 with the reason in the project's webhook events. Wait for the running deployment
 to finish or cancel it, then **Redeliver** the failed event from GitHub's webhook
 delivery history. GitHub does not automatically redeliver failures. Openship
-accepts a retry of the same failed delivery ID and skips a commit that is already
-building or live. A successful delivery remains deduplicated.
+accepts a retry of the same failed delivery ID and remembers projects already
+handled by that delivery, so only the remaining projects are retried. It also skips
+a commit that is already building or live. A successful delivery remains deduplicated.
 </Callout>
 
 ## Related guides
