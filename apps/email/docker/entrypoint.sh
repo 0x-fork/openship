@@ -25,7 +25,11 @@
 #      (no network), hand the mount to the `clamav` user, and create clamd's socket
 #      directory. Without a database clamd exits 1, and amavis — whose only scanner
 #      it is — then defers every inbound message (issue #565).
-#   7. hand off to supervisord (the CMD).
+#   8. Amavis: drop leftover pid/lock/socket. `docker recreate` empties /run;
+#      `docker restart` keeps the writable layer, so Net::Server can abort-loop
+#      against a recycled PID (often now dovecot) and Postfix defers originating
+#      mail on 127.0.0.1:10026.
+#   9. hand off to supervisord (the CMD).
 #
 # Env (from ensure-container-mail.ts --env-file): FIRST_DOMAIN,
 # OPENSHIP_MAIL_DB_{HOST,PORT,NAME,USER}, plus iRedMail secrets
@@ -219,6 +223,22 @@ if getent passwd clamav >/dev/null 2>&1; then
 else
   log "WARN: no clamav user in this image — ClamAV will not start"
 fi
+
+# 8. Amavis runtime files.
+#
+#    Amavis's Net::Server refuses to start if amavisd.pid exists and that PID is
+#    still alive — even when the process is something else. `/run` is empty on
+#    `docker recreate`, but `docker restart` keeps the writable layer, so a pid
+#    from the previous life can now belong to dovecot (PIDs recycle from 1).
+#    Supervisord then reports amavis STARTING/RUNNING while it abort-loops on
+#    "Pid_file already exists", and originating mail sits deferred with
+#    `connect to 127.0.0.1[127.0.0.1]:10026: Connection refused`.
+#
+#    This entrypoint is the first process in a fresh pid namespace, so those
+#    files cannot refer to a living amavis. Drop them unconditionally, then
+#    recreate the directory the way Debian's tmpfiles.d rule would under
+#    systemd (supervisord has no equivalent).
+bash /opt/openship-mail/prepare-amavis-runtime.sh
 
 log "starting supervisord"
 exec "$@"
