@@ -2,7 +2,7 @@
 import { createReadStream, existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Readable } from "node:stream";
-import { prepareSourceDirectory, archiveSourceDirectory } from "@repo/platform/source-files";
+import { prepareSourceDirectory, archiveSourceDirectory, assertSourceStagingOutside } from "@repo/platform/source-files";
 import type { StageSourceInput, StagedSource } from "@repo/contracts";
 import type { HttpClient } from "./http";
 import { requestSourceSession } from "./source-client";
@@ -25,21 +25,28 @@ function detectStack(dir: string): string | undefined {
 export async function stageRemoteSource(http: HttpClient, input: StageSourceInput, options: { signal?: AbortSignal; onStep?: (message: string) => void } = {}): Promise<StagedSource> {
   const { signal, onStep } = options;
   signal?.throwIfAborted();
-  const source = await prepareSourceDirectory(input.source, { signal });
+  const source = await prepareSourceDirectory(input.source, {
+    signal,
+    validatePath: async path => (await assertSourceStagingOutside(path)).directory,
+  });
   try {
-    onStep?.("Creating upload session");
-    const result = await requestSourceSession(http, {
-      name: input.name ?? (source.temporary ? "app" : basename(source.directory)),
-      projectId: input.projectId,
-      packageManager: input.packageManager ?? detectPackageManager(source.directory), stack: input.stack ?? detectStack(source.directory),
-    }, signal);
     onStep?.("Packaging folder");
     const archive = await archiveSourceDirectory(source.directory, { signal });
-    const stream = createReadStream(archive.path);
     try {
-      onStep?.("Uploading source");
-      await http.upload(result.upload, Readable.toWeb(stream) as ReadableStream<Uint8Array>, { signal, duplex: "half" });
-    } finally { stream.destroy(); await archive.dispose(); }
-    return { sessionId: result.sessionId, expiresAt: result.expiresAt };
+      // Provision only after packaging succeeds, so invalid sources cannot create
+      // unused remote sessions and large archives do not consume their expiry.
+      onStep?.("Creating upload session");
+      const result = await requestSourceSession(http, {
+        name: input.name ?? (source.temporary ? "app" : basename(source.directory)),
+        projectId: input.projectId,
+        packageManager: input.packageManager ?? detectPackageManager(source.directory), stack: input.stack ?? detectStack(source.directory),
+      }, signal);
+      const stream = createReadStream(archive.path);
+      try {
+        onStep?.("Uploading source");
+        await http.upload(result.upload, Readable.toWeb(stream) as ReadableStream<Uint8Array>, { signal, duplex: "half" });
+      } finally { stream.destroy(); }
+      return { sessionId: result.sessionId, expiresAt: result.expiresAt };
+    } finally { await archive.dispose(); }
   } finally { await source.dispose(); }
 }

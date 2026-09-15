@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, writeFile, symlink, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, writeFile, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -11,7 +11,7 @@ async function directory() {
   directories.push(dir);
   return dir;
 }
-afterEach(async () => { await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
+afterEach(async () => { vi.unstubAllEnvs(); await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 function server() {
   let archive: Buffer | undefined;
@@ -45,6 +45,32 @@ function server() {
 }
 
 describe("SDK source deployments", () => {
+  it("refuses TMPDIR as a source before creating a remote upload session", async () => {
+    const root = await directory();
+    vi.stubEnv("TMPDIR", root);
+    await writeFile(join(root, "openship-upload-old.tar.gz"), "old artifact");
+    const s = server();
+    await expect(s.client.sources.stage({ source: { type: "directory", path: root } })).rejects.toThrow(/temporary directory/);
+    expect(s.fetcher).not.toHaveBeenCalled();
+    expect(await readdir(root)).toEqual(["openship-upload-old.tar.gz"]);
+  });
+
+  it.each(["session", "upload"])("cleans generated source and archives when the %s request fails", async failure => {
+    const root = await directory();
+    vi.stubEnv("TMPDIR", root);
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (failure === "upload" && url.endsWith("/projects/folder/session")) return Response.json({
+        sessionId: "session", expiresAt: Date.now() + 60_000,
+        upload: { url: "/upload", absoluteUrl: "https://ship.test/upload", method: "POST", headers: {}, requiresAuth: true, withCredentials: false },
+      });
+      if (url.endsWith("/upload")) await new Response(init?.body).arrayBuffer();
+      return Response.json({ error: "storage unavailable" }, { status: 503 });
+    });
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    await expect(client.sources.stage({ source: { type: "files", files: { "dist/index.html": "built site" } } })).rejects.toThrow();
+    expect(await readdir(root)).toEqual([]);
+  });
+
   it("requests editable values through the existing scan while retaining masked scans by default", async () => {
     const s = server();
     await s.client.sources.scan("session/opaque");
