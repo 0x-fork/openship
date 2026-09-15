@@ -143,6 +143,10 @@ if [ -n "$FIRST_DOMAIN" ]; then
   esac
 fi
 
+# 3c. /etc/ssl is in the container layer. Restore the daemon certificate links
+#     on every boot so recreating the container retains the mounted TLS identity.
+bash /opt/openship-mail/reconcile-ssl.sh "$FIRST_DOMAIN"
+
 # 4. bootstrap the mail databases (idempotent; skips if the vmail schema exists).
 #
 # The wait for the sidecar lives INSIDE db-bootstrap.sh, which polls `SELECT 1` until
