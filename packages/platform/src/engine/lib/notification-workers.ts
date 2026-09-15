@@ -62,6 +62,14 @@ export function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   const description = own?.description ?? cat?.description;
   if (description) lines.push(description);
   if (payload.message) lines.push(String(payload.message));
+  if (payload.projectName) lines.push(`Project: ${payload.projectName}`);
+  if (payload.serviceName) lines.push(`Service: ${payload.serviceName}`);
+  if (payload.policyName || payload.policyId) {
+    lines.push(`Policy: ${payload.policyName ?? payload.policyId}`);
+  }
+  if (payload.destinationName || payload.destinationId) {
+    lines.push(`Destination: ${payload.destinationName ?? payload.destinationId}`);
+  }
 
   if (payload.branch) lines.push(`Branch: ${payload.branch}`);
   if (payload.commitSha) {

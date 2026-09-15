@@ -59,4 +59,56 @@ describe("delivered headline vs the category it was subscribed through", () => {
     const msg = renderMessage(delivery("service.recovered", { message: "back up" }));
     expect(msg.title).toBe("App recovered");
   });
+
+  it("renders policy, destination, project, and service names in backup alerts", () => {
+    const msg = renderMessage(
+      delivery("backup.failed", {
+        eventType: "backup_run.failed",
+        policyName: "Nightly Database",
+        destinationName: "S3 Primary",
+        projectName: "Production",
+        serviceName: "postgres",
+        errorMessage: "Docker stream ended mid-frame with 15433 bytes buffered",
+        resourceType: "backup_run",
+        resourceId: "bkr_test_123",
+      }),
+    );
+
+    expect(msg.title).toBe("Backup failed");
+    expect(msg.body).toContain("Policy: Nightly Database");
+    expect(msg.body).toContain("Destination: S3 Primary");
+    expect(msg.body).toContain("Project: Production");
+    expect(msg.body).toContain("Service: postgres");
+    expect(msg.body).toContain("Error: Docker stream ended mid-frame with 15433 bytes buffered");
+    expect(msg.body).toContain("Resource: backup_run (bkr_test_123)");
+  });
+
+  it("renders policy and destination for successful backups", () => {
+    const msg = renderMessage(
+      delivery("backup.succeeded", {
+        eventType: "backup_run.succeeded",
+        policyName: "Weekly Volume",
+        destinationName: "Offsite MinIO",
+        projectName: "App",
+        serviceName: "redis",
+        resourceType: "backup_run",
+        resourceId: "bkr_test_456",
+      }),
+    );
+
+    expect(msg.title).toBe("Backup succeeded");
+    expect(msg.body).toContain("Policy: Weekly Volume");
+    expect(msg.body).toContain("Destination: Offsite MinIO");
+    expect(msg.body).toContain("Project: App");
+    expect(msg.body).toContain("Service: redis");
+  });
+
+  it("keeps durable backup references when names cannot be resolved", () => {
+    const msg = renderMessage(delivery("backup.failed", {
+      policyId: "pol_1",
+      destinationId: "dst_1",
+    }));
+    expect(msg.body).toContain("Policy: pol_1");
+    expect(msg.body).toContain("Destination: dst_1");
+  });
 });

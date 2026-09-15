@@ -170,6 +170,7 @@ const h = vi.hoisted(() => ({
   hookExit: { code: 0 as number | null, stderr: "" },
   artifactMetadata: {} as Record<string, unknown>,
   notifications: [] as Array<{ eventType: string; payload: Record<string, unknown> }>,
+  destinationUnavailable: false,
   verifyNotes: [] as Array<string | undefined>,
 }));
 
@@ -198,12 +199,15 @@ vi.mock("@repo/db", () => ({
       findById: async () => h.policy,
     },
     backupDestination: {
-      findById: async () => ({
-        id: "dst_1",
-        organizationId: "org_1",
-        name: "S3 primary",
-        pathPrefix: null,
-      }),
+      findById: async () => {
+        if (h.destinationUnavailable) throw new Error("Destination lookup unavailable");
+        return {
+          id: "dst_1",
+          organizationId: "org_1",
+          name: "S3 primary",
+          pathPrefix: null,
+        };
+      },
       setLastVerified: async (_id: string, _ok: boolean, note?: string) => {
         h.verifyNotes.push(note);
       },
@@ -348,6 +352,7 @@ beforeEach(() => {
   h.hookExit = { code: 0, stderr: "" };
   h.artifactMetadata = {};
   h.notifications.length = 0;
+  h.destinationUnavailable = false;
   h.verifyNotes.length = 0;
 });
 
@@ -500,6 +505,26 @@ describe("a terminal status is final — one owner per verdict", () => {
 });
 
 describe("BackupOrchestrator.execute — hook output cannot fail the backup", () => {
+  it("delivers failure references when policy and destination lookup are unavailable", async () => {
+    const pg = wireRun();
+    h.policy = null;
+    h.run!.destinationId = "dst_1";
+    h.destinationUnavailable = true;
+
+    await new BackupOrchestrator().execute("bkr_live");
+
+    expect(pg.row.status).toBe("failed");
+    expect(h.notifications).toContainEqual(expect.objectContaining({
+      organizationId: "org_1",
+      eventType: "backup_run.failed",
+      payload: expect.objectContaining({
+        policyId: "pol_1",
+        destinationId: "dst_1",
+        errorMessage: "Policy pol_1 disappeared",
+      }),
+    }));
+  });
+
   it("runs one pipeline for duplicate deliveries and acknowledges only its owner", async () => {
     const pg = wireRun();
     h.claimResults = ["claimed", "state_changed"];
