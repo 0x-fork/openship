@@ -205,6 +205,7 @@ export const githubWebhookProvider: WebhookProvider = {
     // commit-sha guard in triggerDeployment is the backstop).
     const deliveryId = headers["x-github-delivery"];
     let anchorId = "";
+    const handledProjectIds = new Set<string>();
     if (deliveryId) {
       const claim = await repos.webhookDelivery
         .claimGithub({ deliveryId, event, outcome: "received" })
@@ -213,6 +214,9 @@ export const githubWebhookProvider: WebhookProvider = {
         return { success: true, event, message: "Duplicate delivery ignored" };
       }
       anchorId = claim.id;
+      if ("handledProjectIds" in claim) {
+        for (const id of claim.handledProjectIds ?? []) handledProjectIds.add(id);
+      }
     }
 
     let result: WebhookHandlerResult;
@@ -222,7 +226,7 @@ export const githubWebhookProvider: WebhookProvider = {
           result = await handleInstallation(payload as GitHubInstallationPayload);
           break;
         case "push":
-          result = await handlePush(payload as GitHubPushPayload);
+          result = await handlePush(payload as GitHubPushPayload, handledProjectIds);
           break;
         case "check_run":
           result = await handleCheckRun(payload as GitHubCheckRunPayload);
@@ -240,6 +244,7 @@ export const githubWebhookProvider: WebhookProvider = {
             outcome: "failed",
             statusCode: 500,
             error: error instanceof Error ? error.message : "Webhook handler failed",
+            summary: { handledProjectIds: [...handledProjectIds] },
           })
           .catch(() => {});
       }
@@ -252,6 +257,7 @@ export const githubWebhookProvider: WebhookProvider = {
           outcome: result.success ? "received" : "failed",
           statusCode: result.success ? 200 : 500,
           error: result.error,
+          summary: { handledProjectIds: [...handledProjectIds] },
         })
         .catch(() => {});
     }

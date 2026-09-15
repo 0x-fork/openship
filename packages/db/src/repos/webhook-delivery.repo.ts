@@ -77,7 +77,7 @@ export function createWebhookDeliveryRepo(db: Database) {
         deliveryId: string;
         event: string;
       },
-    ): Promise<{ claimed: boolean; id: string }> {
+    ): Promise<{ claimed: boolean; id: string; handledProjectIds?: string[] }> {
       const id = generateId("wdl");
       const rows = await db
         .insert(webhookDelivery)
@@ -104,7 +104,17 @@ export function createWebhookDeliveryRepo(db: Database) {
           ),
         )
         .returning();
-      return retry ? { claimed: true, id: retry.id } : { claimed: false, id: "" };
+      if (!retry) return { claimed: false, id: "" };
+      const summary = retry.summary as { handledProjectIds?: unknown } | null;
+      return {
+        claimed: true,
+        id: retry.id,
+        // A retry must not repeat successful siblings, even after their live
+        // commit changes. Older receipts have no per-project completion data.
+        handledProjectIds: Array.isArray(summary?.handledProjectIds)
+          ? summary.handledProjectIds.filter((id): id is string => typeof id === "string")
+          : [],
+      };
     },
 
     /** Record a delivery row (incoming/backup, or a github fan-out row). Returns its id. */

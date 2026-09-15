@@ -145,7 +145,7 @@ describe("GitHub blocked deployment redelivery (#847)", () => {
     expect(dispatch).toHaveBeenCalledTimes(2);
   });
 
-  it("returns a failure when one project starts and a sibling is blocked", async () => {
+  it("retries only blocked siblings after a partially successful push", async () => {
     const f = await fixture();
     const other = await seedProject(f.organizationId, f.fields);
     dispatch.mockImplementation(async (_ctx, input) => {
@@ -162,6 +162,27 @@ describe("GitHub blocked deployment redelivery (#847)", () => {
       "dispatched",
     );
     expect((await repos.webhookDelivery.listByProject(other.id)).rows[0].outcome).toBe("failed");
+    expect(await f.anchor()).toMatchObject({
+      summary: { handledProjectIds: [f.project.id] },
+    });
+
+    // The first sibling can have advanced to a newer commit before the operator
+    // retries; the current-commit guard cannot make an old delivery idempotent.
+    dispatch.mockResolvedValue({ deployment: { id: "previously-blocked-sibling" } });
+    expect((await f.send(f.deliveryId)).status).toBe(200);
+    expect(
+      dispatch.mock.calls.filter(([, input]) => input.projectId === f.project.id),
+    ).toHaveLength(1);
+    expect(
+      dispatch.mock.calls.filter(([, input]) => input.projectId === other.id),
+    ).toHaveLength(2);
+    expect(await f.anchor()).toMatchObject({ outcome: "received", statusCode: 200 });
+
+    // Completion is scoped to this delivery; the next push still deploys both.
+    f.body.head_commit.id = "3".repeat(40);
+    f.body.after = "3".repeat(40);
+    expect((await f.send(`${f.deliveryId}-next-push`)).status).toBe(200);
+    expect(dispatch).toHaveBeenCalledTimes(5);
   });
 
   it("does not block a different branch delivery while one branch is dispatching", async () => {

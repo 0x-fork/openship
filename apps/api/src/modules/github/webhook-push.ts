@@ -69,7 +69,10 @@ function recordPushDelivery(
     .catch(() => {});
 }
 
-export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHandlerResult> {
+export async function handlePush(
+  payload: GitHubPushPayload,
+  handledProjectIds: Set<string> = new Set(),
+): Promise<WebhookHandlerResult> {
   const owner = payload.repository?.owner?.login;
   const repo = payload.repository?.name;
   const ref = payload.ref;
@@ -99,7 +102,7 @@ export async function handlePush(payload: GitHubPushPayload): Promise<WebhookHan
     commitSha,
     commitMessage: payload.head_commit?.message,
     payload,
-  });
+  }, handledProjectIds);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -268,6 +271,7 @@ async function deployProjectFromPush(
 
 async function triggerBranchDeployments(
   input: BranchDeploymentTrigger,
+  handledProjectIds: Set<string>,
 ): Promise<WebhookHandlerResult> {
   // Dedup lives upstream now (delivery-id claim + commit-sha guard) — no Set here.
   const projects = await repos.project.findByGitRepo(input.owner, input.repo);
@@ -332,8 +336,13 @@ async function triggerBranchDeployments(
     return { success: true, event: input.event, message: "No local auto-deploy projects matched" };
   }
 
+  // A partial fan-out failure makes the delivery retryable. Keep successful
+  // targets in its durable receipt: commit-based dedup cannot protect a target
+  // that has since deployed a newer commit, or an event that forces all services.
+  const pendingProjects = autoDeployProjects.filter((p) => !handledProjectIds.has(p.id));
+  const alreadyHandled = autoDeployProjects.length - pendingProjects.length;
   const results = await Promise.allSettled(
-    autoDeployProjects.map((p) =>
+    pendingProjects.map((p) =>
       // A webhook has no interactive user watching for errors. When a redeploy
       // is blocked BEFORE a deployment row exists (preflight throws with no
       // clone credential, or the org has no owner), the pipeline's own
@@ -351,8 +360,9 @@ async function triggerBranchDeployments(
   let failed = 0;
   await Promise.all(
     results.map(async (r, i) => {
-      const p = autoDeployProjects[i];
+      const p = pendingProjects[i];
       if (r.status === "fulfilled") {
+        handledProjectIds.add(p.id);
         const v = r.value as { deployment?: { id?: string }; skipped?: boolean } | undefined;
         if (v?.skipped) {
           skipped++;
@@ -388,6 +398,7 @@ async function triggerBranchDeployments(
       : {}),
     message:
       `Triggered ${succeeded} deployment(s) for ${input.owner}/${input.repo}#${input.branch}` +
+      `${alreadyHandled ? `, ${alreadyHandled} already handled by this delivery` : ""}` +
       `${skipped ? `, ${skipped} skipped (no affected services)` : ""}` +
       `${failed ? `, ${failed} failed` : ""}`,
   };
