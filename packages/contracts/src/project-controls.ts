@@ -444,7 +444,7 @@ export const ProjectControlSchemas = {
   mergeEnvVars: {
     action: "write",
     input: MergeEnvVarsBody,
-    output: Type.Object({ upserted: Type.Integer(), deleted: Type.Integer() }),
+    output: Type.Object({ upserted: Type.Integer(), deleted: Type.Integer(), warnings: Type.Optional(Type.Array(Type.String())) }),
   },
   getResources: { action: "read", output: ProjectResourcesSchema },
   updateResources: { action: "write", input: UpdateResourcesBody, output: ProjectResourcesSchema },

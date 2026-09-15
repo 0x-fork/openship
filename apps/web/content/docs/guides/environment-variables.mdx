@@ -124,6 +124,29 @@ file is only used after you choose **Import .env**.
   flow rather than committing it to `openship.json` or baking it into the image.
 </Callout>
 
+## Service overrides and credential rotation
+
+On a normal service deployment, the highest-priority value wins in this order:
+
+1. A service-scoped variable from its environment editor.
+2. A literal in that service's Compose `environment` or `openship.json` `env` map.
+3. The project's environment, captured when the deployment starts.
+
+Compose expressions such as `TOKEN: ${TOKEN}` resolve against the configured values;
+they do not pin a previous scan's value. A rollback instead replays its captured
+project values, including their precedence over present-day service overrides.
+
+`openship project env set` warns when a changed or deleted key still has a service
+override. The API and SDK return the same `warnings` array, and deployment logs name
+keys whose service values win. These messages contain names only. Saving the project
+value succeeds, but it cannot replace a service-owned credential. Update the service
+value, or remove its override to inherit the project value, then deploy. Deleting a
+project variable does not delete a service's copy.
+
+For example, if `web` pins `TOKEN=old`, setting the project's `TOKEN=new` will warn
+about `web`; a rebuild alone still uses the pinned value. In the service editor,
+remove that override before relying on the project's rotated token.
+
 ## Reveal, hide, and replace a secret
 
 Inside the editor, each value has an **eye icon** to show or hide it. A secret you saved earlier comes back

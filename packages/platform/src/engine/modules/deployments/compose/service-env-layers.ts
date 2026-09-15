@@ -43,6 +43,8 @@ export interface MergedServiceEnv {
    * displaying the empty value this merge decided to ignore.
    */
   deferredEmpty: string[];
+  /** Project/frozen keys whose service layer takes precedence. Names only. */
+  overriddenProjectKeys: string[];
   /** Required Compose variables still absent after every env layer was merged. */
   missingRequired: ComposeMissingVariable[];
 }
@@ -103,6 +105,8 @@ export function mergeServiceDeployEnv(
   const hasTemplateProvenance = layers.templateKeys !== undefined;
 
   if (!frozenWins) Object.assign(env, layers.frozen);
+  const projectValues = { ...env };
+  const serviceOwnedKeys = new Set<string>();
 
   for (const [key, value] of Object.entries(layers.inline)) {
     // A template is evaluated after all layers exist, so it can consume a
@@ -114,11 +118,13 @@ export function mergeServiceDeployEnv(
       continue;
     }
     env[key] = value;
+    serviceOwnedKeys.add(key);
   }
 
   // Explicit service-scoped rows win outright — including an empty one, which is
   // the supported way to force a variable blank on one service.
   Object.assign(env, layers.service);
+  for (const key of Object.keys(layers.service)) serviceOwnedKeys.add(key);
 
   if (frozenWins) Object.assign(env, layers.frozen);
 
@@ -132,6 +138,11 @@ export function mergeServiceDeployEnv(
       .map((key) => [key, layers.inline[key]!]),
   );
   const dynamic = resolveComposeEnvironmentTemplates(env, templates);
+  // A passthrough such as KEY=${KEY} consumes the project value; it does not
+  // pin an old service value. Report a template only when it changes that value.
+  for (const key of Object.keys(templates)) {
+    if (dynamic.env[key] !== projectValues[key]) serviceOwnedKeys.add(key);
+  }
 
   // A key that a later layer supplied anyway was never really "deferred" —
   // reporting it would name a variable whose value this decision didn't pick.
@@ -140,6 +151,12 @@ export function mergeServiceDeployEnv(
   return {
     env: dynamic.env,
     deferredEmpty: deferredEmpty.filter((key) => !decidedLater(key)),
+    overriddenProjectKeys: [...serviceOwnedKeys]
+      .filter(
+        (key) =>
+          Object.hasOwn(projectValues, key) && !(frozenWins && Object.hasOwn(layers.frozen, key)),
+      )
+      .sort(),
     missingRequired: dynamic.missingRequired,
   };
 }

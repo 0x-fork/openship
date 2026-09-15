@@ -343,6 +343,7 @@ envCmd
       ok(
         `\n  Updated env (${opts.environment}): ${upserts.length} upserted, ${deletes.length} deleted\n`,
       );
+      for (const warning of result.warnings ?? []) info(`  Warning: ${warning}\n`);
     }),
   );
 
