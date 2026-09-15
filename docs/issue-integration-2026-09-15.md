@@ -14,23 +14,39 @@ Usable contributor PRs target this integration branch. Maintainer edits are made
 
 Initial unchanged-main baseline: **13,075 tests passed, 3 skipped, all 10 tasks passed** (4m34s); `npx --yes bun@1.3.10 run test --force --log-order=stream`.
 
-Final combined local suite: **13,325 tests passed, 0 skipped, 1,003 files, all 10 tasks passed** (8m19s); `npx --yes bun@1.3.10 run test`.
+Final combined local suite after hardening: **13,331 tests passed, 0 skipped, 1,003 files, all 10 tasks passed** (4m10s; 5 cached tasks); `npx --yes bun@1.3.10 run test`. The **688 SDK/CLI tests** also passed in a separate uncached run (58 files, 2 tasks), validating shared dependencies without relying on Turbo test caching.
 
 All 22 build/typecheck tasks passed with `npx --yes bun@1.3.10 run lint`. The web documentation source was generated first. Documentation checks passed: 160 pages; 367 SDK methods; 559 HTTP routes; 204 CLI paths; 224 CLI examples; 107 SDK examples.
 
-The actual npm tarball passed outside the workspace on Node 22.21.1: ESM/CommonJS imports, NodeNext types, passive imports, native deployment and persistence, tenant isolation and revocation, teardown, runnable lifecycle example, and CLI persistence/cleanup (`bun run --cwd packages/openship test:package`).
+The actual npm tarball passed outside the workspace on Node 22.21.1 and 24.21.0: ESM/CommonJS imports, NodeNext types, passive imports, native deployment and persistence, tenant isolation and revocation, teardown, runnable lifecycle example, and CLI persistence/cleanup (`bun run --cwd packages/openship test:package`).
 
-Additional runtime checks for the final configuration change:
+Previously completed runtime checks for the unchanged configuration-storage paths (not repeated for these webhook, SFTP and selector fixes):
 
 - 3 whole-instance HTTP-transfer / PostgreSQL configuration race cases
 - 3 real Docker Compose rollback cases, including the original secret after restore
 - 1 real project-store to Docker build/runtime case
 
-Combined-branch CI: [SUCCESS](https://github.com/oblien/openship/actions/runs/35028598928) at `2763b0cdff1e34316f4d46465e3ebccd8ebf5484`. [Current PR checks](https://github.com/oblien/openship/pull/891/checks) include any later ledger-only commit.
+Pre-review CI passed at `1b37a731`: [run 35029518259](https://github.com/oblien/openship/actions/runs/35029518259). The final review commit is checked separately in [PR #891 checks](https://github.com/oblien/openship/pull/891/checks); its result is recorded on the PR.
 
 All 50 reports reviewed: **28 fixed or verified already fixed**, **14 feature requests deferred**, and **8 other reports kept open** with partial fixes, missing reproduction details, or no actionable description. Fifteen contributor PRs are recorded as merged into this branch on GitHub, preserving their commits and authorship. Main is awaiting maintainer review of PR #891.
 
 Local and simulated checks do not establish behavior for an unprovided host or provider response. The remaining limits and requested diagnostics are recorded below.
+
+## Production review of PR #891 — 2026-09-16
+
+The full production diff was reviewed against unchanged main `c6cd723f`, including the shared platform, API/native SDK/CLI boundaries, encrypted storage and transfer, deployment routing, backups, mail and dashboard behavior. All 50 issue outcomes match GitHub. All 42 distinct resolution commits are retained, and all 15 integrated contributor PRs remain GitHub merges with their source history intact.
+
+Three reproducible regressions were corrected during this review:
+
+| Issue | Failure found | Correction | Commit |
+| --- | --- | --- | --- |
+| #847 | Retrying a partially successful push could redeploy a completed target after its active commit changed, or with force-all routing. | Retain handled project IDs in the existing delivery receipt; retry only unfinished targets. | `f4d1b38a` |
+| #817, #882 | An unacknowledged SFTP control request could hold post-backup retention indefinitely. | Reuse the control-request deadline for setup and cleanup; report failed deletion keys while preserving successful backups and healthy streaming uploads. | `e1850f22` |
+| #870 | A later branch page could move the keyboard highlight to another branch before Enter. | Keep the highlighted option by its stable value in the shared selector. | `2a78881f` |
+
+Each regression failed before its fix and passed afterward. The fixes extend existing receipts, timeout handling and selection state; they add no parallel business-logic implementation. Documentation was aligned with the actual retry and DNS/TLS behavior in `3bb3fa3a`, including removal of contradictory self-hosted public-IP/TXT instructions.
+
+Feature requests and incomplete reports retain their existing open status. GitHub redelivery remains manual; the automatic whole-instance server migration remains unavailable, with Data Transfer documented as the supported existing path. Issue-specific limits remain in the ledger below.
 
 ## Issue ledger
 
@@ -46,7 +62,7 @@ Local and simulated checks do not establish behavior for an unprovided host or p
 | [#875](https://github.com/oblien/openship/issues/875) | [Bug]: Can't add self hosted openship mcp sever to claude code                                                                                                                                    | —                                                                                                        | **fixed**: The dashboard now advertises /api/mcp, matching OAuth metadata, including in proxy installations.                                                                                                                                                                                                                                  |
 | [#873](https://github.com/oblien/openship/issues/873) | [Bug]: `openship.json`'s `monorepo` config (and CLI `project create --type monorepo`) is documented and schema-valid, but doesn't actually produce a multi-app project through any available path | —                                                                                                        | **partial**: Fixed silent monorepo fallback and ignored-config diagnostics; declarative Docker-free multi-process support remains out of scope.                                                                                                                                                                                               |
 | [#872](https://github.com/oblien/openship/issues/872) | [Bug]: Global GitHub device-flow connection intermittently shows "rejected". The status is backed by a Redis cache entry with a ~100 second TTL, not the actual GitHub authorization state        | —                                                                                                        | **partial**: Fixed reproducible rate-limit misclassification; the original intermittent account rejection still needs correlation with provider status.                                                                                                                                                                                       |
-| [#870](https://github.com/oblien/openship/issues/870) | [Bug]: Branch selector on "Link Repository" is unusable                                                                                                                                           | [#884](https://github.com/oblien/openship/pull/884)                                                      | **integrated**: Integrate PR #884 with pagination in both the migration wizard and deploy picker, preserving the platform/SDK architecture.                                                                                                                                                                                                   |
+| [#870](https://github.com/oblien/openship/issues/870) | [Bug]: Branch selector on "Link Repository" is unusable                                                                                                                                           | [#884](https://github.com/oblien/openship/pull/884)                                                      | **integrated**: Both migration and deployment selectors share paginated branch search through platform operations, with stable keyboard selection while more branches load.                                                                                                                                                                                                   |
 | [#869](https://github.com/oblien/openship/issues/869) | Migrate to self-hosted server never actually deploys (3 stacked bugs: missing deploy trigger, release-dist path/packaging mismatch, PGlite assets crash)                                          | —                                                                                                        | **partial**: Confirmed the missing remote cutover workflow. Prevented destructive restore before provisioning, exposed the unavailable step, and repaired source-release transfer entry points and PGlite asset isolation.                                                                                                                    |
 | [#867](https://github.com/oblien/openship/issues/867) | [Bug]: Job run failure notifications omit job name, exit code, and logs                                                                                                                           | [#868](https://github.com/oblien/openship/pull/868)                                                      | **integrated**: Job alerts include the real exit status, name, duration, sanitized log tail, and failure reason.                                                                                                                                                                                                                              |
 | [#865](https://github.com/oblien/openship/issues/865) | [Improvement]: Include destination and policy references in backup job notifications                                                                                                              | [#866](https://github.com/oblien/openship/pull/866)                                                      | **integrated**: Backup alerts include policy and destination references even when lookups fail.                                                                                                                                                                                                                                               |
@@ -58,7 +74,7 @@ Local and simulated checks do not establish behavior for an unprovided host or p
 | [#852](https://github.com/oblien/openship/issues/852) | [Bug]: Switching a project's branch in the deploy config UI never re-scans the repo, stale framework/compose detection from the previous branch is kept and used to deploy                        | [#855](https://github.com/oblien/openship/pull/855)                                                      | **integrated**: Integrate PR #855: rescan branch changes, discard stale Compose defaults, and save the new branch with its settings in one platform update.                                                                                                                                                                                   |
 | [#851](https://github.com/oblien/openship/issues/851) | [Bug]: "Sign in with GitHub" (device flow) silently does nothing, backend returns a valid device code but the UI never displays it                                                                | [#862](https://github.com/oblien/openship/pull/862)                                                      | **integrated**: Pending GitHub device codes stay visible across stale status refreshes and account changes.                                                                                                                                                                                                                                   |
 | [#849](https://github.com/oblien/openship/issues/849) | [Feature Request] Add CLI commands for self-hosted jobs                                                                                                                                           | [#850](https://github.com/oblien/openship/pull/850)                                                      | **deferred-feature**: Deferred: new CLI Jobs command surface; PR #850 is not included.                                                                                                                                                                                                                                                        |
-| [#847](https://github.com/oblien/openship/issues/847) | [Bug] Push webhook that arrives during an in-progress deployment is dropped permanently (200 OK, no retry, no queue)                                                                              | —                                                                                                        | **fixed**: Blocked GitHub dispatches now fail visibly and the same failed delivery ID can be redelivered after the blocker clears.                                                                                                                                                                                                            |
+| [#847](https://github.com/oblien/openship/issues/847) | [Bug] Push webhook that arrives during an in-progress deployment is dropped permanently (200 OK, no retry, no queue)                                                                              | —                                                                                                        | **fixed**: Blocked GitHub dispatches fail visibly; redelivery of the same failed delivery ID retries only unfinished targets and preserves successful siblings.                                                                                                                                                                                                            |
 | [#846](https://github.com/oblien/openship/issues/846) | [Bug] Compose services cannot join a pre-existing external Docker network (background workers are unreachable from shared services)                                                               | —                                                                                                        | **deferred-feature**: Per-service external Docker network attachments require a new service/runtime capability; deferred under bugs-only scope.                                                                                                                                                                                               |
 | [#845](https://github.com/oblien/openship/issues/845) | [Bug] Edge router drops query string on 308 trailing-slash redirect                                                                                                                               | —                                                                                                        | **already-fixed**: Current main already preserves query strings in generated trailing-slash redirects. Real OpenResty tests confirm that /ui?token=... redirects to /ui/?token=... without losing encoded values or repeated parameters; additional regression coverage is on the integration branch.                                         |
 | [#844](https://github.com/oblien/openship/issues/844) | [Bug] service.environment silently overrides project env on every deploy path (and stores secrets in plaintext)                                                                                   | —                                                                                                        | **fixed**: Project-env writes and deployments warn about service overrides; service environment, build arguments and their saved copies are encrypted at rest. Contributor PR #864 also protects build-argument API responses and masked edits.                                                                                               |
@@ -97,11 +113,13 @@ The original PR could hang while cleaning up a dead channel and did not bound th
 
 A destination that remains unreachable can still retain the temporary file; cleanup reports that failure. This change does not sweep pre-existing process-crash leftovers.
 
+Production review extended the same control-request deadline to channel/directory setup, probes, stat, listing and idempotent deletion. It removes duplicated unlink callbacks and does not impose a total deadline on a healthy streaming upload.
+
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/882#issuecomment-5685102891).
 
 PR #883: integrated; merged into the integration branch with [review status](https://github.com/oblien/openship/pull/883#issuecomment-5685269861).
 
-Integration commits: `3bf8ec1d`.
+Integration commits: `3bf8ec1d`, `e1850f22`.
 
 Verification:
 
@@ -109,6 +127,7 @@ Verification:
 - Both new deadline regressions failed against original PR #883
 - All 3,667 adapter tests passed
 - Adapter, platform, and API TypeScript checks passed
+- Production review: all 16 SFTP cases passed; the unacknowledged deletion case failed before hardening.
 
 ### #881
 
@@ -274,7 +293,7 @@ Verification:
 
 ### #870
 
-Integrate PR #884 with pagination in both the migration wizard and deploy picker, preserving the platform/SDK architecture.
+Both migration and deployment selectors share paginated branch search through platform operations, with stable keyboard selection while more branches load.
 
 The original PR updated the deployment selector but did not wire pagination into the migration wizard named in the report. Both now share a repository-scoped picker with main/master first, explicit load-more, keyboard search, and visible retryable failures.
 
@@ -282,11 +301,13 @@ Moved branch listing into the shared platform operations and contracts. The priv
 
 Environment creation validates a branch directly, including names beyond page one, rather than accepting any tag/commit ref as the PR proposed. Unavailable-provider errors remain distinct from a missing branch.
 
+Production review: later branch pages may sort before the current option. The shared CustomSelect now retains keyboard focus by option value so pressing Enter cannot silently choose a different branch when results arrive.
+
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/870#issuecomment-5685275371).
 
 PR #884: integrated; merged into the integration branch with [review status](https://github.com/oblien/openship/pull/884#issuecomment-5685276148).
 
-Integration commits: `b2cd7842`.
+Integration commits: `b2cd7842`, `2a78881f`.
 
 PR #884 reviewed at `c9c7fbf2792b02304377b2d49336e71b80844afd`.
 
@@ -294,6 +315,7 @@ Verification:
 
 - Five DOM interaction regressions pass, covering later-page search, current/main branch retention, existing-project operations, stale repository responses, error/retry, and existing description filtering.
 - 17 affected GitHub/project API tests and 34 SDK project-control tests pass; API and dashboard type checks pass. Native/HTTP tests cover page metadata and cross-tenant denial.
+- Production review: the asynchronous insertion regression failed before the fix; all six branch-picker interaction tests passed.
 
 ### #869
 
@@ -307,7 +329,7 @@ The complete move-to-own-server workflow remains open: provision a target throug
 
 GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/869#issuecomment-5688416818).
 
-Integration commits: `760bdbed`.
+Integration commits: `760bdbed`, `3bb3fa3a`.
 
 Verification:
 
@@ -487,25 +509,28 @@ PR #850: feature; closed with [review status](https://github.com/oblien/openship
 
 ### #847
 
-Blocked GitHub dispatches now fail visibly and the same failed delivery ID can be redelivered after the blocker clears.
+Blocked GitHub dispatches fail visibly; redelivery of the same failed delivery ID retries only unfinished targets and preserves successful siblings.
 
 Confirmed on current main: push fan-out returned success=true and HTTP 200 even when checkNoActiveBuild rejected every deployment; its durable delivery claim then discarded redelivery of the same ID.
 
 The public webhook controller now returns HTTP 500 for failed handling. GitHub records the anchor as failed and the project feed retains the individual reason; a compare-and-set permits one retry of a finished failure while successful/in-flight receipts remain deduplicated. Unexpected handler exceptions also leave a retryable failed receipt.
 
-This implements the issue's minimum requested remedy: operator-visible failure and manual GitHub redelivery. It does not add an automatic deployment queue or cancel another build. Existing per-project commit-SHA admission prevents replaying a commit already building/live, including successful siblings of a partial fan-out. The guide explicitly states that GitHub does not automatically retry failed deliveries.
+This implements the issue’s minimum requested remedy: operator-visible failure and manual GitHub redelivery. It does not add an automatic deployment queue or cancel another build. Existing commit-SHA admission skips commits already building/live; the delivery receipt separately retains successful siblings even after newer commits deploy. GitHub does not automatically retry failed deliveries.
 
 Replaced the three skipped pre-RequestContext push cases with signed HTTP tests using real repositories, organization ownership and delivery claims; preserved the unrelated-event check.
 
+Production review: a partial push retry could reschedule a completed target after its active commit changed, or with forceAll routing. The existing delivery receipt now retains handled project IDs across failure/reclaim, and redelivery dispatches only the remaining targets. No second queue or receipt table was added.
+
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/847#issuecomment-5687697009).
 
-Integration commits: `893134da`.
+Integration commits: `893134da`, `f4d1b38a`, `3bb3fa3a`.
 
 Verification:
 
 - 289 GitHub and incoming-webhook API/SDK parity tests passed across 37 files; 6 real-database delivery claim/feed tests passed.
 - Three signed HTTP regressions fail before the production changes and pass with them: blocked dispatch, partial fan-out, and unexpected handler failure. Tests also cover HMAC rejection, same-ID redelivery/deduplication, concurrent branches and legacy default-branch resolution.
 - API TypeScript check and docs validation passed (160 pages, 367 SDK methods, 559 HTTP routes).
+- Production review: the new partial-redelivery regression failed before the fix; 8 signed HTTP/provider tests and 7 real-database receipt tests passed, including concurrent reclaim with retained targets.
 
 ### #846
 
@@ -677,6 +702,8 @@ GitHub: closed with [verification and integration status](https://github.com/obl
 
 PR #831: already-fixed; closed with [review status](https://github.com/oblien/openship/pull/831#issuecomment-5685278536).
 
+Integration commits: `34b3d0e66573a731072d82c814a637be043ca424`.
+
 Verification:
 
 - The existing ten dashboard URL tests pass, including proxy and split API origins
@@ -706,14 +733,17 @@ The existing per-service, protected-copy and partial-delete rules are preserved.
 
 The fallback keeps its stable system-job key and defaults to hourly at minute 29. Orphan cleanup and audit pruning defaults move off the resource/SSL slots. Existing saved cron and enabled settings remain operator-owned; they can be changed in Jobs.
 
+Production review: an SFTP server that never acknowledged unlink could retain the new post-backup worker lease indefinitely. Channel setup and control operations now share the existing request deadline; batch cleanup reports failed keys while preserving missing-file idempotency and successful deletions.
+
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/817#issuecomment-5687573606).
 
-Integration commits: `60e77c57`.
+Integration commits: `60e77c57`, `e1850f22`.
 
 Verification:
 
 - 260 backup/restore tests in 23 files passed, including eight new real-database orchestrator/retention cases: four consecutive runs, failed capture, refused deletion and retry, policy changes, cleanup exception, cancellation, protected per-service copies, and concurrent sweeps.
 - 18 jobs HTTP tests passed alongside the eight focused cases. API TypeScript and documentation validation passed. Four regressions fail against the previous production implementation and pass with the fix.
+- Production review: the stalled-unlink regression failed before the fix. All 16 SFTP cases passed, including setup stalls, partial deletion, early probe closure, fresh-connection cleanup and healthy slow uploads.
 
 ### #801
 
@@ -834,9 +864,11 @@ Corrected English/French/Turkish toggle help and the custom-domain/troubleshooti
 
 Public access still requires a reachable proxy, VPN, or tunnel; internal DNS does not create public reachability. No DDNS manager or new networking mode was added.
 
+Production review removed contradictory introductory troubleshooting instructions that still required self-hosted public-IP/TXT checks. The whole page now distinguishes Cloud ownership checks, self-hosted ACME and operator-owned external ingress.
+
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/706#issuecomment-5687796974).
 
-Integration commits: `c5676499`.
+Integration commits: `c5676499`, `3bb3fa3a`.
 
 Verification:
 
