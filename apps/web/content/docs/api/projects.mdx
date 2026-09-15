@@ -393,7 +393,7 @@ IDs.
 | --- | --- | --- |
 | Read the project’s detailed information. | `projects.getInfo(id)` | `GET /api/projects/:id/info`<br />`project:read` |
 | Read linked Git source information. | `projects.getGitInfo(id)` | `GET /api/projects/:id/git`<br />`project:read` |
-| List branches available from the linked source. | `projects.listBranches(id)` | `GET /api/projects/:id/branches`<br />`project:read` |
+| List branches available from the linked source. | `projects.listBranches(id, input?)` | `GET /api/projects/:id/branches`<br />`project:read` |
 | Link a Git repository to the project. | `projects.linkRepo(id, input)` | `POST /api/projects/:id/git/link`<br />`project:write` |
 | Configure a release image as the deployment source. | `projects.setReleaseImageSource(id, input)` | `PUT /api/projects/:id/release-image-source`<br />`project:write` |
 | Enable or disable automatic deployment triggers. | `projects.setAutoDeploy(id, input)` | `POST /api/projects/:id/auto-deploy`<br />`project:write` |

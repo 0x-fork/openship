@@ -34,7 +34,7 @@ Review and integration are in progress. Local checks do not establish live provi
 | [#858](https://github.com/oblien/openship/issues/858) | [Bug]: False-positive "No public domain is connected" warning on redeploy                                                                                                                         | [#861](https://github.com/oblien/openship/pull/861)                                                      | **pending**: Pending review                                                                                                                                 |
 | [#856](https://github.com/oblien/openship/issues/856) | [Feature]: Add Authentik to the one-click app catalog                                                                                                                                             | [#857](https://github.com/oblien/openship/pull/857)                                                      | **deferred-feature**: Deferred: new Authentik catalog application; PR #857 is not included.                                                                 |
 | [#854](https://github.com/oblien/openship/issues/854) | [Bug] buildArgs returned unmasked in the deployments API while the same key is masked in environment                                                                                              | [#864](https://github.com/oblien/openship/pull/864)                                                      | **pending**: Pending review                                                                                                                                 |
-| [#853](https://github.com/oblien/openship/issues/853) | [Bug] openship deploy: folder upload tarball is written inside its own archive root when cwd is $TMPDIR — orphaned tarballs nest and fill the disk                                                | [#863](https://github.com/oblien/openship/pull/863)                                                      | **pending**: Pending review                                                                                                                                 |
+| [#853](https://github.com/oblien/openship/issues/853) | [Bug] openship deploy: folder upload tarball is written inside its own archive root when cwd is $TMPDIR — orphaned tarballs nest and fill the disk                                                | [#863](https://github.com/oblien/openship/pull/863)                                                      | **integrated**: Integrate PR #863 in the shared platform/SDK packager: reject staging within source and require an explicit folder-upload choice.           |
 | [#852](https://github.com/oblien/openship/issues/852) | [Bug]: Switching a project's branch in the deploy config UI never re-scans the repo, stale framework/compose detection from the previous branch is kept and used to deploy                        | [#855](https://github.com/oblien/openship/pull/855)                                                      | **integrated**: Integrate PR #855: rescan branch changes, discard stale Compose defaults, and save the new branch with its settings in one platform update. |
 | [#851](https://github.com/oblien/openship/issues/851) | [Bug]: "Sign in with GitHub" (device flow) silently does nothing, backend returns a valid device code but the UI never displays it                                                                | [#862](https://github.com/oblien/openship/pull/862)                                                      | **integrated**: Pending GitHub device codes stay visible across stale status refreshes and account changes.                                                 |
 | [#849](https://github.com/oblien/openship/issues/849) | [Feature Request] Add CLI commands for self-hosted jobs                                                                                                                                           | [#850](https://github.com/oblien/openship/pull/850)                                                      | **deferred-feature**: Deferred: new CLI Jobs command surface; PR #850 is not included.                                                                      |
@@ -78,6 +78,8 @@ The original PR could hang while cleaning up a dead channel and did not bound th
 A destination that remains unreachable can still retain the temporary file; cleanup reports that failure. This change does not sweep pre-existing process-crash leftovers.
 
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/882#issuecomment-5685102891).
+
+PR #883: integrated; closed with [review status](https://github.com/oblien/openship/pull/883#issuecomment-5685269861).
 
 Integration commits: `3bf8ec1d`.
 
@@ -133,6 +135,10 @@ Moved branch listing into the shared platform operations and contracts. The priv
 
 Environment creation validates a branch directly, including names beyond page one, rather than accepting any tag/commit ref as the PR proposed. Unavailable-provider errors remain distinct from a missing branch.
 
+GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/870#issuecomment-5685275371).
+
+PR #884: integrated; closed with [review status](https://github.com/oblien/openship/pull/884#issuecomment-5685276148).
+
 Integration commits: `b2cd7842`.
 
 PR #884 reviewed at `c9c7fbf2792b02304377b2d49336e71b80844afd`.
@@ -150,6 +156,8 @@ Adapted PR #868 while preserving native authorization, cancellation, target attr
 
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/867#issuecomment-5685102133).
 
+PR #868: integrated; closed with [review status](https://github.com/oblien/openship/pull/868#issuecomment-5685273691).
+
 Integration commits: `505b91ee`.
 
 Verification:
@@ -165,6 +173,8 @@ Adapted PR #866 into the shared platform. Removed the nonexistent policy-name ca
 
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/865#issuecomment-5685101258).
 
+PR #866: integrated; closed with [review status](https://github.com/oblien/openship/pull/866#issuecomment-5685272687).
+
 Integration commits: `98bbf603`.
 
 Verification:
@@ -179,6 +189,8 @@ Adapted PR #860 to packages/platform. Removed the blanket cron catch so infrastr
 
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/859#issuecomment-5685100566).
 
+PR #860: integrated; closed with [review status](https://github.com/oblien/openship/pull/860#issuecomment-5685271579).
+
 Integration commits: `c200c0b2`.
 
 Verification:
@@ -192,6 +204,23 @@ Deferred: new Authentik catalog application; PR #857 is not included.
 
 Excluded following the maintainer’s explicit request to focus this integration branch on bugs and general improvements. The issue remains open.
 
+PR #857: feature; closed with [review status](https://github.com/oblien/openship/pull/857#issuecomment-5685279419).
+
+### #853
+
+Integrate PR #863 in the shared platform/SDK packager: reject staging within source and require an explicit folder-upload choice.
+
+Kept the SDK migration: the deleted CLI folder-deploy service and obsolete tests are not revived. Physical-path validation and archive ownership live in packages/platform; the SDK packages before requesting a remote session and disposes both generated source and archive on failure.
+
+The CLI uses its cleanup-aware exit mechanism and the shared SDK. An explicit project redeploy from outside Git uses its stored source; uploading the working directory requires --folder or the existing --name opt-in. Existing user-owned upload leftovers are preserved.
+
+Integration commits: `e1082f44`.
+
+Verification:
+
+- 41 platform, SDK and CLI tests pass; platform and CLI type checks pass.
+- All three source/staging overlap regressions fail against main (unsafe archives were created), and pass with the guard. Cases include exact paths, ancestors, symlink aliases/parents, common prefixes, retained build outputs, and session/upload failure cleanup.
+
 ### #852
 
 Integrate PR #855: rescan branch changes, discard stale Compose defaults, and save the new branch with its settings in one platform update.
@@ -199,6 +228,10 @@ Integrate PR #855: rescan branch changes, discard stale Compose defaults, and sa
 The scan commits its branch and defaults together only on success, prevents overlapping scans, ignores completion after switching projects, and keeps manual env edits and project settings. Unknown stacks open manual framework selection.
 
 Adapted the PR to the paginated branch picker and main’s explicit environment-disclosure option. Replaced the PR’s separate options/branch saves with one shared-platform update so an interrupted request cannot save a different branch’s build configuration.
+
+GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/852#issuecomment-5685277005).
+
+PR #855: integrated; closed with [review status](https://github.com/oblien/openship/pull/855#issuecomment-5685277650).
 
 Integration commits: `c45bcf5d`.
 
@@ -215,6 +248,8 @@ PR #862 applies to the current dashboard. Device-grant polling owns completion; 
 
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/851#issuecomment-5685103736).
 
+PR #862: integrated; closed with [review status](https://github.com/oblien/openship/pull/862#issuecomment-5685274538).
+
 Integration commits: `cfdea39b`.
 
 Verification:
@@ -228,11 +263,15 @@ Deferred: new CLI Jobs command surface; PR #850 is not included.
 
 Excluded following the maintainer’s explicit request to focus this integration branch on bugs and general improvements. The issue remains open.
 
+PR #850: feature; closed with [review status](https://github.com/oblien/openship/pull/850#issuecomment-5685280232).
+
 ### #842
 
 Removed the unsupported installation event; retained the shared platform service.
 
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/842#issuecomment-5685099558).
+
+PR #843: integrated; closed with [review status](https://github.com/oblien/openship/pull/843#issuecomment-5685270824).
 
 Integration commits: `8db8ee10`.
 
@@ -250,6 +289,8 @@ Main commit 34b3d0e6 resolves API-root redirects through resolveApiNavigationUrl
 
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/825#issuecomment-5685105317).
 
+PR #831: already-fixed; closed with [review status](https://github.com/oblien/openship/pull/831#issuecomment-5685278536).
+
 Verification:
 
 - The existing ten dashboard URL tests pass, including proxy and split API origins
@@ -266,6 +307,8 @@ Excluded following the maintainer’s explicit request to focus this integration
 Deferred: new image-GC inspection, dry-run and retention controls; PR #794 is not included.
 
 Excluded following the maintainer’s explicit request to focus this integration branch on bugs and general improvements. The issue remains open.
+
+PR #794: feature; closed with [review status](https://github.com/oblien/openship/pull/794#issuecomment-5685281237).
 
 ### #764
 
@@ -285,11 +328,15 @@ Deferred: new supported Compose hardening fields; PR #871 is not included. Exist
 
 Excluded following the maintainer’s explicit request to focus this integration branch on bugs and general improvements. The issue remains open.
 
+PR #871: feature; closed with [review status](https://github.com/oblien/openship/pull/871#issuecomment-5685282420).
+
 ### #717
 
 Deferred: new Git tag-pattern deployment and update triggers; PR #716 is not included.
 
 Excluded following the maintainer’s explicit request to focus this integration branch on bugs and general improvements. The issue remains open.
+
+PR #716: feature; closed with [review status](https://github.com/oblien/openship/pull/716#issuecomment-5685283503).
 
 ### #695
 
