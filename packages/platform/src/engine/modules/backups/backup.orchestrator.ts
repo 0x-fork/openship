@@ -57,6 +57,7 @@ import {
   resolveTargetPlatform,
 } from "../../lib/deployment-runtime";
 import { notification } from "../../lib/notification-dispatcher";
+import { prunePolicy } from "./retention-prune";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
 import crypto from "node:crypto";
@@ -661,6 +662,20 @@ export class BackupOrchestrator {
           artifactCount: artifactsRecorded.length,
         },
       });
+      // Only a durable, verified success may displace older restore points.
+      // Await cleanup while this worker still owns its execution lease. Its
+      // failure must never enter the backup catch, which reclaims THIS run's
+      // uploaded artifacts. The scheduled sweep will retry deferred pruning.
+      try {
+        const finished = await repos.backupRun.findById(runId);
+        // A cancellation/stale-run verdict can win the terminal-state CAS.
+        // In that case this worker did not produce a new durable restore point.
+        if (finished?.status === "succeeded") await prunePolicy(policy);
+      } catch (error) {
+        console.warn(
+          `[backup-orchestrator] run ${runId} succeeded; retention cleanup deferred: ${safeErrorMessage(error)}`,
+        );
+      }
     } catch (err) {
       // Both forms are scrubbed independently: a second `.slice` over an
       // already-scrubbed string can split a surrogate pair back open.

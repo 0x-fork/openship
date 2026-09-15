@@ -154,6 +154,11 @@ these choices:
 
 Press **Create policy**.
 
+Retention runs after each successful backup, independently for each service in a project policy.
+Protected copies remain exempt. A cleanup failure keeps the affected records for retry and does
+not invalidate the new backup. The **Backup retention prune** system job provides a fallback;
+new installations schedule it hourly at minute 29. Existing schedules remain editable in **Jobs**.
+
 </Step>
 
 </Steps>
