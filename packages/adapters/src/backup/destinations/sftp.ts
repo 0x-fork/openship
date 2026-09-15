@@ -71,6 +71,38 @@ const UPLOAD_STALL_PROBE_MS = 30 * 1000;
  * uploads are one-at-a-time within a run.
  */
 const UPLOAD_BUFFER_BYTES = 8 * 1024 * 1024;
+const SFTP_CONTROL_TIMEOUT_MS = 10_000;
+
+/** Control requests must also settle when a broken channel drops its callbacks. */
+function sftpRequest(
+  label: string,
+  start: (done: (error?: Error | null) => void) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => finish(signal?.reason ?? new Error("SFTP connection closed"));
+    const timer = setTimeout(
+      () => finish(new Error(`SFTP ${label} timed out`)),
+      SFTP_CONTROL_TIMEOUT_MS,
+    );
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) return onAbort();
+    try {
+      start(finish);
+    } catch (error) {
+      finish(error as Error);
+    }
+  });
+}
 
 interface ConnectionConfig {
   host: string;
@@ -141,41 +173,69 @@ class SftpDestinationImpl implements BackupDestination {
 
   // ── Connection helper ────────────────────────────────────────────────
 
-  private async withSftp<T>(fn: (sftp: SFTPWrapper) => Promise<T>): Promise<T> {
+  private async withSftp<T>(
+    fn: (sftp: SFTPWrapper, signal: AbortSignal) => Promise<T>,
+    timeoutMs?: number,
+  ): Promise<T> {
     const client = new Client();
+    const abort = new AbortController();
     return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
+        if (timer) clearTimeout(timer);
         try {
           client.end();
         } catch {
           // already ended
         }
       };
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        abort.abort(error);
+        cleanup();
+        reject(error);
+      };
+      if (timeoutMs) {
+        timer = setTimeout(() => fail(new Error("SFTP cleanup timed out")), timeoutMs);
+      }
       client
         .on("ready", () => {
-          client.sftp((err, sftp) => {
-            if (err) {
-              cleanup();
-              reject(err);
-              return;
-            }
-            fn(sftp).then(
-              (val) => {
-                cleanup();
-                resolve(val);
-              },
-              (e) => {
-                cleanup();
-                reject(e);
-              },
-            );
-          });
+          if (settled) return;
+          try {
+            client.sftp((err, sftp) => {
+              if (settled) return;
+              if (err) {
+                fail(err);
+                return;
+              }
+              Promise.resolve()
+                .then(() => {
+                  abort.signal.throwIfAborted();
+                  return fn(sftp, abort.signal);
+                })
+                .then(
+                  (val) => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    resolve(val);
+                  },
+                  fail,
+                );
+            });
+          } catch (error) {
+            fail(error);
+          }
         })
-        .on("error", (err) => {
-          cleanup();
-          reject(err);
-        })
-        .connect(this.conn);
+        .on("error", fail)
+        .on("close", () => fail(new Error("SFTP connection closed before the operation completed")));
+      try {
+        client.connect(this.conn);
+      } catch (error) {
+        fail(error);
+      }
     });
   }
 
@@ -201,6 +261,16 @@ class SftpDestinationImpl implements BackupDestination {
         });
       });
     }
+  }
+
+  /** A missing temporary file is already clean; the caller owns other failures. */
+  private async unlinkIfPresent(sftp: SFTPWrapper, path: string, signal: AbortSignal): Promise<void> {
+    await sftpRequest("temporary upload cleanup", (done) => {
+      sftp.unlink(path, (error) => {
+        const missing = (error as { code?: number } | null)?.code === 2;
+        done(missing ? null : error);
+      });
+    }, signal);
   }
 
   // ── BackupDestination interface ──────────────────────────────────────
@@ -234,9 +304,11 @@ class SftpDestinationImpl implements BackupDestination {
     const target = this.fullPath(key);
     const tmp = `${target}.uploading-${randomBytes(4).toString("hex")}`;
     let bytesWritten = 0;
+    let uploadStarted = false;
 
-    await this.withSftp(async (sftp) => {
+    await this.withSftp(async (sftp, signal) => {
       await this.ensureDir(sftp, posix.dirname(target));
+      signal.throwIfAborted();
 
       await new Promise<void>((resolve, reject) => {
         // `highWaterMark` is the throughput fix, and it is not a micro-optimisation.
@@ -255,9 +327,11 @@ class SftpDestinationImpl implements BackupDestination {
         //
         // This buffer is ALSO the backpressure boundary the artifact stream pushes
         // against, so it is a deliberate memory ceiling per upload, not a guess.
+        uploadStarted = true;
         const ws = sftp.createWriteStream(tmp, { highWaterMark: UPLOAD_BUFFER_BYTES });
         let lastProgressAt = Date.now();
         let settled = false;
+        let finishedWriting = false;
 
         let watchdog: ReturnType<typeof setInterval> | undefined;
 
@@ -297,7 +371,11 @@ class SftpDestinationImpl implements BackupDestination {
         (watchdog as { unref?: () => void }).unref?.();
 
         ws.on("error", (err: Error) => finish(err));
-        ws.on("close", () => finish());
+        ws.on("finish", () => { finishedWriting = true; });
+        ws.on("close", () => finish(finishedWriting ? undefined : new Error("SFTP upload closed before all bytes were written")));
+        const onAbort = () => finish(signal.reason ?? new Error("SFTP connection closed"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        onSettled.push(() => signal.removeEventListener("abort", onAbort));
         // Progress is measured at the WRITE side (`ws`), not by counting bytes read
         // out of `body`. Those are different questions: with a fast producer and a
         // dead destination, bytes leave `body` into the write buffer and the stall
@@ -315,22 +393,36 @@ class SftpDestinationImpl implements BackupDestination {
         (trackProgress as { unref?: () => void }).unref?.();
         onSettled.push(() => clearInterval(trackProgress));
         body.on("error", (err) => finish(err));
+        body.on("close", () => {
+          if (!body.readableEnded) finish(new Error("SFTP upload source closed prematurely"));
+        });
+        if (signal.aborted) return onAbort();
         body.pipe(ws);
       });
 
       // Atomic finalize.
-      await new Promise<void>((resolve, reject) => {
+      await sftpRequest("upload finalization", (done) => {
         sftp.rename(tmp, target, (err) => {
-          if (!err) return resolve();
+          if (!err) return done();
           // POSIX rename refuses to overwrite on some servers. Try
           // unlink + rename as the fallback.
           sftp.unlink(target, () => {
-            sftp.rename(tmp, target, (err2) =>
-              err2 ? reject(err2) : resolve(),
-            );
+            sftp.rename(tmp, target, done);
           });
         });
+      }, signal);
+    }).catch(async (error) => {
+      body.destroy();
+      if (!uploadStarted) throw error;
+      // The upload connection may already be dead. Reconnect with a deadline;
+      // a failed cleanup must neither mask the upload error nor hold the worker.
+      await this.withSftp(
+        (sftp, signal) => this.unlinkIfPresent(sftp, tmp, signal),
+        SFTP_CONTROL_TIMEOUT_MS,
+      ).catch((cleanupError) => {
+        console.warn(`[sftp] Could not reclaim temporary upload ${tmp}: ${safeErrorMessage(cleanupError)}`);
       });
+      throw error;
     });
 
     return { bytesWritten };
