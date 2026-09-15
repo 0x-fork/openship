@@ -306,6 +306,18 @@ setting.
 sub-apps by `rootDirectory` and override their build settings — they don't declare apps from
 scratch (the detector finds the apps).
 
+Each override must have a different normalized `rootDirectory`. Declaring a web
+process and a worker at the same root is not a supported multi-app declaration.
+`openship config validate` rejects duplicate roots; source scans report unmatched
+apps and workspace overrides in the configuration diagnostics.
+
+Create a monorepo through the repository import flow, which supplies the detected
+app metadata. The API/SDK also accepts that metadata as `monorepoApps`. Setting
+`projectType: "monorepo"` (or CLI `project create --type monorepo`) without it now
+fails before creating a project. A local CLI import scans the workspace first.
+For independent processes without containers, use separate projects pointed at
+the required roots and start commands.
+
 ```json
 {
   "monorepo": {

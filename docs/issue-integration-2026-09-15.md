@@ -24,9 +24,9 @@ Review and integration are in progress. Local checks do not establish live provi
 | [#879](https://github.com/oblien/openship/issues/879) | [Bug]: [0.7.2] Custom domains at project level are verified + certified but never routed locally; self-app domain cannot converge (host-port claim conflict)                                      | —                                                                                                        | **partial**: Integrated verified Compose/self-app routing and repair diagnostics; keeping the secondary mail artifact report open.                                                                                                                                                                                                            |
 | [#878](https://github.com/oblien/openship/issues/878) | [Improvement]: Deployments don't use external repository and rebuild images instead                                                                                                               | —                                                                                                        | **needs-reproduction**: Current main already skips source builds for image-only Compose services; the report needs its effective Compose configuration.                                                                                                                                                                                       |
 | [#877](https://github.com/oblien/openship/issues/877) | [Feature]: Add Porkbun as a supported DNS Provider                                                                                                                                                | —                                                                                                        | **deferred-feature**: Deferred: new Porkbun DNS provider; excluded by the bugs-only scope.                                                                                                                                                                                                                                                    |
-| [#876](https://github.com/oblien/openship/issues/876) | [Bug]: Email service is waiting for emails to go out forever                                                                                                                                      | —                                                                                                        | **pending**: Pending review                                                                                                                                                                                                                                                                                                                   |
+| [#876](https://github.com/oblien/openship/issues/876) | [Bug]: Email service is waiting for emails to go out forever                                                                                                                                      | [#885](https://github.com/oblien/openship/pull/885)                                                      | **partial**: Merged contributor PR #885 for verified Amavis restart failures; the reported fresh-install delivery failure still needs logs.                                                                                                                                                                                                   |
 | [#875](https://github.com/oblien/openship/issues/875) | [Bug]: Can't add self hosted openship mcp sever to claude code                                                                                                                                    | —                                                                                                        | **fixed**: The dashboard now advertises /api/mcp, matching OAuth metadata, including in proxy installations.                                                                                                                                                                                                                                  |
-| [#873](https://github.com/oblien/openship/issues/873) | [Bug]: `openship.json`'s `monorepo` config (and CLI `project create --type monorepo`) is documented and schema-valid, but doesn't actually produce a multi-app project through any available path | —                                                                                                        | **pending**: Pending review                                                                                                                                                                                                                                                                                                                   |
+| [#873](https://github.com/oblien/openship/issues/873) | [Bug]: `openship.json`'s `monorepo` config (and CLI `project create --type monorepo`) is documented and schema-valid, but doesn't actually produce a multi-app project through any available path | —                                                                                                        | **partial**: Fixed silent monorepo fallback and ignored-config diagnostics; declarative Docker-free multi-process support remains out of scope.                                                                                                                                                                                               |
 | [#872](https://github.com/oblien/openship/issues/872) | [Bug]: Global GitHub device-flow connection intermittently shows "rejected". The status is backed by a Redis cache entry with a ~100 second TTL, not the actual GitHub authorization state        | —                                                                                                        | **partial**: Fixed reproducible rate-limit misclassification; the original intermittent account rejection still needs correlation with provider status.                                                                                                                                                                                       |
 | [#870](https://github.com/oblien/openship/issues/870) | [Bug]: Branch selector on "Link Repository" is unusable                                                                                                                                           | [#884](https://github.com/oblien/openship/pull/884)                                                      | **integrated**: Integrate PR #884 with pagination in both the migration wizard and deploy picker, preserving the platform/SDK architecture.                                                                                                                                                                                                   |
 | [#869](https://github.com/oblien/openship/issues/869) | Migrate to self-hosted server never actually deploys (3 stacked bugs: missing deploy trigger, release-dist path/packaging mismatch, PGlite assets crash)                                          | —                                                                                                        | **pending**: Pending review                                                                                                                                                                                                                                                                                                                   |
@@ -159,6 +159,8 @@ Added two focused regressions: an image-only GHCR reference remains the deployme
 
 Keep open pending a sanitized effective Compose service definition (including overlays/build keys), Openship version and the start of the build log. A mutable image tag not refreshing is a separate pull/redeploy question; these tests do not establish behavior for the unprovided configuration.
 
+Integration commits: `2a0f0cec`.
+
 Verification:
 
 - 27 Compose build tests passed, including image-only GHCR and explicit-build behavior.
@@ -168,6 +170,30 @@ Verification:
 Deferred: new Porkbun DNS provider; excluded by the bugs-only scope.
 
 Excluded following the maintainer’s explicit request to focus this integration branch on bugs and general improvements. The issue remains open.
+
+### #876
+
+Merged contributor PR #885 for verified Amavis restart failures; the reported fresh-install delivery failure still needs logs.
+
+Reviewed the report and screenshot: temporary delivery deferral alone does not identify the failing mail hop. The fresh Ubuntu installation report lacks the Postfix queue reason and Amavis startup log needed to reproduce its root cause.
+
+Independently reproduced the related stale-PID failure reported in PR #885 using the published 0.7.2 mail image. Updated Francisco Trillo's original branch, preserving b7d53e97 and authorship, extracted the boot-only runtime preparer for real-daemon tests, and merged through GitHub after all updated CI checks passed.
+
+The entrypoint now removes stale Amavis pid/lock/socket files and recreates its runtime directory before supervisord. It fails startup if the required directory cannot be prepared. Mail data is untouched; no live process is killed.
+
+Keep #876 open: a fix for restart-specific stale runtime files is not evidence that every fresh-install postmaster delivery failure is solved. Requested sanitized queue and daemon logs.
+
+PR #885: Adopted the contributor fix after maintainer adaptation and real-daemon restart tests; original commit and credit preserved; merged into the integration branch with [review status](https://github.com/oblien/openship/pull/885#issuecomment-5687831001).
+
+Integration commits: `e143e7bcbfd8c44091ef2a5678833cc56cdff98b`.
+
+PR #885 reviewed at `f1114077cabf6dcafd81c8c88a0b35a5d249ea4b`.
+
+Verification:
+
+- Two Docker E2E tests passed with real Debian 12 Amavis: demonstrate failure with an unrelated live PID, recover SMTP listeners on 10024/10026, survive an actual container restart, preserve persistent data and repair/create runtime directory ownership.
+- Independently reproduced failure and recovery in ghcr.io/oblien/openship-mail:0.7.2. SMTP tests use loopback EHLO/QUIT, not delivery to external recipients.
+- Bash syntax checks, API TypeScript and complete PR CI passed: https://github.com/oblien/openship/actions/runs/35021422249
 
 ### #875
 
@@ -183,6 +209,24 @@ Verification:
 
 - 12 dashboard URL tests passed, including proxy and dynamic desktop-port cases
 - Reviewed the existing /api/mcp and OAuth discovery rewrites
+
+### #873
+
+Fixed silent monorepo fallback and ignored-config diagnostics; declarative Docker-free multi-process support remains out of scope.
+
+Confirmed that monorepo.apps is an override list for discovered workspace apps, as current main documents. It does not declare independent processes. The report's shared-root web/worker declaration cannot be implemented by merely copying detected metadata.
+
+The shared validator now rejects duplicate normalized app roots, using the same normalization as discovery. Scans surface unmatched apps and missing-workspace overrides through the existing configDiagnostics channel, without echoing source values in diagnostics. Matched overrides still apply.
+
+Creating a new explicitly monorepo project without monorepoApps now fails before creating a project/group, through both create and ensure. This fixes CLI --type monorepo silently producing an app, while preserving local import/scanner-backed creation and the supported API/SDK metadata path.
+
+The guide now describes the supported import/metadata workflow and separate projects for independent bare processes. Keep the report open for the requested declarative multi-process capability; this branch does not introduce a new bare multi-process runtime.
+
+Verification:
+
+- 497 project, import, source-preparation and root-discovery tests passed across 40 API files. The full core suite passed: 1,044 tests across 57 files.
+- Six new regressions fail before these changes and pass after: three duplicate-root representations, two ignored-override scan cases, and create/ensure atomic rejection through HTTP/native SDK. Supported two-app creation remains verified through both transports.
+- API TypeScript and docs validation passed.
 
 ### #872
 

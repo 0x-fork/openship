@@ -7,6 +7,7 @@ import {
   parseVercelConfig,
   extractCdTargets,
   slugify,
+  normalizeProjectRootDirectory,
   type WorkspaceDetector,
 } from "@repo/core";
 import {
@@ -135,18 +136,7 @@ const CANDIDATE_WEIGHTS = {
   },
 } as const;
 
-export function normalizeProjectRootDirectory(value?: string): string {
-  const normalized = value
-    ?.trim()
-    .replace(/^\.\//, "")
-    .replace(/^\/+|\/+$/g, "");
-
-  if (!normalized || normalized === ".") {
-    return "";
-  }
-
-  return normalized.split(/[\\/]/).filter(Boolean).join("/");
-}
+export { normalizeProjectRootDirectory } from "@repo/core";
 
 function normalizeFileContents(fileContents?: Record<string, string>): Record<string, string> {
   const normalized: Record<string, string> = {};

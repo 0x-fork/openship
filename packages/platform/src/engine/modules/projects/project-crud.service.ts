@@ -864,6 +864,14 @@ async function createProductionProject(
   organizationId: string,
   access?: { tokenId: string },
 ) {
+  // The project type is derived from persisted service rows. Accepting an
+  // explicit monorepo without app metadata creates a different project from
+  // the one requested (including CLI --type monorepo). Reject before writes.
+  if (data.projectType === "monorepo" && !data.monorepoApps?.length) {
+    throw new ValidationError(
+      "A monorepo project requires detected app metadata (monorepoApps). Scan/import the workspace first, or create separate projects for independently managed processes.",
+    );
+  }
   // A server id is a host-root capability, not an arbitrary foreign key. Verify
   // it through the same org-scoped repository used by deployment preflight,
   // and do it before ensureProjectApp writes anything so a rejected binding is
