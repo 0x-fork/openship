@@ -93,7 +93,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/modules/deployments/session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   updateStatus: (id: string, status: string, detail?: Record<string, unknown>) => {
     h.sessionStatuses.push({ id, status, detail });
   },
@@ -101,7 +101,7 @@ vi.mock("../../../src/modules/deployments/session-manager", () => ({
   appendLog: () => {},
 }));
 
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: {
     emit: (e: { eventType: string }) => {
       h.notifications.push(e.eventType);
@@ -109,13 +109,13 @@ vi.mock("../../../src/lib/notification-dispatcher", () => ({
   },
 }));
 vi.mock("../../../src/lib/audit", () => ({ audit: { recordAsync: () => {} } }));
-vi.mock("../../../src/lib/favicon-detector", () => ({ detectAndStoreFavicon: async () => {} }));
-vi.mock("../../../src/modules/mail/webmail/webmail-install.service", () => ({
+vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: async () => {} }));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: async () => {},
 }));
 
 const { onSuccess, onFailure, reportPipelineError } =
-  await import("../../../src/modules/deployments/deployment-lifecycle");
+  await import("@repo/platform/engine/modules/deployments/deployment-lifecycle");
 type LifecycleContext = Parameters<typeof onSuccess>[0];
 
 function ctxFor(): LifecycleContext {
@@ -491,3 +491,6 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
     expect(writes[0].status).toBe("cancelled");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: () => {} } }));

@@ -6,6 +6,7 @@ import { deployApi, projectsApi, servicesApi, serviceKind } from "@/lib/api";
 import { folderApi } from "@/lib/api/folder";
 import type {
   PrepareProjectResponse,
+  PrepareProjectSource,
   PrepareComposeService,
   PrepareMonorepoApp,
 } from "@/lib/api/deploy";
@@ -973,14 +974,15 @@ export function useDeploymentConfig() {
         const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
         const requestedBranch = (projectBranch || context?.branch || "").trim() || undefined;
 
-        const response = await deployApi.prepare({
+        const preparedSource: PrepareProjectSource = {
           owner: sourceOwner,
           repo: sourceRepo,
           branch: requestedBranch,
           force,
           ...scanComposePath(context?.composePath, project),
-          ...(context?.env ? { env: context.env } : {}),
-        });
+          ...(context?.env ? { env: { ...context.env } } : {}),
+        };
+        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1059,12 +1061,13 @@ export function useDeploymentConfig() {
           }
         }
 
-        const response = await deployApi.prepare({
+        const preparedSource: PrepareProjectSource = {
           source: "local",
           path,
           ...scanComposePath(context?.composePath, project),
-          ...(context?.env ? { env: context.env } : {}),
-        });
+          ...(context?.env ? { env: { ...context.env } } : {}),
+        };
+        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1216,7 +1219,7 @@ export function useDeploymentConfig() {
             services: undefined,
           } as unknown as PrepareProjectResponse;
         } else {
-          const scan = await folderApi.scan(sessionId);
+          const scan = await folderApi.scan(sessionId, { includeEnv: true });
           if ((scan as { error?: string })?.error) {
             return {
               success: false,

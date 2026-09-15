@@ -41,7 +41,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     retain: () => {
       h.retain++;
@@ -59,12 +59,13 @@ vi.mock("../../../src/lib/ssh-manager", () => ({
   },
 }));
 
-import { runCommandJobTick } from "../../../src/modules/jobs/job-command";
-import { jobRunBus, type JobRunEvent } from "../../../src/modules/jobs/job-run.sse";
+import { runCommandJobTick } from "@repo/platform/engine/modules/jobs/job-command";
+import { jobRunBus, type JobRunEvent } from "@repo/platform/engine/modules/jobs/job-run.sse";
 import { createRunBus } from "../../../src/lib/run-sse";
 
 const cmdJob = (key: string, cfg: Record<string, unknown>) => ({
   key,
+  enabled: true,
   actionType: "command",
   actionConfig: cfg,
 });

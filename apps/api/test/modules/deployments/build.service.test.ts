@@ -27,6 +27,7 @@ const {
   getLatestCommit: vi.fn(),
   kickoffBuild: vi.fn(),
   repos: {
+    projectConnection: { listByTarget: vi.fn(async () => []) },
     project: {
       findById: vi.fn(),
       getEnvMap: vi.fn(),
@@ -81,47 +82,47 @@ vi.mock("@repo/db", async (importOriginal) => ({
   repos,
 }));
 
-vi.mock("../../../src/modules/deployments/preflight", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/preflight", () => ({
   runPreflightChecks,
 }));
 
-vi.mock("../../../src/modules/deployments/prepare.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/prepare.service", () => ({
   resolveProjectInfo,
   resolveProjectSourceEnv,
 }));
 
-vi.mock("../../../src/modules/projects/folder/folder.service", () => ({
+vi.mock("@repo/platform/engine/modules/projects/folder/folder.service", () => ({
   scanFolderSession,
   resolveFolderSessionSourceEnv,
 }));
 
-vi.mock("../../../src/modules/deployments/build-pipeline", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build-pipeline", () => ({
   kickoffBuild,
   resolveServicePipelineMode,
 }));
 
-vi.mock("../../../src/modules/domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   listProjectRouteRows: vi.fn(),
   resolveProjectRouteState,
   syncProjectRouteState,
 }));
 
-vi.mock("../../../src/modules/github/github-access", () => ({
+vi.mock("@repo/platform/engine/modules/github/github-access", () => ({
   assertGitHubRepoAccess,
 }));
 
-vi.mock("../../../src/modules/github/github.service", () => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   getCommitByRef,
   getLatestCommit,
   getRepository: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/settings/settings.service", () => ({
+vi.mock("@repo/platform/engine/modules/settings/settings.service", () => ({
   resolveStrategy,
   getForwardGitToServer,
 }));
 
-vi.mock("../../../src/modules/deployments/smart-route", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/smart-route", () => ({
   resolveSmartRoute,
 }));
 
@@ -133,15 +134,16 @@ import {
   resolveSnapshotTarget,
   triggerDeployment,
   type DeploymentConfigSnapshot,
-} from "../../../src/modules/deployments/build.service";
+} from "@repo/platform/engine/modules/deployments/build.service";
 import { createServiceRepo, toComposeSpec, type Database } from "@repo/db";
 import { ENV_MASK, type ReleaseSource } from "@repo/core";
 import {
   newFolderSessionId,
   putFolderSession,
-} from "../../../src/modules/projects/folder/session-store";
-import { ComposeConfigurationError } from "../../../src/modules/deployments/compose-configuration-error";
-import { decrypt, encrypt } from "../../../src/lib/encryption";
+} from "@repo/platform/engine/modules/projects/folder/session-store";
+import { ComposeConfigurationError } from "@repo/platform/engine/modules/deployments/compose-configuration-error";
+import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
+import * as projectConnections from "@repo/platform/engine/modules/projects/project-connection.service";
 
 const ctx = { userId: "user-1", organizationId: "org-1" } as any;
 
@@ -579,6 +581,15 @@ describe("triggerDeployment", () => {
     );
   });
 
+  it("rejects a project that moved out of the authorized tenant before the engine read it", async () => {
+    repos.project.findById.mockResolvedValue(baseProject({ organizationId: "another-org" }));
+    await expect(triggerDeployment(ctx, { projectId: "project-1" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(assertGitHubRepoAccess).not.toHaveBeenCalled();
+    expect(repos.project.getEnvMap).not.toHaveBeenCalled();
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
+  });
+
   it("uses the same frozen project env for Compose reconciliation and the deployment", async () => {
     const encryptedVersion = encrypt("1.2.3");
     repos.project.getEnvMap.mockResolvedValue({ MY_VERSION: encryptedVersion });
@@ -851,8 +862,8 @@ describe("triggerDeployment", () => {
       return { services: storedRows, driftedNames: [] };
     });
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     repos.project.findById.mockResolvedValue(
       baseProject({
@@ -924,8 +935,8 @@ describe("triggerDeployment", () => {
       return { services: storedRows, driftedNames: [] };
     });
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     repos.project.findById.mockResolvedValue(
       baseProject({
@@ -1125,8 +1136,8 @@ describe("triggerDeployment", () => {
     };
     resolveProjectInfo.mockResolvedValue({ services: [proposed] });
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     runPreflightChecks.mockRejectedValueOnce(new Error("blocked after compose reconciliation"));
 
@@ -1379,6 +1390,32 @@ describe("triggerDeployment", () => {
     const meta = repos.deployment.create.mock.calls.at(-1)?.[0]?.meta;
     expect(meta.targetServiceIds).toBeUndefined();
     expect(meta.refreshServiceIds).toBeUndefined();
+  });
+
+  it.each([
+    { serviceIds: undefined, expected: ["svc-api", "svc-worker", "svc-db"] },
+    { serviceIds: ["svc-api"], expected: ["svc-api"] },
+  ])("keeps a forced topology refresh at its requested scope ($expected)", async ({ serviceIds, expected }) => {
+    repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-live" }));
+    repos.deployment.findById.mockResolvedValue({
+      id: "dep-live", commitSha: "running-commit", createdAt: new Date("2026-08-20T00:00:00Z"),
+    });
+    repos.service.listByProject.mockResolvedValue([
+      { id: "svc-api", name: "api", enabled: true, image: "acme/api:1" },
+      { id: "svc-worker", name: "worker", enabled: true, image: "acme/worker:1" },
+      { id: "svc-db", name: "db", enabled: true, image: "postgres:16" },
+      { id: "svc-off", name: "disabled", enabled: false, image: "redis:7" },
+    ]);
+    // Without the explicit-all override this unrelated edit narrows an
+    // environment resource resize to just the worker.
+    repos.project.listEnvVarChangeMeta.mockResolvedValue([
+      { key: "LOG_LEVEL", serviceId: "svc-worker", updatedAt: new Date("2026-08-21T00:00:00Z") },
+    ]);
+    await triggerDeployment(ctx, { projectId: "project-1", refresh: true, forceAll: true, serviceIds });
+    expect(repos.deployment.create).toHaveBeenCalledWith(expect.objectContaining({
+      commitSha: "running-commit", forceAll: false,
+      meta: expect.objectContaining({ targetServiceIds: expected, refreshServiceIds: expected }),
+    }));
   });
 
   it("returns an actionable 409 for a services project with nothing enabled", async () => {
@@ -2128,6 +2165,22 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     );
   });
 
+  it.each([{}, { DATABASE_URL: "stale-value" }])("refreshes connection-owned values in a submitted environment %j", async submitted => {
+    const uploadSessionId = seedSession();
+    const value = "postgresql://user:current@shared-db:5432/app";
+    const refresh = vi.spyOn(projectConnections, "refreshConnectionEnv").mockResolvedValueOnce({ DATABASE_URL: value });
+    repos.project.listEnvVars.mockResolvedValue([{ key: "DATABASE_URL", value: encrypt(value), isSecret: true, environment: "production", serviceId: null }]);
+    try {
+      await requestBuildAccess(ctx, {
+        projectId: "project-1", uploadSessionId, environment: "production",
+        envVars: { PUBLIC_SETTING: "keep", ...submitted },
+      });
+      const captured = repos.deployment.create.mock.calls.at(-1)?.[0]?.envVars;
+      expect(decrypt(captured.DATABASE_URL)).toBe(value);
+      expect(decrypt(captured.PUBLIC_SETTING)).toBe("keep");
+    } finally { refresh.mockRestore(); }
+  });
+
   it("#801: preserves a stored secret submitted as the mask sentinel", async () => {
     const uploadSessionId = seedSession();
     const storedSecret = encrypt("runtime-secret");
@@ -2405,8 +2458,8 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
   it("does not parse or materialize compose for an explicit single-app deploy (#689)", async () => {
     const actualPipeline = await vi.importActual<
-      typeof import("../../../src/modules/deployments/build-pipeline")
-    >("../../../src/modules/deployments/build-pipeline");
+      typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+    >("@repo/platform/engine/modules/deployments/build-pipeline");
     resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
     repos.project.findById.mockResolvedValue(
       baseProject({

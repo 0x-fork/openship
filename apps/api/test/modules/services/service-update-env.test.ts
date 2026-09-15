@@ -18,8 +18,8 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { decrypt, encrypt } from "../../../src/lib/encryption";
-import { revealServiceEnvVars, setServiceEnvVars, updateService } from "../../../src/modules/services/service.service";
+import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
+import { revealServiceEnvVars, setServiceEnvVars, updateService } from "@repo/platform/engine/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", internalAlias: null };

@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 import type { NotificationDelivery } from "@repo/db";
 
-import { renderMessage } from "../../src/lib/notification-workers";
+import { renderMessage } from "@repo/platform/engine/lib/notification-workers";
 
 /** The two fields renderMessage reads. The rest of the row is irrelevant here. */
 const delivery = (category: string, payload: Record<string, unknown>) =>

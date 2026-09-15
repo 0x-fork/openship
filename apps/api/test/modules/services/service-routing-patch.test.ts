@@ -27,14 +27,14 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/lib/free-domain-guard", () => freeGate);
+vi.mock("@repo/platform/engine/lib/free-domain-guard", () => freeGate);
 
 const domainService = vi.hoisted(() => ({
   ensurePendingServiceDomain: vi.fn(),
   removeServiceDomain: vi.fn(),
   reuseServerCertForDomain: vi.fn(),
 }));
-vi.mock("../../../src/modules/domains/domain.service", () => domainService);
+vi.mock("@repo/platform/engine/modules/domains/domain.service", () => domainService);
 
 /**
  * The route-reconcile block is where a bad routing patch does its REAL damage —
@@ -44,8 +44,8 @@ vi.mock("../../../src/modules/domains/domain.service", () => domainService);
  * assertion below passes vacuously against code that never executed.
  */
 const reconcileProjectRoutes = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/lib/route-apply.service", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/route-apply.service")>();
+vi.mock("@repo/platform/engine/lib/route-apply.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/route-apply.service")>();
   return { ...actual, reconcileProjectRoutes };
 });
 vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
@@ -57,7 +57,7 @@ import {
   acceptServiceDrift,
   createService,
   updateService,
-} from "../../../src/modules/services/service.service";
+} from "@repo/platform/engine/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", slug: "acme" };
@@ -502,4 +502,15 @@ describe("service routing patch", () => {
       expect(serviceRepo.update).toHaveBeenCalled();
     });
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
 });

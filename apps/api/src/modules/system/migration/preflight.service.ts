@@ -23,7 +23,7 @@
  */
 
 import { repos } from "@repo/db";
-import { sshManager } from "../../../lib/ssh-manager";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { resolveOpenshipDistDirOrNull } from "./openship-dist";
 
 export type DomainChoice =

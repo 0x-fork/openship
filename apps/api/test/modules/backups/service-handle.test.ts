@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The crypto helpers only need BETTER_AUTH_SECRET; the full zod env refuses to
 // load outside desktop mode without INTERNAL_TOKEN.
-vi.mock("../../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: { BETTER_AUTH_SECRET: "test-secret-for-service-handle-unit-tests" },
 }));
 
@@ -55,8 +55,8 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { encrypt } from "../../../src/lib/encryption";
-import { serviceHandleFor, withContainerEnv } from "../../../src/modules/backups/service-handle";
+import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { serviceHandleFor, withContainerEnv } from "@repo/platform/engine/modules/backups/service-handle";
 
 type ServiceRow = Parameters<typeof serviceHandleFor>[0];
 

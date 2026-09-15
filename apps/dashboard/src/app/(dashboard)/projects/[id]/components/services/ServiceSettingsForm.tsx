@@ -35,6 +35,8 @@ interface ServiceSettingsFormProps {
   /** Names of the OTHER services in this project, for the depends-on picker. */
   siblingServiceNames?: string[];
   onSubmit: (data: Partial<ServiceInput>) => Promise<void>;
+  /** The same form can stage a topology edit before the deployment review. */
+  submitLabel?: string;
 }
 
 /** Backend per-item caps (service.schema.ts ComposeFieldsBlock) surfaced here so
@@ -56,7 +58,7 @@ const splitList = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmit }: ServiceSettingsFormProps) {
+export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmit, submitLabel }: ServiceSettingsFormProps) {
   const { t } = useI18n();
   const f = t.projectDetail.services.settingsForm;
   const isMonorepo = serviceKind(service) === "monorepo";
@@ -551,7 +553,7 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
           className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-          {f.saveChanges}
+          {submitLabel ?? f.saveChanges}
         </button>
       </div>
     </form>

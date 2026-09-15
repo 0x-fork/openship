@@ -21,9 +21,8 @@ import {
   X,
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
-import { folderApi } from "@/lib/api/folder";
-import { servicesApi } from "@/lib/api/services";
-import { envRevealSource } from "./env-reveal-source";
+import { isMaskedValue } from "@repo/core";
+import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -50,13 +49,10 @@ type EnvVarRow = { key: string; value: string; visible: boolean };
 const envToArray = (
   env: Record<string, string>,
   visibleByKey: Record<string, boolean> = {},
-  meta?: ComposeServiceInfo["environmentMeta"],
 ) =>
-  Object.entries(env).map(([key, value]) => {
-    const parsed = meta?.[key];
-    const fallbackVisible = parsed?.source === "default" && value === parsed.resolvedValue;
-    return { key, value, visible: visibleByKey[key] ?? fallbackVisible };
-  });
+  Object.entries(env).map(([key, value]) => ({
+    key, value, visible: visibleByKey[key] ?? !isMaskedValue(value),
+  }));
 
 const arrayToEnv = (arr: Array<{ key: string; value: string }>) => {
   const env: Record<string, string> = {};
@@ -254,7 +250,7 @@ const ServiceDomainSection: React.FC<{
             className={`absolute left-[3px] top-[3px] h-4 w-4 rounded-full shadow-sm transition-all ${
               service.exposed
                 ? "translate-x-[18px] bg-white"
-                : "translate-x-0 bg-background dark:bg-muted-foreground/70"
+                : "translate-x-0 bg-background dark:bg-muted-foreground/70 dim:bg-muted-foreground/70"
             }`}
           />
         </button>
@@ -602,6 +598,9 @@ const ServiceConfigSection: React.FC<{
               {cfg.volumeHint}
               {isCloud && ` ${cfg.volumeCloudNote}`}
             </p>
+            {isCloud && service.volumes.length > 0 && (
+              <p role="alert" className="text-xs text-destructive">{cfg.volumeCloudNote}</p>
+            )}
             <div className="space-y-2">
               {volumeRows.map((row, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -711,40 +710,11 @@ const ServiceCard: React.FC<{
   const missingCount = missingEnvCount(service);
   const envCount = Object.keys(service.environment).length;
   const [envModalOpen, setEnvModalOpen] = useState(false);
-  // #336: env arrives masked, and a masked row the editor can't reveal is a dead end —
-  // unreadable AND unrevealable, which is what "no show button on some rows" was. So
-  // there are two sources, by where the values came from:
-  //   upload scan  → the upload session, scoped to THIS service so a sibling's secrets
-  //                  never ride along.
-  //   saved rows   → the service's own stored env, once we know its persisted id.
-  // Both are write-gated on the API, so a read-only member reveals nothing either way.
-  // Still undefined for a FIRST compose deploy off git: nothing is stored yet, so the
-  // values in hand are the compose file's own and were never masked.
-  // Memoized on the primitives, not rebuilt per render: `onReveal`'s identity is a
-  // dependency of the editor's one-shot `revealOnOpen` fetch, so a fresh function every
-  // render would be a fresh reason to re-run it.
-  const revealSource = useMemo(
-    () =>
-      envRevealSource({
-        uploadSessionId: config.uploadSessionId,
-        projectId: config.projectId,
-        serviceId: service.serviceId,
-        serviceName: service.name,
-      }),
-    [config.uploadSessionId, config.projectId, service.serviceId, service.name],
-  );
-  const onReveal = useMemo(() => {
-    if (!revealSource) return undefined;
-    if (revealSource.kind === "upload") {
-      const { sessionId, service: name } = revealSource;
-      return async (keys: string[]) => (await folderApi.reveal(sessionId, name, keys)).environment;
-    }
-    const { projectId, serviceId } = revealSource;
-    return async (keys: string[]) =>
-      (await servicesApi.revealEnv(projectId, serviceId, keys)).environment;
-  }, [revealSource]);
+  // Fresh scans already supply editable values. Only saved, masked rows fetch
+  // on demand, using the same lookup as the project's service detail panel.
+  const onReveal = useServiceEnvReveal(config.projectId, service.serviceId);
   const [envRows, setEnvRows] = useState<EnvVarRow[]>(() =>
-    envToArray(service.environment, {}, service.environmentMeta),
+    envToArray(service.environment),
   );
 
   const statusLabel = service.exposed
@@ -758,7 +728,7 @@ const ServiceCard: React.FC<{
   useEffect(() => {
     setEnvRows((current) => {
       if (envRecordsEqual(arrayToEnv(current), service.environment)) return current;
-      return envToArray(service.environment, visibilityByKey(current), service.environmentMeta);
+      return envToArray(service.environment, visibilityByKey(current));
     });
   }, [service.environment, service.environmentMeta]);
 
@@ -937,8 +907,6 @@ const ServiceCard: React.FC<{
             envMeta={service.environmentMeta}
             onEnvVarsChange={handleEnvChange}
             onReveal={onReveal}
-            // You got here by pressing Edit on this service's env: show the values.
-            revealOnOpen
           />
         </div>
       </Modal>

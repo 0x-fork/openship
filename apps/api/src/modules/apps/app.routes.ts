@@ -8,7 +8,7 @@
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./app.controller";
-import { InstallAppBody, AddCustomAppBody } from "./app.schema";
+import { InstallAppBody, AddCustomAppBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "apps",
@@ -56,6 +56,7 @@ r.post(
     tag: "project:write",
     collection: true,
     body: AddCustomAppBody,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Add a custom app from an uploaded JSON definition (stored per-org, unverified).",
@@ -73,6 +74,7 @@ r.delete(
     // Org scoping happens in the handler, exactly like the POST above.
     collection: true,
     mcp: { description: "Remove a custom app from this org's catalog." },
+    auditHandledByOperation: true,
   },
   ctrl.removeCustom,
 );
@@ -83,6 +85,7 @@ r.post(
     collection: true,
     projectCreate: true,
     body: InstallAppBody,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Install an app from the catalog as a project (or return a flow route for wizard apps). Public hostnames come ONLY from `routes` — omit it and the app installs port-only (no domain is invented).",

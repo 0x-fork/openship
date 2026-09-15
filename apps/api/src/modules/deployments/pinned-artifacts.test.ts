@@ -6,7 +6,7 @@ import {
   refreshAppDeploymentId,
   snapshotNeedsGitSource,
   withoutPinnedArtifacts,
-} from "./pinned-artifacts";
+} from "@repo/platform/engine/modules/deployments/pinned-artifacts";
 
 describe("pinned artifact lookup", () => {
   const snapshot = {

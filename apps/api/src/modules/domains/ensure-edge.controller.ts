@@ -25,21 +25,21 @@ import {
   type CommandExecutor,
 } from "@repo/adapters";
 import { getRequestContext } from "../../lib/request-context";
-import { withDeploymentPlatform } from "../../lib/deployment-runtime";
-import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
-import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
+import { withDeploymentPlatform } from "@repo/platform/engine/lib/deployment-runtime";
+import { ensureEdgeChallengeReady } from "@repo/platform/engine/lib/edge-challenge";
+import { repairEdgeVhosts } from "@repo/platform/engine/lib/edge-vhost-repair";
 import { permission } from "../../lib/permission";
 import { param } from "../../lib/controller-helpers";
 import { streamSSE } from "../../lib/sse";
-import { sshManager } from "../../lib/ssh-manager";
-import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
-import { deliverManagedImage } from "../../lib/deliver-managed-image";
-import { resolveAcmeProviderOptions } from "../../lib/acme-config";
-import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
-import { applyProjectRouting } from "./routing-apply.service";
-import { reapplyProjectLiveRoutes } from "./project-route.service";
-import { resolveProjectLiveDeployTarget } from "../projects/project-deploy-target";
-import { findLocalServer } from "../../lib/startup/self-server";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { pinnedEdgeImage, withPinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
+import { deliverManagedImage } from "@repo/platform/engine/lib/deliver-managed-image";
+import { resolveAcmeProviderOptions } from "@repo/platform/engine/lib/acme-config";
+import { withLiveProjectRuntimeMutation } from "@repo/platform/engine/lib/project-runtime-lock";
+import { applyProjectRouting } from "@repo/platform/engine/modules/domains/routing-apply.service";
+import { reapplyProjectLiveRoutes } from "@repo/platform/engine/modules/domains/project-route.service";
+import { resolveProjectLiveDeployTarget } from "@repo/platform/engine/modules/projects/project-deploy-target";
+import { findLocalServer } from "@repo/platform/engine/lib/startup/self-server";
 import {
   createEdgeConsentSession,
   getEdgeConsentSession,

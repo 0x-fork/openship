@@ -60,7 +60,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   listProjectRouteRows: vi.fn(async () => {
     if (h.rows === null) throw new Error("db unreachable");
     return h.rows;
@@ -70,20 +70,20 @@ vi.mock("../../domains/project-route.service", () => ({
 // Module-scope imports of the service under test, stubbed because nothing here runs
 // an install. `pickCanonicalDomainRow` is deliberately NOT mocked — the verified/primary
 // precedence is half of what's being asserted.
-vi.mock("../../../lib/ssh-manager", () => ({ sshManager: { withExecutor: vi.fn() } }));
-vi.mock("../../projects/project-teardown", () => ({ teardownProject: vi.fn() }));
-vi.mock("../../apps/catalog-source", () => ({ getTemplateForOrg: vi.fn(async () => null) }));
-vi.mock("../../apps/app-install.service", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: { withExecutor: vi.fn() } }));
+vi.mock("@repo/platform/engine/modules/projects/project-teardown", () => ({ teardownProject: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/apps/catalog-source", () => ({ getTemplateForOrg: vi.fn(async () => null) }));
+vi.mock("@repo/platform/engine/modules/apps/app-install.service", () => ({
   installApp: vi.fn(),
   planInstallRouting: vi.fn(() => new Map()),
   ensureGeneratedAppSecrets: vi.fn(async () => []),
 }));
-vi.mock("../../apps/app-settings.service", () => ({ updateAppProjectSettings: vi.fn() }));
-vi.mock("../../deployments/build.service", () => ({ requestBuildAccess: vi.fn() }));
-vi.mock("../../services/service.service", () => ({ updateService: vi.fn() }));
-vi.mock("../mail-state", () => ({ readState: vi.fn(), mutateState: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/apps/app-settings.service", () => ({ updateAppProjectSettings: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({ requestBuildAccess: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/services/service.service", () => ({ updateService: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({ readState: vi.fn(), mutateState: vi.fn() }));
 
-import { resolveWebmailSummary } from "./webmail-install.service";
+import { resolveWebmailSummary } from "@repo/platform/engine/modules/mail/webmail/webmail-install.service";
 
 beforeEach(() => {
   vi.clearAllMocks();

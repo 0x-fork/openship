@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/db", () => ({ repos: {} }));
 
-import { reconcileProjectRoutes } from "../../src/lib/route-apply.service";
+import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.service";
 
 /**
  * The LIVE path: editing a project's request limits has to take effect on save, the

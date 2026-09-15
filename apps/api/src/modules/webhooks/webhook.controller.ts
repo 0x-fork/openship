@@ -11,8 +11,8 @@
  */
 
 import type { Context } from "hono";
-import { getWebhookProvider } from "./webhook.service";
-import type { WebhookProviderName } from "./webhook.types";
+import { getWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
+import type { WebhookProviderName } from "@repo/platform/engine/modules/webhooks/webhook.types";
 
 /** Allowed provider names - rejects anything else at the route level. */
 const ALLOWED_PROVIDERS = new Set<string>(["github"]);

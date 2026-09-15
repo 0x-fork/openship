@@ -55,7 +55,7 @@ export interface RestorePlanUI {
   reason?: string;
 }
 
-export type PrepareProjectSource =
+export type PrepareProjectSource = { includeEnv?: boolean } & (
   | {
       source?: "github";
       owner: string;
@@ -73,7 +73,7 @@ export type PrepareProjectSource =
       composePath?: string;
       /** Env already configured for this deploy, for compose interpolation. */
       env?: Record<string, string>;
-    };
+    });
 
 export interface PrepareComposeService {
   /** Set only when this service was hydrated from a PERSISTED row (an edit / redeploy

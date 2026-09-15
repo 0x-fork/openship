@@ -189,6 +189,14 @@ export interface TableSpec {
 }
 
 const TABLES: ReadonlyArray<TableSpec> = [
+  {
+    sqlName: "external_identity", table: schema.externalIdentity,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false,
+  },
+  {
+    sqlName: "external_namespace", table: schema.externalNamespace,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true,
+  },
   // Auth + identity — instance-only (SaaS already has its own user/auth rows).
   {
     sqlName: "user",
@@ -724,6 +732,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  platform_instance: "the receiving installation retains its own identity and encryption-key binding",
   // Ephemeral / in-flight — re-created on demand, meaningless on another host.
   build_session: "in-flight build state; a migration never resumes a build mid-flight",
   deployment_check_run: "GitHub check-run mirror, re-created by the next deploy",
@@ -939,7 +948,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },
-  { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl"] },
+  { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl", "botToken"] },
 ];
 
 /**
@@ -1201,6 +1210,13 @@ export interface RestoreOptions {
    * their guaranteed PK collision.
    */
   mergeConflictSkip?: string[];
+  /** Trusted control-plane imports can update matching project records by PK.
+   * Secret cells are handled separately, in the SAME transaction. */
+  mergeConflictUpdate?: string[];
+  mergePreserveColumns?: Record<string, string[]>;
+  /** Filled with exactly the rows inserted/updated, never conflict-skipped rows. */
+  writtenIds?: Map<string, Set<string>>;
+  writtenRows?: { count: number };
 }
 
 /**
@@ -1458,6 +1474,7 @@ export async function restoreSubgraphInTransaction(
     const skipOnConflict =
       spec.scopes.some((s) => s.via === "from-root-project") ||
       (opts.mode === "merge" && !!opts.mergeConflictSkip?.includes(spec.sqlName));
+    const updateOnConflict = opts.mode === "merge" && opts.mergeConflictUpdate?.includes(spec.sqlName);
 
     try {
       // Chunked: one INSERT per `insertChunkSize(spec.table)` rows, so a large
@@ -1465,14 +1482,31 @@ export async function restoreSubgraphInTransaction(
       const chunk = insertChunkSize(spec.table);
       for (let i = 0; i < prepared.length; i += chunk) {
         const batch = prepared.slice(i, i + chunk);
-        if (skipOnConflict) {
-          await tx
+        let written: Array<Record<string, unknown>>;
+        if (updateOnConflict && columns.id) {
+          const secretNames = new Set([
+            ...(encryptedCols?.map((col) => col.column) ?? []),
+            ...(opts.mergePreserveColumns?.[spec.sqlName] ?? []),
+          ]);
+          const set = Object.fromEntries(Object.entries(columns)
+            .filter(([key]) => key !== "id" && !secretNames.has(key) && batch.some((row) => key in row))
+            .map(([key, column]) => [key, sql`excluded.${sql.identifier(column.name)}`]));
+          written = await tx.insert(spec.table).values(batch as never)
+            .onConflictDoUpdate({ target: columns.id, set }).returning();
+        } else if (skipOnConflict) {
+          written = await tx
             .insert(spec.table)
             .values(batch as never)
-            .onConflictDoNothing();
+            .onConflictDoNothing().returning();
         } else {
-          await tx.insert(spec.table).values(batch as never);
+          written = await tx.insert(spec.table).values(batch as never).returning();
         }
+        if (opts.writtenIds) {
+          const ids = opts.writtenIds.get(spec.sqlName) ?? new Set<string>();
+          for (const row of written) if (typeof row.id === "string") ids.add(row.id);
+          opts.writtenIds.set(spec.sqlName, ids);
+        }
+        if (opts.writtenRows) opts.writtenRows.count += written.length;
       }
     } catch (err) {
       // PostgreSQL unique_violation = 23505 (PGlite mirrors this).

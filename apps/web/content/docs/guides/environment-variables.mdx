@@ -31,11 +31,6 @@ Go to your project and open the **Configuration** tab. Find the **Environment va
 **Edit**. A panel opens showing the variables you already have (empty is fine — a brand-new app often has
 none).
 
-<Callout title="Screenshot">
-  Project → **Configuration** tab, the "Environment variables" card with its **Edit** button.
-  *(screenshot pending)*
-</Callout>
-
 </Step>
 
 <Step>
@@ -153,14 +148,9 @@ Press it and Openship recreates the running container from the image it already 
 injected. No git clone, no build — just a quick restart. It's the fastest way to roll out a changed key or a
 rotated secret.
 
-<Callout title="Screenshot">
-  The env editor after saving, showing the "Apply without a rebuild" notice and the **Apply
-  (restart, no rebuild)** button. *(screenshot pending)*
-</Callout>
-
 The same thing from the terminal is `openship deploy --refresh` (shown below).
 
-## Prefer the terminal?
+## CLI
 
 Everything above works from the CLI. Secret values always come back **masked** when you list them.
 
@@ -220,7 +210,7 @@ openship service env set web -p my-stack -e preview API_URL=https://staging.exam
 
 </Tabs>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="I saved a variable but my app still doesn't see it" type="warn">
   Saving stores the value; the **running app** only picks it up on a deploy. Use **Apply (restart,
@@ -240,7 +230,7 @@ openship service env set web -p my-stack -e preview API_URL=https://staging.exam
   more.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card

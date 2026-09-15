@@ -12,25 +12,25 @@
  */
 
 import { repos } from "@repo/db";
-import { env } from "../../config/env";
-import { decrypt } from "../../lib/encryption";
-import { verifyHmacSha256 } from "../webhooks/webhook.service";
+import { env } from "@repo/platform/engine/config/env";
+import { decrypt } from "@repo/platform/engine/lib/encryption";
+import { verifyHmacSha256 } from "@repo/platform/engine/modules/webhooks/webhook.service";
 // resolveProjectWebhookSecret (github.service) was the old single-secret reader;
 // verify() now collects ALL candidate secrets via collectDeliverySecrets below.
 import { handleInstallation } from "./webhook-installation";
 import { handlePush } from "./webhook-push";
 import { handleCheckRun } from "./webhook-check-run";
-import { collectGitHubSourceWebhookSecrets } from "./github-source.service";
+import { collectGitHubSourceWebhookSecrets } from "@repo/platform/engine/modules/github/github-source.service";
 import type {
   WebhookProvider,
   WebhookVerifyResult,
   WebhookHandlerResult,
-} from "../webhooks/webhook.types";
+} from "@repo/platform/engine/modules/webhooks/webhook.types";
 import type {
   GitHubCheckRunPayload,
   GitHubInstallationPayload,
   GitHubPushPayload,
-} from "./github.types";
+} from "@repo/contracts";
 
 // ─── Per-project webhook secret resolution ──────────────────────────────────
 

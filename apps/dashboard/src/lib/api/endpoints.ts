@@ -66,7 +66,6 @@ export const endpoints = {
     folderScan: (sessionId: string) => `projects/folder/scan/${sessionId}`,
     // #336: POST { service, keys } — real (unmasked) values for one folder-scan
     // service's named keys.
-    folderEnvReveal: (sessionId: string) => `projects/folder/scan/${sessionId}/env-reveal`,
     folderUpload: (sessionId: string) => `projects/folder/upload/${sessionId}`,
   },
 
@@ -372,6 +371,8 @@ export const endpoints = {
       export: "system/data-transfer/export",
       import: "system/data-transfer/import",
       importSession: "system/data-transfer/import/session",
+      importPreview: (sessionId: string) =>
+        `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/preview`,
       importChunk: (sessionId: string, index: number) =>
         `system/data-transfer/import/session/${encodeURIComponent(sessionId)}/chunk/${index}`,
       importFinalizeStream: (sessionId: string) =>
@@ -584,7 +585,7 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
-  /*  Billing (Stripe-backed cloud billing — SaaS + local-proxy)      */
+  /*  Billing (Oblien-managed — SaaS + local proxy)                  */
   /* ---------------------------------------------------------------- */
   billing: {
     plans: "billing/plans",
@@ -592,6 +593,8 @@ export const endpoints = {
     usage: "billing/usage",
     topupPacks: "billing/topup-packs",
     subscription: "billing/subscription",
+    cancel: "billing/cancel",
+    resume: "billing/resume",
     topup: "billing/topup",
     portal: "billing/portal",
   },

@@ -63,11 +63,11 @@ vi.mock("@repo/adapters", () => ({
   }),
 }));
 
-vi.mock("../backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: vi.fn(async (row: unknown) => row),
 }));
 
-const { prunePolicy } = await import("./retention-prune");
+const { prunePolicy } = await import("@repo/platform/engine/modules/backups/retention-prune");
 
 type PolicyArg = Parameters<typeof prunePolicy>[0];
 

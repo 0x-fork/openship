@@ -21,13 +21,13 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./service.controller";
-import { AgentExecBody } from "../../lib/agent-exec.schema";
+import { AgentExecBody } from "@repo/contracts";
 import {
   CreateServiceBody,
   SetServiceEnvVarsBody,
   SyncServicesBody,
   UpdateServiceBody,
-} from "./service.schema";
+} from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "services",
@@ -50,7 +50,7 @@ r.post(
     // parent project :id is in the basePath + enforced by cloudProjectProxy /
     // the handler). Without collection:true the middleware demands :serviceId
     // and 400s "Missing route param" before the handler runs.
-    tag: "project:service:write",
+    tag: "project:service:write", auditHandledByOperation: true,
     collection: true,
     body: CreateServiceBody,
     mcp: { description: "Add a service to a project." },
@@ -67,7 +67,7 @@ r.get(
 r.post(
   "/sync",
   {
-    tag: "project:service:write",
+    tag: "project:service:write", auditHandledByOperation: true,
     collection: true,
     body: SyncServicesBody,
     mcp: {
@@ -89,7 +89,7 @@ r.post(
   // Write-gated on purpose. POST keeps key names out of URLs and proxy logs.
   // No mcp block: revealing secrets stays a dashboard action, off automation.
   "/:serviceId/env-reveal",
-  { tag: "project:service:write" },
+  { tag: "project:service:write", auditHandledByOperation: true },
   cloudProjectProxy,
   ctrl.revealEnv,
 );
@@ -120,7 +120,7 @@ r.get(
 r.post(
   "/:serviceId/exec",
   {
-    tag: "project:service:write",
+    tag: "project:service:write", auditHandledByOperation: true,
     // Tighter than the default-authed 3000/min: each call opens a pooled SSH
     // connection and runs an arbitrary command, so the generic read budget is the
     // wrong shape for it.
@@ -137,7 +137,7 @@ r.post(
 r.patch(
   "/:serviceId",
   {
-    tag: "project:service:write",
+    tag: "project:service:write", auditHandledByOperation: true,
     body: UpdateServiceBody,
     mcp: {
       description:
@@ -149,7 +149,7 @@ r.patch(
 );
 r.delete(
   "/:serviceId",
-  { tag: "project:service:admin" },
+  { tag: "project:service:admin", auditHandledByOperation: true },
   cloudProjectProxy,
   ctrl.remove,
 );
@@ -157,20 +157,20 @@ r.delete(
 /* ─── Compose drift (accept upstream / keep edits) ──────────────────────── */
 r.post(
   "/:serviceId/drift/accept",
-  { tag: "project:service:write", mcp: { description: "Accept upstream docker-compose changes for this service." } },
+  { tag: "project:service:write", auditHandledByOperation: true, mcp: { description: "Accept upstream docker-compose changes for this service." } },
   cloudProjectProxy,
   ctrl.acceptDrift,
 );
 r.post(
   "/:serviceId/drift/keep",
-  { tag: "project:service:write", mcp: { description: "Keep local edits over upstream docker-compose changes for this service." } },
+  { tag: "project:service:write", auditHandledByOperation: true, mcp: { description: "Keep local edits over upstream docker-compose changes for this service." } },
   cloudProjectProxy,
   ctrl.keepDrift,
 );
 
 /* ─── Per-service container actions ─────────────────────────────────────── */
-r.post("/:serviceId/start", { tag: "project:service:write", mcp: { description: "Start this service's container." } }, cloudProjectProxy, ctrl.startContainer);
-r.post("/:serviceId/stop", { tag: "project:service:write", mcp: { description: "Stop this service's container." } }, cloudProjectProxy, ctrl.stopContainer);
+r.post("/:serviceId/start", { tag: "project:service:write", auditHandledByOperation: true, mcp: { description: "Start this service's container." } }, cloudProjectProxy, ctrl.startContainer);
+r.post("/:serviceId/stop", { tag: "project:service:write", auditHandledByOperation: true, mcp: { description: "Stop this service's container." } }, cloudProjectProxy, ctrl.stopContainer);
 /* `restart` is a BOUNCE, not a config apply — a container's environment is fixed
  * when it is created. With pending env changes it answers 409 SERVICE_CONFIG_STALE
  * naming the drifted keys instead of silently re-running the old config (GH-615);
@@ -178,7 +178,7 @@ r.post("/:serviceId/stop", { tag: "project:service:write", mcp: { description: "
  * wrong twice over: `RouteSpec` has no `query` field, and a `body` schema makes
  * secureRouter mount tbValidator("json"), which 400s the CLI's bodyless POST
  * (its api-client always sets Content-Type: application/json). */
-r.post("/:serviceId/restart", { tag: "project:service:write", mcp: { description: "Restart (bounce) this service's container. Does NOT apply changed env/config — it answers 409 SERVICE_CONFIG_STALE when env changed since the running container was created. To APPLY config, trigger a refresh deploy: POST /api/deployments {refresh:true, serviceIds:[serviceId]}. Pass ?force=true to bounce despite pending changes." } }, cloudProjectProxy, ctrl.restartContainer);
+r.post("/:serviceId/restart", { tag: "project:service:write", auditHandledByOperation: true, mcp: { description: "Restart (bounce) this service's container. Does NOT apply changed env/config — it answers 409 SERVICE_CONFIG_STALE when env changed since the running container was created. To APPLY config, trigger a refresh deploy: POST /api/deployments {refresh:true, serviceIds:[serviceId]}. Pass ?force=true to bounce despite pending changes." } }, cloudProjectProxy, ctrl.restartContainer);
 
 /* ─── Service environment variables ─────────────────────────────────────── */
 r.get(
@@ -190,7 +190,7 @@ r.get(
 r.put(
   "/:serviceId/env",
   {
-    tag: "project:service:write",
+    tag: "project:service:write", auditHandledByOperation: true,
     body: SetServiceEnvVarsBody,
     mcp: { description: "Replace a service's environment variables." },
   },

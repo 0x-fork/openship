@@ -8,7 +8,7 @@ import {
   getStartCommand,
   resolvePackageJson,
   type RepoFile,
-} from "../../src/lib/stack-detector";
+} from "@repo/platform/engine/lib/stack-detector";
 
 /**
  * Helper: build a RepoFile[] from a flat string[] of filenames.

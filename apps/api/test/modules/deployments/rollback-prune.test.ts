@@ -61,7 +61,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentRuntime: async (dep: { id: string }) => ({
     runtime: {
       name: "docker",
@@ -82,12 +82,12 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
 // The orchestrator statically imports build.service (checkNoActiveBuild) and
 // image-gc; stub the deploy-side one so importing it can't pull the whole build
 // graph, and let the REAL computeKeepSet run — it's the thing under test here.
-vi.mock("../../../src/modules/deployments/build.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   checkNoActiveBuild: async () => {},
   triggerDeployment: async () => ({ deployment: { id: "new" } }),
 }));
 
-const { prune } = await import("../../../src/modules/deployments/rollback");
+const { prune } = await import("@repo/platform/engine/modules/deployments/rollback/index");
 
 const dep = (over: Record<string, unknown>) => ({
   id: "d",

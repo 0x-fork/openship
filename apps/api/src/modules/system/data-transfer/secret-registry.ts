@@ -8,7 +8,14 @@
  * entry this registry doesn't know how to (de)crypt.
  */
 
-import { db, eq, schema, ENCRYPTED_COLUMNS } from "@repo/db";
+import {
+  db,
+  eq,
+  schema,
+  ENCRYPTED_COLUMNS,
+  stripEncryptedInPlace,
+  type DatabaseDump,
+} from "@repo/db";
 
 import type { SecretScheme } from "./types";
 
@@ -61,13 +68,49 @@ const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> =
   "instance_settings.tunnelToken": { table: schema.instanceSettings, scheme: "plaintext" },
   "instance_settings.ghDeviceTokenEncrypted": { table: schema.instanceSettings, scheme: "scalar" },
   "deployment.envVars": { table: schema.deployment, scheme: "map" },
+  "deployment.meta": { table: schema.deployment, scheme: "json" },
+  "service.environment": { table: schema.service, scheme: "json" },
+  "service.buildArgs": { table: schema.service, scheme: "json" },
+  "service.advanced": { table: schema.service, scheme: "json" },
+  "service.importedSpec": { table: schema.service, scheme: "json" },
+  "service.driftSpec": { table: schema.service, scheme: "json" },
+  "edge_target_verification.token": { table: schema.edgeTargetVerification, scheme: "plaintext" },
+  "edge_target_verification.retiredTokens": {
+    table: schema.edgeTargetVerification,
+    scheme: "json",
+  },
+  "backup_policy.webhookToken": { table: schema.backupPolicy, scheme: "plaintext" },
+  "account.accessToken": { table: schema.account, scheme: "plaintext" },
+  "account.refreshToken": { table: schema.account, scheme: "plaintext" },
+  "account.idToken": { table: schema.account, scheme: "plaintext" },
   "notification_channel.config": {
     table: schema.notificationChannel,
     scheme: "notification-config",
   },
 };
 
-export const SECRET_COLUMNS: readonly SecretColumn[] = ENCRYPTED_COLUMNS.map((spec) => {
+// Kept separate from ENCRYPTED_COLUMNS: tenant/cloud promotion still transports
+// ordinary Compose configuration directly. File/direct control-plane transfers
+// seal it because inline env values and mounted files may contain credentials.
+const PLAINTEXT_CONFIG_COLUMNS = [
+  { table: "deployment", column: "meta" },
+  { table: "service", column: "environment" },
+  { table: "service", column: "buildArgs" },
+  { table: "service", column: "advanced" },
+  { table: "service", column: "importedSpec" },
+  { table: "service", column: "driftSpec" },
+  { table: "edge_target_verification", column: "token" },
+  { table: "edge_target_verification", column: "retiredTokens" },
+  { table: "backup_policy", column: "webhookToken" },
+  { table: "account", column: "accessToken" },
+  { table: "account", column: "refreshToken" },
+  { table: "account", column: "idToken" },
+];
+
+export const SECRET_COLUMNS: readonly SecretColumn[] = [
+  ...ENCRYPTED_COLUMNS,
+  ...PLAINTEXT_CONFIG_COLUMNS,
+].map((spec) => {
   const key = `${spec.table}.${spec.column}`;
   const meta = SCHEME_BY_KEY[key];
   if (!meta) {
@@ -79,6 +122,33 @@ export const SECRET_COLUMNS: readonly SecretColumn[] = ENCRYPTED_COLUMNS.map((sp
     pk: (meta.table as unknown as { id: AnyColumn }).id,
     column: spec.column,
     scheme: meta.scheme,
-    secretPaths: spec.secretPaths ? [...spec.secretPaths] : undefined,
+    secretPaths:
+      "secretPaths" in spec && Array.isArray(spec.secretPaths) ? [...spec.secretPaths] : undefined,
   };
 });
+
+export function stripTransferSecrets(tables: DatabaseDump["tables"]): void {
+  stripEncryptedInPlace(tables);
+  for (const spec of PLAINTEXT_CONFIG_COLUMNS) {
+    for (const row of tables[spec.table] ?? []) {
+      if (spec.table === "deployment" && spec.column === "meta") {
+        // Frozen Compose services can contain inline credentials. Keep only
+        // target identity outside the sealed snapshot so a password-free review
+        // can still discover historical server dependencies and plan mappings.
+        const meta = row.meta;
+        if (meta && typeof meta === "object") {
+          row.meta = Object.fromEntries(
+            Object.entries(meta).filter(
+              ([key, value]) =>
+                ["organizationId", "serverId", "deployTarget", "runtimeMode"].includes(key) &&
+                typeof value === "string",
+            ),
+          );
+        }
+        continue;
+      }
+      // JSON config columns have nullable/default values in the schema.
+      delete row[spec.column];
+    }
+  }
+}

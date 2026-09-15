@@ -159,10 +159,14 @@ type DeployPrimaryEndpoint = NonNullable<DeployConfig["publicEndpoints"]>[number
  * constructed for a local/desktop instance — the implementation
  * forwards each call to the SaaS, which performs it with master creds.
  *
- * Today this is just `createPage` (Oblien Pages on shared `.opsh.io`).
- * Add new fields here when more admin-scoped paths need proxying.
+ * The SaaS checks namespace ownership for every Pages and routing operation.
  */
 export interface CloudAdminProxy {
+  /** SaaS delegates only after verifying each resource belongs to its namespace. */
+  pages?: Pick<Oblien["pages"], "get" | "create" | "deploy" | "delete" | "enable" | "disable" | "getDomain" | "connectDomain" | "disconnectDomain" | "checkDNS" | "renewSSL">;
+  setRoutes?: Oblien["routes"]["set"];
+  domainRoutes?: () => ReturnType<Oblien["domain"]["routes"]>;
+  domainSsls?: () => ReturnType<Oblien["domain"]["ssls"]>;
   createPage: (input: {
     workspace_id: string;
     path: string;
@@ -386,6 +390,7 @@ export const PAGE_CONTAINER_PREFIX = "page:";
 export async function provisionCloudWorkspace(
   client: Oblien,
   config: {
+    namespace?: string;
     name: string;
     image: string;
     mode: "temporary" | "permanent";
@@ -400,6 +405,7 @@ export async function provisionCloudWorkspace(
   let wsData: { id: string };
   try {
     wsData = await client.workspaces.create({
+      ...(config.namespace ? { namespace: config.namespace } : {}),
       name: config.name,
       image: config.image,
       mode: config.mode,
@@ -421,15 +427,11 @@ export async function provisionCloudWorkspace(
   const ws = client.workspace(wsData.id);
   try {
     if (config.mode === "temporary" && config.ttl) {
-      try {
-        await ws.lifecycle.makeTemporary({
-          ttl: config.ttl,
-          ttl_action: "remove",
-          remove_on_exit: true,
-        });
-      } catch {
-        // TTL failure is non-fatal - workspace will be cleaned up eventually.
-      }
+      await ws.lifecycle.makeTemporary({
+        ttl: config.ttl,
+        ttl_action: "remove",
+        remove_on_exit: true,
+      });
     }
 
     logger?.log("Connecting to build environment...\n");
@@ -528,12 +530,8 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
   ]);
 
   private readonly client: Oblien;
-  // Optional admin-scoped proxy. Set when this runtime is constructed
-  // by a local/desktop instance whose `client` is a namespace token —
-  // admin-scoped operations (e.g. creating pages on shared `.opsh.io`)
-  // get handed off to the SaaS through this callback. SaaS instances
-  // construct CloudRuntime with master creds and leave it null;
-  // `this.client` already has the needed scope there.
+  // Customer runtimes use namespace tokens. Admin-only resource operations
+  // delegate to the SaaS ownership checks on every deployment mode.
   private readonly adminProxy?: CloudAdminProxy;
   private readonly builtArtifacts = new Map<string, CloudBuiltArtifact>();
   private readonly activeBuilds = new Map<
@@ -555,19 +553,43 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
    * failing loudly with the message below. Loud beats silent here.
    */
   private readonly allowHostBuild: boolean;
+  private readonly namespace?: string;
+  private readonly allowProvisioning: boolean;
+  private readonly beforeProvision?: () => Promise<void>;
 
-  constructor(client: Oblien, opts?: { adminProxy?: CloudAdminProxy; allowHostBuild?: boolean }) {
+  constructor(client: Oblien, opts?: {
+    adminProxy?: CloudAdminProxy; allowHostBuild?: boolean; namespace?: string;
+    allowProvisioning?: boolean; beforeProvision?: () => Promise<void>;
+  }) {
     this.client = client;
     this.adminProxy = opts?.adminProxy;
     this.allowHostBuild = opts?.allowHostBuild ?? false;
+    this.namespace = opts?.namespace;
+    this.allowProvisioning = opts?.allowProvisioning ?? true;
+    this.beforeProvision = opts?.beforeProvision;
     this.compose = new CloudComposeSupport({
       client,
+      namespace: this.namespace,
       builtArtifacts: this.builtArtifacts,
       workspace: (workspaceId) => this.ws(workspaceId),
       provisionWorkspace: (config, logger) => this.provisionWorkspace(config, logger),
       execAndStream: (runtime, command, onLog, timeoutSeconds) =>
         this.execAndStream(runtime, command, onLog, timeoutSeconds),
     });
+  }
+
+  private assertNamespaceAccess(): void {
+    if (!this.allowProvisioning) throw new Error("Cloud operations require an organization-scoped platform");
+  }
+
+  private async assertCanProvision(): Promise<void> {
+    this.assertNamespaceAccess();
+    await this.beforeProvision?.();
+  }
+
+  private get pages(): NonNullable<CloudAdminProxy["pages"]> {
+    this.assertNamespaceAccess();
+    return this.adminProxy?.pages ?? this.client.pages;
   }
 
   /**
@@ -594,6 +616,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
 
   /** Get a scoped workspace handle. */
   private ws(workspaceId: string): WorkspaceHandle {
+    this.assertNamespaceAccess();
     return this.client.workspace(workspaceId);
   }
 
@@ -682,6 +705,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
    * CMD and WORKDIR; deploy keeps those defaults when `prebuiltImage` is set.
    */
   async prepareImage(config: ImageArtifactConfig, logger?: BuildLogger): Promise<BuildResult> {
+    await this.assertCanProvision();
     const log = logger ?? new BuildLogger();
     const startedAt = Date.now();
     const activeBuild = this.createActiveBuild(config.sessionId);
@@ -774,6 +798,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
   }
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
+    await this.assertCanProvision();
     const log = logger ?? new BuildLogger();
     const activeBuild = this.createActiveBuild(config.sessionId);
 
@@ -1644,7 +1669,8 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     },
     logger: BuildLogger,
   ): Promise<{ workspaceId: string; runtime: Awaited<ReturnType<WorkspaceHandle["runtime"]>> }> {
-    return provisionCloudWorkspace(this.client, config, logger);
+    await this.assertCanProvision();
+    return provisionCloudWorkspace(this.client, { ...config, namespace: this.namespace }, logger);
   }
 
   /**
@@ -1675,6 +1701,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     config: BuildConfig,
     logger: BuildLogger,
   ): Promise<{ workspaceId: string; runtime: Awaited<ReturnType<WorkspaceHandle["runtime"]>> }> {
+    await this.assertCanProvision();
     logger.log("Provisioning build environment...\n");
 
     // Create temporary workspace with build resources
@@ -1684,6 +1711,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     let wsData: { id: string };
     try {
       wsData = await this.client.workspaces.create({
+        ...(this.namespace ? { namespace: this.namespace } : {}),
         name: config.slug ?? `build-${config.projectId.slice(0, 20)}`,
         image: config.buildImage,
         mode: "temporary",
@@ -1707,15 +1735,11 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
 
     try {
       // Set TTL via dedicated lifecycle API (config.ttl during create is unreliable)
-      try {
-        await ws.lifecycle.makeTemporary({
-          ttl: "15m",
-          ttl_action: "remove",
-          remove_on_exit: true,
-        });
-      } catch {
-        // TTL failure is non-fatal - workspace will be cleaned up eventually
-      }
+      await ws.lifecycle.makeTemporary({
+        ttl: "15m",
+        ttl_action: "remove",
+        remove_on_exit: true,
+      });
 
       // Acquire runtime handle (enables API server + gets JWT)
       logger.log("Connecting to build environment...\n");
@@ -1773,6 +1797,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
   async deploy(config: DeployConfig, onLog?: LogCallback): Promise<DeploymentResult> {
+    await this.assertCanProvision();
     const workspaceId = config.imageRef;
     if (!workspaceId) {
       return {
@@ -1784,17 +1809,8 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     const ws = this.ws(workspaceId);
     const log: LogCallback = onLog ?? (() => {});
 
-    // Declared persistent paths can't be honoured here: Oblien has no volume
-    // primitive, so the only durable storage is the permanent workspace disk
-    // below — which a fresh workspace does not inherit. Say so rather than
-    // reporting a healthy deploy that quietly drops the mount (same
-    // warn-and-drop contract as compose `advanced` on this runtime).
     if (config.volumes?.length) {
-      log({
-        timestamp: new Date().toISOString(),
-        level: "warn",
-        message: `Persistent storage (${config.volumes.join(", ")}) is not supported on Openship Cloud — the workspace disk is the only durable storage. Use object storage for uploads, or deploy to a server.\n`,
-      });
+      throw new Error("Persistent volume mounts are not supported on Openship Cloud. Choose a server for this workload.");
     }
 
     try {
@@ -2083,6 +2099,7 @@ fi`;
   async deployStatic(
     config: DeployConfig & { outputDirectory: string; projectName?: string },
   ): Promise<DeploymentResult> {
+    await this.assertCanProvision();
     const workspaceId = config.imageRef;
     if (!workspaceId) {
       return { deploymentId: config.deploymentId, status: "failed" };
@@ -2132,7 +2149,7 @@ fi`;
       if (primaryCustomDomain) {
         let pg: { slug: string; url?: string | null };
         try {
-          const result = await this.client.pages.create({
+          const result = await this.pages.create({
             workspace_id: workspaceId,
             path: outputPath,
             name: config.projectName ?? pageSlug,
@@ -2145,17 +2162,13 @@ fi`;
             `Failed to create static page for slug "${pageSlug}" with custom domain "${primaryCustomDomain}": ${safeErrorMessage(err)}`,
           );
         }
-        await this.client.pages
-          .connectDomain(pg.slug, { domain: primaryCustomDomain })
-          .catch(() => {
-            // Non-fatal: page can still be accessed via slug if domain isn't verified yet
-          });
+        await this.pages.connectDomain(pg.slug, { domain: primaryCustomDomain });
         return { ...pg, url: pg.url ?? `https://${primaryCustomDomain}` };
       }
 
       if (wantFree) {
         const createOnSharedZone =
-          this.adminProxy?.createPage ?? ((input) => this.client.pages.create(input));
+          this.adminProxy?.createPage ?? ((input) => this.pages.create(input));
         try {
           const result = await createOnSharedZone({
             workspace_id: workspaceId,
@@ -2175,7 +2188,7 @@ fi`;
 
       let pg: { slug: string; url?: string | null };
       try {
-        const result = await this.client.pages.create({
+        const result = await this.pages.create({
           workspace_id: workspaceId,
           path: outputPath,
           name: config.projectName ?? pageSlug,
@@ -2197,11 +2210,12 @@ fi`;
     // the way this deploy wants, re-deploy fresh files in place (zero-downtime);
     // otherwise replace it (a free subdomain can't be attached after creation,
     // e.g. a legacy page created before endpoints were defaulted). get/deploy/
-    // delete are authoritative only when `this.client` can see the page (SaaS
-    // master); on a namespace (self-host) client get() returns null and we
-    // create via the adminProxy exactly as before — no self-host behavior change.
+    // delete use the tenant-checked admin delegate on both SaaS and desktop.
     let page: { slug: string; url?: string | null };
-    const existingPage = (await this.client.pages.get(pageSlug).catch(() => null))?.page ?? null;
+    const existingPage = (await this.pages.get(pageSlug).catch((error) => {
+      if (isRuntimeNotFoundError(error)) return null;
+      throw error;
+    }))?.page ?? null;
     const bindingMatches =
       !!existingPage &&
       (primaryCustomDomain
@@ -2212,7 +2226,7 @@ fi`;
 
     if (existingPage && bindingMatches) {
       try {
-        const result = await this.client.pages.deploy(pageSlug, {
+        const result = await this.pages.deploy(pageSlug, {
           workspace_id: workspaceId,
           path: outputPath,
         });
@@ -2226,7 +2240,7 @@ fi`;
       if (existingPage) {
         // Wrong/missing binding (e.g. a legacy unbound page) — replace it, since
         // the free subdomain must be set at create time.
-        await this.client.pages.delete(pageSlug).catch(() => {});
+        await this.pages.delete(pageSlug);
       }
       page = await createFresh();
     }
@@ -2252,7 +2266,7 @@ fi`;
       if (this.adminProxy?.disablePage) {
         await this.adminProxy.disablePage(slug);
       } else {
-        await this.client.pages.disable(slug);
+        await this.pages.disable(slug);
       }
     } else {
       await this.ws(containerId).stop();
@@ -2260,12 +2274,13 @@ fi`;
   }
 
   async start(containerId: string): Promise<void> {
+    await this.assertCanProvision();
     if (containerId.startsWith(PAGE_CONTAINER_PREFIX)) {
       const slug = containerId.slice(5);
       if (this.adminProxy?.enablePage) {
         await this.adminProxy.enablePage(slug);
       } else {
-        await this.client.pages.enable(slug);
+        await this.pages.enable(slug);
       }
     } else {
       await this.ws(containerId).start();
@@ -2273,6 +2288,7 @@ fi`;
   }
 
   async restart(containerId: string): Promise<void> {
+    await this.assertCanProvision();
     if (containerId.startsWith(PAGE_CONTAINER_PREFIX)) {
       // Pages are static - no process to restart
       return;
@@ -2287,7 +2303,7 @@ fi`;
         if (this.adminProxy?.deletePage) {
           await this.adminProxy.deletePage(slug);
         } else {
-          await this.client.pages.delete(slug);
+          await this.pages.delete(slug);
         }
       } else {
         await this.ws(containerId).delete();
@@ -2359,7 +2375,7 @@ fi`;
         if (this.adminProxy?.disablePage) {
           await this.adminProxy.disablePage(slug);
         } else {
-          await this.client.pages.disable(slug);
+          await this.pages.disable(slug);
         }
       } catch {
         // already disabled
@@ -2806,6 +2822,7 @@ fi`;
     config: MultiServiceDeployConfig,
     onLog?: LogCallback,
   ): Promise<MultiServiceDeployResult> {
+    await this.assertCanProvision();
     return this.compose.deployServiceWorkload(group, config, onLog);
   }
 
@@ -2882,7 +2899,8 @@ fi`;
    * from the Routing/Domains tab.
    */
   async setDomainRoutes(hostname: string, input: RoutesInput): Promise<RoutesResult> {
-    return this.client.routes.set(hostname, input);
+    this.assertNamespaceAccess();
+    return this.adminProxy?.setRoutes ? this.adminProxy.setRoutes(hostname, input) : this.client.routes.set(hostname, input);
   }
 
   // ── Private helpers ────────────────────────────────────────────────────

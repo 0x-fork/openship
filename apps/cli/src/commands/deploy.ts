@@ -1,10 +1,11 @@
+import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 /**
  * `openship deploy` — deploy the current project.
  *
  * Two paths, auto-selected by whether the cwd is a git repository:
  *   - Git repo  → POST /api/deployments (git-source build of the linked project).
  *   - No git    → folder-upload: package the cwd and drive the same pipeline the
- *                 MCP / dashboard folder deploy uses (see lib/folder-deploy.ts).
+ *                 MCP / dashboard folder deploy uses (see the shared SDK source workflow).
  *
  * The git path's controller accepts an allowlist body ({ projectId, branch,
  * commitSha, environment, serverId, forceAll, serviceIds, smartRoute, refresh }) and
@@ -14,9 +15,9 @@
 import { Command } from "commander";
 import { execFileSync } from "node:child_process";
 import ora from "ora";
-import { apiRequest, ApiError } from "../lib/api-client";
+import { getShipClient, assertLinkedProjectConnection, ApiError } from "../lib/ship-client";
+import type { CreateDeploymentInput, CreateDeploymentResult } from "@repo/sdk/client";
 import { readProjectLink } from "../lib/project-link";
-import { deployFolder } from "../lib/folder-deploy";
 import { streamDeploymentLogs } from "../lib/deploy-stream";
 import { isJsonMode, printJson, err, info } from "../lib/output";
 
@@ -31,10 +32,6 @@ function git(args: string[]): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-interface CreateResponse {
-  data?: { success?: boolean; deployment_id?: string; project_id?: string };
 }
 
 export const deployCommand = new Command("deploy")
@@ -55,11 +52,12 @@ export const deployCommand = new Command("deploy")
   .option("--watch", "Stream the deployment logs until it finishes")
   .action(async (opts) => {
     const link = readProjectLink();
+    if (!opts.project) assertLinkedProjectConnection(link);
 
     const env: string = opts.env;
     if (env !== "production" && env !== "preview") {
       err(`Invalid --env "${env}". Must be "production" or "preview".`);
-      process.exit(1);
+      exitCommand(1);
     }
 
     // Auto-detect: outside a git repo, deploy the folder via the upload flow
@@ -83,22 +81,22 @@ export const deployCommand = new Command("deploy")
     if (!inGitRepo && !gitOnlyFlags) {
       const spinner = isJsonMode() ? null : ora("Deploying folder").start();
       try {
-        const result = await deployFolder({
-          cwd: process.cwd(),
+        const result = await getShipClient().deploy({
+          source: { type: "directory", path: process.cwd() },
           name: opts.name,
           projectId: opts.project || link?.projectId,
-          environment: env,
+          environment: env as "production" | "preview",
           serverId: opts.server,
           serviceIds,
           onStep: (m) => {
             if (spinner) spinner.text = m;
           },
         });
-        deploymentId = result.deploymentId;
+        deploymentId = result.deployment_id;
         payload = {
           success: true,
-          deployment_id: result.deploymentId,
-          project_id: result.projectId,
+          deployment_id: result.deployment_id,
+          project_id: result.project_id,
           ...(result.configDiagnostics && { configDiagnostics: result.configDiagnostics }),
         };
         spinner?.succeed(deploymentId ? `Deployment queued: ${deploymentId}` : "Deployment queued");
@@ -112,21 +110,22 @@ export const deployCommand = new Command("deploy")
         for (const e of result.configDiagnostics?.errors ?? []) err(`    • ${e}`);
         for (const w of result.configDiagnostics?.warnings ?? []) info(`    ⚠ ${w}`);
       } catch (e) {
+      rethrowCommandExit(e);
         spinner?.fail("Folder deploy failed");
         err(e instanceof ApiError ? e.message : String(e));
-        process.exit(1);
+        exitCommand(1);
       }
     } else {
       const projectId: string | undefined = opts.project || link?.projectId;
       if (!projectId) {
         err("No project specified. Pass --project <id> or run `openship init` to link one.");
-        process.exit(1);
+        exitCommand(1);
       }
 
       const branch: string | undefined =
         opts.branch || link?.branch || git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
-      const body = {
+      const body: CreateDeploymentInput = {
         projectId,
         branch,
         commitSha: opts.commit || undefined,
@@ -139,20 +138,18 @@ export const deployCommand = new Command("deploy")
       };
 
       const spinner = isJsonMode() ? null : ora("Triggering deployment").start();
-      let res: CreateResponse;
+      let result: CreateDeploymentResult;
       try {
-        res = await apiRequest<CreateResponse>("/deployments", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
+        result = await getShipClient().deployments.create(body);
       } catch (e) {
+      rethrowCommandExit(e);
         spinner?.fail("Deployment failed to start");
         err(e instanceof ApiError ? e.message : String(e));
-        process.exit(1);
+        exitCommand(1);
       }
 
-      deploymentId = res.data?.deployment_id;
-      payload = res.data ?? (res as Record<string, unknown>);
+      deploymentId = result.deployment_id;
+      payload = { ...result };
       spinner?.succeed(deploymentId ? `Deployment queued: ${deploymentId}` : "Deployment queued");
     }
 
@@ -172,5 +169,5 @@ export const deployCommand = new Command("deploy")
     }
 
     const result = await streamDeploymentLogs(deploymentId);
-    if (result.success === false || result.status === "cancelled") process.exit(1);
+    if (result.success === false || result.status === "cancelled") exitCommand(1);
   });

@@ -4,7 +4,7 @@ import {
   parseComposeEnvFile,
   parseComposeFile,
   resolveComposeEnvironmentTemplates,
-} from "../../src/lib/compose-parser";
+} from "@repo/platform/engine/lib/compose-parser";
 
 describe("parseComposeFile", () => {
   it("resolves Docker Compose environment interpolation from .env content", () => {

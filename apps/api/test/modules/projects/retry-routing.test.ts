@@ -28,29 +28,29 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   return { ...actual, edgeProxy, checkEdge };
 });
 
-vi.mock("../../../src/lib/ssh-manager", () => ({ sshManager: { withExecutor } }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: { withExecutor } }));
 
-vi.mock("../../../src/lib/managed-edge-proxy", () => ({
+vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   syncManagedEdgeRoutes,
   edgeUnsyncedWarning: () => "routing unsynced",
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentRuntime: vi.fn(),
   withDeploymentPlatform,
 }));
 
-vi.mock("../../../src/lib/edge-reconcile", () => ({ reconcileServerEdge }));
+vi.mock("@repo/platform/engine/lib/edge-reconcile", () => ({ reconcileServerEdge }));
 
-vi.mock("../../../src/modules/domains/routing-apply.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/routing-apply.service", () => ({
   applyProjectRouting,
 }));
 
-vi.mock("../../../src/modules/domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   reapplyProjectLiveRoutes,
 }));
 
-import { retryProjectRouting } from "../../../src/modules/projects/project-runtime.service";
+import { retryProjectRouting } from "@repo/platform/engine/modules/projects/project-runtime.service";
 
 // A clearly-custom hostname (never under any routing base domain) so
 // syncProjectManagedEdge finds zero managed targets and just clears the warning.

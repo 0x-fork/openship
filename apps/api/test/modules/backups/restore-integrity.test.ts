@@ -162,7 +162,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/modules/backups/restore.sse", () => ({
+vi.mock("@repo/platform/engine/modules/backups/restore.sse", () => ({
   restoreRunBus: {
     publish: (_id: string, event: Record<string, unknown>) => {
       h.events.push(event);
@@ -171,7 +171,7 @@ vi.mock("../../../src/modules/backups/restore.sse", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   // The orchestrator releases the runtime it resolved when the run ends; these
   // stubs hold no transport, so the release is a no-op here.
   disposeRuntime: () => {},
@@ -179,22 +179,22 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "docker" } } }),
   resolveTargetPlatform: async () => ({ runtime: { name: "bare" } }),
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: () => {} },
 }));
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => null,
   liveContainerForService: async () => ({ containerId: null, running: null }),
 }));
 
-import { RestoreOrchestrator } from "../../../src/modules/backups/restore.orchestrator";
+import { RestoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 
 const recorded = (over: Partial<Recorded> = {}): Recorded => ({
   name: "volume-pgdata.tar.zst",

@@ -81,6 +81,7 @@ r.post(
   "/rescan",
   {
     tag: "job:write",
+    auditHandledByOperation: true,
     collection: true,
     localOnly: true,
     mcp: {

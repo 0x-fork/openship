@@ -1,5 +1,7 @@
 "use client";
 
+import { BillingSubscriptionControls } from "./BillingSubscriptionControls";
+
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Loader2, Sparkles } from "lucide-react";
@@ -62,7 +64,8 @@ interface TopupCheckoutResponse {
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-function formatCredits(milliCredits: number): string {
+function formatCredits(milliCredits: number | null): string {
+  if (milliCredits === null) return "∞";
   const credits = Math.floor(milliCredits / 1000);
   return credits.toLocaleString();
 }
@@ -71,8 +74,8 @@ function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
 }
 
-function pctUsed(used: number, limit: number): number {
-  if (limit <= 0) return 0;
+function pctUsed(used: number, limit: number | null): number {
+  if (limit === null || limit <= 0) return 0;
   return Math.min(100, Math.max(0, (used / limit) * 100));
 }
 
@@ -374,7 +377,7 @@ function BuyCreditsCard({ available }: { available: boolean }) {
   async function handleBuy(packId: string) {
     setBuyingPackId(packId);
     try {
-      const res = await api.post<TopupCheckoutResponse>("billing/topup", { packId });
+      const res = await api.post<TopupCheckoutResponse>("billing/topup", { packId, idempotencyKey: crypto.randomUUID() });
       window.location.href = res.data.checkoutUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.overview.checkoutError);
@@ -502,7 +505,7 @@ function nextPaidPlan(tier: PlanTierId): PlanTierId | undefined {
 
 function PlanCard({ state }: { state: BillingState }) {
   const { t } = useI18n();
-  const plan = PLANS[state.tier];
+  const plan = state.plan === undefined ? PLANS[state.tier] : state.plan;
   const planName = plan?.name ?? state.tier;
   const isFree = state.tier === "free";
   const allowance = state.monthlyCreditLimit;
@@ -540,7 +543,7 @@ function PlanCard({ state }: { state: BillingState }) {
             <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary to-primary/90" />
             <span className="relative flex items-center gap-1.5">
               <Sparkles className="size-3.5" />
-              {interpolate(t.billing.sidebar.upgradeTo, { name: PLANS[nextTier].name })}
+              {t.billing.tabs.plans}
             </span>
           </Link>
         ) : (
@@ -578,6 +581,7 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ state }) => {
     <div className="flex flex-col gap-5">
       {/* Subscription/tier leads; credits balance is secondary. */}
       <PlanCard state={state} />
+      <BillingSubscriptionControls state={state} />
       <BalanceHero state={state} />
       <RecentActivityCard />
       <BuyCreditsCard available={state.topups?.available === true} />

@@ -28,9 +28,9 @@
  */
 
 import type { Context } from "hono";
-import { sshManager } from "../../lib/ssh-manager";
-import { auth } from "../../lib/auth";
-import { trustedOrigins } from "../../config/env";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { trustedOrigins } from "@repo/platform/engine/config/env";
 import { upgradeWebSocket } from "../../lib/ws";
 import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";

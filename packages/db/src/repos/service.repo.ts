@@ -550,9 +550,11 @@ export function createServiceRepo(db: Database) {
 
     async create(data: Omit<NewService, "id">) {
       const id = generateId("svc");
-      const row = { id, ...data };
-      await db.insert(service).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Service;
+      // Return the persisted defaults and timestamps. Synthesizing a Service
+      // from the input omitted fields such as namespaceVolumes and made create
+      // disagree with the next read of the same row.
+      const [row] = await db.insert(service).values({ id, ...data }).returning();
+      return row!;
     },
 
     async update(id: string, data: Partial<NewService>) {

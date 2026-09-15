@@ -7,7 +7,7 @@ import {
   sanitizeServiceEnv,
   sanitizeCustomPaths,
   sanitizeRoutes,
-} from "./migration-input";
+} from "@repo/platform/engine/modules/migration/migration-input";
 
 describe("sanitizeCustomPaths", () => {
   it("keeps well-formed absolute source→dest pairs, trimmed", () => {

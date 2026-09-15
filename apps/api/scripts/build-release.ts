@@ -37,6 +37,8 @@
  *       core/             ← @repo/core source (workspace dep)
  *       db/               ← @repo/db source + drizzle/ migrations
  *       adapters/         ← @repo/adapters source (workspace dep)
+ *       contracts/        ← shared SDK/API contracts
+ *       platform/         ← shared authorization/application operations
  *
  * Workspace packages are copied verbatim and referenced via `file:`
  * paths in api/package.json. They are not on npm — shipping the
@@ -66,7 +68,7 @@ const PACKAGES_DIR = join(REPO_ROOT, "packages");
  * (db-email, ui, onboarding) aren't included — they're either dashboard-
  * only or webmail-only.
  */
-const API_WORKSPACE_DEPS = ["core", "db", "adapters"] as const;
+const API_WORKSPACE_DEPS = ["core", "db", "adapters", "contracts", "platform"] as const;
 
 /**
  * Output directory. Defaults to `apps/api/release-dist/` (the canonical

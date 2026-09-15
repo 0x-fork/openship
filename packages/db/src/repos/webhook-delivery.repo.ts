@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, lt, or, inArray, isNull, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { webhookDelivery } from "../schema";
@@ -114,8 +114,12 @@ export function createWebhookDeliveryRepo(db: Database) {
     },
 
     /** Org-wide feed — includes project-less forwarded/ignored rows for the org. */
-    listByOrg(organizationId: string, opts?: { cursor?: string; limit?: number }) {
-      return page(and(eq(webhookDelivery.organizationId, organizationId)), opts);
+    listByOrg(organizationId: string, opts?: { cursor?: string; limit?: number; projectIds?: string[]; includeUnassigned?: boolean }) {
+      const allowed = opts?.projectIds === undefined ? undefined : or(
+        opts.projectIds.length ? inArray(webhookDelivery.projectId, opts.projectIds) : sql`false`,
+        opts.includeUnassigned ? isNull(webhookDelivery.projectId) : sql`false`,
+      );
+      return page(and(eq(webhookDelivery.organizationId, organizationId), allowed), opts);
     },
 
     /** Delete rows older than `cutoff` (retention). Returns rows deleted. */

@@ -7,7 +7,7 @@
  */
 
 import { PRICING } from "@repo/core";
-import type { BuildStrategy, ProxySettings } from "@repo/core";
+import type { BuildStrategy, ProxySettings, BuildStep, LogEntry } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
 
@@ -448,43 +448,7 @@ export interface DeploymentResult {
   status: ContainerStatus;
 }
 
-/**
- * Pipeline step identifiers for stepper UI.
- *
- * "prepare" is one-time server provisioning (toolchain install, source
- * transfer) that runs BEFORE the build timer starts — so it's shown as its own
- * phase and excluded from the reported build duration.
- */
-export type BuildStep = "prepare" | "clone" | "install" | "build" | "deploy";
-
-export const BUILD_STEPS: readonly BuildStep[] = [
-  "prepare",
-  "clone",
-  "install",
-  "build",
-  "deploy",
-] as const;
-
-export interface LogEntry {
-  timestamp: string;
-  message: string;
-  level: "info" | "warn" | "error";
-  /** When present, this entry is a step event for the stepper UI */
-  step?: BuildStep;
-  /** Step lifecycle status */
-  stepStatus?: "running" | "completed" | "failed" | "skipped";
-  /** Compose service name when this log belongs to one service. */
-  serviceName?: string;
-  /** Stable id of the service this log belongs to (compose deployments). Routes
-   *  the line to its per-service tab without fragile name matching. */
-  serviceId?: string;
-  /** Pre-encoded base64 data - passed through to SSE without re-encoding. */
-  rawData?: string;
-  /** Monotonic sequence assigned by the session manager at append time, used as
-   *  the SSE event id / client dedup cursor. Decoupled from the ring-buffer
-   *  index so it never plateaus when the buffer trims. */
-  seq?: number;
-}
+export { BUILD_STEPS, type BuildStep, type LogEntry } from "@repo/core";
 
 /**
  * A serialization gate for server/workspace-scoped provisioning. The API injects

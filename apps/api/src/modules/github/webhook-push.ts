@@ -3,24 +3,24 @@
  */
 
 import { repos, type Project } from "@repo/db";
-import { env } from "../../config/env";
-import { triggerDeployment } from "../deployments/build.service";
+import { env } from "@repo/platform/engine/config/env";
+import { triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 import {
   compareCommits,
   getRepository,
-} from "./github.service";
-import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
-import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
+} from "@repo/platform/engine/modules/github/github.service";
+import { cloudFetchAsOrgOwner } from "@repo/platform/engine/lib/cloud/transport";
+import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
 import { safeErrorMessage } from "@repo/core";
 import {
   extractChangedFiles,
   routeServicesByChanges,
-} from "./webhook-changed-files";
+} from "@repo/platform/engine/modules/github/webhook-changed-files";
 import { webhookActorCtx } from "./webhook-shared";
-import { resolveOrgOwner } from "../../lib/org-actor";
-import { notification } from "../../lib/notification-dispatcher";
-import type { WebhookHandlerResult } from "../webhooks/webhook.types";
-import type { GitHubPushPayload } from "./github.types";
+import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
+import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
+import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
+import type { GitHubPushPayload } from "@repo/contracts";
 
 // ─── Branch deployment events ────────────────────────────────────────────────
 
