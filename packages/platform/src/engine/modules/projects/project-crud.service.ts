@@ -2159,6 +2159,24 @@ export function releaseSourceKey(p: Project): string {
   ].join("|");
 }
 
+/** An unanswered poll, without doing more I/O on an already stalled source. */
+export function unresolvedUpstreamDrift(p: Project): UpstreamDrift {
+  const mode = driftMode(p);
+  if (mode === "commit") {
+    return { supported: true, mode, key: commitSourceKey(p), latestSha: null, latestMessage: null };
+  }
+  if (mode === "release") {
+    return {
+      supported: true,
+      mode,
+      key: releaseSourceKey(p),
+      latestVersion: null,
+      pinned: Boolean(p.releaseSource?.pinnedVersion),
+    };
+  }
+  return { supported: true, mode, digestByRef: {} };
+}
+
 /** Image services whose upstream digest is worth resolving (image-only, enabled). */
 async function imageServicesOf(p: Project) {
   const services = await repos.service.listByProject(p.id).catch(() => []);
@@ -2190,6 +2208,10 @@ export async function upstreamMatchesSource(p: Project, u: UpstreamDrift): Promi
   if (!u.supported || u.mode !== driftMode(p)) return false;
   if (u.mode === "commit") return u.key === commitSourceKey(p);
   if (u.mode === "release") return u.key === releaseSourceKey(p);
+  // A watchdog can expire before even the local service read completes. An
+  // empty map asserts no version for ANY ref; reuse that unknown answer only
+  // for the short failed-poll backoff, rather than retrying on every page load.
+  if (Object.keys(u.digestByRef).length === 0) return true;
   const services = await imageServicesOf(p);
   if (services.length === 0) return false;
   // Every current ref must have been polled — a service added or retagged since
