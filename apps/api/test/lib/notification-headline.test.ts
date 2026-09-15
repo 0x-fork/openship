@@ -111,4 +111,46 @@ describe("delivered headline vs the category it was subscribed through", () => {
     expect(msg.body).toContain("Policy: pol_1");
     expect(msg.body).toContain("Destination: dst_1");
   });
+
+  it("renders job name, exit code, error, duration, resource, and logs in job failure alerts", () => {
+    const msg = renderMessage(
+      delivery("job.run.failed", {
+        eventType: "job_run.failed",
+        jobName: "Audit unconfigured backups",
+        exitCode: 1,
+        errorMessage: "Command exited with code 1",
+        durationMs: 2500,
+        resourceType: "job",
+        resourceId: "custom:BlS_iYp2_kUnHTbj",
+        logExcerpt: "ALERT: Found 1 project(s) without backup configuration!",
+      }),
+    );
+
+    expect(msg.title).toBe("Job failed");
+    expect(msg.body).toContain("Job: Audit unconfigured backups");
+    expect(msg.body).toContain("Exit Code: 1");
+    expect(msg.body).toContain("Error: Command exited with code 1");
+    expect(msg.body).toContain("Duration: 3s");
+    expect(msg.body).toContain("Resource: job (custom:BlS_iYp2_kUnHTbj)");
+    expect(msg.body).toContain("Logs:\nALERT: Found 1 project(s) without backup configuration!");
+  });
+
+  it("renders job name and exit code 0 for successful job runs", () => {
+    const msg = renderMessage(
+      delivery("job.run.succeeded", {
+        eventType: "job_run.succeeded",
+        label: "Audit disk space",
+        exitCode: 0,
+        durationMs: 500,
+        resourceType: "job",
+        resourceId: "custom:t6GN81ItRPW_qAkX",
+      }),
+    );
+
+    expect(msg.title).toBe("Job succeeded");
+    expect(msg.body).toContain("Job: Audit disk space");
+    expect(msg.body).toContain("Exit Code: 0");
+    expect(msg.body).toContain("Duration: 1s");
+    expect(msg.body).toContain("Resource: job (custom:t6GN81ItRPW_qAkX)");
+  });
 });

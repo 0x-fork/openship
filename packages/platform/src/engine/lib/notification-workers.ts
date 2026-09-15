@@ -70,6 +70,9 @@ export function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   if (payload.destinationName || payload.destinationId) {
     lines.push(`Destination: ${payload.destinationName ?? payload.destinationId}`);
   }
+  if (payload.jobName || payload.label) {
+    lines.push(`Job: ${payload.jobName ?? payload.label}`);
+  }
 
   if (payload.branch) lines.push(`Branch: ${payload.branch}`);
   if (payload.commitSha) {
@@ -77,8 +80,11 @@ export function renderMessage(delivery: NotificationDelivery): RenderedMessage {
     lines.push(`Commit: ${sha}`);
   }
   if (payload.url) lines.push(`URL: ${payload.url}`);
+  if (payload.exitCode !== undefined && payload.exitCode !== null) {
+    lines.push(`Exit Code: ${payload.exitCode}`);
+  }
   if (payload.errorMessage) lines.push(`Error: ${payload.errorMessage}`);
-  if (payload.durationMs) {
+  if (payload.durationMs !== undefined && payload.durationMs !== null) {
     lines.push(`Duration: ${Math.round(Number(payload.durationMs) / 1000)}s`);
   }
 
@@ -86,6 +92,10 @@ export function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   if (resourceId) {
     const resourceType = payload.resourceType ?? "resource";
     lines.push(`Resource: ${resourceType} (${resourceId})`);
+  }
+
+  if (payload.logExcerpt) {
+    lines.push(`Logs:\n${String(payload.logExcerpt).trim()}`);
   }
 
   return {
@@ -481,7 +491,9 @@ async function sendTelegram(
     return; // 200 with an unparseable body: accept rather than retry forever.
   }
   if (parsed && parsed.ok === false) {
-    throw new Error(`Telegram rejected the message: ${(parsed.description ?? "unknown error").slice(0, 200)}`);
+    throw new Error(
+      `Telegram rejected the message: ${(parsed.description ?? "unknown error").slice(0, 200)}`,
+    );
   }
 }
 
