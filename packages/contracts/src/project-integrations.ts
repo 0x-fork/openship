@@ -11,11 +11,13 @@ const provider = Type.Union(OBJECT_STORAGE_PROVIDERS.map(value => Type.Literal(v
 
 export const ProjectConnectionSchema = Type.Object({
   id: Type.String(), sourceProjectId: Type.String(), sourceName: Type.String(), sourceAppTemplateId: nullableString,
+  sourceServiceId: Type.Optional(nullableString), sourceServiceName: Type.Optional(nullableString),
   targetProjectId: Type.String(), outputId: Type.String(), envKey: Type.String(), mode,
 });
 export type ProjectConnection = Static<typeof ProjectConnectionSchema>;
 export const ProjectConnectionConsumerSchema = Type.Object({
   id: Type.String(), targetProjectId: Type.String(), targetName: Type.String(), targetSlug: nullableString,
+  sourceServiceId: Type.Optional(nullableString),
   outputId: Type.String(), envKey: Type.String(), mode,
 });
 export const ProjectObjectStorageSchema = Type.Object({
@@ -43,6 +45,7 @@ export const ProjectEdgeConfigSchema = Type.Object({
 });
 
 export const ProjectIntegrationSchemas = {
+  listConnectionCandidates: { action: "write", output: Type.Array(Type.Object({ id: Type.String(), name: Type.String(), description: Type.String(), appTemplateId: nullableString })) },
   listConnections: { action: "read", output: Type.Array(ProjectConnectionSchema) },
   listConnectionConsumers: { action: "read", output: Type.Array(ProjectConnectionConsumerSchema) },
   createConnection: { action: "write", input: CreateConnectionBody, output: Type.Object({ connection: ProjectConnectionSchema, requiresRedeploy: Type.Literal(true) }) },

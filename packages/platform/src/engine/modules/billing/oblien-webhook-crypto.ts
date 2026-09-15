@@ -76,11 +76,11 @@ export function verifyOblienSignature(
 }
 
 /** Derive a stable idempotency id from the (id-less) Oblien envelope. */
-export function deriveOblienEventId(payload: OblienEventEnvelope): string {
-  const parts = [
-    payload.event ?? "",
-    String(payload.data?.workspace_id ?? extractNamespace(payload) ?? ""),
-    String(payload.data?.period_end ?? payload.timestamp ?? ""),
-  ];
-  return createHash("sha256").update(parts.join(":")).digest("hex");
+export function deriveOblienEventId(payload: OblienEventEnvelope, deliveryId?: string): string {
+  // X-Webhook-Id is stable across provider retries. Older deliveries without it
+  // use the whole payload, so separate usage updates in one period aren't lost.
+  const identity = deliveryId
+    ? JSON.stringify(["oblien", extractNamespace(payload), deliveryId])
+    : JSON.stringify(payload);
+  return createHash("sha256").update(identity).digest("hex");
 }

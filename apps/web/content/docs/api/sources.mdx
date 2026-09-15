@@ -99,7 +99,7 @@ limits and rejects escaping symlinks and special files. A system `tar` executabl
 <Tab value="SDK">
 
 ```ts
-const scan = await ship.sources.scan("session_123");
+const scan = await ship.sources.scan("session_123", { includeEnv: true });
 console.log(scan.stack, scan.buildCommand, scan.configDiagnostics);
 ```
 
@@ -110,7 +110,7 @@ console.log(scan.stack, scan.buildCommand, scan.configDiagnostics);
 curl -X POST "$OPENSHIP_URL/api/projects/folder/scan/session_123" \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{}'
+  -d '{"includeEnv":true}'
 ```
 
 </Tab>
@@ -118,7 +118,8 @@ curl -X POST "$OPENSHIP_URL/api/projects/folder/scan/session_123" \
 
 Detection returns the stack, package manager, commands, output paths, service definitions, and any
 configuration diagnostics. Inspect errors before submitting a deployment. Environment values are
-masked; use [Reveal environment values](/docs/api/services#reveal-environment-values) to display selected keys.
+masked by default. The example requests editable values in the scan response with `includeEnv: true`;
+see [Reveal environment values](/docs/api/services#reveal-environment-values).
 
 To finish a custom flow, use `projects.ensure()` to record the chosen configuration, then
 `deployments.buildAccess()` with `projectId` and `uploadSessionId`. The shared fields are documented in
@@ -134,7 +135,7 @@ To finish a custom flow, use `projects.ensure()` to record the chosen configurat
 | --- | --- | --- |
 | Package and stage generated files or an allowed directory. | `sources.stage(input, options?)` | [Upload workflow](/docs/api/sources#upload-a-source-folder) |
 | Open a folder upload session and return its upload instructions. | `sources.open(input?)` | `POST /api/projects/folder/session`<br />`project:write` |
-| Detect build configuration from a staged source session. | `sources.scan(id)` | `POST /api/projects/folder/scan/:sessionId`<br />`project:write` |
+| Detect build configuration from a staged source session. | `sources.scan(id, options?)` | `POST /api/projects/folder/scan/:sessionId`<br />`project:write` |
 | Reveal explicitly requested source values after authorization. | `sources.reveal(id, input)` | `POST /api/projects/folder/scan/:sessionId/env-reveal`<br />`project:write` |
 
 ### HTTP endpoints

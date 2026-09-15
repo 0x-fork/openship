@@ -1,4 +1,4 @@
-import { isCreateDeploymentResult, parseCreateDeploymentInput, parseInput, isRecord, PrepareDeployBody, RevealPreparedEnvBody, BuildAccessBody, ResourceIdSchema, type PreparedProject, type DeploymentOperations } from "@repo/contracts";
+import { isCreateDeploymentResult, parseCreateDeploymentInput, parseInput, isRecord, PrepareDeployBody, BuildAccessBody, ResourceIdSchema, type PreparedProject, type DeploymentOperations } from "@repo/contracts";
 import { ApiError } from "./errors";
 import { HttpClient, type HttpClientOptions } from "./http";
 import { snapshotSourceInput, type DeploySourceInput, type SourceDeploymentResult } from "./source-input";
@@ -122,11 +122,6 @@ export class OpenshipClient {
         const response = await http.request("/deployments/prepare", { method: "POST", body: JSON.stringify(parseInput(PrepareDeployBody, value)) });
         if (!isRecord(response) || typeof response.stack !== "string" || !isRecord(response.repository)) throw new ApiError("Invalid preparation response", 502, response);
         return response as PreparedProject;
-      },
-      async revealPreparedEnv(value) {
-        const response = await http.request("/deployments/prepare/env-reveal", { method: "POST", body: JSON.stringify(parseInput(RevealPreparedEnvBody, value)) });
-        if (!isRecord(response) || !isRecord(response.environment) || Object.values(response.environment).some(value => typeof value !== "string")) throw new ApiError("Invalid prepared environment response", 502, response);
-        return response.environment as Record<string, string>;
       },
       async buildAccess(value) {
         const response = await http.request("/deployments/build/access", { method: "POST", body: JSON.stringify(parseInput(BuildAccessBody, value)) });

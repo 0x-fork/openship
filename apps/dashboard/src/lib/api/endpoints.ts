@@ -66,7 +66,6 @@ export const endpoints = {
     folderScan: (sessionId: string) => `projects/folder/scan/${sessionId}`,
     // #336: POST { service, keys } — real (unmasked) values for one folder-scan
     // service's named keys.
-    folderEnvReveal: (sessionId: string) => `projects/folder/scan/${sessionId}/env-reveal`,
     folderUpload: (sessionId: string) => `projects/folder/upload/${sessionId}`,
   },
 
@@ -136,7 +135,6 @@ export const endpoints = {
     restorePlan: (id: string) => `deployments/${id}/restore-plan`,
     cancel: (id: string) => `deployments/${id}/cancel`,
     prepare: "deployments/prepare",
-    revealPreparedEnv: "deployments/prepare/env-reveal",
     buildAccess: "deployments/build/access",
     buildStart: (id: string) => `deployments/${id}/build`,
     buildStatus: (id: string) => `deployments/${id}/build`,
@@ -587,7 +585,7 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
-  /*  Billing (Stripe-backed cloud billing — SaaS + local-proxy)      */
+  /*  Billing (Oblien-managed — SaaS + local proxy)                  */
   /* ---------------------------------------------------------------- */
   billing: {
     plans: "billing/plans",
@@ -595,6 +593,8 @@ export const endpoints = {
     usage: "billing/usage",
     topupPacks: "billing/topup-packs",
     subscription: "billing/subscription",
+    cancel: "billing/cancel",
+    resume: "billing/resume",
     topup: "billing/topup",
     portal: "billing/portal",
   },

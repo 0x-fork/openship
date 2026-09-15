@@ -132,10 +132,10 @@ export async function createFolderSession(
 
   if (env.CLOUD_MODE) {
     // ── SaaS: direct browser → Oblien workspace ──
-    // Use the org's NAMESPACE-scoped client (same as every other cloud service:
-    // cloud-pages, cloud-edge-proxy, deploy). The master client can create a
-    // namespaced workspace but then can't resolve it by bare id.
-    const { client } = await getNamespaceClient(input.orgId);
+    // Scope workspace creation and upload access to the authenticated organization.
+    const { client, namespace } = await getNamespaceClient(input.orgId);
+    const { assertCloudCanSpend } = await import("../../billing/billing-oblien-quota");
+    await assertCloudCanSpend(input.orgId);
     // The workspace image is fixed at create time, so resolve it from the
     // client-detected stack when known; fall back to a general JS/TS base
     // otherwise (most uploads are Node/Bun; a mismatch just means the user
@@ -156,6 +156,7 @@ export async function createFolderSession(
       // upload/deploy is reaped by Oblien, a successful deploy promotes it to
       // permanent (build/access → adoptWorkspaceRuntime).
       const provisioned = await provisionCloudWorkspace(client, {
+        namespace,
         name: `upload-${input.orgId.slice(0, 16)}-${id.slice(0, 6)}`,
         image,
         mode: "temporary",

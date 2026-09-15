@@ -166,8 +166,8 @@ const envSchema = z.object({
   CLOUD_MODE: envBool("false"),
   /**
    * MASTER switch for the whole Openship Cloud billing feature (subscriptions,
-   * top-ups, Stripe portal). OFF by default → the billing state reports
-   * `billing.status = "coming_soon"` and every Stripe-mutating endpoint fails
+   * top-ups). OFF by default → the billing state reports
+   * `billing.status = "coming_soon"` and every purchase endpoint fails
    * closed with a `BILLING_NOT_ENABLED` 403. Flip to `true` on the SaaS to make
    * billing live — no dashboard release, no self-hosted change (self-hosted +
    * local proxy their billing to the cloud, so the cloud alone owns this flag).
@@ -338,6 +338,8 @@ const envSchema = z.object({
   /* ---------- Oblien Cloud ---------- */
   OBLIEN_CLIENT_ID: z.string().optional(),
   OBLIEN_CLIENT_SECRET: z.string().optional(),
+  /** Control-plane endpoint. Override only for an Oblien staging installation. */
+  OBLIEN_API_URL: z.url().default("https://api.oblien.com"),
   /**
    * Shared secret we hand Oblien when registering our webhook via
    * `webhooks.create` (see `ensureOblienWebhook`). Oblien signs each delivery
@@ -347,6 +349,8 @@ const envSchema = z.object({
    * traffic). CLOUD_MODE only — self-hosted never registers Oblien webhooks.
    */
   OBLIEN_WEBHOOK_SECRET: z.string().optional(),
+  /** Full public API callback URL; set explicitly for staging/reverse proxies. */
+  OBLIEN_WEBHOOK_URL: z.url().optional(),
 
   /* ---------- Backup destinations ---------- */
   /**

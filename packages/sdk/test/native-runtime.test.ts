@@ -654,7 +654,7 @@ describe("owned native platform on Node", () => {
       const mapped = await ship.operator!.ensureIdentity({ issuer: "host", subject: "local-owner", email: "local@example.test" });
       identity = { user: mapped.user, sessionId: "local-session" };
       await ship.start();
-      const { projects, system, deployments, tokens } = await ship.scope({ identity: "verified", organizationId: mapped.personalOrganizationId });
+      const { projects, system, deployments, tokens, sources } = await ship.scope({ identity: "verified", organizationId: mapped.personalOrganizationId });
       expect(await system.browse()).toEqual({ path: await realpath(source), directories: [] });
       await expect(system.browse({ path: directory })).rejects.toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED" });
       expect(await deployments.prepare({ source: "local", path: source })).toMatchObject({ stack: "static", repository: { name: "source" } });
@@ -669,11 +669,11 @@ describe("owned native platform on Node", () => {
       identity = { ...identity, tokenScope: { tokenId: token.id }, credential: { organizationId: mapped.personalOrganizationId, readOnly: false } };
       const tokenScope = await ship.scope({ identity: "project-token", organizationId: mapped.personalOrganizationId });
       await expect(tokenScope.deployments.prepare({ source: "local", path: source })).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(tokenScope.deployments.revealPreparedEnv({ source: "local", path: source, service: "db", keys: ["POSTGRES_PASSWORD"] })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(tokenScope.deployments.prepare({ source: "local", path: source, includeEnv: true })).rejects.toMatchObject({ code: "NOT_FOUND" });
       identity = ownerIdentity;
 
       // First Compose import: no Compose service row or upload session exists.
-      // Exercise the real parser, native worker and on-demand disclosure together.
+      // Exercise the real parser, native worker and editable scan together.
       await mkdir(join(source, "deploy"));
       await writeFile(join(source, "deploy", ".env"), "PASSWORD=from-dotenv\n");
       await writeFile(join(source, "deploy", "stack.yml"), [
@@ -685,9 +685,30 @@ describe("owned native platform on Node", () => {
       const preview = await deployments.prepare(preparedSource);
       expect(preview).toMatchObject({ services: [{ name: "db", environment: { POSTGRES_PASSWORD: "••••••••", POSTGRES_DB: "••••••••", EMPTY: "" } }, { name: "worker" }] });
       expect(JSON.stringify(preview)).not.toContain("typed-override");
-      expect(await deployments.revealPreparedEnv({ ...preparedSource, service: "db", keys: ["POSTGRES_PASSWORD", "EMPTY", "API_TOKEN"] })).toEqual({ POSTGRES_PASSWORD: "typed-override", EMPTY: "" });
-      expect(await deployments.revealPreparedEnv({ ...preparedSource, env: {}, service: "db", keys: ["POSTGRES_PASSWORD"] })).toEqual({ POSTGRES_PASSWORD: "from-dotenv" });
-      await expect(deployments.revealPreparedEnv({ ...preparedSource, path: directory, service: "db", keys: ["POSTGRES_PASSWORD"] })).rejects.toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED" });
+      expect(await deployments.prepare({ ...preparedSource, includeEnv: true })).toMatchObject({
+        services: [
+          { name: "db", environment: { POSTGRES_PASSWORD: "typed-override", POSTGRES_DB: "app", EMPTY: "" } },
+          { name: "worker", environment: { API_TOKEN: "sibling-secret" } },
+        ],
+      });
+      expect(await deployments.prepare({ ...preparedSource, env: {}, includeEnv: true })).toMatchObject({ services: [
+        { name: "db", environment: { POSTGRES_PASSWORD: "from-dotenv" } }, { name: "worker" },
+      ] });
+      await expect(deployments.prepare({ ...preparedSource, path: directory, includeEnv: true })).rejects.toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED" });
+
+      const compose = "services:\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: ${PASSWORD}\n";
+      await writeFile(join(source, "docker-compose.yml"), compose);
+      await writeFile(join(source, ".env"), "PASSWORD=local-scan-password\n");
+      expect(await projects.scanLocal({ path: source, includeEnv: true })).toMatchObject({
+        services: [{ name: "db", environment: { POSTGRES_PASSWORD: "local-scan-password" } }],
+      });
+      const staged = await sources.stage({ source: { type: "files", files: {
+        "docker-compose.yml": compose, ".env": "PASSWORD=uploaded-password\n",
+      } } });
+      expect(JSON.stringify(await sources.scan(staged.sessionId))).not.toContain("uploaded-password");
+      expect(await sources.scan(staged.sessionId, { includeEnv: true })).toMatchObject({
+        services: [{ name: "db", environment: { POSTGRES_PASSWORD: "uploaded-password" } }],
+      });
       await symlink(join(directory, "outside.txt"), join(source, "escape.txt"));
       await expect(system.browse({ path: join(source, "escape.txt") })).rejects.toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED" });
       await expect(projects.scanLocal({ path: source })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });

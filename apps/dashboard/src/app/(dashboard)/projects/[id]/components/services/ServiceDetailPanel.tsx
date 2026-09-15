@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
+import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import {
   serviceKind,
   serviceUsesDeployPipeline,
@@ -49,6 +50,7 @@ import {
   Save,
   Pencil,
   MonitorSmartphone,
+  PlugZap,
 } from "lucide-react";
 import { backupsApi, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
@@ -63,6 +65,8 @@ import EnvironmentVariables from "@/components/import-project/EnvironmentVariabl
 import { endpoints } from "@/lib/api/endpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
+import { UseInProjectModal } from "../UseInProjectModal";
+import { UsedByCard } from "../UsedByCard";
 
 type ServiceTab = "overview" | "terminal" | "logs" | "env" | "settings" | "backup";
 const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
@@ -149,6 +153,7 @@ export function ServiceDetailPanel({
   deepLink = true,
   onSwitchService,
 }: ServiceDetailPanelProps) {
+  const revealEnv = useServiceEnvReveal(projectId, service.id, SERVICE_ENVIRONMENT);
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -158,6 +163,7 @@ export function ServiceDetailPanel({
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
@@ -600,6 +606,7 @@ export function ServiceDetailPanel({
 
   return (
     <div className="space-y-5">
+      <UseInProjectModal open={shareOpen} onClose={() => setShareOpen(false)} sourceProjectId={projectId} sourceServiceId={service.id} />
       {/* ── Heading (simple, no card) ──────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex items-center gap-2.5">
@@ -636,6 +643,12 @@ export function ServiceDetailPanel({
           <StatusBadge status={status} />
         </div>
         <div className="flex min-w-0 items-center gap-3">
+          {service.enabled && (
+            <button type="button" onClick={() => setShareOpen(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50">
+              <PlugZap className="size-3.5" />{t.projects.connections.useInProject}
+            </button>
+          )}
           {canOpenLocal && (
             <button
               type="button"
@@ -689,6 +702,7 @@ export function ServiceDetailPanel({
       {/* ── Overview ───────────────────────────────────────────── */}
       {activeTab === "overview" && (
         <div className="space-y-5">
+          <UsedByCard projectId={projectId} serviceId={service.id} />
           {/* Network */}
           {(container?.containerId || (service.ports && service.ports.length > 0)) && (
             <div className="bg-card rounded-2xl border border-border/50 p-5">
@@ -912,10 +926,7 @@ export function ServiceDetailPanel({
               // #336: env values arrive masked; reveal only the keys the operator
               // actually opens (the endpoint is write-gated, so read-only members
               // can't reveal at all).
-              onReveal={async (keys) =>
-                (await servicesApi.revealEnv(projectId, service.id, keys, SERVICE_ENVIRONMENT))
-                  .environment
-              }
+              onReveal={revealEnv}
               borderless
             />
           </div>

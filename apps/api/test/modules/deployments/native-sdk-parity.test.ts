@@ -104,7 +104,10 @@ vi.mock("@repo/db", () => ({
     member: { find: async (org: string, user: string) => h.members.get(`${org}:${user}`) },
     project: { findById: async (id: string) => h.projects.get(id),
       findDraftByAppTemplate: h.appDraft,
-      listEnvVars: async (id: string, environment: string, service: string) => h.appEnv.get(`${id}:${environment}:${service}`) ?? [],
+      listEnvVars: async (id: string, environment: string, service?: string) => service
+        ? h.appEnv.get(`${id}:${environment}:${service}`) ?? []
+        : [...h.appEnv.entries()].filter(([key]) => key.startsWith(`${id}:${environment}:`))
+          .flatMap(([key, rows]) => rows.map(row => ({ ...row, serviceId: key.slice(`${id}:${environment}:`.length) }))),
       mergeEnvVars: h.appEnvMerge,
       countActiveByServer: async () => ({ "server-a": 2 }), listActiveByServer: h.serverWorkloads },
     customAppTemplate: {
@@ -523,15 +526,18 @@ describe("deployment preparation HTTP/native parity", () => {
     expect(h.audit).not.toHaveBeenCalled();
   });
 
-  it("reveals only the requested Compose keys through HTTP and native before any project exists", async () => {
+  it("returns editable source values in one authorized HTTP or native preparation", async () => {
     info.services!.push({
       name: "db", image: "postgres:16", ports: [], dependsOn: [], volumes: [],
       environment: { DB_PASSWORD: "sibling-secret" },
     });
     const local = await native();
-    const input = { owner: "acme", repo: "app", branch: "preview", composePath: " deploy/compose.yaml ", env: { OVERRIDE: "typed-value" }, service: "web", keys: ["API_TOKEN", "constructor", "DB_PASSWORD"] };
+    const input = { owner: "acme", repo: "app", branch: "preview", composePath: " deploy/compose.yaml ", env: { OVERRIDE: "typed-value" }, includeEnv: true };
     for (const deployments of [remote().deployments, local.deployments]) {
-      expect(await deployments.revealPreparedEnv(input)).toEqual({ API_TOKEN: secret });
+      expect(await deployments.prepare(input)).toMatchObject({ services: [
+        { name: "web", environment: { API_TOKEN: secret } },
+        { name: "db", environment: { DB_PASSWORD: "sibling-secret" } },
+      ] });
     }
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
@@ -541,13 +547,13 @@ describe("deployment preparation HTTP/native parity", () => {
     expect(h.sourceContent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ owner: "acme", repo: "app" }), "content-whole", "");
     expect(h.audit).toHaveBeenCalledTimes(2);
     for (const [event] of h.audit.mock.calls) {
-      expect(event.after).toEqual({ operation: "prepare.env.reveal", service: "web", revealedEnvKeys: ["API_TOKEN"] });
+      expect(event.after).toEqual({ includeEnv: true });
     }
     expect(JSON.stringify(h.audit.mock.calls)).not.toContain(secret);
     expect(JSON.stringify(h.audit.mock.calls)).not.toContain("typed-value");
     expect(info.services?.[0]?.environment.API_TOKEN).toBe(secret);
 
-    const response = await app.request("/api/deployments/prepare/env-reveal", {
+    const response = await app.request("/api/deployments/prepare", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     });
     expect(response.status).toBe(200);
@@ -558,40 +564,43 @@ describe("deployment preparation HTTP/native parity", () => {
     h.sourceContent.mockResolvedValue({ ok: false, readPaths: [] });
     const local = await native();
     for (const deployments of [remote().deployments, local.deployments]) {
-      await expect(deployments.revealPreparedEnv({ owner: "acme", repo: "app", service: "web", keys: ["API_TOKEN"] })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(deployments.prepare({ owner: "acme", repo: "app", includeEnv: true })).rejects.toMatchObject({ code: "NOT_FOUND" });
     }
     expect(h.localInfo).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();
+    // The original metadata scan remains available without content access.
+    for (const deployments of [remote().deployments, local.deployments]) {
+      expect(JSON.stringify(await deployments.prepare({ owner: "acme", repo: "app" }))).not.toContain(secret);
+    }
   });
 
-  it("rejects read-only credentials before attempting a source reveal", async () => {
+  it("rejects read-only credentials before an editable source scan", async () => {
     h.identity = { ...alice, credential: { organizationId: "org-a", readOnly: true } };
     const local = await native();
     for (const deployments of [remote().deployments, local.deployments]) {
-      await expect(deployments.revealPreparedEnv({ owner: "acme", repo: "app", service: "web", keys: ["API_TOKEN"] })).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
+      await expect(deployments.prepare({ owner: "acme", repo: "app", includeEnv: true })).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
     }
     expect(h.sourceContent).not.toHaveBeenCalled();
     expect(h.localInfo).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();
   });
 
-  it("requires explicit bounded key selection and never falls back to a sibling service", async () => {
+  it("rejects invalid disclosure options before scanning", async () => {
     const local = await native();
     for (const deployments of [remote().deployments, local.deployments]) {
-      for (const keys of [[], Array(501).fill("API_TOKEN"), ["x".repeat(513)]]) {
-        await expect(deployments.revealPreparedEnv({ owner: "acme", repo: "app", service: "web", keys })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      for (const includeEnv of [null, "true", 1, {}, []]) {
+        await expect(deployments.prepare({ owner: "acme", repo: "app", includeEnv: includeEnv as boolean })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
       }
-      await expect(deployments.revealPreparedEnv({ owner: "acme", repo: "app", service: "unknown", keys: ["API_TOKEN"] })).rejects.toMatchObject({ code: "NOT_FOUND" });
     }
-    expect(h.localInfo).toHaveBeenCalledTimes(2);
+    expect(h.localInfo).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();
   });
 
-  it("rejects local source reveal in cloud mode", async () => {
+  it("rejects editable local scans in cloud mode", async () => {
     h.env.CLOUD_MODE = true;
     const local = await native();
     for (const deployments of [remote().deployments, local.deployments]) {
-      await expect(deployments.revealPreparedEnv({ source: "local", path: "/unread", service: "web", keys: ["API_TOKEN"] })).rejects.toMatchObject({ statusCode: 403 });
+      await expect(deployments.prepare({ source: "local", path: "/unread", includeEnv: true })).rejects.toMatchObject({ statusCode: 403 });
     }
     expect(h.localInfo).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();

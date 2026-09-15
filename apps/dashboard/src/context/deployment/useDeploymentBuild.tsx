@@ -1250,7 +1250,6 @@ export function useDeploymentBuild(
             // an EMPTY array, which a `services`-type deploy does (#604): `[]` must not
             // blank a populated list.
             services: hydrateSnapshotServices(data.composeServices, prev.services),
-            preparedSource: data.composeServices?.length ? undefined : prev.preparedSource,
             options: {
               buildCommand: apiConfig.buildCommand || prev.options.buildCommand,
               outputDirectory: apiConfig.outputDirectory || prev.options.outputDirectory,

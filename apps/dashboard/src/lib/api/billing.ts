@@ -1,6 +1,8 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
+import type { ApiPlan } from "@/components/billing/PricingCards";
+import type { BillingSubscription } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -22,11 +24,14 @@ export interface BillingState {
   };
   balance: {
     /** Convenience alias for `quotaRemaining` — kept for back-compat. */
-    total: number;
-    quotaLimit: number;
+    total: number | null;
+    quotaLimit: number | null;
     quotaUsed: number;
-    quotaRemaining: number;
+    quotaRemaining: number | null;
   };
+  plan?: ApiPlan | null;
+  subscription?: BillingSubscription | null;
+  capabilities?: { portal: boolean; cancellation: boolean; resumption?: boolean; subscriptionChange: boolean };
   /** Tier's monthly allowance in milli-credits, or `null` for enterprise. */
   monthlyCreditLimit: number | null;
   /** Display-only: out of credits (Oblien is the real enforcer). */
@@ -47,11 +52,8 @@ export interface BillingState {
   capacity?: BillingCapacity;
   /**
    * MASTER billing-feature availability, decided by Openship Cloud
-   * (`BILLING_ENABLED`). When `enabled` is false the whole billing feature is
-   * pre-launch: the UI shows a "coming soon" surface and every Stripe-mutating
-   * endpoint is refused server-side. Optional/defensive: treated as NOT enabled
-   * when absent, so billing stays gated until the cloud turns it on — no
-   * dashboard release needed to launch.
+   * (`BILLING_ENABLED`). When false, new purchases are disabled. Existing
+   * customers can still manage their payment details and stop renewal.
    */
   billing?: BillingFeature;
   /**
@@ -217,9 +219,7 @@ export const billingApi = {
   },
 
   /**
-   * Start a Stripe Checkout session to upgrade the org to a paid tier.
-   * The `customer.subscription.*` webhooks finalize the local row when
-   * the user completes payment.
+   * Start an Oblien-hosted checkout. Provider events confirm the paid plan.
    */
   createSubscriptionCheckout: async (
     planTierId: SubscriptionPlanTierId,
@@ -227,20 +227,18 @@ export const billingApi = {
   ): Promise<{ checkoutUrl: string }> => {
     const res = await api.post<Envelope<{ checkoutUrl: string }>>(
       endpoints.billing.subscription,
-      { planTierId, interval },
+      { planTierId, interval, idempotencyKey: crypto.randomUUID() },
     );
     return res.data;
   },
 
   /**
-   * Start a Stripe Checkout session for a one-shot credit pack top-up.
-   * The `checkout.session.completed` webhook applies the credits to the
-   * org's Oblien quota.
+   * Start an Oblien-hosted top-up. Oblien applies credits after payment.
    */
   createTopupCheckout: async (packId: string): Promise<{ checkoutUrl: string }> => {
     const res = await api.post<Envelope<{ checkoutUrl: string }>>(
       endpoints.billing.topup,
-      { packId },
+      { packId, idempotencyKey: crypto.randomUUID() },
     );
     return res.data;
   },
@@ -256,5 +254,14 @@ export const billingApi = {
     );
     return res.data;
   },
-};
 
+  cancelSubscription: async (): Promise<{ cancelAt: string | null; subscription: BillingSubscription }> => {
+    const res = await api.post<Envelope<{ cancelAt: string | null; subscription: BillingSubscription }>>(endpoints.billing.cancel);
+    return res.data;
+  },
+
+  resumeSubscription: async (): Promise<{ subscription: BillingSubscription }> => {
+    const res = await api.post<Envelope<{ subscription: BillingSubscription }>>(endpoints.billing.resume);
+    return res.data;
+  },
+};

@@ -77,3 +77,7 @@ export function isNetworkUrl(value: string): boolean {
     return false;
   }
 }
+/** Legacy links joined networks in internal mode; value-only links opt out. */
+export function usesPrivateNetwork(link: { mode: string; usesPrivateNetwork?: boolean }): boolean {
+  return link.mode === "internal" && link.usesPrivateNetwork !== false;
+}

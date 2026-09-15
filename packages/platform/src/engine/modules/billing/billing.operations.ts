@@ -10,6 +10,7 @@ import { proxyToCloudBilling } from "./billing-local.service";
 const routes = {
   getState: ["GET", "/state"], getSubscription: ["GET", "/subscription"],
   createSubscription: ["POST", "/subscription"], cancelSubscription: ["POST", "/cancel"],
+  resumeSubscription: ["POST", "/resume"],
   createTopup: ["POST", "/topup"], listTopupPacks: ["GET", "/topup-packs"],
   createPortal: ["POST", "/portal"], getUsage: ["GET", "/usage"], listAllowanceDetail: ["GET", "/allowances"],
 } as const satisfies Record<keyof typeof BillingOperationSchemas, readonly [string, string]>;

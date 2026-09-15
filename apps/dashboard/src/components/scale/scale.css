@@ -5,19 +5,79 @@
 
 .scale-floating-surface {
   background: var(--th-card-on-page);
-  box-shadow: var(--th-dropdown-shadow);
+  box-shadow: none;
 }
 
 .scale-toolbar {
   max-width: calc(100% - 32px);
+  flex-wrap: wrap;
+}
+
+.scale-workspace[data-inspector] .scale-toolbar {
+  max-width: calc(100% - 388px);
+}
+
+.scale-toolbar[data-scope="cluster"] .scale-toolbar-identity {
+  width: 380px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+@container scale-workspace (max-width: 700px) {
+  .scale-toolbar[data-scope="cluster"] {
+    width: calc(100% - 32px);
+    flex-wrap: wrap;
+  }
+
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-identity,
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-actions {
+    width: 100%;
+  }
+
+  .scale-workspace[data-scope="cluster"] .scale-storage-notice {
+    top: 144px;
+  }
+}
+
+.scale-inspector-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--th-overlay) 60%, transparent);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  touch-action: none;
+  transition:
+    opacity 180ms ease-out,
+    visibility 0s linear 180ms;
+}
+
+.scale-inspector-backdrop[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
 }
 
 .scale-inspector-overlay {
   position: absolute;
-  inset-block-start: 88px;
+  inset-block-start: 16px;
   inset-block-end: 16px;
   inset-inline-end: 16px;
-  z-index: 20;
+  z-index: 50;
+  width: 340px;
+  max-width: calc(100% - 32px);
+}
+
+.scale-inspector-launcher {
+  position: absolute;
+  inset-block-start: 16px;
+  inset-inline-end: 16px;
+  z-index: 50;
   width: 340px;
   max-width: calc(100% - 32px);
 }
@@ -38,12 +98,35 @@
     width: 100%;
   }
 
-  .scale-inspector-overlay {
-    inset-block-start: 144px;
-  }
-
   .scale-storage-notice {
     top: 144px;
+  }
+}
+
+@container scale-workspace (max-width: 720px) {
+  .scale-workspace[data-inspector] .scale-toolbar {
+    top: calc(30px + var(--scale-preview-height, 82px));
+    max-width: calc(100% - 32px);
+  }
+
+  .scale-workspace[data-inspector="expanded"] .scale-toolbar {
+    visibility: hidden;
+  }
+}
+
+@container scale-workspace (max-width: 400px) {
+  .scale-add-context,
+  .scale-back-prefix {
+    display: none;
+  }
+
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-actions > button,
+  .scale-toolbar[data-scope="cluster"] [aria-label="History"] button {
+    width: 28px;
+  }
+
+  .scale-toolbar[data-scope="cluster"] .scale-toolbar-actions {
+    gap: 0;
   }
 }
 
@@ -71,10 +154,29 @@
   --scale-node-border: var(--danger-border);
 }
 
-.scale-resource-icon,
-.scale-cluster-badge {
+.scale-resource-icon {
   color: var(--scale-node-color);
   background: var(--scale-node-tint);
+}
+
+.scale-palette-item {
+  border-color: var(--scale-node-border);
+  background: color-mix(in srgb, var(--scale-node-tint) 50%, var(--th-card-on-page));
+}
+
+.scale-palette-item:hover {
+  border-color: var(--scale-node-color);
+  background: color-mix(in srgb, var(--scale-node-tint) 80%, var(--th-card-on-page));
+}
+
+.scale-palette-item:focus-visible {
+  outline: 2px solid var(--scale-node-color);
+  outline-offset: 2px;
+}
+
+.scale-cluster-composition {
+  border-color: var(--scale-node-border);
+  background: color-mix(in srgb, var(--scale-node-tint) 40%, var(--th-card-on-page));
 }
 
 .scale-resource-node {
@@ -87,7 +189,22 @@
 }
 
 .scale-resource-node[data-selected="true"] {
-  box-shadow: 0 0 0 3px var(--scale-node-tint);
+  outline: 2px solid var(--scale-node-tint);
+  outline-offset: 2px;
+}
+
+.scale-open-cluster {
+  color: var(--scale-node-color);
+  background: var(--scale-node-tint);
+}
+
+.scale-open-cluster:hover {
+  background: color-mix(in srgb, var(--scale-node-color) 15%, var(--th-card-on-page));
+}
+
+.scale-open-cluster:focus-visible {
+  outline: 2px solid var(--scale-node-color);
+  outline-offset: 2px;
 }
 
 .scale-canvas .react-flow {
@@ -134,6 +251,11 @@
 .scale-canvas .scale-traffic-edge.is-selected {
   stroke: var(--foreground);
   stroke-width: 2;
+}
+
+.scale-canvas .scale-traffic-edge.is-disabled {
+  stroke-dasharray: 5 5;
+  opacity: 0.6;
 }
 
 .scale-edge-label {

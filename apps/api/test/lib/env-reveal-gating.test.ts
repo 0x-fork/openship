@@ -45,8 +45,8 @@ describe("#336 env reveal is write-gated; masked reads need only read", () => {
 
     expect(
       tagOf(
-        (r) => r.method === "POST" && r.path === "/api/deployments/prepare/env-reveal",
-        "prepared-source env-reveal",
+        (r) => r.method === "POST" && r.path === "/api/deployments/prepare",
+        "editable source preparation",
       ),
     ).toBe("deployment:write");
 

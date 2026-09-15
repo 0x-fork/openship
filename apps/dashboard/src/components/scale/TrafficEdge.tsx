@@ -9,7 +9,10 @@ import {
   type EdgeProps,
 } from "@xyflow/react";
 
-export type ScaleFlowEdge = Edge<{ label: string }, "traffic">;
+export type ScaleFlowEdge = Edge<
+  { label: string; showLabel?: boolean; enabled?: boolean },
+  "traffic"
+>;
 
 export const TrafficEdge = memo(function TrafficEdge({
   id,
@@ -38,10 +41,10 @@ export const TrafficEdge = memo(function TrafficEdge({
         id={id}
         path={path}
         markerEnd={markerEnd}
-        className={`scale-traffic-edge${selected ? " is-selected" : ""}`}
+        className={`scale-traffic-edge${selected ? " is-selected" : ""}${data?.enabled === false ? " is-disabled" : ""}`}
         interactionWidth={24}
       />
-      {selected && (
+      {(selected || data?.showLabel) && (
         <EdgeLabelRenderer>
           <span
             className={`scale-edge-label${selected ? " is-selected" : ""}`}

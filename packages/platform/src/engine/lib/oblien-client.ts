@@ -1,23 +1,7 @@
-/**
- * The master Oblien SDK client — a LEAF module by design.
- *
- * It exists on its own so nothing has to import `openship-cloud.ts` just to get a
- * client. That file both needs the client and needs the billing module's
- * `setQuotaForTier`, while the billing module needs the client — routing the client
- * through `openship-cloud` therefore made `openship-cloud ⇄ billing-oblien-quota`
- * a genuine import cycle, which was previously papered over with a dynamic
- * `await import()` inside the spend path.
- *
- * A dynamic import does not break a cycle, it hides one, and hiding it had a real
- * cost: the desktop app ships this API as a `Bun.build` node bundle, and a bundler
- * is free to order a flattened cycle so one side's binding is still `undefined`
- * when the other side's function body runs. Depending on ESM hoisting to save us
- * is a bet, not a design. This module has exactly two dependencies — `env` and the
- * SDK — so it can sit underneath everything and the cycle simply does not form.
- */
-
+/** SaaS provider clients. Keep construction separate from billing and provisioning. */
 import { Oblien } from "@repo/adapters";
 import { env } from "../config/env";
+import { OblienBillingApi } from "./oblien-billing-api";
 
 let _client: Oblien | null = null;
 
@@ -44,11 +28,19 @@ export function getOblienClient(): Oblien {
     throw new Error("Oblien credentials not configured (OBLIEN_CLIENT_ID / OBLIEN_CLIENT_SECRET)");
   }
 
-  _client = new Oblien({ clientId, clientSecret });
+  _client = new Oblien({ clientId, clientSecret, baseUrl: env.OBLIEN_API_URL });
   return _client;
 }
 
 /** Test seam: drop the memoized client so a new env/mock takes effect. */
 export function __resetOblienClientForTests(): void {
   _client = null;
+}
+
+/** The catalog is public; all other methods require the SaaS master credentials. */
+export function getOblienBillingApi(): OblienBillingApi {
+  return new OblienBillingApi({
+    baseUrl: env.OBLIEN_API_URL,
+    ...(env.CLOUD_MODE ? { clientId: env.OBLIEN_CLIENT_ID, clientSecret: env.OBLIEN_CLIENT_SECRET } : {}),
+  });
 }

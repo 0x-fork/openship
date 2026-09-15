@@ -1150,6 +1150,9 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
     });
   } catch (err) {
     console.error(`[DOMAIN] Failed to remove route for ${domain.hostname}:`, err);
+    if (project.cloudWorkspaceId) {
+      throw new AppError("Could not remove the cloud route. The domain was kept so you can retry.", 502, "CLOUD_ROUTE_REMOVAL_FAILED");
+    }
   }
 
   // ── Take back the DNS records we wrote, and only those ───────────────────────
@@ -1187,9 +1190,9 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
   // here would orphan the slug with nothing left to retry against — the one
   // outcome that is unrecoverable for the user. Idempotent upstream (an unknown
   // slug reports removed:false), so a retry after a partial failure is safe.
-  const { failures: edgeFailures } = await releaseManagedHostnames([domain.hostname], {
-    organizationId: ctx.organizationId,
-  });
+  const { failures: edgeFailures } = project.cloudWorkspaceId
+    ? { failures: [] }
+    : await releaseManagedHostnames([domain.hostname], { organizationId: ctx.organizationId });
   if (edgeFailures.length > 0) {
     throw new AppError(
       `Couldn't release the free ${domain.hostname} route on Openship Cloud (${edgeFailures.join(", ")}). ` +

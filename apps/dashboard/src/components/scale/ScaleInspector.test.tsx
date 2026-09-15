@@ -5,7 +5,9 @@ import ScaleInspector from "./ScaleInspector";
 import { ResourceNode } from "./ResourceNode";
 import {
   createExampleDraft,
+  createResource,
   configureService,
+  isClusterResource,
   serviceInstances,
   type ScaleDraft,
   type ScaleSelection,
@@ -24,6 +26,7 @@ function render(id: string, draft: ScaleDraft = createExampleDraft()) {
       onRemoveNodes={noop}
       onRemoveEdges={noop}
       onClose={noop}
+      onOpenCluster={noop}
     />,
   );
 }
@@ -31,7 +34,7 @@ function render(id: string, draft: ScaleDraft = createExampleDraft()) {
 describe("scaling panels", () => {
   it("puts load balancing, health checks, and TLS inside OpenShip Edge", () => {
     const html = render("edge-us");
-    expect(html).toContain("OpenResty + Lua");
+    expect(html).toContain("OpenShip Edge");
     expect(html).toContain("TLS termination");
     expect(html).toContain("Balancing algorithm");
     expect(html).toContain("Health check path");
@@ -102,7 +105,7 @@ describe("scaling panels", () => {
   it("retains PostgreSQL single-writer semantics and replica-gated failover", () => {
     const draft = createExampleDraft();
     draft.nodes = draft.nodes.map((node) =>
-      node.kind === "postgres" ? { ...node, replicas: 0, failover: false } : node,
+      isClusterResource(node) && node.kind === "postgres" ? { ...node, replicas: 0, failover: false } : node,
     );
     const html = render("postgres", draft);
     expect(html).toContain("not multi-primary or write sharding");
@@ -145,5 +148,18 @@ describe("scaling panels", () => {
     expect(html).toContain("Engine");
     expect(html).toContain(id === "postgres" ? "PostgreSQL cluster" : "Redis cluster");
     expect(html).not.toContain("Plan overview");
+  });
+  it.each(["postgres", "redis"] as const)("configures standalone %s without cluster controls", (kind) => {
+    const resource = createResource(kind, "standalone");
+    const draft: ScaleDraft = { version: 2, services: [], nodes: [resource], edges: [] };
+    const html = render(resource.id, draft);
+    expect(html).toContain("Database name");
+    expect(html).toContain("Standalone");
+    expect(html).toContain("Instance resources");
+    expect(html).toContain("vCPU");
+    expect(html).toContain("Memory");
+    expect(html.includes("Storage (GB)")).toBe(kind === "postgres");
+    for (const label of ["Cluster name", "Open cluster", "Read replicas", "Primary shards", "Slot allocation"])
+      expect(html).not.toContain(label);
   });
 });

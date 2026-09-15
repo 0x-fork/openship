@@ -17,6 +17,11 @@ const r = secureRouter(new Hono(), {
   basePath: "/api/projects/:id/connections",
 });
 
+r.get("/candidates", {
+  tag: "project:write",
+  mcp: { description: "List projects and apps available for a service connection, filtered by access." },
+}, cloudProjectProxy, ctrl.candidates);
+
 r.get(
   "/",
   {

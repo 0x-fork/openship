@@ -31,6 +31,8 @@ import {
   type LocalizedString,
 } from "@repo/core";
 import { isStaticService, parseServicePort, resolveServicePort } from "../../lib/deployable-service";
+import { mergeServiceDeployEnv } from "../deployments/compose/service-env-layers";
+import { serviceConnectionOutput } from "../services/service-connection-output";
 import { getTemplateForOrg } from "./catalog-source";
 import { repos, type Project, type Service } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -185,6 +187,8 @@ export async function updateAppProjectSettings(
 /** One resolved connection value for the app Overview's Connection card. */
 export interface AppConnectionOutput {
   id: string;
+  /** Stable identity for service-level links; names and aliases may change. */
+  sourceServiceId?: string;
   label: string;
   help?: string;
   /** Render masked with a reveal toggle. The real value is still sent (this is a
@@ -335,54 +339,13 @@ export async function getAppConnectionView(
   // — every project joins its own docker network with a stable alias. Synthesize
   // an internal-address view so a plain single-app / compose / monorepo project
   // can be a linkable SOURCE ("Use in a project" → internal), not just catalog
-  // apps. The curated public/secret surface stays template-only.
+  // apps. Known database images also resolve their configured credentials.
   if (!connection) return synthesizeInternalConnectionView(project);
 
   const services = await repos.service.listByProject(projectId);
   const byName = new Map(services.map((s) => [s.name, s]));
 
-  // Fetch each referenced service's env once, decrypting every value (all rows
-  // are encrypt()-ed at rest regardless of the secret flag).
-  const needed = new Set<string>();
-  const scanSource = (source: string) => {
-    const m = /^env:([^:]+):/.exec(source);
-    if (m) needed.add(m[1]);
-    // template: sources may reference `{{env:<svc>:<KEY>}}` too — fetch those.
-    if (source.startsWith("template:")) {
-      for (const mm of source.matchAll(/\{\{\s*env:([^:}]+):[^}]+\}\}/g)) needed.add(mm[1]);
-    }
-  };
-  for (const o of connection.outputs) {
-    scanSource(o.source);
-    for (const v of o.variants ?? []) scanSource(v.source);
-  }
-  const envByService = new Map<string, Record<string, string>>();
-  for (const name of needed) {
-    const svc = byName.get(name);
-    // The service's compose env map (JSONB, template literals like
-    // ME_CONFIG_BASICAUTH_USERNAME) as the base, overlaid by the env_vars table
-    // (generated secrets / config, decrypted). Reading only env_vars missed
-    // literals that never became env_var rows.
-    //
-    // This is NOT the full deploy merge: it omits the project-scoped layer
-    // entirely, so a key whose only real value is project-level resolves here to
-    // the row's inline value (possibly ""), while the container gets the project
-    // one (`inlineEmptyDefers` in deployments/compose/service-env-layers.ts).
-    // Adding that layer changes what every existing app connection resolves to,
-    // which is a deliberate call for its own change — not a side effect of the
-    // #614 deploy fix. Until then, treat a connection output as authoritative
-    // only for keys the app template or its generated rows own.
-    const map: Record<string, string> = { ...((svc?.environment as Record<string, string>) ?? {}) };
-    const rows = svc ? await repos.project.listEnvVars(projectId, ENVIRONMENT, svc.id) : [];
-    for (const row of rows) {
-      try {
-        map[row.key] = decrypt(row.value);
-      } catch {
-        map[row.key] = "";
-      }
-    }
-    envByService.set(name, map);
-  }
+  const envByService = await readConnectionServiceEnv(project, services);
 
   // Server host for the port-only URL fallback — resolved lazily (only if some
   // source needs a host at all), and shared across every source in this view
@@ -485,6 +448,7 @@ export async function getAppConnectionView(
     }
     outputs.push({
       id: o.id,
+      sourceServiceId: byName.get(getOutputService(o) ?? "")?.id,
       label: o.label,
       help: o.help,
       secret: !!o.secret,
@@ -498,6 +462,11 @@ export async function getAppConnectionView(
       kind: o.kind,
     });
   }
+
+  // Services added to a catalog app use the same connection surface. A curated
+  // service already has its outputs, so never duplicate it with a generic URL.
+  const extraServices = services.filter(service => !outputs.some(output => output.sourceServiceId === service.id));
+  if (extraServices.length) outputs.push(...(await synthesizeInternalConnectionView(project, extraServices)).outputs);
 
   return {
     title: connection.title,
@@ -536,25 +505,26 @@ function makeInternalOutput(alias: string, port: number): AppConnectionOutput {
  * build-pipeline's `networkAlias`, services via their name), so it's internally
  * reachable; this surfaces that as the "Use in a project" source.
  *
- * Only INTERNAL addresses are synthesized (`http://<alias>:<port>`): the alias
- * matches the primary Docker alias each container answers to, and the custom
- * alias (`service.advanced.alias` / `project.internalAlias`) wins when set, so
- * the value equals what embedded DNS resolves. No public/secret values are
- * invented — that curated surface stays template-only. Empty (no port anywhere)
- * → `{ outputs: [] }`, which the card renders as nothing.
+ * Only private addresses are synthesized. Known database images use their native
+ * URI format and effective service credentials; other services use HTTP. Empty
+ * or unresolved credentials stay unavailable until configured. Connection links
+ * replace the service alias with an immutable shared alias when saved.
  */
 async function synthesizeInternalConnectionView(
   project: Project,
+  selectedServices?: Service[],
 ): Promise<AppConnectionView> {
-  const services = await repos.service.listByProject(project.id);
+  const services = selectedServices ?? await repos.service.listByProject(project.id);
   const outputs: AppConnectionOutput[] = [];
 
   if (services.length > 0) {
+    const envByService = await readConnectionServiceEnv(project, services);
     // Service-based (compose / monorepo / imported): one output per service that
     // listens on a port. Exposed services first — a sibling most often wants the
     // app, not its sidecar DB — but every reachable service is offered.
     const ordered = [...services].sort((a, b) => Number(!!b.exposed) - Number(!!a.exposed));
     for (const svc of ordered) {
+      if (svc.enabled === false) continue;
       // A static sub-app (Vite/CRA build served as files off the edge's shared
       // volume) has no listening container, yet persistMonorepoApps still writes
       // it an `exposedPort` from the framework stack default — so resolveServicePort
@@ -569,8 +539,7 @@ async function synthesizeInternalConnectionView(
       // same honesty the single-app/static branch keeps below.
       const port = resolveServicePort(svc);
       if (!port) continue;
-      const alias = effectiveServiceAlias(svc.name, (svc.advanced as ComposeAdvanced | null)?.alias);
-      outputs.push(makeInternalOutput(alias, port));
+      outputs.push(serviceConnectionOutput(svc, port, envByService.get(svc.name) ?? {}));
     }
   } else if (project.hasServer !== false && project.productionMode !== "static") {
     // Single-app native: the project itself is the one reachable endpoint. Alias
@@ -591,4 +560,26 @@ async function synthesizeInternalConnectionView(
   // modal should land on internal (public would inject the same address for a
   // routeless app, which is harmless but not the point).
   return { outputs, guide: { defaultMode: "internal" } };
+}
+
+/** Connection values use exactly the env precedence used when the service deploys. */
+async function readConnectionServiceEnv(project: Project, services: Service[]) {
+  const rows = await repos.project.listEnvVars(project.id, ENVIRONMENT);
+  const projectEnv: Record<string, string> = {};
+  const scoped = new Map<string, Record<string, string>>();
+  for (const row of rows) {
+    let value: string;
+    try { value = decrypt(row.value); } catch { continue; }
+    if (!row.serviceId) projectEnv[row.key] = value;
+    else {
+      const map = scoped.get(row.serviceId) ?? {};
+      map[row.key] = value;
+      scoped.set(row.serviceId, map);
+    }
+  }
+  return new Map(services.map(service => [service.name, mergeServiceDeployEnv({
+    project: projectEnv, frozen: {}, inline: service.environment ?? {},
+    service: scoped.get(service.id) ?? {},
+    templateKeys: (service.advanced as ComposeAdvanced | null)?.environmentTemplateKeys,
+  }, false).env]));
 }

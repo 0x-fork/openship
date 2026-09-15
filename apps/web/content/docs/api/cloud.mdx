@@ -304,6 +304,8 @@ from the dashboard.
 | Disable a Cloud Page by slug. | `POST /api/cloud/pages/disable`<br />`cloud:write` |
 | Enable a Cloud Page by slug. | `POST /api/cloud/pages/enable`<br />`cloud:write` |
 | Cloud deployment preflight — slug / custom-domain availability. | `POST /api/cloud/preflight`<br />`cloud:write` |
+| Run an allowed Pages or routing action after verifying customer namespace ownership. | `POST /api/cloud/resource-proxy`<br />`cloud:write` |
+| Read routes or certificates belonging to the caller's Cloud namespace. | `GET /api/cloud/route-registry`<br />`cloud:read` |
 | Relay an invitation email via the SaaS mail infrastructure. | `POST /api/cloud/send-invitation`<br />`cloud:write` |
 | Openship Cloud connection status for this instance. | `GET /api/cloud/status`<br />`cloud:read` |
 | Delete a project's rows on the SaaS (bring-home / reconcile). | `POST /api/cloud/teardown-project`<br />`cloud:admin` |

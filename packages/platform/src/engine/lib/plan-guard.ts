@@ -17,11 +17,8 @@
  *   org is already connected; sending it to a connect-Cloud modal would "succeed"
  *   and change nothing.
  *
- * WHAT THESE GATES DO NOT DO: stop workloads that are already running. A
- * paid→free downgrade lowers the Oblien credit ceiling (`setQuotaForTier`) and
- * blocks the NEXT non-static deploy; it does not tear down running containers.
- * Reconciling existing workloads on downgrade is a separate job and must not be
- * smuggled in here.
+ * Oblien enforces credit limits and subscription suspension. These gates
+ * enforce Openship application allowances using the current provider tier.
  */
 
 import {
@@ -85,6 +82,10 @@ export class FreeSubdomainLimitError extends PlanUpgradeRequiredError {
 /** The org's current tier. Unknown/missing → the catalog's most restrictive. */
 async function tierFor(organizationId: string): Promise<PlanTierId> {
   const org = await repos.organization.findById(organizationId);
+  if (env.CLOUD_MODE && org?.oblienNamespace) {
+    const { syncOblienEntitlement } = await import("../modules/billing/billing-oblien-quota");
+    return (await syncOblienEntitlement(organizationId)).tier;
+  }
   return (org?.planTierId ?? "free") as PlanTierId;
 }
 

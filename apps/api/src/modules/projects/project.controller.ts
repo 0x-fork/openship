@@ -293,6 +293,7 @@ export async function updateCloneToken(c: Context) {
 export async function scanLocal(c: Context) {
   const result = await getPlatformKernel().projects.scanLocal(operationContext(c), await c.req.json());
   applyOperationContext(c, result.context);
+  c.header("Cache-Control", "no-store");
   return c.json(result.data);
 }
 

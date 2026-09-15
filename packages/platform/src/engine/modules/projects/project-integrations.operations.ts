@@ -14,6 +14,7 @@ export function createProjectIntegrationOperations(recordAudit: ProjectDependenc
   const audit = (ctx: Parameters<typeof recordAudit>[0], id: string, action: "write" | "admin", after: unknown) =>
     recordAudit(ctx, { eventType: `project:${action}`, resourceType: "project", resourceId: id, after });
   return {
+    listConnectionCandidates: (ctx, id) => connections.listConnectionCandidates(ctx, id),
     listConnections: (ctx, id) => connections.listConnections(ctx, id),
     listConnectionConsumers: (ctx, id) => connections.listConsumers(ctx, id),
     async createConnection(ctx, id, input) {

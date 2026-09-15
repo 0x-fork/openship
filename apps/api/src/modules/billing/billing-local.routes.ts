@@ -33,12 +33,13 @@ const r = secureRouter(billingLocalRoutes, {
 // POST /payment-methods, and GET /invoices do not exist on the SaaS
 // side — invoices and payment methods are owned by Stripe's hosted
 // portal (POST /portal returns the redirect URL), and subscription
-// updates are POST /subscription (replace) or POST /cancel. Mounting
+// updates use POST /subscription (checkout), /cancel, or /resume. Mounting
 // the orphan routes here just routed dashboard calls into 404 HTML
 // pages from the SaaS proxy, breaking dashboard error handling.
 r.use("/state", authMiddleware);
 r.use("/subscription", authMiddleware);
 r.use("/cancel", authMiddleware);
+r.use("/resume", authMiddleware);
 r.use("/usage", authMiddleware);
 r.use("/allowances", authMiddleware);
 r.use("/topup", authMiddleware);
@@ -50,11 +51,12 @@ r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, 
 
 /* ---------- Subscriptions ---------- */
 r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getSubscription);
-r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingLocal.createSubscription);
+r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingLocal.createSubscription);
 
 /* ---------- Cancellation ---------- */
-// Destructive — admin tier per the same precedent as the SaaS sibling.
-r.post("/cancel", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingLocal.cancelSubscription);
+// Renewal controls use the same grants as the SaaS operations.
+r.post("/cancel", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingLocal.cancelSubscription);
+r.post("/resume", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingLocal.resumeSubscription);
 
 /* ---------- Usage ---------- */
 r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getUsage);
@@ -68,11 +70,11 @@ r.post(
   billingLocal.createTopup,
 );
 
-/* ---------- Stripe Portal (invoices + PM management) ---------- */
+/* ---------- Namespace billing portal ---------- */
 // Each call mints a Stripe portal session — tight per-org limit (20/min)
 // stops a runaway frontend retry loop from racking up Stripe API spend.
 r.post(
   "/portal",
-  { tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
+  { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingLocal.createPortal,
 );

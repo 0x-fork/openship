@@ -37,6 +37,7 @@ import { scopedVolumeName, type CommandExecutor } from "@repo/adapters";
 import { isArtifactRef } from "../../lib/container-ref";
 import { assertValidGeneratedConfigFiles } from "../../lib/generated-config-files";
 import { advisoryWork } from "../../lib/advisory-work";
+import { assertServiceNotShared } from "./shared-service-guard";
 import { execInContainer } from "../../lib/agent-exec";
 import { encrypt, decrypt } from "../../lib/encryption";
 import {
@@ -733,6 +734,8 @@ export async function updateService(
 ) {
   const { project, svc } = await assertServiceAccess(ctx, projectId, serviceId);
 
+  if (data.enabled === false) await assertServiceNotShared(serviceId);
+
   // Normalize routing: when exposed is turned off, clear routing fields.
   // When domainType changes, clear the irrelevant domain field.
   const patch: Record<string, any> = { ...data };
@@ -1237,6 +1240,7 @@ export async function deleteService(ctx: RequestContext, projectId: string, serv
       throw new Error("service-not-found");
     }
     assertNotControlPlane(liveProject);
+    await assertServiceNotShared(serviceId);
     await deleteLiveService(liveProject, liveService);
     return true;
   });

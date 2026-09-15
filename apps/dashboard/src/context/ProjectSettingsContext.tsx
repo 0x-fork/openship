@@ -957,6 +957,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     const tl = t.projects.sidebar.tabs;
     const all = [
       { id: "overview", label: tl.overview, icon: "setting-100-1658432731.png" },
+      { id: "topology", label: tl.topology, icon: "layers.png" },
       { id: "services", label: tl.services, icon: "layers.png" },
       { id: "domains", label: tl.domains, icon: "server-59-1658435258.png" },
       { id: "deployments", label: tl.deployments, icon: "heart%20rate-118-1658433496.png" },

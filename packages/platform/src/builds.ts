@@ -1,5 +1,5 @@
-import { AppError, BuildAccessBody, PrepareDeployBody, RevealPreparedEnvBody, ResourceIdSchema, parseInput, isCreateDeploymentResult,
-  type BuildOperations, type PrepareDeploymentInput, type RevealPreparedEnvInput, type BuildAccessInput, type PreparedProject, type CreateDeploymentResult } from "@repo/contracts";
+import { AppError, BuildAccessBody, PrepareDeployBody, ResourceIdSchema, parseInput, isCreateDeploymentResult,
+  type BuildOperations, type PrepareDeploymentInput, type BuildAccessInput, type PreparedProject, type CreateDeploymentResult } from "@repo/contracts";
 import type { ExecutionContext } from "./context";
 import type { Authorization } from "./authorization";
 import type { DeploymentExecutionOptions, OperationResult } from "./deployments";
@@ -9,7 +9,6 @@ export type PlatformBuildOperations = {
 };
 export interface BuildDependencies {
   prepare(ctx: ExecutionContext, input: PrepareDeploymentInput): Promise<PreparedProject>;
-  revealPreparedEnv(ctx: ExecutionContext, input: RevealPreparedEnvInput): Promise<Record<string, string>>;
   access(ctx: ExecutionContext, input: BuildAccessInput, options?: DeploymentExecutionOptions): Promise<CreateDeploymentResult>;
   start(ctx: ExecutionContext, id: string): Promise<CreateDeploymentResult>;
   recordAudit(ctx: ExecutionContext, id: string, after?: Record<string, unknown>): void;
@@ -35,16 +34,7 @@ export function createBuildOperations(authorization: Authorization, dependencies
       const input = parseInput(PrepareDeployBody, value);
       const context = await authorizePreparation(ctx);
       const data = await resources().prepare(context, input);
-      resources().recordAudit(context, "*");
-      return { context, data };
-    },
-    async revealPreparedEnv(ctx, value) {
-      const input = parseInput(RevealPreparedEnvBody, value);
-      const context = await authorizePreparation(ctx);
-      const data = await resources().revealPreparedEnv(context, input);
-      resources().recordAudit(context, "*", {
-        operation: "prepare.env.reveal", service: input.service, revealedEnvKeys: Object.keys(data),
-      });
+      resources().recordAudit(context, "*", input.includeEnv ? { includeEnv: true } : undefined);
       return { context, data };
     },
     async buildAccess(ctx, value) {

@@ -1,45 +1,10 @@
 /**
- * Oblien webhook receiver — POST /api/billing/oblien-webhook.
- *
- * Single entry point for events Oblien fires against our endpoint
- * (registered once at boot via `ensureOblienWebhook`, account-wide).
- * Four event types matter:
- *
- *   - `credits.usage`             → refresh the org's usage snapshot
- *                                   (balance / credits_used / per-resource
- *                                   metered units) so the dashboard renders
- *                                   without a live Oblien round-trip.
- *   - `credits.depleted`          → suspend the namespace + flip the org to
- *                                   `credit_exhausted`, and emit the audit +
- *                                   notification for the transition.
- *   - `credits.low`               → soft warning email (approaching the cap).
- *   - `namespace.quota.threshold` → distinct threshold email carrying the
- *                                   crossed percent / used / limit.
- *
- * Anything else is accepted (2xx) but treated as a no-op — Oblien does not
- * retry, so we simply record it as seen.
- *
- * Signature verification: HMAC-SHA256 hex of the RAW request body using
- * OBLIEN_WEBHOOK_SECRET, delivered in the `X-Webhook-Signature` header
- * (Oblien signs the body only — no timestamp, no `sha256=` prefix, though we
- * tolerate the prefix defensively). Compared in constant time. Missing header
- * OR mismatch → 401. Missing secret (env not configured) → 503: a
- * security-critical endpoint must never silently accept unverified traffic.
- * The handler MUST read the raw body before parsing JSON — we need the exact
- * bytes Oblien signed.
- *
- * Idempotency: Oblien's envelope carries NO event id, so we derive a stable
- * one from `event : (workspace_id|namespace) : timestamp` and dedupe on the
- * `oblien_webhook_event` table + Postgres advisory-lock (same shape as
- * billing.webhooks.ts). Including the per-delivery `timestamp` means genuine
- * periodic `credits.usage` refreshes are each distinct (not collapsed), while
- * an exact re-delivery still dedupes.
- *
- * Runs only under CLOUD_MODE — Oblien webhooks target the SaaS.
+ * Verify signed provider events, deduplicate stable delivery IDs, and refresh
+ * the organization from Oblien's current entitlement. Events never grant credits
+ * or suspend workspaces locally; failed synchronization returns a retryable 503.
  */
-
 export interface BillingWebhookResponse { status: number; payload: Record<string, unknown> }
-import { db, schema, repos, eq, sql, hashStringToInt } from "@repo/db";
+import { db, schema, repos, eq } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 
 import { env } from "@repo/platform/engine/config/env";
@@ -53,17 +18,9 @@ import {
   extractNamespace,
 } from "@repo/platform/engine/modules/billing/oblien-webhook-crypto";
 
-/* ───────── Constants ────────────────────────────────────────────────────── */
+import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
 
-
-
-/** Set of event types the dispatcher has handlers for. */
-const ROUTED_EVENT_TYPES = new Set<string>([
-  "credits.usage",
-  "credits.depleted",
-  "credits.low",
-  "namespace.quota.threshold",
-]);
+const ROUTED_EVENT_TYPES = new Set<string>(OBLIEN_WEBHOOK_EVENTS);
 
 /* ───────── Payload shapes ───────────────────────────────────────────────── */
 
@@ -115,16 +72,6 @@ function parseDate(v: unknown): Date | null {
   if (typeof v !== "string" && typeof v !== "number") return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function readAcquired(result: unknown): boolean {
-  if (typeof result !== "object" || result === null) return false;
-  const rows = (result as { rows?: unknown }).rows;
-  if (Array.isArray(rows) && rows.length > 0) {
-    const first = rows[0] as { acquired?: boolean | null };
-    return first.acquired === true;
-  }
-  return false;
 }
 
 /* ───────── Org resolution by namespace ──────────────────────────────────── */
@@ -278,114 +225,6 @@ async function handleCreditsDepleted(orgId: string): Promise<void> {
   });
 }
 
-/**
- * Oblien stopped the namespace's workspaces. Record it LOCALLY so the billing
- * surface stops claiming everything is fine.
- *
- * Unlike `credits.depleted` this is not purely informational: depletion has a
- * matching local status already (`credit_exhausted`, set by the hard-cap path),
- * whereas a suspension could previously happen for a reason our credit events
- * never mention — traffic/egress overage, a CDN storage cap — and leave
- * `subscription_status` on `active` indefinitely.
- *
- * We reuse `credit_exhausted` rather than minting a `suspended` status. Two
- * reasons, both deliberate: it is the status the anniversary cron already knows
- * how to clear, and Oblien's own entitlement vocabulary
- * (`canceled` / `past_due` / `credit_exhausted` / `active`) has no `suspended`
- * either — keeping the two aligned is worth more than a more precise word. The
- * true cause is preserved in the audit payload's `reason`, so a traffic
- * suspension is still distinguishable in the record even though the customer-facing
- * status is the same.
- *
- * We do NOT call Oblien to stop anything: it already did, and issuing our own
- * suspend would race its state machine.
- */
-async function handleNamespaceSuspended(
-  orgId: string,
-  payload: OblienWebhookPayload,
-): Promise<void> {
-  const org = await repos.organization.findById(orgId);
-  if (!org) return;
-
-  const data = (payload.data ?? {}) as Record<string, unknown>;
-  const reason = typeof data.reason === "string" ? data.reason : null;
-
-  const before = org.subscriptionStatus;
-  if (before !== "credit_exhausted") {
-    await repos.organization.setSubscriptionStatus(orgId, "credit_exhausted");
-  }
-
-  await audit.record(
-    { organizationId: orgId, actorUserId: null, source: "webhook" },
-    {
-      eventType: "billing.credit_exhausted",
-      resourceType: "organization",
-      resourceId: orgId,
-      before: { subscriptionStatus: before },
-      after: {
-        subscriptionStatus: "credit_exhausted",
-        oblienNamespace: org.oblienNamespace ?? null,
-        // The distinction the shared status can't carry.
-        reason: reason ?? "namespace_suspended",
-      },
-    },
-  );
-  notification.emit({
-    organizationId: orgId,
-    eventType: "billing.credit_exhausted",
-    resourceType: "organization",
-    resourceId: orgId,
-    payload: {
-      planTierId: org.planTierId,
-      oblienNamespace: org.oblienNamespace ?? null,
-      reason: reason ?? "namespace_suspended",
-    },
-  });
-}
-
-/**
- * Oblien lifted the suspension — a top-up, a renewal, or an operator action put
- * usage back under the ceiling.
- *
- * Only clears a status WE set for this reason. An org sitting in `past_due` or
- * `canceled` is in that state because Stripe said so, and a namespace coming back
- * online says nothing about whether the card cleared; flipping it to `active` here
- * would hand a non-paying org a green badge.
- */
-async function handleNamespaceRestored(orgId: string): Promise<void> {
-  const org = await repos.organization.findById(orgId);
-  if (!org) return;
-
-  const before = org.subscriptionStatus;
-  if (before === "credit_exhausted") {
-    await repos.organization.setSubscriptionStatus(orgId, "active");
-  }
-
-  await audit.record(
-    { organizationId: orgId, actorUserId: null, source: "webhook" },
-    {
-      eventType: "billing.credit_restored",
-      resourceType: "organization",
-      resourceId: orgId,
-      before: { subscriptionStatus: before },
-      after: {
-        subscriptionStatus: before === "credit_exhausted" ? "active" : before,
-        oblienNamespace: org.oblienNamespace ?? null,
-      },
-    },
-  );
-  notification.emit({
-    organizationId: orgId,
-    eventType: "billing.credit_restored",
-    resourceType: "organization",
-    resourceId: orgId,
-    payload: {
-      planTierId: org.planTierId,
-      oblienNamespace: org.oblienNamespace ?? null,
-    },
-  });
-}
-
 async function handleCreditsLow(
   orgId: string,
   payload: OblienWebhookPayload,
@@ -398,7 +237,7 @@ async function handleCreditsLow(
 /* ───────── Persistence helpers ──────────────────────────────────────────── */
 
 async function upsertWebhookEventProcessed(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: typeof db,
   eventId: string,
   eventType: string,
 ): Promise<void> {
@@ -425,85 +264,47 @@ async function upsertWebhookEventProcessed(
  * reads the raw body first (signature input), then parses the JSON itself;
  * never call `c.req.json()` before verification.
  */
-export async function handleOblienWebhook(rawBody: string, signatureHeader?: string): Promise<BillingWebhookResponse> {
-
+export async function handleOblienWebhook(
+  rawBody: string, signatureHeader?: string, deliveryId?: string,
+): Promise<BillingWebhookResponse> {
   const sig = verifyOblienSignature(rawBody, signatureHeader, env.OBLIEN_WEBHOOK_SECRET);
-  if (!sig.ok) {
-    if (sig.reason === "no_secret") {
-      console.error(
-        "[oblien-webhook] OBLIEN_WEBHOOK_SECRET is not configured — refusing delivery",
-      );
-      return ({ status: 503, payload: { error: "Oblien webhook not configured" } });
-    }
-    console.warn(`[oblien-webhook] signature rejected: ${sig.reason}`);
-    return ({ status: 401, payload: { error: "invalid signature" } });
-  }
-
+  if (!sig.ok) return {
+    status: sig.reason === "no_secret" ? 503 : 401,
+    payload: { error: sig.reason === "no_secret" ? "Oblien webhook not configured" : "invalid signature" },
+  };
   let payload: OblienWebhookPayload;
-  try {
-    payload = JSON.parse(rawBody) as OblienWebhookPayload;
-  } catch {
-    return ({ status: 400, payload: { error: "invalid json" } });
-  }
-
+  try { payload = JSON.parse(rawBody); }
+  catch { return { status: 400, payload: { error: "invalid json" } }; }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return { status: 400, payload: { error: "invalid json" } };
   const eventType = extractEventType(payload);
-  if (!eventType) {
-    return ({ status: 400, payload: { error: "missing event" } });
-  }
-
-  const eventId = deriveOblienEventId(payload);
+  if (!eventType) return { status: 400, payload: { error: "missing event" } };
+  if (deliveryId && deliveryId.length > 256) return { status: 400, payload: { error: "invalid webhook id" } };
+  const eventId = deriveOblienEventId(payload, deliveryId);
   const namespace = extractNamespace(payload);
-  const lockKey = hashStringToInt(`oblien:event:${eventId}`);
+  if (!ROUTED_EVENT_TYPES.has(eventType)) {
+    await upsertWebhookEventProcessed(db, eventId, eventType);
+    return { status: 200, payload: { received: true } };
+  }
+  if (!namespace) return { status: 400, payload: { error: "missing namespace" } };
+  const orgId = await findOrgByNamespace(namespace);
+  if (!orgId) return { status: 200, payload: { received: true } };
 
-  await db.transaction(async (tx) => {
-    const lockResult = await tx.execute(
-      sql`SELECT pg_try_advisory_xact_lock(${lockKey}) AS acquired`,
-    );
-    if (!readAcquired(lockResult)) {
-      // Peer is processing this event — their commit stamps processed_at.
-      return;
-    }
-
-    const [existing] = await tx
-      .select({ processedAt: schema.oblienWebhookEvent.processedAt })
-      .from(schema.oblienWebhookEvent)
-      .where(eq(schema.oblienWebhookEvent.oblienEventId, eventId))
-      .limit(1);
-    if (existing?.processedAt) return;
-
-    if (!ROUTED_EVENT_TYPES.has(eventType)) {
-      console.warn(
-        `[oblien-webhook] received unrouted event ${eventType} (id=${eventId}) — accepting without action`,
-      );
-      await upsertWebhookEventProcessed(tx, eventId, eventType);
-      return;
-    }
-
-    if (!namespace) {
-      console.warn(
-        `[oblien-webhook] event ${eventId} (${eventType}) has no namespace — accepting without action`,
-      );
-      await upsertWebhookEventProcessed(tx, eventId, eventType);
-      return;
-    }
-
-    const orgId = await findOrgByNamespace(namespace);
-    if (!orgId) {
-      console.warn(
-        `[oblien-webhook] event ${eventId} (${eventType}) namespace=${namespace} has no matching org`,
-      );
-      await upsertWebhookEventProcessed(tx, eventId, eventType);
-      return;
-    }
-
-    try {
+  try {
+    await quotaWrapper.withCloudBillingLock(orgId, async (sync) => {
+      const [existing] = await db.select({ processedAt: schema.oblienWebhookEvent.processedAt })
+        .from(schema.oblienWebhookEvent)
+        .where(eq(schema.oblienWebhookEvent.oblienEventId, eventId)).limit(1);
+      if (existing?.processedAt) return;
+      // Every relevant notification refreshes provider truth. In particular,
+      // old payment/suspension events cannot revert a newer paid entitlement.
+      const { entitlement } = await sync();
       switch (eventType) {
         case "credits.usage":
           await handleCreditsUsage(orgId, payload);
           break;
         case "credits.depleted":
-          await handleCreditsDepleted(orgId);
+        case "namespace.suspended":
+          if (entitlement.status === "credit_exhausted") await handleCreditsDepleted(orgId);
           break;
         case "credits.low":
           await handleCreditsLow(orgId, payload);
@@ -511,21 +312,13 @@ export async function handleOblienWebhook(rawBody: string, signatureHeader?: str
         case "namespace.quota.threshold":
           await notifyQuotaThreshold(orgId, payload.data ?? {});
           break;
-        case "namespace.suspended":
-          await handleNamespaceSuspended(orgId, payload);
-          break;
-        case "namespace.restored":
-          await handleNamespaceRestored(orgId);
-          break;
       }
-      await upsertWebhookEventProcessed(tx, eventId, eventType);
-    } catch (err) {
-      console.error(
-        `[oblien-webhook] handler failed for ${eventType} (id=${eventId}, org=${orgId}): ${safeErrorMessage(err)}`,
-      );
-      throw err;
-    }
-  });
-
-  return ({ status: 200, payload: { received: true } });
+      // Stamp only after the mirror succeeds. A failed read remains retryable.
+      await upsertWebhookEventProcessed(db, eventId, eventType);
+    });
+  } catch (error) {
+    console.warn(`[oblien-webhook] synchronization failed for org ${orgId}: ${safeErrorMessage(error)}`);
+    return { status: 503, payload: { error: "Billing synchronization temporarily unavailable" } };
+  }
+  return { status: 200, payload: { received: true } };
 }

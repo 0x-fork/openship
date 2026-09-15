@@ -32,7 +32,7 @@ export interface ProjectDependencies {
   get(ctx: ExecutionContext, id: string): Promise<unknown>;
   update(ctx: ExecutionContext, id: string, input: UpdateProjectInput): Promise<unknown>;
   local?: {
-    scan(ctx: ExecutionContext, input: { path: string }): Promise<LocalProjectScan>;
+    scan(ctx: ExecutionContext, input: Parameters<ProjectOperations["scanLocal"]>[0]): Promise<LocalProjectScan>;
     import(ctx: ExecutionContext, input: ImportLocalProjectInput): Promise<{ project: unknown; serviceCount: number }>;
     list(ctx: ExecutionContext): Promise<unknown[]>;
   };
@@ -106,7 +106,7 @@ export function createProjectOperations(authorization: Authorization, dependenci
       const context = await authorize(ctx, "*", "write");
       const data = await local().scan(context, input);
       if (!isLocalProjectScan(data)) throw new AppError("Invalid local scan response", 500, "INVALID_SOURCE_RESPONSE");
-      resources().recordAudit(context, { eventType: "project:write", resourceType: "project", resourceId: "*", after: { operation: "local.scan", path: input.path } });
+      resources().recordAudit(context, { eventType: "project:write", resourceType: "project", resourceId: "*", after: { operation: "local.scan", path: input.path, ...(input.includeEnv && { includeEnv: true }) } });
       return { context, data };
     },
     async importLocal(ctx, value) {

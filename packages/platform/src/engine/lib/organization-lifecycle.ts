@@ -8,7 +8,7 @@ import { resolveDashboardPublicUrl, refreshSelfAppPublicUrl } from "./public-url
 import { sendMail, smtpEnabled } from "./mail";
 import { organizationInviteEmail } from "./email-templates";
 import { memberAudit } from "../modules/audit/member-emitter";
-import { getOrgBillingState, teardownBillingForOrg } from "../modules/billing/billing-org-cleanup";
+import { getOrgBillingState } from "../modules/billing/billing-org-cleanup";
 import { invitationClaimPath, safeErrorMessage } from "@repo/core";
 import { invitationNeedsEmail } from "./invitation-delivery";
 import { invitationAccountCreationMode } from "./invitation-claim";
@@ -162,7 +162,7 @@ export const organizationOptions = {
         },
       );
 
-      // Give the org its Oblien namespace and push its tier's ceilings.
+      // Create the org namespace under the provider's default billing policy.
       // Cloud only, and fire-and-forget: a slow or unreachable Oblien must
       // not fail org creation (the boot backfill re-attempts anything that
       // fails here). Without this a free org had no namespace recorded and
@@ -209,7 +209,7 @@ export const organizationOptions = {
           },
         );
         throw new APIError("CONFLICT", {
-          message: `Cannot delete organization while billing is active: ${billingState.summary}. Cancel subscriptions and settle open invoices first.`,
+          message: billingState.summary,
           code: "ORG_DELETE_BILLING_ACTIVE",
         });
       }
@@ -234,38 +234,11 @@ export const organizationOptions = {
     },
 
     afterDeleteOrganization: async ({ organization, user }) => {
-      // HIGH F16: cascade everything Better Auth's built-in CASCADE
-      // doesn't reach.
-      //
-      //   1. teardownBillingForOrg — cancel Stripe subs, suspend
-      //      then delete the Oblien namespace. Static import is
-      //      safe: no module under modules/billing or modules/audit
-      //      imports lib/auth, so there is no cycle to break.
-      //   2. resource_grant rows scoped to the org (the FK already
-      //      CASCADEs, but the explicit call gives us a count).
-      //   3. Session pointers — re-point any session whose
-      //      activeOrganizationId is the dead org onto the user's
-      //      personal org. The column is NOT NULL by schema.
-      //   4. Emit one audit row with the full summary.
+      // Cloud/legacy billing accounts are blocked before deletion. Only local
+      // grants and session pointers remain to clean up after this commit.
       const memberSnapshot =
         (organization as { _orgDeleteMemberSnapshot?: unknown })._orgDeleteMemberSnapshot ??
         null;
-
-      let billingResult: {
-        subscriptionsCancelled: number;
-        subscriptionsFailed: number;
-        namespaceDecommissioned: boolean;
-        customerDeleted: boolean;
-        errors: string[];
-      } | null = null;
-      try {
-        billingResult = await teardownBillingForOrg(organization.id);
-      } catch (err) {
-        console.error(
-          "[organizationHooks.afterDeleteOrganization] billing teardown failed:",
-          err,
-        );
-      }
 
       let grantsDeleted = 0;
       try {
@@ -296,11 +269,6 @@ export const organizationOptions = {
             members: memberSnapshot,
           },
           after: {
-            subscriptionsCancelled: billingResult?.subscriptionsCancelled ?? 0,
-            subscriptionsFailed: billingResult?.subscriptionsFailed ?? 0,
-            namespaceDecommissioned: billingResult?.namespaceDecommissioned ?? false,
-            customerDeleted: billingResult?.customerDeleted ?? false,
-            billingErrors: billingResult?.errors ?? [],
             grantsDeleted,
             sessionsRepointed,
           },

@@ -212,6 +212,13 @@ interface EnvMetaLike {
 export function maskEnvironmentMeta(
   meta: Record<string, EnvMetaLike> | null | undefined,
 ): Record<string, EnvMetaLike> {
+  return publicEnvironmentMeta(meta, false);
+}
+
+function publicEnvironmentMeta(
+  meta: Record<string, EnvMetaLike> | null | undefined,
+  includeEnv: boolean,
+): Record<string, EnvMetaLike> {
   const out: Record<string, EnvMetaLike> = {};
   if (!meta) return out;
   for (const [key, m] of Object.entries(meta)) {
@@ -222,19 +229,19 @@ export function maskEnvironmentMeta(
       ...(m.unresolvedVariables !== undefined && {
         unresolvedVariables: [...m.unresolvedVariables],
       }),
-      ...(m.resolvedValue !== undefined && { resolvedValue: maskValue(m.resolvedValue) }),
-      ...(m.defaultValue !== undefined && { defaultValue: maskValue(m.defaultValue) }),
+      ...(m.resolvedValue !== undefined && { resolvedValue: includeEnv ? m.resolvedValue : maskValue(m.resolvedValue) }),
+      ...(m.defaultValue !== undefined && { defaultValue: includeEnv ? m.defaultValue : maskValue(m.defaultValue) }),
     };
   }
   return out;
 }
 
 /**
- * Mask a scan-result service: both its `environment` map and its
- * `environmentMeta` value fields. Used for the scan/prepare response, where the
- * service carries the extra `environmentMeta` the deployable/service rows don't.
+ * Project scan data for an API response. Source values are masked by default;
+ * authorized editing scans may include them in the initial response. Parser
+ * provenance stays server-owned in either case.
  */
-export function maskScanService<
+export function publicScanService<
   T extends {
     environment?: Record<string, string> | null;
     environmentTemplates?: Record<string, string> | null;
@@ -245,13 +252,19 @@ export function maskScanService<
       [key: string]: unknown;
     } | null;
   },
->(svc: T): T {
+>(svc: T, includeEnv = false): T {
   // svc is always a concrete service here (mapped from a scan list).
   const masked = maskServiceEnv(svc) as T;
-  if (masked.environmentMeta) {
-    return { ...masked, environmentMeta: maskEnvironmentMeta(masked.environmentMeta) };
-  }
-  return masked;
+  return {
+    ...masked,
+    ...(includeEnv && svc.environment && { environment: { ...svc.environment } }),
+    ...(svc.environmentMeta && { environmentMeta: publicEnvironmentMeta(svc.environmentMeta, includeEnv) }),
+  };
+}
+
+/** Retain the masking-only helper used by other read boundaries. */
+export function maskScanService<T extends Parameters<typeof publicScanService>[0]>(svc: T): T {
+  return publicScanService(svc);
 }
 
 /**

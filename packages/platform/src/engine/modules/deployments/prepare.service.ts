@@ -17,7 +17,8 @@ import {
   type ComposeService,
   type ComposeUnsupportedField,
 } from "../../lib/compose-parser";
-import { maskEnv, maskScanService } from "../../lib/secret-env";
+import { maskEnv, publicScanService } from "../../lib/secret-env";
+import type { SourceScanOptions } from "@repo/contracts";
 import {
   applyWorkspaceContext,
   buildProjectRootSnapshot,
@@ -587,19 +588,18 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
 }
 
 /**
- * Strip or mask every source value before ProjectInfo crosses an API boundary.
- * Both `/deployments/prepare` and the local/folder scan endpoints use this one
- * projection so a newly-added response field cannot accidentally bypass the
- * secret policy on just one route.
+ * Shared scan projection. Callers authorize includeEnv before invoking it;
+ * ordinary scans stay masked and parser provenance is never exposed.
  */
 export function projectInfoToPublicResponse(
   result: ProjectInfo,
+  { includeEnv = false }: SourceScanOptions = {},
 ): Omit<ProjectInfo, "openshipEnv"> & { openshipEnvKeys?: string[] } {
   const { openshipEnv, ...publicInfo } = result;
   return {
     ...publicInfo,
-    ...(result.services && { services: result.services.map(maskScanService) }),
-    ...(result.rootEnv && { rootEnv: maskEnv(result.rootEnv) }),
+    ...(result.services && { services: result.services.map(service => publicScanService(service, includeEnv)) }),
+    ...(result.rootEnv && { rootEnv: includeEnv ? { ...result.rootEnv } : maskEnv(result.rootEnv) }),
     ...(openshipEnv && { openshipEnvKeys: Object.keys(openshipEnv) }),
   };
 }
@@ -609,8 +609,8 @@ export function projectInfoToPublicResponse(
  * local-folder and folder-upload endpoints so their payload shape cannot drift.
  * Callers add their own extra field (`path` / `sessionId`) alongside.
  */
-export function projectInfoToScanResponse(result: ProjectInfo) {
-  const publicInfo = projectInfoToPublicResponse(result);
+export function projectInfoToScanResponse(result: ProjectInfo, options: SourceScanOptions = {}) {
+  const publicInfo = projectInfoToPublicResponse(result, options);
   return {
     name: publicInfo.repository.name,
     stack: publicInfo.stack,
@@ -626,9 +626,7 @@ export function projectInfoToScanResponse(result: ProjectInfo) {
     ...(publicInfo.composePath && { composePath: publicInfo.composePath }),
     productionPaths: publicInfo.productionPaths,
     port: publicInfo.port,
-    // #336: env values (and their environmentMeta) are masked on output. The
-    // deploy pipeline recovers the real values by re-parsing the source, and the
-    // wizard reveals them on demand via the write-gated reveal endpoint.
+    // Authorized edit scans carry values once; ordinary scans remain masked.
     services: publicInfo.services ?? [],
     ...(publicInfo.missingRequiredEnv && { missingRequiredEnv: publicInfo.missingRequiredEnv }),
     ...(publicInfo.unsupportedCompose && { unsupportedCompose: publicInfo.unsupportedCompose }),

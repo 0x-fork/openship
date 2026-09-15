@@ -314,15 +314,18 @@ async function teardownProjectLocked(
     // stepUnlinkConsumers), but read them here so the list is captured while the
     // graph is still whole.
     //
-    // try/catch, not `.catch()`: the repo lookup can throw SYNCHRONOUSLY (a
-    // partially-stubbed `repos` in a unit test), which a promise `.catch` never
-    // sees — and a read that explodes must not take the delete down. Unreadable
-    // → the FK still protects the row (stepDeleteRow fails loudly instead).
+    // Check dependencies before touching containers or volumes. The FK alone
+    // would protect only the final row deletion, after runtime cleanup.
     let consumerLinks: ConsumerLink[] = [];
     try {
       consumerLinks = (await repos.projectConnection.listBySource(projectId)) as ConsumerLink[];
+      if (consumerLinks.some(link => link.sourceServiceId)) {
+        push({ step: "load_project", status: "failed", error: "Disconnect this project's shared services from their consuming projects before deleting it." });
+        return finalize(steps, false);
+      }
     } catch {
-      /* unreadable — stepDeleteRow surfaces the FK error if it mattered */
+      push({ step: "load_project", status: "failed", error: "Could not check shared service connections. Try deleting the project again." });
+      return finalize(steps, false);
     }
 
     // Record-only ("soft") delete: keep the server workload + data, drop just
@@ -537,6 +540,7 @@ function finalize(
  *  was linked into. */
 interface ConsumerLink {
   id: string;
+  sourceServiceId?: string | null;
   targetProjectId: string;
   envKey: string;
   mode: string;

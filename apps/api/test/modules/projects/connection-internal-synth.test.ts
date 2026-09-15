@@ -21,11 +21,15 @@ const h = vi.hoisted(() => ({
   serverGetInOrganization: vi.fn(),
   isLocalHostRow: vi.fn(),
   listByTarget: vi.fn(),
-  upsert: vi.fn(),
+  saveBindings: vi.fn(),
   getTemplateForOrg: vi.fn(),
   getAppConnectionView: vi.fn(),
   mergeEnvVars: vi.fn(),
   toInternalUrl: vi.fn(),
+}));
+
+vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
+  withProjectRuntimeLock: async (_id: string, run: () => Promise<unknown>) => run(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -33,7 +37,7 @@ vi.mock("@repo/db", () => ({
     project: { findById: h.findById, listEnvVars: h.listEnvVars },
     deployment: { findById: h.deploymentFindById },
     server: { getInOrganization: h.serverGetInOrganization },
-    projectConnection: { listByTarget: h.listByTarget, upsert: h.upsert },
+    projectConnection: { listByTarget: h.listByTarget, saveBindings: h.saveBindings },
   },
 }));
 
@@ -74,6 +78,8 @@ vi.mock("@repo/platform/engine/modules/projects/project-connection.util", async 
 
 import { createConnection } from "@repo/platform/engine/modules/projects/project-connection.service";
 
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ encrypt: (value: string) => `enc:${value}`, decrypt: (value: string) => value.replace(/^enc:/, "") }));
+
 const ctx = { organizationId: "org1", userId: "u1" } as never;
 
 const SYNTH_OUTPUT = {
@@ -107,7 +113,7 @@ beforeEach(() => {
   h.serverGetInOrganization.mockImplementation(async (id: string) => ({ id, isLocal: false }));
   h.isLocalHostRow.mockImplementation(async (row: { isLocal?: boolean }) => !!row?.isLocal);
   h.toInternalUrl.mockReturnValue(null);
-  h.upsert.mockImplementation(async (row: Record<string, unknown>) => ({ ...row, id: "conn_new" }));
+  h.saveBindings.mockImplementation(async (_target: string, _env: string, rows: { connection: Record<string, unknown> }[]) => rows.map(row => ({ ...row.connection, id: "conn_new" })));
   h.mergeEnvVars.mockResolvedValue(undefined);
 });
 
@@ -120,13 +126,9 @@ describe("createConnection — synthesized internal source", () => {
       { defer: true },
     );
 
-    expect(h.mergeEnvVars).toHaveBeenCalledWith(
-      "app-a",
-      "org1",
-      expect.objectContaining({
-        upserts: [{ key: "DB_URL", value: "http://my-app:8080", isSecret: true }],
-      }),
-    );
+    expect(h.saveBindings).toHaveBeenCalledWith("app-a", "production", [expect.objectContaining({
+      connection: expect.objectContaining({ envKey: "DB_URL" }), encryptedValue: `enc:${"http://my-app:8080"}`,
+    })]);
     // The template rewrite path must NOT run — it needs a template and would
     // null out a value that is already the container's DNS address.
     expect(h.toInternalUrl).not.toHaveBeenCalled();
@@ -154,8 +156,8 @@ describe("createConnection — synthesized internal source", () => {
     ).rejects.toThrow(/Public/);
 
     // Guard fires before the env write — no half-wired state.
-    expect(h.mergeEnvVars).not.toHaveBeenCalled();
-    expect(h.upsert).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
   });
 
   it("refuses internal when the two projects sit on DIFFERENT servers", async () => {
@@ -177,8 +179,8 @@ describe("createConnection — synthesized internal source", () => {
       ),
     ).rejects.toThrow(/same server/i);
 
-    expect(h.mergeEnvVars).not.toHaveBeenCalled();
-    expect(h.upsert).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
   });
 
   it("treats the isLocal 'This Server' row and an unbound-but-deployed project as ONE machine", async () => {
@@ -202,13 +204,9 @@ describe("createConnection — synthesized internal source", () => {
     );
 
     expect(res.connection.mode).toBe("internal");
-    expect(h.mergeEnvVars).toHaveBeenCalledWith(
-      "app-a",
-      "org1",
-      expect.objectContaining({
-        upserts: [{ key: "DB_URL", value: "http://my-app:8080", isSecret: true }],
-      }),
-    );
+    expect(h.saveBindings).toHaveBeenCalledWith("app-a", "production", [expect.objectContaining({
+      connection: expect.objectContaining({ envKey: "DB_URL" }), encryptedValue: `enc:${"http://my-app:8080"}`,
+    })]);
   });
 
   it("allows connect-before-deploy when the source is on THIS box", async () => {
@@ -253,8 +251,8 @@ describe("createConnection — synthesized internal source", () => {
       ),
     ).rejects.toThrow(/same server/i);
 
-    expect(h.mergeEnvVars).not.toHaveBeenCalled();
-    expect(h.upsert).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
   });
 
   it("catches a cloud source from the deployment SNAPSHOT when cloudWorkspaceId is null", async () => {
@@ -281,8 +279,8 @@ describe("createConnection — synthesized internal source", () => {
       ),
     ).rejects.toThrow(/cloud-hosted/i);
 
-    expect(h.mergeEnvVars).not.toHaveBeenCalled();
-    expect(h.upsert).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
+    expect(h.saveBindings).not.toHaveBeenCalled();
   });
 
   it("allows internal for two projects on the SAME server", async () => {
@@ -302,30 +300,12 @@ describe("createConnection — synthesized internal source", () => {
     expect(res.connection.mode).toBe("internal");
   });
 
-  it("a DEFAULTED mode falls back to public instead of failing the request", async () => {
-    // Only an EXPLICIT `mode: "internal"` gets the error. When the caller never
-    // chose, refusing would turn a working public wire-up into a dead end.
-    h.findById.mockImplementation(async (id: string) =>
-      id === "app-a"
-        ? { id: "app-a", name: "App A", slug: "app-a", organizationId: "org1", activeDeploymentId: null, serverId: "srv-a" }
-        : { id: "db-c", name: "Plain App", slug: "plain-app", organizationId: "org1", appTemplateId: null, activeDeploymentId: null, serverId: "srv-b" },
-    );
-
-    const res = await createConnection(
-      ctx,
-      "app-a",
-      { sourceProjectId: "db-c", outputId: "svc", envKey: "DB_URL" },
-      { defer: true },
-    );
-
-    expect(res.connection.mode).toBe("public");
-    expect(h.mergeEnvVars).toHaveBeenCalledWith(
-      "app-a",
-      "org1",
-      expect.objectContaining({
-        upserts: [{ key: "DB_URL", value: "http://my-app:8080", isSecret: true }],
-      }),
-    );
+  it("never falls back to public for a private-only address on another server", async () => {
+    h.findById.mockImplementation(async (id: string) => ({
+      id, name: id, slug: id, organizationId: "org1", activeDeploymentId: null, serverId: id,
+    }));
+    await expect(createConnection(ctx, "app-a", { sourceProjectId: "db-c", outputId: "svc", envKey: "DB_URL" }, { defer: true })).rejects.toThrow(/same Docker server/);
+    expect(h.saveBindings).not.toHaveBeenCalled();
   });
 
   it("a TEMPLATE (non-internal) output still routes through toInternalUrl", async () => {
@@ -347,13 +327,9 @@ describe("createConnection — synthesized internal source", () => {
     // 4th arg = the container port the output's catalog source declares (null
     // here — this fixture's `connection.outputs` is empty).
     expect(h.toInternalUrl).toHaveBeenCalledWith("postgres://host:5432/db", expect.anything(), "my-app", null);
-    expect(h.mergeEnvVars).toHaveBeenCalledWith(
-      "app-a",
-      "org1",
-      expect.objectContaining({
-        upserts: [{ key: "DB_URL", value: "postgres://my-app:5432/db", isSecret: true }],
-      }),
-    );
+    expect(h.saveBindings).toHaveBeenCalledWith("app-a", "production", [expect.objectContaining({
+      connection: expect.objectContaining({ envKey: "DB_URL" }), encryptedValue: `enc:${"postgres://my-app:5432/db"}`,
+    })]);
   });
 
   it("a TEMPLATE non-URL output (token, password, key) is injected verbatim in internal mode", async () => {
@@ -381,13 +357,9 @@ describe("createConnection — synthesized internal source", () => {
     );
 
     expect(h.toInternalUrl).not.toHaveBeenCalled();
-    expect(h.mergeEnvVars).toHaveBeenCalledWith(
-      "app-a",
-      "org1",
-      expect.objectContaining({
-        upserts: [{ key: "SUPABASE_ANON_KEY", value: "eyJhbGciOiJIUzI1NiJ9.abc.def", isSecret: true }],
-      }),
-    );
+    expect(h.saveBindings).toHaveBeenCalledWith("app-a", "production", [expect.objectContaining({
+      connection: expect.objectContaining({ envKey: "SUPABASE_ANON_KEY" }), encryptedValue: `enc:${"eyJhbGciOiJIUzI1NiJ9.abc.def"}`,
+    })]);
     expect(res.connection.mode).toBe("internal");
   });
 
@@ -424,13 +396,9 @@ describe("createConnection — synthesized internal source", () => {
     );
 
     expect(res.connection.mode).toBe("internal");
-    expect(h.mergeEnvVars).toHaveBeenCalledWith(
-      "app-a",
-      "org1",
-      expect.objectContaining({
-        upserts: [{ key: "SUPABASE_ANON_KEY", value: "eyJhbGciOiJIUzI1NiJ9.abc.def", isSecret: true }],
-      }),
-    );
+    expect(h.saveBindings).toHaveBeenCalledWith("app-a", "production", [expect.objectContaining({
+      connection: expect.objectContaining({ envKey: "SUPABASE_ANON_KEY" }), encryptedValue: `enc:${"eyJhbGciOiJIUzI1NiJ9.abc.def"}`,
+    })]);
   });
 });
 

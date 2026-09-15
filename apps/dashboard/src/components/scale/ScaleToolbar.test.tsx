@@ -41,15 +41,16 @@ describe("scaling toolbar", () => {
       expect(html).not.toContain(label);
   });
 
-  it("groups both supported database engines under Cluster", () => {
+  it("lists database engines before presenting deployment choices", () => {
     const html = renderToStaticMarkup(<ResourceMenu onAdd={vi.fn()} />);
-    const clusterGroup = html.slice(html.indexOf('role="group" aria-label="Cluster"'));
+    const databaseGroup = html.slice(html.indexOf('role="group" aria-label="Databases"'));
     expect(html).toContain("OpenShip Edge");
     expect(html).toContain("Application");
-    expect(clusterGroup).toContain("PostgreSQL");
-    expect(clusterGroup).toContain("Redis");
-    expect(clusterGroup).not.toContain("Application");
+    expect(databaseGroup).toContain('aria-label="Choose PostgreSQL deployment"');
+    expect(databaseGroup).toContain('aria-label="Choose Redis deployment"');
+    expect(databaseGroup).not.toContain("Standalone");
+    expect(databaseGroup).not.toContain("Add PostgreSQL cluster");
+    expect(databaseGroup).not.toContain("Application");
     expect(html.match(/data-kind=/g)).toHaveLength(4);
-    expect(html.match(/scale-resource-icon/g)).toHaveLength(4);
   });
 });

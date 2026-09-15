@@ -16,6 +16,7 @@ const planLimits = Type.Object({
   freeSubdomains: numberOrNull, customDomains: numberOrNull, seats: numberOrNull,
 });
 export const BillingPlansSchema = Type.Object({
+  provider: Type.Optional(Type.Literal("oblien")),
   locale: Type.String(), annual: Type.Object({ enabled: Type.Boolean(), monthsFree: Type.Number() }),
   ui: Type.Record(Type.String(), Type.String()),
   plans: Type.Array(Type.Object({
@@ -27,9 +28,19 @@ export const BillingPlansSchema = Type.Object({
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
 });
+export const BillingSubscriptionSchema = Type.Object({
+  tier,
+  status: Type.Union(["active", "trialing", "past_due", "unpaid", "paused", "canceled"].map(value => Type.Literal(value))),
+  interval: Type.Union([Type.Literal("monthly"), Type.Literal("annual")]),
+  currentPeriod,
+  cancelAtPeriodEnd: Type.Boolean(), canceledAt: stringOrNull,
+});
 export const BillingStateSchema = Type.Object({
   tier, status: Type.String(), currentPeriod,
-  balance: Type.Object({ total: Type.Number(), quotaLimit: Type.Number(), quotaUsed: Type.Number(), quotaRemaining: Type.Number() }),
+  balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull }),
+  plan: Type.Optional(Type.Union([BillingPlansSchema.properties.plans.items, Type.Null()])),
+  subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])),
+  capabilities: Type.Optional(Type.Object({ portal: Type.Boolean(), cancellation: Type.Boolean(), resumption: Type.Optional(Type.Boolean()), subscriptionChange: Type.Boolean() })),
   monthlyCreditLimit: numberOrNull, overQuota: Type.Boolean(), buildTimeMinutes: Type.Number(),
   capacity: Type.Optional(Type.Partial(Type.Object({ routes: meter, workspaces: meter, vcpus: meter, ramMb: meter, diskGb: meter, bandwidthGb: meter, buildMinutes: meter, services: meter, projects: meter }))),
   maxServiceMachine: Type.Union([Type.Object({ tier: Type.String(), cpuCores: Type.Number(), memoryMb: Type.Number() }), Type.Null()]),
@@ -50,12 +61,14 @@ export const BillingPublicSchemas = {
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BillingOperationSchemas = {
   getState: { action: "read", output: BillingStateSchema },
-  getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod }) },
+  getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
-  cancelSubscription: { action: "admin", output: Type.Object({ cancelAt: stringOrNull }) },
+  cancelSubscription: { action: "admin", output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },
+  resumeSubscription: { action: "admin", output: Type.Object({ subscription: BillingSubscriptionSchema }) },
   createTopup: { action: "write", input: CreateTopupBody, output: Type.Object({ checkoutUrl: Type.String() }) },
   listTopupPacks: { action: "read", output: Type.Array(BillingCreditPackSchema) },
-  createPortal: { action: "write", output: Type.Object({ portalUrl: Type.String() }) },
+  // The hosted portal can cancel renewal, so it requires the same grant as cancel.
+  createPortal: { action: "admin", output: Type.Object({ portalUrl: Type.String() }) },
   getUsage: { action: "read", input: BillingUsageInputSchema, optionalInput: true, output: Type.Object({
     from: Type.String(), to: Type.String(), groupBy: Type.Union([Type.Literal("hour"), Type.Literal("day")]),
     // Oblien's metering payload is forwarded without renaming its provider fields.
@@ -67,6 +80,7 @@ export const BillingOperationSchemas = {
   }) }) },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export type BillingState = Static<typeof BillingStateSchema>;
+export type BillingSubscription = Static<typeof BillingSubscriptionSchema>;
 export type BillingCreditPack = Static<typeof BillingCreditPackSchema>;
 export type BillingPlans = Static<typeof BillingPlansSchema>;
 export interface BillingOperations extends ScopedOperations<typeof BillingPublicSchemas>, ScopedOperations<typeof BillingOperationSchemas> {}

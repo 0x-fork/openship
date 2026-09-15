@@ -14,6 +14,33 @@ resolving compose drift, and setting per-service environment variables. In the d
 These operations are available with supported self-hosted and Cloud providers. A fixed organization
 scope requires a direct compatible Cloud connection; see [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
 
+## Share a service between projects
+
+A service can stay in its owning project and be connected to several other projects. This reuses the
+existing instance and its data. In the dashboard, open the service and choose **Use in a project**, or
+choose **Add service → Connect existing** from the consuming project's Services tab. Shared services
+appear there with their source project; the owner can see which projects use each service.
+
+Use the existing project connection API to create these links:
+
+```ts
+const { outputs } = await ship.projects.getAppConnection("source_project");
+const output = outputs.find(item => item.sourceServiceId === "svc_database");
+if (!output?.value) throw new Error("Configure and deploy the source database first.");
+
+await ship.projects.connectBundle("consumer_project", {
+  sourceProjectId: "source_project",
+  items: [{ outputId: output.id, envKey: "DATABASE_URL" }],
+  mode: "internal",
+});
+```
+
+The caller needs write access to both projects in the same organization. Private service connections
+require Docker projects on the same server. Credentials are stored as secret environment variables and
+refreshed from the source on normal consumer deployments. Disconnecting removes that project's link;
+the source service and other consumers remain. Disconnect all consumers before deleting a shared service
+or its owning project.
+
 ## Add a service
 
 A service row is a union: `kind: "compose"` uses the container fields (image, build, ports…), while
@@ -246,9 +273,10 @@ with `GET .../env` first if you only mean to change one — anything you omit is
 
 ### Reveal environment values
 
-The dashboard uses the same environment editor and **Show value / Hide value** controls when importing
-Compose services and editing saved services. Revealing a value only changes its display; it does not
-save or overwrite configuration.
+The dashboard uses one environment editor. Imported Compose values are visible immediately; **Demo mode**
+blurs them like IP addresses. Saved values start masked, and clicking a row's eye reveals only that value.
+**Show values** is the explicit action for revealing all saved rows. Revealing does not save or overwrite
+configuration.
 
 SDK and REST requests name 1–500 keys, each up to 512 characters. Only requested keys that exist are
 returned. Reading masked configuration does not grant permission to reveal it.
@@ -281,17 +309,18 @@ This reads saved Compose configuration and requires service write access. Add
 `environment: "production"`, `"preview"`, or `"development"` to read the service's variables for that
 environment instead.
 
-During import, the same editor reads the source supplying the displayed values:
+For an import editor, request values with the initial scan. This avoids a second source read when the
+editor opens:
 
 | Source | SDK | REST API |
 | --- | --- | --- |
-| Git or local scan | `deployments.revealPreparedEnv({ ...prepareInput, service: "db", keys: ["POSTGRES_PASSWORD"] })` | `POST /api/deployments/prepare/env-reveal` with the same body |
-| Uploaded snapshot | `sources.reveal("session_123", { service: "db", keys: ["POSTGRES_PASSWORD"] })` | `POST /api/projects/folder/scan/session_123/env-reveal` with `{ "service": "db", "keys": ["POSTGRES_PASSWORD"] }` |
+| Git or local scan | `deployments.prepare({ ...prepareInput, includeEnv: true })` | `POST /api/deployments/prepare` with `includeEnv: true` |
+| Uploaded snapshot | `sources.scan("session_123", { includeEnv: true })` | `POST /api/projects/folder/scan/session_123` with `{ "includeEnv": true }` |
+| Local directory | `projects.scanLocal({ path: "/srv/app", includeEnv: true })` | `POST /api/projects/scan` with the same body |
 
-For Git or local scans, keep the source, branch, `composePath`, and interpolation `env` from `prepare`.
-The lookup rereads source files, so values can change if the source changes. It requires deployment write
-access and, for Git, whole-repository content read access. Local paths are self-hosted only. Upload
-lookups read the authorized session's snapshot. All lookups share key validation and filtering.
+Ordinary scans remain masked. `includeEnv: true` requires the scan's write permission and, for Git,
+whole-repository content read access. Local paths are self-hosted only. Demo mode only changes the browser
+display; it does not change API permissions or returned values.
 
 ## Errors
 

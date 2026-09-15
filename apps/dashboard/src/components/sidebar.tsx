@@ -28,6 +28,7 @@ import { MailServerSwitcher } from "@/components/mail-server-switcher";
 import { useMailScope } from "@/context/MailScopeContext";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import { projectsApi } from "@/lib/api";
+import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { getSidebarNavCountsRevision, subscribeSidebarNavCounts } from "@/lib/sidebar-nav-counts";
 import {
   getMailNavSections,
@@ -118,7 +119,9 @@ export function Sidebar() {
   const { resolvedTheme, toggle } = useTheme();
   const { t } = useI18n();
   const brand = useBrandName();
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, toggleCollapsed } = useSidebarCollapse(
+    pathname === "/scale" || pathname.startsWith("/scale/") || /^\/projects\/[^/]+\/topology(?:\/|$)/.test(pathname),
+  );
   const [loggingOut, setLoggingOut] = useState(false);
   const [navCounts, setNavCounts] = useState<{ projects: number; apps: number } | null>(null);
   const [navCountsRevision, setNavCountsRevision] = useState(getSidebarNavCountsRevision);
@@ -297,6 +300,7 @@ export function Sidebar() {
 
   return (
     <aside
+      id="dashboard-sidebar"
       className={`my-3 ms-3 flex shrink-0 flex-col rounded-2xl border border-border/50 bg-card transition-[width] duration-200 overflow-hidden ${
         collapsed ? "w-[72px]" : "w-[260px]"
       }`}
@@ -333,8 +337,11 @@ export function Sidebar() {
           </button>
           <button
             type="button"
-            onClick={() => setCollapsed((v) => !v)}
+            onClick={toggleCollapsed}
             aria-label={collapsed ? t.dashboard.sidebar.expand : t.dashboard.sidebar.collapse}
+            aria-expanded={!collapsed}
+            aria-controls="dashboard-sidebar"
+            title={collapsed ? t.dashboard.sidebar.expand : t.dashboard.sidebar.collapse}
             className="flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
           >
             {collapsed ? (

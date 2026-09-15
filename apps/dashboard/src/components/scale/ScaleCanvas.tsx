@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -13,11 +13,14 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useStore,
   useViewport,
   type Connection,
   type OnDelete,
   type NodeChange,
   type EdgeChange,
+  type Viewport,
+  type FitViewOptions,
 } from "@xyflow/react";
 import {
   LockKeyhole,
@@ -30,20 +33,35 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ResourceNode, type ScaleFlowNode } from "./ResourceNode";
+import { ClusterNode, type ClusterFlowNode } from "./ClusterNode";
 import { TrafficEdge, type ScaleFlowEdge } from "./TrafficEdge";
-import { connectionError, connectionLabel, type ScaleDraft, type ScaleSelection } from "./topology";
+import {
+  connectionError,
+  connectionLabel,
+  isClusterResource,
+  type ClusterResource,
+  type ScaleDraft,
+  type ScaleSelection,
+} from "./topology";
+import {
+  canRemoveClusterMember,
+  clusterConnectionError,
+  clusterSlotRange,
+  getClusterTopology,
+} from "./clusterTopology";
 import "@xyflow/react/dist/style.css";
 
-const nodeTypes = { resource: ResourceNode };
+type CanvasNode = ScaleFlowNode | ClusterFlowNode;
+const nodeTypes = { resource: ResourceNode, clusterMember: ClusterNode };
 const edgeTypes = { traffic: TrafficEdge };
 const defaultEdgeOptions = {
   type: "traffic",
   markerEnd: { type: MarkerType.ArrowClosed, color: "var(--th-on-30)", width: 15, height: 15 },
 };
-const fitViewOptions = { padding: 0.12, maxZoom: 1 };
 const connectionLineStyle = { stroke: "var(--foreground)", strokeWidth: 1.5 };
 
 interface ScaleCanvasProps {
+  inert?: boolean;
   draft: ScaleDraft;
   selection: ScaleSelection;
   onSelect: (selection: ScaleSelection) => void;
@@ -52,6 +70,10 @@ interface ScaleCanvasProps {
   onRemoveNodes: (ids: string[]) => void;
   onRemoveEdges: (ids: string[]) => void;
   fitRequest: { revision: number; nodeId?: string };
+  cluster?: ClusterResource;
+  onOpenCluster?: (id: string) => void;
+  defaultViewport?: Viewport;
+  onViewportChange?: (viewport: Viewport) => void;
 }
 
 function CanvasTools({
@@ -59,11 +81,13 @@ function CanvasTools({
   onToggleLock,
   showMap,
   onToggleMap,
+  fitOptions,
 }: {
   locked: boolean;
   onToggleLock: () => void;
   showMap: boolean;
   onToggleMap: () => void;
+  fitOptions: FitViewOptions;
 }) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
@@ -99,7 +123,7 @@ function CanvasTools({
         size="icon"
         title="Fit topology to view"
         aria-label="Fit topology to view"
-        onClick={() => fitView(fitViewOptions)}
+        onClick={() => fitView(fitOptions)}
       >
         <Maximize />
       </Button>
@@ -129,6 +153,7 @@ function CanvasTools({
 }
 
 function Canvas({
+  inert = false,
   draft,
   selection,
   onSelect,
@@ -137,8 +162,28 @@ function Canvas({
   onRemoveNodes,
   onRemoveEdges,
   fitRequest,
+  cluster,
+  onOpenCluster,
+  defaultViewport,
+  onViewportChange,
 }: ScaleCanvasProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<ScaleFlowNode>([]);
+  const [initialViewport] = useState(defaultViewport);
+  const canvasWidth = useStore((state) => state.width);
+  const inCluster = !!cluster;
+  const fitViewOptions = useMemo<FitViewOptions>(
+    () => ({
+      maxZoom: 1,
+      padding: {
+        top: canvasWidth > 0 && canvasWidth <= (inCluster ? 700 : 560) ? "152px" : "88px",
+        bottom: "80px",
+        x: "28px",
+      },
+    }),
+    [canvasWidth, inCluster],
+  );
+  const topology = useMemo(() => (cluster ? getClusterTopology(cluster) : null), [cluster]);
+  const expectedNodes = topology?.nodes ?? draft.nodes;
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<ScaleFlowEdge>([]);
   const [locked, setLocked] = useState(false);
   const [showMap, setShowMap] = useState(false);
@@ -149,36 +194,102 @@ function Canvas({
     const services = new Map(draft.services.map((service) => [service.id, service]));
     setNodes((current) => {
       const previous = new Map(current.map((node) => [node.id, node]));
+      if (cluster && topology) {
+        return topology.nodes.map((member): ClusterFlowNode => {
+          const candidate = previous.get(member.id);
+          const existing = candidate?.type === "clusterMember" ? candidate : undefined;
+          const selected = selection?.type === "node" && selection.id === member.id;
+          const connected = topology.edges.some((edge) => edge.target === member.id);
+          const slots = clusterSlotRange(cluster, member);
+          const deletable = canRemoveClusterMember(cluster, member);
+          const unchanged =
+            existing?.data.member === member &&
+            existing.data.connected === connected &&
+            existing.deletable === deletable &&
+            existing.data.slots?.start === slots?.start &&
+            existing.data.slots?.end === slots?.end;
+          if (unchanged && existing.selected === selected) return existing;
+          return {
+            ...existing,
+            id: member.id,
+            type: "clusterMember",
+            position: member.position,
+            data: unchanged ? existing.data : { member, kind: cluster.kind, connected, slots },
+            selected,
+            deletable,
+            ariaLabel: `${member.name}, ${member.role}. Select, then choose Expand settings.`,
+          };
+        });
+      }
       return draft.nodes.map((resource) => {
-        const existing = previous.get(resource.id);
+        const candidate = previous.get(resource.id);
+        const existing = candidate?.type === "resource" ? candidate : undefined;
         const selected = selection?.type === "node" && selection.id === resource.id;
         const service = resource.kind === "service" ? services.get(resource.serviceId) : undefined;
         const unchanged =
-          existing?.data.resource === resource && existing?.data.service === service;
+          existing?.data.resource === resource &&
+          existing?.data.service === service &&
+          existing.data.onOpenCluster === onOpenCluster;
         if (unchanged && existing.selected === selected) return existing;
         return {
           ...existing,
           id: resource.id,
-          type: "resource",
+          type: "resource" as const,
           position: resource.position,
-          data: unchanged ? existing.data : { resource, service },
+          data: unchanged ? existing.data : { resource, service, onOpenCluster },
           selected,
-          ariaLabel: `${resource.name}, ${resource.kind}. Select to configure.`,
+          ariaLabel: `${resource.name}, ${resource.kind}. ${isClusterResource(resource) ? "Double-click to open cluster." : "Select, then choose Expand settings."}`,
         };
       });
     });
-  }, [draft.nodes, draft.services, selection, setNodes]);
+  }, [draft.nodes, draft.services, cluster, topology, selection, setNodes, onOpenCluster]);
   useEffect(() => {
     const resources = new Map(draft.nodes.map((resource) => [resource.id, resource]));
     setEdges((current) => {
       const previous = new Map(current.map((edge) => [edge.id, edge]));
+      if (cluster && topology) {
+        return topology.edges.map((edge): ScaleFlowEdge => {
+          const selected = selection?.type === "edge" && selection.id === edge.id;
+          const label = edge.mode === "sync" ? "Sync replication" : "Async replication";
+          const existing = previous.get(edge.id);
+          if (
+            existing?.source === edge.source &&
+            existing.target === edge.target &&
+            existing.data?.label === label &&
+            existing.selected === selected
+          )
+            return existing;
+          return {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            ...defaultEdgeOptions,
+            type: "traffic",
+            sourceHandle: "out",
+            targetHandle: "in",
+            data: { label, showLabel: true },
+            selected,
+            ariaLabel: `${label} from ${topology.nodes.find((node) => node.id === edge.source)?.name} to ${topology.nodes.find((node) => node.id === edge.target)?.name}`,
+          };
+        });
+      }
       return draft.edges.flatMap((edge) => {
         const target = resources.get(edge.target);
         if (!target) return [];
         const existing = previous.get(edge.id);
         const selected = selection?.type === "edge" && selection.id === edge.id;
-        const label = connectionLabel(draft, target);
-        if (existing?.data?.label === label && existing.selected === selected) return [existing];
+        const label = `${edge.label ? `${edge.label} · ` : ""}${connectionLabel(draft, target, edge)}`;
+        const enabled = edge.enabled !== false;
+        const ariaLabel = `${enabled ? "Connection" : "Disabled connection"} from ${resources.get(edge.source)?.name} to ${target.name}`;
+        if (
+          existing?.source === edge.source &&
+          existing.target === edge.target &&
+          existing.data?.label === label &&
+          existing.data.enabled === enabled &&
+          existing.selected === selected &&
+          existing.ariaLabel === ariaLabel
+        )
+          return [existing];
         return [
           {
             ...edge,
@@ -186,16 +297,27 @@ function Canvas({
             type: "traffic" as const,
             sourceHandle: "out",
             targetHandle: "in",
-            data: { label },
+            data: { label, enabled },
             selected,
-            ariaLabel: `Connection from ${resources.get(edge.source)?.name} to ${target.name}`,
+            ariaLabel,
           },
         ];
       });
     });
-  }, [draft, selection, setEdges]);
+  }, [draft, cluster, topology, selection, setEdges]);
   useEffect(() => {
     if (!nodesInitialized || fittedRevision.current === fitRequest.revision) return;
+    // The draft can request a fit before its new nodes and positions reach the canvas.
+    if (
+      nodes.length !== expectedNodes.length ||
+      nodes.some(
+        (node, index) =>
+          node.id !== expectedNodes[index].id ||
+          node.position.x !== expectedNodes[index].position.x ||
+          node.position.y !== expectedNodes[index].position.y,
+      )
+    )
+      return;
     const frame = requestAnimationFrame(() => {
       fittedRevision.current = fitRequest.revision;
       fitView({
@@ -204,7 +326,7 @@ function Canvas({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [fitRequest, nodesInitialized, fitView]);
+  }, [fitRequest, nodesInitialized, nodes, expectedNodes, fitView, fitViewOptions]);
 
   const handleConnection = useCallback(
     (connection: Connection) => onConnect(connection.source, connection.target),
@@ -212,11 +334,13 @@ function Canvas({
   );
   const isValidConnection = useCallback(
     (connection: Connection | ScaleFlowEdge) =>
-      !connectionError(draft, connection.source, connection.target),
-    [draft],
+      !(cluster && topology
+        ? clusterConnectionError(cluster, topology, connection.source, connection.target)
+        : connectionError(draft, connection.source, connection.target)),
+    [draft, cluster, topology],
   );
   const handleNodesChange = useCallback(
-    (changes: NodeChange<ScaleFlowNode>[]) => {
+    (changes: NodeChange<CanvasNode>[]) => {
       onNodesChange(changes);
       const selected = changes.find((change) => change.type === "select" && change.selected);
       if (selected?.type === "select") onSelect({ type: "node", id: selected.id });
@@ -238,15 +362,22 @@ function Canvas({
     [onEdgesChange, onSelect],
   );
   const handleNodeClick = useCallback(
-    (_event: unknown, node: ScaleFlowNode) => onSelect({ type: "node", id: node.id }),
+    (_event: unknown, node: CanvasNode) => onSelect({ type: "node", id: node.id }),
     [onSelect],
+  );
+  const handleNodeDoubleClick = useCallback(
+    (_event: unknown, node: CanvasNode) => {
+      if (node.type === "resource" && isClusterResource(node.data.resource))
+        onOpenCluster?.(node.id);
+    },
+    [onOpenCluster],
   );
   const handleEdgeClick = useCallback(
     (_event: unknown, edge: ScaleFlowEdge) => onSelect({ type: "edge", id: edge.id }),
     [onSelect],
   );
   const handlePaneClick = useCallback(() => onSelect(null), [onSelect]);
-  const handleDelete = useCallback<OnDelete<ScaleFlowNode, ScaleFlowEdge>>(
+  const handleDelete = useCallback<OnDelete<CanvasNode, ScaleFlowEdge>>(
     ({ nodes: removedNodes, edges: removedEdges }) => {
       if (removedNodes.length) onRemoveNodes(removedNodes.map((node) => node.id));
       else if (removedEdges.length) onRemoveEdges(removedEdges.map((edge) => edge.id));
@@ -258,12 +389,15 @@ function Canvas({
     <div
       className="scale-canvas h-full w-full"
       dir="ltr"
-      aria-label="Interactive scaling topology"
+      inert={inert}
+      aria-label={
+        cluster ? `Interactive ${cluster.name} cluster topology` : "Interactive scaling topology"
+      }
       onKeyDownCapture={(event) => {
         if (event.key === "Escape") onSelect(null);
       }}
     >
-      <ReactFlow<ScaleFlowNode, ScaleFlowEdge>
+      <ReactFlow<CanvasNode, ScaleFlowEdge>
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -273,6 +407,7 @@ function Canvas({
         onConnect={handleConnection}
         isValidConnection={isValidConnection}
         onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
         onDelete={handleDelete}
@@ -280,19 +415,21 @@ function Canvas({
         nodesConnectable={!locked}
         autoPanOnNodeFocus={false}
         edgesReconnectable={false}
-        deleteKeyCode={locked ? null : ["Backspace", "Delete"]}
+        deleteKeyCode={locked || inert ? null : ["Backspace", "Delete"]}
         multiSelectionKeyCode={null}
         selectionKeyCode={null}
         onlyRenderVisibleElements
-        minZoom={0.2}
+        minZoom={cluster ? 0.1 : 0.2}
         maxZoom={1.6}
-        fitView
+        fitView={!initialViewport}
+        defaultViewport={initialViewport}
+        onMove={(_event, viewport) => onViewportChange?.(viewport)}
         fitViewOptions={fitViewOptions}
         defaultEdgeOptions={defaultEdgeOptions}
         connectionLineStyle={connectionLineStyle}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--th-on-12)" />
-        {!draft.nodes.length && (
+        {!cluster && !draft.nodes.length && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
             <Network className="size-8 text-muted-foreground/50" />
             <h3 className="text-lg font-medium text-foreground/80">No resources yet</h3>
@@ -306,6 +443,7 @@ function Canvas({
           onToggleLock={() => setLocked(!locked)}
           showMap={showMap}
           onToggleMap={() => setShowMap(!showMap)}
+          fitOptions={fitViewOptions}
         />
         {showMap && (
           <MiniMap pannable zoomable nodeColor="var(--th-on-30)" maskColor="var(--th-sf-06)" />

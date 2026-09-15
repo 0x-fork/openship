@@ -1,5 +1,7 @@
 import { createPlatform, type CloudRuntime } from "@repo/adapters";
-import { getOblienClient, getNamespaceClient, issueNamespaceToken } from "./openship-cloud";
+import { ensureNamespace, getOblienClient, issueNamespaceToken } from "./openship-cloud";
+import { env } from "../config/env";
+import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { safeErrorMessage } from "@repo/core";
 
@@ -14,18 +16,17 @@ function normalizeSlug(raw: string): string {
 }
 
 /**
- * Does the caller's OWN Oblien namespace already own `<slug>`? `edgeProxy.list`
- * is namespace-scoped (see cloud-edge-proxy.service.ts), so a hit means a
- * redeploy / re-add of a slug this org already holds — available to YOU, not a
- * cross-namespace conflict. Fail-closed (false) when it can't be confirmed.
+ * Check all route types, including Pages and workspace public access. The
+ * registry requires admin scope, so filter by the trusted namespace twice.
  */
 async function ownsManagedSlug(organizationId: string, rawSlug: string): Promise<boolean> {
   try {
     const slug = normalizeSlug(rawSlug);
     if (!slug) return false;
-    const { client } = await getNamespaceClient(organizationId);
-    const { proxies } = await client.edgeProxy.list();
-    return proxies.some((p) => p.slug === slug);
+    const namespace = await ensureNamespace(organizationId);
+    const { data } = await getOblienClient().domain.routes({ namespace });
+    const hostname = `${slug}.${getRoutingBaseDomain()}`;
+    return data.some((route) => route.namespace === namespace && route.hostname.toLowerCase() === hostname);
   } catch {
     return false;
   }
@@ -89,7 +90,11 @@ export async function runCloudPreflight(
   let runtimeError: string | null = null;
   try {
     const token = await issueNamespaceToken(organizationId);
-    const cloudPlatform = await createPlatform({ target: "cloud", cloudToken: token.token });
+    await assertCloudCanSpend(organizationId);
+    const cloudPlatform = await createPlatform({
+      target: "cloud", cloudToken: token.token, cloudNamespace: token.namespace,
+      cloudApiUrl: env.OBLIEN_API_URL,
+    });
     cloud = cloudPlatform.runtime as CloudRuntime;
     await cloud.getQuota();
   } catch (err) {

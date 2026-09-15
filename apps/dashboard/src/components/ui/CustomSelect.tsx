@@ -40,6 +40,9 @@ interface CustomSelectProps<T extends string> {
   /** Fired once each time the menu opens — use to lazily load options. */
   onOpen?: () => void;
   disabled?: boolean;
+  /** Enables filtering for long project or resource lists. */
+  searchPlaceholder?: string;
+  emptySearchMessage?: (query: string) => string;
 }
 
 export function CustomSelect<T extends string>({
@@ -51,14 +54,20 @@ export function CustomSelect<T extends string>({
   footerAction,
   onOpen,
   disabled = false,
+  searchPlaceholder,
+  emptySearchMessage,
 }: CustomSelectProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPosition, setMenuPosition] = useState<DropdownPosition | null>(null);
 
   const selectedOption = options.find((opt) => opt.value === value);
+  const filteredOptions = searchPlaceholder && query.trim()
+    ? options.filter(option => `${option.label} ${option.description ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+    : options;
 
   const updateMenuPosition = useCallback(() => {
     if (!triggerRef.current || typeof window === "undefined") return;
@@ -130,6 +139,7 @@ export function CustomSelect<T extends string>({
   useEffect(() => {
     if (!isOpen) {
       setMenuPosition(null);
+      setQuery("");
       return;
     }
 
@@ -160,7 +170,7 @@ export function CustomSelect<T extends string>({
     ? createPortal(
         <div
           ref={menuRef}
-          role="listbox"
+          role={searchPlaceholder ? undefined : "listbox"}
           className="fixed z-[10050] flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
           style={{
             left: menuPosition.left,
@@ -171,6 +181,13 @@ export function CustomSelect<T extends string>({
               : { bottom: menuPosition.bottom }),
           }}
         >
+          {searchPlaceholder && (
+            <div className="shrink-0 border-b border-border/50 p-2">
+              <input autoFocus type="search" value={query} onChange={event => setQuery(event.target.value)}
+                aria-label={searchPlaceholder} placeholder={searchPlaceholder}
+                className="w-full rounded-lg bg-muted/40 px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary" />
+            </div>
+          )}
           {/*
             `max-h-full` does not constrain a percentage-sized child when its
             parent only has `max-height`. With a long branch list the options
@@ -179,8 +196,11 @@ export function CustomSelect<T extends string>({
             with `min-h-0` takes the remaining bounded menu height instead;
             the footer stays visible and the list owns vertical scrolling.
           */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5 touch-pan-y">
-            {options.map((option) => {
+          <div role={searchPlaceholder ? "listbox" : undefined} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5 touch-pan-y">
+            {filteredOptions.length === 0 && emptySearchMessage && (
+              <p className="px-4 py-3 text-xs text-muted-foreground">{emptySearchMessage(query)}</p>
+            )}
+            {filteredOptions.map((option) => {
               const isSelected = option.value === value;
               return (
                 <button

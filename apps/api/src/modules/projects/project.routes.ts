@@ -1,4 +1,4 @@
-import { RouteRuleInputSchema, ConnectProjectDomainInputSchema } from "@repo/contracts";
+import { RouteRuleInputSchema, ConnectProjectDomainInputSchema, SourceScanOptionsSchema } from "@repo/contracts";
 /**
  * Project routes - mounted at /api/projects in app.ts.
  *
@@ -122,6 +122,7 @@ r.post(
   {
     tag: "project:write",
     collection: true, collectionProject: true, auditHandledByOperation: true,
+    body: SourceScanOptionsSchema,
     mcp: {
       description:
         "Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty ({}). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present.",

@@ -1,15 +1,4 @@
-/**
- * Billing repository — DB-only, no Stripe calls.
- *
- * This module owns the Stripe → Oblien quota bridge. We persist enough
- * Stripe state locally to attribute webhooks (`billing_customer`), to
- * track tier/status/period transitions for the dashboard
- * (`billing_subscription`), and to resolve top-up `price_id`s to a
- * known SKU (`credit_pack`). Credit consumption itself is no longer
- * tracked here — Oblien owns the ledger. `getBillingState` reads the
- * authoritative quota numbers from Oblien via the
- * `billing-oblien-quota` helper.
- */
+/** Live provider billing state plus read access to historical billing records. */
 
 import { eq, and, desc, inArray, db, schema, repos } from "@repo/db";
 import {
@@ -23,7 +12,11 @@ import {
   type PlanTierId,
   type CreditPackDefinition,
 } from "@repo/core";
-import { getQuotaState } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
+import { entitlementQuota, syncOblienEntitlement } from "./billing-oblien-quota";
+import { cloudPlan } from "./billing-catalog";
+import { presentCloudSubscription } from "./billing-subscription";
+import { getOblienBillingApi } from "../../lib/oblien-client";
+import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
 import { env } from "@repo/platform/engine/config/env";
 
@@ -65,71 +58,18 @@ export interface UpsertSubscriptionInput {
 
 // ─── getBillingState ─────────────────────────────────────────────────────────
 
-/**
- * Per-org billing snapshot suitable for the dashboard overview card.
- *
- * Reads tier/status/period from the local `organization` row and fans
- * out to Oblien for the quota numbers (limit / used / remaining). The
- * Oblien call is wrapped in `getQuotaState` so this function stays a
- * pure read-aggregator over two sources.
- */
+/** Mirror fresh provider entitlement and add Openship application usage. */
 export async function getBillingState(orgId: string): Promise<BillingState> {
-  const [org] = await db
-    .select({
-      planTierId: organization.planTierId,
-      subscriptionStatus: organization.subscriptionStatus,
-      currentPeriodStart: organization.currentPeriodStart,
-      currentPeriodEnd: organization.currentPeriodEnd,
-      oblienNamespace: organization.oblienNamespace,
-    })
-    .from(organization)
-    .where(eq(organization.id, orgId))
-    .limit(1);
-
-  if (!org) {
-    throw new Error(`Organization not found: ${orgId}`);
-  }
-
-  const tier = org.planTierId as PlanTierId;
-  // Tier baseline — the contractually-granted monthly allowance. This is
-  // separate from the live Oblien quota ceiling (which can include topups
-  // and is the source of truth for current entitlement).
-  const monthlyCreditLimit = PLANS[tier]?.monthlyCredits ?? null;
-
-  // Live Oblien quota is authoritative. It can throw (Oblien unreachable) or
-  // return null (namespace not provisioned / no `compute` row) — in both cases
-  // fall back to the last `credits.usage` snapshot so the dashboard degrades
-  // gracefully instead of 500ing. All three sources speak milli-credits.
-  let quota: Awaited<ReturnType<typeof getQuotaState>> = null;
-  try {
-    quota = await getQuotaState(orgId);
-  } catch (err) {
-    console.warn(
-      `[billing] live quota read failed for org ${orgId}; falling back to usage snapshot: ${safeErrorMessage(err)}`,
-    );
-  }
-
-  const snapshot = await repos.billingUsageSnapshot.findByOrg(orgId).catch(() => null);
-
-  const quotaUsed = quota?.quotaUsed ?? snapshot?.creditsUsed ?? 0;
-  // `quotaLimit === null` (Oblien "unlimited") falls through to the derived
-  // snapshot limit (balance + used), then the tier baseline, then 0.
-  const quotaLimit =
-    quota?.quotaLimit ??
-    (snapshot?.balance != null
-      ? snapshot.balance + (snapshot.creditsUsed ?? 0)
-      : null) ??
-    monthlyCreditLimit ??
-    0;
-  const rawRemaining =
-    quota?.quotaRemaining ??
-    (snapshot?.balance != null ? Math.max(0, snapshot.balance) : Math.max(0, quotaLimit - quotaUsed));
-  // Oblien reports Infinity for an unlimited quota — clamp to the numeric
-  // limit so the dashboard contract stays finite/serializable.
-  const quotaRemaining = Number.isFinite(rawRemaining) ? rawRemaining : quotaLimit;
-
-  // Display-only over-quota flag (Oblien is the real enforcer).
-  const overQuota = quotaLimit > 0 && quotaRemaining <= 0;
+  const namespace = await ensureNamespace(orgId);
+  const { entitlement, tier } = await syncOblienEntitlement(orgId);
+  const [plan, providerSubscription, legacySubscriptions] = await Promise.all([
+    cloudPlan(tier), getOblienBillingApi().getSubscription(namespace), listLiveSubscriptions(orgId),
+  ]);
+  const subscription = presentCloudSubscription(providerSubscription.subscription);
+  const managed = legacySubscriptions.length === 0;
+  const monthlyCreditLimit = plan?.monthlyCredits ?? null;
+  const { quotaLimit, quotaUsed, quotaRemaining } = entitlementQuota(entitlement);
+  const overQuota = quotaRemaining !== null && quotaRemaining <= 0;
 
   // Build time + free subdomains, read through the SAME helpers the plan gate
   // enforces with. This used to compute its own window (the org's billing period,
@@ -151,10 +91,18 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
 
   return {
     tier,
-    status: org.subscriptionStatus,
+    status: entitlement.status,
+    plan,
+    subscription,
+    capabilities: {
+      portal: managed,
+      cancellation: managed && subscription !== null && subscription.status !== "canceled",
+      resumption: managed && subscription !== null && subscription.status !== "canceled" && subscription.cancelAtPeriodEnd,
+      subscriptionChange: managed && env.BILLING_ENABLED,
+    },
     currentPeriod: {
-      start: org.currentPeriodStart ?? null,
-      end: org.currentPeriodEnd ?? null,
+      start: entitlement.periodStart ? new Date(entitlement.periodStart) : null,
+      end: entitlement.periodEnd ? new Date(entitlement.periodEnd) : null,
     },
     balance: {
       total: quotaRemaining,

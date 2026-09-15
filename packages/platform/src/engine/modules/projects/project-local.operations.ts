@@ -30,7 +30,7 @@ export function createProjectLocalDependencies(create: (ctx: ExecutionContext, i
     async scan(_ctx, input) {
       const directory = await localDirectory(input.path);
       const info = await prepareService.resolveProjectInfo({ source: "local", path: directory });
-      return { success: true, path: input.path, ...prepareService.projectInfoToScanResponse(info) };
+      return { success: true, path: input.path, ...prepareService.projectInfoToScanResponse(info, input) };
     },
     async import(ctx, input) {
       const body = { ...input, localPath: await localDirectory(input.localPath) };

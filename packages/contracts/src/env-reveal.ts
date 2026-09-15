@@ -1,4 +1,12 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
+
+/** Request editable source values with the scan instead of fetching them later. */
+export const SourceScanOptionsSchema = Type.Object({
+  includeEnv: Type.Optional(Type.Boolean({
+    description: "Include source environment values for editing. Requires permission to read source contents.",
+  })),
+});
+export type SourceScanOptions = Static<typeof SourceScanOptionsSchema>;
 
 /** Shared selection limits for saved services and source previews. */
 export const MAX_REVEAL_KEYS = 500;

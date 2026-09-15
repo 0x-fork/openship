@@ -36,6 +36,7 @@ const h = vi.hoisted(() => ({
   /** Links from the app being deleted into the projects using it. */
   consumers: [] as Array<{
     id: string;
+    sourceServiceId?: string | null;
     targetProjectId: string;
     envKey: string;
     mode: string;
@@ -210,6 +211,17 @@ describe("teardownProject — the GitHub webhook step vs. repo write access", ()
 });
 
 describe("teardownProject — deleting a linked app unlinks it from the projects using it", () => {
+  it.each([false, true])("preserves a shared service and its consumers before cleanup (recordOnly=%s)", async recordOnly => {
+    h.consumers = [{ id: "shared-link", sourceServiceId: "db", targetProjectId: "consumer", envKey: "DATABASE_URL", mode: "internal" }];
+    const result = await teardownProject(ctx, "p1", { force: true, recordOnly });
+    expect(result.rowDeleted).toBe(false);
+    expect(stepOf(result.steps, "load_project")?.error).toMatch(/Disconnect/);
+    expect(h.collectProjectManifest).not.toHaveBeenCalled();
+    expect(h.executeCleanup).not.toHaveBeenCalled();
+    expect(h.deleteHard).not.toHaveBeenCalled();
+    expect(h.unlinkConsumersOfSource).not.toHaveBeenCalled();
+  });
+
   it("unlinks every consuming project instead of refusing the delete", async () => {
     // `project_connection.sourceProjectId` is ON DELETE RESTRICT, so the links
     // have to go before the row can drop. The consuming projects are NOT touched

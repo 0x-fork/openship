@@ -1906,9 +1906,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
           // Single-app consumer: join the networks of any internally-linked
           // source apps so injected internal hosts (e.g. db:5432) resolve. The
           // compose path does this in compose/deploy.service.ts; this closes the
-          // single-container gap. Advisory — never fails the deploy.
+          // single-container gap. Service links require successful networking.
           await attachLinkedNetworks(project.id, runtime, (m, level) =>
-            logger.log(`${m}\n`, level),
+            logger.log(`${m}\n`, level), cfg.deploymentId,
           );
           return deployed;
         },

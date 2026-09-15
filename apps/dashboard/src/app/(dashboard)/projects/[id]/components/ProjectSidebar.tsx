@@ -25,6 +25,7 @@ import {
   Plus,
   HeartPulse,
   MonitorSmartphone,
+  Waypoints,
 } from "lucide-react";
 
 const TAB_ICONS: Record<
@@ -32,6 +33,7 @@ const TAB_ICONS: Record<
   React.ComponentType<{ className?: string; strokeWidth?: number }>
 > = {
   overview: LayoutDashboard,
+  topology: Waypoints,
   monitoring: Activity,
   services: Layers,
   domains: Globe,

@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18nProvider } from "@/components/i18n-provider";
 import { DEFAULT_CONFIG, type DeploymentConfig } from "@/context/deployment/types";
-import type { PrepareProjectSource } from "@/lib/api/deploy";
 import type EnvironmentVariables from "./EnvironmentVariables";
 import ComposeServices from "./ComposeServices";
 
@@ -12,16 +11,15 @@ const h = vi.hoisted(() => ({
   config: {} as DeploymentConfig,
   update: vi.fn(),
   editors: [] as EditorProps[],
-  prepared: vi.fn(), upload: vi.fn(), stored: vi.fn(),
+  stored: vi.fn(), demoMode: false,
 }));
 vi.mock("@/context/DeploymentContext", () => ({
   useDeployment: () => ({ config: h.config, updateConfig: h.update }),
   useOptionalDeployment: () => undefined,
 }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ baseDomain: "test.invalid" }) }));
-vi.mock("@/lib/api/deploy", () => ({ deployApi: { revealPreparedEnv: h.prepared } }));
-vi.mock("@/lib/api/folder", () => ({ folderApi: { reveal: h.upload } }));
 vi.mock("@/lib/api/services", () => ({ servicesApi: { revealEnv: h.stored } }));
+vi.mock("@/lib/demo-mode", () => ({ useDemoMode: () => h.demoMode }));
 // Mount modal contents during server rendering; the real editor and the card's
 // callback wiring run unchanged. Browser interaction is checked separately.
 vi.mock("@/components/ui/Modal", () => ({ Modal: ({ children }: { children: ReactNode }) => children }));
@@ -34,16 +32,15 @@ const MASK = "••••••••";
 beforeEach(() => {
   vi.clearAllMocks();
   h.editors.length = 0;
+  h.demoMode = false;
   h.config = {
     ...structuredClone(DEFAULT_CONFIG), projectName: "app", owner: "acme", repo: "app",
     projectType: "services", serviceDeploymentMode: "services",
     services: [
-      { name: "db", image: "postgres:16", ports: [], dependsOn: [], volumes: [], environment: { POSTGRES_PASSWORD: MASK } },
-      { name: "worker", image: "node:22", ports: [], dependsOn: [], volumes: [], environment: { API_TOKEN: MASK } },
+      { name: "db", image: "postgres:16", ports: [], dependsOn: [], volumes: [], environment: { POSTGRES_PASSWORD: "source-password" } },
+      { name: "worker", image: "node:22", ports: [], dependsOn: [], volumes: [], environment: { API_TOKEN: "source-token" } },
     ],
   };
-  h.prepared.mockResolvedValue({ environment: { POSTGRES_PASSWORD: "source-secret" } });
-  h.upload.mockResolvedValue({ environment: { POSTGRES_PASSWORD: "upload-secret" } });
   h.stored.mockResolvedValue({ environment: { POSTGRES_PASSWORD: "stored-secret" } });
 });
 
@@ -54,41 +51,38 @@ function render() {
   return { html, editor: editor! };
 }
 
-describe("Compose environment editor sources", () => {
-  it.each<PrepareProjectSource>([
-    { owner: "acme", repo: "app", branch: "preview", composePath: "deploy/stack.yml", env: { PASSWORD: "typed" } },
-    { source: "local", path: "/work/app", composePath: "deploy/stack.yml" },
-  ])("gives a first scan reveal controls and scopes its request to one service", async source => {
-    h.config.preparedSource = source;
+describe("shared Compose environment editor", () => {
+  it.each(["git", "local", "upload"])("shows %s scan values immediately without a reveal lookup", source => {
+    if (source === "local") h.config.localPath = "/work/app";
+    if (source === "upload") h.config.uploadSessionId = "upload-session";
     const { html, editor } = render();
-    expect(html.match(/aria-label="Show value"/g)).toHaveLength(2);
-    expect(editor.revealOnOpen).toBe(true);
-    expect(editor.onReveal).toBeTypeOf("function");
-    expect(await editor.onReveal!(["POSTGRES_PASSWORD"])).toEqual({ POSTGRES_PASSWORD: "source-secret" });
-    expect(h.prepared).toHaveBeenCalledExactlyOnceWith(source, "db", ["POSTGRES_PASSWORD"]);
+    expect(html.match(/aria-label="Hide value"/g)).toHaveLength(2);
+    expect(editor.envVars).toContainEqual({ key: "POSTGRES_PASSWORD", value: "source-password", visible: true });
+    expect(editor.onReveal).toBeUndefined();
+    expect(html).not.toContain("blur-[5px]");
     expect(h.stored).not.toHaveBeenCalled();
-    expect(h.upload).not.toHaveBeenCalled();
-    expect(h.config.services[0]!.environment.POSTGRES_PASSWORD).toBe(MASK);
     expect(h.update).not.toHaveBeenCalled();
   });
 
-  it("keeps an uploaded scan as the reveal source when editing an existing project", async () => {
-    h.config.uploadSessionId = "upload-session";
-    h.config.projectId = "project-id";
-    h.config.services[0]!.serviceId = "service-id";
-    const { editor } = render();
-    expect(await editor.onReveal!(["POSTGRES_PASSWORD"])).toEqual({ POSTGRES_PASSWORD: "upload-secret" });
-    expect(h.upload).toHaveBeenCalledExactlyOnceWith("upload-session", "db", ["POSTGRES_PASSWORD"]);
+  it("blurs every source value in demo mode without replacing or fetching values", () => {
+    h.demoMode = true;
+    const { html, editor } = render();
+    expect(html.match(/blur-\[5px\] select-none/g)).toHaveLength(2);
+    expect(editor.envVars?.[0]?.value).toBe("source-password");
+    expect(h.config.services[0]!.environment.POSTGRES_PASSWORD).toBe("source-password");
+    expect(h.update).not.toHaveBeenCalled();
     expect(h.stored).not.toHaveBeenCalled();
-    expect(h.prepared).not.toHaveBeenCalled();
   });
 
-  it("uses saved values when opening a persisted service without a fresh scan", async () => {
+  it("reveals a saved row with the shared service lookup and preserves its stored-value sentinel", async () => {
     h.config.projectId = "project-id";
     h.config.services[0]!.serviceId = "service-id";
+    h.config.services[0]!.environment.POSTGRES_PASSWORD = MASK;
     const { editor } = render();
+    expect(h.stored).not.toHaveBeenCalled();
     expect(await editor.onReveal!(["POSTGRES_PASSWORD"])).toEqual({ POSTGRES_PASSWORD: "stored-secret" });
-    expect(h.stored).toHaveBeenCalledExactlyOnceWith("project-id", "service-id", ["POSTGRES_PASSWORD"]);
-    expect(h.prepared).not.toHaveBeenCalled();
+    expect(h.stored).toHaveBeenCalledExactlyOnceWith("project-id", "service-id", ["POSTGRES_PASSWORD"], undefined);
+    expect(h.config.services[0]!.environment.POSTGRES_PASSWORD).toBe(MASK);
+    expect(h.update).not.toHaveBeenCalled();
   });
 });

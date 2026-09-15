@@ -13,12 +13,12 @@
   },
   "topupsComingSoon": "عمليات شحن الأرصدة لمرة واحدة قادمة قريبًا — ستتمكن هنا من إضافة أرصدة فوق حصتك الشهرية.",
   "header": {
-    "credits": "الحوسبة",
-    "creditsSuffix": "of {limit}",
-    "overQuota": "Over quota",
+    "credits": "الرصيد",
+    "creditsSuffix": "من {limit}",
+    "overQuota": "تجاوز الحصة",
     "bandwidth": "Bandwidth",
-    "bandwidthNote": "combined in + out",
-    "build": "Build time",
+    "bandwidthNote": "إجمالي الوارد والصادر",
+    "build": "وقت البناء",
     "min": "min",
     "capacity": "Capacity",
     "workspaces": "workspaces",
@@ -35,9 +35,10 @@
     "invoices": "الفواتير"
   },
   "portal": {
-    "openButton": "فتح بوابة Stripe",
+    "openButton": "فتح بوابة الفوترة",
     "errorMissingUrl": "رابط البوابة مفقود من الاستجابة",
-    "errorOpenFailed": "تعذّر فتح بوابة Stripe"
+    "errorOpenFailed": "تعذّر فتح بوابة الفوترة",
+    "supportButton": "تواصل مع الدعم"
   },
   "unavailable": {
     "notConnected": {
@@ -67,7 +68,10 @@
     "loadError": "تعذّر تحميل الخطط",
     "genericError": "حدث خطأ ما",
     "tryAgain": "حاول مرة أخرى",
-    "checkoutError": "تعذّر بدء عملية الدفع"
+    "checkoutError": "تعذّر بدء عملية الدفع",
+    "changeViaSupport": "تواصل مع الدعم لتغيير اشتراكك الحالي أو إلغائه.",
+    "billingUnavailable": "عمليات الشراء غير متاحة لهذا الحساب بعد.",
+    "replacementNotice": "تغيير الخطة أو فترة الفوترة يبدأ دورة جديدة بالسعر الكامل المحدد بعد الدفع. لا تُحسب فروقات المدة تلقائيًا."
   },
   "pricing": {
     "custom": "مخصّص",
@@ -75,26 +79,31 @@
     "currentPlan": "الخطة الحالية",
     "contactSales": "تواصل مع المبيعات",
     "freeForever": "مجاني للأبد",
-    "upgrade": "ترقية"
+    "upgrade": "ترقية",
+    "billingInterval": "دورة الفوترة",
+    "monthly": "شهري",
+    "annual": "سنوي",
+    "billedAnnually": "تُدفع سنوياً",
+    "comingSoon": "قريبًا"
   },
   "topups": {
     "loadError": "تعذّر تحميل باقات الشحن",
     "title": "شحن الأرصدة",
-    "description": "باقات أرصدة لمرة واحدة تُحصّل عبر Stripe. الأرصدة لا تنتهي صلاحيتها وتُضاف فوق حصتك الشهرية.",
+    "description": "باقات رصيد تُضاف إلى رصيدك السحابي بعد الدفع.",
     "tryAgain": "حاول مرة أخرى",
-    "credits": "دقيقة حوسبة",
+    "credits": "وحدة رصيد",
     "redirecting": "جارٍ إعادة التوجيه…",
     "buy": "شراء",
     "empty": "لا توجد باقات شحن متاحة حاليًا.",
     "receiptsTitle": "عمليات الشحن الأخيرة",
-    "receiptsDescription": "تُدار الإيصالات في Stripe — افتح بوابة الفوترة لعرض سجل فواتيرك وتنزيل الإيصالات.",
+    "receiptsDescription": "اعرض أو اطلب إيصالات مشتريات الرصيد.",
     "opening": "جارٍ الفتح…",
-    "openPortal": "فتح بوابة Stripe",
+    "openPortal": "فتح بوابة الفوترة",
     "checkoutError": "تعذّر بدء عملية الدفع",
     "portalError": "تعذّر فتح بوابة الفوترة"
   },
   "overview": {
-    "creditsLeft": "دقيقة حوسبة متبقية",
+    "creditsLeft": "وحدة رصيد متبقية",
     "planLabel": "خطة {name}",
     "usedThisPeriod": "المُستخدَم هذه الفترة",
     "resets": "التجديد",
@@ -106,12 +115,12 @@
     "viewFullUsage": "عرض الاستخدام الكامل",
     "noUsageYet": "لا يوجد استخدام بعد",
     "usageError": "تعذّر تحميل الاستخدام",
-    "needMoreCredits": "بحاجة إلى مزيد من دقائق الحوسبة؟",
+    "needMoreCredits": "بحاجة إلى مزيد من وحدات الرصيد؟",
     "oneTimeTopups": "شحن لمرة واحدة، دون تغيير الاشتراك",
     "seeAllPacks": "عرض كل الباقات",
     "packsError": "تعذّر تحميل الباقات",
     "noPacks": "لا توجد باقات شحن متاحة.",
-    "creditsAmount": "{n} دقيقة حوسبة",
+    "creditsAmount": "{n} وحدة رصيد",
     "oneTime": "{price} لمرة واحدة",
     "buy": "شراء",
     "checkoutError": "تعذّر بدء عملية الدفع"
@@ -122,7 +131,7 @@
       "balance": "الرصيد",
       "balanceSuffix": "من أصل {limit} رصيد",
       "consumed": "المُستهلَك هذه الفترة",
-      "credits": "دقيقة حوسبة",
+      "credits": "وحدة رصيد",
       "burnRate": "معدل الاستهلاك",
       "burnRateSuffix": "رصيد/يوم (آخر 7 أيام)",
       "projected": "التوقع في نهاية الفترة",
@@ -141,7 +150,7 @@
       "subtitle": "الأرصدة موزّعة تناسبيًا على استخدام الموارد المقيس في النطاق المحدد.",
       "resource": "المورد",
       "units": "الوحدات",
-      "credits": "دقائق الحوسبة",
+      "credits": "وحدات الرصيد",
       "percentOfTotal": "٪ من الإجمالي",
       "loading": "جارٍ التحميل…",
       "empty": "لا يوجد استخدام في النطاق المحدد."
@@ -201,14 +210,36 @@
       "unpaid": "غير مدفوع",
       "paused": "متوقّف مؤقتًا"
     },
-    "includedTitle": "ما يشمله"
+    "includedTitle": "ما يشمله",
+    "perYear": "${price}/سنة"
   },
   "paymentPanel": {
     "title": "طريقة الدفع",
-    "description": "تُدار البطاقات والحسابات البنكية وتفاصيل الفوترة في بوابة عملاء Stripe. افتح البوابة لإضافة طرق الدفع أو إزالتها أو تحديثها."
+    "description": "إدارة طرق الدفع وتفاصيل الفوترة."
   },
   "invoicesPanel": {
     "title": "الفواتير",
-    "description": "تتوفر الفواتير والإيصالات في بوابة عملاء Stripe. افتح البوابة لعرض سجل الفوترة وتنزيل الفواتير بصيغة PDF."
+    "description": "عرض أو طلب سجل الفوترة والفواتير."
+  },
+  "checkout": {
+    "checking": "جارٍ تحديث خطة Cloud والرصيد. قد تستغرق معالجة الدفع بعض الوقت.",
+    "active": "خطة Cloud الخاصة بك نشطة.",
+    "pending": "قد يكون الدفع قيد المعالجة. حدّث الصفحة للتحقق من الخطة والرصيد، وتواصل مع الدعم إذا لم تظهر دفعة مكتملة.",
+    "support": "تواصل مع الدعم"
+  },
+  "subscription": {
+    "title": "الاشتراك",
+    "renewsOn": "يتجدد في {date}",
+    "endsOn": "تم إيقاف التجديد. ينتهي اشتراكك في {date}.",
+    "endsAtPeriodEnd": "تم إيقاف التجديد. ينتهي اشتراكك بنهاية الفترة المدفوعة.",
+    "renewalEnabled": "التجديد التلقائي مفعّل.",
+    "ended": "انتهى الاشتراك. اختر خطة للاشتراك مجددًا.",
+    "billedMonthly": "فوترة شهرية",
+    "cancel": "إلغاء الاشتراك",
+    "resume": "استئناف التجديد",
+    "cancelNotice": "سيتوقف التجديد بنهاية الفترة المدفوعة. يبقى اشتراكك قائمًا حتى ذلك الوقت.",
+    "confirmCancel": "إيقاف التجديد",
+    "keepPlan": "الاحتفاظ بالاشتراك",
+    "error": "تعذّر تحديث اشتراكك. حاول مجددًا."
   }
 }

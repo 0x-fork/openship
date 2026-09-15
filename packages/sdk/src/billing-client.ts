@@ -10,6 +10,7 @@ export function createRemoteBillingOperations(http: HttpClient): BillingOperatio
       getSubscription: { method: "GET", path: () => "/billing/subscription", envelope: "data" },
       createSubscription: { method: "POST", path: () => "/billing/subscription", envelope: "data" },
       cancelSubscription: { method: "POST", path: () => "/billing/cancel", envelope: "data" },
+      resumeSubscription: { method: "POST", path: () => "/billing/resume", envelope: "data" },
       createTopup: { method: "POST", path: () => "/billing/topup", envelope: "data" },
       listTopupPacks: { method: "GET", path: () => "/billing/topup-packs", response: body => normalizeBillingCreditPacks(isRecord(body) ? body.data : undefined) },
       createPortal: { method: "POST", path: () => "/billing/portal", envelope: "data" },

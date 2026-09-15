@@ -1,34 +1,35 @@
 "use client";
 
-import { memo, useEffect, useId, useState, type ReactNode } from "react";
+import { memo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   ChevronDown,
-  Info,
-  Minus,
+  ChevronUp,
   Plus,
   Trash2,
   Unplug,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { CustomSelect } from "@/components/ui/CustomSelect";
-import { Switch } from "@/components/ui/Switch";
 import { Tabs } from "@/components/ui/Tabs";
 import { ResourceIcon } from "./ResourceIcon";
+import { Note, NumberField, Section, SelectField, TextField, ToggleField } from "./InspectorFields";
+import { clusterSlotRange, getClusterTopology } from "./clusterTopology";
 import {
   ALGORITHMS,
   APPLICATION_TYPES,
-  CLUSTER_ENGINES,
+  DATABASE_CATALOG,
+  DATABASE_ENGINES,
+  DATABASE_MODES,
   MAX_INSTANCES,
   REGIONS,
   RESOURCE_META,
+  RESOURCE_CATALOG,
   connectionError,
-  isClusterKind,
+  isClusterResource,
+  isDatabaseResource,
   instanceCount,
-  redisSlotRanges,
   serviceInstances,
   type ScaleDraft,
   type ScaleResource,
@@ -46,201 +47,8 @@ interface InspectorProps {
   onRemoveNodes: (ids: string[]) => void;
   onRemoveEdges: (ids: string[]) => void;
   onClose: () => void;
-}
-
-function Section({
-  title,
-  children,
-  description,
-}: {
-  title: string;
-  children: ReactNode;
-  description?: string;
-}) {
-  return (
-    <section className="space-y-4">
-      <div>
-        <h3 className="text-sm font-medium text-foreground">{title}</h3>
-        {description && (
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
-        )}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Note({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-      <Info className="mt-0.5 size-3.5 shrink-0" />
-      <p>{children}</p>
-    </div>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  path = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  path?: boolean;
-}) {
-  const id = useId();
-  const [text, setText] = useState(value);
-  const [error, setError] = useState("");
-  useEffect(() => setText(value), [value]);
-  return (
-    <div className="space-y-2">
-      <label className="text-sm text-muted-foreground" htmlFor={id}>
-        {label}
-      </label>
-      <Input
-        id={id}
-        value={text}
-        maxLength={path ? 200 : 60}
-        aria-invalid={!!error}
-        aria-describedby={error ? `${id}-error` : undefined}
-        onChange={(event) => {
-          setText(event.target.value);
-          setError("");
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-        }}
-        onBlur={() => {
-          const next = text.trim();
-          if (!next || (path && !next.startsWith("/"))) {
-            setText(value);
-            setError(path ? "Use a path starting with /." : "A name is required.");
-          } else {
-            setText(next);
-            onChange(next);
-          }
-        }}
-      />
-      {error && (
-        <p className="text-xs text-danger" role="alert" id={`${id}-error`}>
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-  step = 1,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-  step?: number;
-}) {
-  const id = useId();
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
-  return (
-    <div className="space-y-2">
-      <label htmlFor={id} className="text-sm text-muted-foreground">
-        {label}
-      </label>
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="size-10 shrink-0"
-          aria-label={`Decrease ${label.toLowerCase()}`}
-          disabled={value <= min}
-          onClick={() => onChange(Math.max(min, value - step))}
-        >
-          <Minus />
-        </Button>
-        <Input
-          id={id}
-          type="number"
-          min={min}
-          max={max}
-          step={step}
-          value={text}
-          className="h-10 min-w-0 text-center tabular-nums"
-          onChange={(event) => {
-            const next = event.target.value;
-            setText(next);
-            const number = Number(next);
-            if (next && Number.isInteger(number) && number >= min && number <= max)
-              onChange(number);
-          }}
-          onBlur={() => setText(String(value))}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="size-10 shrink-0"
-          aria-label={`Increase ${label.toLowerCase()}`}
-          disabled={value >= max}
-          onClick={() => onChange(Math.min(max, value + step))}
-        >
-          <Plus />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <fieldset className="min-w-0">
-      <legend className="mb-2 text-sm text-muted-foreground">{label}</legend>
-      <CustomSelect value={value} options={options} onChange={onChange} />
-    </fieldset>
-  );
-}
-
-function ToggleField({
-  label,
-  description,
-  checked,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <div>
-        <p className="text-sm text-foreground/80">{label}</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
-      </div>
-      <Switch checked={checked} onChange={onChange} disabled={disabled} ariaLabel={label} />
-    </div>
-  );
+  onMinimize?: () => void;
+  onOpenCluster?: (id: string) => void;
 }
 
 function ApplicationSettings({
@@ -319,8 +127,8 @@ function ApplicationSettings({
             <NumberField
               label="Target CPU (%)"
               value={service.targetCpu}
-              min={20}
-              max={90}
+              min={RESOURCE_CATALOG.service.limits.targetCpu.min}
+              max={RESOURCE_CATALOG.service.limits.targetCpu.max}
               step={5}
               onChange={(targetCpu) => onUpdateService({ ...service, targetCpu })}
             />
@@ -328,8 +136,8 @@ function ApplicationSettings({
           </>
         )}
         <p className="text-xs leading-relaxed text-muted-foreground">
-          New instances inherit the application’s gateway routes and database connections. Keep
-          application state outside these instances.
+          Connect each new instance to its gateways and databases. Keep application state outside
+          these instances.
         </p>
       </Section>
       <Section title="Per-instance resources">
@@ -337,13 +145,16 @@ function ApplicationSettings({
           <SelectField
             label="vCPU"
             value={String(service.cpu)}
-            options={[0.5, 1, 2, 4].map((cpu) => ({ value: String(cpu), label: `${cpu} vCPU` }))}
+            options={RESOURCE_CATALOG.service.limits.cpu.map((cpu) => ({
+              value: String(cpu),
+              label: `${cpu} vCPU`,
+            }))}
             onChange={(cpu) => onUpdateService({ ...service, cpu: Number(cpu) })}
           />
           <SelectField
             label="Memory"
             value={String(service.memory)}
-            options={[512, 1024, 2048, 4096, 8192].map((memory) => ({
+            options={RESOURCE_CATALOG.service.limits.memory.map((memory) => ({
               value: String(memory),
               label: `${memory / 1024} GB`,
             }))}
@@ -373,39 +184,89 @@ function Configuration({
     resource.kind === "service"
       ? draft.services.find((entry) => entry.id === resource.serviceId)
       : undefined;
-  const cluster = isClusterKind(resource.kind);
+  const cluster = isClusterResource(resource);
+  const database = isDatabaseResource(resource);
   return (
     <>
       {service && (
         <ApplicationSettings service={service} draft={draft} onUpdateService={onUpdateService} />
       )}
       <Section
-        title={resource.kind === "service" ? "Instance placement" : cluster ? "Cluster" : "General"}
+        title={
+          resource.kind === "service"
+            ? "Instance placement"
+            : database
+              ? cluster
+                ? "Cluster"
+                : "Database"
+              : "General"
+        }
       >
-        {isClusterKind(resource.kind) && (
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Engine</span>
-            <span className="text-foreground/80">{CLUSTER_ENGINES[resource.kind]}</span>
-          </div>
+        {database && (
+          <>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Engine</span>
+              <span className="text-foreground/80">{DATABASE_ENGINES[resource.kind]}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Deployment</span>
+              <span className="text-foreground/80">{DATABASE_MODES[resource.mode]}</span>
+            </div>
+          </>
         )}
         {resource.kind !== "service" && (
           <TextField
-            label={cluster ? "Cluster name" : "Resource name"}
+            label={cluster ? "Cluster name" : database ? "Database name" : "Resource name"}
             value={resource.name}
             onChange={(name) => onUpdate({ ...resource, name })}
           />
         )}
         <SelectField
-          label="Region"
+          label={cluster ? "Default region" : "Region"}
           value={resource.region}
           options={REGIONS.map((region) => ({ value: region.id, label: region.name }))}
           onChange={(region) => onUpdate({ ...resource, region })}
         />
       </Section>
+      {database && resource.mode === "standalone" && (
+        <Section title="Instance resources">
+          <div className="grid grid-cols-2 gap-3">
+            <SelectField
+              label="vCPU"
+              value={String(resource.cpu)}
+              options={DATABASE_CATALOG[resource.kind].deployments.standalone.limits.cpu.map(
+                (cpu) => ({ value: String(cpu), label: `${cpu} vCPU` }),
+              )}
+              onChange={(cpu) => onUpdate({ ...resource, cpu: Number(cpu) })}
+            />
+            <SelectField
+              label="Memory"
+              value={String(resource.memory)}
+              options={DATABASE_CATALOG[resource.kind].deployments.standalone.limits.memory.map(
+                (memory) => ({
+                  value: String(memory),
+                  label: `${memory / 1024} GB`,
+                }),
+              )}
+              onChange={(memory) => onUpdate({ ...resource, memory: Number(memory) })}
+            />
+          </div>
+          {resource.kind === "postgres" && (
+            <NumberField
+              label="Storage (GB)"
+              value={resource.storage}
+              min={DATABASE_CATALOG.postgres.deployments.standalone.limits.storage.min}
+              max={DATABASE_CATALOG.postgres.deployments.standalone.limits.storage.max}
+              step={10}
+              onChange={(storage) => onUpdate({ ...resource, storage })}
+            />
+          )}
+        </Section>
+      )}
       {resource.kind === "edge" && (
         <Section
           title="OpenShip Edge"
-          description="One OpenResty + Lua gateway handles ingress, TLS, API routing, and load balancing."
+          description="Ingress, TLS, API routing, and load balancing for your applications."
         >
           <ToggleField
             label="TLS termination"
@@ -430,8 +291,8 @@ function Configuration({
           <NumberField
             label="Health check interval (seconds)"
             value={resource.healthInterval}
-            min={5}
-            max={120}
+            min={RESOURCE_CATALOG.edge.limits.healthInterval.min}
+            max={RESOURCE_CATALOG.edge.limits.healthInterval.max}
             step={5}
             onChange={(healthInterval) => onUpdate({ ...resource, healthInterval })}
           />
@@ -441,7 +302,7 @@ function Configuration({
           </Note>
         </Section>
       )}
-      {resource.kind === "postgres" && (
+      {cluster && resource.kind === "postgres" && (
         <Section
           title="Replication"
           description="One writable primary with read replicas, not multi-primary or write sharding."
@@ -453,8 +314,8 @@ function Configuration({
           <NumberField
             label="Read replicas"
             value={resource.replicas}
-            min={0}
-            max={8}
+            min={DATABASE_CATALOG.postgres.deployments.cluster.limits.replicas.min}
+            max={DATABASE_CATALOG.postgres.deployments.cluster.limits.replicas.max}
             onChange={(replicas) =>
               onUpdate({ ...resource, replicas, failover: replicas > 0 && resource.failover })
             }
@@ -476,7 +337,7 @@ function Configuration({
           </Note>
         </Section>
       )}
-      {resource.kind === "redis" && (
+      {cluster && resource.kind === "redis" && (
         <Section
           title="Shards & replicas"
           description="Replicas are planned for every primary shard."
@@ -484,17 +345,29 @@ function Configuration({
           <NumberField
             label="Primary shards"
             value={resource.shards}
-            min={3}
-            max={12}
+            min={DATABASE_CATALOG.redis.deployments.cluster.limits.shards.min}
+            max={DATABASE_CATALOG.redis.deployments.cluster.limits.shards.max}
             onChange={(shards) => onUpdate({ ...resource, shards })}
           />
           <SelectField
             label="Replicas per shard"
             value={String(resource.replicasPerShard)}
-            options={[
-              { value: "1", label: "1 replica" },
-              { value: "2", label: "2 replicas" },
-            ]}
+            options={Array.from(
+              {
+                length:
+                  DATABASE_CATALOG.redis.deployments.cluster.limits.replicasPerShard.max -
+                  DATABASE_CATALOG.redis.deployments.cluster.limits.replicasPerShard.min +
+                  1,
+              },
+              (_, index) => {
+                const count =
+                  DATABASE_CATALOG.redis.deployments.cluster.limits.replicasPerShard.min + index;
+                return {
+                  value: String(count),
+                  label: `${count} ${count === 1 ? "replica" : "replicas"}`,
+                };
+              },
+            )}
             onChange={(replicas) => onUpdate({ ...resource, replicasPerShard: Number(replicas) })}
           />
           <div className="rounded-xl bg-muted/40 p-3">
@@ -520,14 +393,17 @@ function Configuration({
           </Button>
           {showSlots && (
             <div className="divide-y divide-border/50">
-              {redisSlotRanges(resource.shards).map((range) => (
-                <div key={range.shard} className="flex justify-between py-2 text-xs">
-                  <span className="text-muted-foreground">Shard {range.shard}</span>
-                  <code className="text-foreground/70">
-                    {range.start}–{range.end}
-                  </code>
-                </div>
-              ))}
+              {getClusterTopology(resource)
+                .nodes.filter((node) => node.role === "primary")
+                .map((member) => (
+                  <div key={member.id} className="flex justify-between py-2 text-xs">
+                    <span className="text-muted-foreground">Shard {member.shard}</span>
+                    <code className="text-foreground/70">
+                      {clusterSlotRange(resource, member)?.start}–
+                      {clusterSlotRange(resource, member)?.end}
+                    </code>
+                  </div>
+                ))}
             </div>
           )}
         </Section>
@@ -550,20 +426,13 @@ function Connections({
   const connections = draft.edges.filter(
     (edge) => edge.source === resource.id || edge.target === resource.id,
   );
-  const seen = new Set<string>();
-  const targets = draft.nodes.filter((target) => {
-    if (connectionError(draft, resource.id, target.id)) return false;
-    const key = target.kind === "service" ? target.serviceId : target.id;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const targets = draft.nodes.filter((target) => !connectionError(draft, resource.id, target.id));
   const validTarget = targets.some((target) => target.id === targetId);
   return (
     <>
       <Section
         title="Connections"
-        description="Application routes are shared by every instance. Adding or removing a route updates them all."
+        description="Each connection belongs to these two nodes. Select one to edit its settings."
       >
         {connections.length ? (
           <div className="divide-y divide-border/50">
@@ -582,18 +451,20 @@ function Connections({
                   )}
                   <button
                     type="button"
-                    className="min-w-0 flex-1 text-start"
-                    onClick={() => onSelect({ type: "node", id: other.id })}
+                    className="min-w-0 flex-1 rounded text-start focus-visible:outline-2 focus-visible:outline-ring"
+                    aria-label={`Edit connection ${incoming ? "from" : "to"} ${other.name}`}
+                    onClick={() => onSelect({ type: "edge", id: edge.id })}
                   >
                     <p className="truncate text-sm text-foreground/80">{other.name}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {incoming ? "Incoming" : "Outgoing"}
+                      {edge.enabled === false ? " · Disabled" : ""}
                     </p>
                   </button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    title="Remove shared route"
+                    title="Remove connection"
                     aria-label={`Disconnect ${other.name}`}
                     onClick={() => onRemoveEdges([edge.id])}
                   >
@@ -608,16 +479,13 @@ function Connections({
         )}
       </Section>
       {resource.kind !== "postgres" && resource.kind !== "redis" && (
-        <Section title="Add a route">
+        <Section title="Add a connection">
           <SelectField
             label="Destination"
             value={validTarget ? targetId : ""}
             options={targets.map((target) => ({
               value: target.id,
-              label:
-                target.kind === "service"
-                  ? `${draft.services.find((service) => service.id === target.serviceId)?.name} · All instances`
-                  : target.name,
+              label: target.name,
             }))}
             onChange={setTargetId}
           />
@@ -632,9 +500,6 @@ function Connections({
           >
             <Plus />
             Connect
-            {targets.find((target) => target.id === targetId)?.kind === "service"
-              ? " application"
-              : " resource"}
           </Button>
           {!targets.length && (
             <p className="text-xs leading-relaxed text-muted-foreground">
@@ -666,6 +531,16 @@ function ResourceInspector({ resource, ...props }: InspectorProps & { resource: 
         className="px-1"
       />
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain p-5">
+        {isClusterResource(resource) && props.onOpenCluster && (
+          <Button
+            variant="outline"
+            className="w-full justify-between"
+            onClick={() => props.onOpenCluster?.(resource.id)}
+          >
+            Open cluster
+            <ArrowUpRight />
+          </Button>
+        )}
         {tab === "configuration" ? (
           <Configuration resource={resource} {...props} />
         ) : (
@@ -717,12 +592,33 @@ export default memo(function ScaleInspector(props: InspectorProps) {
           <p className="mt-1 text-xs text-muted-foreground">
             {resource.kind === "service"
               ? "Application instance"
-              : RESOURCE_META[resource.kind].title}
+              : isClusterResource(resource)
+                ? `${DATABASE_ENGINES[resource.kind]} cluster`
+                : RESOURCE_META[resource.kind].title}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={props.onClose} aria-label="Close inspector">
-          <X />
-        </Button>
+        <div className="flex shrink-0 items-center">
+          {props.onMinimize && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={props.onMinimize}
+              aria-label="Minimize inspector"
+              title="Minimize panel (Esc)"
+            >
+              <ChevronUp />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={props.onClose}
+            aria-label="Close inspector"
+            title="Close panel"
+          >
+            <X />
+          </Button>
+        </div>
       </div>
       <ResourceInspector key={resource.id} resource={resource} {...props} />
     </aside>

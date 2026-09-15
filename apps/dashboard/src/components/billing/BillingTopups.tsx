@@ -100,7 +100,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
     setBuyingPackId(packId);
     setError(null);
     try {
-      const res = await api.post<CheckoutResponse>("billing/topup", { packId });
+      const res = await api.post<CheckoutResponse>("billing/topup", { packId, idempotencyKey: crypto.randomUUID() });
       window.location.href = res.data.checkoutUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.topups.checkoutError);
@@ -241,7 +241,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
             </div>
           </div>
 
-          <button
+          {state.capabilities?.portal === true ? <button
             onClick={handleOpenPortal}
             disabled={openingPortal}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
@@ -257,7 +257,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
                 <ExternalLink className="size-3.5" />
               </>
             )}
-          </button>
+          </button> : <a href="mailto:support@openship.io" className="text-sm font-medium text-primary hover:underline">{t.billing.portal.supportButton}</a>}
         </div>
       </div>
     </div>

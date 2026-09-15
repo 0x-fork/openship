@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { getClusterTopology } from "./clusterTopology";
 import {
   ALGORITHMS,
-  CLUSTER_KINDS,
+  DATABASE_KINDS,
   MAX_CONNECTIONS,
   MAX_RESOURCES,
   RESOURCE_KINDS,
   addService,
+  configureConnection,
   configureService,
   connectResources,
   connectionError,
@@ -15,8 +17,10 @@ import {
   createService,
   draftReducer,
   draftStorageKey,
+  getConnectionSettings,
   instanceCount,
-  isClusterKind,
+  isClusterResource,
+  isDatabaseKind,
   layoutDraft,
   parseDraft,
   redisSlotRanges,
@@ -25,6 +29,7 @@ import {
   reviewDraft,
   serviceInstances,
   summarizeDraft,
+  type ConnectionOptions,
   type DraftHistory,
   type ScaleDraft,
 } from "./topology";
@@ -33,10 +38,10 @@ const empty = (): ScaleDraft => ({ version: 2, services: [], nodes: [], edges: [
 const history = (): DraftHistory => ({ present: createExampleDraft(), past: [], future: [] });
 
 describe("OpenShip Edge topology", () => {
-  it("classifies PostgreSQL and Redis as cluster engines", () => {
-    expect(RESOURCE_KINDS.filter(isClusterKind)).toEqual(CLUSTER_KINDS);
-    expect(isClusterKind("edge")).toBe(false);
-    expect(isClusterKind("service")).toBe(false);
+  it("classifies PostgreSQL and Redis as database engines", () => {
+    expect(RESOURCE_KINDS.filter(isDatabaseKind)).toEqual(DATABASE_KINDS);
+    expect(isDatabaseKind("edge")).toBe(false);
+    expect(isDatabaseKind("service")).toBe(false);
   });
   it("has one gateway type, not separate edge and load-balancer modules", () => {
     expect(RESOURCE_KINDS).toEqual(["edge", "service", "postgres", "redis"]);
@@ -114,18 +119,19 @@ describe("OpenShip Edge topology", () => {
     const draft = createExampleDraft();
     const resource = draft.nodes[0];
     if (resource.kind !== "edge") throw new Error("Expected a gateway");
-    expect(connectionLabel(draft, { ...resource, tls: false })).toBe("HTTP · Edge route");
+    expect(connectionLabel(draft, { ...resource, tls: false })).toBe("HTTP · 80");
+    expect(connectionLabel(draft, resource)).toBe("HTTPS · 443");
     const changed = configureService(draft, { ...draft.services[0], port: 8080 });
     expect(connectionLabel(changed, serviceInstances(changed, "api")[0])).toBe("HTTP · 8080");
   });
 });
 
 describe("horizontal service scaling", () => {
-  it("adds real nodes and inherits every gateway and data-store route", () => {
+  it("adds unconnected instances while preserving the existing nodes and connections", () => {
     const original = createExampleDraft();
     const next = configureService(original, original.services[0], 5);
     expect(serviceInstances(next, "api")).toHaveLength(5);
-    expect(next.edges).toHaveLength(20);
+    expect(next.edges).toEqual(original.edges);
     expect(next.nodes).toHaveLength(9);
     expect(original.nodes).toHaveLength(7);
     expect(original.edges).toHaveLength(12);
@@ -203,7 +209,7 @@ describe("horizontal service scaling", () => {
     ).toThrow("bounds");
   });
 
-  it("checks both node and connection budgets before scaling", () => {
+  it("checks node capacity when scaling and connection capacity when wiring nodes", () => {
     const draft = createExampleDraft();
     const full = {
       ...draft,
@@ -216,36 +222,38 @@ describe("horizontal service scaling", () => {
     };
     expect(() => configureService(full, draft.services[0], 4)).toThrow("limit");
     expect(() => addService(full, createService("extra-service"))).toThrow("limit");
-    const connected = {
-      ...draft,
-      edges: [
-        ...draft.edges,
-        ...Array.from({ length: MAX_CONNECTIONS - draft.edges.length }, (_entry, index) => ({
-          id: `extra-${index}`,
-          source: "edge-us",
-          target: "edge-eu",
-        })),
-      ],
-    };
-    expect(() => configureService(connected, draft.services[0], 4)).toThrow("connection limit");
+    const gateways = Array.from({ length: 12 }, (_, index) =>
+      createResource("edge", `gateway-${index}`),
+    );
+    let connected = addService({ ...empty(), nodes: gateways }, createService("api", "api"), 15);
+    for (const gateway of gateways)
+      for (const instance of serviceInstances(connected, "api"))
+        connected = connectResources(connected, gateway.id, instance.id);
+    expect(connected.edges).toHaveLength(MAX_CONNECTIONS);
+    expect(parseDraft(JSON.stringify(connected))).toEqual(connected);
+    expect(configureService(connected, connected.services[0], 16).edges).toEqual(connected.edges);
+    expect(() => connectResources(connected, "gateway-0", "gateway-1")).toThrow("connection limit");
   });
 });
 
-describe("shared application routing", () => {
-  it("fans gateway and database connections out to all replicas", () => {
+describe("individual node connections", () => {
+  it("connects and disconnects exactly the selected pair without changing sibling instances", () => {
     const draft = createExampleDraft();
     const first = draft.edges.find((edge) => edge.source === "edge-us")!;
     const disconnected = removeConnections(draft, [first.id]);
-    expect(disconnected.edges.filter((edge) => edge.source === "edge-us")).toHaveLength(0);
-    const connected = connectResources(disconnected, "edge-us", "api-instance-2");
-    expect(connected.edges.filter((edge) => edge.source === "edge-us")).toHaveLength(3);
+    expect(disconnected.edges).toEqual(draft.edges.filter((edge) => edge.id !== first.id));
+    expect(disconnected.edges.filter((edge) => edge.source === "edge-us")).toHaveLength(2);
+    const connected = connectResources(disconnected, first.source, first.target);
+    expect(connected.edges).toHaveLength(draft.edges.length);
+    expect(connected.edges.at(-1)).toEqual(first);
     const databaseRoute = connected.edges.find((edge) => edge.target === "postgres")!;
-    expect(
-      removeConnections(connected, [databaseRoute.id]).edges.filter(
-        (edge) => edge.target === "postgres",
-      ),
-    ).toHaveLength(0);
+    const withoutDatabaseRoute = removeConnections(connected, [databaseRoute.id]);
+    expect(withoutDatabaseRoute.edges.filter((edge) => edge.target === "postgres")).toHaveLength(2);
+    expect(withoutDatabaseRoute.edges).toEqual(
+      connected.edges.filter((edge) => edge.id !== databaseRoute.id),
+    );
     expect(parseDraft(JSON.stringify(disconnected))).toEqual(disconnected);
+    expect(parseDraft(JSON.stringify(withoutDatabaseRoute))).toEqual(withoutDatabaseRoute);
   });
 
   it("isolates the routes and scaling of different applications", () => {
@@ -261,12 +269,107 @@ describe("shared application routing", () => {
     const next = removeConnections(draft, [route.id]);
     expect(
       next.edges.filter((edge) => edge.source === "edge-us").map((edge) => edge.target),
-    ).toEqual(["web-instance-1", "web-instance-2"]);
+    ).toEqual(["api-instance-2", "api-instance-3", "web-instance-1"]);
     expect(
       configureService(next, next.services[0], 5).nodes.filter(
         (node) => node.kind === "service" && node.serviceId === "web",
       ),
     ).toHaveLength(2);
+  });
+
+  it("keeps each connection's settings independent through scaling, persistence, and undo", () => {
+    const original = createExampleDraft();
+    const connection = original.edges.find((edge) => edge.target === "postgres")!;
+    const options = { label: "Reporting", protocol: "tls" as const, port: 6432, enabled: false };
+    const changed = configureConnection(original, connection.id, options);
+    expect(changed.edges.find((edge) => edge.id === connection.id)).toEqual({
+      ...connection,
+      ...options,
+    });
+    expect(changed.edges.filter((edge) => edge.id !== connection.id)).toEqual(
+      original.edges.filter((edge) => edge.id !== connection.id),
+    );
+    const scaled = configureService(changed, { ...changed.services[0], name: "backend" }, 5);
+    expect(scaled.edges).toEqual(changed.edges);
+    expect(parseDraft(JSON.stringify(scaled))).toEqual(scaled);
+    const after = draftReducer(
+      { present: original, past: [], future: [] },
+      { type: "change", draft: changed },
+    );
+    const undone = draftReducer(after, { type: "undo" });
+    expect(undone.present).toEqual(original);
+    expect(draftReducer(undone, { type: "redo" }).present).toEqual(changed);
+  });
+
+  it("resolves defaults for older wires and respects per-connection overrides", () => {
+    const draft = createExampleDraft();
+    const application = serviceInstances(draft, "api")[0];
+    const database = draft.nodes.find((node) => node.id === "postgres")!;
+    expect(getConnectionSettings(draft, application)).toEqual({
+      label: "",
+      protocol: "http",
+      port: 3000,
+      enabled: true,
+    });
+    expect(getConnectionSettings(draft, database)).toEqual({
+      label: "",
+      protocol: "tcp",
+      port: 5432,
+      enabled: true,
+    });
+    const connection = draft.edges.find((edge) => edge.target === application.id)!;
+    const configured = configureConnection(draft, connection.id, { port: 8080, protocol: "https" });
+    const changed = configureService(configured, { ...configured.services[0], port: 9000 });
+    expect(connectionLabel(changed, application, changed.edges[0])).toBe("HTTPS · 8080");
+    expect(connectionLabel(changed, application)).toBe("HTTP · 9000");
+    expect(connectionLabel(draft, database, { protocol: "tls", port: 6432, enabled: false })).toBe(
+      "Disabled · PostgreSQL (TLS) · 6432",
+    );
+    expect(parseDraft(JSON.stringify(draft))).toEqual(draft);
+  });
+
+  it("ignores disabled connections when checking reachability and restores them when enabled", () => {
+    const draft = createExampleDraft();
+    const incoming = draft.edges.filter((edge) => edge.target === "api-instance-2");
+    const disabled = incoming.reduce(
+      (current, edge) => configureConnection(current, edge.id, { enabled: false }),
+      draft,
+    );
+    expect(disabled.edges).toHaveLength(draft.edges.length);
+    expect(reviewDraft(disabled).map((issue) => issue.nodeId)).toEqual(["api-instance-2"]);
+    expect(reviewDraft(configureConnection(disabled, incoming[0].id, { enabled: true }))).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    { label: "x".repeat(61) },
+    { protocol: "http" },
+    { protocol: "toString" },
+    { port: 0 },
+    { port: 65536 },
+    { port: 5432.5 },
+    { port: "5432" },
+    { enabled: "false" },
+  ])("rejects invalid database connection settings %j on edits and restore", (patch) => {
+    const draft = createExampleDraft();
+    const connection = draft.edges.find((edge) => edge.target === "postgres")!;
+    expect(() => configureConnection(draft, connection.id, patch as ConnectionOptions)).toThrow(
+      "connection settings",
+    );
+    const invalid = {
+      ...draft,
+      edges: draft.edges.map((edge) => (edge.id === connection.id ? { ...edge, ...patch } : edge)),
+    };
+    expect(parseDraft(JSON.stringify(invalid))).toBeNull();
+  });
+
+  it("rejects database protocols for HTTP routes and edits of deleted connections", () => {
+    const draft = createExampleDraft();
+    expect(() => configureConnection(draft, draft.edges[0].id, { protocol: "tcp" })).toThrow(
+      "connection settings",
+    );
+    expect(() => configureConnection(draft, "missing", { port: 80 })).toThrow("no longer exists");
   });
 
   it("allows edge-to-edge routing but rejects duplicates, loops, and unsupported directions", () => {
@@ -309,12 +412,95 @@ describe("database planning", () => {
     },
   );
   it("counts PostgreSQL primaries and Redis replicas separately from applications", () => {
-    expect(instanceCount(createResource("postgres", "postgres"))).toBe(3);
-    expect(instanceCount(createResource("redis", "redis"))).toBe(6);
+    expect(instanceCount(createResource("postgres", "postgres", 1, "cluster"))).toBe(3);
+    expect(instanceCount(createResource("redis", "redis", 1, "cluster"))).toBe(6);
   });
+
+  it.each(DATABASE_KINDS)(
+    "creates a standalone %s by default, with its own application routes",
+    (kind) => {
+      const database = createResource(kind, "standalone");
+      expect(database).toMatchObject({ kind, mode: "standalone", cpu: 1, memory: 1024 });
+      expect(isClusterResource(database)).toBe(false);
+      expect(instanceCount(database)).toBe(1);
+      for (const field of ["replicas", "shards", "replicasPerShard", "topology", "failover"])
+        expect(database).not.toHaveProperty(field);
+      let draft = addService({ ...empty(), nodes: [database] }, createService("app", "app"));
+      draft = connectResources(draft, "app-instance-1", database.id);
+      expect(draft.edges).toHaveLength(1);
+      expect(draft.edges[0]).toMatchObject({ source: "app-instance-1", target: database.id });
+      expect(connectionLabel(draft, database)).toContain(kind === "postgres" ? "5432" : "6379");
+      expect(parseDraft(JSON.stringify(draft))).toEqual(draft);
+      expect(layoutDraft(draft).nodes.find((node) => node.id === database.id)).toMatchObject({
+        mode: "standalone",
+        position: { x: 680 },
+      });
+      const scaled = configureService(draft, draft.services[0], 5);
+      expect(scaled.edges).toEqual(draft.edges);
+      expect(summarizeDraft(scaled).total).toBe(6);
+      expect(removeConnections(scaled, [scaled.edges[0].id]).edges).toEqual([]);
+      expect(connectionError(draft, database.id, "app-instance-1")).not.toBeNull();
+      expect(removeResources(scaled, [database.id]).edges).toEqual([]);
+    },
+  );
 });
 
 describe("draft persistence and history", () => {
+  it("restores older databases as clusters, preserving member settings and connections", () => {
+    const draft = createExampleDraft();
+    draft.nodes = draft.nodes.map((node) => {
+      if (!isClusterResource(node)) return node;
+      const topology = getClusterTopology(node);
+      topology.nodes[1] = {
+        ...topology.nodes[1],
+        name: "Custom replica",
+        region: "eu-west-1",
+        position: { x: 610, y: 350 },
+      };
+      topology.edges = topology.edges.slice(1);
+      return { ...node, topology };
+    });
+    const legacy = {
+      ...draft,
+      nodes: draft.nodes.map((node) => ({ ...node, mode: undefined })),
+    };
+    expect(parseDraft(JSON.stringify(legacy))).toEqual(draft);
+  });
+
+  it.each(DATABASE_KINDS)("round-trips %s modes together through persistence and undo", (kind) => {
+    const standalone = createResource(kind, "standalone");
+    const cluster = createResource(kind, "cluster", 1, "cluster");
+    const before = { present: { ...empty(), nodes: [cluster] }, past: [], future: [] };
+    const after = draftReducer(before, {
+      type: "change",
+      draft: { ...before.present, nodes: [cluster, standalone] },
+    });
+    expect(parseDraft(JSON.stringify(after.present))).toEqual(after.present);
+    expect(draftReducer(after, { type: "undo" }).present).toEqual(before.present);
+    expect(draftReducer(draftReducer(after, { type: "undo" }), { type: "redo" }).present).toEqual(
+      after.present,
+    );
+  });
+
+  it.each([
+    { mode: "replicated" },
+    { mode: null },
+    { mode: "cluster" },
+    { mode: undefined },
+    { cpu: "1" },
+    { cpu: -1 },
+    { memory: 0 },
+    { memory: "1024" },
+    { storage: 0 },
+    { storage: 5000 },
+    { storage: 20.5 },
+    { replicas: 0 },
+    { topology: { nodes: [], edges: [] } },
+  ])("rejects invalid or mixed standalone settings %j", (patch) => {
+    const resource = { ...createResource("postgres", "database"), ...patch };
+    expect(parseDraft(JSON.stringify({ ...empty(), nodes: [resource] }))).toBeNull();
+  });
+
   it.each(["{", "null", "[]", "{}", '{"version":1,"nodes":[],"edges":[]}'])(
     "rejects malformed or previous-model drafts: %s",
     (serialized) => expect(parseDraft(serialized)).toBeNull(),
@@ -344,11 +530,14 @@ describe("draft persistence and history", () => {
   ] as const)("rejects invalid %s settings", (kind, patch) =>
     expect(
       parseDraft(
-        JSON.stringify({ ...empty(), nodes: [{ ...createResource(kind, "resource"), ...patch }] }),
+        JSON.stringify({
+          ...empty(),
+          nodes: [{ ...createResource(kind, "resource", 1, "cluster"), ...patch }],
+        }),
       ),
     ).toBeNull(),
   );
-  it("rejects dangling service references, duplicate ordinals, and partial application routes", () => {
+  it("rejects dangling service references and duplicates while allowing individual routes", () => {
     const draft = createExampleDraft();
     expect(parseDraft(JSON.stringify({ ...draft, services: [] }))).toBeNull();
     expect(
@@ -364,7 +553,8 @@ describe("draft persistence and history", () => {
         }),
       ),
     ).toBeNull();
-    expect(parseDraft(JSON.stringify({ ...draft, edges: draft.edges.slice(1) }))).toBeNull();
+    const partial = { ...draft, edges: draft.edges.slice(1) };
+    expect(parseDraft(JSON.stringify(partial))).toEqual(partial);
     expect(
       parseDraft(JSON.stringify({ ...draft, edges: [...draft.edges, draft.edges[0]] })),
     ).toBeNull();
@@ -384,7 +574,7 @@ describe("draft persistence and history", () => {
       draft: (draft) => configureService(draft, draft.services[0], 5),
     });
     expect(changed.present.nodes).toHaveLength(9);
-    expect(changed.present.edges).toHaveLength(20);
+    expect(changed.present.edges).toEqual(initial.present.edges);
     const undone = draftReducer(changed, { type: "undo" });
     expect(undone.present).toBe(initial.present);
     expect(draftReducer(undone, { type: "redo" }).present).toBe(changed.present);

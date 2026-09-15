@@ -449,6 +449,7 @@ IDs.
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | List the project’s outgoing resource connections. | `projects.listConnections(id)` | `GET /api/projects/:id/connections`<br />`project:read` |
+| List accessible projects and apps for a service connection. | `projects.listConnectionCandidates(id)` | `GET /api/projects/:id/connections/candidates`<br />`project:write` |
 | List projects consuming this project’s outputs. | `projects.listConnectionConsumers(id)` | `GET /api/projects/:id/connections/consumers`<br />`project:read` |
 | Connect an output to a target environment variable. | `projects.createConnection(id, input)` | `POST /api/projects/:id/connections`<br />`project:write` |
 | Apply a group of compatible resource connections. | `projects.connectBundle(id, input)` | `POST /api/projects/:id/connections/bundle`<br />`project:write` |

@@ -144,7 +144,7 @@ export const BillingCapacity: React.FC<{ state: BillingState }> = ({ state }) =>
   const c = t.billing.capacity;
   const h = t.billing.header;
   // Customer-facing ceilings, from the same catalog entry enforcement reads.
-  const limits = PLANS[state.tier]?.limits ?? null;
+  const limits = state.plan?.limits ?? PLANS[state.tier]?.limits ?? null;
   const cap = state.capacity;
 
   // Merge cloud-reported meters with the plan's ceilings. Cloud wins for the
@@ -156,7 +156,7 @@ export const BillingCapacity: React.FC<{ state: BillingState }> = ({ state }) =>
     fallbackMax: number | null,
   ): CapacityMeter => ({
     used: reported?.used ?? null,
-    max: reported?.max ?? fallbackMax,
+    max: reported ? reported.max : fallbackMax,
   });
 
   const rows: RowSpec[] = [];

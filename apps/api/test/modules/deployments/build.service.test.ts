@@ -27,6 +27,7 @@ const {
   getLatestCommit: vi.fn(),
   kickoffBuild: vi.fn(),
   repos: {
+    projectConnection: { listByTarget: vi.fn(async () => []) },
     project: {
       findById: vi.fn(),
       getEnvMap: vi.fn(),
@@ -142,6 +143,7 @@ import {
 } from "@repo/platform/engine/modules/projects/folder/session-store";
 import { ComposeConfigurationError } from "@repo/platform/engine/modules/deployments/compose-configuration-error";
 import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
+import * as projectConnections from "@repo/platform/engine/modules/projects/project-connection.service";
 
 const ctx = { userId: "user-1", organizationId: "org-1" } as any;
 
@@ -1390,6 +1392,32 @@ describe("triggerDeployment", () => {
     expect(meta.refreshServiceIds).toBeUndefined();
   });
 
+  it.each([
+    { serviceIds: undefined, expected: ["svc-api", "svc-worker", "svc-db"] },
+    { serviceIds: ["svc-api"], expected: ["svc-api"] },
+  ])("keeps a forced topology refresh at its requested scope ($expected)", async ({ serviceIds, expected }) => {
+    repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-live" }));
+    repos.deployment.findById.mockResolvedValue({
+      id: "dep-live", commitSha: "running-commit", createdAt: new Date("2026-08-20T00:00:00Z"),
+    });
+    repos.service.listByProject.mockResolvedValue([
+      { id: "svc-api", name: "api", enabled: true, image: "acme/api:1" },
+      { id: "svc-worker", name: "worker", enabled: true, image: "acme/worker:1" },
+      { id: "svc-db", name: "db", enabled: true, image: "postgres:16" },
+      { id: "svc-off", name: "disabled", enabled: false, image: "redis:7" },
+    ]);
+    // Without the explicit-all override this unrelated edit narrows an
+    // environment resource resize to just the worker.
+    repos.project.listEnvVarChangeMeta.mockResolvedValue([
+      { key: "LOG_LEVEL", serviceId: "svc-worker", updatedAt: new Date("2026-08-21T00:00:00Z") },
+    ]);
+    await triggerDeployment(ctx, { projectId: "project-1", refresh: true, forceAll: true, serviceIds });
+    expect(repos.deployment.create).toHaveBeenCalledWith(expect.objectContaining({
+      commitSha: "running-commit", forceAll: false,
+      meta: expect.objectContaining({ targetServiceIds: expected, refreshServiceIds: expected }),
+    }));
+  });
+
   it("returns an actionable 409 for a services project with nothing enabled", async () => {
     repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-live" }));
     repos.deployment.findById.mockResolvedValue({
@@ -2135,6 +2163,22 @@ describe("requestBuildAccess — folder-upload compose services", () => {
         }),
       }),
     );
+  });
+
+  it.each([{}, { DATABASE_URL: "stale-value" }])("refreshes connection-owned values in a submitted environment %j", async submitted => {
+    const uploadSessionId = seedSession();
+    const value = "postgresql://user:current@shared-db:5432/app";
+    const refresh = vi.spyOn(projectConnections, "refreshConnectionEnv").mockResolvedValueOnce({ DATABASE_URL: value });
+    repos.project.listEnvVars.mockResolvedValue([{ key: "DATABASE_URL", value: encrypt(value), isSecret: true, environment: "production", serviceId: null }]);
+    try {
+      await requestBuildAccess(ctx, {
+        projectId: "project-1", uploadSessionId, environment: "production",
+        envVars: { PUBLIC_SETTING: "keep", ...submitted },
+      });
+      const captured = repos.deployment.create.mock.calls.at(-1)?.[0]?.envVars;
+      expect(decrypt(captured.DATABASE_URL)).toBe(value);
+      expect(decrypt(captured.PUBLIC_SETTING)).toBe("keep");
+    } finally { refresh.mockRestore(); }
   });
 
   it("#801: preserves a stored secret submitted as the mask sentinel", async () => {

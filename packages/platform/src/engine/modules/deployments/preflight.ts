@@ -1476,6 +1476,12 @@ export async function runPreflightChecks(
       ? { id: "stack", label: "Service stack", status: "pass" }
       : checkStack(snapshot),
   ];
+  if (effectiveTarget === "cloud" && (snapshot.volumes?.length || opts?.composeServices?.some((service) => service.volumes?.length))) {
+    checks.push({
+      id: "cloud-storage", label: "Persistent storage", status: "fail", code: "CLOUD_VOLUMES_UNSUPPORTED",
+      message: "Persistent volume mounts are not supported on Openship Cloud. Choose a server for workloads that require volumes.",
+    });
+  }
 
   // Does this machine meet what the app says it needs? Cloud is sized from the
   // tier table, not from host hardware, so there is nothing to match there (and

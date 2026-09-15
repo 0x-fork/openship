@@ -25,7 +25,8 @@ import {
 import { env } from "../config/index";
 import { trackBackgroundWork } from "./background-work";
 import { isRealContainerRef } from "./container-ref";
-import { cloudClient, getOrgCloudToken } from "./cloud/client";
+import { getOrgCloudToken } from "./cloud/client";
+import { createRemoteCloudAdmin } from "./cloud/admin-proxy";
 import { resolveOrgCloudUserId } from "./cloud/transport";
 import { platform } from "./platform-config";
 import { buildSshConfig, sshManager } from "./ssh-manager";
@@ -36,6 +37,9 @@ import { resolveAcmeProviderOptions } from "./acme-config";
 import { findLocalServer } from "./startup/self-server";
 import { requireOrgServer } from "./server-target";
 import { registryAuthResolver } from "../modules/credentials/registry-auth";
+import { issueNamespaceToken } from "./openship-cloud";
+import { createTenantCloudAdmin } from "./cloud-tenant-admin";
+import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
 import {
   LOCAL_HOST_PORT_TARGET,
   resolveHostPortTargetIdentity,
@@ -353,7 +357,9 @@ async function resolveCloudPlatformForOrg(organizationId?: string): Promise<Plat
     throw new Error("Cannot resolve cloud deployment platform without an organization ID");
   }
 
-  const result = await getOrgCloudToken(organizationId);
+  const result = env.CLOUD_MODE
+    ? await issueNamespaceToken(organizationId)
+    : await getOrgCloudToken(organizationId);
   if (!result) {
     // getOrgCloudToken returns null for TWO different reasons — don't conflate
     // them. A link that exists but couldn't mint a token means Cloud is
@@ -370,13 +376,11 @@ async function resolveCloudPlatformForOrg(organizationId?: string): Promise<Plat
   return createPlatform({
     target: "cloud",
     cloudToken: result.token,
+    cloudNamespace: result.namespace,
+    cloudApiUrl: env.OBLIEN_API_URL,
+    cloudBeforeProvision: env.CLOUD_MODE ? () => assertCloudCanSpend(organizationId) : undefined,
     allowHostBuild: !env.CLOUD_MODE && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
-    cloudAdminProxy: {
-      createPage: (input) => cloudClient({ organizationId }).pages.create(input),
-      disablePage: (slug) => cloudClient({ organizationId }).pages.disable(slug),
-      enablePage: (slug) => cloudClient({ organizationId }).pages.enable(slug),
-      deletePage: (slug) => cloudClient({ organizationId }).pages.delete(slug),
-    },
+    cloudAdminProxy: env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, result.namespace) : createRemoteCloudAdmin(organizationId),
   });
 }
 
@@ -455,13 +459,9 @@ export async function resolveDeploymentPlatform(
   // desktop (single-user, owner-driven) — never by a self-hosted server. That is
   // what keeps the local cloud-capability path (pages/managed edge) off a
   // self-hosted box.
-  const needsOrgScopedCloudPlatform =
-    (effectiveTarget === "cloud" && !env.CLOUD_MODE && basePlatform.target !== "cloud") ||
-    (!env.CLOUD_MODE && basePlatform.target === "cloud");
-
-  const resolvedPlatform = needsOrgScopedCloudPlatform
-    ? await resolveCloudPlatformForOrg(opts?.organizationId)
-    : basePlatform;
+  // SaaS deployments must use the org's token too. The process-wide platform
+  // has reseller credentials and is never a customer workload authority.
+  const resolvedPlatform = await resolveCloudPlatformForOrg(opts?.organizationId);
 
   return {
     platform: resolvedPlatform,

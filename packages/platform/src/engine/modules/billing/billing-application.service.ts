@@ -1,114 +1,21 @@
-/**
- * Billing controller — Stripe-backed cloud billing endpoints.
- *
- * Every authed route below is org-scoped: the billing customer +
- * subscription rows live on the organization, not the user. The
- * dashboard's active-org context is set by `authMiddleware` and
- * surfaced via `getRequestContext(c).organizationId`.
- *
- * Stub paths from the early scaffold (manual payment-method/invoice
- * CRUD, free-form usage recording) are NOT re-introduced — Stripe
- * Portal owns the invoice/PM list, and the Oblien usage sync is the
- * only writer to `credit_consumption`. The endpoints below cover what
- * the dashboard actually needs.
- */
+/** Organization-scoped billing operations. Oblien is the Cloud payment authority. */
 
 import type { ExecutionContext } from "../../../context";
 import { ValidationError, normalizeBillingCreditPacks, type BillingOperations } from "@repo/contracts";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
-import {
-  CREDIT_PACKS,
-  ANNUAL_ENABLED,
-  ANNUAL_MONTHS_FREE,
-  FREE_DOMAIN_SUFFIX,
-  effectiveMonthlyPrice,
-  pricingUi,
-  resolvePlans,
-  toPricingLocale,
-} from "@repo/core";
+import { FREE_DOMAIN_SUFFIX } from "@repo/core";
 import { getFreeSubdomainUsage, listFreeSubdomains } from "@repo/platform/engine/lib/plan-guard";
 import * as billingService from "@repo/platform/engine/modules/billing/billing.service";
 import * as billingRepository from "@repo/platform/engine/modules/billing/billing.repository";
 import { getNamespaceUsage } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
+import { getCloudBillingCatalog, presentCloudPlans } from "./billing-catalog";
 
 /* ---------- Plans (public) ---------- */
 
-/**
- * Serve the pricing catalog in the caller's language.
- *
- * Locale precedence is `?locale=` → `Accept-Language` → English, because the two
- * callers differ: the dashboard knows the reader's chosen locale (a cookie the
- * browser won't send us as a language header) and passes it explicitly, while
- * anything else gets a sensible default from the header. `toPricingLocale`
- * narrows any unsupported value to English rather than 404ing a price list.
- *
- * `features` come back as finished localized strings with the plan's own numbers
- * already interpolated and formatted for the locale — clients render them
- * verbatim. `limits` ships alongside so a client can draw a meter against the
- * exact number enforcement uses. Prices stay integer CENTS; formatting is the
- * client's job. Route is public and mounted in every mode.
- */
+/** Public on every installation: a linked local dashboard must show Cloud's
+ * actual prices too. Outside SaaS, the public provider read sends no credentials. */
 export async function listPlans(input: NonNullable<Parameters<BillingOperations["listPlans"]>[0]>) {
-  const locale = toPricingLocale(
-    input.locale ?? null,
-  );
-
-  // Campaign windows are evaluated per REQUEST, never at module load, so an
-  // offer starting or expiring takes effect without a redeploy.
-  const now = new Date();
-
-  const plans = resolvePlans(locale).map((p) => {
-    const { listCents, effectiveCents, campaign } = effectiveMonthlyPrice(p.id, now);
-    return {
-      id: p.id,
-      name: p.name,
-      description: p.description,
-      popular: p.popular,
-      // `price` stays the LIST price so existing clients keep working and the
-      // struck-through number is available; `effectivePrice` is what's charged.
-      price: p.price, // { monthly: cents|null, annual: cents|null }
-      effectivePrice: { monthly: effectiveCents },
-      // The coupon env name is deliberately NOT exposed — clients never need it
-      // and it is server config.
-      campaign: campaign
-        ? {
-            id: campaign.id,
-            percentOff: campaign.percentOff,
-            durationMonths: campaign.durationMonths,
-            endsAt: campaign.endsAt,
-          }
-        : null,
-      listPrice: { monthly: listCents },
-      monthlyCredits: p.monthlyCredits,
-      // `oblienLimits` is deliberately NOT published. It is internal provisioning
-      // detail (and, since the ceilings are derived to fit the build machine, it
-      // also discloses that spec) with zero client consumers — both panels that
-      // once read it were removed in favour of the customer-facing `limits`.
-      limits: p.limits,
-      features: p.features,
-      // Published alongside `features`, not folded into it: it is the "Everything in
-      // X, plus:" lead-in, and a client that renders the bullet list with a
-      // checkmark per item must not put one beside a transition.
-      inheritedFrom: p.inheritedFrom ?? null,
-      support: p.support,
-      contactSales: p.contactSales ?? null,
-    };
-  });
-
-  // Cacheable: the response is identical for every caller of a given locale, and
-  // the handler is pure in-memory catalog resolution (no DB, no Stripe). The only
-  // thing that changes it mid-window is a campaign boundary, so the shared TTL is
-  // capped at 5 minutes — a campaign can start or end up to that late, the same
-  // tradeoff the marketing page's revalidate window makes. `Vary` is required
-  // because the payload is localized and a shared cache must not serve Arabic copy
-  // to an English reader.
-
-  return {
-      locale,
-      annual: { enabled: ANNUAL_ENABLED, monthsFree: ANNUAL_MONTHS_FREE },
-      ui: pricingUi(locale),
-      plans,
-    };
+  return presentCloudPlans(await getCloudBillingCatalog(), input.locale);
 }
 
 /* ---------- Billing state (dashboard overview) ---------- */
@@ -127,6 +34,7 @@ export async function createSubscription(ctx: ExecutionContext, input: NonNullab
     ctx,
     planTierId,
     interval,
+    input.idempotencyKey,
   );
 
   return { checkoutUrl };
@@ -137,6 +45,10 @@ export async function cancelSubscription(ctx: ExecutionContext) {
   return result;
 }
 
+export async function resumeSubscription(ctx: ExecutionContext) {
+  return billingService.resumeSubscription(ctx.organizationId);
+}
+
 /* ---------- Top-ups ---------- */
 
 export async function createTopup(ctx: ExecutionContext, input: NonNullable<Parameters<BillingOperations["createTopup"]>[0]>) {
@@ -145,30 +57,15 @@ export async function createTopup(ctx: ExecutionContext, input: NonNullable<Para
   const { checkoutUrl } = await billingService.createTopupCheckoutSession(
     ctx,
     packId,
+    input.idempotencyKey,
   );
 
   return { checkoutUrl };
 }
 
-/**
- * Active top-up packs surfaced in the dashboard. Reads from the
- * synced `credit_pack` table; falls back to the in-code `CREDIT_PACKS`
- * constant if the sync hasn't run yet (first-boot bootstrap path).
- */
-export async function listTopupPacks(ctx: ExecutionContext) {
-
-  // `explains` ("≈ 83 hours of a small app, or 625 build minutes") is a DERIVED
-  // display string, not a column — it comes from the catalog's own rates so it
-  // can't drift from what a credit actually buys. The synced `credit_pack` rows
-  // therefore don't carry it, and it has to be grafted on whichever source wins
-  // below, or the DB path silently loses the one line that makes a pack legible.
-  const explainsById = new Map(CREDIT_PACKS.map((p) => [p.id, p.explains]));
-  const withExplains = <T extends { id: string }>(rows: T[]) =>
-    rows.map((row) => ({ ...row, explains: explainsById.get(row.id) ?? null }));
-
-  const packs = await billingService.listActiveCreditPacks();
-  if (packs.length > 0) return normalizeBillingCreditPacks(withExplains(packs));
-  return normalizeBillingCreditPacks(withExplains([...CREDIT_PACKS]));
+/** Provider credit packs; never fall back to historical Stripe price IDs. */
+export async function listTopupPacks(_ctx: ExecutionContext) {
+  return normalizeBillingCreditPacks(await billingService.listActiveCreditPacks());
 }
 
 /* ---------- Allowance detail (what is using my quota) ---------- */
@@ -287,6 +184,7 @@ export async function getSubscription(ctx: ExecutionContext) {
       tier: state.tier,
       status: state.status,
       currentPeriod: state.currentPeriod,
+      subscription: state.subscription,
     };
 }
 function invalidInput(message: string): never { throw new ValidationError(message); }

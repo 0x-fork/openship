@@ -3,8 +3,12 @@ import { Value } from "@sinclair/typebox/value";
 import { CreateProjectBody } from "./project-inputs";
 import { ProjectSchema, type Project } from "./projects";
 import { SourceScanSchema } from "./sources";
+import { SourceScanOptionsSchema } from "./env-reveal";
 
-export const ScanLocalProjectBody = Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }) });
+export const ScanLocalProjectBody = Type.Object({
+  ...SourceScanOptionsSchema.properties,
+  path: Type.String({ minLength: 1, maxLength: 4096 }),
+});
 export const ImportLocalProjectBody = Type.Object({
   ...CreateProjectBody.properties,
   localPath: Type.String({ minLength: 1, maxLength: 4096 }),

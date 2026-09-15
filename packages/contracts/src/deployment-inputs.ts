@@ -5,6 +5,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { CreateDeploymentSchema } from "./deployments";
 import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "./project-inputs";
+import { SourceScanOptionsSchema } from "./env-reveal";
 
 // ─── Route params ────────────────────────────────────────────────────────────
 
@@ -183,6 +184,7 @@ export const BuildAccessBody = Type.Object({
 // the controller resolves source from (owner,repo) vs path and enforces the
 // conditional requireds (owner+repo for github, path for local).
 export const PrepareDeployBody = Type.Object({
+  ...SourceScanOptionsSchema.properties,
   source: Type.Optional(
     Type.Union([Type.Literal("github"), Type.Literal("local")], {
       description: "Source kind; inferred from owner/repo vs path when omitted.",

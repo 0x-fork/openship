@@ -6,6 +6,8 @@ description: Read plans and manage subscriptions, credits, and usage.
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 Billing covers plans, subscriptions, credits, and usage. Plan listing is public on every installation.
+Oblien owns hosted checkout, payment collection, renewals, and credits. Every
+organization maps to one immutable provider namespace resolved by Openship.
 Account operations require configured Cloud billing. Self-hosted HTTP routes can proxy a connected user's
 Cloud billing account; fixed SDK scopes require a direct compatible Cloud API connection.
 See [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
@@ -39,9 +41,9 @@ Pass `?locale=<lang>` — or send an `Accept-Language` header — to pick the
 language. An unsupported tag falls back to its base language, then to English;
 the locale that was actually used comes back in the response.
 
-The envelope is `{ data: { locale, annual, ui, plans } }`. `annual` reports
-whether annual terms are published (`enabled`) and how many months an annual term
-waives; `ui` carries the short labels a pricing UI needs — the `/mo` suffix, the
+The envelope is `{ data: { provider: "oblien", locale, annual, ui, plans } }`. `annual.enabled` reports
+whether annual terms are published; read the actual yearly price from each plan.
+`ui` carries the short labels a pricing UI needs — the `/mo` suffix, the
 "Custom" and "Free" words, the "Most popular" badge — already translated, because
 a marketing site may have no dictionary of its own.
 
@@ -50,15 +52,13 @@ Each entry in `plans` looks like:
 <TypeTable
   type={{
     id: { type: 'string', description: 'Stable tier id — free, starter, pro, team, enterprise. Never localized; this is what you send back when starting a subscription.' },
-    name: { type: 'string', description: 'Display name in the resolved locale. Do not key logic off this.' },
-    description: { type: 'string', description: "The tier's one-line pitch, localized." },
+    name: { type: 'string', description: 'Provider display name. Do not key logic off this.' },
+    description: { type: 'string', description: "The provider's plan description." },
     popular: { type: 'boolean', description: 'Render the "most popular" badge on exactly this tier.' },
     price: { type: 'object', description: 'Monthly and annual price in the currency’s MINOR units (cents). null on either side means that interval is not purchasable.' },
-    monthlyCredits: { type: 'number | null', description: 'Compute credits granted per period, in milli-credits. null = granted by hand (custom tiers).' },
-    limits: { type: 'object', description: 'The numeric allowances enforcement reads: workloads, services, build minutes, free subdomains, seats, workspaces, vCPU, RAM, disk, bandwidth.' },
-    oblienLimits: { type: 'object | null', description: 'Per-workspace ceilings pushed at provision time. null when the tier is custom, or when any single dimension is unlimited.' },
-    features: { type: 'string[]', description: 'Finished, localized bullet strings — numbers already interpolated and locale-formatted. Render verbatim.' },
-    support: { type: 'string', description: 'Support level: community, email, priority, or dedicated.' },
+    monthlyCredits: { type: 'number | null', description: 'Included monthly allowance in milli-credits. null means uncapped.' },
+    limits: { type: 'object', description: 'Openship application allowances, including workloads, running services, projects, machine tier, build minutes, domains, and seats.' },
+    features: { type: 'string[]', description: 'Provider feature bullets. Render verbatim.' },
     contactSales: { type: 'string | null', description: 'Where to send a buyer when the tier has no self-serve price — a mailto or URL. null on purchasable tiers.' },
   }}
 />
@@ -72,9 +72,10 @@ Two conventions matter when you render this:
   `false` while annual terms are unpublished, and every `price.annual` is `null`
   to match — keep annual affordances hidden while it is.
 
-Prices and limits come from one committed catalog in `@repo/core`, which the API,
-the dashboard, and the [pricing page](/pricing) all read, so they cannot drift
-apart.
+Prices, credits, and packs come from Oblien's live catalog. The API, dashboard,
+and [pricing page](/pricing) use that same source. Application limits come from
+`@repo/core`. Internal tier IDs stay stable: `starter` selects Oblien's `hobby`,
+`pro` selects `pro`, and `team` selects `scale`.
 
 ## Subscription and usage
 
@@ -100,27 +101,48 @@ curl "$OPENSHIP_URL/api/billing/state" \
 `GET /state` is the snapshot the dashboard's Billing screen renders in one call:
 the active tier, the period you're in, the credit balance, and how much of the
 plan's capacity is in use. `GET /usage` returns the metered series behind the
-usage chart. `GET /subscription` returns just the subscription slice — tier,
-status, and period boundaries.
+usage chart. `GET /subscription` returns the entitlement tier/status/period and
+a `subscription` object, or `null` if never subscribed. The object includes
+`tier`, `status`, `interval` (`monthly` or `annual`), `currentPeriod`,
+`cancelAtPeriodEnd`, and `canceledAt`. A scheduled cancellation can still have
+an active entitlement until the paid period ends.
 
-`POST /subscription` starts a Stripe Checkout session for an upgrade or downgrade
-and returns the URL to send the browser to. The local subscription row is not
-written by that call — Stripe's `customer.subscription.*` webhooks finalize it,
-so a plan change only lands once payment actually clears.
+`POST /subscription` accepts `{ planTierId, interval, idempotencyKey? }` and returns
+`{ checkoutUrl }`. Use a stable request key when retrying the same purchase.
+Oblien replaces only this organization's subscription after payment and starts
+a new cycle at the full selected price, without automatic proration. A browser
+return URL does not grant access: signed Oblien events and fresh entitlement
+reads confirm the current plan.
 
-`POST /cancel` flips the subscription to `cancel_at_period_end`. Access stays
-until the paid period ends, then the deletion webhook downgrades the org to the
-free tier. Nothing is deleted by cancelling.
+`POST /cancel` stops renewal at period end and returns `{ cancelAt, subscription }`.
+`POST /resume` undoes a scheduled cancellation and returns `{ subscription }`.
+Both are safe to repeat. Cancellation preserves the paid period; it does not
+delete resources. An ended subscription requires a new checkout.
+
+```ts
+await ship.billing.cancelSubscription();
+const { subscription } = await ship.billing.getSubscription();
+console.log(subscription?.cancelAtPeriodEnd);
+await ship.billing.resumeSubscription();
+```
 
 ## Top-ups and the portal
 
 `GET /topup-packs` lists the one-shot credit packs from the same catalog;
 `POST /topup` opens Checkout for one. Credits bought this way sit on top of the
-plan's monthly allowance.
+plan's allowance and survive renewal. Openship never resets or grants those
+credits itself.
 
-`POST /portal` mints a short-lived Stripe billing-portal session for invoices and
-payment methods. It's a POST because each call is a Stripe-side mutation, and
-it's rate-limited per organization for the same reason.
+`POST /portal` returns `{ portalUrl }` for this organization's invoices, payment
+methods, and cancellation. It requires `billing:admin`, like cancel/resume,
+because the hosted portal can stop renewal. It never exposes the API-key owner's
+billing portal. Shared legacy billing must be separated before management or
+purchases can proceed.
+
+Portal/cancel/resume remain available when new purchases are disabled. The
+`capabilities` object in billing state reports which actions are available.
+Organization deletion still requires support to coordinate provider billing
+closure and resource cleanup.
 
 ## Operations
 
@@ -132,12 +154,13 @@ it's rate-limited per organization for the same reason.
 | --- | --- | --- |
 | Read the plan catalog, optionally localized. | `billing.listPlans(input?)` | `GET /api/billing/plans`<br />`Handler authentication` |
 | Read current billing state. | `billing.getState()` | `GET /api/billing/state`<br />`billing:read` |
-| Read the active subscription. | `billing.getSubscription()` | `GET /api/billing/subscription`<br />`billing:read` |
+| Read subscription and renewal state. | `billing.getSubscription()` | `GET /api/billing/subscription`<br />`billing:read` |
 | Create a subscription checkout or subscription change. | `billing.createSubscription(input)` | `POST /api/billing/subscription`<br />`billing:write` |
-| Request subscription cancellation. | `billing.cancelSubscription()` | `POST /api/billing/cancel`<br />`billing:admin` |
+| Stop subscription renewal at the end of the paid period. | `billing.cancelSubscription()` | `POST /api/billing/cancel`<br />`billing:admin` |
+| Resume a scheduled subscription renewal. | `billing.resumeSubscription()` | `POST /api/billing/resume`<br />`billing:admin` |
 | Create a credit top-up checkout. | `billing.createTopup(input)` | `POST /api/billing/topup`<br />`billing:write` |
 | List available credit packs. | `billing.listTopupPacks()` | `GET /api/billing/topup-packs`<br />`billing:read` |
-| Create a billing portal session. | `billing.createPortal()` | `POST /api/billing/portal`<br />`billing:write` |
+| Create a billing portal session. | `billing.createPortal()` | `POST /api/billing/portal`<br />`billing:admin` |
 | Read billable usage for the requested period. | `billing.getUsage(input?)` | `GET /api/billing/usage`<br />`billing:read` |
 | Read detailed allowance allocation and consumption. | `billing.listAllowanceDetail()` | `GET /api/billing/allowances`<br />`billing:read` |
 
@@ -146,6 +169,6 @@ it's rate-limited per organization for the same reason.
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | Receive authenticated Oblien billing events. | HTTP only | `POST /api/billing/oblien-webhook`<br />`Handler authentication` |
-| Receive signed Stripe billing events. | HTTP only | `POST /api/billing/webhook/stripe`<br />`Handler authentication` |
+| Retired Stripe webhook; returns 410 without changing billing. | HTTP only | `POST /api/billing/webhook/stripe`<br />`Handler authentication` |
 
 {/* api-operations:end */}

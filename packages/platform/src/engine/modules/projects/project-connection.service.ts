@@ -4,9 +4,9 @@
  * env var, and (internal mode) mark that the target should join the source's
  * network at deploy. One DB instance, many links — no duplication.
  *
- * Security: the caller must be able to READ the source and WRITE the target, and
+ * Security: the caller must be able to WRITE the source and target, and
  * both must live in the SAME org (no cross-tenant credential flow). The injected
- * URL is encrypted at rest (via the project env merge path).
+ * URL is encrypted at rest and saved atomically with its link.
  */
 
 import { repos, type Project } from "@repo/db";
@@ -25,9 +25,32 @@ import { isLocalHostRow } from "../../lib/box-org";
 import { authorization } from "../../lib/authorization";
 import { getAppConnectionView, type AppConnectionOutput } from "../apps/app-settings.service";
 import { mergeEnvVars } from "./project-env.service";
-import { toInternalUrl, isNetworkUrl } from "./project-connection.util";
+import { toInternalUrl, isNetworkUrl, usesPrivateNetwork } from "./project-connection.util";
+import { sharedServiceAlias, ensureSharedServiceNetwork, disconnectSharedServiceNetwork } from "./shared-service-network";
+import { encrypt, decrypt } from "../../lib/encryption";
+import { listAuthorizedProjects } from "../../lib/authorized-projects";
+import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 
 const ENVIRONMENT = "production";
+
+/** Match service/project deletion locks; a stable order also allows reciprocal links. */
+function withConnectionLocks<T>(sourceId: string, targetId: string, run: () => Promise<T>): Promise<T> {
+  const [first, second] = [sourceId, targetId].sort();
+  return withProjectRuntimeLock(first, () => withProjectRuntimeLock(second, run));
+}
+
+/** Both connection pickers use the same uncapped, permission-filtered choices. */
+export async function listConnectionCandidates(ctx: RequestContext, projectId: string) {
+  ctx = await authorization.authorize(ctx, { resourceType: "project", resourceId: projectId, action: "write" });
+  const candidates = [];
+  for (const project of await listAuthorizedProjects(ctx, ctx.organizationId)) {
+    if (project.id === projectId || !(await authorization.checkPermissionOnResource(
+      { ...ctx, scopeMode: "fixed" }, { resourceType: "project", resourceId: project.id, action: "write" },
+    ))) continue;
+    candidates.push({ id: project.id, name: project.name, description: project.environmentName, appTemplateId: project.appTemplateId });
+  }
+  return candidates.sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export type ConnectionMode = "internal" | "public";
 
@@ -36,6 +59,8 @@ export interface ConnectionView {
   sourceProjectId: string;
   sourceName: string;
   sourceAppTemplateId: string | null;
+  sourceServiceId: string | null;
+  sourceServiceName: string | null;
   targetProjectId: string;
   outputId: string;
   envKey: string;
@@ -51,18 +76,22 @@ function toConnectionView(
   link: {
     id: string;
     sourceProjectId: string;
+    sourceServiceId?: string | null;
     targetProjectId: string;
     outputId: string;
     envKey: string;
     mode: string;
   },
   source: { name: string; appTemplateId: string | null } | null | undefined,
+  sourceServiceName: string | null = null,
 ): ConnectionView {
   return {
     id: link.id,
     sourceProjectId: link.sourceProjectId,
     sourceName: source?.name ?? "Unknown",
     sourceAppTemplateId: source?.appTemplateId ?? null,
+    sourceServiceId: link.sourceServiceId ?? null,
+    sourceServiceName,
     targetProjectId: link.targetProjectId,
     outputId: link.outputId,
     envKey: link.envKey,
@@ -83,7 +112,8 @@ export async function listConnections(
   const out: ConnectionView[] = [];
   for (const l of links) {
     const src = await repos.project.findById(l.sourceProjectId);
-    out.push(toConnectionView(l, src));
+    const service = l.sourceServiceId ? await repos.service.findById(l.sourceServiceId) : null;
+    out.push(toConnectionView(l, src, service?.name ?? null));
   }
   return out;
 }
@@ -91,6 +121,7 @@ export async function listConnections(
 /** One project consuming THIS app — the reverse of {@link listConnections}. */
 export interface ConnectionConsumerView {
   id: string;
+  sourceServiceId: string | null;
   targetProjectId: string;
   targetName: string;
   targetSlug: string | null;
@@ -132,6 +163,7 @@ export async function listConsumers(
     if (target && target.organizationId !== ctx.organizationId) continue;
     out.push({
       id: l.id,
+      sourceServiceId: l.sourceServiceId ?? null,
       targetProjectId: l.targetProjectId,
       targetName: target?.name ?? "Unknown",
       targetSlug: target?.slug ?? null,
@@ -182,6 +214,7 @@ interface ConnectionEnds {
   source: Project;
   target: Project;
   output: AppConnectionOutput;
+  sourceServiceName: string | null;
   template: AppTemplate | undefined;
   /** Container port the output's catalog `source` names — see `getOutputPort`. */
   declaredPort: number | null;
@@ -197,22 +230,28 @@ async function loadConnectionEnds(
   targetProjectId: string,
   sourceProjectId: string,
   outputId: string,
+  /** Existing bindings are refreshed under deployment authority, without exposing secrets. */
+  opts?: { refresh?: boolean; sourceServiceId?: string | null },
 ): Promise<ConnectionEnds> {
   // Both projects must exist, be in the SAME org (no cross-tenant flow), and the
-  // caller must be able to read the source + write the target.
+  // caller must be able to write the source and target.
   const target = await repos.project.findById(targetProjectId);
   assertResourceInOrg(target, "Project", ctx.organizationId, targetProjectId);
   const source = await repos.project.findById(sourceProjectId);
   assertResourceInOrg(source, "Project", target.organizationId, sourceProjectId);
+  if (source.deletionInProgress || target.deletionInProgress) {
+    throw new ValidationError("A project in this connection is being deleted. Try again after deletion finishes.");
+  }
   if (source.id === target.id) {
     throw new ValidationError("A project can't connect to itself.");
   }
-  ctx = await authorization.authorize(ctx, {
+  if (!opts?.refresh) ctx = await authorization.authorize(ctx, {
     resourceType: "project",
     resourceId: sourceProjectId,
-    action: "read",
+    // Matches getAppConnection: connecting a source discloses its credentials.
+    action: "write",
   });
-  ctx = await authorization.authorize(ctx, {
+  if (!opts?.refresh) ctx = await authorization.authorize(ctx, {
     resourceType: "project",
     resourceId: targetProjectId,
     action: "write",
@@ -220,9 +259,24 @@ async function loadConnectionEnds(
 
   // Resolve the connection value from the source app's already-computed outputs.
   const view = await getAppConnectionView(ctx, sourceProjectId);
-  const output = view.outputs.find((o) => o.id === outputId);
+  const output = view.outputs.find((o) => o.id === outputId)
+    // Compatibility with the former alias-based synthesized output IDs.
+    ?? view.outputs.find((o) => o.internal && (
+      opts?.sourceServiceId ? o.sourceServiceId === opts.sourceServiceId : o.service === outputId
+    ));
   if (!output || !output.value) {
     throw new ValidationError("That connection value isn't available yet on the source app.");
+  }
+  if (opts?.sourceServiceId && output.sourceServiceId !== opts.sourceServiceId) {
+    throw new ValidationError("The source of this connection changed. Reconnect the service before deploying.");
+  }
+  let sourceServiceName: string | null = null;
+  if (output.sourceServiceId) {
+    const service = await repos.service.findById(output.sourceServiceId);
+    if (!service || service.projectId !== source.id || service.enabled === false) {
+      throw new ValidationError("The source service is no longer available.");
+    }
+    sourceServiceName = service.name;
   }
 
   // The source app template — used to default the reach mode from the endpoint's
@@ -231,7 +285,7 @@ async function loadConnectionEnds(
   const spec = template
     ? getAppConnection(template)?.outputs.find((o) => o.id === outputId)
     : undefined;
-  return { source, target, output, template, declaredPort: spec ? getOutputPort(spec) : null };
+  return { source, target, output, sourceServiceName, template, declaredPort: spec ? getOutputPort(spec) : null };
 }
 
 /**
@@ -291,6 +345,19 @@ async function resolveProjectHost(project: Project): Promise<ProjectHost> {
     : { kind: "server", id: serverId };
 }
 
+/** Also checked against the new deployment at network attachment, so moves cannot silently break a link. */
+export async function privateConnectionError(source: Project, target: Project): Promise<string | null> {
+  const [sourceHost, targetHost, targetDeployment] = await Promise.all([
+    resolveProjectHost(source), resolveProjectHost(target),
+    target.activeDeploymentId ? repos.deployment.findById(target.activeDeploymentId) : null,
+  ]);
+  if (sourceHost.kind === "cloud" || targetHost.kind === "cloud") return "Internal mode isn't available for a cloud-hosted app yet — use Public.";
+  if (hostKey(sourceHost) !== hostKey(targetHost)) return "Internal mode needs both projects on the same server — they're on different servers.";
+  const runtimeMode = (targetDeployment?.meta as { runtimeMode?: string } | null)?.runtimeMode ?? target.runtimeMode;
+  if (runtimeMode === "bare") return "Private service connections require a Docker deployment for the consuming project.";
+  return null;
+}
+
 /** The east-west value an internal connection should inject, or why it can't. */
 type InternalResolution = { value: string } | { error: string };
 
@@ -315,37 +382,32 @@ async function resolveInternalValue(ends: ConnectionEnds): Promise<InternalResol
   // joining the source app's docker network at deploy (attachLinkedNetworks). Those
   // networks are per-machine and a failed attach only WARNS, so a link across two
   // machines injects an alias that resolves nowhere and still deploys green.
-  const [sourceHost, targetHost] = await Promise.all([
-    resolveProjectHost(source),
-    resolveProjectHost(target),
-  ]);
-
-  if (sourceHost.kind === "cloud" || targetHost.kind === "cloud") {
-    return { error: "Internal mode isn't available for a cloud-hosted app yet — use Public." };
-  }
-  if (hostKey(sourceHost) !== hostKey(targetHost)) {
-    return {
-      error:
-        "Internal mode needs both projects on the same server — they're on different servers, so use Public.",
-    };
-  }
+  const placementError = await privateConnectionError(source, target);
+  if (placementError) return { error: placementError };
 
   // A synthesized output (plain app / raw compose, no template) already carries
   // the east-west address as its value — the synthesizer built it from the same
   // alias+port the container answers to on the shared network. Inject verbatim;
   // toInternalUrl would need a template and return null.
-  if (output.internal) return { value: output.value };
+  if (output.internal) return { value: sharedInternalValue(output.value, output.sourceServiceId) };
 
   // Template source: rewrite host → the source app's internal service alias. The
   // output's declared/derived `service` and `port` are authoritative for which
   // alias+port to target; if it can't resolve, internal isn't viable here.
   const internal = toInternalUrl(output.value, template, output.service, declaredPort);
   return internal
-    ? { value: internal }
+    ? { value: sharedInternalValue(internal, output.sourceServiceId) }
     : {
         error:
           "Internal mode isn't available for this connection — use Public, or pick a database app's URL.",
       };
+}
+
+function sharedInternalValue(value: string, serviceId?: string): string {
+  if (!serviceId) return value;
+  const url = new URL(value);
+  url.hostname = sharedServiceAlias(serviceId);
+  return url.href;
 }
 
 /**
@@ -369,14 +431,11 @@ export async function internalModeAvailable(
   return !("error" in (await resolveInternalValue(ends)));
 }
 
-export async function createConnection(
+async function prepareConnection(
   ctx: RequestContext,
   targetProjectId: string,
   input: CreateConnectionInput,
-  /** `defer` skips the best-effort apply-redeploy so a bundle redeploys ONCE at
-   *  the end instead of per-item. */
-  opts?: { defer?: boolean },
-): Promise<{ connection: ConnectionView; requiresRedeploy: true }> {
+) {
   const envKey = input.envKey.trim();
   if (!isValidEnvKey(envKey)) {
     throw new ValidationError("Enter a valid environment variable name (letters, digits, _).");
@@ -401,10 +460,13 @@ export async function createConnection(
       output.service && template
         ? getAppEndpoints(template).find((e) => e.service === output.service)?.scope
         : undefined;
-    mode = scope === "internal" ? "internal" : "public";
+    mode = output.internal || scope === "internal" ? "internal" : "public";
   }
 
   let value = output.value;
+  if (mode === "public" && output.internal) {
+    throw new ValidationError("This service has a private address. Connect it privately to a project on the same server.");
+  }
   if (mode === "internal") {
     const resolved = await resolveInternalValue(ends);
     if ("error" in resolved) {
@@ -417,14 +479,17 @@ export async function createConnection(
       value = resolved.value;
     }
   }
+  if (mode === "public" && output.internal) {
+    throw new ValidationError("Private service connections require both projects on the same Docker server.");
+  }
 
   // Don't silently clobber a manually-set env var: if `envKey` already exists on
   // the target and isn't owned by an existing connection, refuse — disconnect
   // would later delete it, losing the user's own value. Re-connecting an
   // already-connection-owned key is fine (it's an upsert of our own var).
   const [existingVars, existingLinks] = await Promise.all([
-    repos.project.listEnvVars(targetProjectId, ENVIRONMENT).catch(() => [] as { key: string }[]),
-    repos.projectConnection.listByTarget(targetProjectId).catch(() => [] as { envKey: string }[]),
+    repos.project.listEnvVars(targetProjectId, ENVIRONMENT, null),
+    repos.projectConnection.listByTarget(targetProjectId),
   ]);
   const connectionOwnedKeys = new Set(existingLinks.map((l) => l.envKey));
   const keyExisted = existingVars.some((v) => v.key === envKey);
@@ -434,47 +499,44 @@ export async function createConnection(
     );
   }
 
-  // Inject the secret env var (encrypted at rest), then record the link. If
-  // recording the link fails, roll back the var WE just injected — a secret with
-  // no owning link would be orphaned AND the clobber-guard above would then block
-  // re-connecting that key forever. Only roll back a FRESHLY-injected key: a
-  // re-connect of an already-owned key merely refreshed an existing var, which
-  // must survive the failure.
-  await mergeEnvVars(targetProjectId, target.organizationId, {
-    environment: ENVIRONMENT,
-    upserts: [{ key: envKey, value, isSecret: true }],
-    deletes: [],
-  });
-
-  let row: Awaited<ReturnType<typeof repos.projectConnection.upsert>>;
-  try {
-    row = await repos.projectConnection.upsert({
-      organizationId: target.organizationId,
-      sourceProjectId: source.id,
-      targetProjectId: target.id,
-      outputId: input.outputId,
-      envKey,
-      mode,
-    });
-  } catch (err) {
-    if (!keyExisted) {
-      await mergeEnvVars(targetProjectId, target.organizationId, {
-        environment: ENVIRONMENT,
-        upserts: [],
-        deletes: [envKey],
-      }).catch(() => {});
-    }
-    throw err;
+  const privateNetwork = mode === "internal" && isNetworkUrl(value);
+  if (privateNetwork && output.sourceServiceId) {
+    await ensureSharedServiceNetwork(source, output.sourceServiceId);
   }
 
-  // Apply immediately to the running consumer (best-effort). A bundle defers so
-  // it redeploys once at the end rather than per item.
-  if (!opts?.defer) await applyConnectionToTarget(ctx, targetProjectId);
-
   return {
-    connection: toConnectionView(row, source),
-    requiresRedeploy: true,
+    source,
+    output,
+    sourceServiceName: ends.sourceServiceName,
+    binding: {
+      encryptedValue: encrypt(value),
+      connection: {
+        organizationId: target.organizationId,
+        sourceProjectId: source.id,
+        sourceServiceId: output.sourceServiceId ?? null,
+        targetProjectId: target.id,
+        outputId: output.id,
+        envKey,
+        mode,
+        usesPrivateNetwork: privateNetwork,
+      },
+    },
   };
+}
+
+export async function createConnection(
+  ctx: RequestContext,
+  targetProjectId: string,
+  input: CreateConnectionInput,
+  opts?: { defer?: boolean },
+): Promise<{ connection: ConnectionView; requiresRedeploy: true }> {
+  const connection = await withConnectionLocks(input.sourceProjectId, targetProjectId, async () => {
+    const prepared = await prepareConnection(ctx, targetProjectId, input);
+    const [row] = await repos.projectConnection.saveBindings(targetProjectId, ENVIRONMENT, [prepared.binding]);
+    return toConnectionView(row, prepared.source, prepared.sourceServiceName);
+  });
+  if (!opts?.defer) await applyConnectionToTarget(ctx, targetProjectId);
+  return { connection, requiresRedeploy: true };
 }
 
 export interface ConnectBundleItem {
@@ -484,51 +546,35 @@ export interface ConnectBundleItem {
 
 /**
  * Wire a BUNDLE of outputs from one source app into a target project atomically:
- * either every item links, or none does. On any failure, every connection made
- * in THIS call is rolled back (its injected env var + link removed), so a partial
- * failure never leaves a half-wired mix. Reuses `createConnection` per item, so
- * the same-org + read-source/write-target invariants and clobber-guard apply.
+ * either every item links, or none does. Preparation is shared with the single
+ * connection path; env values and links are committed in one DB transaction.
+ * Failed reconnects preserve existing bindings, and the consumer redeploys once.
  */
 export async function connectBundle(
   ctx: RequestContext,
   targetProjectId: string,
   input: { sourceProjectId: string; items: ConnectBundleItem[]; mode?: ConnectionMode },
 ): Promise<{ connections: ConnectionView[]; requiresRedeploy: true }> {
-  const created: ConnectionView[] = [];
-  try {
-    for (const item of input.items) {
-      const { connection } = await createConnection(
-        ctx,
-        targetProjectId,
-        {
-          sourceProjectId: input.sourceProjectId,
-          outputId: item.outputId,
-          envKey: item.envKey,
-          mode: input.mode,
-        },
-        // Defer the apply-redeploy — we do it ONCE below after all items land,
-        // so a multi-output bundle triggers a single consumer redeploy.
-        { defer: true },
-      );
-      created.push(connection);
-    }
-  } catch (err) {
-    // Roll back every link made in this bundle (best-effort) before surfacing.
-    for (const c of created) {
-      await deleteConnection(ctx, targetProjectId, c.id, { defer: true }).catch(() => {});
-    }
-    throw err;
-  }
+  if (!input.items.length) throw new ValidationError("Choose at least one connection value.");
+  const keys = input.items.map(item => item.envKey.trim());
+  if (new Set(keys).size !== keys.length) throw new ValidationError("Choose a different environment variable name for each connection value.");
+  const connections = await withConnectionLocks(input.sourceProjectId, targetProjectId, async () => {
+    const prepared: Array<Awaited<ReturnType<typeof prepareConnection>>> = [];
+    for (const item of input.items) prepared.push(await prepareConnection(ctx, targetProjectId, {
+      sourceProjectId: input.sourceProjectId, ...item, mode: input.mode,
+    }));
+    const rows = await repos.projectConnection.saveBindings(targetProjectId, ENVIRONMENT, prepared.map(item => item.binding));
+    return rows.map((row, index) => toConnectionView(row, prepared[index].source, prepared[index].sourceServiceName));
+  });
   await applyConnectionToTarget(ctx, targetProjectId);
-  return { connections: created, requiresRedeploy: true };
+  return { connections, requiresRedeploy: true };
 }
 
 export async function deleteConnection(
   ctx: RequestContext,
   targetProjectId: string,
   linkId: string,
-  /** `defer` skips the apply-redeploy — used by bundle rollback so a failed
-   *  bundle doesn't fire a redeploy per rolled-back item. */
+  /** `defer` skips the consumer redeployment. */
   opts?: { defer?: boolean },
 ): Promise<{ requiresRedeploy: true }> {
   ctx = await authorization.authorize(ctx, {
@@ -539,19 +585,57 @@ export async function deleteConnection(
   const target = await repos.project.findById(targetProjectId);
   assertResourceInOrg(target, "Project", ctx.organizationId, targetProjectId);
 
-  const link = await repos.projectConnection.findInTarget(linkId, targetProjectId);
-  if (!link) throw new ValidationError("Connection not found.");
+  const existing = await repos.projectConnection.findInTarget(linkId, targetProjectId);
+  if (!existing) throw new ValidationError("Connection not found.");
 
-  // Remove the injected env var, then drop the link.
-  await mergeEnvVars(targetProjectId, target.organizationId, {
-    environment: ENVIRONMENT,
-    upserts: [],
-    deletes: [link.envKey],
+  await withConnectionLocks(existing.sourceProjectId, targetProjectId, async () => {
+    const link = await repos.projectConnection.findInTarget(linkId, targetProjectId);
+    if (!link || link.sourceProjectId !== existing.sourceProjectId) throw new ValidationError("This connection changed. Refresh the project before disconnecting.");
+    if (usesPrivateNetwork(link) && link.sourceServiceId) {
+      const source = await repos.project.findById(link.sourceProjectId);
+      assertResourceInOrg(source, "Project", target.organizationId, link.sourceProjectId);
+      await disconnectSharedServiceNetwork(source, target, link.sourceServiceId, link.id);
+    }
+
+    await mergeEnvVars(targetProjectId, target.organizationId, {
+      environment: ENVIRONMENT, upserts: [], deletes: [link.envKey],
+    });
+    await repos.projectConnection.delete(linkId);
   });
-  await repos.projectConnection.delete(linkId);
   // Refresh the running consumer so the removed env leaves the live container.
   if (!opts?.defer) await applyConnectionToTarget(ctx, targetProjectId);
   return { requiresRedeploy: true };
+}
+
+/** Refresh references before a normal deploy freezes its env; rollback keeps its snapshot. */
+export async function refreshConnectionEnv(
+  ctx: RequestContext,
+  targetProjectId: string,
+  environment: string,
+): Promise<Record<string, string>> {
+  if (environment !== ENVIRONMENT) return {};
+  const links = (await repos.projectConnection.listByTarget(targetProjectId))
+    .filter(link => !!link.sourceServiceId);
+  if (!links.length) return {};
+  const resolved: Record<string, string> = {};
+  const rows = await repos.project.listEnvVars(targetProjectId, environment, null);
+  const values = new Map(rows.map(row => [row.key, decrypt(row.value)]));
+  const upserts: Array<{ key: string; value: string; isSecret: boolean }> = [];
+  for (const link of links) {
+    const ends = await loadConnectionEnds(ctx, targetProjectId, link.sourceProjectId, link.outputId, {
+      refresh: true, sourceServiceId: link.sourceServiceId,
+    });
+    let value = ends.output.value;
+    if (link.mode === "internal") {
+      const result = await resolveInternalValue(ends);
+      if ("error" in result) throw new ValidationError(result.error);
+      value = result.value;
+    }
+    resolved[link.envKey] = value;
+    if (values.get(link.envKey) !== value) upserts.push({ key: link.envKey, value, isSecret: true });
+  }
+  if (upserts.length) await mergeEnvVars(targetProjectId, ctx.organizationId, { environment, upserts, deletes: [] });
+  return resolved;
 }
 
 /**

@@ -45,6 +45,16 @@ function server() {
 }
 
 describe("SDK source deployments", () => {
+  it("requests editable values through the existing scan while retaining masked scans by default", async () => {
+    const s = server();
+    await s.client.sources.scan("session/opaque");
+    await s.client.sources.scan("session/opaque", { includeEnv: true });
+    expect(s.commands).toEqual([
+      { path: "/api/projects/folder/scan/session%2Fopaque", body: {} },
+      { path: "/api/projects/folder/scan/session%2Fopaque", body: { includeEnv: true } },
+    ]);
+  });
+
   it("shares the full generated-code workflow, snapshots bytes, and preserves service selection", async () => {
     const s = server();
     const bytes = new TextEncoder().encode("initial-content");

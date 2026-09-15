@@ -3591,8 +3591,8 @@ async function deployComposeServicesUnlocked(
   // ── Cross-project service links (internal / shared-network mode) ────────────
   // Attach this consumer's containers to each internally-linked source app's
   // `openship-<slug>` network so injected internal hosts resolve (see the shared
-  // helper). Advisory — a link-networking failure never fails the deploy.
-  await attachLinkedNetworks(project.id, runtime, (m, level) => logger.log(`${m}\n`, level));
+  // helper). Service links require successful networking before stabilization.
+  await attachLinkedNetworks(project.id, runtime, (m, level) => logger.log(`${m}\n`, level), dep.id);
 
   // ── Stabilization: did the containers we just created STAY up? ───────────────
   // Up to here "success" meant docker accepted the create+start call, which a

@@ -57,7 +57,6 @@ interface PreparedConfigArgs {
   projectId?: string;
   localPath?: string;
   uploadSessionId?: string;
-  preparedSource?: PrepareProjectSource;
 }
 
 interface LoadedProjectState {
@@ -812,7 +811,6 @@ export function useDeploymentConfig() {
         projectId,
         localPath,
         uploadSessionId,
-        preparedSource,
       } = args;
       const preparedContext = resolvePreparedProjectContext(response, newEndpointDomainType);
       const routingState = resolvePreparedRoutingState(
@@ -842,9 +840,6 @@ export function useDeploymentConfig() {
           owner,
           localPath,
           uploadSessionId,
-          // Cleared when hydrating saved rows or an upload, so their own reveal
-          // source cannot be shadowed by a previous repository scan.
-          preparedSource,
           projectName: project?.name || repoName,
           // The scan echoes back the compose path it actually used (request value or
           // the one openship.json declared), so the field shows what's in effect and
@@ -987,7 +982,7 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare(preparedSource);
+        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1024,11 +1019,6 @@ export function useDeploymentConfig() {
               branch: selectedBranch,
               branches: branchOptions,
               projectId: context?.projectId,
-              preparedSource: {
-                ...preparedSource,
-                branch: selectedBranch,
-                composePath: response.composePath ?? preparedSource.composePath,
-              },
             },
           ),
         );
@@ -1077,7 +1067,7 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare(preparedSource);
+        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1101,10 +1091,6 @@ export function useDeploymentConfig() {
               branches: [],
               projectId: context?.projectId,
               localPath: path,
-              preparedSource: {
-                ...preparedSource,
-                composePath: response.composePath ?? preparedSource.composePath,
-              },
             },
           ),
         );
@@ -1233,7 +1219,7 @@ export function useDeploymentConfig() {
             services: undefined,
           } as unknown as PrepareProjectResponse;
         } else {
-          const scan = await folderApi.scan(sessionId);
+          const scan = await folderApi.scan(sessionId, { includeEnv: true });
           if ((scan as { error?: string })?.error) {
             return {
               success: false,

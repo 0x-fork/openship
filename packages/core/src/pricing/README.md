@@ -1,47 +1,21 @@
-# Pricing — the catalog we sell from
+# Application plan limits and legacy pricing
 
-This directory is the **single source of truth for every price, allowance and limit** on Openship
-Cloud. Prices are not in TypeScript: they are in [`pricing.json`](./pricing.json), and the words that
-describe them are in [`locales/`](./locales/), one file per language.
+Cloud checkout, prices, credit allowances, and packs come from Oblien's live
+billing catalog. The API, dashboard (including linked local instances), and
+marketing site use that catalog. Do not configure new Cloud prices or credit
+grants through Stripe or the historical values in `pricing.json`.
 
-Three surfaces read this and are guaranteed to agree:
+`planLimits(tier)` still defines Openship application permissions such as project
+counts and build-minute limits. Stable app IDs map to provider IDs in
+`packages/platform/src/engine/modules/billing/billing-catalog.ts`:
+`starter → hobby`, `pro → pro`, `team → scale`. Provider currency amounts are
+converted to cents, and provider credits to milli-credits, at that boundary.
 
-| Surface | Reads |
-|---|---|
-| API — `GET /api/billing/plans` | `resolvePlans(locale)`, serving the caller's language |
-| Dashboard — Billing → Plans | the same payload, over the wire |
-| Marketing — `openship.io/pricing` | imports `@repo/core` directly (server component) |
-
-Enforcement (build minutes, free subdomains, static-only) reads `planLimits(tier)` — never the
-localized view, because a limit must not depend on which language a request arrived in.
-
-## Files here
-
-| Path | What it is |
-|---|---|
-| [`pricing.json`](./pricing.json) | **Edit this** — prices, allowances, limits, feature order. |
-| [`locales/en.json`](./locales/en.json) | **Edit this** — English copy. The source of truth for every other language. |
-| `locales/<lang>.json` | Translations. A missing key falls back to English; the test demands none are missing. |
-| [`schema.ts`](./schema.ts) | The validator. Rejects an incoherent edit at parse time. |
-| [`index.ts`](./index.ts) | Resolution — localized plans, limit lookups, Stripe price-id resolution. |
-| [`pricing.test.ts`](./pricing.test.ts) | The guard rail. Run it after every edit. |
-
-## Changing a price
-
-1. Edit `price.monthly` in `pricing.json` (**USD cents** — `3900` is $39).
-2. Create the matching price in Stripe and set the env var the plan **names** in
-   `stripePriceEnv.monthly` (e.g. `STRIPE_PRICE_PRO_MONTHLY=price_1Ab…`) on the SaaS.
-3. `bunx vitest run src/pricing` from `packages/core`.
-
-The catalog stores the env var **name**, never the id itself: this file is imported into browser
-bundles, so a `process.env` read at module load would both ship a server concern to the client and
-freeze the value at build time. `resolveStripePriceId()` reads the environment at call time, on the
-server.
-
-If you publish a price here and forget the Stripe id, two things happen: the API logs it at boot
-(`validatePlanPriceIds()`, an error in cloud mode, a note otherwise) and checkout refuses with
-`503 BILLING_NOT_CONFIGURED` at the point of use. Boot is deliberately **not** fatal — refusing to
-start the whole SaaS over one unset price id would trade a broken button for an outage.
+This directory also contains shared UI copy, the free self-hosted offer, and
+historical pricing helpers needed by older data/clients. The reference below
+describes those application definitions, not the current provider price list.
+See [the Cloud release gate](../../../../docs/openship-cloud-launch.md) for
+provider configuration and migration requirements.
 
 ## Changing a limit
 

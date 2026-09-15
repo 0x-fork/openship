@@ -19,6 +19,10 @@ const h = vi.hoisted(() => ({
   assertCalled: [] as Array<{ resourceId: string; action: string }>,
 }));
 
+vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
+  withProjectRuntimeLock: async (_id: string, run: () => Promise<unknown>) => run(),
+}));
+
 vi.mock("@repo/db", () => ({
   repos: {
     projectConnection: {

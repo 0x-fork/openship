@@ -8,15 +8,21 @@ import { assertNativeSourcePath } from "../../native/source-policy";
 import { resolveProjectAuthority } from "../../lib/cloud/project-authority";
 import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
 import { audit } from "../../lib/audit-emitter";
-import { pickRevealed } from "../../lib/env-reveal";
 
-/** Shared source validation for the masked preview and its explicit reveal. */
+/** Validate the source and permission to include editable values in its scan. */
 async function preparationSource(ctx: ExecutionContext, body: PrepareDeploymentInput): Promise<Source> {
   const source = body.source ?? (body.owner && body.repo ? "github" : undefined);
   const composePath = body.composePath?.trim() || undefined;
   const envVars = body.env && Object.keys(body.env).length ? body.env : undefined;
   if (source === "github") {
     if (!body.owner || !body.repo) throw new ValidationError("owner and repo are required");
+    if (body.includeEnv) {
+      // Values can combine Compose, .env and openship.json. A deployment or
+      // metadata grant alone must not expose the contents of those files.
+      const { checkSourceTier } = await import("../github/github-access");
+      const { ok } = await checkSourceTier(ctx, { owner: body.owner, repo: body.repo }, "content-whole", "");
+      if (!ok) throw new NotFoundError("github", `${body.owner}/${body.repo}`);
+    }
     return { source, owner: body.owner, repo: body.repo, branch: body.branch, ctx, composePath, env: envVars };
   }
   if (source === "local") {
@@ -32,23 +38,7 @@ export const buildDependencies: BuildDependencies = {
   async prepare(ctx, body) {
     const prepare = await import("./prepare.service");
     const input = await preparationSource(ctx, body);
-    return JSON.parse(JSON.stringify(prepare.projectInfoToPublicResponse(await prepare.resolveProjectInfo(input))));
-  },
-  async revealPreparedEnv(ctx, body) {
-    const input = await preparationSource(ctx, body);
-    if (input.source === "github") {
-      // A deploy/metadata grant may scan, but must not disclose file content.
-      // Values can combine Compose, adjacent .env and openship.json; require
-      // whole-repo content access before reading those unfiltered inputs.
-      const { checkSourceTier } = await import("../github/github-access");
-      const { ok } = await checkSourceTier(ctx, input, "content-whole", "");
-      if (!ok) throw new NotFoundError("github", `${input.owner}/${input.repo}`);
-    }
-    const { resolveProjectInfo } = await import("./prepare.service");
-    const info = await resolveProjectInfo(input);
-    const service = info.services?.find(row => row.name === body.service);
-    if (!service) throw new NotFoundError("Compose service", body.service);
-    return pickRevealed(service.environment, body.keys);
+    return JSON.parse(JSON.stringify(prepare.projectInfoToPublicResponse(await prepare.resolveProjectInfo(input), body)));
   },
   async access(ctx, input) {
     if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ROUTING === "none" && input.publicEndpoints === undefined) input.publicEndpoints = [];

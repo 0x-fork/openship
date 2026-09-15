@@ -196,6 +196,7 @@ export async function buildRespond(c: Context) {
  * Callers may omit `source` and send { owner, repo }; treated as GitHub.
  */
 export async function prepare(c: Context) {
+  c.header("Cache-Control", "no-store");
   try {
     const result = await getPlatformKernel().deployments.prepare(operationContext(c), await c.req.json());
     applyOperationContext(c, result.context);
@@ -204,13 +205,6 @@ export async function prepare(c: Context) {
     if (err instanceof AppError) throw err;
     return c.json({ error: err instanceof Error ? err.message : "Failed to initialize deploy" }, 400);
   }
-}
-
-export async function revealPreparedEnv(c: Context) {
-  const result = await getPlatformKernel().deployments.revealPreparedEnv(operationContext(c), await c.req.json());
-  applyOperationContext(c, result.context);
-  c.header("Cache-Control", "no-store");
-  return c.json({ environment: result.data });
 }
 
 export async function buildAccess(c: Context) {

@@ -1288,6 +1288,10 @@ export async function createQueuedDeployment(opts: {
   // be bypassed by the Redeploy button and by apply-update) and
   // triggerDeployment (webhook push, incoming webhooks, service-connection
   // auto-redeploy). Both gates no-op unless CLOUD_MODE.
+  if ((env.CLOUD_MODE || meta.deployTarget === "cloud") &&
+      (meta.volumes?.length || meta.composeServices?.some((service) => service.volumes?.length))) {
+    throw new AppError("Persistent volume mounts are not supported on Openship Cloud. Choose a server for this workload.", 400, "CLOUD_VOLUMES_UNSUPPORTED");
+  }
   await assertPlanAllowsDeployShape(opts.organizationId, {
     workload: snapshotToClass(meta).workload,
     targetServiceIds: meta.targetServiceIds ?? null,
@@ -1486,11 +1490,14 @@ export async function requestBuildAccess(
   // and the eventual build must see the exact same values. Keep the encrypted
   // map for the deployment row and decrypt only the in-memory interpolation copy.
   const deployEnvironment = environment || "production";
+  const connectedEnv = await (await import("../projects/project-connection.service")).refreshConnectionEnv(ctx, project.id, deployEnvironment);
   let deploymentEnvVars: Record<string, string> | null;
   let submittedProjectEnv: Array<{ key: string; value: string; isSecret: boolean }> | undefined;
   if (envVars && Object.keys(envVars).length > 0) {
     const storedRows = await repos.project.listEnvVars(project.id, deployEnvironment, null);
-    const resolved = resolveSubmittedProjectEnv(envVars, storedRows);
+    // Connection-owned values follow their source, even if the wizard submits
+    // an older environment snapshot or omits the connected key.
+    const resolved = resolveSubmittedProjectEnv({ ...envVars, ...connectedEnv }, storedRows);
     deploymentEnvVars = resolved.encrypted;
     submittedProjectEnv = resolved.rows;
   } else {
@@ -2264,6 +2271,7 @@ export async function redeployBuildSession(
   // reconcileComposeSource. A composePath bootstrap is intentionally strict;
   // an explicitly frozen single-app deployment must remain single and must not
   // materialize compose rows as a side effect of redeploying it.
+  await (await import("../projects/project-connection.service")).refreshConnectionEnv(ctx, project.id, oldDep.environment);
   let currentProjectEnv = await repos.project.getEnvMap(project.id, oldDep.environment, null);
   let currentSourceInfo: SourceEnvInfo | undefined;
   if (meta.serviceDeploymentMode !== "single") {
@@ -2573,6 +2581,7 @@ export async function triggerDeployment(
   if (data.reuseSnapshot) {
     encryptedEnvVars = data.reuseSnapshot.envVars;
   } else {
+    await (await import("../projects/project-connection.service")).refreshConnectionEnv(ctx, project.id, environment);
     const rawEnvMap = await repos.project.getEnvMap(project.id, environment, null);
     encryptedEnvVars = Object.keys(rawEnvMap).length > 0 ? rawEnvMap : null;
   }
@@ -2789,11 +2798,15 @@ export async function triggerDeployment(
       .filter((s) => s.enabled)
       .map((s) => s.id);
     // Target precedence: explicit serviceIds (per-service refresh from the UI)
-    // → env-changed services (surgical, leaves a running DB alone) → all
-    // enabled (single-app, or a manual "refresh everything").
+    // → forceAll (explicit environment refresh) → env-changed services
+    // (surgical, leaves a running DB alone) → all enabled.
     let target: string[];
     if (data.serviceIds && data.serviceIds.length > 0) {
       target = data.serviceIds.filter((id) => enabledIds.includes(id));
+    } else if (data.forceAll) {
+      // An explicit environment-wide refresh also reapplies non-env settings
+      // (for example CPU/memory). An unrelated dirty env key must not narrow it.
+      target = enabledIds;
     } else {
       const envDirty = await resolveEnvDirtyServiceIds(project, environment);
       target = envDirty && envDirty.size > 0 ? [...envDirty] : enabledIds;

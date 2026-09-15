@@ -77,6 +77,11 @@ export interface PlatformConfig {
   cloudClientSecret?: string;
   /** Oblien namespace-scoped token (cloud target - local instances) */
   cloudToken?: string;
+  /** Customer namespace; required alongside a token for cloud workload access. */
+  cloudNamespace?: string;
+  cloudApiUrl?: string;
+  /** Fresh provider entitlement check before starting billable work. */
+  cloudBeforeProvision?: () => Promise<void>;
   /**
    * Admin-scoped Oblien operations that namespace tokens can't perform.
    * Local/desktop instances inject these so CloudRuntime can hand them
@@ -245,19 +250,23 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
 
   // Single Oblien client - either from token or master creds
   const client = config.cloudToken
-    ? new Oblien({ token: config.cloudToken })
+    ? new Oblien({ token: config.cloudToken, baseUrl: config.cloudApiUrl })
     : new Oblien({
         clientId: config.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
         clientSecret: config.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
+        baseUrl: config.cloudApiUrl,
       });
 
-  const infra = new CloudInfraProvider(client);
+  const infra = new CloudInfraProvider(client, { namespace: config.cloudNamespace, adminProxy: config.cloudAdminProxy });
 
   return {
     target: "cloud",
     runtime: new CloudRuntime(client, {
       adminProxy: config.cloudAdminProxy,
       allowHostBuild: config.allowHostBuild,
+      namespace: config.cloudNamespace,
+      allowProvisioning: Boolean(config.cloudToken && config.cloudNamespace),
+      beforeProvision: config.cloudBeforeProvision,
     }),
     routing: infra,
     ssl: infra,

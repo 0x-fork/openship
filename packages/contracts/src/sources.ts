@@ -2,7 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { BuildServiceInput } from "./deployment-inputs";
 import { EnsureProjectBody } from "./project-inputs";
-import { EnvRevealKeysSchema } from "./env-reveal";
+import { EnvRevealKeysSchema, type SourceScanOptions } from "./env-reveal";
 
 export type CodeSource = { type: "directory"; path: string } | { type: "files"; files: Readonly<Record<string, string | Uint8Array>> };
 export interface StageSourceInput { source: CodeSource; projectId?: string; name?: string; stack?: string; packageManager?: string }
@@ -48,6 +48,6 @@ export const RevealSourceSchema = Type.Object({
 export interface SourceOperations {
   stage(input: StageSourceInput, options?: { signal?: AbortSignal; onStep?: (message: string) => void }): Promise<StagedSource>;
   open(input?: { projectId?: string; name?: string; stack?: string; packageManager?: string }): Promise<FolderSessionResult>;
-  scan(id: string): Promise<SourceScan>;
+  scan(id: string, options?: SourceScanOptions): Promise<SourceScan>;
   reveal(id: string, input: Static<typeof RevealSourceSchema>): Promise<Record<string, string>>;
 }

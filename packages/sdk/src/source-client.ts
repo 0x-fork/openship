@@ -1,4 +1,4 @@
-import { FolderSessionBody, ResourceIdSchema, RevealSourceSchema, isRecord, isFolderSessionResult, isSourceScan, parseInput, type SourceOperations } from "@repo/contracts";
+import { FolderSessionBody, ResourceIdSchema, RevealSourceSchema, SourceScanOptionsSchema, isRecord, isFolderSessionResult, isSourceScan, parseInput, type SourceOperations } from "@repo/contracts";
 import type { HttpClient } from "./http";
 import { ApiError } from "./errors";
 
@@ -13,8 +13,8 @@ export function createRemoteSourceOperations(http: HttpClient): SourceOperations
   return Object.freeze({
     async stage(input, options) { return (await import("./sources")).stageRemoteSource(http, input, options); },
     open: input => requestSourceSession(http, input),
-    async scan(id) {
-      const result = await http.request(path(id), { method: "POST", body: "{}" });
+    async scan(id, options = {}) {
+      const result = await http.request(path(id), { method: "POST", body: JSON.stringify(parseInput(SourceScanOptionsSchema, options)) });
       if (!isSourceScan(result)) throw new ApiError("Invalid source scan response", 502, result);
       return result;
     },

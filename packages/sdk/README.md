@@ -115,7 +115,7 @@ Connect directly to the canonical cloud instance and its cloud organization ID. 
 | `tokens`, `permissions` | PAT/MCP lifecycle, grants/resources, teams/memberships and invitations. |
 | `github` | Connection/source management, repository metadata/content/automation and narrowed clone tokens. |
 | `notices` | Public installation announcements; publishing requires the separate operator capability. |
-| `billing` | Plans, account/subscription state, checkout/cancellation, top-ups, portal, usage and allowance detail through retained billing services. |
+| `billing` | Plans, subscription and renewal state, checkout, cancellation/resumption, top-ups, a namespace-specific portal, usage and allowance detail through Oblien. |
 | Workflows | `deploy({ source, ... })`, `deployment(id).wait(...)`. |
 
 The exported operation interfaces in `@repo/contracts` are the method-level source of truth. Capability checks depend on mode, configured providers, identity, and host policy.
@@ -128,7 +128,7 @@ All project methods are on `scope.projects` or `client.projects`. Environment li
 
 Native CLI mode is implemented and the legacy HTTP/SSE/folder-deploy helpers are removed. Edge, mail, and parts of system management still need named SDK adoption. Full mail, data transfer, cloud tenant mapping, organization/account lifecycle, and remaining system/channel operations are still being migrated. Durable multi-worker dispatch/replay, billing replay/accounting review and constrained background jobs remain open.
 
-Billing catalogs work locally. Account and payment operations require hosted billing configuration or the canonical remote cloud client. Fixed local scopes refuse unverified owner-account cloud forwarding. Signature verification for Stripe and Oblien webhook ingress remains outside the ordinary tenant SDK.
+Billing catalogs work locally. Account and payment operations require hosted billing configuration or the canonical remote cloud client. Fixed local scopes refuse unverified owner-account cloud forwarding. Oblien webhook signature verification remains outside the ordinary tenant SDK; the retired Stripe webhook returns 410. Portal/cancel/resume require billing admin permission and remain available when new purchases are disabled.
 
 Incoming hooks, invitations, and Git device continuations retain the initiating actor's identifiers and restriction ceilings and recheck persisted membership/token revocation before execution. They never substitute an organization owner. Host session revocation must be synchronized into durable identity/membership state for work that can survive the originating request; external assertion callbacks cannot be replayed after restart. Job, backup, and scan principals still need this migration.
 

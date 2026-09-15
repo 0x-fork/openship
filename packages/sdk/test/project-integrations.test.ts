@@ -3,10 +3,11 @@ import type { ProjectControlOperations } from "@repo/contracts";
 import { OpenshipClient } from "../src/client";
 import { projectFixture } from "../../contracts/test/fixtures";
 
-const connection = { id: "link/a", sourceProjectId: "database", sourceName: "Database", sourceAppTemplateId: "postgres", targetProjectId: "project/a", outputId: "url", envKey: "DATABASE_URL", mode: "internal" };
+const connection = { id: "link/a", sourceProjectId: "database", sourceName: "Database", sourceAppTemplateId: "postgres", sourceServiceId: "svc-db", sourceServiceName: "Postgres", targetProjectId: "project/a", outputId: "url", envKey: "DATABASE_URL", mode: "internal" };
 const binding = { provider: "custom", bucket: "uploads", endpoint: "https://s3.example.test", region: "auto", envKeys: ["S3_BUCKET"], boundAt: "2026-09-12T00:00:00.000Z" };
 const providers = { custom: { id: "custom", label: "S3-compatible", endpointPlaceholder: "https://s3.example.test", defaultRegion: "auto", forcePathStyle: true } };
 const cases: Array<{ name: keyof ProjectControlOperations; method: string; path: string; input?: unknown; pathInput?: boolean; output: unknown; envelope?: boolean }> = [
+  { name: "listConnectionCandidates", method: "GET", path: "/connections/candidates", output: [{ id: "database", name: "Database", description: "production", appTemplateId: null }], envelope: true },
   { name: "listConnections", method: "GET", path: "/connections", output: [connection], envelope: true },
   { name: "listConnectionConsumers", method: "GET", path: "/connections/consumers", output: [{ id: "link/a", targetProjectId: "consumer", targetName: "Consumer", targetSlug: "consumer", outputId: "url", envKey: "DATABASE_URL", mode: "internal" }], envelope: true },
   { name: "createConnection", method: "POST", path: "/connections", input: { sourceProjectId: "database", outputId: "url", envKey: "DATABASE_URL" }, output: { connection, requiresRedeploy: true }, envelope: true },

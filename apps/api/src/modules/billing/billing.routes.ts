@@ -25,7 +25,7 @@ plansR.public(
 );
 
 /**
- * Stripe-powered billing — SaaS only (CLOUD_MODE=true).
+ * Oblien-managed billing — SaaS only (CLOUD_MODE=true).
  * Registered at `/api/billing` only when CLOUD_MODE.
  *
  * ⚠ This sub-app shares the `/api/billing` mount prefix with
@@ -48,10 +48,10 @@ r.use("/topup", authMiddleware);
 r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
 r.use("/cancel", authMiddleware);
+r.use("/resume", authMiddleware);
 r.use("/usage", authMiddleware);
 r.use("/allowances", authMiddleware);
-// /webhook/stripe is intentionally unauthed — Stripe signs the request;
-// signature verification happens inside the handler.
+// The retired Stripe webhook always returns 410 and performs no mutation.
 
 /* ---------- Dashboard state snapshot ---------- */
 r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getState);
@@ -69,16 +69,14 @@ r.get("/allowances", { tag: "billing:read", authorizationHandledByOperation: tru
 
 /* ---------- Subscription ---------- */
 // GET returns the per-org subscription slice (tier + status + period).
-// POST starts a Stripe Checkout session for an upgrade — the
-// `customer.subscription.*` webhooks finalize the local row.
+// POST requests an Oblien hosted checkout; provider entitlements confirm access.
 r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getSubscription);
-r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingController.createSubscription);
+r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingController.createSubscription);
 
 /* ---------- Cancellation ---------- */
-// Destructive — admin tier per the same precedent as the domain DELETE
-// flow. Flips `cancel_at_period_end=true` on Stripe; the deletion
-// webhook downgrades the local row when the period ends.
-r.post("/cancel", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true }, billingController.cancelSubscription);
+// Oblien keeps paid access until period end; both renewal actions are repeatable.
+r.post("/cancel", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingController.cancelSubscription);
+r.post("/resume", { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" }, billingController.resumeSubscription);
 
 /* ---------- One-shot top-ups ---------- */
 r.get("/topup-packs", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.listTopupPacks);
@@ -88,14 +86,11 @@ r.post(
   billingController.createTopup,
 );
 
-/* ---------- Stripe Portal (invoices + PM management) ---------- */
-// POST (not GET) because creating a portal session is a Stripe-side
-// mutation: each call mints a new short-lived session token. Tight
-// per-org rate limit caps runaway frontend retry loops that would
-// otherwise rack up Stripe API spend.
+/* ---------- Billing management ---------- */
+// The portal can cancel renewal, so it requires billing:admin too.
 r.post(
   "/portal",
-  { tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
+  { tag: "billing:admin", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal" },
   billingController.createPortal,
 );
 
@@ -103,7 +98,7 @@ r.post(
 r.public(
   "post",
   "/webhook/stripe",
-  { reason: "Stripe-signed webhook — signature verified in handler, no session auth" },
+  { reason: "Retired Stripe endpoint — always 410, no billing mutations" },
   billingController.stripeWebhook,
 );
 

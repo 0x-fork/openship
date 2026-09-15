@@ -3,6 +3,12 @@ import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { param } from "../../lib/controller-helpers";
 import { operationContext, applyOperationContext } from "../../lib/operation-context";
 
+export async function candidates(c: Context) {
+  const result = await getPlatformKernel().projects.listConnectionCandidates(operationContext(c), param(c, "id"));
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+
 export async function list(c: Context) {
   const result = await getPlatformKernel().projects.listConnections(operationContext(c), param(c, "id"));
   applyOperationContext(c, result.context);
@@ -32,4 +38,3 @@ export async function remove(c: Context) {
   applyOperationContext(c, result.context);
   return c.json({ data: result.data });
 }
-

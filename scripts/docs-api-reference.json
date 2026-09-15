@@ -138,12 +138,6 @@
       "description": "Detect and prepare source configuration before submission.",
       "route": "POST /api/deployments/prepare"
     },
-    "deployments.revealPreparedEnv": {
-      "page": "deployments",
-      "section": "Submit",
-      "description": "Reveal selected Compose environment keys from a Git or local source before saving a project.",
-      "route": "POST /api/deployments/prepare/env-reveal"
-    },
     "deployments.buildAccess": {
       "page": "deployments",
       "section": "Submit",
@@ -425,6 +419,12 @@
       "section": "Connections, storage, and apps",
       "description": "List the project’s outgoing resource connections.",
       "route": "GET /api/projects/:id/connections"
+    },
+    "projects.listConnectionCandidates": {
+      "page": "projects",
+      "section": "Connections, storage, and apps",
+      "description": "List accessible projects and apps for a service connection.",
+      "route": "GET /api/projects/:id/connections/candidates"
     },
     "projects.listConnectionConsumers": {
       "page": "projects",
@@ -1389,7 +1389,7 @@
     "billing.getSubscription": {
       "page": "billing",
       "section": "Operations",
-      "description": "Read the active subscription.",
+      "description": "Read subscription and renewal state.",
       "route": "GET /api/billing/subscription"
     },
     "billing.createSubscription": {
@@ -1401,8 +1401,14 @@
     "billing.cancelSubscription": {
       "page": "billing",
       "section": "Operations",
-      "description": "Request subscription cancellation.",
+      "description": "Stop subscription renewal at the end of the paid period.",
       "route": "POST /api/billing/cancel"
+    },
+    "billing.resumeSubscription": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Resume a scheduled subscription renewal.",
+      "route": "POST /api/billing/resume"
     },
     "billing.createTopup": {
       "page": "billing",
@@ -2280,7 +2286,7 @@
     },
     "POST /api/billing/webhook/stripe": {
       "page": "billing",
-      "description": "Receive signed Stripe billing events."
+      "description": "Retired Stripe webhook; returns 410 without changing billing."
     },
     "GET /api/cloud/account": {
       "page": "cloud",
@@ -2393,6 +2399,14 @@
     "POST /api/cloud/preflight": {
       "page": "cloud",
       "description": "Cloud deployment preflight — slug / custom-domain availability."
+    },
+    "POST /api/cloud/resource-proxy": {
+      "page": "cloud",
+      "description": "Run an allowed Pages or routing action after verifying customer namespace ownership."
+    },
+    "GET /api/cloud/route-registry": {
+      "page": "cloud",
+      "description": "Read routes or certificates belonging to the caller's Cloud namespace."
     },
     "POST /api/cloud/send-invitation": {
       "page": "cloud",

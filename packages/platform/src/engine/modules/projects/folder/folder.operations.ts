@@ -54,9 +54,9 @@ export const sourceDependencies: SourceDependencies = {
       throw error;
     } finally { await source.dispose(); }
   },
-  async scan(ctx, id) {
+  async scan(ctx, id, options) {
     const [{ projectInfoToScanResponse }, { scanFolderSession }] = await Promise.all([import("../../deployments/prepare.service"), import("./folder.service")]);
-    return projectInfoToScanResponse(await scanFolderSession(sessionFor(id, ctx.organizationId)));
+    return projectInfoToScanResponse(await scanFolderSession(sessionFor(id, ctx.organizationId)), options);
   },
   async upload(ctx, id, ticket, body) {
     const session = sessionFor(id, ctx.organizationId);

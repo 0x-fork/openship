@@ -55,6 +55,7 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
       getIncidents: { method: "GET", path: id => path(id) + "/incidents" },
       connectDomain: { method: "POST", path: id => path(id) + "/connect" },
       listConnections: { method: "GET", path: id => path(id) + "/connections", envelope: "data" },
+      listConnectionCandidates: { method: "GET", path: id => path(id) + "/connections/candidates", envelope: "data" },
       listConnectionConsumers: { method: "GET", path: id => path(id) + "/connections/consumers", envelope: "data" },
       createConnection: { method: "POST", path: id => path(id) + "/connections", envelope: "data" },
       connectBundle: { method: "POST", path: id => path(id) + "/connections/bundle", envelope: "data" },

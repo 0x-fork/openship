@@ -28,10 +28,8 @@ export const organization = pgTable("organization", {
   // The active tier is denormalized here so per-request authorization checks
   // ("can this org do X on the pro tier?") don't have to join through
   // billing_subscription. The source of truth for subscription state is
-  // billing_subscription; this column is kept in sync by the Stripe webhook
-  // handler. `subscription_status` mirrors the Stripe status verbatim but
-  // adds the openship-internal `credit_exhausted` state for orgs whose
-  // metered usage outran their balance (gating happens in middleware).
+  // Oblien entitlement API; webhook notifications and polling refresh this
+  // mirror. Historical billing_subscription rows are retained for migration.
   /** 'free' | 'pro' | 'team' | 'enterprise' */
   planTierId: text("plan_tier_id").notNull().default("free"),
   /** Mirrors billing_customer.stripe_customer_id for fast lookup. */
@@ -43,7 +41,7 @@ export const organization = pgTable("organization", {
   /** Oblien-side namespace for this org's metered resources. Set when the
    *  org is provisioned in Oblien; null for orgs that haven't been
    *  onboarded to metered billing yet. */
-  oblienNamespace: text("oblien_namespace"),
+  oblienNamespace: text("oblien_namespace").unique(),
 });
 
 export const member = pgTable(
