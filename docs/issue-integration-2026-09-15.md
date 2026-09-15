@@ -2,9 +2,11 @@
 
 Snapshot: 2026-09-15, open issues in GitHub's default newest-first order.
 
-Integration branch: `feat/bugfix-integration-2026-09-15`. Base: `c6cd723f8bd1a0665f5593daaccd0d15fd552931` (`main`). The original checkout and `main` are unchanged.
+Integration branch: `feat/bugfix-integration-2026-09-15`. Base: `c6cd723f8bd1a0665f5593daaccd0d15fd552931` (`main`). This review has not advanced `main`; implementation changes are isolated in the integration worktree.
 
-Scope: bugs and general improvements only, as clarified by the maintainer. New feature requests are deferred and remain open. Bug reports are checked against this base and the integrated tree. Business logic stays in the shared platform; the HTTP API, SDK, and CLI use that implementation. Original PR commits remain in merge history, with architecture and correctness adjustments in the integration merge.
+Canonical integration PR: [#891](https://github.com/oblien/openship/pull/891). The earlier [#890](https://github.com/oblien/openship/pull/890) is closed as superseded; its complete commit history is retained in this branch.
+
+Scope: bugs and general improvements only, as clarified by the maintainer. New feature requests are deferred and remain open. Bug reports are checked against this base and the integrated tree. Business logic stays in the shared platform; the HTTP API, SDK, and CLI use that implementation. Original PR commits remain in merge history, with architecture and correctness adjustments on the contributor branches before integration where possible.
 
 Usable contributor PRs target this integration branch. Maintainer edits are made on the original PR branch when allowed; original commits and authorship are preserved. Redundant or out-of-scope PRs are closed with reasons.
 
@@ -12,7 +14,23 @@ Usable contributor PRs target this integration branch. Maintainer edits are made
 
 Initial unchanged-main baseline: **13,075 tests passed, 3 skipped, all 10 tasks passed** (4m34s); `npx --yes bun@1.3.10 run test --force --log-order=stream`.
 
-Review and integration are in progress. Local checks do not establish live provider behavior; any remaining provider or deployment checks are identified in the issue notes.
+Final combined local suite: **13,325 tests passed, 0 skipped, 1,003 files, all 10 tasks passed** (8m19s); `npx --yes bun@1.3.10 run test`.
+
+All 22 build/typecheck tasks passed with `npx --yes bun@1.3.10 run lint`. The web documentation source was generated first. Documentation checks passed: 160 pages; 367 SDK methods; 559 HTTP routes; 204 CLI paths; 224 CLI examples; 107 SDK examples.
+
+The actual npm tarball passed outside the workspace on Node 22.21.1: ESM/CommonJS imports, NodeNext types, passive imports, native deployment and persistence, tenant isolation and revocation, teardown, runnable lifecycle example, and CLI persistence/cleanup (`bun run --cwd packages/openship test:package`).
+
+Additional runtime checks for the final configuration change:
+
+- 3 whole-instance HTTP-transfer / PostgreSQL configuration race cases
+- 3 real Docker Compose rollback cases, including the original secret after restore
+- 1 real project-store to Docker build/runtime case
+
+Combined-branch CI: [SUCCESS](https://github.com/oblien/openship/actions/runs/35028598928) at `2763b0cdff1e34316f4d46465e3ebccd8ebf5484`. [Current PR checks](https://github.com/oblien/openship/pull/891/checks) include any later ledger-only commit.
+
+All 50 reports reviewed: **28 fixed or verified already fixed**, **14 feature requests deferred**, and **8 other reports kept open** with partial fixes, missing reproduction details, or no actionable description. Fifteen contributor PRs are recorded as merged into this branch on GitHub, preserving their commits and authorship. Main is awaiting maintainer review of PR #891.
+
+Local and simulated checks do not establish behavior for an unprovided host or provider response. The remaining limits and requested diagnostics are recorded below.
 
 ## Issue ledger
 
@@ -43,7 +61,7 @@ Review and integration are in progress. Local checks do not establish live provi
 | [#847](https://github.com/oblien/openship/issues/847) | [Bug] Push webhook that arrives during an in-progress deployment is dropped permanently (200 OK, no retry, no queue)                                                                              | —                                                                                                        | **fixed**: Blocked GitHub dispatches now fail visibly and the same failed delivery ID can be redelivered after the blocker clears.                                                                                                                                                                                                            |
 | [#846](https://github.com/oblien/openship/issues/846) | [Bug] Compose services cannot join a pre-existing external Docker network (background workers are unreachable from shared services)                                                               | —                                                                                                        | **deferred-feature**: Per-service external Docker network attachments require a new service/runtime capability; deferred under bugs-only scope.                                                                                                                                                                                               |
 | [#845](https://github.com/oblien/openship/issues/845) | [Bug] Edge router drops query string on 308 trailing-slash redirect                                                                                                                               | —                                                                                                        | **already-fixed**: Current main already preserves query strings in generated trailing-slash redirects. Real OpenResty tests confirm that /ui?token=... redirects to /ui/?token=... without losing encoded values or repeated parameters; additional regression coverage is on the integration branch.                                         |
-| [#844](https://github.com/oblien/openship/issues/844) | [Bug] service.environment silently overrides project env on every deploy path (and stores secrets in plaintext)                                                                                   | —                                                                                                        | **partial**: Added shared API/SDK, CLI and deployment-log warnings for service overrides; API build-argument masking is already integrated through PR #864. At-rest storage hardening remains under review.                                                                                                                                   |
+| [#844](https://github.com/oblien/openship/issues/844) | [Bug] service.environment silently overrides project env on every deploy path (and stores secrets in plaintext)                                                                                   | —                                                                                                        | **fixed**: Project-env writes and deployments warn about service overrides; service environment, build arguments and their saved copies are encrypted at rest. Contributor PR #864 also protects build-argument API responses and masked edits.                                                                                               |
 | [#842](https://github.com/oblien/openship/issues/842) | [Bug]: GitHub App manifest includes unsupported installation event                                                                                                                                | [#843](https://github.com/oblien/openship/pull/843)                                                      | **integrated**: Removed the unsupported installation event; retained the shared platform service.                                                                                                                                                                                                                                             |
 | [#841](https://github.com/oblien/openship/issues/841) | [Bug] service sync leaves its multi-GB upload tarball in /tmp after a successful deploy                                                                                                           | —                                                                                                        | **already-fixed**: Current main service sync sends normalized Compose configuration through the SDK and creates no source archive. Source uploads separately dispose of their generated directory and tarball as soon as the upload completes; cleanup does not wait for deployment completion.                                               |
 | [#837](https://github.com/oblien/openship/issues/837) | [Bug] openship-mail: Postfix and Dovecot fall back to self-signed certificate when Let's Encrypt cert is mounted                                                                                  | [#838](https://github.com/oblien/openship/pull/838)                                                      | **integrated**: Mail startup validates mounted TLS certificates and repairs both iRedMail certificate/key links, including container recreation and renewal. PR #838 was updated on the contributor branch and merged into integration after all CI checks passed.                                                                            |
@@ -142,6 +160,8 @@ OPENSHIP_PUBLIC_URL backfill intentionally records external ingress when self-re
 
 The secondary mail/static-root report remains unverified: invalid container/image/hash references now produce a named warning rather than a bogus document root, but the affected deployment metadata and artifact location are unavailable. Keeping #879 open for that report rather than claiming an unverified mail repair.
 
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/879#issuecomment-5687365186).
+
 Integration commits: `d0e7f4f1`.
 
 Verification:
@@ -158,6 +178,8 @@ Reviewed the shared Compose build classification and native deploy handoff. A se
 Added two focused regressions: an image-only GHCR reference remains the deployment image with no source build, while a service declaring both image and build honors the explicit build. This distinguishes the missing configuration detail without changing existing deployment semantics.
 
 Keep open pending a sanitized effective Compose service definition (including overlays/build keys), Openship version and the start of the build log. A mutable image tag not refreshing is a separate pull/redeploy question; these tests do not establish behavior for the unprovided configuration.
+
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/878#issuecomment-5687857006).
 
 Integration commits: `2a0f0cec`.
 
@@ -182,6 +204,8 @@ Independently reproduced the related stale-PID failure reported in PR #885 using
 The entrypoint now removes stale Amavis pid/lock/socket files and recreates its runtime directory before supervisord. It fails startup if the required directory cannot be prepared. Mail data is untouched; no live process is killed.
 
 Keep #876 open: a fix for restart-specific stale runtime files is not evidence that every fresh-install postmaster delivery failure is solved. Requested sanitized queue and daemon logs.
+
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/876#issuecomment-5687928128).
 
 PR #885: Adopted the contributor fix after maintainer adaptation and real-daemon restart tests; original commit and credit preserved; merged into the integration branch with [review status](https://github.com/oblien/openship/pull/885#issuecomment-5687831001).
 
@@ -222,6 +246,8 @@ Creating a new explicitly monorepo project without monorepoApps now fails before
 
 The guide now describes the supported import/metadata workflow and separate projects for independent bare processes. Keep the report open for the requested declarative multi-process capability; this branch does not introduce a new bare multi-process runtime.
 
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/873#issuecomment-5688002443).
+
 Integration commits: `7841d472`.
 
 Verification:
@@ -237,6 +263,8 @@ Fixed reproducible rate-limit misclassification; the original intermittent accou
 The cache TTL is not the credential lifetime: main reloads encrypted instance credentials on a cache miss. The integrated correction keeps 403 primary/secondary rate limits and 429 retryable and bounds verification to 10 seconds. Actual authorization rejection still prompts reconnection.
 
 Leaving the issue open because the reported account’s intermittent rejection has not been reproduced or tied to a rate-limit response.
+
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/872#issuecomment-5688591669).
 
 Integration commits: `2715609a`.
 
@@ -276,6 +304,10 @@ Current main created an Openship project then attempted a sealed restore at a fi
 The source release now packages api/scripts/import-instance.ts and packages/db/scripts/{dump,restore}. Its supervisor and source-only maintenance commands discard the compiled CLI PGlite assets override before loading the installed package. Headless sealed import validates mode and requires the passphrase before opening storage; it cannot report success after skipping secrets.
 
 The complete move-to-own-server workflow remains open: provision a target through the shared engine, identify its actual release/data directory and key, quiesce storage, import and verify health, then commit cutover. No new installation/cutover feature was improvised into this bug branch. Use the existing Data Transfer workflow on a running target, documented in the control-plane migration guide.
+
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/869#issuecomment-5688416818).
+
+Integration commits: `760bdbed`.
 
 Verification:
 
@@ -500,19 +532,28 @@ Verification:
 
 ### #844
 
-Added shared API/SDK, CLI and deployment-log warnings for service overrides; API build-argument masking is already integrated through PR #864. At-rest storage hardening remains under review.
+Project-env writes and deployments warn about service overrides; service environment, build arguments and their saved copies are encrypted at rest. Contributor PR #864 also protects build-argument API responses and masked edits.
 
-Project environment writes now identify enabled services whose literal or service-scoped values override changed/deleted keys. The warning uses the actual shared deploy merge, respects Compose passthrough and environment scope, and contains names only. Existing precedence is preserved.
+Warnings name affected keys and enabled services, respect environment scope and Compose passthrough, and use the actual shared deployment merge. They never contain values. Existing precedence and frozen rollback behavior are preserved; the CLI prints human-readable warnings on stderr and includes them in JSON results.
 
-Frozen rollback values retain priority; deployment warnings reflect the layer that actually supplies a value. Read diagnostics before committing the write so a later failed read cannot make a successful credential rotation appear to have failed.
+Repositories now encrypt service environment, buildArgs, advanced configuration, importedSpec and driftSpec, plus deployment.meta.composeServices. They expose decrypted domain objects to the shared engine. One explicit-key AES-GCM implementation is reused; native composition remains passive and isolated. API and native startup convert legacy rows in bounded batches with compare-and-swap guards, without changing timestamps or overwriting concurrent edits.
 
-Storage encryption and legacy copies in service baselines/deployment snapshots are still being reviewed. The issue stays open.
+Wrong keys and damaged ciphertext fail closed. Empty/default values and literal strings resembling an envelope still round-trip correctly. Transfers extract and re-encrypt protected configuration for the destination key; transfers or recovery manifests without secrets redact it. Keep BETTER_AUTH_SECRET with the database backup, and restore the matching old database when downgrading. The environment guide explains these requirements.
 
-Integration commits: `d43b3f5001eb64ad907efd712d64a399d98fd6d6`, `8c20a9b303a57955237a40f5ece15cc6e179041a`.
+The build-argument masking and safe edit behavior came from contributor PR #864, preserved as a GitHub merge into this branch. The suggested effective-environment CLI is an additional feature, outside this bug-only integration.
+
+GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/844#issuecomment-5688737834).
+
+Integration commits: `d43b3f5001eb64ad907efd712d64a399d98fd6d6`, `8c20a9b3`, `2763b0cdff1e34316f4d46465e3ebccd8ebf5484`.
 
 Verification:
 
-- 556 API/project/Compose tests in 54 files, including three real-database native SDK/HTTP cases, passed. CLI project suite: 11 tests passed. API and CLI TypeScript checks passed. Documentation validation passed.
+- The full combined branch passed 13,325 tests across 1,003 files and all 10 workspace test tasks, including native/HTTP SDK masking, edits, drift and environment warnings.
+- Seven new real PGlite repository cases passed: raw storage protection, legacy conversion across multiple pages, cloning, deployment updates, rollback snapshots, wrong-key/tamper rejection, and empty/prefix-like values.
+- Two real PostgreSQL lock races preserved concurrent service/deployment edits. A whole-instance HTTP transfer between separate API processes with different keys preserved inline environment, build arguments and mounted-file content, with masked read responses.
+- Three real Docker Compose rollback cases and the real project-store → Docker-build → running-container case passed. The rollback restored the original secret while its database snapshot remained encrypted.
+- All 22 build/typecheck tasks, explicit E2E TypeScript checks, documentation validation, and external npm-tarball ESM/CommonJS/native/CLI checks passed.
+- Combined-branch CI passed at 2763b0cd: https://github.com/oblien/openship/actions/runs/35028598928.
 
 ### #842
 
@@ -733,6 +774,8 @@ All 13 existing SSH bridge tests pass, including real HTTP stream behavior, sile
 
 Requested current Openship version, exact failing route/operation, elapsed time and sanitized request/SSH journal details. Leave open until the failure can be reproduced.
 
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/773#issuecomment-5688002629).
+
 Verification:
 
 - 13 Docker SSH bridge tests passed against the retained current-main implementation.
@@ -803,6 +846,8 @@ Verification:
 ### #695
 
 The issue has no body, reproduction, request, or linked PR. No code change can be inferred.
+
+GitHub: remains open with [progress and outstanding details](https://github.com/oblien/openship/issues/695#issuecomment-5688591793).
 
 Verification:
 
