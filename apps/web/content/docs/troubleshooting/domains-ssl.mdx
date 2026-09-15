@@ -17,6 +17,28 @@ Every custom domain needs a **routing record** (an `A` or `CNAME` that points th
 Verify checks both.
 </Callout>
 
+## DNS and SSL are verified, but the app still returns 404 or 502
+
+DNS verification and certificate issuance do not prove that a domain has a working upstream.
+For a Compose project, open **Domains & Routes** and map the domain to the intended service's
+container port. An unmapped project-level domain is skipped with a warning naming the available
+ports; it must not inherit a stale project port from another service. Then retry routing or set
+up the project's edge. Review any route warnings even when the edge itself is healthy.
+
+On an Openship control-plane project, an instance administrator can use these repair actions to
+route the adopted dashboard to its configured loopback port. The repair preserves the dashboard
+service's existing port claim. Project membership alone does not grant access to reserved host
+ports, and organization-bound or restricted API tokens cannot perform this instance action.
+
+If setup recorded `OPENSHIP_PUBLIC_URL` as **external ingress**, boot assumes an existing proxy
+terminates TLS. That record alone does not provision Openship's edge. Use the self-hosted setup
+flow to configure Openship's edge when changing who owns ingress; retain external ingress when
+your existing proxy should continue serving the domain.
+
+A static route needs the absolute release directory of its active deployment. A container ID,
+image tag or artifact hash cannot serve as a document root. A warning that no static root exists
+means the deployment's artifact or workload metadata needs repair or a new successful deployment.
+
 ## Verification keeps failing
 
 <Callout type="error" title="Symptom / what you see">

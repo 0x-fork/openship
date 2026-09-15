@@ -134,7 +134,11 @@ export function createProjectControls(
       return data;
     },
     async retryRouting(ctx, id) {
-      const data = await (await service()).retryProjectRouting(id, ctx.organizationId);
+      const { canRouteSelfApp } = await import("../../lib/self-app-routing");
+      const isSelfApp = await canRouteSelfApp(ctx, id);
+      const data = await (
+        await service()
+      ).retryProjectRouting(id, ctx.organizationId, { isSelfApp });
       if (data.ok) updated(ctx, id, { action: "routing_retried" });
       return data;
     },

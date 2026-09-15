@@ -24,7 +24,7 @@ import {
 } from "@repo/core";
 import { env } from "../config/index";
 import { trackBackgroundWork } from "./background-work";
-import { isRealContainerRef } from "./container-ref";
+import { isArtifactRef, isRealContainerRef } from "./container-ref";
 import { getOrgCloudToken } from "./cloud/client";
 import { createRemoteCloudAdmin } from "./cloud/admin-proxy";
 import { resolveOrgCloudUserId } from "./cloud/transport";
@@ -166,14 +166,14 @@ export function resolveDeploymentStaticRoot(
   // dial a bogus static path (#538-B).
   if (
     resolveWorkload(project.workloadType, project.hasServer) !== "static" ||
-    !deployment.containerId
+    !isArtifactRef(deployment.containerId)
   ) {
     return null;
   }
   const meta = (deployment.meta ?? {}) as DeploymentMeta;
   const outputDirectory = meta.staticServeOutputDir ?? project.outputDirectory ?? "";
   try {
-    return resolveStaticOutputPath(deployment.containerId, outputDirectory);
+    return resolveStaticOutputPath(deployment.containerId!.trim(), outputDirectory);
   } catch {
     return null;
   }

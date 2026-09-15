@@ -348,6 +348,7 @@ async function startOne(runtime: RuntimeAdapter, containerId: string): Promise<v
 export async function retryProjectRouting(
   projectId: string,
   organizationId: string,
+  options: { isSelfApp?: boolean } = {},
 ): Promise<{ ok: boolean; warning?: string }> {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
@@ -356,7 +357,7 @@ export async function retryProjectRouting(
     // The first read above is the authorization boundary; this second assertion
     // protects the callback if ownership changed while it waited for teardown.
     assertResourceInOrg(liveProject, "Project", organizationId, projectId);
-    return retryLiveProjectRouting(liveProject, organizationId);
+    return retryLiveProjectRouting(liveProject, organizationId, options);
   });
   return (
     result ?? {
@@ -370,6 +371,7 @@ export async function retryProjectRouting(
 async function retryLiveProjectRouting(
   p: ProjectRow,
   organizationId: string,
+  options: { isSelfApp?: boolean },
 ): Promise<{ ok: boolean; warning?: string }> {
   const projectId = p.id;
 
@@ -398,6 +400,7 @@ async function retryLiveProjectRouting(
 
   // Live re-apply is best-effort, but its failure must NOT clear the warning.
   let applyOk = true;
+  const routeWarnings: string[] = [];
   // `reapplyProjectLiveRoutes` FIRST, `applyProjectRouting` second — the two cover
   // different route shapes and retry has to heal all of them:
   //   - reapply → the per-domain surface: a single app's port target OR a static
@@ -412,12 +415,21 @@ async function retryLiveProjectRouting(
   // `managedEdgeSyncedByCaller`: syncProjectManagedEdge below already covers every
   // managed hostname; letting reapply sync them too races its own follow-up (two
   // ACME challenges for one target, the second resetting the first's token).
-  await reapplyProjectLiveRoutes(p, [], { managedEdgeSyncedByCaller: true }).catch(() => {
+  const onWarning = (message: string) => {
     applyOk = false;
-  });
-  await applyProjectRouting(projectId).catch(() => {
+    routeWarnings.push(message);
+  };
+  await reapplyProjectLiveRoutes(p, [], {
+    ...options,
+    managedEdgeSyncedByCaller: true,
+    onWarning,
+  }).catch((error) => {
     applyOk = false;
+    routeWarnings.push(safeErrorMessage(error));
   });
+  await applyProjectRouting(projectId, { onWarning }).catch((error) =>
+    onWarning(safeErrorMessage(error)),
+  );
 
   // Reconciles *.opsh.io and clears the warning on its own success (including the
   // no-managed-domains case). syncProjectManagedEdge re-reads the deployment, so
@@ -426,8 +438,9 @@ async function retryLiveProjectRouting(
   if (!ok) return { ok: false, warning: edgeUnsyncedWarning(failures, "retry") };
 
   if (!applyOk) {
-    const warning =
-      "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
+    const warning = routeWarnings.length
+      ? [...new Set(routeWarnings)].join("\n")
+      : "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
     const fresh = p.activeDeploymentId
       ? await repos.deployment.findById(p.activeDeploymentId)
       : null;
