@@ -22,7 +22,7 @@ Review and integration are in progress. Local checks do not establish live provi
 | [#881](https://github.com/oblien/openship/issues/881) | Service-first projects hide project environment editing and blur env scope                                                                                                                        | —                                                                                                        | **integrated**: Configuration keeps the project environment editor accessible for Compose, monorepo and installed-app projects. Project and service runtime scopes, overriding keys, and source-controlled build arguments are explained explicitly.                                                                                          |
 | [#880](https://github.com/oblien/openship/issues/880) | [Bug]: GET /api/issues and GET /api/updates hang indefinitely when one project's upstream update poll never settles                                                                               | —                                                                                                        | **integrated**: The issues and updates feeds recover from stalled upstream polls without restarting the API. DNS, polling and cache writes have deadlines, failed polls back off, and late work cannot overwrite newer cached results.                                                                                                        |
 | [#879](https://github.com/oblien/openship/issues/879) | [Bug]: [0.7.2] Custom domains at project level are verified + certified but never routed locally; self-app domain cannot converge (host-port claim conflict)                                      | —                                                                                                        | **partial**: Integrated verified Compose/self-app routing and repair diagnostics; keeping the secondary mail artifact report open.                                                                                                                                                                                                            |
-| [#878](https://github.com/oblien/openship/issues/878) | [Improvement]: Deployments don't use external repository and rebuild images instead                                                                                                               | —                                                                                                        | **pending**: Pending review                                                                                                                                                                                                                                                                                                                   |
+| [#878](https://github.com/oblien/openship/issues/878) | [Improvement]: Deployments don't use external repository and rebuild images instead                                                                                                               | —                                                                                                        | **needs-reproduction**: Current main already skips source builds for image-only Compose services; the report needs its effective Compose configuration.                                                                                                                                                                                       |
 | [#877](https://github.com/oblien/openship/issues/877) | [Feature]: Add Porkbun as a supported DNS Provider                                                                                                                                                | —                                                                                                        | **deferred-feature**: Deferred: new Porkbun DNS provider; excluded by the bugs-only scope.                                                                                                                                                                                                                                                    |
 | [#876](https://github.com/oblien/openship/issues/876) | [Bug]: Email service is waiting for emails to go out forever                                                                                                                                      | —                                                                                                        | **pending**: Pending review                                                                                                                                                                                                                                                                                                                   |
 | [#875](https://github.com/oblien/openship/issues/875) | [Bug]: Can't add self hosted openship mcp sever to claude code                                                                                                                                    | —                                                                                                        | **fixed**: The dashboard now advertises /api/mcp, matching OAuth metadata, including in proxy installations.                                                                                                                                                                                                                                  |
@@ -148,6 +148,20 @@ Verification:
 
 - 264 related API tests passed, including native/HTTP repair authorization, real database host-port claim idempotence, route failures and skipped domains. The final service-inventory guard also passed all 53 project-route tests.
 - Nine regression cases failed against the previous production implementation and passed after restoration. API TypeScript and documentation checks passed.
+
+### #878
+
+Current main already skips source builds for image-only Compose services; the report needs its effective Compose configuration.
+
+Reviewed the shared Compose build classification and native deploy handoff. A service with image set and no build/inline build is carried as an external registry image; only an explicit build recipe enters buildImages. This behavior is already present in main c6cd723f.
+
+Added two focused regressions: an image-only GHCR reference remains the deployment image with no source build, while a service declaring both image and build honors the explicit build. This distinguishes the missing configuration detail without changing existing deployment semantics.
+
+Keep open pending a sanitized effective Compose service definition (including overlays/build keys), Openship version and the start of the build log. A mutable image tag not refreshing is a separate pull/redeploy question; these tests do not establish behavior for the unprovided configuration.
+
+Verification:
+
+- 27 Compose build tests passed, including image-only GHCR and explicit-build behavior.
 
 ### #877
 
@@ -662,6 +676,10 @@ The current main already bypasses DNS and local ACME for operator-owned self-hos
 Corrected English/French/Turkish toggle help and the custom-domain/troubleshooting guides: self-hosted ACME verification does not compare A records or require an ownership TXT record; external ingress requests no DNS records locally, while Openship Cloud retains its ownership TXT challenge. Added concrete Nginx Proxy Manager and internal-DNS guidance.
 
 Public access still requires a reachable proxy, VPN, or tunnel; internal DNS does not create public reachability. No DDNS manager or new networking mode was added.
+
+GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/706#issuecomment-5687796974).
+
+Integration commits: `c5676499`.
 
 Verification:
 
