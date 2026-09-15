@@ -7,7 +7,8 @@ import {
   resolveCommandArgv,
   type ComposeAdvanced,
 } from "@repo/core";
-import type { Database } from "../client";
+import type { Database } from "../connection";
+import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
 
@@ -468,14 +469,15 @@ export function normalizeRoutingFields(input: {
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
-export function createServiceRepo(db: Database) {
+export function createServiceRepo(db: Database, encryption: ConfigurationEncryption) {
+  const codec = createConfigurationSecrets(encryption);
   return {
     // ── Services ───────────────────────────────────────────────────────
 
     async findById(id: string) {
-      return db.query.service.findFirst({
+      return codec.openService(await db.query.service.findFirst({
         where: eq(service.id, id),
-      });
+      }));
     },
 
     /** Batch id → display name, for naming services in list responses. */
@@ -488,16 +490,16 @@ export function createServiceRepo(db: Database) {
     },
 
     async findByName(projectId: string, name: string) {
-      return db.query.service.findFirst({
+      return codec.openService(await db.query.service.findFirst({
         where: and(eq(service.projectId, projectId), eq(service.name, name)),
-      });
+      }));
     },
 
     async listByProject(projectId: string) {
-      return db.query.service.findMany({
+      return (await db.query.service.findMany({
         where: eq(service.projectId, projectId),
         orderBy: [asc(service.sortOrder), asc(service.name)],
-      });
+      })).map(codec.openService);
     },
 
     /**
@@ -535,10 +537,10 @@ export function createServiceRepo(db: Database) {
      */
     async listByProjects(projectIds: string[]): Promise<Map<string, Service[]>> {
       if (projectIds.length === 0) return new Map();
-      const rows = await db.query.service.findMany({
+      const rows = (await db.query.service.findMany({
         where: inArray(service.projectId, projectIds),
         orderBy: [asc(service.sortOrder), asc(service.name)],
-      });
+      })).map(codec.openService);
       const out = new Map<string, Service[]>();
       for (const id of projectIds) out.set(id, []);
       for (const row of rows) {
@@ -553,14 +555,14 @@ export function createServiceRepo(db: Database) {
       // Return the persisted defaults and timestamps. Synthesizing a Service
       // from the input omitted fields such as namespaceVolumes and made create
       // disagree with the next read of the same row.
-      const [row] = await db.insert(service).values({ id, ...data }).returning();
-      return row!;
+      const [row] = await db.insert(service).values(codec.sealService({ id, ...data })).returning();
+      return codec.openService(row!);
     },
 
     async update(id: string, data: Partial<NewService>) {
       await db
         .update(service)
-        .set({ ...data, updatedAt: new Date() })
+        .set(codec.sealService({ ...data, updatedAt: new Date() }))
         .where(eq(service.id, id));
     },
 
@@ -582,10 +584,10 @@ export function createServiceRepo(db: Database) {
 
     /** List only the rows of one kind under a project. */
     async listByProjectKind(projectId: string, kind: "compose" | "monorepo") {
-      return db.query.service.findMany({
+      return (await db.query.service.findMany({
         where: and(eq(service.projectId, projectId), eq(service.kind, kind)),
         orderBy: [asc(service.sortOrder), asc(service.name)],
-      });
+      })).map(codec.openService);
     },
 
     /**

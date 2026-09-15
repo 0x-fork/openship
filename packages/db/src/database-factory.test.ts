@@ -1,3 +1,4 @@
+import { createEncryption } from "./encryption";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, createRepositories, schema, type DatabaseConnection } from "./factory";
 import { createPgliteLock } from "./pglite-lock";
@@ -21,8 +22,8 @@ describe("instance-owned database composition", () => {
   it("keeps repositories with the same identifiers isolated and closes only owned resources", async () => {
     await first.db.insert(schema.user).values({ id: "same-user", name: "First", email: "first@example.test" });
     await second.db.insert(schema.user).values({ id: "same-user", name: "Second", email: "second@example.test" });
-    const a = createRepositories(first.db);
-    const b = createRepositories(second.db);
+    const a = createRepositories(first.db, createEncryption("repository-test-secret"));
+    const b = createRepositories(second.db, createEncryption("repository-test-secret"));
     expect((await a.user.findById("same-user"))?.name).toBe("First");
     expect((await b.user.findById("same-user"))?.name).toBe("Second");
     await Promise.all([first.close(), first.close()]);

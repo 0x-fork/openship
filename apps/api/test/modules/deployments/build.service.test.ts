@@ -1,3 +1,5 @@
+import { createConfigurationSecrets } from "@repo/db/configuration-secrets";
+import { createEncryption } from "@repo/db/encryption";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -208,6 +210,9 @@ const composeServices = [
  * seam. The rest of a deployment stays mocked (no clone/build/Docker), while
  * service writes are stateful and observable across the full trigger boundary.
  */
+const testEncryption = createEncryption("repository-test-secret");
+const configuration = createConfigurationSecrets(testEncryption);
+
 function installStatefulComposeRepo<T extends Record<string, unknown>>(initial: T) {
   let stored = structuredClone(initial);
   const writes: Array<Record<string, unknown>> = [];
@@ -216,16 +221,16 @@ function installStatefulComposeRepo<T extends Record<string, unknown>>(initial: 
     update: () => ({
       set: (data: Record<string, unknown>) => ({
         where: async () => {
-          writes.push(data);
+          writes.push(configuration.openService(data));
           stored = { ...stored, ...data } as T;
         },
       }),
     }),
   } as unknown as Database;
-  const real = createServiceRepo(db);
+  const real = createServiceRepo(db, testEncryption);
   repos.service.listByProject.mockImplementation(real.listByProject.bind(real));
   repos.service.reconcileFromCompose.mockImplementation(real.reconcileFromCompose.bind(real));
-  return { stored: () => stored, writes };
+  return { stored: () => configuration.openService(stored), writes };
 }
 
 const criticalApiEnvironment = {

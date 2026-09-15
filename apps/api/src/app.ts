@@ -66,6 +66,7 @@ import { repos } from "@repo/db";
 
 /* ---------- Initialize platform (runtime + infra + system) ---------- */
 await initPlatform(resolvePlatformConfig());
+await repos.configurationSecrets.backfillLegacy();
 
 export const app = new Hono();
 

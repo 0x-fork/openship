@@ -24,6 +24,14 @@
     "./lock": {
       "types": "./src/pglite-lock.ts",
       "import": "./src/pglite-lock.ts"
+    },
+    "./encryption": {
+      "types": "./src/encryption.ts",
+      "import": "./src/encryption.ts"
+    },
+    "./configuration-secrets": {
+      "types": "./src/configuration-secrets.ts",
+      "import": "./src/configuration-secrets.ts"
     }
   },
   "scripts": {

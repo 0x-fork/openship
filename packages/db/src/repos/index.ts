@@ -1,5 +1,5 @@
 export * from "./factory";
 import { createRepositories } from "./factory";
-import { db } from "../client";
+import { db, storageEncryption } from "../client";
 
-export const repos = createRepositories(db);
+export const repos = createRepositories(db, storageEncryption);

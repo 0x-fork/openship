@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createPrivateKey } from "crypto";
+import { DEFAULT_ENCRYPTION_SECRET as DEFAULT_BETTER_AUTH_SECRET } from "@repo/db/encryption";
 import {
   runtimeTarget,
   runtimeTargetId,
@@ -10,8 +11,6 @@ import {
 } from "@repo/core";
 
 export { runtimeTarget, runtimeTargetId, cloudRuntimeTarget, cloudRuntimeTargetId };
-
-const DEFAULT_BETTER_AUTH_SECRET = "change-me-in-production";
 
 /**
  * Parse a string env var as boolean. Accepts "true"/"1" → true,

@@ -1,3 +1,4 @@
+import { createEncryption } from "@repo/db/encryption";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -52,7 +53,7 @@ describeDockerE2E("update cache lock deadlines (GH-880, real PostgreSQL)", () =>
       poolMax: 3,
       registerExitHook: false,
     });
-    repos = createRepositories(connection.db);
+    repos = createRepositories(connection.db, createEncryption("repository-test-secret"));
     await connection.db.insert(schema.organization).values({ id: "org", name: "Cache test" });
     await connection.db
       .insert(schema.projectGroup)
