@@ -53,13 +53,8 @@ import type {
   RollbackInput,
   MakeActiveResult,
 } from "./types";
-import {
-  BuildLogger,
-  injectGitToken,
-  runBuildPipeline,
-  sq,
-  type BuildEnvironment,
-} from "./build-pipeline";
+import { BuildLogger, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
+import { assembleGitClone, gitShellCommand, GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
 import {
   CloudComposeSupport,
   resolveCloudWorkloadCmd,
@@ -1220,7 +1215,8 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       await this.ensureWorkspaceGit(provisioned.runtime, logger, "Dockerfile source workspace");
 
       const executor = this.workspaceExecutor(provisioned.runtime);
-      const cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
+      const gitInvocation = assembleGitClone({ repoUrl: config.repoUrl, gitToken: config.gitToken });
+      const cloneUrl = gitInvocation.cloneUrl;
       const fetchCommand = [
         "set -e",
         `rm -rf ${sq(sourceDir)}`,
@@ -1234,6 +1230,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
         // progress lines to stderr so they reach the build log stream.
         `GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/echo git -c credential.helper= fetch --progress --depth ${config.commitSha ? "50" : "1"} origin ${sq(config.branch)}`,
         `git -c credential.helper= -c advice.detachedHead=false checkout -q ${sq(checkoutRef)}`,
+        gitShellCommand(gitInvocation, GIT_SUBMODULE_UPDATE_ARGS.join(" ")),
         'echo "Dockerfile source fetch ready."',
       ].join("\n");
       const fetchResult = await executor.streamExec(fetchCommand, logger.callback);
@@ -1488,7 +1485,8 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       throw new Error("Dockerfile build context escapes the repository source.");
     }
 
-    const cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
+    const gitInvocation = assembleGitClone({ repoUrl: config.repoUrl, gitToken: config.gitToken });
+    const cloneUrl = gitInvocation.cloneUrl;
     const depthArgs = config.commitSha ? "--depth 50 " : "--depth 1 ";
     const cloneTarget = contextRelativePath ? repoRoot : contextRoot;
     const contextSource = contextRelativePath
@@ -1527,18 +1525,26 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       // See fetchCommand above for env-var rationale; --progress keeps
       // the clone visible in the streamed log even though stdout/stderr
       // are pipes, not a tty.
-      `GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/echo git -c credential.helper= clone --progress ${depthArgs}--branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(cloneTarget)}`,
+      gitShellCommand(
+        gitInvocation,
+        `clone --progress ${depthArgs}--branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(cloneTarget)}`,
+      ),
     ].join("\n");
-    const checkoutCommand = config.commitSha
-      ? `cd ${sq(cloneTarget)} && git -c credential.helper= -c advice.detachedHead=false checkout ${sq(config.commitSha)}`
-      : "";
+    const checkoutCommand = [
+      "set -e",
+      `cd ${sq(cloneTarget)}`,
+      ...(config.commitSha
+        ? [`git -c credential.helper= -c advice.detachedHead=false checkout ${sq(config.commitSha)}`]
+        : []),
+      gitShellCommand(gitInvocation, GIT_SUBMODULE_UPDATE_ARGS.join(" ")),
+    ].join("\n");
     // No name-based pruning: a fresh clone already contains only git-tracked
     // files (gitignored output was never committed), so pruning by name here
     // would only risk deleting tracked source (e.g. a top-level `data/` dir).
     // A tracked `.dockerignore` still applies at `docker build` on the worker.
     const prepareCommand = [
       "set -e",
-      `rm -rf ${sq(joinWorkspacePath(cloneTarget, ".git"))}`,
+      `find ${sq(cloneTarget)} -name .git -prune -exec rm -rf {} +`,
       ...prepareContextCommands,
       'echo "Dockerfile context prepared."',
     ].join("\n");
@@ -1549,9 +1555,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     await this.ensureWorkspaceGit(targetRuntime, logger, "Dockerfile build workspace");
     logger.log(`Cloning Dockerfile context in build workspace (branch: ${config.branch})...\n`);
     await this.execAndStream(targetRuntime, ["sh", "-c", cloneCommand], logger.callback, 900);
-    if (checkoutCommand) {
-      await this.execAndStream(targetRuntime, ["sh", "-c", checkoutCommand], logger.callback, 300);
-    }
+    await this.execAndStream(targetRuntime, ["sh", "-c", checkoutCommand], logger.callback, 900);
     await this.execAndStream(targetRuntime, ["sh", "-c", prepareCommand], logger.callback, 300);
     logger.log("Dockerfile context ready.\n");
   }
