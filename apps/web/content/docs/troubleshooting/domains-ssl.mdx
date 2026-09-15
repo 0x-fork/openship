@@ -181,7 +181,7 @@ deployment only starts serving HTTPS after redeploying, preserve both the deploy
 that indicates a separate edge/route reconciliation failure.
 </Callout>
 
-## External ingress: your edge terminates TLS (TXT only)
+## External ingress: your edge terminates TLS
 
 <Callout type="error" title="Symptom / what you see">
 Your app already sits behind a Cloudflare Tunnel, a load balancer, or another reverse proxy that handles
@@ -195,13 +195,13 @@ confirm you own the name and stay out of the certificate business.
 
 **How to fix**
 
-1. When adding the domain, turn on **External ingress & TLS**. As the toggle explains: *"TLS terminates
-   upstream (Cloudflare Tunnel, load balancer). Verify by TXT only — the domain need not point at this server,
-   and we won't issue a certificate."* From the API, pass `"externalIngress": true` on `POST /api/domains`.
-2. Add **only** the `TXT` record with host `_openship-challenge` — there's no routing record to add, because
-   your edge already controls where the name points.
-3. Click **Verify**. Openship checks the TXT alone and confirms with *"Domain verified — TLS is handled by
-   your external ingress; no certificate is issued here."*
+1. When adding the domain, turn on **External ingress & TLS**. From the API, pass
+   `"externalIngress": true` on `POST /api/domains`.
+2. On **Openship Cloud**, add the requested `_openship-challenge` TXT record. On **self-hosted instances**,
+   no DNS record is requested or checked. Configure DNS to reach your proxy, including internal DNS for
+   a homelab behind Nginx Proxy Manager; a rotating WAN IP does not block this verification mode.
+3. Click **Verify**. Openship confirms *"Domain verified — TLS is handled by your external ingress;
+   no certificate is issued here."* Your proxy must forward requests to the Openship server and serve HTTPS.
 
 <Callout title="What the SSL pill shows" type="info">
 An external-ingress domain reads **External TLS** for its SSL status — that's correct and final. Openship

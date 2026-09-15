@@ -747,7 +747,7 @@
       "servesPathHint": "Les requêtes vers ce domaine sont servies depuis ce chemin dans la sortie de compilation.",
       "servesPathRedeploy": "Les nouveaux chemins prennent effet au prochain déploiement.",
       "externalIngress": "Ingress et TLS externes",
-      "externalIngressDesc": "Le TLS se termine en amont (Cloudflare Tunnel, équilibreur de charge). Vérification par TXT uniquement — le domaine n'a pas besoin de pointer vers ce serveur, et nous n'émettrons pas de certificat.",
+      "externalIngressDesc": "Le TLS se termine sur votre proxy inverse (Cloudflare Tunnel, Nginx Proxy Manager ou un équilibreur de charge). Le domaine n’a pas besoin de pointer vers ce serveur et Openship n’émettra pas de certificat.",
       "dnsChallenge": "Utiliser le défi DNS-01",
       "dnsChallengeDesc": "Émettez et renouvelez le certificat via votre fournisseur DNS connecté. Utilisez cette option si le port 80 est inaccessible.",
       "dnsChallengeWildcardDesc": "Les certificats génériques nécessitent DNS-01 et un fournisseur DNS connecté.",

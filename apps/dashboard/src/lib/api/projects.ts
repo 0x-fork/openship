@@ -585,7 +585,7 @@ export const projectsApi = {
     api.post<any>(endpoints.projects.deploymentSession(id)),
 
   /** Connect a custom domain. `externalIngress` = TLS/ingress handled upstream
-   *  (Cloudflare Tunnel / LB): verify via TXT only, no certbot, plain-HTTP route. */
+   *  (Cloudflare Tunnel / LB): no certbot, plain-HTTP route; Cloud requires an ownership TXT record. */
   connectDomain: (
     id: string | number,
     body: {
