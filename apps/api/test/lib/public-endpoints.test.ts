@@ -21,8 +21,8 @@ import {
   syncStoredPublicEndpoints,
   type ProjectDomainRow,
   type StoredServiceRouting,
-} from "../../src/lib/public-endpoints";
-import { getRoutingBaseDomain } from "../../src/lib/routing-domains";
+} from "@repo/platform/engine/lib/public-endpoints";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
 import { normalizeCustomHostname, resolveServiceHostnameLabel } from "@repo/core";
 
 const row = (

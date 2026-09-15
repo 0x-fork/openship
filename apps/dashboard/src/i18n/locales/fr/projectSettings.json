@@ -365,16 +365,16 @@
       "appliesOnDeploy": "Appliqué au prochain déploiement."
     },
     "env": {
-      "title": "Variables d'environnement",
-      "description": "Chiffrées au repos. Les secrets restent masqués — seules les valeurs que vous modifiez sont écrites.",
+      "title": "Environnement du projet (compilation et exécution partagée)",
+      "description": "Utilisé pour compiler les images et comme entrée partagée à l’exécution. Les valeurs Compose et du service sont prioritaires à l’exécution. Les secrets restent masqués.",
       "edit": "Modifier"
     }
   },
   "envVars": {
     "cancel": "Annuler",
     "saveChanges": "Enregistrer les modifications",
-    "title": "Variables d'environnement",
-    "description": "Production. Chiffrées au repos. Les secrets s'affichent comme définis — saisissez pour remplacer ; laissez vide pour conserver.",
+    "title": "Environnement du projet (compilation et exécution partagée)",
+    "description": "Variables de production du projet. Les secrets restent masqués ; laissez un secret enregistré vide pour le conserver. Les valeurs du service sont prioritaires pour une même clé.",
     "empty": "Aucune variable d'environnement pour le moment.",
     "keyPlaceholder": "CLÉ",
     "secretPlaceholder": "•••••••• (défini — saisir pour remplacer)",
@@ -402,7 +402,7 @@
     },
     "close": "Fermer",
     "applyTitle": "Appliquer sans recompilation",
-    "applyText": "Enregistré. Appliquez-les au service en cours — il redémarre avec le nouvel environnement, sans clonage ni recompilation.",
+    "applyText": "Enregistré. Redémarrez pour appliquer les changements d’exécution. Recompilez et redéployez pour appliquer les valeurs utilisées lors de la compilation d’une image.",
     "applyButton": "Appliquer (redémarrage, sans recompilation)",
     "linkedBadge": "Lié",
     "linkedManaged": "via {app}",
@@ -924,5 +924,13 @@
     "saved": "Règle enregistrée",
     "saveFailed": "Échec de l'enregistrement de la règle",
     "loadFailed": "Échec du chargement des règles"
+  },
+  "serviceEnvironment": {
+    "title": "Environnement d’exécution du service",
+    "description": "S’applique uniquement à ce service à l’exécution. Ces valeurs remplacent celles de Compose et du projet portant la même clé. Appliquez-les par un redémarrage ou un déploiement.",
+    "overrides": "Ces clés sont prioritaires sur les valeurs du projet pour ce service : {keys}.",
+    "buildArguments": "Les arguments explicites de compilation se modifient dans le fichier Compose ou la configuration source. Recompilez et redéployez pour les appliquer ; cet éditeur ne modifie que les variables d’exécution.",
+    "projectLink": "Modifier l’environnement partagé du projet",
+    "loadFailed": "Impossible de charger les noms des variables du projet pour vérifier les remplacements."
   }
 }

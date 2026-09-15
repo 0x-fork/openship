@@ -10,8 +10,8 @@
  * how each column is normally sealed at rest.
  */
 
-import { encrypt, decrypt, decryptEnvMap } from "../../../lib/encryption";
-import { encryptSecretField, decryptSecretField } from "../../../lib/credential-encryption";
+import { encrypt, decrypt, decryptEnvMap } from "@repo/platform/engine/lib/encryption";
+import { encryptSecretField, decryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 
 import type { SecretColumn } from "./secret-registry";
 import type { SecretEntry } from "./types";
@@ -26,6 +26,8 @@ export function extractPlaintext(
   const base = { table: spec.sqlName, id, column: spec.column } as const;
 
   switch (spec.scheme) {
+    case "json":
+      return { ...base, scheme: "json", json: structuredClone(cell) };
     case "scalar": {
       if (typeof cell !== "string" || cell === "") return null;
       return { ...base, scheme: "scalar", value: decrypt(cell) };
@@ -70,6 +72,8 @@ export function sealForInstance(
   currentCell?: unknown,
 ): unknown {
   switch (spec.scheme) {
+    case "json":
+      return structuredClone(entry.json);
     case "scalar":
       return entry.value != null ? encrypt(entry.value) : null;
     case "enc1":

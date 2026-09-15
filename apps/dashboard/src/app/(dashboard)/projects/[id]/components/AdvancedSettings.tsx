@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Cloud,
   Copy,
+  Download,
   HardDrive,
   Hammer,
   Loader2,
@@ -42,6 +43,8 @@ import { ProjectMigrationCard } from "@/components/migration/ProjectMigrationCar
 import { ProjectMigrationHistory } from "@/components/migration/ProjectMigrationHistory";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 import { useAuth } from "@/context/AuthContext";
+import { ExportPanel } from "@/components/data-transfer/ExportPanel";
+import { usePlatform } from "@/context/PlatformContext";
 
 interface Props {
   onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void;
@@ -133,6 +136,7 @@ function SectionCard({
 export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   const { showToast } = useToast();
   const { user } = useAuth();
+  const { selfHosted } = usePlatform();
   const { t } = useI18n();
   const { projectData } = useProjectSettings();
   // `enabled` is the server's answer (derived from disabled_at in enrichProject).
@@ -621,6 +625,18 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             </button>
           </div>
         </SectionCard>
+        )}
+
+        {selfHosted && user?.role === "admin" && projectId && (
+          <SectionCard
+            title="Export project"
+            description="Download this project's environments, metadata, keys, and related server connections for another control plane."
+            icon={Download}
+            iconTone="primary"
+            collapsible
+          >
+            <ExportPanel key={projectId} projectId={projectId} projectName={projectData.name} />
+          </SectionCard>
         )}
 
         {/* Transfer & Clone (mock — hidden until wired) */}

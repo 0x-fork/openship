@@ -42,7 +42,7 @@ const h = vi.hoisted(() => ({
   tracked: true,
 }));
 
-vi.mock("./health-watch", () => ({
+vi.mock("@repo/platform/engine/modules/monitoring/health-watch", () => ({
   runHealthWatch: h.run,
   isTrackedHealthContainer: () => h.tracked,
   // Mirrors health-watch.ts's own helpers (asserted against the real pair by the
@@ -59,7 +59,7 @@ vi.mock("./health-watch", () => ({
   },
 }));
 
-vi.mock("../../config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     get OPENSHIP_DISABLE_CONTAINER_EVENTS() {
       return h.disabled;
@@ -71,8 +71,8 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/adapters")>()),
   getPlatform: () => ({ target: h.target }),
 }));
-vi.mock("../../lib/deployment-runtime", () => ({ resolveDeploymentRuntimeForRead: h.resolve }));
-vi.mock("../../lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({ resolveDeploymentRuntimeForRead: h.resolve }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { retain: h.retain, release: h.release },
 }));
 
@@ -157,7 +157,7 @@ async function advance(ms: number) {
 
 /** One full sweep's worth of lease renewal, as `runHealthWatch` would issue it. */
 async function renew(keys: string[]) {
-  const { renewEventWatchers } = await import("./container-events");
+  const { renewEventWatchers } = await import("@repo/platform/engine/modules/monitoring/container-events");
   await renewEventWatchers(keys);
   await flush();
 }
@@ -167,7 +167,7 @@ beforeEach(async () => {
   // want a real timer, and this suite's first `beforeEach` pays the whole
   // transform+resolve cost — under a parallel `turbo run test` that exceeded the 10s
   // hook timeout, so the suite failed only when the rest of the repo ran alongside it.
-  const { __resetContainerEventWatchers } = await import("./container-events");
+  const { __resetContainerEventWatchers } = await import("@repo/platform/engine/modules/monitoring/container-events");
   vi.useFakeTimers();
   __resetContainerEventWatchers();
   boxes.clear();
@@ -532,7 +532,7 @@ describe("lease", () => {
 
   it("closes every stream on shutdown", async () => {
     await renew([key("srv1"), key("srv2")]);
-    const { stopAllContainerEventWatchers } = await import("./container-events");
+    const { stopAllContainerEventWatchers } = await import("@repo/platform/engine/modules/monitoring/container-events");
 
     await stopAllContainerEventWatchers();
 

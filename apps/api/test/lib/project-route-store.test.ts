@@ -28,8 +28,8 @@ vi.mock("../../src/lib/controller-helpers", async (importOriginal) => {
   return { ...actual, platform: () => ({ runtime: {} }) };
 });
 
-import { getRoutingBaseDomain } from "../../src/lib/routing-domains";
-import { syncProjectPublicRoutes } from "../../src/lib/project-route-store";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
+import { syncProjectPublicRoutes } from "@repo/platform/engine/lib/project-route-store";
 
 describe("syncProjectPublicRoutes", () => {
   beforeEach(() => {
@@ -369,4 +369,15 @@ describe("syncProjectPublicRoutes", () => {
       );
     });
   });
+});
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: {} }) };
+});
+
+vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/controller-helpers")>();
+  return { ...actual, platform: () => ({ runtime: {} }) };
 });

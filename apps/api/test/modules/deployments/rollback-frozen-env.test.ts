@@ -13,12 +13,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { resolveEnvPublicUrls } from "../../../src/modules/deployments/compose/deploy.service";
+import { resolveEnvPublicUrls } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
 import {
   inlineEmptyDefers,
   mergeServiceDeployEnv as mergeLayers,
-} from "../../../src/modules/deployments/compose/service-env-layers";
-import { diffFrozenEnv, ENV_DIFF_CAP } from "../../../src/modules/deployments/rollback";
+} from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
+import { diffFrozenEnv, ENV_DIFF_CAP } from "@repo/platform/engine/modules/deployments/rollback/index";
 
 /** Unwraps `{ env, deferredEmpty }` so these cases keep asserting on the env map. */
 const mergeServiceDeployEnv = (

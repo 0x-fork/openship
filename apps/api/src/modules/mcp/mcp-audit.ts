@@ -19,7 +19,7 @@
  * nothing extra and reads go dark again.
  */
 
-import { audit } from "../../lib/audit";
+import { audit } from "@repo/platform/engine/lib/audit-emitter";
 
 /** One executed tool call — the facts the audit decision is made from. */
 export interface ToolCallRecord {

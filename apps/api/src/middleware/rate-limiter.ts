@@ -29,7 +29,7 @@ import { isLoopbackPeer, peerAddress } from "./loopback-peer";
 import { rateLimit, type PolicyId } from "../lib/rate-limit";
 import { POLICIES } from "../lib/rate-limit/policies";
 import { getRequestContext } from "../lib/request-context";
-import { env } from "../config";
+import { env } from "@repo/platform/engine/config/index";
 
 function resolveSubjectId(c: Context, subject: "ip" | "user" | "org" | "global"): string | null {
   if (subject === "global") return "global";

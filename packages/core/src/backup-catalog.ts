@@ -12,7 +12,7 @@
  *     live process in the container, and whether the write only takes effect after
  *     the service is power-cycled (`apps/api/src/modules/backups/restore.orchestrator.ts`);
  *   - the policy service, which must refuse a policy that cannot produce a
- *     restorable artifact (`apps/api/src/modules/backups/backup.service.ts`);
+ *     restorable artifact (`packages/platform/src/engine/modules/backups/backup.service.ts`);
  *   - the dashboard, which has to tell the operator what will happen before it does
  *     (`apps/dashboard/src/components/backup/PolicyEditor.tsx`).
  *

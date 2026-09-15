@@ -1,5 +1,6 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
+import type { BranchPageResponse } from "./github";
 import type {
   RoutingConfig,
   RouteRuleSpec,
@@ -71,6 +72,7 @@ export interface RollbackCapacityUI {
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
  *  optional — only the fields sent are written. Mirrors the backend allowlist. */
 export interface ProjectOptionsBody {
+  gitBranch?: string;
   framework?: string;
   packageManager?: string;
   buildImage?: string;
@@ -638,6 +640,8 @@ export const projectsApi = {
 
   /** List branches */
   getBranches: (id: string | number) => api.get<any>(endpoints.projects.branches(id)),
+  getBranchPage: (id: string | number, page: number) =>
+    api.get<BranchPageResponse>(endpoints.projects.branches(id), { params: { page } }),
 
   /** Set active branch */
   setBranch: (id: string | number, branch: string) =>

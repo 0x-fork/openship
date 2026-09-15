@@ -37,6 +37,7 @@ interface CloudComposeGroupState {
 
 interface CloudComposeSupportDeps {
   client: Oblien;
+  namespace?: string;
   builtArtifacts: Map<string, CloudBuiltArtifact>;
   workspace(workspaceId: string): WorkspaceHandle;
   provisionWorkspace(
@@ -202,6 +203,9 @@ export class CloudComposeSupport {
     config: MultiServiceDeployConfig,
     onLog?: LogCallback,
   ): Promise<MultiServiceDeployResult> {
+    if (config.volumes?.length) {
+      throw new Error("Persistent volume mounts are not supported on Openship Cloud. Choose a server for this service.");
+    }
     const log = onLog ?? (() => {});
     const groupState = this.groups.get(group.id) ?? {
       id: group.id,
@@ -462,12 +466,8 @@ export class CloudComposeSupport {
           level: "info",
         });
         return config.previousWorkspaceId;
-      } catch {
-        onLog({
-          timestamp: now(),
-          message: `Previous workspace for "${config.serviceName}" is gone — creating a fresh one (its prior data is not recoverable).\n`,
-          level: "warn",
-        });
+      } catch (error) {
+        throw new Error(`Could not verify the existing workspace for "${config.serviceName}". Retry before replacing its data: ${errorMessage(error)}`);
       }
     }
 
@@ -505,6 +505,7 @@ export class CloudComposeSupport {
     let wsData: { id: string };
     try {
       wsData = await this.deps.client.workspaces.create({
+        ...(this.deps.namespace ? { namespace: this.deps.namespace } : {}),
         name: `${config.slug}-${config.serviceName}`.slice(0, 60),
         image: config.image,
         mode: "permanent",

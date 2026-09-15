@@ -22,7 +22,7 @@ import {
   releaseDeploymentExecution,
   requestDeploymentCancellation,
   waitForDeploymentQuiescence,
-} from "./deployment-cancellation";
+} from "@repo/platform/engine/modules/deployments/deployment-cancellation";
 
 describe("deployment cancellation", () => {
   const ids: Array<{ id: string; signal: AbortSignal }> = [];

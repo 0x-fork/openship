@@ -3,24 +3,24 @@
  */
 
 import { repos, type Project } from "@repo/db";
-import { env } from "../../config/env";
-import { triggerDeployment } from "../deployments/build.service";
+import { env } from "@repo/platform/engine/config/env";
+import { triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 import {
   compareCommits,
   getRepository,
-} from "./github.service";
-import { cloudFetchAsOrgOwner } from "../../lib/cloud/transport";
-import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
+} from "@repo/platform/engine/modules/github/github.service";
+import { cloudFetchAsOrgOwner } from "@repo/platform/engine/lib/cloud/transport";
+import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
 import { safeErrorMessage } from "@repo/core";
 import {
   extractChangedFiles,
   routeServicesByChanges,
-} from "./webhook-changed-files";
+} from "@repo/platform/engine/modules/github/webhook-changed-files";
 import { webhookActorCtx } from "./webhook-shared";
-import { resolveOrgOwner } from "../../lib/org-actor";
-import { notification } from "../../lib/notification-dispatcher";
-import type { WebhookHandlerResult } from "../webhooks/webhook.types";
-import type { GitHubPushPayload } from "./github.types";
+import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
+import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
+import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
+import type { GitHubPushPayload } from "@repo/contracts";
 
 // ─── Branch deployment events ────────────────────────────────────────────────
 
@@ -48,8 +48,8 @@ function recordPushDelivery(
   input: BranchDeploymentTrigger,
   outcome: string,
   opts?: { organizationId?: string | null; actionRef?: string | null; error?: string | null },
-): void {
-  void repos.webhookDelivery
+): Promise<void> {
+  return repos.webhookDelivery
     .record({
       organizationId: p?.organizationId ?? opts?.organizationId ?? undefined,
       projectId: p?.id ?? undefined,
@@ -65,6 +65,7 @@ function recordPushDelivery(
         commit: input.commitSha ?? undefined,
       },
     })
+    .then(() => {})
     .catch(() => {});
 }
 
@@ -313,7 +314,7 @@ async function triggerBranchDeployments(
         console.log(
           `[GitHub Webhook] ${input.event} for ${input.owner}/${input.repo}#${input.branch} - forwarded to Openship Cloud (${fwd.cloudProjectId})`,
         );
-        recordPushDelivery(null, input, "forwarded", {
+        await recordPushDelivery(null, input, "forwarded", {
           organizationId: fwd.organizationId,
           actionRef: fwd.cloudProjectId,
         });
@@ -327,7 +328,7 @@ async function triggerBranchDeployments(
     console.log(
       `[GitHub Webhook] ${input.event} for ${input.owner}/${input.repo}#${input.branch} - no matching LOCAL auto-deploy project (cloud projects deploy via the SaaS)`,
     );
-    recordPushDelivery(null, input, "ignored");
+    await recordPushDelivery(null, input, "ignored");
     return { success: true, event: input.event, message: "No local auto-deploy projects matched" };
   }
 
@@ -348,22 +349,24 @@ async function triggerBranchDeployments(
   let succeeded = 0;
   let skipped = 0;
   let failed = 0;
-  results.forEach((r, i) => {
-    const p = autoDeployProjects[i];
-    if (r.status === "fulfilled") {
-      const v = r.value as { deployment?: { id?: string }; skipped?: boolean } | undefined;
-      if (v?.skipped) {
-        skipped++;
-        recordPushDelivery(p, input, "skipped");
+  await Promise.all(
+    results.map(async (r, i) => {
+      const p = autoDeployProjects[i];
+      if (r.status === "fulfilled") {
+        const v = r.value as { deployment?: { id?: string }; skipped?: boolean } | undefined;
+        if (v?.skipped) {
+          skipped++;
+          await recordPushDelivery(p, input, "skipped");
+        } else {
+          succeeded++;
+          await recordPushDelivery(p, input, "dispatched", { actionRef: v?.deployment?.id });
+        }
       } else {
-        succeeded++;
-        recordPushDelivery(p, input, "dispatched", { actionRef: v?.deployment?.id });
+        failed++;
+        await recordPushDelivery(p, input, "failed", { error: safeErrorMessage(r.reason) });
       }
-    } else {
-      failed++;
-      recordPushDelivery(p, input, "failed", { error: String(r.reason) });
-    }
-  });
+    }),
+  );
 
   if (failed > 0) {
     const errors = results
@@ -376,8 +379,13 @@ async function triggerBranchDeployments(
   }
 
   return {
-    success: true,
+    success: failed === 0,
     event: input.event,
+    ...(failed
+      ? {
+          error: `${failed} deployment(s) could not be started. Review the project's webhook events and redeliver after resolving the failure.`,
+        }
+      : {}),
     message:
       `Triggered ${succeeded} deployment(s) for ${input.owner}/${input.repo}#${input.branch}` +
       `${skipped ? `, ${skipped} skipped (no affected services)` : ""}` +

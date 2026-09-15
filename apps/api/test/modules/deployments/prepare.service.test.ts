@@ -6,7 +6,7 @@ import { join } from "node:path";
 import {
   resolveProjectInfo,
   resolveProjectSourceEnv,
-} from "../../../src/modules/deployments/prepare.service";
+} from "@repo/platform/engine/modules/deployments/prepare.service";
 
 describe("resolveProjectInfo", () => {
   const tempDirs: string[] = [];

@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -9,6 +9,7 @@ import {
   FileText,
   Key,
   KeyRound,
+  LoaderCircle,
   Pencil,
   Plus,
   RotateCcw,
@@ -22,6 +23,7 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import type { EnvironmentVariable } from "./types";
+import { useDemoMode } from "@/lib/demo-mode";
 
 // #336: env values arrive masked as ENV_MASK (shared with the API via @repo/core
 // so the exact sentinel can't drift). A masked row keeps the sentinel in state —
@@ -79,21 +81,9 @@ interface EnvironmentVariablesPropsOptional {
    * Never a "give me everything" call: the API requires the key names, so a
    * single reveal discloses a single secret. When provided and any row is masked
    * (`••••••••`), the reveal affordances appear. Omit when there's no reveal
-   * source (a new, unsaved service) — they simply won't show.
+   * source (for example, rows the user typed) — masked rows then have no reveal.
    */
   onReveal?: (keys: string[]) => Promise<Record<string, string>>;
-  /**
-   * Reveal every masked row once, on mount, instead of waiting for the operator to
-   * click. For the surfaces you reach by pressing "Edit" on env that ALREADY exists:
-   * you opened it to read and change values, and a column of dots is nothing to edit —
-   * the first action would always have been "show values" anyway.
-   *
-   * Opt-in per host, not the default. On a surface that merely LISTS env next to other
-   * settings, disclosing every secret to anyone who scrolls past is a different
-   * bargain than disclosing them to someone who opened the editor. Needs {@link
-   * onReveal}; without a source there is nothing to fetch.
-   */
-  revealOnOpen?: boolean;
 }
 
 const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
@@ -114,8 +104,8 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   envMeta,
   onEnvVarsChange,
   onReveal,
-  revealOnOpen = false,
 }) => {
+  const demoMode = useDemoMode();
   const deployment = useOptionalDeployment();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -277,25 +267,6 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     },
     [ensureRevealed, showToast, ev],
   );
-
-  // `revealOnOpen`: fetch every masked row once, so an editor opened on existing env
-  // shows values instead of a column of dots.
-  //
-  // Guarded by a ref, not by the masked-key list: `revealAndShow` writes state, which
-  // re-renders, and the rows stay masked the whole time (the row keeps the sentinel by
-  // design — see `revealedValues`). Keyed off the list, this would re-fire on every
-  // render and hammer the endpoint. It fires for the FIRST non-empty set of masked keys
-  // and never again — a later paste or a new row is the operator's own doing, and they
-  // can use the eye. A failure isn't retried either: `revealAndShow` has already
-  // toasted, and a silent retry loop against a failing endpoint is worse than a row
-  // the operator can click.
-  const autoRevealed = useRef(false);
-  useEffect(() => {
-    if (!revealOnOpen || !onReveal || autoRevealed.current) return;
-    if (maskedKeys.length === 0) return;
-    autoRevealed.current = true;
-    void revealAndShow(maskedKeys);
-  }, [revealOnOpen, onReveal, maskedKeys, revealAndShow]);
 
   // Drop plaintext for `keys` from the overlay as they're hidden, so a revealed
   // secret doesn't linger in component state after the operator hides it. Showing
@@ -883,16 +854,20 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                       readOnly={!isEditingMode}
                       className={`w-full px-3.5 py-2.5 pe-9 border border-border/50 rounded-lg text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${
                         !isEditingMode ? "cursor-default bg-muted/20" : "bg-muted/30"
-                      } ${inputStateClass}`}
+                      } ${inputStateClass} ${demoMode ? "blur-[5px] select-none" : ""}`}
                     />
                     {canToggleValue && (
                       <button
                         onClick={() => void toggleEnvVisibility(index)}
                         disabled={revealingKeys.has(env.key)}
+                        aria-busy={revealingKeys.has(env.key)}
+                        aria-label={showAsText ? t.projectSettings.envVars.hideValue : t.projectSettings.envVars.showValue}
                         className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors disabled:opacity-40"
                         type="button"
                       >
-                        {showAsText ? (
+                        {revealingKeys.has(env.key) ? (
+                          <LoaderCircle className="size-3.5 animate-spin" />
+                        ) : showAsText ? (
                           <EyeOff className="size-3.5" />
                         ) : (
                           <Eye className="size-3.5" />

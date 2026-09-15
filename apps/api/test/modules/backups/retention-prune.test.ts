@@ -49,13 +49,13 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
 }));
 
 // Registering a real cron schedule is the JobRunner's business, not retention's.
-vi.mock("../../../src/modules/backups/triggers/cron", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/modules/backups/triggers/cron")>()),
+vi.mock("@repo/platform/engine/modules/backups/triggers/cron", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/modules/backups/triggers/cron")>()),
   syncPolicySchedule: h.syncPolicySchedule,
 }));
 
-import { createPolicy } from "../../../src/modules/backups/backup.service";
-import { prunePolicy, runRetentionSweep } from "../../../src/modules/backups/retention-prune";
+import { createPolicy } from "@repo/platform/engine/modules/backups/backup.service";
+import { prunePolicy, runRetentionSweep } from "@repo/platform/engine/modules/backups/retention-prune";
 import {
   seedBackupDestination,
   seedBackupPolicy,
@@ -291,7 +291,7 @@ describe("prunePolicy", () => {
     expect((await repos.backupRun.findById(runs[2]!.id))?.deletedAt).toBeNull();
   });
 
-  it("names the skip when the mail server row is gone", async () => {
+  it("names the skip when deleting the mail server also removes its policy", async () => {
     // No org means no scoped read; deleting on a guess would cross tenants.
     const mailServerId = await seedMailServer(organizationId);
     const policy = await seedBackupPolicy(destinationId, {
@@ -306,7 +306,7 @@ describe("prunePolicy", () => {
     expect(await prunePolicy(policy)).toEqual({
       dropped: 0,
       deferred: 0,
-      skipped: "mail server row is gone",
+      skipped: "policy deleted",
     });
     expect(h.deleted).toEqual([]);
   });

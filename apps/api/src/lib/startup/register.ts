@@ -6,12 +6,12 @@
  * order is deterministic and not dependent on incidental module-load order.
  * Add new feature hooks here.
  */
-import { registerTunnelAutostart } from "../ssh-tunnel-manager";
+import { registerTunnelAutostart } from "@repo/platform/engine/lib/ssh-tunnel-manager";
 import { registerSelfAdoptReconcile } from "./self-deploy";
-import { registerSelfServerReconcile } from "./self-server";
+import { registerSelfServerReconcile } from "@repo/platform/engine/lib/startup/self-server";
 import { registerInfraReconcile } from "./infra-reconcile";
-import { registerAppServiceRowReconcile } from "../../modules/services/service.service";
-import { registerCustomCommandRestoreBackfill } from "../../modules/backups/restore-command-backfill";
+import { registerAppServiceRowReconcile } from "@repo/platform/engine/modules/services/service.service";
+import { registerCustomCommandRestoreBackfill } from "@repo/platform/engine/modules/backups/restore-command-backfill";
 import { registerCredentialBackfill } from "./credential-backfill";
 
 export function registerStartupHooks(): void {

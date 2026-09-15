@@ -22,7 +22,7 @@ book. This guide walks you through all of it.
   the two lines Openship gives you.
 </Callout>
 
-## The click-by-click way
+## Steps
 
 <Steps>
 
@@ -31,8 +31,6 @@ book. This guide walks you through all of it.
 ### Open your project's Domains tab
 
 Go to your project and open the **Domains** tab. This is home base for everything about addresses and HTTPS.
-
-<Callout title="Screenshot">Project page, the **Domains** tab selected, showing the current access URL and an **Add domain** button. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -70,8 +68,6 @@ Saving the domain just registers your intent. It stays **Pending** until you add
 that's the next two steps.
 </Callout>
 
-<Callout title="Screenshot">The Add domain form: **Custom domain** selected, the domain-name field filled in, the "Maps to port" field, and the Include-www / External-ingress toggles. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -89,8 +85,6 @@ There are usually two records:
   Nobody else can add it, so it's how Openship knows the domain is really yours.
 
 Copy each value exactly as shown — don't retype it, use the Copy button.
-
-<Callout title="Screenshot">The DNS Records panel with the routing record and the `_openship-challenge` TXT record, each with a Copy button. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -136,8 +130,6 @@ Once verified, the **SSL** status shows **Provisioning** while Openship requests
 Let's Encrypt (a trusted certificate authority). When it lands, the status becomes **Active** and your app is
 reachable at `https://app.example.com` with the padlock. Certificates also renew automatically before they
 expire, so this is a one-time setup.
-
-<Callout title="Screenshot">A verified custom domain row showing **Verified** status and **SSL: Active**, with a **Visit** action. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -241,7 +233,7 @@ There's nothing for Openship to renew, so it watches the expiry and reminds you 
 before it lapses.
 </Callout>
 
-## Prefer the terminal?
+## CLI
 
 Every step above has a CLI equivalent. The `add` command prints the DNS records and the domain's ID; use that
 ID to verify.
@@ -267,7 +259,7 @@ openship domain list --project <projectId>
 [Domains API reference](/docs/api/domains).
 </Callout>
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="Verify keeps failing" type="warn">
 Openship tells you which of the two checks is still missing. If the **routing record** (`A`/`CNAME`) is the
@@ -304,7 +296,7 @@ outcome — that log names the real cause (DNS not resolving, port 80 unreachabl
 **Copy log** if you want to keep it, and **Try again** to re-run without closing the window.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Domains API reference" href="/docs/api/domains" description="Every domain endpoint — add, preview, verify, primary, and SSL — with request shapes." />

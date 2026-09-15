@@ -11,6 +11,7 @@ vi.mock("../../src/lib/caps", () => ({
 
 import { projectCommand, releaseImageSourceFromOptions } from "../../src/commands/project";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
+import { projectFixture } from "../../../../packages/contracts/test/fixtures";
 
 let fetchStub: FetchStub;
 afterEach(() => fetchStub?.restore());
@@ -19,7 +20,7 @@ describe("openship project list", () => {
   it("paginates /projects and tabulates the rows", async () => {
     fetchStub = stubFetch((req) => {
       expect(req.url).toContain("/api/projects");
-      return { json: { data: [{ id: "p1", name: "shop", slug: "shop" }], total: 1 } };
+      return { json: { data: [projectFixture("p1", "shop")], total: 1, page: 1, perPage: 50 } };
     });
     const { out, code } = await runCommand(projectCommand, ["list"]);
     expect(code).toBe(0);
@@ -33,8 +34,7 @@ describe("openship project get", () => {
     fetchStub = stubFetch(() => ({
       json: {
         data: {
-          id: "p1",
-          name: "shop",
+          ...projectFixture("p1", "shop"),
           deployTarget: "server",
           serverId: "srv_remote",
         },
@@ -59,7 +59,7 @@ describe("openship project create", () => {
         localPath: "/opt/apps/payments",
         projectType: "services",
       });
-      return { json: { data: { id: "p1", name: "payments" } } };
+      return { json: { data: projectFixture("p1", "payments") } };
     });
 
     const { code } = await runCommand(projectCommand, [
@@ -79,7 +79,7 @@ describe("openship project create", () => {
   it("keeps Git projects on the normal create endpoint", async () => {
     fetchStub = stubFetch((req) => {
       expect(req.url).toBe("http://api.test/api/projects");
-      return { json: { data: { id: "p2", name: "shop" } } };
+      return { json: { data: projectFixture("p2", "shop") } };
     });
 
     const { code } = await runCommand(projectCommand, [
@@ -107,8 +107,7 @@ describe("openship project create", () => {
       return {
         json: {
           data: {
-            id: "p2",
-            name: "shop",
+            ...projectFixture("p2", "shop"),
             deployTarget: "server",
             serverId: "srv_remote",
           },
@@ -143,7 +142,7 @@ describe("openship project release-image", () => {
         imageTemplate: "ghcr.io/acme/api:{tag}",
         repo: "acme/api",
       });
-      return { json: { data: { id: "project/one" } } };
+      return { json: { data: projectFixture("project/one") } };
     });
 
     const { err, code } = await runCommand(projectCommand, [

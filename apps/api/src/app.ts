@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { env, trustedOrigins } from "./config/env";
+import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { handleApiError } from "./middleware/error-handler";
 import { authRouteLimiter } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
@@ -10,14 +10,13 @@ import { forceMcpConsent } from "./middleware/mcp-consent";
 import { originGuard } from "./middleware/origin-guard";
 import { migrationGuard } from "./middleware/migration-guard";
 import { initPlatform } from "@repo/adapters";
-import { validatePlanPriceIds } from "@repo/core";
-import { resolvePlatformConfig } from "./lib/controller-helpers";
-import { runWithRequestStore } from "./lib/request-store";
+import { resolvePlatformConfig } from "@repo/platform/engine/lib/platform-config";
+import { runWithRequestStore } from "@repo/platform/engine/lib/request-store";
 import { runWithCallSource } from "./lib/call-source";
 import { sanitizeRequestLogLine } from "./lib/request-log-redaction";
 
 import { authRoutes } from "./modules/auth/auth.routes";
-import { auth } from "./lib/auth";
+import { auth } from "@repo/platform/engine/lib/auth";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import {
   MCP_RESOURCE_PATHS,
@@ -44,7 +43,7 @@ import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
 import { githubRoutes } from "./modules/github";
-import * as githubAuth from "./modules/github/github.auth";
+import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
 import { tokenRoutes } from "./modules/tokens/token.routes";
 import { mcpRoutes } from "./modules/mcp/mcp.routes";
@@ -55,14 +54,14 @@ import { backupRoutes } from "./modules/backups/backup.routes";
 import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
-import { reconcileAllSchedules } from "./modules/backups/triggers/cron";
-import { reconcileJobs } from "./modules/jobs/job.service";
-import { scheduleBillingAnniversary } from "./modules/billing/billing-anniversary.cron";
-import { ensureOblienWebhook } from "./lib/openship-cloud";
-import { ensureOblienDefaultQuota } from "./modules/billing/billing-oblien-quota";
-import { backfillWebhookSecrets } from "./modules/github/github.service";
-import { backupOrchestrator } from "./modules/backups/backup.orchestrator";
-import { getJobRunner } from "./lib/job-runner";
+import { reconcileAllSchedules } from "@repo/platform/engine/modules/backups/triggers/cron";
+import { reconcileJobs } from "@repo/platform/engine/modules/jobs/job.service";
+import { scheduleBillingAnniversary } from "@repo/platform/engine/modules/billing/billing-anniversary.cron";
+import { ensureOblienWebhook } from "@repo/platform/engine/lib/openship-cloud";
+import { ensureOblienDefaultQuota } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
+import { backfillWebhookSecrets } from "@repo/platform/engine/modules/github/github.service";
+import { backupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
+import { getJobRunner } from "@repo/platform/engine/lib/job-runner/index";
 import { repos } from "@repo/db";
 
 /* ---------- Initialize platform (runtime + infra + system) ---------- */
@@ -387,7 +386,7 @@ if (env.CLOUD_MODE) {
   // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
   // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
   if (!env.CLOUD_MODE) {
-    const { migrationOrchestrator } = await import("./modules/migration/migration.orchestrator");
+    const { migrationOrchestrator } = await import("@repo/platform/engine/modules/migration/migration.orchestrator");
     await migrationOrchestrator.recoverInterruptedMigrations();
   }
 
@@ -415,34 +414,23 @@ if (env.CLOUD_MODE) {
       .catch((err) => console.warn("[boot] failStaleRunning failed:", err));
   }
 
-  // Hourly billing-period rollover — re-arms Oblien quota for orgs
-  // whose current_period_end has passed (safety net for paid orgs
-  // whose Stripe webhook lagged, and the primary mechanism for
-  // free-tier orgs).
+  // Refresh entitlement mirrors every five minutes; Oblien owns renewals.
   void scheduleBillingAnniversary().catch((err) =>
     console.warn("[boot] scheduleBillingAnniversary failed:", err),
   );
 
-  // Register the Oblien billing webhook (credits usage/low/depleted + quota
-  // threshold). Idempotent + self-gating on CLOUD_MODE; without it Oblien
-  // never calls our receiver.
+  // Register signed payment, entitlement, and credit notifications.
   void ensureOblienWebhook().catch((err) =>
     console.warn("[boot] ensureOblienWebhook failed:", err),
   );
 
-  // Account-wide default credit ceiling, auto-applied by Oblien to any namespace
-  // created without an explicit setQuota. Backstop only — the spend path asserts
-  // the real ceiling — but it makes the free tier, not "unlimited", the failure
-  // mode of a forgotten quota push. Self-gating on CLOUD_MODE.
+  // Validate onboarding policy without modifying provider quotas or grants.
   void ensureOblienDefaultQuota().catch((err) =>
     console.warn("[boot] ensureOblienDefaultQuota failed:", err),
   );
 
-  // Drain orgs that have no Oblien namespace recorded. Every org predates
-  // namespace persistence (the column was read in eleven places and written in
-  // none), so until this sweep finishes their credit quotas and resource
-  // ceilings do not exist on Oblien's side. Bounded per boot.
-  void import("./modules/billing/billing-namespace.provision")
+  // Retry incomplete namespace onboarding, bounded per boot.
+  void import("@repo/platform/engine/modules/billing/billing-namespace.provision")
     .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
     .then((stats) => {
       if (stats.done > 0 || stats.failed > 0) {
@@ -453,38 +441,10 @@ if (env.CLOUD_MODE) {
     })
     .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
 
-  // Every PUBLISHED price must have a real Stripe price id in the environment.
-  // Now that the pricing catalog states actual prices, a missing id is a
-  // customer-visible failure: the plan card shows $39 and checkout 503s. This
-  // check already existed but had NO caller in either mode — wired here.
-  //
-  // Loud, not fatal: refusing to boot the whole SaaS over an unset price id
-  // would trade a broken checkout button for a total outage, and checkout
-  // already fails closed on its own (503 BILLING_NOT_CONFIGURED at the point of
-  // use, plus BILLING_ENABLED defaults off). Self-hosted logs it as information
-  // — it never sells anything.
-  // A live campaign must match its Stripe coupon, or the page advertises a
-  // discount the customer won't get. Only reaches Stripe when a campaign is
-  // actually running, so the common case costs nothing.
-  void import("./modules/billing/billing.service")
-    .then(({ verifyCampaigns }) => verifyCampaigns())
-    .then((problems) => {
-      for (const p of problems) console.error(`[boot] pricing campaign: ${p}`);
-    })
-    .catch((err) => console.warn("[boot] verifyCampaigns failed:", err));
-
-  {
-    const { missing } = validatePlanPriceIds();
-    if (missing.length > 0) {
-      const detail = missing.join(", ");
-      if (env.CLOUD_MODE) {
-        console.error(
-          `[boot] FATAL: published prices with no Stripe price id configured: ${detail}. Set those env vars or unpublish the price in packages/core/src/pricing/pricing.json.`,
-        );
-      } else {
-        console.log(`[boot] billing not configured (self-hosted, expected): ${detail}`);
-      }
-    }
+  if (env.CLOUD_MODE) {
+    void import("@repo/platform/engine/modules/billing/billing-catalog")
+      .then(({ getCloudBillingCatalog }) => getCloudBillingCatalog({ fresh: true }))
+      .catch((error) => console.error("[boot] Oblien billing catalog unavailable:", error));
   }
 
   // Self-hosted only: backfill per-project GitHub webhook secrets for
@@ -509,7 +469,7 @@ if (env.CLOUD_MODE) {
 // dispatches them to per-channel workers (email/webhook/in_app/slack).
 // Lightweight in-process timer — fine for the cluster sizes we target.
 {
-  const { startNotificationRunner } = await import("./lib/notification-workers");
+  const { startNotificationRunner } = await import("@repo/platform/engine/lib/notification-workers");
   startNotificationRunner();
   console.log("[boot] notification runner started");
 }
@@ -523,7 +483,7 @@ if (env.CLOUD_MODE) {
 // stay as-is (some are cloud); new self-hosted boot work belongs here.
 {
   const { registerStartupHooks } = await import("./lib/startup/register");
-  const { runStartupHooks } = await import("./lib/startup");
+  const { runStartupHooks } = await import("@repo/platform/engine/lib/startup/index");
   registerStartupHooks();
   await runStartupHooks();
 }

@@ -188,32 +188,32 @@ vi.mock("@repo/adapters", async () => {
   };
 });
 
-vi.mock("../../../src/lib/job-runner", () => ({
+vi.mock("@repo/platform/engine/lib/job-runner/index", () => ({
   getJobRunner: async () => ({ enqueueRun: async () => {} }),
 }));
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   disposeRuntime: () => {},
   disposePlatform: () => {},
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "docker" } } }),
   resolveTargetPlatform: async () => ({ runtime: { name: "docker" } }),
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
-vi.mock("../../../src/lib/notification-dispatcher", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: {
     emit: (e: { eventType: string }) => {
       h.notifications.push(e.eventType);
     },
   },
 }));
-vi.mock("../../../src/modules/backup-destinations/hydrate-server", () => ({
+vi.mock("@repo/platform/engine/modules/backup-destinations/hydrate-server", () => ({
   toAdapterRow: async (row: unknown) => row,
 }));
-vi.mock("../../../src/modules/services/service-container", () => ({
+vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   liveContainerIdForService: async () => "c_pg",
   liveContainerForService: async () => ({ containerId: "c_pg", running: true }),
 }));
 
-import { BackupOrchestrator } from "../../../src/modules/backups/backup.orchestrator";
+import { BackupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
 
 beforeEach(() => {
   h.artifacts = [];

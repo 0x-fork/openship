@@ -19,7 +19,7 @@ function repoRoot(): string {
 // command construction + DNS patching from the on-VPS JSON plumbing. The
 // mutator is applied to an in-memory fake so we can assert the persisted shape.
 let fakeState: Record<string, unknown>;
-vi.mock("../mail-state", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({
   readState: vi.fn(async () => fakeState),
   mutateState: vi.fn(
     async (_exec: unknown, _serverId: string, mutator: (s: Record<string, unknown>) => Record<string, unknown>) => {
@@ -29,14 +29,14 @@ vi.mock("../mail-state", () => ({
   ),
 }));
 // Deterministic, env-free encryption stub.
-vi.mock("../../../lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   encrypt: (s: string) => `enc(${s})`,
   decrypt: (s: string) => s.replace(/^enc\(|\)$/g, ""),
 }));
 // Mock psql-runner: (a) its real transitive imports (ssh-manager/env) throw in
 // tests, (b) capturing the SQL lets us assert sender_relayhost routing directly.
 const pg = vi.hoisted(() => ({ sqlCalls: [] as string[] }));
-vi.mock("./psql-runner", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/psql-runner", () => ({
   execute: async (_exec: unknown, sql: string) => {
     pg.sqlCalls.push(sql);
     return "";
@@ -51,8 +51,8 @@ import {
   relaySpfInclude,
   withSpfInclude,
   withoutSpfInclude,
-} from "./outbound-relay.service";
-import { MailConfigPermissionError } from "../mail-engine";
+} from "@repo/platform/engine/modules/mail/admin/outbound-relay.service";
+import { MailConfigPermissionError } from "@repo/platform/engine/modules/mail/mail-engine";
 
 type Flavor = "container" | "host";
 

@@ -1,8 +1,9 @@
+import type { ExecutionContext, PermissionInput } from "@repo/platform";
 import type { Context } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
-  assert: vi.fn(async () => undefined),
+  assert: vi.fn(async (_ctx: ExecutionContext, _input: PermissionInput) => undefined),
   checkComponents: vi.fn(),
   deliverManagedImage: vi.fn(async () => ({ delivered: false })),
   dockerInstaller: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock("@repo/db", () => ({
   repos: {
     server: {
       get: vi.fn(async () => undefined),
-      getInOrganization: vi.fn(async () => null),
+      getInOrganization: vi.fn(async (id: string) => ({ id, organizationId: "org1", isLocal: false, sshHost: "203.0.113.10", sshAuthMethod: "key", sshPrivateKey: "supplied-test-key" })),
       list: vi.fn(async () => []),
     },
     member: { find: vi.fn(async () => null) },
@@ -41,7 +42,7 @@ vi.mock("@repo/adapters", async (importOriginal) => {
   };
 });
 
-vi.mock("../../config", async (importOriginal) => {
+vi.mock("@repo/platform/engine/config/index", async (importOriginal) => {
   const actual = await importOriginal<{ env: Record<string, unknown> }>();
   return {
     ...actual,
@@ -53,19 +54,19 @@ vi.mock("../../lib/permission", () => ({ permission: { assert: h.assert } }));
 vi.mock("../../lib/request-context", () => ({
   getRequestContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
 }));
-vi.mock("../../lib/ssh-manager", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   sshManager: { withExecutor: h.withExecutor },
 }));
 vi.mock("../../lib/sse", () => ({ streamSSE: h.streamSSE }));
-vi.mock("../../lib/deliver-managed-image", () => ({
+vi.mock("@repo/platform/engine/lib/deliver-managed-image", () => ({
   deliverManagedImage: h.deliverManagedImage,
 }));
-vi.mock("./server-containers.service", () => ({
+vi.mock("@repo/platform/engine/modules/system/server-containers.service", () => ({
   refreshServerContainer: h.refreshServerContainer,
 }));
 
-import { checkServer, installComponent, installStream } from "./server-check.controller";
+import { checkServer as checkServerHandler, installComponent as installComponentHandler, installStream } from "./server-check.controller";
 
 const executor = {} as never;
 
@@ -211,3 +212,38 @@ describe("server component installation dependencies", () => {
     expect(h.edgeInstaller).not.toHaveBeenCalled();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: async (ctx: ExecutionContext, input: PermissionInput) => { await h.assert(ctx, input); return ctx; } },
+}));
+
+vi.mock("../../lib/operation-context", () => ({
+  operationContext: () => ({ userId: "u1", organizationId: "org1", role: "owner" }),
+  operationData: async (_c: unknown, work: Promise<{ data: unknown }>) => (await work).data,
+}));
+vi.mock("@repo/platform/engine/lib/platform", async () => {
+  const { createServerOperations } = await import("@repo/platform");
+  const { serverDependencies } = await import("@repo/platform/engine/modules/system/server.operations");
+  const { authorization } = await import("@repo/platform/engine/lib/authorization");
+  const servers = createServerOperations(authorization, serverDependencies);
+  return { getPlatformKernel: () => ({ servers }) };
+});
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn() }, operationAuditContext: () => ({}) }));
+
+import { OperationError, ValidationError } from "@repo/contracts";
+import { handleApiError } from "../../middleware/error-handler";
+const checkServer = async (c: Context): Promise<Response> => {
+  try { return await checkServerHandler(c); }
+  catch (error) {
+    if (error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
+    throw error;
+  }
+};
+const installComponent = async (c: Context): Promise<Response> => {
+  try { return await installComponentHandler(c); }
+  catch (error) {
+    if (error instanceof OperationError || error instanceof ValidationError) return handleApiError(error, c);
+    throw error;
+  }
+};

@@ -32,21 +32,21 @@ vi.mock("@repo/db", () => ({
 
 // The row IS this box; keyed off the flag so the test doesn't depend on loopback
 // resolution or env.
-vi.mock("./box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
   isLocalHostRow: async (row: { isLocal?: boolean }) => Boolean(row?.isLocal),
 }));
 
-vi.mock("./ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { acquire: h.acquire },
   buildSshConfig: async () => ({ host: "127.0.0.1", port: 22, username: "root" }),
 }));
 
-vi.mock("./provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: (f: () => unknown) => f() }),
 }));
 
 const { resolvePlannedTargetTopology, resolveServerExecutor, hostChannelDeployNotice } =
-  await import("./deployment-runtime");
+  await import("@repo/platform/engine/lib/deployment-runtime");
 const { HostChannelUnavailableError } = await import("@repo/adapters");
 
 const resolve = () => resolveServerExecutor("srv-local", "org1");

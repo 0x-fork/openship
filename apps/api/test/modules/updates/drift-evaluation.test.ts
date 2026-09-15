@@ -40,7 +40,7 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../src/modules/github/github.service", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   compareCommits,
 }));
@@ -50,7 +50,7 @@ import {
   evaluateDrift,
   releaseSourceKey,
   type UpstreamDrift,
-} from "../../../src/modules/projects/project-crud.service";
+} from "@repo/platform/engine/modules/projects/project-crud.service";
 import type { Project } from "@repo/db";
 
 const SHIPPED = "13140747f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6";

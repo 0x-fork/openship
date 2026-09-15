@@ -29,7 +29,7 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-vi.mock("../../lib/startup/self-server", () => ({
+vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({
   findLocalServer: () => h.findLocalServer(),
 }));
 

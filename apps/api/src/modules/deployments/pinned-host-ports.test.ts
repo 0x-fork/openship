@@ -10,8 +10,8 @@ import {
   prepareTargetPinnedHostPorts,
   releaseNewPinnedHostPortClaims,
   type PinnedHostPort,
-} from "./pinned-host-ports";
-import type { HostPortTargetIdentity } from "../../lib/host-port-target";
+} from "@repo/platform/engine/modules/deployments/pinned-host-ports";
+import type { HostPortTargetIdentity } from "@repo/platform/engine/lib/host-port-target";
 
 const claimRepo = vi.hoisted(() => ({
   reserve: vi.fn(),
