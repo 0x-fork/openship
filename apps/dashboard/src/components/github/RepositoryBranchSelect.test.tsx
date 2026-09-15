@@ -27,14 +27,14 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-async function render(repo = "app", projectId?: string) {
+async function render(repo = "app", projectId?: string, value = "main") {
   await act(async () =>
     root.render(
       <RepositoryBranchSelect
         owner="acme"
         repo={repo}
         projectId={projectId}
-        value="main"
+        value={value}
         onChange={changed}
       />,
     ),
@@ -57,6 +57,20 @@ function options() {
 }
 
 describe("repository branch selection (#870)", () => {
+  it("keeps the selected branch highlighted when a page inserts earlier names", async () => {
+    let finish!: (result: ReturnType<typeof page>) => void;
+    api.listBranches.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await render("app", undefined, "z-current");
+    await open();
+    await act(async () => finish(page(["a-other", "m-middle"])));
+    await act(async () =>
+      document.querySelector('input[role="combobox"]')!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      ),
+    );
+    expect(changed).toHaveBeenCalledExactlyOnceWith("z-current");
+  });
+
   it("keeps main pinned and searches branches beyond the first hundred in the migration picker", async () => {
     api.listBranches
       .mockResolvedValueOnce(

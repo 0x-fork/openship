@@ -74,7 +74,7 @@ export function CustomSelect<T extends string>({
 }: CustomSelectProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [highlight, setHighlight] = useState(0);
+  const [highlightedValue, setHighlightedValue] = useState<T>();
   const listId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -95,6 +95,12 @@ export function CustomSelect<T extends string>({
       `${opt.label} ${opt.value} ${opt.description ?? ""}`.toLocaleLowerCase().includes(q),
     );
   }, [options, query]);
+
+  // Loading another page can reorder options; keep keyboard focus on the same value.
+  const highlight = Math.max(
+    0,
+    filteredOptions.findIndex((option) => option.value === highlightedValue),
+  );
 
   const updateMenuPosition = useCallback(() => {
     if (!triggerRef.current || typeof window === "undefined") return;
@@ -186,7 +192,7 @@ export function CustomSelect<T extends string>({
 
     const selectedIndex = filteredOptions.findIndex((opt) => opt.value === value);
     const start = selectedIndex >= 0 ? selectedIndex : 0;
-    setHighlight(start);
+    setHighlightedValue(filteredOptions[start]?.value);
     listRef.current.querySelector(`[data-index="${start}"]`)?.scrollIntoView({ block: "nearest" });
     if (showSearch) inputRef.current?.focus();
     else listRef.current.focus();
@@ -208,7 +214,7 @@ export function CustomSelect<T extends string>({
 
   const handleSearch = (nextQuery: string) => {
     setQuery(nextQuery);
-    setHighlight(0);
+    setHighlightedValue(undefined);
     listRef.current?.scrollTo({ top: 0 });
   };
 
@@ -225,13 +231,11 @@ export function CustomSelect<T extends string>({
 
   const moveHighlight = (delta: number) => {
     if (filteredOptions.length === 0) return;
-    setHighlight((prev) => {
-      const next = Math.min(Math.max(prev + delta, 0), filteredOptions.length - 1);
-      listRef.current
-        ?.querySelector(`[data-index="${next}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-      return next;
-    });
+    const next = Math.min(Math.max(highlight + delta, 0), filteredOptions.length - 1);
+    setHighlightedValue(filteredOptions[next].value);
+    listRef.current
+      ?.querySelector(`[data-index="${next}"]`)
+      ?.scrollIntoView({ block: "nearest" });
   };
 
   const handleMenuKeyDown = (event: React.KeyboardEvent) => {
@@ -324,7 +328,7 @@ export function CustomSelect<T extends string>({
                       role="option"
                       aria-selected={isSelected}
                       onClick={() => handleSelect(option.value)}
-                      onMouseEnter={() => setHighlight(index)}
+                      onMouseEnter={() => setHighlightedValue(option.value)}
                       className={`
                       w-full px-4 py-2.5 text-start flex items-center justify-between gap-2
                       text-sm transition-all duration-150
