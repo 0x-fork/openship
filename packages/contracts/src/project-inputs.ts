@@ -659,6 +659,8 @@ export const SetSleepModeBody = Type.Object({
  */
 export const SetOptionsBody = Type.Object(
   {
+    /** Save a scanned source ref and its build settings in the same update. */
+    gitBranch: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
     buildCommand: Type.Optional(Type.String()),
     installCommand: Type.Optional(Type.String()),
     outputDirectory: Type.Optional(Type.String()),

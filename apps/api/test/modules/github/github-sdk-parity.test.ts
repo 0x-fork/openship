@@ -84,6 +84,19 @@ describe("GitHub operations shared by SDK and HTTP", () => {
     for (const call of provider.cloneToken.mock.calls) expect(call.slice(1)).toEqual(["acme", undefined, { repositories: ["app"] }]);
   });
 
+  it("saves a scanned branch and build settings together through native and HTTP project operations", async () => {
+    const owner = await seedOwner();
+    const c = await clients(owner);
+    const group = await repos.projectGroup.create({ organizationId: owner.orgId, name: "Scan", slug: `scan-${owner.userId}` });
+    const project = await repos.project.create({ organizationId: owner.orgId, groupId: group.id, name: "Scan", slug: `scan-${owner.userId}`, gitOwner: "acme", gitRepo: "app", gitProvider: "github", gitBranch: "main", composePath: "old/compose.yml" });
+    for (const client of [c.native, c.remote]) {
+      await client.projects.setOptions(project.id, { gitBranch: "plain", framework: "node", buildCommand: "npm run build", composePath: null });
+      expect(await repos.project.findById(project.id)).toMatchObject({ gitBranch: "plain", framework: "node", buildCommand: "npm run build", composePath: null });
+      await expect(client.projects.setOptions(project.id, { gitBranch: " ", buildCommand: "invalid update" })).rejects.toMatchObject({ statusCode: 400 });
+      expect((await repos.project.findById(project.id))?.buildCommand).toBe("npm run build");
+    }
+  });
+
   it("filters repository counts and directory entries before returning them to a restricted principal", async () => {
     const owner = await seedOwner(), member = await memberOf(owner), c = await clients(member, owner.orgId);
     provider.source.mockResolvedValue({ listReposForOwner: async () => [mapped("app"), mapped("hidden")] });

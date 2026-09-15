@@ -2551,6 +2551,12 @@ export async function updateOptions(
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
   const update: Record<string, unknown> = {};
+  if (options.gitBranch !== undefined) {
+    if (typeof options.gitBranch !== "string" || !options.gitBranch.trim() || options.gitBranch.length > 200) {
+      throw new ValidationError("gitBranch must be a non-empty branch name of at most 200 characters");
+    }
+    update.gitBranch = options.gitBranch.trim();
+  }
   if (options.buildCommand !== undefined) update.buildCommand = options.buildCommand;
   if (options.installCommand !== undefined) update.installCommand = options.installCommand;
   if (options.outputDirectory !== undefined) update.outputDirectory = options.outputDirectory;

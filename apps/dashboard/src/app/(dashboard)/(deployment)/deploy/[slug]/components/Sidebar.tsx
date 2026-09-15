@@ -153,7 +153,8 @@ const ComposeChecklist: React.FC = () => {
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
 const Sidebar: React.FC = () => {
-  const { config, state, updateConfig, startDeployment } = useDeployment();
+  const { config, state, updateConfig, startDeployment, rescanWithBranch, isRescanning } =
+    useDeployment();
   const { t } = useI18n();
   const { requireCloud } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
@@ -163,6 +164,15 @@ const Sidebar: React.FC = () => {
   const { showToast } = useToast();
   const router = useRouter();
   const isServices = usesServiceDeployment(config);
+  const [branchError, setBranchError] = React.useState<string | null>(null);
+  const handleBranchChange = useCallback(
+    async (branch: string) => {
+      setBranchError(null);
+      const result = await rescanWithBranch(branch);
+      if (!result.success && result.error) setBranchError(result.error);
+    },
+    [rescanWithBranch],
+  );
 
   // Copy a ready-to-run `git clone` command with a short-lived GitHub App
   // installation token. Cloud / GitHub-App mode only — surfaces a clear
@@ -457,7 +467,8 @@ const Sidebar: React.FC = () => {
                 repo={config.repo}
                 projectId={config.projectId}
                 value={config.branch}
-                onChange={(val) => updateConfig({ branch: val })}
+                onChange={(val) => void handleBranchChange(val)}
+                disabled={isRescanning || isSaving || state.isDeploying}
                 initialBranches={config.branches}
                 initialPage={config.branchPage}
                 initialHasMore={config.branchesHasMore}
@@ -469,6 +480,20 @@ const Sidebar: React.FC = () => {
                     }
                   : undefined}
               />
+              {isRescanning && (
+                <p
+                  role="status"
+                  className="flex items-center gap-2 mt-2 text-sm text-muted-foreground"
+                >
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  {t.importProject.buildSettings.composePath.scanning}
+                </p>
+              )}
+              {branchError && (
+                <p role="alert" className="mt-2 text-sm text-danger break-words">
+                  {branchError}
+                </p>
+              )}
             </div>
           )}
           {config.branches.length === 0 && config.branch && (
@@ -518,7 +543,7 @@ const Sidebar: React.FC = () => {
       {isConfigMode ? (
         <button
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || isRescanning}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? (
@@ -536,7 +561,7 @@ const Sidebar: React.FC = () => {
       ) : (
         <button
           onClick={handleDeploy}
-          disabled={state.isDeploying}
+          disabled={state.isDeploying || isRescanning}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {state.isDeploying ? (

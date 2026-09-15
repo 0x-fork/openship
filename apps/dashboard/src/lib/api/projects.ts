@@ -72,6 +72,7 @@ export interface RollbackCapacityUI {
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
  *  optional — only the fields sent are written. Mirrors the backend allowlist. */
 export interface ProjectOptionsBody {
+  gitBranch?: string;
   framework?: string;
   packageManager?: string;
   buildImage?: string;
