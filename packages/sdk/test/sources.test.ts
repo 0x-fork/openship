@@ -45,6 +45,17 @@ function server() {
 }
 
 describe("SDK source deployments", () => {
+  it("removes generated source and its archive as soon as upload succeeds", async () => {
+    const root = await directory();
+    vi.stubEnv("TMPDIR", root);
+    const s = server();
+    const result = await s.client.sources.stage({ source: { type: "files", files: { "index.html": "uploaded-content" } } });
+    expect(result).toMatchObject({ sessionId: "session/opaque" });
+    expect(s.tar()).toContain("uploaded-content");
+    expect(s.commands.map(command => command.path)).toEqual(["/api/projects/folder/session"]);
+    expect(await readdir(root)).toEqual([]);
+  });
+
   it("refuses TMPDIR as a source before creating a remote upload session", async () => {
     const root = await directory();
     vi.stubEnv("TMPDIR", root);
