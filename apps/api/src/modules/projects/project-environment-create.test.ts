@@ -119,7 +119,8 @@ vi.mock("../../lib/controller-helpers", () => ({
 }));
 vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
   resolveDefaultBranch: async () => "main",
-  listBranches: async () => h.branches,
+  getBranch: async (_ctx: unknown, _owner: string, _repo: string, name: string) =>
+    h.branches.find((branch) => branch.name === name) ?? null,
   getLatestCommit: async () => null,
   getWebhookStrategy: () => "per-project",
   resolveWebhookStrategy: async () => ({}),
