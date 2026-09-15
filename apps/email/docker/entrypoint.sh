@@ -238,11 +238,7 @@ fi
 #    files cannot refer to a living amavis. Drop them unconditionally, then
 #    recreate the directory the way Debian's tmpfiles.d rule would under
 #    systemd (supervisord has no equivalent).
-if getent passwd amavis >/dev/null 2>&1; then
-  rm -f /var/run/amavis/amavisd.pid /var/run/amavis/amavisd.lock /var/run/amavis/amavisd.socket
-  install -d -m 0750 -o amavis -g amavis /var/run/amavis \
-    || log "WARN: could not create /var/run/amavis — amavis cannot write its pid file"
-fi
+bash /opt/openship-mail/prepare-amavis-runtime.sh
 
 log "starting supervisord"
 exec "$@"
