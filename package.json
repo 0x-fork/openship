@@ -1,6 +1,6 @@
 {
-  "name": "openship",
-  "version": "0.6.5",
+  "name": "@repo/workspace",
+  "version": "0.7.2",
   "description": "Open-source, self-hostable deployment platform",
   "license": "Apache-2.0",
   "repository": {
@@ -50,7 +50,10 @@
     "dev:clean": "turbo run clean && rm -rf node_modules",
     "clean:modules": "find apps packages -name node_modules -type d -prune -exec rm -rf {} + && rm -rf node_modules",
     "release": "bun scripts/release.ts",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config core.hooksPath .githooks || true",
+    "build:sdk": "bun run --cwd packages/openship build",
+    "docs:reference": "node scripts/generate-api-reference.mjs --write && node scripts/generate-cli-reference.mjs --write",
+    "docs:check": "node scripts/check-docs.mjs"
   },
   "devDependencies": {
     "prettier": "^3.8.1",
@@ -62,8 +65,8 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
-    "@octokit/auth-oauth-device": "^8.0.3",
     "api": "^6.1.3",
     "sonner": "^2.0.7"
-  }
+  },
+  "private": true
 }

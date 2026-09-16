@@ -11,7 +11,7 @@ import Link from "next/link";
 import { Boxes, Copy, Check, ScrollText, ShieldCheck, Unplug, Loader2, ChevronDown, ExternalLink, KeyRound, SlidersHorizontal } from "lucide-react";
 import { SettingsSection } from "./SettingsSection";
 import { McpAccessEditor } from "./McpAccessEditor";
-import { getRestApiBaseUrl } from "@/lib/api/urls";
+import { getMcpEndpointUrl } from "@/lib/api/urls";
 import { tokensApi, getApiErrorMessage, type McpClient, type McpClientDetail } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -312,11 +312,11 @@ export function McpConnection() {
   const { showToast } = useToast();
   const { t } = useI18n();
 
-  // Resolve on the client — getRestApiBaseUrl reads window.location, so compute
+  // Resolve on the client — getMcpEndpointUrl reads window.location, so compute
   // after mount to avoid an SSR/hydration mismatch.
   const [endpoint, setEndpoint] = useState("");
   useEffect(() => {
-    setEndpoint(`${getRestApiBaseUrl()}/mcp`);
+    setEndpoint(getMcpEndpointUrl());
   }, []);
 
   // Connected clients own the layout: once anything is connected the list leads

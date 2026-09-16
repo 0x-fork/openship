@@ -71,6 +71,8 @@ const SYNCED_PKGS = [
   join(ROOT, "apps/web/package.json"),
   join(ROOT, "apps/email/package.json"),
   join(ROOT, "apps/cli/package.json"),
+  join(ROOT, "packages/openship/package.json"),
+  join(ROOT, "packages/platform/package.json"),
 ];
 
 /* ─── CLI parsing ──────────────────────────────────────────────────── */
@@ -392,8 +394,8 @@ function changelogNotesStatus(version: string): string {
     const md = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
     const section = extractChangelogSection(md, version);
     if (section) return `CHANGELOG.md § ${version} (${section.split("\n").length} lines)`;
-    const base = version.split("-")[0];
-    if (base !== version && extractChangelogSection(md, base)) {
+    const base = version.match(/^(\d+\.\d+\.\d+)-/)?.[1];
+    if (base && extractChangelogSection(md, base)) {
       return `CHANGELOG.md § ${base} (base version — this is a prerelease)`;
     }
   } catch {

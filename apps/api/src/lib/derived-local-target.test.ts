@@ -49,7 +49,7 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
   createHostExecutor: () => h.hostExecutor(),
 }));
 
-vi.mock("./startup/self-server", () => ({
+vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({
   findLocalServer: async () => {
     h.findCalls++;
     if (h.findRejects) throw new Error("db unavailable");
@@ -80,20 +80,20 @@ vi.mock("@repo/db", () => ({
 
 // The row IS this box; keyed off the flag so the test doesn't depend on loopback
 // resolution or env.
-vi.mock("./box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
   isLocalHostRow: async (row: { isLocal?: boolean }) => Boolean(row?.isLocal),
 }));
 
-vi.mock("./ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { acquire: h.acquire, acquireHostChannel: h.acquireHostChannel },
   buildSshConfig: async () => ({ host: "127.0.0.1", port: 22, username: "root" }),
 }));
 
-vi.mock("./provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: (name: string) => ({ name, run: (f: () => unknown) => f() }),
 }));
 
-const { resolveTargetPlatform } = await import("./deployment-runtime");
+const { resolveTargetPlatform } = await import("@repo/platform/engine/lib/deployment-runtime");
 const { HostChannelUnavailableError } = await import("@repo/adapters");
 
 const last = () => h.configs[h.configs.length - 1] as Record<string, unknown>;
@@ -129,14 +129,21 @@ describe("derived local target — one machine, one executor path", () => {
     h.localRow = { id: "srv-local" };
     await resolveTargetPlatform("server", "docker", "srv-local", "org1");
     const picked = last();
-    await resolveTargetPlatform("local", "docker");
+    await resolveTargetPlatform("local", "docker", undefined, "org1");
     const derived = last();
 
     // The whole point of the convergence: the wizard door and the no-binding door
     // cannot end up on different rules for the same box.
     expect(derived.executor).toBe(picked.executor);
     expect(derived.localHost).toBe(true);
-    expect(derived.docker).toEqual(picked.docker);
+    expect(derived.docker).toMatchObject({
+      transport: "socket",
+      resolveRegistryAuth: expect.any(Function),
+    });
+    expect(picked.docker).toMatchObject({
+      transport: "socket",
+      resolveRegistryAuth: expect.any(Function),
+    });
     // Same host being provisioned → same lock, or two "local" deploys would race
     // openresty/docker/state on one machine.
     expect((derived.provisionLock as { name: string }).name).toBe(

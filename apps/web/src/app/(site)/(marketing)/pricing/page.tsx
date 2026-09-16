@@ -1,43 +1,16 @@
 import { Navbar, Footer } from "@/components/landing";
 import {
-  CUSTOM_TIERS,
   SELF_HOSTED,
-  TIERS,
+  STANDARD,
   UI,
   chooseLabel,
   cloudFrom,
-  liveCampaigns,
   priceParts,
-  renderNow,
+  getCloudPricing,
 } from "@/lib/pricing";
 import { CLOUD_CTA_HREF, SELF_HOST_CTA_HREF, faq } from "./_data";
 
-/**
- * Rendered per request, NOT prerendered.
- *
- * The page can carry a time-bounded campaign price, and a campaign has to start
- * and expire on its own. Two things are required for that and neither is
- * sufficient alone:
- *
- *   1. Prices are computed inside this component, from `renderNow()` — never in
- *      a module const. A module body runs once per process, which on a
- *      prerendered route is BUILD time.
- *   2. This declaration. `new Date()` is not one of Next's dynamic APIs, so
- *      without it the route would still be prerendered and every "per render"
- *      computation would happen exactly once, at build.
- *
- * `revalidate` over `force-dynamic`: a render is cheap in CPU, but
- * `force-dynamic` sends `private, no-cache, no-store`, which makes this the one
- * marketing route no CDN can ever serve — measured at ~9.5x lower throughput than
- * its prerendered siblings, on the page most likely to be linked and crawled.
- * A 60-second window costs only that a campaign can begin or end up to a minute
- * late, which is not a claim anyone can act on.
- *
- * The JSON-LD stays consistent under ISR: the layout and the page render in ONE
- * pass sharing `renderNow()`, so a revalidation bakes the structured data and the
- * visible price from the same instant. They can drift only if the two files are
- * given different windows — keep them equal.
- */
+// Match the public catalog and JSON-LD cache window.
 export const revalidate = 60;
 
 function Check() {
@@ -50,11 +23,10 @@ function Check() {
 
 /* ─── Page ───────────────────────────────────────────────────── */
 
-export default function PricingPage() {
-  const now = renderNow();
-  const from = cloudFrom(now);
-  const campaigns = liveCampaigns(now);
-  const questions = faq(now);
+export default async function PricingPage() {
+  const pricing = await getCloudPricing();
+  const from = cloudFrom(pricing);
+  const questions = faq(pricing);
 
   return (
     <>
@@ -125,22 +97,18 @@ export default function PricingPage() {
             <header className="pp-plans-head">
               <h2 className="pp-plans-title">Openship Cloud</h2>
               <p className="pp-plans-note">
-                We run the servers, the edge, the backups. Same platform, same
-                containers — start at no cost and move up when you outgrow it.
+                Managed builds, application runtimes, and HTTPS domains.
+                Choose a plan for your organization and track credit usage in your dashboard.
               </p>
 
-              {/* Only rendered while the catalog has a live campaign. */}
-              {campaigns.map((c) => (
-                <p key={c.id} className="pp-campaign">
-                  <span className="pp-campaign-badge">{c.badge}</span>
-                  <span className="pp-campaign-ends">{c.ends}</span>
-                </p>
-              ))}
+              {!pricing.available && (
+                <p role="status">Current Cloud prices are temporarily unavailable. <a href={CLOUD_CTA_HREF}>Open the dashboard</a> to check availability.</p>
+              )}
             </header>
 
             <div className="pp-plans">
-              {TIERS.map((plan) => {
-                const price = priceParts(plan, now);
+              {pricing.tiers.map((plan) => {
+                const price = priceParts(plan);
                 const free = plan.price.monthly === 0;
                 return (
                   <article
@@ -153,21 +121,10 @@ export default function PricingPage() {
                     <p className="pp-plan-lead">{plan.description}</p>
 
                     <div className="pp-plan-price">
-                      {price.badge && <span className="pp-plan-save">{price.badge}</span>}
-
                       <span className="pp-plan-amt">
                         {price.amount}
                         {price.per && <span className="pp-plan-per">{price.per}</span>}
                       </span>
-
-                      {price.was && (
-                        <span className="pp-plan-was">
-                          {price.was.before}
-                          <s>{price.was.value}</s>
-                          {price.was.after}
-                          {price.ends && <span className="pp-plan-ends">{price.ends}</span>}
-                        </span>
-                      )}
 
                       <span className="pp-plan-pricenote">
                         {free ? "no credit card" : UI.billedMonthly}
@@ -180,6 +137,12 @@ export default function PricingPage() {
                     >
                       {free ? UI.ctaStart : chooseLabel(plan.name)}
                     </a>
+
+                    {/* A lead-in, not a bullet — it used to carry a checkmark, which
+                        made a sentence ending in a colon read as a feature. */}
+                    {plan.inheritedFrom && (
+                      <p className="pp-plan-inherits">{plan.inheritedFrom}</p>
+                    )}
 
                     <ul className="pp-plan-features">
                       {plan.features.map((f) => (
@@ -194,22 +157,45 @@ export default function PricingPage() {
               })}
             </div>
 
-            {CUSTOM_TIERS.map((plan) => (
+            {/* What every tier includes, stated ONCE.
+                A tier's own bullets are its numbers; anything true on all of them
+                belongs here instead of repeated down each column — repeating it was
+                what made the audit log read as a Scale-only feature. */}
+            <div className="pp-standard">
+              <h3 className="pp-standard-title">{STANDARD.title}</h3>
+              <ul className="pp-standard-features">
+                {STANDARD.features.map((f) => (
+                  <li key={f}>
+                    <Check />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {pricing.customTiers.map((plan) => (
               <div key={plan.id} className="pp-ent">
                 <div>
                   <h3 className="pp-ent-name">{plan.name}</h3>
                   <p className="pp-ent-lead">{plan.description}</p>
+                  {/* Name → lead → price, the same order as the four tier cards, so
+                      the eye finds "how much" in the same place it just left. */}
                   <p className="pp-ent-price">{UI.custom}</p>
                 </div>
 
-                <ul className="pp-ent-features">
-                  {plan.features.map((f) => (
-                    <li key={f}>
-                      <Check />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div>
+                  {plan.inheritedFrom && (
+                    <p className="pp-ent-inherits">{plan.inheritedFrom}</p>
+                  )}
+                  <ul className="pp-ent-features">
+                    {plan.features.map((f) => (
+                      <li key={f}>
+                        <Check />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
                 <a href={plan.contactSales ?? CLOUD_CTA_HREF} className="pp-solid-cta">
                   {UI.ctaContact}

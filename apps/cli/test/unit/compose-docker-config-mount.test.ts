@@ -25,7 +25,7 @@ vi.mock("node:child_process", () => ({
   execFile: (_c: unknown, _a: unknown, cb: (e: null, o: { stdout: string }) => void) =>
     cb(null, { stdout: "" }),
   spawnSync: (cmd: string, args: string[] = []) => {
-    if (cmd === "docker" && args[0] === "volume") return { status: 1, stdout: "", stderr: "" };
+    if (cmd === "docker" && args[0] === "volume") return { status: 1, stdout: "", stderr: `Error: No such volume: ${args[2]}` };
     return { status: 0, stdout: "", stderr: "" };
   },
 }));
@@ -33,6 +33,7 @@ vi.mock("node:child_process", () => ({
 vi.mock("node:fs", () => ({
   existsSync: (p: string) => h.existing.has(String(p)),
   mkdirSync: () => undefined,
+  realpathSync: (p: string) => String(p),
   readFileSync: (p: string) => h.written.get(String(p)) ?? "",
   writeFileSync: (p: string, data: string) => {
     h.written.set(String(p), String(data));

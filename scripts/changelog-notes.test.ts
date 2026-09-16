@@ -6,7 +6,9 @@
  * zero-config fit.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,13 +60,13 @@ describe("extractChangelogSection", () => {
     expect(body).not.toContain("0.4.7");
   });
 
-  test("returns null for a missing version and for an empty trailing section", () => {
-    expect(extractChangelogSection(SAMPLE, "9.9.9")).toBeNull();
-    expect(extractChangelogSection(SAMPLE, "0.4.7")).toBeNull();
+  test("returns empty for a missing version and for an empty trailing section", () => {
+    expect(extractChangelogSection(SAMPLE, "9.9.9")).toBe("");
+    expect(extractChangelogSection(SAMPLE, "0.4.7")).toBe("");
   });
 
   test("does not match a prefix of another version", () => {
-    expect(extractChangelogSection("## 0.6.10\n\nten\n", "0.6.1")).toBeNull();
+    expect(extractChangelogSection("## 0.6.10\n\nten\n", "0.6.1")).toBe("");
   });
 
   test("tolerates dated and bracketed headings", () => {
@@ -109,8 +111,45 @@ describe("buildReleaseNotes", () => {
   });
 
   test("truncateBody cuts on a line boundary", () => {
-    const out = truncateBody("aaa\nbbb\nccc\n", "https://example.test/CHANGELOG.md", 80);
-    expect(out.split("\n")[0]).toBe("aaa");
+    const line = "- a complete changelog bullet\n";
+    const out = truncateBody(line.repeat(30), "https://example.test/CHANGELOG.md", 300);
+    expect(out.length).toBeLessThanOrEqual(300);
+    expect(out).toContain("…truncated.");
+    const keptLines = out.split("\n\n")[0]!.split("\n");
+    expect(keptLines.length).toBeGreaterThan(0);
+    for (const kept of keptLines) expect(kept).toBe(line.trimEnd());
+  });
+
+  test("small limits cannot make truncation retain nearly the whole input", () => {
+    for (const max of [0, 4, 80]) {
+      const out = truncateBody("a".repeat(1000), "https://example.test/CHANGELOG.md", max);
+      expect(out.length).toBeLessThanOrEqual(max);
+    }
+  });
+});
+
+describe("changelog-notes CLI", () => {
+  test("accepts both custom-file argument forms and preserves prose as data", () => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-changelog-"));
+    try {
+      const path = join(dir, "custom changelog.md");
+      const body = '- Keep `code`, "quotes", and $(literal) unchanged.';
+      writeFileSync(path, `## 9.8.7\n\n${body}\n`);
+      for (const args of [
+        ["--changelog", path, "v9.8.7"],
+        ["v9.8.7", `--changelog=${path}`],
+      ]) {
+        const result = spawnSync(
+          process.execPath,
+          [join(import.meta.dir, "changelog-notes.ts"), ...args],
+          { encoding: "utf8" },
+        );
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toBe(body);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -137,7 +176,7 @@ describe("the real CHANGELOG.md", () => {
     const root = dirname(dirname(fileURLToPath(import.meta.url)));
     const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
     const notes = buildReleaseNotes(changelog, `v${version}`);
-    const hasSection = extractChangelogSection(changelog, version) !== null;
+    const hasSection = extractChangelogSection(changelog, version) !== "";
     if (hasSection) expect(notes).not.toContain("No changelog entry");
     else expect(notes).toContain("CHANGELOG.md");
     expect(notes.length).toBeGreaterThan(0);

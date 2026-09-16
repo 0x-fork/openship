@@ -208,9 +208,9 @@
       "volumes": "Disk Birimleri (Volumes)",
       "statefulWarnPart1": "Buluttaki durum bilgisi tutan (stateful) servis: veriler çalışma alanının kalıcı diskinde kalır (yeniden başlatmalarda korunur) ancak yedeklemeler etkinleştirilmediği sürece ",
       "statefulWarnBold": "yeniden derlemelerde korunmaz",
-      "statefulWarnPart2": ". Docker volume bağlamaları geçerli değildir.",
+      "statefulWarnPart2": ". Çalışma alanını değiştirmeden önce verileri açıkça yedekleyin ve geri yükleyin.",
       "volumeHint": "Adlandırılmış disk birimi veya sunucu yolu → konteyner yolu.",
-      "volumeCloudNote": "Bulutta bu bağlamalar geçerli değildir — veriler çalışma alanının diskinde kalır (yedekleme olmadan yeniden derlemelerde korunmaz).",
+      "volumeCloudNote": "Openship Cloud kalıcı birim bağlamalarını desteklemez. Birim gerektiren iş yükleri için bir sunucu seçin.",
       "sourcePlaceholder": "Kaynak",
       "containerPathPlaceholder": "Konteyner yolu",
       "readOnlyMount": "Salt okunur bağlama",
@@ -430,5 +430,14 @@
     "rowServices": "Servisler",
     "rowProject": "Proje",
     "rowType": "Tür"
+  },
+  "configDiagnostics": {
+    "title": "Bu deponun openship.json dosyasının bir kısmı uygulanmadı",
+    "description": "Aşağıda listelenen alanlar atlandı; dosyanın kalanı uygulandı. Dağıtım devam edecek.",
+    "titleWholeFile": "Bu deponun openship.json dosyası yok sayıldı",
+    "descriptionWholeFile": "Dosyanın hiçbir kısmı uygulanmadı. Dağıtım, Openship'in algıladığı ayarlarla devam edecek.",
+    "refused": "Reddedildi",
+    "unrecognized": "Tanınmadı",
+    "hint": "Sonraki dağıtımdan önce dosyayı denetlemek için depoda `openship config validate` komutunu çalıştırın."
   }
 }
