@@ -43,6 +43,7 @@ import {
 import type { LogEntry, ResourceConfig } from "@repo/adapters";
 import { resolveCloudResourceConfig } from "./cloud-resources";
 import { resolveEnvDirtyServiceIds } from "./env-drift";
+import { resolveDeploymentEnvironment } from "./deployment-environment";
 import type { TBuildAccessBody } from "@repo/contracts";
 import { platform } from "../../lib/platform-config";
 import { decryptEnvMap, encrypt } from "../../lib/encryption";
@@ -1457,6 +1458,7 @@ export async function requestBuildAccess(
     throw new NotFoundError("Project", projectId);
   }
   if (project.organizationId !== ctx.organizationId) throw new NotFoundError("Project", projectId);
+  const deployEnvironment = resolveDeploymentEnvironment(project, environment);
   if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") {
     if (buildStrategy === "local" || deployTarget === "local")
       throw new AppError("Host execution is disabled by this native installation's policy", 403, "HOST_EXECUTION_DISABLED");
@@ -1492,7 +1494,6 @@ export async function requestBuildAccess(
   // interpolation is part of deployment configuration, so the source refresh
   // and the eventual build must see the exact same values. Keep the encrypted
   // map for the deployment row and decrypt only the in-memory interpolation copy.
-  const deployEnvironment = environment || "production";
   const connectedEnv = await (await import("../projects/project-connection.service")).refreshConnectionEnv(ctx, project.id, deployEnvironment);
   let deploymentEnvVars: Record<string, string> | null;
   let submittedProjectEnv: Array<{ key: string; value: string; isSecret: boolean }> | undefined;
@@ -2169,6 +2170,7 @@ export async function redeployBuildSession(
   opts?: { useExistingCommit?: boolean; trigger?: string },
 ) {
   const { dep: oldDep, project } = await loadDeployment(deploymentId);
+  resolveDeploymentEnvironment(project, oldDep.environment);
   // The Openship control plane updates itself via the CLI — never a redeploy.
   // The apply-update endpoint (updates.service) reaches redeploy directly, and
   // the self-app is a repo-less release project so the GitHub gate below
@@ -2494,6 +2496,7 @@ export async function triggerDeployment(
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", data.projectId);
   }
+  const environment = resolveDeploymentEnvironment(project, data.environment);
   if (data.serverId) await requireOrgServer(data.serverId, ctx.organizationId);
   // The Openship control plane IS the running host service, not a redeployable
   // workload — it updates itself via the CLI. It's a release-provider project, so
@@ -2548,7 +2551,6 @@ export async function triggerDeployment(
   }
 
   const branch = await resolveProjectBranch(ctx, project, data.branch);
-  const environment = data.environment ?? "production";
   // Before the dedupe below and before anything stores it: one canonical sha, so
   // the row a webhook compares against and the row the drift check reads are
   // written in the same alphabet. See canonicalizeCommitRef.
