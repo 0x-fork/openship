@@ -37,6 +37,7 @@
  * instance whose scheduler is broken.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { ValidationError, withTimeout } from "@repo/core";
 import { repos, type NewUpdateStatus, type Project, type UpdateStatus } from "@repo/db";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
@@ -557,10 +558,11 @@ export async function getProjectDrift(
 export async function applyProjectUpdate(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-  if (!project.activeDeploymentId) {
+  const active = await findActiveDeployment(project);
+  if (!active) {
     throw new ValidationError("Deploy this project before updating it.");
   }
-  return redeployBuildSession(ctx, project.activeDeploymentId, {
+  return redeployBuildSession(ctx, active.id, {
     trigger: "update",
   });
 }

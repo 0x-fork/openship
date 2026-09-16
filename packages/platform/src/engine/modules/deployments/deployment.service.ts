@@ -5,9 +5,10 @@
  * SSL operations live in ssl.service.ts.
  */
 
+import { findProjectDeployment } from "../../lib/active-deployment";
 import { existsSync, readFileSync } from "node:fs";
 import { repos, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError } from "@repo/core";
+import { NotFoundError, ForbiddenError, deploymentBelongsToProject } from "@repo/core";
 import type { LogEntry } from "@repo/adapters";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import {
@@ -352,10 +353,21 @@ export async function rejectDeployment(deploymentId: string, organizationId: str
   }
 
   const project = await repos.project.findById(dep.projectId);
-  if (!project) throw new NotFoundError("Project", dep.projectId);
+  if (!project || !deploymentBelongsToProject(project, dep)) {
+    throw new NotFoundError("Project", dep.projectId);
+  }
 
   const meta = (dep.meta as { previousActiveDeploymentId?: string } | null) ?? null;
   const previousDeploymentId = meta?.previousActiveDeploymentId;
+  // Imported/old metadata is not authority to restore another project. Refuse
+  // before restoring or tearing down anything when the predecessor is invalid.
+  if (previousDeploymentId && (
+    typeof previousDeploymentId !== "string" ||
+    previousDeploymentId === deploymentId ||
+    !await findProjectDeployment(project, previousDeploymentId)
+  )) {
+    throw new NotFoundError("Previous deployment for project", project.id);
+  }
 
   // Reject both restores a release AND destroys one, so it must not start while
   // another deploy on this project is in flight — that deploy's containers are

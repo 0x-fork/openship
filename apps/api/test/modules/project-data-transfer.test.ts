@@ -355,6 +355,24 @@ beforeEach(async () => {
 });
 
 describe("project control-plane export and import", () => {
+  it.each(["missing", "other-project", "other-organization"])(
+    "rejects a %s active-deployment binding in both preview and apply before writing",
+    async (kind) => {
+      await source();
+      const file = await exportFile();
+      const project = file.dump.tables.project!.find((row) => row.id === "web")!;
+      const deployment = file.dump.tables.deployment!.find((row) => row.id === "deploy_web")!;
+      if (kind === "missing") project.activeDeploymentId = "outside-the-archive";
+      else if (kind === "other-project") deployment.projectId = "database";
+      else deployment.organizationId = "foreign-org";
+      await destination();
+      await expect(previewInstanceImport({ file, context })).rejects.toThrow(/active deployment.*same project and organization/);
+      await expect(importInstance({ file, passphrase: password, mode: "merge", context })).rejects.toThrow(/active deployment.*same project and organization/);
+      expect(await db.select().from(schema.project)).toHaveLength(0);
+      expect(await db.select().from(schema.deployment)).toHaveLength(0);
+    },
+  );
+
   it("exports all environments, linked apps, backup parents and repo keys without unrelated projects or plaintext secrets", async () => {
     await source();
     const file = await exportFile();

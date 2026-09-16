@@ -110,9 +110,10 @@ const container = (id: string, service: string, state = "running") => ({
 
 /** A project + its active deployment, on `serverId`. */
 function project(id: string, serverId: string | null, containerId: string | null = null) {
-  h.projects.push({ id, slug: "app", activeDeploymentId: `d-${id}`, disabledAt: null });
+  h.projects.push({ id, organizationId: "org1", slug: "app", activeDeploymentId: `d-${id}`, disabledAt: null });
   h.deployments.set(`d-${id}`, {
     id: `d-${id}`,
+    projectId: id,
     organizationId: "org1",
     containerId,
     meta: serverId ? { serverId } : {},
@@ -154,6 +155,18 @@ describe("bucketMinuteFor", () => {
 });
 
 describe("scope", () => {
+  it.each([
+    { projectId: "p2", organizationId: "org1" },
+    { projectId: "p1", organizationId: "org2" },
+  ])("skips a mismatched active deployment before resolving a runtime: %j", async (owner) => {
+    project("p1", "s1", "c-app");
+    Object.assign(h.deployments.get("d-p1")!, owner);
+    const result = await runUsageSampleSweep();
+    expect(result).toMatchObject({ skipped: 1, samples: 0, servers: 0 });
+    expect(h.resolveCalls).toBe(0);
+    expect(h.inserted).toEqual([]);
+  });
+
   it("samples a single-container project under the shared sentinel key", async () => {
     project("p1", "s1", "c-app");
     h.liveContainers = [{ ...container("c-app", "app"), labels: {} }];

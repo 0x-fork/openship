@@ -9,6 +9,7 @@
  * copy is how one of them ends up leaking sshd sessions again (#291).
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Project } from "@repo/db";
 import { createExecutor, type CommandExecutor } from "@repo/adapters";
 
@@ -19,7 +20,7 @@ import { sshManager } from "./ssh-manager";
 /** The server the project's active deployment runs on (for edge/cert reads). */
 export async function resolveServerIdForProject(project: Project): Promise<string | null> {
   if (!project.activeDeploymentId) return null;
-  const dep = await repos.deployment.findById(project.activeDeploymentId).catch(() => null);
+  const dep = await findActiveDeployment(project).catch(() => null);
   return (dep?.meta as DeploymentMeta | undefined)?.serverId ?? null;
 }
 

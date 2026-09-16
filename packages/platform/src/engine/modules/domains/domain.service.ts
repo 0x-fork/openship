@@ -14,6 +14,7 @@
  * in the SSL status pill on the next read.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, normalizeRoutingFields, type Domain, type Project } from "@repo/db";
 import {
   AppError,
@@ -1142,7 +1143,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
     // local orchestrator's OpenResty — reconcileProjectRoutes resolves the
     // deployment's own runtime and handles the cloud case.
     const deployment = project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+      ? await findActiveDeployment(project).catch(() => null)
       : null;
     await reconcileProjectRoutes(project, {
       deployment,

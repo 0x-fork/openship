@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import { type BuildLogger } from "@repo/adapters";
 import {
@@ -54,7 +55,7 @@ export async function checkProjectOutput(
   if (deploymentWorkload(project) !== "static") return [];
   if (!project.activeDeploymentId) return [];
 
-  const deployment = await repos.deployment.findById(project.activeDeploymentId);
+  const deployment = await findActiveDeployment(project);
   if (!deployment || !deployment.containerId) return [];
 
   // Bound the whole probe: a slow/unreachable/asleep remote box must degrade to

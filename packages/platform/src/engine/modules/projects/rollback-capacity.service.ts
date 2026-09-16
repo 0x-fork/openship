@@ -10,6 +10,7 @@
  * window the pruner wouldn't enforce.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import {
   MAX_ROLLBACK_WINDOW,
@@ -55,7 +56,7 @@ export async function getRollbackCapacity(
   // Which host would this project deploy to? The active release records it;
   // a project that has never deployed has no host to measure yet.
   const activeDep = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+    ? await findActiveDeployment(project).catch(() => null)
     : null;
   const serverId = (activeDep?.meta as { serverId?: string } | null)?.serverId;
   // An unreachable host must degrade the LABEL, not the endpoint: everything

@@ -23,6 +23,7 @@
  * prefix: "openship.terminal.resume+" (same).
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
 import { auth } from "@repo/platform/engine/lib/auth";
@@ -155,7 +156,7 @@ async function resolveServiceForOrg(
       message: "Project has no active deployment yet",
     };
   }
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  const dep = await findActiveDeployment(project);
   if (!dep) {
     return {
       ok: false,

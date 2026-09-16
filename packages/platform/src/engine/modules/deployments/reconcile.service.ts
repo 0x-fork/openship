@@ -20,7 +20,8 @@
  * containers may be healthy) and NEVER advances the project pointer on failure.
  */
 
-import { repos, type Deployment } from "@repo/db";
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import { repos, type Deployment, type Project } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import { disposeRuntime, resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { isRealContainerRef } from "../../lib/container-ref";
@@ -41,9 +42,9 @@ export interface DeploymentDrift {
 
 /** Whether the project's live release is NEWER than `dep` — if so, a reconcile
  *  to success must NOT steal the pointer back (forward-only). */
-async function isSuperseded(activeDeploymentId: string | null, dep: Deployment): Promise<boolean> {
-  if (!activeDeploymentId || activeDeploymentId === dep.id) return false;
-  const active = await repos.deployment.findById(activeDeploymentId).catch(() => undefined);
+async function isSuperseded(project: Project, dep: Deployment): Promise<boolean> {
+  if (!project.activeDeploymentId || project.activeDeploymentId === dep.id) return false;
+  const active = await findActiveDeployment(project).catch(() => undefined);
   if (!active) return false;
   return active.createdAt.getTime() >= dep.createdAt.getTime();
 }
@@ -184,7 +185,7 @@ export async function reconcileDeployment(deploymentId: string): Promise<Reconci
     await repos.deployment.updateStatus(dep.id, verdict, { errorMessage: null, meta: nextMeta });
 
     const project = await repos.project.findById(dep.projectId);
-    if (project && !(await isSuperseded(project.activeDeploymentId, dep))) {
+    if (project && !(await isSuperseded(project, dep))) {
       await repos.project.setActiveDeployment(project.id, dep.id);
     }
     return "finalized";

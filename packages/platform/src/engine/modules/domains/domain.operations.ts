@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { AppError, NotFoundError, ValidationError, safeErrorMessage } from "@repo/core";
 import { repos } from "@repo/db";
 import type { DomainDependencies } from "../../../domains";
@@ -33,7 +34,7 @@ export async function domainExecution(ctx: ExecutionContext, id: string, verifyi
   if (verifying && (domain.verified || domain.externalIngress)) return;
   const project = domain.projectId ? await repos.project.findById(domain.projectId) : null;
   if (!project || project.organizationId !== ctx.organizationId) throw new NotFoundError("Domain", id);
-  const deployment = project.activeDeploymentId ? await repos.deployment.findById(project.activeDeploymentId) : null;
+  const deployment = project.activeDeploymentId ? await findActiveDeployment(project) : null;
   const meta = (deployment?.meta ?? {}) as DeploymentMeta;
   if (resolveEffectiveTarget(platform().target, meta) === "cloud") return;
   if (meta.serverId) {

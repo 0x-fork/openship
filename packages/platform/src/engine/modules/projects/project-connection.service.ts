@@ -9,6 +9,7 @@
  * URL is encrypted at rest and saved atomically with its link.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Project } from "@repo/db";
 import {
   ValidationError,
@@ -326,7 +327,7 @@ const hostKey = (h: ProjectHost): string => (h.kind === "server" ? `server:${h.i
  */
 async function resolveProjectHost(project: Project): Promise<ProjectHost> {
   const dep = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+    ? await findActiveDeployment(project).catch(() => null)
     : null;
   const meta = (dep?.meta ?? null) as { deployTarget?: string; serverId?: string } | null;
   if (meta?.deployTarget === "cloud" || project.cloudWorkspaceId) return { kind: "cloud" };
@@ -349,7 +350,7 @@ async function resolveProjectHost(project: Project): Promise<ProjectHost> {
 export async function privateConnectionError(source: Project, target: Project): Promise<string | null> {
   const [sourceHost, targetHost, targetDeployment] = await Promise.all([
     resolveProjectHost(source), resolveProjectHost(target),
-    target.activeDeploymentId ? repos.deployment.findById(target.activeDeploymentId) : null,
+    target.activeDeploymentId ? findActiveDeployment(target) : null,
   ]);
   if (sourceHost.kind === "cloud" || targetHost.kind === "cloud") return "Internal mode isn't available for a cloud-hosted app yet — use Public.";
   if (hostKey(sourceHost) !== hostKey(targetHost)) return "Internal mode needs both projects on the same server — they're on different servers.";

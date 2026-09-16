@@ -17,9 +17,10 @@
  * Scheduled as the `images:gc` system job (see modules/jobs/job.registry.ts).
  */
 
+import { activeDeploymentForProject, findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Project } from "@repo/db";
 import { DockerRuntime } from "@repo/adapters";
-import { normalizeRollbackWindow, safeErrorMessage } from "@repo/core";
+import { deploymentBelongsToProject, normalizeRollbackWindow, safeErrorMessage } from "@repo/core";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { getHostDisk } from "../../lib/host-disk";
 import {
@@ -47,7 +48,7 @@ export interface ImageGcSummary {
  * Exported for unit testing; pure given the injected loaders.
  */
 export async function computeKeepSet(
-  project: Pick<Project, "id" | "activeDeploymentId"> & RollbackWindowProject,
+  project: Pick<Project, "id" | "organizationId" | "activeDeploymentId"> & RollbackWindowProject,
   loaders?: {
     listReadyOrderedDesc?: (projectId: string) => Promise<Deployment[]>;
     findById?: (id: string) => Promise<Deployment | undefined>;
@@ -65,6 +66,7 @@ export async function computeKeepSet(
   const keepDeployments: Deployment[] = [];
   let unpinnedKept = 0;
   for (const dep of ready) {
+    if (!deploymentBelongsToProject(project, dep)) continue;
     if (dep.id === project.activeDeploymentId || dep.pinned) {
       keepDeployments.push(dep);
       continue;
@@ -81,7 +83,7 @@ export async function computeKeepSet(
     project.activeDeploymentId &&
     !keepDeployments.some((d) => d.id === project.activeDeploymentId)
   ) {
-    const active = await findById(project.activeDeploymentId);
+    const active = activeDeploymentForProject(project, await findById(project.activeDeploymentId));
     if (active) keepDeployments.push(active);
   }
 
@@ -117,7 +119,7 @@ async function refreshRollbackCapacityFor(
   if (sizes.length === 0) return;
 
   const activeDep = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId)
+    ? await findActiveDeployment(project)
     : null;
   const serverId = (activeDep?.meta as { serverId?: string } | null)?.serverId;
   const disk = await getHostDisk(serverId, project.organizationId).catch(() => null);
@@ -168,7 +170,7 @@ export function selectImageRemovalRefs(
 export async function reapProjectImages(project: Project): Promise<ReapResult> {
   const out: ReapResult = { removed: 0, bytes: 0, skippedInUse: 0 };
   if (!project.activeDeploymentId) return out; // no host to resolve
-  const activeDep = await repos.deployment.findById(project.activeDeploymentId);
+  const activeDep = await findActiveDeployment(project);
   if (!activeDep) return out;
 
   const { runtime } = await resolveDeploymentRuntime(activeDep);

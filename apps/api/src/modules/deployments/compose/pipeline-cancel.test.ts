@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    deployment: { findById: async () => ({ id: "dep-live", projectId: "p1", organizationId: "org1" }) },
     service: {
       listByProject: vi.fn(async () => [
         { id: "svc-api", name: "api", enabled: true, advanced: null },
@@ -99,6 +100,7 @@ async function run(
   await executeComposePipeline({
     project: {
       id: "p1",
+      organizationId: "org1",
       slug: "app",
       name: "app",
       webhookDomain: null,

@@ -2,6 +2,7 @@
  * Service business logic - CRUD and compose sync.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import {
   normalizeRoutingFields,
   repos,
@@ -1024,7 +1025,7 @@ export async function updateService(
       // Needed for route REMOVAL too, so it is not gated on having routes.
       const dep =
         !project.cloudWorkspaceId && project.activeDeploymentId
-          ? await repos.deployment.findById(project.activeDeploymentId)
+          ? await findActiveDeployment(project)
           : null;
 
       // Self-hosted upstream, resolved from the LIVE container: the published
@@ -1037,7 +1038,7 @@ export async function updateService(
       let stored: StoredUpstream | undefined;
       let containerId: string | undefined;
       if (isRoutable && nextRoutes.length > 0 && dep && project.activeDeploymentId) {
-        const rows = await repos.service.listByDeployment(project.activeDeploymentId);
+        const rows = await repos.service.listByDeployment(dep.id);
         const row = rows.find((r) => r.serviceId === serviceId);
         stored = { ip: row?.ip, hostPort: row?.hostPort, hostPorts: row?.hostPorts };
         containerId = row?.containerId ?? undefined;
@@ -1198,8 +1199,8 @@ export async function updateService(
 async function deleteLiveService(project: Project, svc: Service): Promise<void> {
   const serviceId = svc.id;
   if (project.activeDeploymentId) {
-    const dep = await repos.deployment.findById(project.activeDeploymentId);
-    const serviceDeployments = await repos.service.listByDeployment(project.activeDeploymentId);
+    const dep = await findActiveDeployment(project);
+    const serviceDeployments = dep ? await repos.service.listByDeployment(dep.id) : [];
     const serviceDeployment = serviceDeployments.find((row) => row.serviceId === serviceId);
 
     if (dep && serviceDeployment?.containerId) {
@@ -1268,7 +1269,7 @@ async function deleteLiveService(project: Project, svc: Service): Promise<void> 
         // leave a remote vhost proxying a now-dead upstream → 502).
         const dep =
           !project.cloudWorkspaceId && project.activeDeploymentId
-            ? await repos.deployment.findById(project.activeDeploymentId)
+            ? await findActiveDeployment(project)
             : null;
         await reconcileProjectRoutes(project, {
           deployment: dep,
@@ -1623,7 +1624,7 @@ export async function getActiveServiceContainers(
   if (services.length === 0) return [];
 
   const dep = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId)
+    ? await findActiveDeployment(project)
     : null;
   // service_deployment rows are IDENTITY HINTS ONLY (container id, image). Their
   // `status` column is a deploy-time artifact and is never read for liveness.
@@ -1865,7 +1866,7 @@ export async function getServiceVolumeSizes(
     return { measurable: true, volumes: [], totalBytes: null, partial: false };
   if (!project.activeDeploymentId) return unmeasured(false);
 
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  const dep = await findActiveDeployment(project);
   if (!dep) return unmeasured(false);
 
   // Resolve the host that runs this service's container → its shell executor.
@@ -1995,7 +1996,7 @@ async function resolveServiceContainer(ctx: RequestContext, projectId: string, s
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!project.activeDeploymentId) throw new Error("No active deployment");
 
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  const dep = await findActiveDeployment(project);
   if (!dep) throw new Error("Active deployment not found");
 
   const svc = (await repos.service.listByProject(projectId)).find((s) => s.id === serviceId);
@@ -2084,7 +2085,7 @@ async function provisionServiceContainer(
   if (!project.activeDeploymentId) {
     throw new Error("Deploy the project first, then start its services.");
   }
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  const dep = await findActiveDeployment(project);
   if (!dep) throw new Error("Active deployment not found");
 
   const service = (await repos.service.listByProject(projectId)).find((s) => s.id === serviceId);
@@ -2250,7 +2251,7 @@ export async function restartServiceContainer(
     const project = await repos.project.findById(projectId);
     assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
     const dep = project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+      ? await findActiveDeployment(project).catch(() => null)
       : null;
     const service = (await repos.service.listByProject(projectId)).find((s) => s.id === serviceId);
     if (dep && service) {

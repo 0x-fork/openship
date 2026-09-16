@@ -1,4 +1,5 @@
-import { repos, type Deployment, type Project } from "@repo/db";
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import type { Deployment, Project } from "@repo/db";
 import { deriveProjectDeployTarget, type DeployTarget } from "@repo/core";
 
 /**
@@ -77,10 +78,10 @@ export function readDeployMeta(
 
 /** Canonical target resolver for callers that do not already hold the active deployment. */
 export async function resolveProjectDeployTarget(
-  project: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   const activeDeployment = project.activeDeploymentId
-    ? ((await repos.deployment.findById(project.activeDeploymentId)) ?? null)
+    ? ((await findActiveDeployment(project)) ?? null)
     : null;
   return readDeployMeta(project, activeDeployment);
 }
@@ -94,10 +95,10 @@ export async function resolveProjectDeployTarget(
  * deployment snapshot or they can mutate a future server after a target edit.
  */
 export async function resolveProjectLiveDeployTarget(
-  project: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   if (!project.activeDeploymentId) return { deployTarget: null, serverId: null };
-  const active = (await repos.deployment.findById(project.activeDeploymentId)) ?? null;
+  const active = (await findActiveDeployment(project)) ?? null;
   const meta = (active?.meta ?? null) as {
     deployTarget?: unknown;
     serverId?: string;

@@ -25,6 +25,7 @@
  * container-less pre-deploy, and we require no configured backup destination.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import crypto from "node:crypto";
 import { repos } from "@repo/db";
 import { isServiceFailureStatus, safeErrorMessage, sanitizeProxySettings } from "@repo/core";
@@ -2109,7 +2110,7 @@ class MigrationOrchestratorImpl {
       const services = await repos.service.listByProject(projectId);
       if (!project || services.length === 0) return;
       const dep = project.activeDeploymentId
-        ? await repos.deployment.findById(project.activeDeploymentId)
+        ? await findActiveDeployment(project)
         : null;
       const trackedIds = Object.fromEntries(
         (dep ? await repos.service.listByDeployment(dep.id) : []).map((r) => [
