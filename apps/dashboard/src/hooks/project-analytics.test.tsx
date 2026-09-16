@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { ProjectSettingsProvider, useProjectSettings } from "@/context/ProjectSettingsContext";
 import { OverviewTab } from "@/app/(dashboard)/projects/[id]/components/OverviewTab";
-import { invalidateProjectCaches, useAnalyticsOverview } from "./useProjectEndpoints";
+import { invalidateProjectCaches, useAnalyticsOverview, useProjectUsageHistory } from "./useProjectEndpoints";
 
 const h = vi.hoisted(() => ({ get: vi.fn(), info: vi.fn(), services: vi.fn(), router: { replace: vi.fn() } }));
 vi.mock("@/lib/api", () => ({
   api: { get: h.get }, projectsApi: { getInfo: h.info }, servicesApi: { list: h.services },
-  endpoints: { analytics: { overview: "/analytics/overview" } },
+  endpoints: { analytics: { overview: "/analytics/overview", usageHistory: "/analytics/usage/history" } },
   ApiError: class extends Error {},
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => h.router }));
@@ -79,6 +79,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -151,4 +152,23 @@ describe("project analytics requests and recovery (#396)", () => {
     expect([...container.querySelectorAll('[data-subscriber]')].map((e) => e.textContent))
       .toEqual(["200", "200", "200"]);
   });
+});
+
+
+it("prevents an older resource poll from undoing an explicit refresh (#396)", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const history = (minute: number) => ({ data: { buckets: [{ minute }], services: [], granularityMinutes: 5 } });
+  const oldPoll = deferred<ReturnType<typeof history>>();
+  h.get.mockResolvedValueOnce(history(1)).mockReturnValueOnce(oldPoll.promise).mockResolvedValue(history(3));
+  function History() {
+    const result = useProjectUsageHistory(id, null, 1000);
+    return <output data-history>{result.data?.buckets[0]?.minute}</output>;
+  }
+  await act(async () => root.render(<History />));
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  await act(async () => invalidateProjectCaches(id));
+  expect(container.querySelector('[data-history]')?.textContent).toBe("3");
+  await act(async () => oldPoll.resolve(history(2)));
+  expect(container.querySelector('[data-history]')?.textContent).toBe("3");
+  expect(h.get).toHaveBeenCalledTimes(3);
 });

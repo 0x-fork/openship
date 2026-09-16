@@ -361,10 +361,14 @@ function useEndpoint<T>(
     if (!id || !pollMs || pollMs <= 0) return;
     let cancelled = false;
     const handle = setInterval(() => {
+      const previous = cache.get(id);
+      if (previous?.kind === "loading") return;
+      const startedRevision = revKey ? getRevision(revKey) : 0;
       fetcher(id)
         .then((data) => {
+          if (cancelled || idRef.current !== id || cache.get(id) !== previous ||
+            (revKey && getRevision(revKey) !== startedRevision)) return;
           cache.set(id, { kind: "ready", data });
-          if (cancelled || idRef.current !== id) return;
           loadedIdRef.current = id;
           setState({ data, isLoading: false, error: null });
         })
@@ -374,7 +378,7 @@ function useEndpoint<T>(
       cancelled = true;
       clearInterval(handle);
     };
-  }, [id, cache, fetcher, pollMs]);
+  }, [id, cache, fetcher, pollMs, revKey]);
 
   return state;
 }
