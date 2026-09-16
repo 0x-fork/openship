@@ -32,6 +32,7 @@
  * server, non-running containers skipped for free, and a hard per-server budget.
  */
 
+import { activeDeploymentForProject } from "@repo/platform/engine/lib/active-deployment";
 import {
   repos,
   SINGLE_APP_SERVICE_KEY,
@@ -215,8 +216,13 @@ export async function runUsageSampleSweep(): Promise<UsageSampleSummary> {
   // than one SSH bridge per project.
   const groups = new Map<string, Candidate[]>();
   for (const p of active) {
-    const dep = deployments.get(p.activeDeploymentId!);
-    if (!dep) continue;
+    const candidate = deployments.get(p.activeDeploymentId!);
+    const dep = activeDeploymentForProject(p, candidate);
+    if (!dep) {
+      summary.skipped++;
+      if (candidate) console.warn(`[usage-sampler] Ignoring invalid active-deployment binding for project ${p.id}`);
+      continue;
+    }
     const meta = (dep.meta ?? {}) as { serverId?: string };
     const key = watchGroupKey(meta.serverId ?? null, dep.organizationId);
     const list = groups.get(key) ?? [];

@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { AppError, NotFoundError, safeErrorMessage } from "@repo/core";
 import { OperationError, type ProjectRoutingSchemas } from "@repo/contracts";
 import { repos } from "@repo/db";
@@ -82,7 +83,7 @@ export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSch
       .filter(row => row.organizationId === ctx.organizationId && row.projectId === id);
     const historyDays = 30;
     const cutoff = Date.now() - historyDays * 86_400_000;
-    const deployment = project.activeDeploymentId ? await repos.deployment.findById(project.activeDeploymentId) : null;
+    const deployment = project.activeDeploymentId ? await findActiveDeployment(project) : null;
     const serverId = (deployment?.meta as { serverId?: string } | null)?.serverId;
     const incident = serverId ? await repos.serviceIncident.findOpenForServer(serverId) : null;
     const job = await repos.job.findByKey("services:health-watch");

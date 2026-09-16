@@ -36,7 +36,7 @@ const h = vi.hoisted(() => ({
   updateServiceDeployment: vi.fn(),
   services: [] as Array<Record<string, unknown>>,
   previousServiceRows: [] as Array<Record<string, unknown>>,
-  previousDeployment: { id: "d-old", containerId: "compose", createdAt: null } as Record<
+  previousDeployment: { id: "d-old", projectId: "p1", organizationId: "org1", containerId: "compose", createdAt: null } as Record<
     string,
     unknown
   >,
@@ -220,7 +220,7 @@ beforeEach(() => {
       hostPorts: { 8080: 30_000 },
     },
   ];
-  h.previousDeployment = { id: "d-old", containerId: "compose", createdAt: null };
+  h.previousDeployment = { id: "d-old", projectId: "p1", organizationId: "org1", containerId: "compose", createdAt: null };
   h.prepareTargetPinnedHostPorts.mockResolvedValue([]);
   h.allocateAndReservePinnedHostPort.mockImplementation(async (input) => ({
     port: 30_000,
@@ -1816,3 +1816,5 @@ describe("compose deploy — host channel unavailable", () => {
     expect(h.convergeTargetHostPortClaimsUnlocked).not.toHaveBeenCalled();
   });
 });
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted" }) }));

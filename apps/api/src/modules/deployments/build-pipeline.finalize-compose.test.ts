@@ -47,11 +47,11 @@ vi.mock("@repo/platform/engine/modules/deployments/rollback/index", () => ({
 
 import { finalizeComposeDeploy } from "@repo/platform/engine/modules/deployments/build-pipeline";
 
-const asDeployment = (deployment: Partial<Deployment>) => deployment as Deployment;
+const asDeployment = (deployment: Partial<Deployment>) => ({ organizationId: "org-1", ...deployment }) as Deployment;
 const asProject = (project: Partial<Project>) => project as Project;
 const logger = {} as BuildLogger;
 const previousDeploymentId = "previous-deployment";
-const project = asProject({ id: "project-1", activeDeploymentId: previousDeploymentId });
+const project = asProject({ id: "project-1", organizationId: "org-1", activeDeploymentId: previousDeploymentId });
 
 function deploymentWithStatus(status: Deployment["status"]): Deployment {
   return asDeployment({

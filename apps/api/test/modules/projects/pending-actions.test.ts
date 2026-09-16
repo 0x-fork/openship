@@ -65,6 +65,7 @@ const PROJECT = "proj-1";
 
 const dep = (over: Record<string, unknown> = {}) => ({
   id: "dep-1",
+  projectId: PROJECT,
   organizationId: ORG,
   status: "ready",
   meta: null,

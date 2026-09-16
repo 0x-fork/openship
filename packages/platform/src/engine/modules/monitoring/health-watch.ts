@@ -50,6 +50,7 @@
  * costs at most one extra minute of detection latency.
  */
 
+import { activeDeploymentForProject } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Project, type Service, type ServiceIncident } from "@repo/db";
 import {
   getPlatform,
@@ -632,7 +633,12 @@ async function sweepOnce(opts?: HealthSweepOptions): Promise<HealthWatchSummary>
 
   const live: { project: Project; dep: Deployment; meta: DeploymentMeta }[] = [];
   for (const project of projects) {
-    const dep = project.activeDeploymentId ? activeDeps.get(project.activeDeploymentId) : undefined;
+    const candidate = project.activeDeploymentId ? activeDeps.get(project.activeDeploymentId) : undefined;
+    const dep = activeDeploymentForProject(project, candidate);
+    if (candidate && !dep) {
+      console.warn(`[health-watch] Ignoring invalid active-deployment binding for project ${project.id}`);
+      continue;
+    }
     // Nothing deployed, or the operator turned it off. Both are permanent until
     // someone acts, so an open incident is closed silently rather than announced
     // as a recovery — the workload didn't come back, it stopped being watched.

@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { authorization } from "../../lib/authorization";
 /**
@@ -623,7 +624,7 @@ export async function getContainerInfo(ctx: RequestContext, projectId: string) {
 
   if (!project.activeDeploymentId) return null;
 
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  const dep = await findActiveDeployment(project);
   if (!dep?.containerId) return null;
 
   const { runtime } = await resolveDeploymentRuntimeForRead(dep);

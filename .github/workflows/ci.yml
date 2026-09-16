@@ -83,10 +83,14 @@ jobs:
           # Both suites rebuild the same native bundle. Keep them sequential on
           # their own runner; the other packages do not share that filesystem.
           - suite: SDK and CLI
-            command: bun run test --filter=@repo/sdk --filter=@repo/cli --log-order=stream
+            command: bunx turbo run test --filter=@repo/sdk --filter=@repo/cli --concurrency=1 --log-order=stream
           # Exclusions keep new workspace test scripts included automatically.
+          # Keep filters on the workspace runner. Script tests run once below,
+          # independently of the root command's argument-forwarding behavior.
           - suite: Other packages
-            command: bun run test --filter=!@repo/api --filter=!@repo/db --filter=!@repo/sdk --filter=!@repo/cli --log-order=stream
+            command: |
+              bunx turbo run test --filter=!@repo/api --filter=!@repo/db --filter=!@repo/sdk --filter=!@repo/cli --filter=!@repo/email --concurrency=1 --log-order=stream
+              bun run test:scripts
     steps:
       - name: Checkout
         uses: actions/checkout@v7

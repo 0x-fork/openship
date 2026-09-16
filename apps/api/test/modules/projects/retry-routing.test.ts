@@ -91,6 +91,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     });
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1",
+      projectId: "proj_1", organizationId: "org_1",
       status: "ready",
       meta: { serverId: "srv_1", deployTarget: "server" },
     });
@@ -218,7 +219,7 @@ describe("retryProjectRouting — safe self-heal", () => {
       serverId: null,
       activeDeploymentId: "dep_1",
     });
-    deploymentRepo.findById.mockResolvedValue({ id: "dep_1", status: "ready", meta: {} });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_1", projectId: "proj_1", organizationId: "org_1", status: "ready", meta: {} });
     domainRepo.listByProject.mockResolvedValue([]);
 
     const result = await retryProjectRouting("proj_1", "org_1");
@@ -232,7 +233,7 @@ describe("retryProjectRouting — safe self-heal", () => {
   // Fix 2c step 1: a snapshot whose meta.serverId drifted from the durable binding
   // is re-stamped so routing resolves to the server again, not "local".
   it("re-stamps a drifted deployment meta from the durable project.serverId", async () => {
-    deploymentRepo.findById.mockResolvedValue({ id: "dep_1", status: "ready", meta: {} });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_1", projectId: "proj_1", organizationId: "org_1", status: "ready", meta: {} });
 
     await retryProjectRouting("proj_1", "org_1");
 

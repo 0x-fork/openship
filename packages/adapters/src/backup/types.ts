@@ -403,8 +403,9 @@ export interface ArtifactRef {
   payloadKind: PayloadKind;
   sha256: string;
   sizeBytes: number;
-  /** Lazily-resolved stream from the destination. The producer pipes
-   *  this through whatever decompression/parsing it needs. */
+  /** Lazily-resolved stream from the destination. Finish validation
+   *  before opening, and open before clearing or writing target data: the
+   *  orchestrator records that writes may begin when it hands out this stream. */
   open: () => Promise<Readable>;
 }
 

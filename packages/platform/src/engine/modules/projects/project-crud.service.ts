@@ -2,6 +2,7 @@
  * Project CRUD service - create, read, update, list, ensure.
  */
 
+import { activeDeploymentForProject, findActiveDeployment, listActiveServiceDeployments } from "@repo/platform/engine/lib/active-deployment";
 import {
   repos,
   type Deployment,
@@ -76,6 +77,7 @@ import {
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
+import { resolveDeploymentEnvironment } from "../deployments/deployment-environment";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
 import { currentPlanTier, planProjectLimit, PlanUpgradeRequiredError } from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
@@ -260,7 +262,7 @@ export async function enrichProject(p: Project) {
 
   let activeDep: Deployment | null = null;
   if (p.activeDeploymentId) {
-    activeDep = (await repos.deployment.findById(p.activeDeploymentId)) ?? null;
+    activeDep = (await findActiveDeployment(p)) ?? null;
   }
   const { deployTarget, serverId } = readDeployMeta(p, activeDep);
   let serverName: string | null = null;
@@ -317,7 +319,9 @@ export async function enrichProjectsBatch(
     .catch(() => new Map<string, Deployment>());
 
   const serverIds = new Set<string>();
-  for (const d of deployments.values()) {
+  for (const project of projects) {
+    const d = project.activeDeploymentId ? activeDeploymentForProject(project, deployments.get(project.activeDeploymentId)) : undefined;
+    if (!d) continue;
     const meta = d.meta as { serverId?: string } | null;
     if (meta?.serverId) serverIds.add(meta.serverId);
   }
@@ -341,7 +345,7 @@ export async function enrichProjectsBatch(
 
     let activeDep: Deployment | null = null;
     if (p.activeDeploymentId) {
-      activeDep = deployments.get(p.activeDeploymentId) ?? null;
+      activeDep = activeDeploymentForProject(p, deployments.get(p.activeDeploymentId)) ?? null;
     }
     const { deployTarget, serverId } = readDeployMeta(p, activeDep);
     let serverName: string | null = null;
@@ -1422,6 +1426,18 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (!project && desiredSlug !== nameSlug) {
     project = await findProjectByAppSlug(organizationId, desiredSlug, data.gitBranch);
   }
+  if (project && project.organizationId !== organizationId) {
+    throw new NotFoundError("Project", data.projectId ?? desiredSlug);
+  }
+  if (data.deploymentEnvironment !== undefined) {
+    // Source deployments ensure config before asking for build access. Reject a
+    // preview aimed at production here too, before overwriting services/config
+    // or leaving a newly created production project behind after the refusal.
+    resolveDeploymentEnvironment(
+      project ?? { id: desiredSlug, environmentType: "production" },
+      data.deploymentEnvironment,
+    );
+  }
   let created = false;
 
   if (!project) {
@@ -1431,13 +1447,6 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     project = await createProductionProject(data, desiredSlug, organizationId);
     created = true;
   } else {
-    // Defensive: if we matched an existing project but its org_id doesn't
-    // match the caller's active org, refuse. The auto-switch middleware
-    // should have made these match before we get here, but the bare
-    // ensure path can be called from edge code paths (CLI, deploy hooks).
-    if (project.organizationId !== organizationId) {
-      throw new NotFoundError("Project", data.projectId ?? desiredSlug);
-    }
     const update: Record<string, unknown> = {};
     if (data.framework !== undefined) update.framework = normalizeFramework(data.framework);
     if (data.packageManager !== undefined) update.packageManager = data.packageManager;
@@ -2314,7 +2323,7 @@ export async function resolveDeployedDrift(
   if (mode === "commit") {
     let deployedSha: string | null = null;
     if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+      const dep = await findActiveDeployment(p).catch(() => null);
       deployedSha = dep?.commitSha ?? null;
     }
     return { mode: "commit", deployedSha };
@@ -2328,7 +2337,7 @@ export async function resolveDeployedDrift(
     }
     let currentVersion: string | null = null;
     if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+      const dep = await findActiveDeployment(p).catch(() => null);
       currentVersion = dep?.releaseVersion ?? null;
     }
     if (!currentVersion && p.appTemplateId === "openship") currentVersion = readApiVersion();
@@ -2337,7 +2346,7 @@ export async function resolveDeployedDrift(
 
   const deployedByService = new Map<string, { ref?: string; digest?: string }>();
   if (p.activeDeploymentId) {
-    const sds = await repos.service.listByDeployment(p.activeDeploymentId).catch(() => []);
+    const sds = await listActiveServiceDeployments(p).catch(() => []);
     for (const sd of sds) {
       deployedByService.set(sd.serviceId, {
         digest: sd.imageDigest ?? undefined,
@@ -2676,11 +2685,12 @@ export async function getLatestDeploymentSession(projectId: string, organization
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  if (!p.activeDeploymentId) {
+  const active = await findActiveDeployment(p);
+  if (!active) {
     return { session: null };
   }
 
-  const session = await repos.deployment.findBuildSessionByDeploymentId(p.activeDeploymentId);
+  const session = await repos.deployment.findBuildSessionByDeploymentId(active.id);
   return {
     session: session
       ? {

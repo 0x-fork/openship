@@ -51,7 +51,7 @@ vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: {}, getO
 vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ buildSshConfig: async () => null, sshManager: {} }));
 vi.mock("@repo/platform/engine/lib/provision-lock", () => ({ createProvisionLock: () => ({}) }));
-vi.mock("@repo/platform/engine/lib/box-org", () => ({ isLocalHostRow: async () => true }));
+vi.mock("@repo/platform/engine/lib/box-org", () => ({ isLocalHostRow: async () => true, boxOwningOrgId: async () => "org_1" }));
 vi.mock("@repo/platform/engine/lib/acme-config", () => ({ resolveAcmeProviderOptions: () => ({}) }));
 
 const dep = { meta: {}, organizationId: "org_1" };

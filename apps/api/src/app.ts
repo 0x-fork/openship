@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { handleApiError } from "./middleware/error-handler";
-import { authRouteLimiter } from "./middleware/rate-limiter";
+import { authRouteLimiter, floodGuard } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
 import { betterAuthShield } from "./middleware/better-auth-shield";
 import { forceMcpConsent } from "./middleware/mcp-consent";
@@ -148,13 +148,18 @@ app.use("*", migrationGuard);
 // AppError / ZodError get serialized with their statusCode and code.
 app.onError(handleApiError);
 
-// Rate limiting now lives in the route chain, NOT in a global `/api/*`
-// middleware (fixes #123). secureRouter injects a per-route limiter AFTER
+// Per-route rate limiting lives after authentication (fixes #123).
+// secureRouter injects a per-route limiter AFTER
 // authMiddleware — `default-authed` (per user) for permission-tagged routes,
 // `default-anon` (per IP) for public ones, or the route's explicit `rateLimit`
 // policy. A global limiter ran upstream of auth, so it could never see `ctx`
 // (always default-anon) and double-charged routes with their own policy.
 //
+// An independent pre-auth ceiling protects the session lookup on standalone
+// installations. Its flood-ip bucket does not charge the per-route policies.
+// Cloud mode and OPENSHIP_TRUST_EDGE delegate this ceiling to the trusted edge.
+app.use("/api/*", floodGuard);
+
 // Better Auth is a RAW catch-all (not secureRouter), so it carries one central
 // limiter: POSTs and invitation bearer-token previews use `auth-tight`; ordinary
 // session/OAuth GETs use `default-anon`. A route must not add a second limiter.

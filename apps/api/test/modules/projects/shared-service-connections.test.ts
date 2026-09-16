@@ -16,7 +16,7 @@ vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
 vi.mock("@repo/db", () => ({ repos: {
   project: { findById: async (id: string) => h.projects.get(id), listEnvVars: async () => h.envRows },
   service: { findById: async (id: string) => h.services.get(id), listByDeployment: async () => [{ containerId: "adopted-web" }] },
-  deployment: { findById: async (id: string) => ({ id, meta: {} }) },
+  deployment: { findById: async (id: string) => ({ id, projectId: id === "dep-source" || id === "dep-new" ? "source" : "target", organizationId: "org", meta: {} }) },
   projectConnection: {
     listByTarget: async (id: string) => h.links.filter(link => link.targetProjectId === id),
     listBySource: async (id: string) => h.links.filter(link => link.sourceProjectId === id),

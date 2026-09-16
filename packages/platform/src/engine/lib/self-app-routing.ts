@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { ExecutionContext } from "../../context";
 import { repos } from "@repo/db";
 import { instanceAuthorization } from "./instance-authorization";
@@ -12,11 +13,9 @@ export async function canRouteSelfApp(ctx: ExecutionContext, projectId: string):
     !project.activeDeploymentId
   )
     return false;
-  const deployment = await repos.deployment.findById(project.activeDeploymentId);
+  const deployment = await findActiveDeployment(project);
   if (
-    deployment?.projectId !== project.id ||
-    deployment.organizationId !== ctx.organizationId ||
-    (deployment.meta as { adopt?: boolean } | null)?.adopt !== true
+    (deployment?.meta as { adopt?: boolean } | null)?.adopt !== true
   )
     return false;
   return instanceAuthorization.allows(ctx, "write");

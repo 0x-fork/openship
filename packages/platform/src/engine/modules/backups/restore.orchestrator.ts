@@ -29,6 +29,7 @@
  * Same shape as backups — dashboard refresh-safe.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import crypto from "node:crypto";
 import { Writable, pipeline as streamPipeline } from "node:stream";
 import { promisify } from "node:util";
@@ -1081,13 +1082,8 @@ export class RestoreOrchestrator {
           // target was cleared, so a mismatch here is reported as partial data
           // rather than as "not safe to restore".
           const hasher = new HashingPassthrough();
+          let download: Promise<void> | undefined;
           const targetLabel = this.artifactTargetLabel(recorded, serviceHandle);
-          await this.markDestructive(restoreId, targetLabel);
-          wroteInto = targetLabel;
-          // Before the write, because for these kinds the destruction starts with it:
-          // the volume helper's clear happens in its prelude, `tar -x` writes file by
-          // file, `mysql` commits statement by statement.
-          if (!failureLeavesTargetIntact(recorded.payloadKind)) unfinishedTarget = targetLabel;
           try {
             await producer.restore(
               serviceHandle,
@@ -1098,7 +1094,24 @@ export class RestoreOrchestrator {
                 payloadKind: recorded.payloadKind,
                 sha256: recorded.sha256 ?? "",
                 sizeBytes: recorded.sizeBytes,
-                open: async () => (await destination.get(recorded.key)).pipe(hasher),
+                open: async () => {
+                  // Producers finish their preflight before opening the artifact.
+                  // An AOF/credential refusal must not claim it damaged Redis data.
+                  await this.throwIfCancelRequested(restoreId, wroteInto);
+                  const body = await destination.get(recorded.key);
+                  // Forward download errors to the producer and close both streams
+                  // together. pipe() alone leaves source errors unhandled.
+                  download = pipelineP(body, hasher);
+                  // The producer observes the error through hasher; attach a handler
+                  // immediately because it may fail before open() returns.
+                  void download.catch(() => {});
+                  await this.markDestructive(restoreId, targetLabel);
+                  wroteInto = targetLabel;
+                  // Mark before handing bytes to the producer: a volume helper
+                  // may clear its target before it reads the first byte.
+                  if (!failureLeavesTargetIntact(recorded.payloadKind)) unfinishedTarget = targetLabel;
+                  return hasher;
+                },
               },
               {
                 clearTarget: await this.shouldClearTarget(sourceRun, recorded.payloadKind),
@@ -1113,8 +1126,13 @@ export class RestoreOrchestrator {
             // service restarted on a half-written volume, because only the
             // partial-write paths decline that restart. So a cancel that was in
             // fact requested owns the failure.
-            if (await this.cancelRequested(restoreId)) throw new RestoreCancelled(targetLabel);
+            if (await this.cancelRequested(restoreId)) throw new RestoreCancelled(wroteInto);
             throw err;
+          } finally {
+            // A producer can reject before consuming its input. Release the
+            // download before reporting completion or releasing the runtime.
+            hasher.destroy();
+            await download?.catch(() => {});
           }
           // Null when the producer didn't drain the stream (a pg_restore that
           // stops early, say) — unverifiable, not a mismatch.
@@ -1519,7 +1537,7 @@ export class RestoreOrchestrator {
   private async activeDeploymentMeta(projectId: string): Promise<Record<string, unknown>> {
     const project = await repos.project.findById(projectId);
     if (!project?.activeDeploymentId) return {};
-    const dep = await repos.deployment.findById(project.activeDeploymentId);
+    const dep = await findActiveDeployment(project);
     return (dep?.meta ?? {}) as Record<string, unknown>;
   }
 
@@ -1566,7 +1584,7 @@ export class RestoreOrchestrator {
     // taken as `$POSTGRES_USER` has to be replayed as the same one.
     let environment: string | undefined;
     if (project.activeDeploymentId) {
-      const dep = await repos.deployment.findById(project.activeDeploymentId);
+      const dep = await findActiveDeployment(project);
       // Verified against the host — a restore into a container a redeploy has
       // since replaced would write into nothing (or the wrong thing).
       if (dep) {

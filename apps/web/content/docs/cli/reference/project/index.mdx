@@ -18,6 +18,7 @@ openship project|projects [options] [command]
 | --- | --- |
 | [`list\|ls`](/docs/cli/reference/project#openship-project-list) | List projects in the active organization |
 | [`get <id>`](/docs/cli/reference/project#openship-project-get) | Show a single project |
+| [`rename <id> <name>`](/docs/cli/reference/project#openship-project-rename) | Change a project's display name |
 | [`release-image [options] <id>`](/docs/cli/reference/project#openship-project-release-image) | Track and deploy a versioned prebuilt container image |
 | [`create [options]`](/docs/cli/reference/project#openship-project-create) | Create a project |
 | [`delete\|rm [options] <id>`](/docs/cli/reference/project#openship-project-delete) | Delete a project (tears down all resources) |
@@ -215,6 +216,19 @@ openship project release-image [options] <id>
 | `--github-repo <owner/repo>` | Resolve versions from GitHub Releases |
 | `--version-url <https-url>` | HTTPS endpoint returning a version or tag |
 | `--pin <version>` | Deploy a fixed version instead of the discovered latest release |
+
+## openship project rename
+
+Change a project's display name
+
+```text
+openship project rename [options] <id> <name>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `name` | New display name |
 
 ## openship project server-logs
 

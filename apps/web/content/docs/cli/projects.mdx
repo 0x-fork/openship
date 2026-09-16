@@ -12,8 +12,13 @@ Resource commands use the active [connection context](/docs/cli/access) or your 
 openship project list
 openship project create --name my-app --git-owner my-team --git-repo my-app
 openship project get proj_123
+openship project rename proj_123 "My application"
 openship init --project proj_123
 ```
+
+`project rename` updates the display name through the same operation as the dashboard.
+The project ID, slug, volumes, and live routes keep their existing identities. Manage hostnames
+with the domain commands below.
 
 `init` writes a project link in `.openship/project.json`. This is different from `openship.json`, which
 declares deployment configuration:

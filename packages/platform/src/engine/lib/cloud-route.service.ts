@@ -1,6 +1,6 @@
 import { Oblien, PAGE_CONTAINER_PREFIX, CloudInfraProvider } from "@repo/adapters";
 import { repos } from "@repo/db";
-import { AppError, SYSTEM } from "@repo/core";
+import { AppError, SYSTEM, deploymentBelongsToProject } from "@repo/core";
 import { env } from "../config/env";
 import { getOrgCloudToken } from "./cloud/client";
 import { createRemoteCloudAdmin } from "./cloud/admin-proxy";
@@ -32,7 +32,7 @@ export async function reapplyCloudProjectRoute(project: CloudRouteProject, input
   if (!project.cloudWorkspaceId || !project.activeDeploymentId) return;
   const deployment = await repos.deployment.findById(project.activeDeploymentId);
   if (!deployment?.containerId) return;
-  if (deployment.organizationId !== project.organizationId || deployment.projectId !== project.id) {
+  if (!deploymentBelongsToProject(project, deployment)) {
     throw new AppError("Cloud deployment does not belong to this project", 404, "DEPLOYMENT_NOT_FOUND");
   }
   const { client, adminProxy } = await tenantClient(project.organizationId);

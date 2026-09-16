@@ -14,7 +14,8 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
-import { repos, type Project } from "@repo/db";
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import { repos, unresolvedComposeEnvironmentKeys, type Project, type Service } from "@repo/db";
 import {
   AppError,
   NotFoundError,
@@ -43,6 +44,7 @@ import {
 import type { LogEntry, ResourceConfig } from "@repo/adapters";
 import { resolveCloudResourceConfig } from "./cloud-resources";
 import { resolveEnvDirtyServiceIds } from "./env-drift";
+import { resolveDeploymentEnvironment } from "./deployment-environment";
 import type { TBuildAccessBody } from "@repo/contracts";
 import { platform } from "../../lib/platform-config";
 import { decryptEnvMap, encrypt } from "../../lib/encryption";
@@ -131,13 +133,14 @@ function throwPreflightFailure(preflight: PreflightResult): never {
 }
 
 /** Wrap a snapshot with the project's currently-active deployment id (rollback target). */
-export function metaWithPrevious(
+export async function metaWithPrevious(
   snapshot: DeploymentConfigSnapshot,
   project: Project,
-): DeploymentConfigSnapshot {
+): Promise<DeploymentConfigSnapshot> {
+  const previous = await findActiveDeployment(project);
   return {
     ...snapshot,
-    previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
+    previousActiveDeploymentId: previous?.id,
     envCapture: "flat-v1",
   };
 }
@@ -768,14 +771,23 @@ function composeCouldHaveChanged(project: Project, changedPaths: string[]): bool
  * be normalized once even when the triggering push only changed application
  * code. `buildArgs` is the version marker here: every current `toComposeSpec`
  * writes it (including `{}`), while pre-#689 baselines omit it. A null baseline
- * likewise still needs its first repo reconciliation. */
+ * likewise still needs its first repo reconciliation. Missing environment
+ * provenance and unreviewed cached values also require a source read (#893). */
 function composeRowsNeedBaselineUpgrade(
-  rows: Array<{ kind?: string | null; importedSpec?: unknown }>,
+  rows: Array<Pick<Service, "kind" | "importedSpec" | "environment" | "advanced">>,
 ): boolean {
   return rows.some((row) => {
     if (row.kind !== "compose") return false;
     const baseline = row.importedSpec;
-    return !baseline || typeof baseline !== "object" || !Object.hasOwn(baseline, "buildArgs");
+    const templateKeys = new Set(row.advanced?.environmentTemplateKeys ?? []);
+    const overrideKeys = new Set(row.advanced?.environmentOverrideKeys ?? []);
+    return !baseline || !Object.hasOwn(baseline, "buildArgs") ||
+      (Object.keys(baseline.environment ?? {}).length > 0 &&
+        !Object.hasOwn(baseline.advanced ?? {}, "environmentTemplateKeys")) ||
+      (baseline.advanced?.environmentTemplateKeys ?? []).some(
+        (key) => !overrideKeys.has(key) && !templateKeys.has(key),
+      ) ||
+      unresolvedComposeEnvironmentKeys(row, baseline).length > 0;
   });
 }
 
@@ -845,14 +857,18 @@ async function reconcileComposeSource(
         });
     const services = info.services ?? [];
     if (services.length === 0) {
-      if (bootstrapping) {
-        throw new Error(
-          `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
-        );
-      }
-      return;
+      throw new ComposeConfigurationError(
+        `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
+      );
     }
-    const { driftedNames } = await repos.service.reconcileFromCompose(project.id, services);
+    const { driftedNames, unresolvedEnvironment } = await repos.service.reconcileFromCompose(project.id, services);
+    if (unresolvedEnvironment?.length) {
+      const keys = unresolvedEnvironment.map((entry) => `${entry.name}: ${entry.keys.join(", ")}`).join("; ");
+      throw new AppError(
+        `Compose environment needs review (${keys}). The saved values may be old interpolation results or inline edits. Review the service's Compose changes and choose Accept upstream or Keep mine before redeploying.`,
+        409,
+      );
+    }
     if (driftedNames.length > 0) {
       console.log(
         `[compose-drift] ${project.id}: kept user edits on ${driftedNames.join(", ")} (pending review)`,
@@ -860,26 +876,16 @@ async function reconcileComposeSource(
     }
     return info;
   } catch (err) {
-    if (bootstrapping || isLocalSource) {
-      const action = bootstrapping ? "initialize" : "refresh";
-      throw new AppError(
-        `Could not ${action} compose services from "${project.composePath ?? "repository root"}": ${safeErrorMessage(err)}`,
-        400,
-      );
-    }
-    // A transient GitHub/API failure may safely keep the last imported
-    // shape for an existing project. A file we did read but cannot represent
-    // must fail closed: otherwise this deploy silently runs the stale service
-    // definition after the author changed a build target, secret, SSH option,
-    // malformed arg, or another unsupported Compose field.
-    if (err instanceof ComposeConfigurationError) {
-      throw new AppError(
-        `Could not refresh compose services from "${project.composePath ?? "repository root"}": ${safeErrorMessage(err)}`,
-        400,
-      );
-    }
-    console.warn(`[compose-source] reconcile skipped for ${project.id}:`, err);
-    return undefined;
+    if (err instanceof AppError) throw err;
+    const action = bootstrapping ? "initialize" : "refresh";
+    // Once a source refresh is required, running a cached definition after a
+    // failed read cannot claim to deploy the requested configuration (#893).
+    // Return an operator-visible error before queuing a deployment. Explicit
+    // rollback/snapshot replay already bypasses this source reconciliation.
+    throw new AppError(
+      `Could not ${action} compose services from "${project.composePath ?? "repository root"}": ${safeErrorMessage(err)}`,
+      bootstrapping || isLocalSource || err instanceof ComposeConfigurationError ? 400 : 502,
+    );
   }
 }
 
@@ -994,7 +1000,7 @@ export async function resolveSnapshotTarget(
   override?: { deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" },
 ): Promise<{ deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" }> {
   const activeMeta = project.activeDeploymentId
-    ? ((await repos.deployment.findById(project.activeDeploymentId).catch(() => null))
+    ? ((await findActiveDeployment(project).catch(() => null))
         ?.meta as DeploymentConfigSnapshot | null)
     : null;
 
@@ -1454,6 +1460,7 @@ export async function requestBuildAccess(
     throw new NotFoundError("Project", projectId);
   }
   if (project.organizationId !== ctx.organizationId) throw new NotFoundError("Project", projectId);
+  const deployEnvironment = resolveDeploymentEnvironment(project, environment);
   if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") {
     if (buildStrategy === "local" || deployTarget === "local")
       throw new AppError("Host execution is disabled by this native installation's policy", 403, "HOST_EXECUTION_DISABLED");
@@ -1489,7 +1496,6 @@ export async function requestBuildAccess(
   // interpolation is part of deployment configuration, so the source refresh
   // and the eventual build must see the exact same values. Keep the encrypted
   // map for the deployment row and decrypt only the in-memory interpolation copy.
-  const deployEnvironment = environment || "production";
   const connectedEnv = await (await import("../projects/project-connection.service")).refreshConnectionEnv(ctx, project.id, deployEnvironment);
   let deploymentEnvVars: Record<string, string> | null;
   let submittedProjectEnv: Array<{ key: string; value: string; isSecret: boolean }> | undefined;
@@ -1969,7 +1975,7 @@ export async function requestBuildAccess(
     commitMessage,
     environment: env,
     framework: snapshot.framework,
-    meta: metaWithPrevious(snapshot, project),
+    meta: await metaWithPrevious(snapshot, project),
     envVars: deploymentEnvVars,
     rollbackStrategy,
     commitShaBefore,
@@ -2166,6 +2172,7 @@ export async function redeployBuildSession(
   opts?: { useExistingCommit?: boolean; trigger?: string },
 ) {
   const { dep: oldDep, project } = await loadDeployment(deploymentId);
+  resolveDeploymentEnvironment(project, oldDep.environment);
   // The Openship control plane updates itself via the CLI — never a redeploy.
   // The apply-update endpoint (updates.service) reaches redeploy directly, and
   // the self-app is a repo-less release project so the GitHub gate below
@@ -2326,7 +2333,7 @@ export async function redeployBuildSession(
     trigger: opts?.trigger ?? "redeploy",
     environment: oldDep.environment,
     framework: oldDep.framework || refreshedMeta.framework,
-    meta: metaWithPrevious(refreshedMeta, project),
+    meta: await metaWithPrevious(refreshedMeta, project),
     envVars: Object.keys(currentProjectEnv).length > 0 ? currentProjectEnv : null,
     rollbackStrategy,
     commitShaBefore,
@@ -2491,6 +2498,7 @@ export async function triggerDeployment(
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", data.projectId);
   }
+  const environment = resolveDeploymentEnvironment(project, data.environment);
   if (data.serverId) await requireOrgServer(data.serverId, ctx.organizationId);
   // The Openship control plane IS the running host service, not a redeployable
   // workload — it updates itself via the CLI. It's a release-provider project, so
@@ -2545,7 +2553,6 @@ export async function triggerDeployment(
   }
 
   const branch = await resolveProjectBranch(ctx, project, data.branch);
-  const environment = data.environment ?? "production";
   // Before the dedupe below and before anything stores it: one canonical sha, so
   // the row a webhook compares against and the row the drift check reads are
   // written in the same alphabet. See canonicalizeCommitRef.
@@ -2558,7 +2565,7 @@ export async function triggerDeployment(
       .findInProgressByCommit(project.id, requestedCommitSha)
       .catch(() => undefined);
     const active = project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+      ? await findActiveDeployment(project).catch(() => null)
       : null;
     const existing =
       inFlight ??
@@ -2692,7 +2699,7 @@ export async function triggerDeployment(
   let refreshActive: Awaited<ReturnType<typeof repos.deployment.findById>> | null = null;
   if (data.refresh) {
     refreshActive = project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+      ? await findActiveDeployment(project).catch(() => null)
       : null;
     if (!refreshActive) {
       throw new AppError("Nothing to refresh yet — deploy the project first.", 409);
@@ -2848,7 +2855,7 @@ export async function triggerDeployment(
     trigger: data.trigger ?? "manual",
     environment,
     framework: snapshot.framework,
-    meta: metaWithPrevious(snapshot, project),
+    meta: await metaWithPrevious(snapshot, project),
     envVars: encryptedEnvVars,
     rollbackStrategy,
     commitShaBefore,

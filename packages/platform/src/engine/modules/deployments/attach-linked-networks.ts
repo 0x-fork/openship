@@ -4,6 +4,7 @@
  * older project links retain their project network. Service links fail the deploy
  * if networking cannot be established. Legacy links remain advisory.
  */
+import { findProjectDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 
 import type { RuntimeAdapter } from "@repo/adapters";
@@ -66,8 +67,11 @@ export async function attachLinkedNetworks(
        */
       const project = await repos.project.findById(projectId).catch(() => null);
       const currentDeploymentId = deploymentId ?? project?.activeDeploymentId;
-      const stored = currentDeploymentId
-        ? (await repos.service.listByDeployment(currentDeploymentId).catch(() => []))
+      const deployment = project && currentDeploymentId
+        ? await findProjectDeployment(project, currentDeploymentId).catch(() => undefined)
+        : undefined;
+      const stored = deployment
+        ? (await repos.service.listByDeployment(deployment.id).catch(() => []))
             .map((row) => row.containerId)
             .filter((id): id is string => !!id)
         : [];

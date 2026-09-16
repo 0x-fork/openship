@@ -9,6 +9,7 @@
  *   4. Services discover each other by name (hostname = service name)
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
 import { posix as pathPosix } from "node:path";
 import {
@@ -1187,12 +1188,12 @@ async function deployComposeServicesUnlocked(
 
   // 4. Load previous service containers so each service is replaced in-place
   //    instead of tearing down the whole app before the first deploy attempt.
-  let previousServiceDeps = project.activeDeploymentId
-    ? await repos.service.listByDeployment(project.activeDeploymentId)
-    : [];
   const activeDeployment = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId)
+    ? await findActiveDeployment(project)
     : null;
+  let previousServiceDeps = activeDeployment
+    ? await repos.service.listByDeployment(activeDeployment.id)
+    : [];
   const activeServerId = ((activeDeployment?.meta ?? {}) as { serverId?: string }).serverId ?? null;
   const targetServerId = opts?.serverId ?? null;
   // Docker ownership proofs are meaningful only on the same physical target.
@@ -1430,7 +1431,7 @@ async function deployComposeServicesUnlocked(
   // check (active.createdAt): a changed image/config (svc.updatedAt) or env
   // (env_var updatedAt) after the anchor → recreate; otherwise keep it running.
   const carryAnchorDep = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+    ? await findActiveDeployment(project).catch(() => null)
     : null;
   const carryAnchor = carryAnchorDep?.createdAt ?? null;
   const carryEnvMeta = carryAnchor
@@ -4304,7 +4305,7 @@ async function deployComposeServicesUnlocked(
   // "compose" sentinel or one of the per-service containers already handled
   // (the compose→compose case, where prevDep.containerId IS a service row).
   if (project.activeDeploymentId && !opts?.strictScope) {
-    const prevDep = await repos.deployment.findById(project.activeDeploymentId);
+    const prevDep = await findActiveDeployment(project);
     const prevContainerId = prevDep?.containerId;
     // Only reap when the predecessor was a GENUINE single-app deploy. If that
     // deployment has any service_deployment rows, it was already a services

@@ -26,6 +26,7 @@
  * a "public" signal into them.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Project, type Deployment } from "@repo/db";
 import { BareRuntime } from "@repo/adapters";
 import { safeErrorMessage, UNLIMITED_RESOURCES } from "@repo/core";
@@ -101,7 +102,7 @@ export async function ensureAdoptDeployment(
 
   // Already adopted + active → done.
   if (project.activeDeploymentId) {
-    const active = await repos.deployment.findById(project.activeDeploymentId);
+    const active = await findActiveDeployment(project);
     if (isAdoptDeployment(active)) return active!;
   }
 
