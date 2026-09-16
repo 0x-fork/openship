@@ -240,6 +240,47 @@ describe.each(kinds)("$name terminal session ownership", (kind) => {
     expect(s.shell.close).not.toHaveBeenCalled();
     expect(kind.release).not.toHaveBeenCalled();
   });
+  it.each(["same", "different"])("binds a resume token to the %s authorized target", async (target) => {
+    const s = await start(kind);
+    s.pty.resolve(s.shell);
+    await s.opening;
+    const ready = s.frames.find((frame) => frame.type === "ready")!;
+    s.handlers.onClose();
+
+    const targetId = `${kind.name === "server" ? "srv" : "svc"}_${target === "same" ? 1 : 2}`;
+    const { token } = kind.mint(
+      { userId: s.userId, organizationId: "org_1" } as never,
+      targetId,
+    );
+    const headers = new Headers({
+      origin: trustedOrigins[0]!,
+      "sec-websocket-protocol":
+        `openship.terminal.v1+${token},openship.terminal.resume+${ready.resumeToken}`,
+    });
+    const handlers = await (kind.factory as unknown as (ctx: unknown) => Promise<Handlers>)({
+      req: {
+        header: (name: string) => headers.get(name) ?? undefined,
+        param: () => targetId,
+        raw: { headers },
+      },
+      var: { clientIp: "127.0.0.1" },
+    });
+    connections.push(handlers);
+    const send = vi.fn();
+    await handlers.onOpen({}, { readyState: 1, send, close: vi.fn() });
+
+    const frames = send.mock.calls.map(([frame]) => JSON.parse(frame));
+    if (target === "same") {
+      expect(frames).toContainEqual(expect.objectContaining({
+        type: "ready", resumed: true, sessionId: ready.sessionId,
+      }));
+    } else {
+      expect(frames).toContainEqual(expect.objectContaining({ type: "error", code: "resume_failed" }));
+      expect(frames.some((frame) => frame.type === "ready")).toBe(false);
+    }
+    expect(kind.resume(ready.resumeToken!, s.userId)).not.toBeNull();
+    expect(s.shell.close).not.toHaveBeenCalled();
+  });
   it("releases the transport when shell opening rejects after a disconnect", async () => {
     const s = await start(kind);
     s.handlers.onClose();

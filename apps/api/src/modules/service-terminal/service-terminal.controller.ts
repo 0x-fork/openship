@@ -437,7 +437,8 @@ function buildHandlers(ctx: HandshakeCtx) {
           ctx.resumeToken,
           ctx.userId,
         );
-        if (!existing) {
+        // A token cannot substitute a different service after permission checks.
+        if (!existing || existing.serviceId !== ctx.serviceId) {
           sendControl(ws, {
             type: "error",
             code: "resume_failed",

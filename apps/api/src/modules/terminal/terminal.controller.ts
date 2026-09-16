@@ -353,7 +353,8 @@ function buildHandlers(ctx: HandshakeCtx) {
       // ── RESUME path ──────────────────────────────────────────────
       if (ctx.resumeToken) {
         const existing = getSessionByResumeToken(ctx.resumeToken, ctx.userId);
-        if (!existing) {
+        // The handshake authorized this server, not every session the user owns.
+        if (!existing || existing.serverId !== ctx.serverId) {
           // Token doesn't match a live session (expired, idle/cap
           // fired, server restarted, or wrong user). Tell the client
           // so it can drop the stale token from localStorage and try
