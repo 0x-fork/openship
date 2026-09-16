@@ -49,6 +49,44 @@ describe("openship project get", () => {
   });
 });
 
+describe("openship project rename", () => {
+  it("sends only the display name through the SDK and prints the saved identity", async () => {
+    fetchStub = stubFetch((req) => {
+      expect(req.url).toBe("http://api.test/api/projects/project%2Fone");
+      expect(req.method).toBe("PATCH");
+      expect(req.body).toEqual({ name: "New Store" });
+      return { json: { data: { ...projectFixture("project/one", "old-store"), name: "New Store" } } };
+    });
+
+    const { out, code } = await runCommand(projectCommand, ["rename", "project/one", "  New Store  "]);
+
+    expect(code).toBe(0);
+    expect(fetchStub.calls).toHaveLength(1);
+    expect(out).toContain("New Store");
+    expect(out).toContain("old-store");
+  });
+
+  it("rejects a blank name before sending a write", async () => {
+    fetchStub = stubFetch(() => ({ json: {} }));
+
+    const { err, code } = await runCommand(projectCommand, ["rename", "p1", "   "]);
+
+    expect(code).toBe(1);
+    expect(fetchStub.calls).toHaveLength(0);
+    expect(err).toContain("Project name cannot be empty");
+  });
+
+  it("reports a rejected rename without printing a successful project update", async () => {
+    fetchStub = stubFetch(() => ({ status: 409, json: { error: 'Project "Taken" already exists' } }));
+
+    const { out, err, code } = await runCommand(projectCommand, ["rename", "p1", "Taken"]);
+
+    expect(code).toBe(1);
+    expect(err).toContain("already exists");
+    expect(out).toBe("");
+  });
+});
+
 describe("openship project create", () => {
   it("routes local paths through the server-side import scanner (#751)", async () => {
     fetchStub = stubFetch((req) => {

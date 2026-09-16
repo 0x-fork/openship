@@ -155,6 +155,18 @@ const getCmd = new Command("get")
     }),
   );
 
+const renameCmd = new Command("rename")
+  .description("Change a project's display name")
+  .argument("<id>", "Project ID")
+  .argument("<name>", "New display name")
+  .action(
+    action(async (id: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) throw new Error("Project name cannot be empty.");
+      printProject(await getShipClient().projects.update(id, { name: trimmed }));
+    }),
+  );
+
 // ─── release-image ───────────────────────────────────────────────────────────
 // PUT /api/projects/:id/release-image-source — atomic source transition.
 const releaseImageCmd = new Command("release-image")
@@ -642,6 +654,7 @@ export const projectCommand = new Command("project")
 
 projectCommand.addCommand(listCmd);
 projectCommand.addCommand(getCmd);
+projectCommand.addCommand(renameCmd);
 projectCommand.addCommand(releaseImageCmd);
 projectCommand.addCommand(createCmd);
 projectCommand.addCommand(deleteCmd);

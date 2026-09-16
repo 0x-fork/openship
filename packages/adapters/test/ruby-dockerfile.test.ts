@@ -116,10 +116,12 @@ describe("generateDockerfile — Ruby recipe", () => {
   });
 
   it("handles official Alpine images with apk and the Alpine user tools", () => {
-    const df = generateDockerfile(railsConfig({
-      buildImage: "ruby:3.3-alpine",
-      runtimeImage: "ruby:3.3-alpine",
-    }));
+    const df = generateDockerfile(
+      railsConfig({
+        buildImage: "ruby:3.3-alpine",
+        runtimeImage: "ruby:3.3-alpine",
+      }),
+    );
     expect(builderStage(df)).toContain("apk add --no-cache build-base");
     expect(runtimeStage(df)).toContain("apk add --no-cache libpq");
     expect(runtimeStage(df)).toContain("addgroup -S -g 1000 rails");
@@ -127,13 +129,17 @@ describe("generateDockerfile — Ruby recipe", () => {
   });
 
   it("uses the shared monorepo context and copies only the selected app", () => {
-    const df = generateDockerfile(railsConfig({
-      rootDirectory: "apps/store",
-      workspacePrepareCommand: "ruby prepare.rb",
-      envVars: { APP_BUILD_FLAG: "enabled" },
-    }));
+    const df = generateDockerfile(
+      railsConfig({
+        rootDirectory: "apps/store",
+        workspacePrepareCommand: "ruby prepare.rb",
+        envVars: { APP_BUILD_FLAG: "enabled" },
+      }),
+    );
     const builder = builderStage(df);
-    expect(builder.indexOf("ruby prepare.rb")).toBeLessThan(builder.indexOf("WORKDIR /workspace/apps/store"));
+    expect(builder.indexOf("ruby prepare.rb")).toBeLessThan(
+      builder.indexOf("WORKDIR /workspace/apps/store"),
+    );
     expect(builder).toContain("APP_BUILD_FLAG='enabled'");
     expect(runtimeStage(df)).toContain("COPY --from=builder /workspace/apps/store /app");
     expect(runtimeStage(df)).not.toContain("APP_BUILD_FLAG");
