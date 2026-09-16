@@ -43,10 +43,12 @@ import { encrypt, decrypt } from "../../lib/encryption";
 import {
   ENV_MASK,
   hasMaskedValue,
+  isMaskedValue,
   maskDriftChanges,
   maskServiceEnv,
   mergeServiceEnv,
   unmaskEnv,
+  unmaskBuildArgs,
 } from "../../lib/secret-env";
 import { assertNotControlPlane, assertNotControlPlaneById, assertResourceInOrg } from "../../lib/resource-access";
 import { platform } from "../../lib/platform-config";
@@ -672,7 +674,7 @@ export async function createService(
     image: trimOrNull(data.image),
     build: trimOrNull(data.build),
     dockerfile: trimOrNull(data.dockerfile),
-    buildArgs: data.buildArgs ?? {},
+    buildArgs: unmaskBuildArgs(data.buildArgs, null),
     ports: data.ports ?? [],
     dependsOn: data.dependsOn ?? [],
     environment: data.environment ?? {},
@@ -753,6 +755,9 @@ export async function updateService(
       patch.environment,
     );
   }
+  if ("buildArgs" in patch) {
+    patch.buildArgs = unmaskBuildArgs(patch.buildArgs, svc.buildArgs);
+  }
 
   // `advanced` is ONE blob holding independent, separately-owned keys —
   // `healthcheck` (edited in the service form), `readiness` (the deploy gate),
@@ -785,7 +790,11 @@ export async function updateService(
     // and be expanded on the next deploy.
     patch.advanced = mergeAdvanced(
       ("advanced" in patch ? patch.advanced : svc.advanced) as ComposeAdvanced | null,
-      { buildArgTemplateKeys: [] },
+      {
+        buildArgTemplateKeys: (
+          (svc.advanced as ComposeAdvanced | null)?.buildArgTemplateKeys ?? []
+        ).filter((key) => isMaskedValue(data.buildArgs?.[key])),
+      },
     );
   }
 
@@ -1368,6 +1377,7 @@ export async function syncComposeServices(
   const storedEnvByName = new Map(
     stored.map((s) => [s.name, (s.environment as Record<string, string> | null) ?? {}]),
   );
+  const storedByName = new Map(stored.map((svc) => [svc.name, svc]));
 
   // Import path, but the hostnames are still client-authored — same gate as the
   // create/update editors (normalizeRoutingPatch); `syncFromCompose` writes the
@@ -1408,8 +1418,25 @@ export async function syncComposeServices(
       svc.environmentTemplates !== undefined ||
       (!hasExplicitTemplateMarker && environment !== undefined);
 
+    // A masked argument keeps its value AND its interpolation semantics. Sync
+    // is a whole-map replacement, so new literals must not inherit a marker
+    // from the previous value. An explicit parser marker still takes priority
+    // (notably [] from `docker compose config`, whose values are already final).
+    const previous = storedByName.get(svc.name);
+    const buildArgs = svc.buildArgs && unmaskBuildArgs(svc.buildArgs, previous?.buildArgs);
+    const buildArgTemplateKeys =
+      buildArgs && !Object.hasOwn(advanced ?? {}, "buildArgTemplateKeys")
+        ? (previous?.advanced?.buildArgTemplateKeys ?? []).filter(
+            (key) => isMaskedValue(svc.buildArgs?.[key]) && Object.hasOwn(buildArgs, key),
+          )
+        : undefined;
+
     return {
       ...svc,
+      ...(buildArgs && { buildArgs }),
+      ...(buildArgTemplateKeys && {
+        advanced: { ...advanced, buildArgTemplateKeys },
+      }),
       ...(environment && { environment }),
       ...(persistTemplateProvenance && { environmentTemplates }),
     };
@@ -1456,7 +1483,6 @@ export async function syncComposeServices(
   // Best-effort per hostname: an invalid or foreign hostname throws here
   // (Validation / Conflict) and a sync that already persisted its services must not
   // fail on the follow-up bookkeeping; the deploy path re-attempts the same ensure.
-  const storedByName = new Map(stored.map((svc) => [svc.name, svc]));
   for (const svc of synced) {
     for (const row of serviceDomainRowsToEnsure(svc)) {
       await ensurePendingServiceDomain({

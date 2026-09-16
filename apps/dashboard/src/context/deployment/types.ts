@@ -411,6 +411,8 @@ export interface DeploymentConfig {
   rootEnvVars: EnvironmentVariable[];
   branch: string;
   branches: string[];
+  branchPage: number;
+  branchesHasMore: boolean;
   services: ComposeServiceInfo[];
   /**
    * Compose/import projects can either deploy each parsed service, or ignore the
@@ -492,6 +494,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   noPublicRoute: false,
   branch: "main",
   branches: [],
+  branchPage: 0,
+  branchesHasMore: false,
   services: [],
   serviceDeploymentMode: "single",
   cloudResourceTier: "low",
@@ -886,6 +890,8 @@ export type DeploymentStatus = "building" | "deploying" | "ready" | "failed" | "
 export interface DeploymentContextType {
   // Single source of truth
   config: DeploymentConfig;
+  /** Source detection is in flight; save/deploy must wait for a consistent config. */
+  isRescanning: boolean;
   state: DeploymentState;
   terminalRef: React.MutableRefObject<Terminal | null>;
   canStreamContainer: React.MutableRefObject<boolean>;
@@ -929,6 +935,8 @@ export interface DeploymentContextType {
   rescanWithComposePath: (
     composePath: string,
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
+  /** Re-detect the selected branch before applying its name and build defaults. */
+  rescanWithBranch: (branch: string) => Promise<{ success: boolean; error?: string }>;
   /** Folder-upload hydration — seed from the user-picked stack's defaults
    *  (no auto-detection); falls back to the session scan when no stack given. */
   initializeFromUpload: (

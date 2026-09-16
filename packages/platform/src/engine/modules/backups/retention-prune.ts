@@ -1,5 +1,5 @@
 /**
- * Retention prune — runs daily, applies each policy's retention rules.
+ * Retention prune — runs after successful backups, with a scheduled fallback.
  *
  * Source-agnostic: a project/service policy and a mail-server policy differ only
  * in which column scopes the run list and where the owning org is read from. Mail
@@ -30,6 +30,7 @@ import { resolveDestination } from "@repo/adapters";
 import { toAdapterRow } from "@repo/platform/engine/modules/backup-destinations/hydrate-server";
 import { policyOrganizationId } from "@repo/platform/engine/modules/backups/backup.service";
 import { safeErrorMessage } from "@repo/core";
+import { createProvisionLock } from "../../lib/provision-lock";
 
 export async function runRetentionSweep(): Promise<{
   policiesProcessed: number;
@@ -86,6 +87,17 @@ type PruneOutcome = { dropped: number; deferred: number; skipped: string | null 
 const PRUNE_PAGE_SIZE = 500;
 
 export async function prunePolicy(policy: BackupPolicy): Promise<PruneOutcome> {
+  // Fan-out children and the fallback sweep may finish together. Serialize
+  // their reads and deletes, and re-read settings after waiting for the lock.
+  return createProvisionLock(`backup-retention:${policy.id}`).run(async () => {
+    const current = await repos.backupPolicy.findById(policy.id);
+    if (!current) return { dropped: 0, deferred: 0, skipped: "policy deleted" };
+    if (!current.enabled) return { dropped: 0, deferred: 0, skipped: "policy disabled" };
+    return pruneCurrentPolicy(current);
+  });
+}
+
+async function pruneCurrentPolicy(policy: BackupPolicy): Promise<PruneOutcome> {
   // Non-positive retention is not a tighter window, it's a loaded gun:
   // `retainCount: -1` puts every run outside the keep-set and deletes the lot.
   // Nothing validates the number on the way in, so it's normalized here, where
@@ -248,4 +260,3 @@ export async function prunePolicy(policy: BackupPolicy): Promise<PruneOutcome> {
   }
   return { dropped, deferred, skipped: null };
 }
-

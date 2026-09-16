@@ -105,9 +105,12 @@ const cases: Array<{
   {
     name: "listBranches",
     method: "GET",
-    path: "/branches",
-    envelope: "data",
-    output: [{ name: "main", sha: "abc123", protected: true }],
+    path: "/branches?page=2",
+    input: { page: 2 },
+    output: {
+      data: [{ name: "main", sha: "abc123", protected: true }],
+      pagination: { page: 2, perPage: 100, hasMore: false },
+    },
   },
   {
     name: "linkRepo",

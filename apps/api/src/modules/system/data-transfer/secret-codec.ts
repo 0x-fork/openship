@@ -11,10 +11,27 @@
  */
 
 import { encrypt, decrypt, decryptEnvMap } from "@repo/platform/engine/lib/encryption";
-import { encryptSecretField, decryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
+import {
+  encryptSecretField,
+  decryptSecretField,
+} from "@repo/platform/engine/lib/credential-encryption";
+import { createConfigurationSecrets, SERVICE_SECRET_FIELDS } from "@repo/db/configuration-secrets";
 
 import type { SecretColumn } from "./secret-registry";
 import type { SecretEntry } from "./types";
+
+const configuration = createConfigurationSecrets({ encrypt, decrypt });
+function configurationCell(spec: SecretColumn, cell: unknown, direction: "open" | "seal"): unknown {
+  if (spec.sqlName === "deployment" && spec.column === "meta") {
+    return direction === "open"
+      ? configuration.openDeploymentMeta(cell)
+      : configuration.sealDeploymentMeta(cell);
+  }
+  if (spec.sqlName === "service" && SERVICE_SECRET_FIELDS.some((key) => key === spec.column)) {
+    return direction === "open" ? configuration.openJson(cell) : configuration.sealJson(cell);
+  }
+  return structuredClone(cell);
+}
 
 /** Decrypt one stored cell → plaintext entry, or null if empty/absent. */
 export function extractPlaintext(
@@ -27,7 +44,7 @@ export function extractPlaintext(
 
   switch (spec.scheme) {
     case "json":
-      return { ...base, scheme: "json", json: structuredClone(cell) };
+      return { ...base, scheme: "json", json: configurationCell(spec, cell, "open") };
     case "scalar": {
       if (typeof cell !== "string" || cell === "") return null;
       return { ...base, scheme: "scalar", value: decrypt(cell) };
@@ -73,7 +90,7 @@ export function sealForInstance(
 ): unknown {
   switch (spec.scheme) {
     case "json":
-      return structuredClone(entry.json);
+      return configurationCell(spec, entry.json, "seal");
     case "scalar":
       return entry.value != null ? encrypt(entry.value) : null;
     case "enc1":

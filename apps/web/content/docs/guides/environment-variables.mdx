@@ -52,11 +52,22 @@ Some values are sensitive — passwords, API keys, tokens. For each of those, pr
 row to **mark it as secret**. A secret's value is stored the same way, but from then on it shows as dots
 (`••••••••`) instead of plain text, so it stays hidden whenever you reopen the editor.
 
-<Callout title="Everything is encrypted at rest" type="info">
+<Callout title="Environment values are encrypted at rest" type="info">
   Whether or not you mark a variable secret, Openship **encrypts every value before saving it**.
   Marking a value secret adds the on-screen masking on top — it controls what *you* can see later,
   not whether it's protected on disk.
 </Callout>
+
+Inline service environment values and build arguments are also encrypted, including their copies in
+saved deployment snapshots and Compose drift baselines. Existing plaintext service configuration is
+converted when the API or native engine starts after upgrading. Keep your `BETTER_AUTH_SECRET` with
+your database backup: it is needed to read these values. To downgrade to a version from before this
+protection, restore its matching database backup as well.
+
+When moving to an installation with a different key, use **Settings → Data Transfer** with secrets
+included. It re-encrypts the configuration for the destination. Transfers or recovery manifests that
+omit secrets also omit inline environment, build arguments and protected service configuration; set
+those values again before deploying.
 
 </Step>
 
@@ -123,6 +134,29 @@ file is only used after you choose **Import .env**.
   variables for credentials. If a build genuinely needs a secret, use a dedicated BuildKit secret
   flow rather than committing it to `openship.json` or baking it into the image.
 </Callout>
+
+## Service overrides and credential rotation
+
+On a normal service deployment, the highest-priority value wins in this order:
+
+1. A service-scoped variable from its environment editor.
+2. A literal in that service's Compose `environment` or `openship.json` `env` map.
+3. The project's environment, captured when the deployment starts.
+
+Compose expressions such as `TOKEN: ${TOKEN}` resolve against the configured values;
+they do not pin a previous scan's value. A rollback instead replays its captured
+project values, including their precedence over present-day service overrides.
+
+`openship project env set` warns when a changed or deleted key still has a service
+override. The API and SDK return the same `warnings` array, and deployment logs name
+keys whose service values win. These messages contain names only. Saving the project
+value succeeds, but it cannot replace a service-owned credential. Update the service
+value, or remove its override to inherit the project value, then deploy. Deleting a
+project variable does not delete a service's copy.
+
+For example, if `web` pins `TOKEN=old`, setting the project's `TOKEN=new` will warn
+about `web`; a rebuild alone still uses the pinned value. In the service editor,
+remove that override before relying on the project's rotated token.
 
 ## Reveal, hide, and replace a secret
 

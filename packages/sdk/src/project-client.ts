@@ -67,7 +67,7 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
       remove: { method: "DELETE", path },
       getInfo: { method: "GET", path: (id) => path(id) + "/info", envelope: "data" },
       getGitInfo: { method: "GET", path: (id) => path(id) + "/git" },
-      listBranches: { method: "GET", path: (id) => path(id) + "/branches", envelope: "data" },
+      listBranches: { method: "GET", path: (id) => path(id) + "/branches" },
       linkRepo: { method: "POST", path: (id) => path(id) + "/git/link" },
       setReleaseImageSource: {
         method: "PUT",

@@ -157,7 +157,7 @@ describe("backupRun.transition — status must not ride a payload that can fail"
 const h = vi.hoisted(() => ({
   run: null as Record<string, unknown> | null,
   policy: null as Record<string, unknown> | null,
-  services: [] as Array<{ id: string; enabled: boolean }>,
+  services: [] as Array<Record<string, unknown>>,
   createdRuns: [] as Array<Record<string, unknown>>,
   executionRow: null as Record<string, unknown> | null,
   claimResults: ["claimed"] as Array<"claimed" | "project_unavailable" | "state_changed">,
@@ -170,6 +170,7 @@ const h = vi.hoisted(() => ({
   hookExit: { code: 0 as number | null, stderr: "" },
   artifactMetadata: {} as Record<string, unknown>,
   notifications: [] as Array<{ eventType: string; payload: Record<string, unknown> }>,
+  destinationUnavailable: false,
   verifyNotes: [] as Array<string | undefined>,
 }));
 
@@ -198,12 +199,15 @@ vi.mock("@repo/db", () => ({
       findById: async () => h.policy,
     },
     backupDestination: {
-      findById: async () => ({
-        id: "dst_1",
-        organizationId: "org_1",
-        name: "S3 primary",
-        pathPrefix: null,
-      }),
+      findById: async () => {
+        if (h.destinationUnavailable) throw new Error("Destination lookup unavailable");
+        return {
+          id: "dst_1",
+          organizationId: "org_1",
+          name: "S3 primary",
+          pathPrefix: null,
+        };
+      },
       setLastVerified: async (_id: string, _ok: boolean, note?: string) => {
         h.verifyNotes.push(note);
       },
@@ -348,6 +352,7 @@ beforeEach(() => {
   h.hookExit = { code: 0, stderr: "" };
   h.artifactMetadata = {};
   h.notifications.length = 0;
+  h.destinationUnavailable = false;
   h.verifyNotes.length = 0;
 });
 
@@ -360,8 +365,8 @@ describe("BackupOrchestrator.enqueue — durable batch identity", () => {
       mailServerId: null,
     };
     h.services = [
-      { id: "svc_api", enabled: true },
-      { id: "svc_db", enabled: true },
+      { id: "svc_api", enabled: true, volumes: ["api_data:/data"] },
+      { id: "svc_db", enabled: true, image: "postgres:16" },
     ];
     const orchestrator = new BackupOrchestrator();
 
@@ -386,6 +391,75 @@ describe("BackupOrchestrator.enqueue — durable batch identity", () => {
     expect(new Set(secondBatch.map((run) => run.batchId)).size).toBe(1);
     expect(secondBatch[0]!.batchId).not.toBe(firstBatch[0]!.batchId);
   });
+
+  it("skips stateless services without volumes or database images during fan-out", async () => {
+    h.policy = {
+      ...(h.policy ?? {}),
+      sourceKind: "service",
+      projectId: "proj_1",
+      mailServerId: null,
+      payloadKind: "auto",
+    };
+    h.services = [
+      { id: "svc_web", enabled: true, volumes: [] },
+      { id: "svc_monitor", enabled: true, volumes: [] },
+      { id: "svc_db", enabled: true, image: "postgres:16" },
+    ];
+    const orchestrator = new BackupOrchestrator();
+
+    await orchestrator.enqueue({
+      policyId: "pol_1",
+      trigger: { source: "cron", userId: "system" },
+    });
+
+    expect(h.createdRuns).toHaveLength(1);
+    expect(h.createdRuns[0]!.serviceId).toBe("svc_db");
+  });
+
+  it("throws when project has no services with persistent storage", async () => {
+    h.policy = {
+      ...(h.policy ?? {}),
+      sourceKind: "service",
+      projectId: "proj_1",
+      mailServerId: null,
+      payloadKind: "auto",
+    };
+    h.services = [
+      { id: "svc_web", enabled: true, volumes: [] },
+      { id: "svc_monitor", enabled: true, volumes: [] },
+    ];
+    const orchestrator = new BackupOrchestrator();
+
+    await expect(
+      orchestrator.enqueue({
+        policyId: "pol_1",
+        trigger: { source: "cron", userId: "system" },
+      }),
+    ).rejects.toThrow(/no services with persistent storage/);
+
+    expect(h.createdRuns).toHaveLength(0);
+  });
+
+  it.each(["custom_command", "path"])(
+    "keeps explicit %s payloads eligible without volumes",
+    async (payloadKind) => {
+      h.policy = {
+        ...(h.policy ?? {}),
+        sourceKind: "service",
+        projectId: "proj_1",
+        mailServerId: null,
+        payloadKind,
+      };
+      h.services = [{ id: "svc_app", enabled: true, image: "node:22", volumes: [] }];
+
+      await new BackupOrchestrator().enqueue({
+        policyId: "pol_1",
+        trigger: { source: "cron", userId: "system" },
+      });
+
+      expect(h.createdRuns.map((run) => run.serviceId)).toEqual(["svc_app"]);
+    },
+  );
 });
 
 describe("a terminal status is final — one owner per verdict", () => {
@@ -431,6 +505,26 @@ describe("a terminal status is final — one owner per verdict", () => {
 });
 
 describe("BackupOrchestrator.execute — hook output cannot fail the backup", () => {
+  it("delivers failure references when policy and destination lookup are unavailable", async () => {
+    const pg = wireRun();
+    h.policy = null;
+    h.run!.destinationId = "dst_1";
+    h.destinationUnavailable = true;
+
+    await new BackupOrchestrator().execute("bkr_live");
+
+    expect(pg.row.status).toBe("failed");
+    expect(h.notifications).toContainEqual(expect.objectContaining({
+      organizationId: "org_1",
+      eventType: "backup_run.failed",
+      payload: expect.objectContaining({
+        policyId: "pol_1",
+        destinationId: "dst_1",
+        errorMessage: "Policy pol_1 disappeared",
+      }),
+    }));
+  });
+
   it("runs one pipeline for duplicate deliveries and acknowledges only its owner", async () => {
     const pg = wireRun();
     h.claimResults = ["claimed", "state_changed"];

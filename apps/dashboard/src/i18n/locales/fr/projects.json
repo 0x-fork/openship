@@ -381,12 +381,13 @@
     "noPublicDomainTitle": "Aucun domaine public n'est connecté",
     "noPublicDomainDescOne": "Ce projet a {count} service avec des ports exposés, mais aucun n'est configuré avec un domaine accessible. Si vous déployez maintenant, la stack peut fonctionner en interne, mais les utilisateurs ne pourront pas y accéder depuis une URL publique.",
     "noPublicDomainDescOther": "Ce projet a {count} services avec des ports exposés, mais aucun n'est configuré avec un domaine accessible. Si vous déployez maintenant, la stack peut fonctionner en interne, mais les utilisateurs ne pourront pas y accéder depuis une URL publique.",
+    "openDomains": "Ouvrir les domaines",
     "openServices": "Ouvrir les services",
     "deployAnyway": "Déployer quand même",
     "suggestedFix": "Correction suggérée",
-    "fixStep1": "Ouvrez l'onglet Services.",
-    "fixStep2": "Sélectionnez le service qui doit être public.",
-    "fixStep3": "Activez l'exposition du domaine et choisissez le port public."
+    "fixStep1": "Ouvrez l'onglet Domaines.",
+    "fixStep2": "Ajoutez une route ou un domaine personnalisé pour le port du service.",
+    "fixStep3": "Vérifiez le domaine et déployez."
   },
   "connections": {
     "useInProject": "Utiliser dans un projet",

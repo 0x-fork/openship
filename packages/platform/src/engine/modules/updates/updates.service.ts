@@ -37,7 +37,7 @@
  * instance whose scheduler is broken.
  */
 
-import { ValidationError } from "@repo/core";
+import { ValidationError, withTimeout } from "@repo/core";
 import { repos, type NewUpdateStatus, type Project, type UpdateStatus } from "@repo/db";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -49,6 +49,7 @@ import {
   hasDeployedSide,
   resolveUpstreamDrift,
   upstreamMatchesSource,
+  unresolvedUpstreamDrift,
   type DriftStatus,
   type UpstreamDrift,
 } from "@repo/platform/engine/modules/projects/project-crud.service";
@@ -140,12 +141,16 @@ function presentation(status: DriftStatus) {
  * dropped. The `key` fields ride along: they are what makes the row answerable
  * later, or knowably unanswerable.
  */
-function toUpsert(project: Project, upstream: UpstreamDrift): Omit<NewUpdateStatus, "id"> | null {
+function toUpsert(
+  project: Project,
+  upstream: UpstreamDrift,
+  checkedAt: Date,
+): Omit<NewUpdateStatus, "id"> | null {
   if (!upstream.supported) return null;
   const base = {
     organizationId: project.organizationId,
     projectId: project.id,
-    checkedAt: new Date(),
+    checkedAt,
   };
   if (upstream.mode === "commit") {
     return {
@@ -225,6 +230,12 @@ const UPSTREAM_TTL_MS = 6 * 60 * 60 * 1000;
  */
 const UPSTREAM_RETRY_MS = 10 * 60 * 1000;
 
+// Leave time for the cache write and HTTP response within the dashboard's 15s
+// request deadline. These bound the composite operation, not individual fetches.
+const UPSTREAM_POLL_MS = 8_000;
+const CACHE_WRITE_MS = 2_500;
+const FEED_BUDGET_MS = 12_000;
+
 /** Concurrent upstream polls. One wave can be every project in an org. */
 const POLL_LIMIT = 6;
 
@@ -251,10 +262,29 @@ export interface ScanSummary {
  */
 const inFlight = new Map<string, Promise<UpstreamDrift>>();
 
+// A locked/unavailable cache must not erase backoff. Keep only failed polls or
+// failed writes here, expiring them even if the project is never read again.
+function retrySource(project: Project): string {
+  const unknown = unresolvedUpstreamDrift(project);
+  return unknown.supported && unknown.mode !== "image" ? `${unknown.mode}:${unknown.key}` : "image";
+}
+const retry = new Map<string, { source: string; upstream: UpstreamDrift; until: number }>();
+function rememberRetry(project: Project, upstream: UpstreamDrift) {
+  const entry = { source: retrySource(project), upstream, until: Date.now() + UPSTREAM_RETRY_MS };
+  retry.set(project.id, entry);
+  setTimeout(() => {
+    if (retry.get(project.id) === entry) retry.delete(project.id);
+  }, UPSTREAM_RETRY_MS).unref?.();
+}
+
 /** Persist a polled upstream. An entity with no upstream drops its row. */
-async function persistUpstream(project: Project, upstream: UpstreamDrift): Promise<void> {
-  const row = toUpsert(project, upstream);
-  if (!row) await repos.updateStatus.deleteByProject(project.id).catch(() => {});
+async function persistUpstream(
+  project: Project,
+  upstream: UpstreamDrift,
+  checkedAt: Date,
+): Promise<void> {
+  const row = toUpsert(project, upstream, checkedAt);
+  if (!row) await repos.updateStatus.deleteByProject(project.id, checkedAt);
   else await repos.updateStatus.upsert(row);
 }
 
@@ -263,7 +293,9 @@ async function persistUpstream(project: Project, upstream: UpstreamDrift): Promi
  * whoever pays for the round-trip pays it for every other surface too.
  *
  * A failed persist never fails the caller — the answer is already in hand, and
- * losing the cache entry only means the next reader polls again.
+ * losing the cache entry uses a short in-memory backoff. Late resolver results
+ * never reach persistence; late writes carry the poll's start time so they
+ * cannot overwrite a newer poll in the database.
  */
 async function pollUpstream(
   actor: RequestContext | null,
@@ -271,16 +303,33 @@ async function pollUpstream(
 ): Promise<UpstreamDrift> {
   const shared = inFlight.get(project.id);
   if (shared) return shared;
+  const failed = retry.get(project.id);
+  if (failed && Date.now() < failed.until && failed.source === retrySource(project))
+    return failed.upstream;
+  retry.delete(project.id);
   const run = (async () => {
-    const upstream = await resolveUpstreamDrift(actor, project);
-    await persistUpstream(project, upstream).catch(() => {});
+    const checkedAt = new Date();
+    const upstream = await withTimeout(
+      resolveUpstreamDrift(actor, project),
+      UPSTREAM_POLL_MS,
+      "Upstream poll timed out",
+    ).catch(() => {
+      const unknown = unresolvedUpstreamDrift(project);
+      rememberRetry(project, unknown);
+      return unknown;
+    });
+    await withTimeout(
+      persistUpstream(project, upstream, checkedAt),
+      CACHE_WRITE_MS,
+      "Update cache write timed out",
+    ).catch(() => rememberRetry(project, upstream));
     return upstream;
   })();
   inFlight.set(project.id, run);
   try {
     return await run;
   } finally {
-    inFlight.delete(project.id);
+    if (inFlight.get(project.id) === run) inFlight.delete(project.id);
   }
 }
 
@@ -433,16 +482,29 @@ export async function listOrganizationUpdates(
   opts?: { behindOnly?: boolean },
 ): Promise<UpdateItem[]> {
   const organizationId = ctx.organizationId;
+  const deadline = Date.now() + FEED_BUDGET_MS;
   const [projects, cached] = await Promise.all([
     listAuthorizedProjects(ctx, organizationId),
-    repos.updateStatus.listByOrg(organizationId).catch(() => []),
+    withTimeout(
+      repos.updateStatus.listByOrg(organizationId),
+      CACHE_WRITE_MS,
+      "Update cache read timed out",
+    ).catch(() => []),
   ]);
   const rowByProject = new Map(cached.map((r) => [r.projectId, r]));
 
   const items: UpdateItem[] = [];
   await mapWithLimit(projects, POLL_LIMIT, async (project) => {
     // Per project: a source we can't reach must not cost us the other rows.
-    const item = await driftItem(ctx, project, rowByProject.get(project.id)).catch(() => null);
+    // One deadline for the whole feed, including queued concurrency waves and
+    // drift comparison, so many stalled projects cannot multiply response time.
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return;
+    const item = await withTimeout(
+      driftItem(ctx, project, rowByProject.get(project.id)),
+      remaining,
+      "Update feed timed out",
+    ).catch(() => null);
     if (item) items.push(item);
   });
 
@@ -464,7 +526,11 @@ export async function getProjectDrift(
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!hasDeployedSide(project)) return { supported: false };
-  return evaluateDrift(project, await pollUpstream(ctx, project), ctx);
+  return withTimeout(
+    pollUpstream(ctx, project).then((upstream) => evaluateDrift(project, upstream, ctx)),
+    FEED_BUDGET_MS,
+    "Project update check timed out",
+  ).catch(() => ({ supported: false }));
 }
 
 // ─── Applying ────────────────────────────────────────────────────────────────

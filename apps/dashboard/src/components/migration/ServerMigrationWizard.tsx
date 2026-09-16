@@ -55,6 +55,7 @@ import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryL
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import { Switch } from "@/components/ui/Switch";
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -3477,25 +3478,7 @@ function RepoSourceCard({
   const s = t.migration.wizard.steps;
   const [urlInput, setUrlInput] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
-  const [branches, setBranches] = useState<string[]>([]);
   const repo = project.repo;
-
-  useEffect(() => {
-    if (!repo) {
-      setBranches([]);
-      return;
-    }
-    let on = true;
-    githubApi
-      .listBranches(repo.owner, repo.repo)
-      .then((res) => {
-        if (on) setBranches((res?.data ?? []).map((b) => b.name).filter(Boolean));
-      })
-      .catch(() => {});
-    return () => {
-      on = false;
-    };
-  }, [repo?.owner, repo?.repo]);
 
   const applyUrl = () => {
     const parsed = parseGitHubRepo(urlInput);
@@ -3571,14 +3554,11 @@ function RepoSourceCard({
           </div>
           <div className="space-y-1.5">
             <label className="text-[13px] font-medium text-muted-foreground">{s.branch}</label>
-            <CustomSelect
+            <RepositoryBranchSelect
+              owner={repo.owner}
+              repo={repo.repo}
               value={repo.branch}
               onChange={(val) => onRepoChange({ ...repo, branch: val })}
-              options={(branches.length ? branches : [repo.branch]).map((b) => ({
-                value: b,
-                label: b,
-                icon: <GitBranch className="size-3.5" />,
-              }))}
             />
           </div>
         </div>

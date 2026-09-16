@@ -1,6 +1,7 @@
 import { eq, and, isNull, isNotNull, inArray, desc, sql, type SQL } from "drizzle-orm";
 import { generateId, ForbiddenError, UnauthorizedError } from "@repo/core";
-import type { Database } from "../client";
+import type { Database } from "../connection";
+import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { project, projectGroup, envVar, deployment, service } from "../schema";
 import { member } from "../schema/organization";
 // Cloning a project writes its group and service rows in the same transaction, so this repo
@@ -93,7 +94,8 @@ export async function rebindGitHubInstallationRows(
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
-export function createProjectRepo(db: Database) {
+export function createProjectRepo(db: Database, encryption: ConfigurationEncryption) {
+  const codec = createConfigurationSecrets(encryption);
   return {
     // ── Projects ───────────────────────────────────────────────────────
 
@@ -437,7 +439,7 @@ export function createProjectRepo(db: Database) {
             input.services.map((svc) => ({
               id: serviceIdBySourceId[svc.sourceId]!,
               projectId,
-              ...svc.row,
+              ...codec.sealService(svc.row),
             })),
           );
         }

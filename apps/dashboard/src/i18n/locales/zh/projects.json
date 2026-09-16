@@ -381,12 +381,13 @@
     "noPublicDomainTitle": "未连接公开域名",
     "noPublicDomainDescOne": "此项目有 {count} 个服务开放了端口，但均未配置可访问的域名。若现在部署，堆栈可在内部运行，但用户将无法通过公开 URL 访问它。",
     "noPublicDomainDescOther": "此项目有 {count} 个服务开放了端口，但均未配置可访问的域名。若现在部署，堆栈可在内部运行，但用户将无法通过公开 URL 访问它。",
+    "openDomains": "打开域名",
     "openServices": "打开服务",
     "deployAnyway": "仍然部署",
     "suggestedFix": "建议的修复方法",
-    "fixStep1": "打开“服务”标签页。",
-    "fixStep2": "选择应对外公开的服务。",
-    "fixStep3": "启用域名暴露并选择公开端口。"
+    "fixStep1": "打开“域名”标签页。",
+    "fixStep2": "为服务端口添加路由或自定义域名。",
+    "fixStep3": "验证域名并部署。"
   },
   "connections": {
     "useInProject": "在项目中使用",

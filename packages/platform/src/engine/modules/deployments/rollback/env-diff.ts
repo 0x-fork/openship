@@ -67,10 +67,10 @@ export interface EnvDiffInput {
    * merged under the service's own env rows (rows win, matching the deploy
    * merge). Empty for a single-app project.
    *
-   * Must be built with `mergeServiceDeployEnv`'s deferral applied — an inline
-   * empty that yields to a project value (`inlineEmptyDefers`) is NOT an override
-   * and must not appear here, or this diff reports a revert the rollback will
-   * never perform.
+   * Use `mergeServiceDeployEnv` to resolve Compose templates and empty-value
+   * provenance. A passthrough that consumes a project value is not an override;
+   * an authored empty literal is. Raw expressions cannot be compared to frozen
+   * values without reporting changes the rollback will never perform.
    */
   liveServices?: Array<{ name: string; overrides: Record<string, string> }>;
   strategy: EnvRestoreStrategy;

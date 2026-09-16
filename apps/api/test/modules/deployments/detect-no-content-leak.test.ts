@@ -70,6 +70,7 @@ function infoWithSecrets() {
         dependsOn: [],
         volumes: [],
         environment: { STRIPE_SECRET: SENTINELS.serviceEnv },
+        buildArgs: { BUILD_CREDENTIAL: SENTINELS.serviceEnv },
       },
       {
         name: "db",
@@ -78,6 +79,7 @@ function infoWithSecrets() {
         dependsOn: [],
         volumes: [],
         environment: { POSTGRES_PASSWORD: SENTINELS.secondService },
+        buildArgs: { BUILD_CREDENTIAL: SENTINELS.secondService },
       },
     ],
   } as unknown as Parameters<typeof projectInfoToScanResponse>[0];

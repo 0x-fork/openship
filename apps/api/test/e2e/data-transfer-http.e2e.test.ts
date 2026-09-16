@@ -9,7 +9,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -35,7 +36,7 @@ const FILE_SECRET_VALUE = "file-resume-secret-816-✓";
 const FILE_PASSPHRASE = "issue-816-http-e2e-passphrase";
 
 interface RunningApi {
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   baseUrl: string;
   dbDir: string;
   port: number;
@@ -367,6 +368,26 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
   await mergeEnv(source.baseUrl, project.id, [
     { key: "E2E_SECRET", value: SECRET_VALUE, isSecret: true },
   ]);
+  const inlineSecret = "inline-transfer-844-✓";
+  const buildSecret = "build-transfer-844-✓";
+  const fileSecret = "mounted-transfer-844-✓";
+  const created = await jsonRequest<{ service: { id: string; buildArgs: Record<string, string> } }>(
+    source.baseUrl,
+    `/api/projects/${project.id}/services`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "web",
+        kind: "compose",
+        image: "busybox:1.37.0",
+        exposed: false,
+        environment: { PASSWORD: inlineSecret },
+        buildArgs: { TOKEN: buildSecret },
+        advanced: { files: [{ path: "/run/config", content: fileSecret }] },
+      }),
+    },
+  );
+  expect(created.service.buildArgs.TOKEN).toBe("••••••••");
 
   const retryProxy = await startRetryProxy(destination.port);
   const receive = await jsonRequest<{ code: string }>(
@@ -404,6 +425,21 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
   expect(masked.data).toContainEqual(
     expect.objectContaining({ key: "E2E_SECRET", value: "••••••••", isSecret: true }),
   );
+  const servicePath = `/api/projects/${project.id}/services/${created.service.id}`;
+  const serviceRead = await jsonRequest<{
+    service: { environment: Record<string, string>; buildArgs: Record<string, string> };
+  }>(destination.baseUrl, servicePath);
+  expect(serviceRead.service.environment.PASSWORD).toBe("••••••••");
+  expect(serviceRead.service.buildArgs.TOKEN).toBe("••••••••");
+  const revealed = await jsonRequest<{ environment: Record<string, string> }>(
+    destination.baseUrl,
+    `${servicePath}/env-reveal`,
+    {
+      method: "POST",
+      body: JSON.stringify({ keys: ["PASSWORD"] }),
+    },
+  );
+  expect(revealed.environment.PASSWORD).toBe(inlineSecret);
 
   const destinationExport = await jsonRequest<DataTransferFile>(
     destination.baseUrl,
@@ -416,6 +452,19 @@ it("transfers multiple HTTP chunks atomically and resumes a file import after re
   expect(
     findSecret(openTransferSecrets(destinationExport.secrets, FILE_PASSPHRASE), SECRET_VALUE),
   ).toBe(true);
+  const transferredConfig = openTransferSecrets(destinationExport.secrets, FILE_PASSPHRASE)!;
+  for (const secret of [inlineSecret, buildSecret, fileSecret]) {
+    expect(JSON.stringify(destinationExport)).not.toContain(secret);
+    expect(JSON.stringify(transferredConfig)).toContain(secret);
+  }
+  expect(transferredConfig.entries).toContainEqual(
+    expect.objectContaining({
+      table: "service",
+      id: created.service.id,
+      column: "buildArgs",
+      json: { TOKEN: buildSecret },
+    }),
+  );
 
   // File upload uses the same import boundary. Upload one chunk, restart the
   // destination process against the same DB, then resume and finalize.

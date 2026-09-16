@@ -46,7 +46,10 @@ class FakeWriteStream extends EventEmitter {
     return true;
   }
   end() {
-    queueMicrotask(() => this.emit("close"));
+    queueMicrotask(() => {
+      this.emit("finish");
+      this.emit("close");
+    });
   }
   destroy() {
     this.destroyedWith = true;
@@ -70,6 +73,7 @@ vi.mock("ssh2", () => {
         stat: (_p: string, done: (e: Error | null) => void) => queueMicrotask(() => done(null)),
         rename: (_a: string, _b: string, done: (e: Error | null) => void) =>
           queueMicrotask(() => done(null)),
+        unlink: (_p: string, done: (e: Error | null) => void) => queueMicrotask(() => done(null)),
       });
       return this;
     }

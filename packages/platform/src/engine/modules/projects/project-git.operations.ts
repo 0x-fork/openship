@@ -243,18 +243,17 @@ export function createProjectGitOperations(
         default_rollback_strategy: info.defaultRollbackStrategy ?? "git",
       };
     },
-    async listBranches(ctx, id) {
-      const { userId, organizationId } = ctx;
+    async listBranches(ctx, id, input) {
+      const { organizationId } = ctx;
       const info = await projectService.getGitInfo(id, organizationId);
       if (!info.gitOwner || !info.gitRepo) {
         return failOperation({ success: false, error: "No repository connected" }, 400);
       }
-      const branches = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo);
-      return branches.map((branch) => ({
-        name: branch.name,
-        sha: branch.commit.sha,
-        protected: branch.protected,
-      }));
+      const { branches, page, perPage, hasMore } = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo, input);
+      return {
+        data: branches.map((branch) => ({ name: branch.name, sha: branch.commit.sha, protected: branch.protected })),
+        pagination: { page, perPage, hasMore },
+      };
     },
     async linkRepo(ctx, id, input) {
       const { owner, repo, branch, installationId } = input;

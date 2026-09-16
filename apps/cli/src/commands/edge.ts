@@ -787,7 +787,7 @@ async function panelRegisterDomain(): Promise<void> {
   const sp = spin(`Registering ${hostname}…`);
   try {
     const res = await registerDomainCore(hostname, opts);
-    sp?.succeed(res.verified ? `${hostname} verified & serving` : `Registered ${hostname}`);
+    sp?.succeed(res.verified ? `DNS verified for ${hostname}` : `Registered ${hostname}`);
     if (res.verified) {
       if (res.sslStatus) info(`  SSL: ${res.sslStatus}`);
     } else if (res.records) {
@@ -1238,7 +1238,7 @@ async function runDomainAdd(hostname: string, opts: DomainAddOpts): Promise<void
   const sp = spin(`Registering ${host}…`);
   try {
     const res = await registerDomainCore(hostname, opts);
-    sp?.succeed(res.verified ? `${host} verified & serving` : `Registered ${host}`);
+    sp?.succeed(res.verified ? `DNS verified for ${host}` : `Registered ${host}`);
     if (isJsonMode()) {
       printJson({ domain: res.domain, records: res.records, verified: res.verified, sslStatus: res.sslStatus, projectId: res.projectId });
       return;

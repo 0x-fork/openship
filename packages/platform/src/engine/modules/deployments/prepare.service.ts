@@ -195,6 +195,7 @@ export interface ProjectInfo {
     clone_url?: string;
     html_url?: string;
     branches?: { name: string }[];
+    branches_has_more?: boolean;
   };
   stack: StackResult["stack"];
   projectType: ProjectType;
@@ -505,8 +506,7 @@ function openshipServicesToCompose(services: OpenshipService[]): ComposeService[
 /**
  * Merge declared monorepo app OVERRIDES onto the detector's discovered sub-apps,
  * matched by normalized `rootDirectory`. Only fields the user set override the
- * detected value; unmatched declarations are ignored (declaring apps the
- * detector didn't find is out of scope — use per-sub-app config instead).
+ * detected value; unmatched declarations are reported by the overlay below.
  */
 function mergeMonorepoApps(
   detected: MonorepoApp[],
@@ -573,6 +573,25 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
   // detector's discovered sub-apps. Only meaningful once detection produced
   // sub-apps (declaring apps from scratch is out of scope — see mergeMonorepoApps).
   if (config.monorepo) {
+    const warn = (message: string) => {
+      info.configDiagnostics ??= { errors: [], warnings: [] };
+      info.configDiagnostics.warnings.push(message);
+    };
+    const roots = new Set(
+      (info.monorepoApps ?? []).map((app) => normalizeProjectRootDirectory(app.rootDirectory)),
+    );
+    config.monorepo.apps?.forEach((app, index) => {
+      if (!roots.has(normalizeProjectRootDirectory(app.rootDirectory))) {
+        // Indices only: paths/commands may contain credentials or log-control
+        // characters. Use the existing public diagnostics channel.
+        warn(
+          `monorepo.apps[${index}]: rootDirectory did not match a detected workspace app; ignored. Entries override discovered apps; they do not declare new processes.`,
+        );
+      }
+    });
+    if (config.monorepo.workspace && !info.monorepoWorkspace) {
+      warn("monorepo.workspace: no workspace was detected; workspace overrides were ignored.");
+    }
     if (config.monorepo.workspace && info.monorepoWorkspace) {
       info.monorepoWorkspace = {
         packageManager: config.monorepo.workspace.packageManager,
@@ -929,19 +948,6 @@ export async function resolveFromReader(
   const routing = extractRootRouting(rootSnapshot.fileContents ?? {});
   const openship = extractOpenshipConfig(rootSnapshot.fileContents ?? {});
 
-  // Also logged server-side, because the response field only reaches a caller
-  // that asked for a scan. A push-to-deploy asks for none: the pipeline runs off
-  // a frozen snapshot and only re-resolves here via reconcileComposeSource, which
-  // returns early for anything that isn't a local/Git-backed COMPOSE project. So
-  // a pushed single-app deploy still gets no signal at all — see #641's discussion
-  // of why replaying onto the BuildLogger would have to be stale or re-fetch.
-  if (openship.diagnostics) {
-    console.warn(
-      `[openship.json] ${repoMeta.full_name}: ` +
-        [...openship.diagnostics.errors, ...openship.diagnostics.warnings].join(" · "),
-    );
-  }
-
   // Configs SEED defaults; an explicit caller value — the user's own edit,
   // persisted on the project — wins over the repo-declared one. Resolved before
   // the root so a declared path can pre-empt detection; the overlay applied at
@@ -983,8 +989,16 @@ export async function resolveFromReader(
       },
     },
   );
+  if (openship.diagnostics) info.configDiagnostics = openship.diagnostics;
   const overlaid = applyOpenshipOverlay(info, openship.config);
-  if (openship.diagnostics) overlaid.configDiagnostics = openship.diagnostics;
+  // Log both syntax diagnostics and overrides rejected by workspace discovery.
+  // Scans expose the same diagnostics to SDK, CLI and dashboard callers.
+  if (overlaid.configDiagnostics) {
+    console.warn(
+      `[openship.json] ${repoMeta.full_name}: ` +
+        [...overlaid.configDiagnostics.errors, ...overlaid.configDiagnostics.warnings].join(" · "),
+    );
+  }
 
   if (root.declaredComposePath) {
     // The compose directory IS this project's root — it anchors every relative
@@ -1035,6 +1049,7 @@ function toProjectInfo(
     clone_url?: string;
     html_url?: string;
     branches?: { name: string }[];
+    branches_has_more?: boolean;
   },
   projectRoot: ProjectRootSnapshot,
   composeContent?: string,
@@ -1124,6 +1139,7 @@ function toProjectInfo(
       clone_url: repo.clone_url,
       html_url: repo.html_url,
       branches: repo.branches,
+      branches_has_more: repo.branches_has_more,
     },
     stack: stack.stack,
     projectType,

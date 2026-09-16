@@ -21,6 +21,7 @@ export interface SafeFetchOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  /** Total deadline, including DNS, response body and every redirect. Default 10s. */
   timeoutMs?: number;
   /** Permit plaintext http (default: https only). */
   allowHttp?: boolean;
@@ -46,7 +47,11 @@ export interface SafeFetchResponse {
 }
 
 /** Resolve + validate a host, returning a pinned IP to connect to. */
-async function resolvePinnedIp(host: string, allowPrivate: boolean): Promise<{ ip: string; family: number }> {
+async function resolvePinnedIp(
+  host: string,
+  allowPrivate: boolean,
+  signal: AbortSignal,
+): Promise<{ ip: string; family: number }> {
   const literal = net.isIP(host);
   if (literal) {
     if (!allowPrivate && isPrivateIp(host)) {
@@ -59,8 +64,20 @@ async function resolvePinnedIp(host: string, allowPrivate: boolean): Promise<{ i
   }
   let addrs: { address: string; family: number }[];
   try {
-    addrs = await lookup(host, { all: true });
+    // dns.lookup cannot be cancelled. Stop awaiting it at the deadline, and
+    // never start an HTTP request if the resolver eventually completes late.
+    addrs = await new Promise((resolve, reject) => {
+      signal.throwIfAborted();
+      const aborted = () => reject(signal.reason);
+      signal.addEventListener("abort", aborted, { once: true });
+      lookup(host, { all: true })
+        .then(resolve, reject)
+        .finally(() => {
+          signal.removeEventListener("abort", aborted);
+        });
+    });
   } catch {
+    signal.throwIfAborted();
     throw new SsrfError(`Cannot resolve host: ${host}`);
   }
   if (addrs.length === 0) throw new SsrfError(`Host does not resolve: ${host}`);
@@ -78,17 +95,45 @@ async function resolvePinnedIp(host: string, allowPrivate: boolean): Promise<{ i
 
 /** Headers that must never cross a redirect to a DIFFERENT origin (credential
  *  leak) — matches fetch's cross-origin stripping. */
-function stripCredentialHeaders(headers: Record<string, string> | undefined): Record<string, string> {
+function stripCredentialHeaders(
+  headers: Record<string, string> | undefined,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(headers ?? {})) {
     const lower = k.toLowerCase();
-    if (lower === "authorization" || lower === "cookie" || lower === "proxy-authorization") continue;
+    if (lower === "authorization" || lower === "cookie" || lower === "proxy-authorization")
+      continue;
     out[k] = v;
   }
   return out;
 }
 
-export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Promise<SafeFetchResponse> {
+export async function safeFetch(
+  rawUrl: string,
+  opts: SafeFetchOptions = {},
+): Promise<SafeFetchResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new SsrfError("Request timed out")),
+    opts.timeoutMs ?? 10_000,
+  );
+  try {
+    return await fetchHop(rawUrl, opts, controller.signal);
+  } catch (error) {
+    // node:http wraps signal.reason in AbortError; retain the public error type.
+    controller.signal.throwIfAborted();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchHop(
+  rawUrl: string,
+  opts: SafeFetchOptions,
+  signal: AbortSignal,
+): Promise<SafeFetchResponse> {
+  signal.throwIfAborted();
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -102,11 +147,11 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
 
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const allowPrivate = opts.allowPrivate ?? false;
-  const { ip, family } = await resolvePinnedIp(host, allowPrivate);
+  const { ip, family } = await resolvePinnedIp(host, allowPrivate, signal);
+  signal.throwIfAborted();
 
   const mod = isHttps ? https : http;
   const port = url.port ? Number(url.port) : isHttps ? 443 : 80;
-  const timeoutMs = opts.timeoutMs ?? 10_000;
   const maxBodyBytes = opts.maxBodyBytes ?? 5_000_000;
 
   const reqHeaders: Record<string, string> = { ...opts.headers, Host: url.host };
@@ -115,9 +160,9 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
   if (opts.body !== undefined) reqHeaders["Content-Length"] = String(Buffer.byteLength(opts.body));
 
   const res = await new Promise<SafeFetchResponse>((resolve, reject) => {
-    let deadline: ReturnType<typeof setTimeout>;
     const req = mod.request(
       {
+        signal,
         host: ip, // connect to the VALIDATED ip — never re-resolve `host`
         family,
         port,
@@ -145,7 +190,6 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
           }
         });
         r.on("end", () => {
-          clearTimeout(deadline);
           const body = Buffer.concat(chunks);
           resolve({
             status,
@@ -157,16 +201,11 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
           });
         });
         r.on("error", (e) => {
-          clearTimeout(deadline);
           reject(e);
         });
       },
     );
-    // Hard TOTAL-request deadline — the socket idle-timeout alone can't bound a
-    // slow drip (a server sending 1 byte every <timeout keeps it alive forever).
-    deadline = setTimeout(() => req.destroy(new SsrfError(`Request to ${host} timed out`)), timeoutMs);
     req.on("error", (e) => {
-      clearTimeout(deadline);
       reject(e);
     });
     if (opts.body !== undefined) req.write(opts.body);
@@ -183,11 +222,15 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
       // Never carry credentials across a scheme, hostname, or port boundary.
       const nextHeaders =
         nextUrl.origin === url.origin ? opts.headers : stripCredentialHeaders(opts.headers);
-      return safeFetch(nextUrl.toString(), {
-        ...opts,
-        headers: nextHeaders,
-        maxRedirects: (opts.maxRedirects ?? 0) - 1,
-      });
+      return fetchHop(
+        nextUrl.toString(),
+        {
+          ...opts,
+          headers: nextHeaders,
+          maxRedirects: (opts.maxRedirects ?? 0) - 1,
+        },
+        signal,
+      );
     }
   }
   return res;

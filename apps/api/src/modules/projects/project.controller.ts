@@ -390,9 +390,10 @@ export async function listBranches(c: Context) {
   const result = await getPlatformKernel().projects.listBranches(
     operationContext(c),
     param(c, "id"),
+    { page: Number(c.req.query("page") ?? 1) },
   );
   applyOperationContext(c, result.context);
-  return c.json({ success: true, data: result.data });
+  return c.json({ success: true, ...result.data });
 }
 
 /**

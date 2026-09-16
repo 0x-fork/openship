@@ -1674,6 +1674,13 @@ async function deployComposeServicesUnlocked(
       },
       frozenEnvWins,
     );
+    if (layered.overriddenProjectKeys.length > 0) {
+      logger.log(
+        `Service "${service.name}" uses service-level values instead of project environment for: ${layered.overriddenProjectKeys.join(", ")}. Update or remove those service overrides to use project values.\n`,
+        "warn",
+        { serviceName: service.name },
+      );
+    }
 
     // Say so when a variable is not what any UI shows. The service Env tab and
     // the wizard both keep rendering the empty value this merge ignored, so the

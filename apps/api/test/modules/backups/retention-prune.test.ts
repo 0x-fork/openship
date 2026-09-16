@@ -291,7 +291,7 @@ describe("prunePolicy", () => {
     expect((await repos.backupRun.findById(runs[2]!.id))?.deletedAt).toBeNull();
   });
 
-  it("names the skip when the mail server row is gone", async () => {
+  it("names the skip when deleting the mail server also removes its policy", async () => {
     // No org means no scoped read; deleting on a guess would cross tenants.
     const mailServerId = await seedMailServer(organizationId);
     const policy = await seedBackupPolicy(destinationId, {
@@ -306,7 +306,7 @@ describe("prunePolicy", () => {
     expect(await prunePolicy(policy)).toEqual({
       dropped: 0,
       deferred: 0,
-      skipped: "mail server row is gone",
+      skipped: "policy deleted",
     });
     expect(h.deleted).toEqual([]);
   });

@@ -222,3 +222,15 @@ describe("openship project release-image", () => {
     ).toThrow("embedded credentials");
   });
 });
+
+
+describe("openship project env set (#844)", () => {
+  it("prints override warnings after a successful write without printing the submitted secret", async () => {
+    fetchStub = stubFetch(() => ({ json: { upserted: 1, deleted: 0, warnings: ['Service "worker" overrides project environment for: TOKEN.'] } }));
+    const { err: output, code } = await runCommand(projectCommand, ["env", "set", "p1", "--set", "TOKEN=new-secret", "--secret"]);
+    expect(code).toBe(0);
+    expect(output).toContain("Updated env");
+    expect(output).toContain('Service "worker" overrides');
+    expect(output).not.toContain("new-secret");
+  });
+});

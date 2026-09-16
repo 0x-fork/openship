@@ -153,10 +153,10 @@ export type GitIdentityMethod = "host-cli" | "device" | "token";
  * credential at all — "nothing connected" and "what you connected is broken"
  * are different states and the UI has to be able to tell them apart.
  *
- *   "rejected"    → GitHub answered 401/403: revoked, expired, or scope-stripped.
+ *   "rejected"    → GitHub refused authentication or authorization.
  *                   Actionable, and the only one worth alarming about.
- *   "unreachable" → we never got an answer (DNS, offline, proxy). The credential
- *                   may be perfectly fine, so this must NOT read as "invalid".
+ *   "unreachable" → verification failed transiently (network, rate limit, 5xx).
+ *                   The credential may be fine, so this must NOT read as "invalid".
  */
 export type GitIdentityProblem = "rejected" | "unreachable";
 
@@ -247,6 +247,7 @@ export async function getLocalGhStatus(): Promise<LocalGhStatus> {
 
   try {
     const res = await fetch("https://api.github.com/user", {
+      signal: AbortSignal.timeout(10_000),
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
@@ -254,16 +255,25 @@ export async function getLocalGhStatus(): Promise<LocalGhStatus> {
       },
     });
     if (!res.ok) {
+      // GitHub uses 403 for primary and secondary rate limits as well as for
+      // authorization failures. A throttled check says nothing about token validity.
+      let rateLimited =
+        res.status === 429 ||
+        (res.status === 403 &&
+          (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after")));
+      if (res.status === 403 && !rateLimited) {
+        const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+        rateLimited =
+          typeof body?.message === "string" && /rate limit|abuse detection/i.test(body.message);
+      }
+      const rejected = res.status === 401 || (res.status === 403 && !rateLimited);
       systemDebug(
         "gh-cli",
-        `/user verify failed: status=${res.status} method=${method} — the stored GitHub ` +
-          `credential was rejected. Reconnect in Settings, or run \`gh auth refresh\`.`,
+        `/user verify failed: status=${res.status} method=${method} — ` +
+          (rejected
+            ? "the stored GitHub credential was rejected. Reconnect in Settings, or run `gh auth refresh`."
+            : "GitHub verification is temporarily unavailable; retry without replacing the credential."),
       );
-      // 401/403 is GitHub telling us the credential is bad. Any other status is
-      // GitHub having a problem (5xx, rate-limit page, captive proxy) — reporting
-      // that as "your token is invalid" would send the operator to revoke a
-      // working token.
-      const rejected = res.status === 401 || res.status === 403;
       return {
         available: false,
         method,

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { db, eq, schema, sql } from "@repo/db";
+import { db, eq, schema, sql, repos } from "@repo/db";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-vi.mock("@repo/platform/engine/config/env", () => ({
-  env: { BETTER_AUTH_SECRET: "project-transfer-test-key", CLOUD_MODE: false },
+vi.mock("@repo/platform/engine/config/env", async () => ({
+  env: { BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? (await import("@repo/db/encryption")).DEFAULT_ENCRYPTION_SECRET, CLOUD_MODE: false },
 }));
 vi.mock("../../src/lib/database-runtime-state", () => ({
   reconcileRuntimeStateAfterImport: vi.fn(),
@@ -434,12 +434,15 @@ describe("project control-plane export and import", () => {
       .where(eq(schema.envVar.id, "env_service"));
     expect(environment!.serviceId).toBe("service_web");
     expect(decrypt(environment!.value)).toBe("service-secret");
-    const [service] = await db.select().from(schema.service);
+    const [storedService] = await db.select().from(schema.service);
+    expect(typeof storedService!.environment).toBe("string");
+    const service = await repos.service.findById(storedService!.id);
     expect(service!.environment).toEqual({ INLINE_PASSWORD: "inline-secret" });
     expect(service!.advanced).toEqual({
       files: [{ path: "/run/secrets/key", content: "private-file-contents" }],
     });
-    const [deployment] = await db.select().from(schema.deployment);
+    const [storedDeployment] = await db.select().from(schema.deployment);
+    const deployment = await repos.deployment.findById(storedDeployment!.id);
     expect(deployment!.meta).toMatchObject({
       organizationId: context.organizationId,
       serverId: "target_server",
@@ -590,7 +593,8 @@ describe("project control-plane export and import", () => {
       serviceId: "existing_service",
       serviceIds: ["existing_service"],
     });
-    const [deployment] = await db.select().from(schema.deployment);
+    const [storedDeployment] = await db.select().from(schema.deployment);
+    const deployment = await repos.deployment.findById(storedDeployment!.id);
     expect(deployment!.meta).toMatchObject({
       targetServiceIds: ["existing_service"],
       composeServices: [
@@ -735,7 +739,8 @@ describe("project control-plane export and import", () => {
     const [project] = await db.select().from(schema.project).where(eq(schema.project.id, "web"));
     expect(project!.activeDeploymentId).toBeNull();
     expect(project!.disabledAt).toBeInstanceOf(Date);
-    const [deployment] = await db.select().from(schema.deployment);
+    const [storedDeployment] = await db.select().from(schema.deployment);
+    const deployment = await repos.deployment.findById(storedDeployment!.id);
     expect(deployment!.containerId).toBeNull();
     expect(deployment!.meta).toBeNull();
     const [domain] = await db.select().from(schema.domain);

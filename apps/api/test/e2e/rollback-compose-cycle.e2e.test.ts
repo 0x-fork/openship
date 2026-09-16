@@ -35,7 +35,7 @@ import {
   createHostExecutor,
   type CommandExecutor,
 } from "@repo/adapters";
-import { repos } from "@repo/db";
+import { db, eq, repos, schema } from "@repo/db";
 import { LOCAL_HOST_PORT_TARGET } from "@repo/platform/engine/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import {
@@ -46,7 +46,7 @@ import {
   seedServiceDeployment,
 } from "../helpers/seed";
 
-const BASE_IMAGE = "busybox:latest";
+const BASE_IMAGE = "busybox:1.37.0";
 const WEB_V1 = "openship/e2e-compose-web:v1";
 const WEB_V2 = "openship/e2e-compose-web:v2";
 const API_V1 = "openship/e2e-compose-api:v1";
@@ -88,7 +88,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
   let apiPort = 0;
   let contextDir = "";
 
-  let rollbackMod: typeof import("../../src/modules/deployments/rollback");
+  let rollbackMod: typeof import("@repo/platform/engine/modules/deployments/rollback/index");
 
   const buildImage = async (tag: string, body: string) => {
     await writeFile(
@@ -185,6 +185,13 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
         }),
       };
     });
+    // These factories close over this fixture's real runtime, after it exists.
+    for (const module of ["@repo/platform/engine/lib/platform-config", "@repo/platform/engine/lib/resource-access"]) {
+      vi.doMock(module, async (importOriginal) => {
+        const actual = (await importOriginal()) as Record<string, unknown>;
+        return { ...actual, platform: () => localPlatform.platform };
+      });
+    }
     vi.doMock("../../src/lib/controller-helpers", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return { ...actual, platform: () => localPlatform.platform };
@@ -196,6 +203,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
+        getPlatform: () => localPlatform.platform,
         edgeProxyFor: () => ({
           listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
         }),
@@ -236,8 +244,8 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     runtimeMode: "docker" as const,
     serviceDeploymentMode: "services" as const,
     composeServices: [
-      { id: web.id, name: "web", kind: "compose", image: webImage, enabled: true, ports: [`${webPort}:${SVC_PORT}`] },
-      { id: api.id, name: "api", kind: "compose", image: API_V1, enabled: true, ports: [`${apiPort}:${SVC_PORT}`] },
+      { id: web.id, name: "web", kind: "compose", image: webImage, environment: { ROLLBACK_SECRET: webImage === WEB_V1 ? "original-844" : "rotated-844" }, enabled: true, ports: [`${webPort}:${SVC_PORT}`] },
+      { id: api.id, name: "api", kind: "compose", image: API_V1, environment: { API_SECRET: "api-secret-844" }, enabled: true, ports: [`${apiPort}:${SVC_PORT}`] },
     ],
   });
 
@@ -339,6 +347,12 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     // a null name here would silently rebuild the whole stack next time.
     expect(byName.get("web")).toBe(WEB_V1);
     expect(byName.get("api")).toBe(API_V1);
+    const webRow = rows.find(row => row.serviceName === "web")!;
+    const live = await runtime.docker.getContainer(webRow.containerId!).inspect();
+    expect(live.Config.Env).toContain("ROLLBACK_SECRET=original-844");
+    const stored = await db.query.deployment.findFirst({ where: eq(schema.deployment.id, restore.id) });
+    expect((stored!.meta as Record<string, unknown>).composeServices).toEqual(expect.stringMatching(/^openship:config:v1:/));
+    expect(JSON.stringify(stored!.meta)).not.toContain("original-844");
   }, 600_000);
 
   it("cancels a lost pre-activation host callback, preserves v1, and lets the next real rollout finish", async () => {
@@ -518,14 +532,3 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     throw new Error(`deploy never finished (last status: ${last || "no new row"})`);
   }
 });
-
-// The application seams moved with the shared engine.
-vi.doMock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
-      const actual = (await importOriginal()) as Record<string, unknown>;
-      return { ...actual, platform: () => localPlatform.platform };
-    });
-
-vi.doMock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
-      const actual = (await importOriginal()) as Record<string, unknown>;
-      return { ...actual, platform: () => localPlatform.platform };
-    });

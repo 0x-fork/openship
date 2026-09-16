@@ -19,7 +19,7 @@ export function createRemoteGitHubOperations(http: HttpClient): GitHubOperations
       getRepo: { method: "GET", path: repo, envelope: "data" },
       createRepo: { method: "POST", path: () => "/github/repos", envelope: "data" },
       deleteRepo: { method: "DELETE", path: repo },
-      listBranches: { method: "GET", path: input => `${repo(input)}/branches`, envelope: "data" },
+      listBranches: { method: "GET", path: input => `${repo(input)}/branches` },
       getCloneToken: { method: "GET", path: input => `${repo(input)}/clone-token` },
       detectStack: { method: "GET", path: input => `${repo(input)}/detect`, envelope: "data" },
       listFiles: { method: "GET", path: input => `${repo(input)}/files`, envelope: "data" },

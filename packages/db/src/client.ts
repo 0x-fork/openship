@@ -1,6 +1,7 @@
 /** HTTP/CLI process composition. Native embedders import @repo/db/factory. */
 import { createDatabase, PG_POOL_MAX, type DatabaseOptions } from "./connection";
 import { resolve } from "node:path";
+import { createEncryption, DEFAULT_ENCRYPTION_SECRET } from "./encryption";
 export { PG_POOL_MAX, type Database, type DatabaseTransaction, type Driver } from "./connection";
 export { awaitPgReady } from "./pg-ready";
 
@@ -84,9 +85,16 @@ const options: DatabaseOptions = {
   lockWaitMs: process.env.OPENSHIP_NATIVE === "true" ? 0 : undefined,
   takeover: process.env.OPENSHIP_NATIVE !== "true" && (process.execArgv.includes("--watch") || process.env.OPENSHIP_DEV_LOCK_TAKEOVER === "true"),
 };
-const connection = await createDatabase(options);
+export const storageEncryption = createEncryption(process.env.BETTER_AUTH_SECRET ?? DEFAULT_ENCRYPTION_SECRET);
+const connection = await createDatabase(options).catch(error => {
+  storageEncryption.close();
+  throw error;
+});
 export const db = connection.db;
-export const closeDb = connection.close;
+export async function closeDb(): Promise<void> {
+  try { await connection.close(); }
+  finally { storageEncryption.close(); }
+}
 export const getDriver = () => connection.driver;
 export function getPgPool() {
   if (!connection.pool) throw new Error("Postgres pool is unavailable (active driver is not 'pg')");

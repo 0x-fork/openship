@@ -47,7 +47,14 @@ import {
   type ObservedLoopbackPublish,
 } from "../deployments/observed-host-port-claims";
 
-export async function applyProjectRouting(projectId: string): Promise<void> {
+export async function applyProjectRouting(
+  projectId: string,
+  options: { onWarning?: (message: string) => void } = {},
+): Promise<void> {
+  const warn = (message: string) => {
+    console.warn(message);
+    options.onWarning?.(message);
+  };
   const project = await repos.project.findById(projectId);
   if (!project) return;
 
@@ -257,7 +264,7 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
             : null,
           !resolveTargetUrl(plan.backendServiceId) ? "the backend has no live upstream" : null,
         ].filter(Boolean);
-        console.warn(
+        warn(
           `[routing-apply] ${project.slug}: composite vhost not emitted — ` +
             `${missing.length ? missing.join("; ") : "no routable domain for the frontend"}. ` +
             `Redeploy to rebuild it.`,
@@ -308,6 +315,7 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
     const registers = [...serviceRegisters, ...topologyRegisters];
     if (registers.length > 0) {
       await reconcileProjectRoutes(project, {
+        onWarning: options.onWarning,
         deployment,
         routing,
         hostPortTarget: resolved.hostPortTarget,
@@ -318,9 +326,8 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
       });
     }
   } catch (err) {
-    console.warn(
-      `[routing-apply] ${project.slug}: live routing re-apply failed (non-fatal, applies next deploy): ${safeErrorMessage(err)}`,
-    );
+    const warning = `[routing-apply] ${project.slug}: live routing re-apply failed (non-fatal, applies next deploy): ${safeErrorMessage(err)}`;
+    warn(warning);
   } finally {
     disposePlatform(resolved);
   }

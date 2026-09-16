@@ -1,3 +1,4 @@
+import { createEncryption } from "@repo/db/encryption";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
 import { createDeploymentRepo } from "../../../../../packages/db/src/repos/deployment.repo";
@@ -437,7 +438,7 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
         }),
       }),
     };
-    return { writes, repo: createDeploymentRepo(db as never) };
+    return { writes, repo: createDeploymentRepo(db as never, createEncryption("repository-test-secret")) };
   }
 
   it("retries with a marker payload and keeps status + duration", async () => {

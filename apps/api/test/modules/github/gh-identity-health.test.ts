@@ -49,14 +49,14 @@ import {
 } from "@repo/platform/engine/modules/github/github.local-auth";
 
 /** GitHub's /user answering with `status`. */
-function githubUserReturns(status: number, body: unknown = {}) {
+function githubUserReturns(
+  status: number,
+  body: unknown = {},
+  headers: Record<string, string> = {},
+) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => body,
-    })),
+    vi.fn(async () => new Response(JSON.stringify(body), { status, headers })),
   );
 }
 
@@ -210,6 +210,26 @@ describe("getLocalGhStatus — credential health", () => {
     if (status.available) throw new Error("unreachable");
     expect(status.problem).toBe("rejected");
   });
+
+  it.each([
+    { headers: { "x-ratelimit-remaining": "0" }, body: {} },
+    { headers: { "retry-after": "60" }, body: {} },
+    { headers: {}, body: { message: "You have exceeded a secondary rate limit." } },
+  ])(
+    "does not reject a durable credential when GitHub rate limits verification",
+    async ({ headers, body }) => {
+      githubUserReturns(403, body, headers);
+      expect(await getLocalGhStatus()).toMatchObject({
+        available: false,
+        method: "token",
+        problem: "unreachable",
+      });
+
+      // A cold cache after the transient failure still resolves the durable token.
+      githubUserReturns(200, { login: "account", id: 7, avatar_url: "" });
+      expect(await getLocalGhStatus()).toMatchObject({ available: true, login: "account" });
+    },
+  );
 
   it("does NOT blame the credential for a 5xx", async () => {
     githubUserReturns(500);

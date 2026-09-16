@@ -83,9 +83,9 @@ export async function parseRepoCompose(
   // NB: we deliberately do NOT read the repo's `.env` for `${VAR}` interpolation.
   // Secrets live in Openship's ENCRYPTED env store — captured from the running
   // container for adopted services, or set via the wizard/env UI for new ones —
-  // never a committed repo file. Pulling a `.env` here would drop those values
-  // into the PLAINTEXT service.environment column. So a bare `${VAR}` with no
-  // inline default resolves to "" and the real value comes from the env store.
+  // never a committed repo file. Pulling a `.env` here would pin those values
+  // as service overrides, hiding later rotations in the project store. A bare
+  // `${VAR}` without an inline default resolves to "" and defers to that store.
   for (const file of REPO_COMPOSE_FILES) {
     let content: string | null = null;
     try {

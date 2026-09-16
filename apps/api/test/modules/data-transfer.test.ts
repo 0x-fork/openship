@@ -11,8 +11,8 @@ import { db, eq, schema } from "@repo/db";
 
 // Skip the full zod-validated env (which refuses to load outside desktop mode
 // without INTERNAL_TOKEN); the crypto helpers only need BETTER_AUTH_SECRET.
-vi.mock("@repo/platform/engine/config/env", () => ({
-  env: { BETTER_AUTH_SECRET: "test-secret-for-data-transfer-unit-tests", CLOUD_MODE: false },
+vi.mock("@repo/platform/engine/config/env", async () => ({
+  env: { BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? (await import("@repo/db/encryption")).DEFAULT_ENCRYPTION_SECRET, CLOUD_MODE: false },
 }));
 
 import { decrypt, encrypt, encryptBytesWithKey, encryptWithKey } from "@repo/platform/engine/lib/encryption";

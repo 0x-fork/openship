@@ -60,6 +60,7 @@ try {
   const { configureNativeSourceRoots } = await import("./engine/native/source-policy");
   configureNativeSourceRoots(options.policy?.sourceRoots ?? []);
   await identities.bindInstallation(options.instanceId, options.encryptionKey);
+  await database.repos.configurationSecrets.backfillLegacy();
   await adapters.initPlatform(resolvePlatformConfig());
   const kernel = getPlatformKernel();
   let started = false, draining = false, finalizing = false;

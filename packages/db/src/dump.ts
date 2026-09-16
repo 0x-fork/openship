@@ -28,6 +28,7 @@ import { sql, eq, inArray, count, getTableColumns } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { db, getDriver, type DatabaseTransaction } from "./client";
 import * as schema from "./schema";
+import { SERVICE_SECRET_FIELDS, DEPLOYMENT_SECRET_FIELDS } from "./configuration-secrets";
 
 export const DUMP_FORMAT_VERSION = 1;
 
@@ -948,6 +949,8 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },
+  ...SERVICE_SECRET_FIELDS.map(column => ({ table: "service", column })),
+  { table: "deployment", column: "meta", secretPaths: [...DEPLOYMENT_SECRET_FIELDS] },
   { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl", "botToken"] },
 ];
 

@@ -4,22 +4,20 @@
 
 import { repos } from "@repo/db";
 import { ValidationError, SYSTEM } from "@repo/core";
-import { encrypt, decrypt } from "../../lib/encryption";
+import { encrypt, decrypt, decryptEnvMap } from "../../lib/encryption";
 import { ENV_MASK } from "../../lib/secret-env";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import type { TMergeEnvVarsBody } from "@repo/contracts";
+import { mergeServiceDeployEnv } from "../deployments/compose/service-env-layers";
 
 // ─── List env vars ───────────────────────────────────────────────────────────
 
-export async function listEnvVars(
-  projectId: string,
-  organizationId: string,
-  environment?: string,
-) {
+export async function listEnvVars(projectId: string, organizationId: string, environment?: string) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  const vars = await repos.project.listEnvVars(projectId, environment);
+  // Match project writes: service-scoped rows belong to the service env API.
+  const vars = await repos.project.listEnvVars(projectId, environment, null);
 
   return vars.map((v) => {
     let plainValue: string;
@@ -41,7 +39,6 @@ export async function listEnvVars(
 }
 
 // ─── Set env vars ────────────────────────────────────────────────────────────
-
 
 // ─── Merge env vars (partial — safe for masked secrets) ──────────────────────
 
@@ -73,9 +70,7 @@ export async function mergeEnvVars(
   }
 
   if (data.upserts.length > SYSTEM.ENV_VARS.MAX_PER_PROJECT) {
-    throw new ValidationError(
-      `Maximum ${SYSTEM.ENV_VARS.MAX_PER_PROJECT} variables per project`,
-    );
+    throw new ValidationError(`Maximum ${SYSTEM.ENV_VARS.MAX_PER_PROJECT} variables per project`);
   }
 
   const encrypted = data.upserts.map((v) => ({
@@ -84,8 +79,45 @@ export async function mergeEnvVars(
     isSecret: v.isSecret,
   }));
 
+  // Read diagnostics before committing: a failed diagnostic read must not make
+  // a successful write look failed to a caller retrying a credential rotation.
+  const changedKeys = new Set([...upsertKeys, ...data.deletes]);
+  const [services, stored] = await Promise.all([
+    repos.service.listByProject(projectId),
+    repos.project.listEnvVars(projectId, data.environment),
+  ]);
+  const projectValues = decryptEnvMap(
+    Object.fromEntries(stored.filter((row) => !row.serviceId).map((row) => [row.key, row.value])),
+  );
+  for (const row of data.upserts) projectValues[row.key] = row.value;
+  // Include deleted keys in the comparison: deleting the project copy does not
+  // remove a service's pinned copy. No value is returned in the diagnostic.
+  for (const key of data.deletes) projectValues[key] ??= "";
+  const warnings: string[] = [];
+  for (const service of services) {
+    if (!service.enabled) continue;
+    const serviceValues = decryptEnvMap(
+      Object.fromEntries(
+        stored.filter((row) => row.serviceId === service.id).map((row) => [row.key, row.value]),
+      ),
+    );
+    const resolved = mergeServiceDeployEnv(
+      {
+        project: projectValues,
+        frozen: {},
+        inline: service.environment ?? {},
+        templateKeys: service.advanced?.environmentTemplateKeys,
+        service: serviceValues,
+      },
+      false,
+    );
+    const keys = resolved.overriddenProjectKeys.filter((key) => changedKeys.has(key));
+    if (keys.length > 0) {
+      warnings.push(
+        `Service "${service.name}" overrides project environment for: ${keys.join(", ")}. Update or remove its service-level values for these changes to reach that service.`,
+      );
+    }
+  }
   await repos.project.mergeEnvVars(projectId, data.environment, encrypted, data.deletes);
-  return { upserted: data.upserts.length, deleted: data.deletes.length };
+  return { upserted: data.upserts.length, deleted: data.deletes.length, warnings };
 }
-
-

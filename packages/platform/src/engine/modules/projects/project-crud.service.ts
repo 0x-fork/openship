@@ -53,7 +53,7 @@ import { assertResourceInOrg } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import {
   resolveDefaultBranch,
-  listBranches as listGitHubBranches,
+  getBranch,
   compareCommits,
   getLatestCommit,
   getWebhookStrategy,
@@ -864,6 +864,14 @@ async function createProductionProject(
   organizationId: string,
   access?: { tokenId: string },
 ) {
+  // The project type is derived from persisted service rows. Accepting an
+  // explicit monorepo without app metadata creates a different project from
+  // the one requested (including CLI --type monorepo). Reject before writes.
+  if (data.projectType === "monorepo" && !data.monorepoApps?.length) {
+    throw new ValidationError(
+      "A monorepo project requires detected app metadata (monorepoApps). Scan/import the workspace first, or create separate projects for independently managed processes.",
+    );
+  }
   // A server id is a host-root capability, not an arbitrary foreign key. Verify
   // it through the same org-scoped repository used by deployment preflight,
   // and do it before ensureProjectApp writes anything so a rejected binding is
@@ -1967,9 +1975,8 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branches = await listGitHubBranches(ctx, base.gitOwner, base.gitRepo);
-    const exists = branches.some((branch) => branch.name === gitBranch);
-    if (!exists) {
+    const branch = await getBranch(ctx, base.gitOwner, base.gitRepo, gitBranch);
+    if (!branch) {
       throw new ValidationError(
         `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
       );
@@ -2160,6 +2167,24 @@ export function releaseSourceKey(p: Project): string {
   ].join("|");
 }
 
+/** An unanswered poll, without doing more I/O on an already stalled source. */
+export function unresolvedUpstreamDrift(p: Project): UpstreamDrift {
+  const mode = driftMode(p);
+  if (mode === "commit") {
+    return { supported: true, mode, key: commitSourceKey(p), latestSha: null, latestMessage: null };
+  }
+  if (mode === "release") {
+    return {
+      supported: true,
+      mode,
+      key: releaseSourceKey(p),
+      latestVersion: null,
+      pinned: Boolean(p.releaseSource?.pinnedVersion),
+    };
+  }
+  return { supported: true, mode, digestByRef: {} };
+}
+
 /** Image services whose upstream digest is worth resolving (image-only, enabled). */
 async function imageServicesOf(p: Project) {
   const services = await repos.service.listByProject(p.id).catch(() => []);
@@ -2191,6 +2216,10 @@ export async function upstreamMatchesSource(p: Project, u: UpstreamDrift): Promi
   if (!u.supported || u.mode !== driftMode(p)) return false;
   if (u.mode === "commit") return u.key === commitSourceKey(p);
   if (u.mode === "release") return u.key === releaseSourceKey(p);
+  // A watchdog can expire before even the local service read completes. An
+  // empty map asserts no version for ANY ref; reuse that unknown answer only
+  // for the short failed-poll backoff, rather than retrying on every page load.
+  if (Object.keys(u.digestByRef).length === 0) return true;
   const services = await imageServicesOf(p);
   if (services.length === 0) return false;
   // Every current ref must have been polled — a service added or retagged since
@@ -2552,6 +2581,12 @@ export async function updateOptions(
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
   const update: Record<string, unknown> = {};
+  if (options.gitBranch !== undefined) {
+    if (typeof options.gitBranch !== "string" || !options.gitBranch.trim() || options.gitBranch.length > 200) {
+      throw new ValidationError("gitBranch must be a non-empty branch name of at most 200 characters");
+    }
+    update.gitBranch = options.gitBranch.trim();
+  }
   if (options.buildCommand !== undefined) update.buildCommand = options.buildCommand;
   if (options.installCommand !== undefined) update.installCommand = options.installCommand;
   if (options.outputDirectory !== undefined) update.outputDirectory = options.outputDirectory;

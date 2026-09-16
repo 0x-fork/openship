@@ -337,9 +337,14 @@ import { createStripeTopupGrantRepo } from "./stripe-topup-grant.repo";
 import { createBillingAnniversaryGrantRepo } from "./billing-anniversary-grant.repo";
 import { createBillingUsageSnapshotRepo } from "./billing-usage-snapshot.repo";
 
-export function createRepositories(db: Database) {
+import type { ConfigurationEncryption } from "../configuration-secrets";
+import { createConfigurationSecretsRepo } from "./configuration-secrets.repo";
+
+/** Passive composition: the caller owns both the connection and encryption key. */
+export function createRepositories(db: Database, encryption: ConfigurationEncryption) {
   const auditSettingsRepo = createAuditSettingsRepo(db);
   return {
+  configurationSecrets: createConfigurationSecretsRepo(db, encryption),
   user: createUserRepo(db),
   session: createSessionRepo(db),
   account: createAccountRepo(db),
@@ -347,8 +352,8 @@ export function createRepositories(db: Database) {
   githubInstallState: createGithubInstallStateRepo(db),
   gitSource: createGitSourceRepo(db),
   projectGroup: createProjectGroupRepo(db),
-  project: createProjectRepo(db),
-  deployment: createDeploymentRepo(db),
+  project: createProjectRepo(db, encryption),
+  deployment: createDeploymentRepo(db, encryption),
   domain: createDomainRepo(db),
   dnsCredential: createDnsCredentialRepo(db),
   credential: createCredentialRepo(db),
@@ -365,7 +370,7 @@ export function createRepositories(db: Database) {
   projectConnection: createProjectConnectionRepo(db),
   customAppTemplate: createCustomAppTemplateRepo(db),
   webhookDelivery: createWebhookDeliveryRepo(db),
-  service: createServiceRepo(db),
+  service: createServiceRepo(db, encryption),
   serviceDeployment: createServiceDeploymentRepo(db),
   settings: createSettingsRepo(db),
   instanceSettings: createInstanceSettingsRepo(db),

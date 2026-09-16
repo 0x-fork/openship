@@ -225,6 +225,27 @@ describe("parseOpenshipConfig", () => {
     }
   });
 
+  describe("monorepo override roots (#873)", () => {
+    it.each([
+      ["platform/dashboard_web", "./platform/dashboard_web/"],
+      [".", "./"],
+      ["apps\\web", "apps/web"],
+    ])("rejects duplicate monorepo override roots %s and %s (#873)", (first, second) => {
+      const { config, errors } = parseOpenshipConfig({
+        monorepo: {
+          apps: [
+            { name: "web", rootDirectory: first },
+            { name: "worker", rootDirectory: second },
+          ],
+        },
+      });
+      expect(errors).toEqual([
+        expect.stringMatching(/monorepo\.apps\[1\]\.rootDirectory: duplicates monorepo\.apps\[0\]/),
+      ]);
+      expect(config?.monorepo?.apps).toHaveLength(1);
+    });
+  });
+
   describe("composePath", () => {
     it("round-trips a file path and a directory path", () => {
       for (const composePath of [

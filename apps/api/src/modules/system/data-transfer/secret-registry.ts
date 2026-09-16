@@ -1,8 +1,8 @@
 /**
  * Maps every encrypted column (the single source of truth in @repo/db
  * `ENCRYPTED_COLUMNS`) to the crypto scheme used to seal it at rest. This
- * drives the export decrypt and the import re-encrypt. Kept in `apps/api`
- * because the crypto helpers live here and `packages/db` cannot import them.
+ * drives export decryption and import re-encryption. The transfer coordinator
+ * binds the shared codecs to the source or destination installation's key.
  *
  * A build-time assertion below fails fast if `ENCRYPTED_COLUMNS` gains an
  * entry this registry doesn't know how to (de)crypt.
@@ -89,10 +89,9 @@ const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> =
   },
 };
 
-// Kept separate from ENCRYPTED_COLUMNS: tenant/cloud promotion still transports
-// ordinary Compose configuration directly. File/direct control-plane transfers
-// seal it because inline env values and mounted files may contain credentials.
-const PLAINTEXT_CONFIG_COLUMNS = [
+// File/direct transfers also remove non-encrypted sensitive configuration. The
+// service fields are included here to keep legacy export redaction identical.
+const TRANSFER_CONFIG_COLUMNS = [
   { table: "deployment", column: "meta" },
   { table: "service", column: "environment" },
   { table: "service", column: "buildArgs" },
@@ -109,7 +108,12 @@ const PLAINTEXT_CONFIG_COLUMNS = [
 
 export const SECRET_COLUMNS: readonly SecretColumn[] = [
   ...ENCRYPTED_COLUMNS,
-  ...PLAINTEXT_CONFIG_COLUMNS,
+  ...TRANSFER_CONFIG_COLUMNS.filter(
+    (spec) =>
+      !ENCRYPTED_COLUMNS.some(
+        (encrypted) => encrypted.table === spec.table && encrypted.column === spec.column,
+      ),
+  ),
 ].map((spec) => {
   const key = `${spec.table}.${spec.column}`;
   const meta = SCHEME_BY_KEY[key];
@@ -129,7 +133,7 @@ export const SECRET_COLUMNS: readonly SecretColumn[] = [
 
 export function stripTransferSecrets(tables: DatabaseDump["tables"]): void {
   stripEncryptedInPlace(tables);
-  for (const spec of PLAINTEXT_CONFIG_COLUMNS) {
+  for (const spec of TRANSFER_CONFIG_COLUMNS) {
     for (const row of tables[spec.table] ?? []) {
       if (spec.table === "deployment" && spec.column === "meta") {
         // Frozen Compose services can contain inline credentials. Keep only

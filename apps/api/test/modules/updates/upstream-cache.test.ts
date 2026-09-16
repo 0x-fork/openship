@@ -1,5 +1,5 @@
 import "../mail/_setup-env";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The read path's freshness policy — i.e. "when is the cache allowed to answer?"
@@ -56,7 +56,9 @@ vi.mock("@repo/db", async (importOriginal) => {
 // upstreamMatchesSource stay real, because they are what's under test with it.
 vi.mock("@repo/platform/engine/modules/projects/project-crud.service", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@repo/platform/engine/modules/projects/project-crud.service")>();
+    await importOriginal<
+      typeof import("@repo/platform/engine/modules/projects/project-crud.service")
+    >();
   return { ...actual, resolveUpstreamDrift };
 });
 
@@ -68,6 +70,7 @@ vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
 import {
   getProjectDrift,
   listOrganizationUpdates,
+  scanOrganizationUpdates,
 } from "@repo/platform/engine/modules/updates/updates.service";
 import {
   commitSourceKey,
@@ -110,11 +113,7 @@ const upstream = (p: Project, latestSha: string | null): UpstreamDrift => ({
 });
 
 /** A cache row as `updates:scan` would have written it. */
-const cachedRow = (over: {
-  key: string;
-  latestSha: string | null;
-  ageMs: number;
-}): UpdateStatus =>
+const cachedRow = (over: { key: string; latestSha: string | null; ageMs: number }): UpdateStatus =>
   ({
     id: "ups_1",
     organizationId: "org_1",
@@ -329,5 +328,142 @@ describe("getProjectDrift (the project page banner)", () => {
 
     expect(await getProjectDrift(ctx, "proj_1")).toEqual({ supported: false });
     expect(resolveUpstreamDrift).not.toHaveBeenCalled();
+  });
+});
+
+describe("stalled upstream polls (GH-880)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(async () => {
+    await vi.advanceTimersByTimeAsync(12 * MINUTE);
+    vi.useRealTimers();
+  });
+
+  it("bounds a shared poll, records unknown state, backs off, and recovers without a restart", async () => {
+    const p = project({ id: "deadline-resolver" });
+    setup([p], []);
+    let release!: (value: UpstreamDrift) => void;
+    resolveUpstreamDrift.mockReturnValueOnce(
+      new Promise<UpstreamDrift>((r) => {
+        release = r;
+      }),
+    );
+    const first = listOrganizationUpdates(ctx);
+    const second = getProjectDrift(ctx, p.id);
+    const scan = scanOrganizationUpdates(ctx, ctx.organizationId);
+    await vi.advanceTimersByTimeAsync(8_001);
+    expect((await first)[0]).toMatchObject({ behind: false, latestLabel: null });
+    expect(await second).toMatchObject({ supported: true, latestSha: null, behind: false });
+    expect(await scan).toEqual({ scanned: 1, supported: 1 });
+    expect(resolveUpstreamDrift).toHaveBeenCalledTimes(1);
+    expect(updateStatusRepo.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: p.id,
+        kind: "commit",
+        detail: expect.objectContaining({ latestSha: null }),
+      }),
+    );
+    await listOrganizationUpdates(ctx);
+    await getProjectDrift(ctx, p.id);
+    expect(resolveUpstreamDrift).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(10 * MINUTE);
+    let next!: (value: UpstreamDrift) => void;
+    resolveUpstreamDrift.mockReturnValueOnce(
+      new Promise<UpstreamDrift>((r) => {
+        next = r;
+      }),
+    );
+    const recovered = getProjectDrift(ctx, p.id);
+    await vi.advanceTimersByTimeAsync(0);
+    // The original promise wakes during a NEW poll: it must neither write old
+    // data nor remove the new poll's deduplication entry.
+    release(upstream(p, SHIPPED));
+    await vi.advanceTimersByTimeAsync(0);
+    const shared = listOrganizationUpdates(ctx);
+    await vi.advanceTimersByTimeAsync(0);
+    next(upstream(p, NEWER));
+    expect(await recovered).toMatchObject({ behind: true, latestSha: NEWER });
+    expect((await shared)[0]).toMatchObject({ behind: true });
+    expect(resolveUpstreamDrift).toHaveBeenCalledTimes(2);
+    expect(updateStatusRepo.upsert).toHaveBeenCalledTimes(2);
+    expect(updateStatusRepo.upsert.mock.calls[1][0].detail.latestSha).toBe(NEWER);
+  });
+
+  it("returns the known version when persistence hangs and retains backoff without the database", async () => {
+    const p = project({ id: "deadline-write" });
+    setup([p], []);
+    resolveUpstreamDrift.mockResolvedValue(upstream(p, NEWER));
+    updateStatusRepo.upsert.mockReturnValueOnce(new Promise(() => {}));
+    const pending = listOrganizationUpdates(ctx);
+    await vi.advanceTimersByTimeAsync(2_501);
+    expect((await pending)[0]).toMatchObject({ behind: true });
+    expect(await getProjectDrift(ctx, p.id)).toMatchObject({ latestSha: NEWER });
+    expect(resolveUpstreamDrift).toHaveBeenCalledTimes(1);
+    expect(updateStatusRepo.upsert).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(10 * MINUTE);
+    await getProjectDrift(ctx, p.id);
+    expect(resolveUpstreamDrift).toHaveBeenCalledTimes(2);
+    expect(updateStatusRepo.upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds a failed poll AND failed write and keeps healthy project updates", async () => {
+    const bad = project({ id: "deadline-both" }),
+      good = project({ id: "deadline-healthy" });
+    setup([bad, good], []);
+    resolveUpstreamDrift.mockImplementation((_actor, p) =>
+      p.id === bad.id ? new Promise(() => {}) : Promise.resolve(upstream(good, NEWER)),
+    );
+    updateStatusRepo.upsert.mockImplementation((row) =>
+      row.projectId === bad.id ? new Promise(() => {}) : Promise.resolve(),
+    );
+    const pending = listOrganizationUpdates(ctx);
+    await vi.advanceTimersByTimeAsync(10_501);
+    expect(await pending).toMatchObject([
+      { projectId: good.id, behind: true },
+      { projectId: bad.id, behind: false },
+    ]);
+    await listOrganizationUpdates(ctx);
+    expect(resolveUpstreamDrift.mock.calls.filter(([, p]) => p.id === bad.id)).toHaveLength(1);
+  });
+
+  it("uses one feed deadline across concurrency waves instead of multiplying the timeout", async () => {
+    setup(
+      Array.from({ length: 30 }, (_, n) => project({ id: `deadline-wave-${n}` })),
+      [],
+    );
+    resolveUpstreamDrift.mockReturnValue(new Promise(() => {}));
+    const pending = listOrganizationUpdates(ctx);
+    await vi.advanceTimersByTimeAsync(12_001);
+    expect(await pending).toHaveLength(6);
+    expect(resolveUpstreamDrift.mock.calls.length).toBeLessThan(30);
+  });
+
+  it("persists an unanswered image poll as short-lived unknown state", async () => {
+    const p = project({ id: "deadline-images", gitOwner: null, gitRepo: null });
+    setup([p], []);
+    serviceRepo.listByProject.mockResolvedValue([
+      { id: "svc", image: "example/app:latest", enabled: true },
+    ]);
+    resolveUpstreamDrift.mockReturnValue(new Promise(() => {}));
+    const pending = listOrganizationUpdates(ctx);
+    await vi.advanceTimersByTimeAsync(8_001);
+    expect((await pending)[0]).toMatchObject({ kind: "image", behind: false, latestLabel: null });
+    const row = updateStatusRepo.upsert.mock.calls[0][0];
+    expect(row).toMatchObject({ kind: "image", detail: { digestByRef: {} } });
+    updateStatusRepo.listByOrg.mockResolvedValue([row]);
+    await listOrganizationUpdates(ctx);
+    expect(resolveUpstreamDrift).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not apply a failed branch's backoff to a newly selected branch", async () => {
+    const p = project({ id: "deadline-repointed" });
+    setup([p], []);
+    resolveUpstreamDrift.mockRejectedValueOnce(new Error("provider offline"));
+    await getProjectDrift(ctx, p.id);
+    const changed = { ...p, gitBranch: "release" };
+    setup([changed], []);
+    resolveUpstreamDrift.mockResolvedValue(upstream(changed, NEWER));
+    expect(await getProjectDrift(ctx, p.id)).toMatchObject({ behind: true, branch: "release" });
+    expect(resolveUpstreamDrift).toHaveBeenCalledTimes(2);
   });
 });

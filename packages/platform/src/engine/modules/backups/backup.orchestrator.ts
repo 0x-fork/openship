@@ -57,10 +57,11 @@ import {
   resolveTargetPlatform,
 } from "../../lib/deployment-runtime";
 import { notification } from "../../lib/notification-dispatcher";
+import { prunePolicy } from "./retention-prune";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
 import crypto from "node:crypto";
-import { safeErrorMessage } from "@repo/core";
+import { detectDbImage, safeErrorMessage, ValidationError } from "@repo/core";
 import {
   boundedStorableText,
   sanitizeStorableStringsExceptKeys,
@@ -83,6 +84,31 @@ const TRUNCATE_ERROR = 4096;
 const TRUNCATE_HOOK_LOG = 64 * 1024;
 /** Cap on waiting for a finished hook's stdout to drain (see runHook). */
 const HOOK_DRAIN_TIMEOUT_MS = 500;
+
+/**
+ * A service is eligible for project-level backup fan-out if:
+ * 1. The policy specifies custom_command or path payloads, OR
+ * 2. The service runs a recognized database engine (PostgreSQL, MySQL, Redis, MongoDB), OR
+ * 3. The service has declared volumes in its service definition.
+ *
+ * Stateless services without volumes or databases are skipped during project fan-out
+ * so they do not fail the backup batch (#859).
+ */
+export function isBackupCandidateService(
+  service: Pick<Service, "image" | "volumes">,
+  policy: Pick<BackupPolicy, "payloadKind">,
+): boolean {
+  if (policy.payloadKind === "custom_command" || policy.payloadKind === "path") {
+    return true;
+  }
+  if (detectDbImage(service.image) !== null) {
+    return true;
+  }
+  if (Array.isArray(service.volumes) && service.volumes.length > 0) {
+    return true;
+  }
+  return false;
+}
 /** Short form for the notification payload + destination verify note. */
 const TRUNCATE_ERROR_SUMMARY = 500;
 /** A `PutResult.etag` in this shape is a sha256 we can compare ours against. */
@@ -207,8 +233,14 @@ export class BackupOrchestrator {
     if (services.length === 0) {
       throw new Error("Project has no services to back up — add a service or pick one.");
     }
+    const candidates = services.filter((svc) => isBackupCandidateService(svc, policy));
+    if (candidates.length === 0) {
+      throw new ValidationError(
+        "Project has no services with persistent storage (volumes or databases) to back up.",
+      );
+    }
     const runIds: string[] = [];
-    for (const svc of services) {
+    for (const svc of candidates) {
       try {
         runIds.push(
           await this.spawnRun(
@@ -317,6 +349,7 @@ export class BackupOrchestrator {
     this.publishTransition(runId, "preparing");
 
     let policy = null as Awaited<ReturnType<typeof repos.backupPolicy.findById>> | null;
+    let ctx: RunContext | null = null;
     let executor: BackupExecutor | null = null;
     let serviceHandle: ServiceHandle | null = null;
     // The runtime the BackupExecutor wraps. Held for the whole run (it shells into
@@ -365,7 +398,6 @@ export class BackupOrchestrator {
       // 3. Materialize the SOURCE — a deployed project service, or a bare
       //    mail server. Both yield an opaque ServiceHandle + an executor +
       //    the key/manifest metadata the shared pipeline below needs.
-      let ctx: RunContext;
       if (policy.sourceKind === "mail_server") {
         if (!policy.mailServerId) throw new Error("mail_server policy has no mailServerId");
         const built = await this.buildMailSource(
@@ -623,11 +655,27 @@ export class BackupOrchestrator {
         payload: {
           projectName: ctx.projectName,
           serviceName: ctx.serviceName,
+          policyId: policy.id,
+          destinationId: destinationRow.id,
           destinationName: destinationRow.name,
           bytesTransferred: totalBytes,
           artifactCount: artifactsRecorded.length,
         },
       });
+      // Only a durable, verified success may displace older restore points.
+      // Await cleanup while this worker still owns its execution lease. Its
+      // failure must never enter the backup catch, which reclaims THIS run's
+      // uploaded artifacts. The scheduled sweep will retry deferred pruning.
+      try {
+        const finished = await repos.backupRun.findById(runId);
+        // A cancellation/stale-run verdict can win the terminal-state CAS.
+        // In that case this worker did not produce a new durable restore point.
+        if (finished?.status === "succeeded") await prunePolicy(policy);
+      } catch (error) {
+        console.warn(
+          `[backup-orchestrator] run ${runId} succeeded; retention cleanup deferred: ${safeErrorMessage(error)}`,
+        );
+      }
     } catch (err) {
       // Both forms are scrubbed independently: a second `.slice` over an
       // already-scrubbed string can split a surrogate pair back open.
@@ -708,25 +756,27 @@ export class BackupOrchestrator {
         bytesTransferred: 0,
       });
 
-      // Fan-out to subscribers. We re-fetch destination if needed —
-      // the catch block may have lost the closure depending on where
-      // we threw, so look it up by policy.
-      if (policy?.destinationId) {
-        const destForNotify = await repos.backupDestination
-          .findById(policy.destinationId)
-          .catch(() => null);
-        if (destForNotify) {
-          notification.emit({
-            organizationId: destForNotify.organizationId,
-            eventType: "backup_run.failed",
-            resourceType: "backup_run",
-            resourceId: runId,
-            payload: {
-              destinationName: destForNotify.name,
-              errorMessage: summary,
-            },
-          });
-        }
+      // Fan-out to subscribers. Look up destination by policy or run.
+      const destId = policy?.destinationId ?? run.destinationId;
+      const destForNotify = destId
+        ? await repos.backupDestination.findById(destId).catch(() => null)
+        : null;
+      const organizationId = run.organizationId ?? destForNotify?.organizationId;
+      if (organizationId) {
+        notification.emit({
+          organizationId,
+          eventType: "backup_run.failed",
+          resourceType: "backup_run",
+          resourceId: runId,
+          payload: {
+            destinationName: destForNotify?.name ?? null,
+            destinationId: destId ?? null,
+            policyId: policy?.id ?? run.policyId ?? null,
+            projectName: ctx?.projectName ?? null,
+            serviceName: ctx?.serviceName ?? null,
+            errorMessage: summary,
+          },
+        });
       }
     } finally {
       disposeRuntime(sourceRuntime);

@@ -1,3 +1,4 @@
+import { createEncryption } from "../encryption";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, createRepositories, schema, type DatabaseConnection } from "../factory";
 
@@ -6,7 +7,7 @@ describe("atomic project creation and credential access", () => {
   let repos: ReturnType<typeof createRepositories>;
   beforeAll(async () => {
     connection = await createDatabase({ driver: "pglite", dataDir: "memory://" });
-    repos = createRepositories(connection.db);
+    repos = createRepositories(connection.db, createEncryption("repository-test-secret"));
     await connection.db.insert(schema.organization).values({ id: "org", name: "Test" });
   }, 30_000);
   afterAll(async () => { await connection?.close(); });

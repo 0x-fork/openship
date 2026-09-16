@@ -140,8 +140,14 @@ export async function reconcileProjectRoutes(
     edgeProxy?: Pick<EdgeProxyApi, "listLoopbackUpstreamPortsStrict">;
     registers?: RouteRegister[];
     removes?: RouteRemove[];
+    /** Repair actions surface best-effort failures without rolling back saved routes. */
+    onWarning?: (message: string) => void;
   },
 ): Promise<void> {
+  const warn = (message: string) => {
+    console.warn(message);
+    opts.onWarning?.(message);
+  };
   const registers = opts.registers ?? [];
   const removes = opts.removes ?? [];
   if (registers.length === 0 && removes.length === 0) return;
@@ -188,7 +194,7 @@ export async function reconcileProjectRoutes(
         // target it isn't, so the stray vhost may actually live on another host and
         // these removes are a no-op there. Non-fatal either way, but log it so an
         // orphaned vhost that survives isn't mistaken for a completed teardown.
-        console.warn(
+        warn(
           `[route-apply] no deployment routing resolved — running ${removes.length} route removal(s) ` +
             `against the API's own edge context; a remote/takeover'd edge may retain the vhost until redeploy`,
         );
@@ -197,14 +203,14 @@ export async function reconcileProjectRoutes(
           await local
             .removeRoute(r.hostname)
             .catch((err) =>
-              console.warn(
+              warn(
                 `[route-apply] fallback removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`,
               ),
             );
         }
       }
       if (registers.length > 0) {
-        console.warn(
+        warn(
           `[route-apply] no deployment routing resolved — ${registers.length} route(s) not applied (redeploy to re-sync)`,
         );
       }
@@ -310,7 +316,7 @@ export async function reconcileProjectRoutes(
         await routing
           .removeRoute(r.hostname)
           .catch((err) =>
-            console.warn(
+            warn(
               `[route-apply] removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`,
             ),
           );
@@ -320,7 +326,7 @@ export async function reconcileProjectRoutes(
         // A route serves `/` from ONE of two things: a host directory (static, files
         // on disk) or an upstream. Neither → nothing to serve.
         if (!r.staticRoot && !r.targetUrl) {
-          console.warn(
+          warn(
             `[route-apply] no upstream or static root resolved for ${r.hostname} — route not applied (redeploy to re-sync)`,
           );
           continue;
@@ -355,7 +361,7 @@ export async function reconcileProjectRoutes(
           });
           successfulPublishes.push(...(loopbackPublishesByRegister.get(r) ?? []));
         } catch (err) {
-          console.warn(
+          warn(
             `[route-apply] registerRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`,
           );
         }
@@ -376,7 +382,7 @@ export async function reconcileProjectRoutes(
           // The route mutation is already best-effort and the safe fallback is
           // to KEEP every claim. Surface the deferred cleanup without turning a
           // successfully committed DB edit into an HTTP failure.
-          console.warn(
+          warn(
             `[route-apply] host-port claim convergence deferred (claims retained): ${safeErrorMessage(error)}`,
           );
         }

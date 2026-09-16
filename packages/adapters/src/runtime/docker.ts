@@ -140,6 +140,7 @@ import {
 import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
+import { GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import {
   createDockerBuildContext,
@@ -1743,6 +1744,16 @@ export class DockerRuntime implements RuntimeAdapter {
             destDir: remoteContextDir,
             onLog: (entry) => log.log(entry.message, parseLogLevel(entry.message)),
           });
+          // Check for submodules. If present, the tarball is missing submodule contents.
+          const hasSubmodules = await executor
+            .exec(`test -f ${sq(`${remoteContextDir}/.gitmodules`)}`)
+            .then(
+              () => true,
+              () => false,
+            );
+          if (hasSubmodules) {
+            throw new Error("Repository contains submodules; tarball download is insufficient");
+          }
           // A tarball has no .git, but strip defensively in case a repo tracks one.
           await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
           return;
@@ -1791,7 +1802,7 @@ export class DockerRuntime implements RuntimeAdapter {
     log.log(`Cloning ${config.repoUrl} on the server → ${remoteContextDir} (${authLabel})...\n`);
     await executor.exec(`rm -rf ${dir} && mkdir -p ${dir}`);
 
-    const run = async (operation: "clone" | "fetch" | "checkout", cmd: string) => {
+    const run = async (operation: "clone" | "fetch" | "checkout" | "submodule", cmd: string) => {
       const { code } = await executor.streamExec(cmd, (entry) =>
         log.log(entry.message, parseLogLevel(entry.message)),
       );
@@ -1843,8 +1854,12 @@ export class DockerRuntime implements RuntimeAdapter {
           ),
         );
       }
-      // Never ship .git into the build image.
-      await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
+      await run(
+        "submodule",
+        `cd ${dir} && ${gitShellCommand(gitInvocation, GIT_SUBMODULE_UPDATE_ARGS.join(" "))}`,
+      );
+      // Never ship .git into the build image. Submodules may create .git files/dirs within the tree.
+      await executor.exec(`find ${sq(remoteContextDir)} -name .git -prune -exec rm -rf {} +`);
     } finally {
       await sshMaterial?.cleanup();
     }

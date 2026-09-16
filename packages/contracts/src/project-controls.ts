@@ -20,6 +20,7 @@ import { ProjectRoutingSchemas } from "./project-routing";
 import { ProjectLogSchemas } from "./project-logs";
 import { ProjectTransferSchemas } from "./project-transfer";
 import { AppProjectSchemas } from "./apps";
+import { BranchPageInput, BranchPaginationSchema } from "./github";
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 export const ProjectEnvironmentSchema = Type.Object({
@@ -308,9 +309,12 @@ export const ProjectControlSchemas = {
   getGitInfo: { action: "read", output: ProjectGitInfoSchema },
   listBranches: {
     action: "read",
-    output: Type.Array(
-      Type.Object({ name: Type.String(), sha: Type.String(), protected: Type.Boolean() }),
-    ),
+    input: BranchPageInput,
+    optionalInput: true,
+    output: Type.Object({
+      data: Type.Array(Type.Object({ name: Type.String(), sha: Type.String(), protected: Type.Boolean() })),
+      pagination: BranchPaginationSchema,
+    }),
   },
   linkRepo: {
     action: "write",
@@ -440,7 +444,7 @@ export const ProjectControlSchemas = {
   mergeEnvVars: {
     action: "write",
     input: MergeEnvVarsBody,
-    output: Type.Object({ upserted: Type.Integer(), deleted: Type.Integer() }),
+    output: Type.Object({ upserted: Type.Integer(), deleted: Type.Integer(), warnings: Type.Optional(Type.Array(Type.String())) }),
   },
   getResources: { action: "read", output: ProjectResourcesSchema },
   updateResources: { action: "write", input: UpdateResourcesBody, output: ProjectResourcesSchema },

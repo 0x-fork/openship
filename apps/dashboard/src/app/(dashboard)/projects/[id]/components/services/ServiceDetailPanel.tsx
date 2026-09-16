@@ -60,6 +60,7 @@ import { useTheme } from "@/components/theme-provider";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { ServiceSettingsForm } from "./ServiceSettingsForm";
+import { ServiceEnvironmentScope } from "./ServiceEnvironmentScope";
 import { TerminalLogs } from "../logs/TerminalLogs";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { endpoints } from "@/lib/api/endpoints";
@@ -913,8 +914,10 @@ export function ServiceDetailPanel({
           {/* No extra padding here — EnvironmentVariables (borderless) brings its
               own px-5/py-4, so a wrapper p-6 would double it. */}
           <div className="bg-card rounded-2xl border border-border/50">
+            <ServiceEnvironmentScope projectId={projectId} keys={envRows.map(row => row.key)} />
             <EnvironmentVariables
               mode="settings"
+              hideTitle
               envVars={envRows}
               onEnvVarsChange={setEnvRows}
               isEditingMode={true}

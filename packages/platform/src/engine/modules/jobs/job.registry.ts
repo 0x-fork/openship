@@ -79,7 +79,8 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
     key: "projects:orphan-gc",
     label: "Orphaned resource cleanup",
-    defaultCron: "41 * * * *",
+    // Avoid the resource sampler's :41 slot without reducing cleanup frequency.
+    defaultCron: "49 * * * *",
     run: async () => runOrphanSweep(),
   },
   {
@@ -110,7 +111,10 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
     key: "retention-prune-daily",
     label: "Backup retention prune",
-    defaultCron: "17 3 * * *",
+    // Retain the persisted job key. Successful backups prune immediately;
+    // this hourly fallback retries storage failures, off the SSL/audit slot.
+    // Existing operator schedules remain authoritative.
+    defaultCron: "29 * * * *",
     run: async () => runRetentionSweep(),
   },
   {
@@ -124,7 +128,8 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
     key: "audit:retention-prune",
     label: "Audit log prune",
-    defaultCron: "17 3 * * *",
+    // Separate this database sweep from certificate renewal at 03:17.
+    defaultCron: "7 4 * * *",
     run: async () => pruneAuditEvents(),
   },
   {

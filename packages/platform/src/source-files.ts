@@ -1,7 +1,7 @@
 /** Node filesystem helpers shared by native staging and remote SDK uploads. No engine bootstrap. */
 import { lstat, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { createWriteStream, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { create as createTar } from "tar";
@@ -15,6 +15,28 @@ function assertContained(root: string, path: string): void {
   const target = relative(root, path);
   if (target === ".." || target.startsWith("../") || target.startsWith("..\\") || isAbsolute(target))
     throw new ValidationError("Source symlinks must remain inside the selected directory");
+}
+
+/** Resolve a not-yet-created staging root through its existing symlink parents. */
+async function plannedRealpath(path: string): Promise<string> {
+  try { return await realpath(path); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return join(await plannedRealpath(dirname(path)), basename(path));
+  }
+}
+
+/** An archive must never discover its own growing output or earlier upload debris. */
+export async function assertSourceStagingOutside(directory: string, temporaryRoot = tmpdir()) {
+  const canonical = await realpath(directory);
+  const root = await plannedRealpath(resolve(temporaryRoot));
+  const target = relative(canonical, root);
+  if (target === "" || (!isAbsolute(target) && target !== ".." && !target.startsWith("../") && !target.startsWith("..\\"))) {
+    throw new ValidationError(
+      "Cannot upload the temporary directory or a folder containing it. Select the project's source directory, or set TMPDIR outside it.",
+    );
+  }
+  return { directory: canonical, root };
 }
 
 export function sourceFileEntries(source: CodeSource): Array<[string, string | Uint8Array]> | null {
@@ -90,8 +112,9 @@ export async function prepareSourceDirectory(source: CodeSource, options: { temp
 
 /** A source archive only excludes dependencies, Git metadata and OS noise. Build outputs remain. */
 export async function archiveSourceDirectory(directory: string, options: { temporaryRoot?: string; signal?: AbortSignal } = {}) {
-  const canonical = await validateSourceDirectory(directory, options.signal);
-  const root = options.temporaryRoot ?? tmpdir();
+  const staging = await assertSourceStagingOutside(directory, options.temporaryRoot);
+  const canonical = await validateSourceDirectory(staging.directory, options.signal);
+  const root = staging.root;
   await mkdir(root, { recursive: true, mode: 0o700 });
   const temporary = await mkdtemp(join(root, "openship-upload-")), path = join(temporary, "source.tar.gz");
   const dispose = () => rm(temporary, { recursive: true, force: true });
