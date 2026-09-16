@@ -219,11 +219,15 @@ Closed the reproduced connection bugs with the #892 fix and pending-main status.
 
 Closure: https://github.com/oblien/openship/issues/668#issuecomment-5694012488
 
-Commits: [`30c564b0`](https://github.com/oblien/openship/commit/30c564b0ed741246e3e75195de9e0f97ddc556a4).
+The final PR audit repairs build-log retry scheduling after EOF/errors and isolates replacement attempts. HTTP 401/403 stops retries; replay resumes after the highest received event ID and filters duplicates before terminal writes.
+
+Commits: [`30c564b0`](https://github.com/oblien/openship/commit/30c564b0ed741246e3e75195de9e0f97ddc556a4), [`a57cc76b`](https://github.com/oblien/openship/commit/a57cc76b62cae1c784235476cd8ed4f53863e64f).
 
 Verification: 17 React lifecycle and real ReadableStream cases pass; 12 reproduced failures on main. Dashboard TypeScript passes.
 
 Verification: Closure recheck: all 17 terminal/log lifecycle cases pass again at 0285ccb2.
+
+Verification: EOF/error and replay regressions fail before their fixes. All 104 stream/PTY/processor cases pass, including permission failures, terminal completion and stale attempt cleanup.
 
 ### #661: fixed-in-branch
 
@@ -381,9 +385,13 @@ Verification: Closure recheck: all four client-to-tRPC-to-IMAP deletion cases pa
 
 Confirmed orphan sessions when a browser disconnects during shell/audit setup. Adapted and merged contributor PR #579, preserving original authorship and GitHub merge credit. Also made unaudited IDs collision-free and closed service-runtime leases on rejected or failed handshakes. Established sessions still park for reconnect.
 
-Commits: [`380d2526`](https://github.com/oblien/openship/commit/380d25260649cf8eb590854d7833c5ca3dea037e).
+The final PR code audit also binds resumed sessions to the server/service authorized by the current handshake. A token from another target is rejected without consuming or closing its parked shell.
+
+Commits: [`380d2526`](https://github.com/oblien/openship/commit/380d25260649cf8eb590854d7833c5ca3dea037e), [`dacf2b0e`](https://github.com/oblien/openship/commit/dacf2b0efef713076d0404f42cd55d379ae945b6).
 
 Verification: 15 behavioral regressions plus six existing registry cases pass; 11 of the new cases fail against main. API TypeScript passes.
+
+Verification: Both cross-target resume cases fail on the reviewed PR head. Same-target resumes and all 116 focused terminal/restore cases pass after hardening.
 
 ### #424: already-fixed-main
 
@@ -535,7 +543,9 @@ Contributor PR #469 is integrated with its original commit and GitHub merge cred
 
 Producer preflight refusals now remain non-destructive in restore reporting. The orchestrator records possible writes only when it hands the artifact stream to the producer, with a cancellation check before that boundary. AOF/credential refusal no longer claims partial data loss; earlier partial writes still retain their warning.
 
-Commits: [`f1dc8a74`](https://github.com/oblien/openship/commit/f1dc8a740210c542215de0e287740abef259db5f), [`38cc1a03`](https://github.com/oblien/openship/commit/38cc1a0395ac3f2c4b34b005cf0d5d450d66d6a6), [`9ede7762`](https://github.com/oblien/openship/commit/9ede77620bc7eb500ee1568aa7f3d46d61932703), [`3822b062`](https://github.com/oblien/openship/commit/3822b0620f5cb4f1c57e462b5a441023d1df6846), [`e4587335`](https://github.com/oblien/openship/commit/e4587335306102f65db4db55a339b45500c32b9c).
+The final PR audit preserves Redis/Valkey snapshot settings when artifact opening or CONFIG SET acknowledgement fails before any write. Restore downloads now propagate source errors and close on early target refusal; possible partial writes still require recovery before restarting.
+
+Commits: [`f1dc8a74`](https://github.com/oblien/openship/commit/f1dc8a740210c542215de0e287740abef259db5f), [`38cc1a03`](https://github.com/oblien/openship/commit/38cc1a0395ac3f2c4b34b005cf0d5d450d66d6a6), [`9ede7762`](https://github.com/oblien/openship/commit/9ede77620bc7eb500ee1568aa7f3d46d61932703), [`3822b062`](https://github.com/oblien/openship/commit/3822b0620f5cb4f1c57e462b5a441023d1df6846), [`e4587335`](https://github.com/oblien/openship/commit/e4587335306102f65db4db55a339b45500c32b9c), [`8c4626e8`](https://github.com/oblien/openship/commit/8c4626e8ef367de329c95c9c4501d1761284b45f).
 
 Verification: PR #468: 1,059 core cases and 224 API stack/language cases pass; nine new cases fail against main.
 
@@ -546,6 +556,8 @@ Verification: PR #469: 63 recipe/entrypoint tests and adapter TypeScript pass. R
 Verification: All 255 backup/restore tests pass. Two unsafe-RDB preflight reporting regressions fail on main and pass here; the full API suite also passes.
 
 Verification: The host-command ownership guard now recognizes the generated Ruby Dockerfile as image installation, separately from host provisioning. Its allowance is restricted to the Debian/Alpine install verbs; the full adapter suite passes 3,788 tests.
+
+Verification: Failed open/acknowledgement/transport regressions fail before the persistence repair. Broken downloads previously timed out with an unhandled error; source failure and early input refusal now finish cleanly. All 33 Redis and 116 focused API terminal/restore cases pass.
 
 ### #220: fixed-in-branch
 
@@ -617,9 +629,13 @@ Revalidated the historical SECURITY.md findings against main. SEC-01 already enf
 
 The security-help umbrella remains open. The September 5 report is retained with current remediation status; the bounded checks are not an exhaustive security certification. Contributor security PRs #152 and #193 are already merged; #224 is already closed.
 
-Commits: [`3c35e5ba`](https://github.com/oblien/openship/commit/3c35e5bad490c6e631eef167d03c8f936e758aff).
+Terminal resume now binds the parked session to the target authorized by the fresh handshake, in addition to the existing user, project and organization checks.
+
+Commits: [`3c35e5ba`](https://github.com/oblien/openship/commit/3c35e5bad490c6e631eef167d03c8f936e758aff), [`dacf2b0e`](https://github.com/oblien/openship/commit/dacf2b0efef713076d0404f42cd55d379ae945b6).
 
 Verification: 18 API boundary regressions and three database import regressions fail against main and pass on the integration branch. The full API suite passes 6,221 tests across 523 files; the full database suite passes 327 tests across 40 files. API TypeScript passes. Valid owner/native/desktop paths, historical deployment logs, and rollback/Compose lifecycle cases remain covered.
+
+Verification: Both terminal target-substitution regressions fail before this hardening; valid same-target resumes remain covered.
 
 ### #123: fixed-in-branch
 
@@ -661,5 +677,6 @@ Verification: Six regressions fail on current main.
 - CI matrix selection is verified with actual Turbo dry runs; the compound-script argument forwarding regression is corrected, and every workspace test plus script tests remains included.
 - Closure recheck: 108 reports are classified, including the new feature follow-up #894. All 39 resolved reports are closed with evidence (23 fixed here, 16 already fixed in main). The 69 remaining reports have explicit partial, reproduction-dependent or feature status.
 - Closure recheck at 0285ccb2: 354 targeted GitHub, monorepo, log/terminal, Compose, service-state, app-routing and mail regression cases pass across 20 files. Application code is unchanged by the tracking update.
+- Final PR audit: all 112 pre-review commits and 257 changed files traced against main, including manual merge resolutions and superseded architecture paths. Five additional defects repaired in three code commits; 253 focused tests and 12 typecheck/dependency-build tasks pass. See the [PR review](pr-892-review.md) for the commit index and issue-by-issue result.
 
 Feature requests remain outside this bug batch. Reproduction gaps stay open with a diagnostic request. Issues fixed on this branch are closed with a comment identifying #892 and the pending merge to main; partial and ongoing umbrella reports stay open.
