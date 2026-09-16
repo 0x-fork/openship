@@ -1271,6 +1271,9 @@ export async function renewDomainSsl(ctx: RequestContext, domainId: string) {
   const result = await manageDomainSsl(domain.hostname, {
     action: "renew",
   });
+  if (!result.verified) {
+    throw new ValidationError("Renewal did not produce a valid certificate on the serving host.");
+  }
 
   return {
     domain: domain.hostname,
@@ -1554,9 +1557,10 @@ export async function renewOrgCerts(ctx: RequestContext, contextFor?: DomainBatc
       if (p.organizationId !== ctx.organizationId) continue;
       const domains = await repos.domain.listByProject(p.id);
       for (const d of domains) {
-        if (d.sslStatus !== "active" || !d.sslExpiresAt) continue;
+        if ((d.sslStatus !== "active" && d.sslStatus !== "error") || !d.sslExpiresAt) continue;
+        if (tlsIssuedElsewhere(d)) continue;
         const daysLeft = (new Date(d.sslExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-        if (daysLeft > 14) continue;
+        if (daysLeft >= SYSTEM.DOMAINS.SSL_RENEW_BEFORE_DAYS) continue;
         const context = contextFor ? await contextFor(d.id, "renew") : ctx;
         if (!context) continue;
         try {
