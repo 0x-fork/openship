@@ -16,11 +16,11 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { readCliInstall } from "./cli-install";
-import { IS_ALT_HOME, OS_DIR } from "./paths";
+import { IS_ALT_HOME, LOG_DIR, OS_DIR } from "./paths";
 import { readStoredPorts } from "./ports";
+import { thisHost } from "./this-host";
 
 const HOME = homedir();
-const LOG_DIR = join(OS_DIR, "logs");
 /** Where the tarball install's stable launcher + PATH entry live. */
 const OPENSHIP_BIN = join(OS_DIR, "bin");
 
@@ -50,10 +50,12 @@ export interface UpFlags {
   managedEdge?: boolean;
   /** ACME contact email for the managed edge. */
   acmeEmail?: string;
+  /** Openship Mail: default the dashboard to the mail control plane. */
+  mail?: boolean;
 }
 
 /** The CLI's own runtime + entry, so the service invokes THIS install. */
-function selfInvocation(): { runtime: string; args: string[] } {
+export function selfInvocation(): { runtime: string; args: string[] } {
   // Tarball installs run through the stable launcher (~/.openship/bin/openship):
   // it re-resolves node and cli/current on every boot, so `openship update` and
   // Node bumps repoint symlinks with NO service-unit rewrite. The launcher
@@ -79,6 +81,10 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.host) a.push("--host", flags.host);
   if (flags.managedEdge) a.push("--managed-edge");
   if (flags.acmeEmail) a.push("--acme-email", flags.acmeEmail);
+  // Replayed, not carried in the unit's Environment=: the supervised process is
+  // `up --foreground`, which builds its own env from the flags. Without this the
+  // service would boot the platform shell on a box installed as Openship Mail.
+  if (flags.mail) a.push("--mail");
   return a;
 }
 
@@ -128,15 +134,15 @@ export type ServiceKind = "launchd" | "systemd-user" | "systemd-system" | "schta
 export function detectKind(): ServiceKind {
   if (process.platform === "darwin") return "launchd";
   if (process.platform === "linux") {
-    if (!hasSystemd()) return "unsupported";
+    // The resolver's systemd test, not a `command -v systemctl` of our own: systemctl is
+    // installed in plenty of containers where systemd is not the init, and this one asked
+    // only whether the binary existed — so a docker build reported `systemd-user` and then
+    // failed to install a unit. The resolver requires a live /run/systemd/system too.
+    if (thisHost().profile.serviceManager !== "systemd") return "unsupported";
     return isRoot() ? "systemd-system" : "systemd-user";
   }
   if (process.platform === "win32") return "schtasks";
   return "unsupported";
-}
-
-function hasSystemd(): boolean {
-  return spawnSync("sh", ["-c", "command -v systemctl"]).status === 0;
 }
 
 /* ── file builders ──────────────────────────────────────────────────────── */
@@ -224,6 +230,27 @@ export interface ServiceResult {
   kind: ServiceKind;
   /** Human note about what happened / how to inspect it. */
   detail: string;
+}
+
+/**
+ * How `installAndStart` enables + starts the service on this manager, as one line
+ * for `up --dry-run`. Lives beside the code that runs it so the preview and the
+ * commands below can't drift.
+ */
+export function installStepFor(kind: ServiceKind): string {
+  switch (kind) {
+    case "launchd":
+      return "launchctl bootstrap  (starts it now and at login)";
+    case "systemd-user":
+      return "systemctl --user enable --now + loginctl enable-linger  (starts it now, on boot, without a login session)";
+    case "systemd-system":
+      return "systemctl enable --now  (starts it now and on boot)";
+    case "schtasks":
+      return "schtasks /Create /SC ONLOGON  (starts it at logon)";
+    default:
+      // detectKind found nothing to install into — installAndStart throws here.
+      return "nothing — no supported service manager on this box (needs systemd on Linux); `up --foreground` or `up --compose` instead";
+  }
 }
 
 /** Return (don't write) the service definition — for `--dry-run`/debugging. */

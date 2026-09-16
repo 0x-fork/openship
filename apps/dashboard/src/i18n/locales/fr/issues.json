@@ -1,8 +1,9 @@
 {
-  "title": "Problèmes",
+  "title": "Surveillance",
   "subtitle": "Tout ce qu'Openship a trouvé d'anormal dans vos projets, serveurs et domaines.",
   "tabs": {
     "open": "Ouverts",
+    "health": "Santé",
     "resolved": "Résolus"
   },
   "resolvedNote": "L'historique couvre les incidents de conteneurs et de serveurs — les autres vérifications rapportent l'état actuel, un certificat ou un déploiement réparé disparaît donc simplement d'ici.",
@@ -13,7 +14,8 @@
     "all": "Tous",
     "outage": "Panne",
     "action_required": "Action requise",
-    "advisory": "Information"
+    "advisory": "Information",
+    "clear": "Réinitialiser les filtres"
   },
   "scopes": {
     "platform": "Openship",
@@ -56,11 +58,19 @@
   "selfUpdateNote": "Cette installation se met à jour depuis la ligne de commande.",
   "empty": {
     "openTitle": "Rien ne demande votre attention",
-    "openBody": "Aucune panne, aucun déploiement bloqué, aucun problème de certificat ou de domaine, rien en retard. Les vérifications continuent en arrière-plan.",
+    "openBody": "Aucun déploiement bloqué ou en attente, aucun problème de certificat ou de domaine, rien en retard, rien sur un mauvais port. Les vérifications continuent en arrière-plan.",
     "resolvedTitle": "Aucun incident résolu",
     "resolvedBody": "Les incidents de conteneurs et de serveurs apparaissent ici dès qu'ils sont rétablis, et sont conservés 30 jours.",
     "filteredTitle": "Aucun résultat",
-    "filteredBody": "Aucun problème ne correspond à ce filtre."
+    "filteredBody": "Des problèmes sont ouverts — aucun ne correspond à ce filtre."
+  },
+  "summary": {
+    "title": "Aperçu",
+    "subtitle": "L'état en un coup d'œil",
+    "totalOpen": "ouvertes",
+    "totalResolved": "résolues",
+    "bySeverity": "Par gravité",
+    "byArea": "Par zone"
   },
   "home": {
     "attentionTitle": "À surveiller",

@@ -12,15 +12,14 @@
  * fs.readFileSync and push them to the server.
  *
  * Scripts:
- *   site_logger.lua      - log_by_lua: atomic counters + ring buffer + pipe
- *   pipe_log.lua         - module: pushes to shared-dict list for SSE pipe
- *   pipe_stream.lua      - content_by_lua: SSE endpoint (long-lived)
+ *   site_logger.lua      - log_by_lua: atomic counters + ring buffer
+ *   pipe_stream.lua      - content_by_lua: SSE endpoint reading the ring by cursor
  *   mgmt_api.lua         - content_by_lua: REST analytics query endpoints
  *   geo_country.lua      - module: MaxMind GeoLite2 IP → country code
  *
  * Shared memory zones (declared in nginx.conf):
  *   analytics        256m - minute-bucket counters, daily geo, totals
- *   request_data     128m - raw-log ring buffers + live-log pipe queue
+ *   request_data     128m - raw-log ring buffer (also the live SSE source)
  *
  * Management port: 127.0.0.1:9145 (loopback only)
  *   GET /analytics?domain=&from=&to=   - minute-bucket time series
@@ -31,14 +30,19 @@
  *   GET /health                        - 200 ok
  */
 
-import { safeErrorMessage } from "@repo/core";
-import { createHash } from "node:crypto";
+import { answered, refused, safeErrorMessage } from "@repo/core";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EMBEDDED_LUA } from "./lua-embedded";
+import { resolveEnvironment } from "../system/environment";
+import { envOps, opScript } from "../system/environment-ops";
 import type { CommandExecutor } from "../types";
 import { EDGE_REAL_IP_CONF_NAME, edgeRealIpConf } from "./edge-real-ip";
+import { EDGE_NOT_FOUND_LOCATION } from "./edge-not-found";
+import { sq } from "../system/local-shell";
+import { reloadBareOpenResty } from "./openresty-reload";
 
 // ── Paths & constants ────────────────────────────────────────────────────────
 
@@ -72,6 +76,27 @@ export const EDGE_LUA_PACKAGE_PATH = `${OPENRESTY_SITE_LUALIB}/?.lua;;`;
  * otherwise wedge routing for every site on the box, not just its own.
  */
 export const EDGE_SERVER_NAMES_HASH_BUCKET_SIZE = 128;
+
+/**
+ * Upload ceiling every vhost inherits, unless the project overrides it.
+ *
+ * nginx's built-in default is 1 MB, and it is not a soft limit — a larger request is
+ * refused with 413 before it reaches the app, so a form upload, an avatar or a CSV import
+ * fails with no application log to explain it. Openship exposed
+ * `client_max_body_size` as a per-project tunable (PROXY_DIRECTIVES) but shipped no
+ * DEFAULT, which meant every project that had never opened that panel was still on 1 MB.
+ *
+ * Set at HTTP level on purpose rather than written into each vhost: nginx resolves
+ * `server` over `http`, so one line here raises the floor for every site — including the
+ * ones Openship generates for mail, webmail and the default server — while a project's own
+ * value continues to win. Writing it per-vhost would also mean regenerating every vhost on
+ * every box to change the floor.
+ *
+ * 50m, not larger: it is generous for the uploads a web app actually does, and the ceiling
+ * is what stops a single unbounded request from filling the disk of a box whose whole job
+ * is proxying. A project that needs more sets its own.
+ */
+export const EDGE_CLIENT_MAX_BODY_SIZE = "50m";
 
 /**
  * Shared-memory zones the openship Lua depends on, and the ONE definition of
@@ -133,6 +158,10 @@ export const EDGE_SHARED_DICTS: ReadonlyArray<{ name: string; size: string }> = 
 export interface OpenRestyPaths {
   /** Path to the openresty binary (e.g. /usr/local/openresty/bin/openresty) */
   bin: string;
+  /** The binary's compiled `--conf-path`, retained even when `confPath` falls
+   *  back to another existing tree. A master started without `-c` reloads this
+   *  path, so bare-host signaling is safe only when it resolves to `confPath`. */
+  compiledConfPath: string;
   /** Path to nginx.conf (e.g. /etc/openresty/nginx.conf) */
   confPath: string;
   /** Directory containing nginx.conf (e.g. /etc/openresty) */
@@ -166,11 +195,45 @@ export function parseNginxVersion(raw: string): readonly [number, number, number
 /** Fallback paths when `openresty -V` is unavailable (e.g. not yet installed). */
 export const OPENRESTY_DEFAULT_PATHS: OpenRestyPaths = {
   bin: "/usr/local/openresty/bin/openresty",
+  compiledConfPath: "/usr/local/openresty/nginx/conf/nginx.conf",
   confPath: "/usr/local/openresty/nginx/conf/nginx.conf",
   confDir: "/usr/local/openresty/nginx/conf",
   sitesDir: "/usr/local/openresty/nginx/conf/sites-enabled",
   pidPath: "/usr/local/openresty/nginx/logs/nginx.pid",
 };
+
+/**
+ * Directory (relative to the conf dir) holding the placeholder certificate the
+ * :443 catch-all presents for a hostname we do NOT route, so the handshake
+ * completes and the visitor gets a page instead of a TLS error (#431).
+ *
+ * Beside `sites-enabled`, and pointedly NOT under `/etc/letsencrypt`: that path is
+ * a bind mount that `certsExist()` / `readCertInfo()` / the migrate proxy scan all
+ * read, and a self-signed cert sitting in it would be reported as a domain's
+ * active certificate — satisfying the renewal scheduler and the verify-pending
+ * sweep while the real cert never gets issued. Here it is invisible to all of them.
+ *
+ * The conf dir is not a mount, so in the container this resolves to the copy baked
+ * into the image and nothing on the host can mask or delete it.
+ */
+export const EDGE_DEFAULT_CERT_DIRNAME = "openship-default-cert";
+
+/** The placeholder cert/key pair for a given OpenResty conf dir. */
+export function edgeDefaultCertPaths(confDir: string): {
+  dir: string;
+  certPath: string;
+  keyPath: string;
+} {
+  const dir = `${confDir}/${EDGE_DEFAULT_CERT_DIRNAME}`;
+  return { dir, certPath: `${dir}/fullchain.pem`, keyPath: `${dir}/privkey.pem` };
+}
+
+/**
+ * Common name on that placeholder. Not a hostname on purpose — it is presented
+ * only for names we do not serve, and giving it one would make it look, to anyone
+ * reading a scan or a browser warning, like a cert we meant to use for that name.
+ */
+export const EDGE_DEFAULT_CERT_CN = "openship-edge-default";
 
 // ── Containerized edge ───────────────────────────────────────────────────────
 
@@ -197,6 +260,22 @@ export const EDGE_CONTAINER_MOUNTS: ReadonlyArray<{ host: string; container: str
 ];
 
 /**
+ * The subset of {@link EDGE_CONTAINER_MOUNTS} whose host and container names are the
+ * SAME string — today `/etc/letsencrypt` and `/opt/openship/static`.
+ *
+ * Two unrelated rules need exactly this set, which is why it lives next to the table
+ * rather than being re-filtered at each: a container edge runs commands INSIDE the
+ * container while file ops land on the host, so only a same-path mount lets a `chmod`
+ * aim at the bytes a `writeFile` just produced (`NginxProvider._chmod`); and on the
+ * local box only a same-path mount can be read without the host channel
+ * (`sharedMountExecutor`). Derived, so a new mount can't be forgotten here — and
+ * shared, so the two rules can't come to disagree about which paths qualify.
+ */
+export const EDGE_SAME_PATH_MOUNTS: readonly string[] = EDGE_CONTAINER_MOUNTS.filter(
+  (m) => m.host === m.container,
+).map((m) => m.host.replace(/\/+$/, ""));
+
+/**
  * Paths for driving a containerized edge from OUTSIDE the container — i.e. over
  * SSH to the box it runs on.
  *
@@ -208,6 +287,7 @@ export const EDGE_CONTAINER_MOUNTS: ReadonlyArray<{ host: string; container: str
  */
 export const EDGE_HOST_PATHS: OpenRestyPaths = {
   bin: OPENRESTY_DEFAULT_PATHS.bin,
+  compiledConfPath: OPENRESTY_DEFAULT_PATHS.compiledConfPath,
   confPath: OPENRESTY_DEFAULT_PATHS.confPath,
   confDir: OPENRESTY_DEFAULT_PATHS.confDir,
   sitesDir: `${EDGE_HOST_STATE_DIR}/sites-enabled`,
@@ -228,9 +308,7 @@ const KNOWN_CONF_PATHS = [
  * If not, probes known alternative locations. This handles scenarios
  * where OpenResty was reinstalled and the config directory changed.
  */
-export async function detectOpenRestyPaths(
-  executor: CommandExecutor,
-): Promise<OpenRestyPaths> {
+export async function detectOpenRestyPaths(executor: CommandExecutor): Promise<OpenRestyPaths> {
   const raw = await executor.exec("openresty -V 2>&1 || true");
 
   const parseFlag = (flag: string): string | null => {
@@ -239,7 +317,8 @@ export async function detectOpenRestyPaths(
   };
 
   const bin = parseFlag("sbin-path") ?? OPENRESTY_DEFAULT_PATHS.bin;
-  let confPath = parseFlag("conf-path") ?? OPENRESTY_DEFAULT_PATHS.confPath;
+  const compiledConfPath = parseFlag("conf-path") ?? OPENRESTY_DEFAULT_PATHS.compiledConfPath;
+  let confPath = compiledConfPath;
   const pidPath = parseFlag("pid-path") ?? OPENRESTY_DEFAULT_PATHS.pidPath;
 
   // Verify the detected confPath actually exists on disk.
@@ -247,7 +326,7 @@ export async function detectOpenRestyPaths(
   if (!(await executor.exists(confPath))) {
     let found = false;
     for (const candidate of KNOWN_CONF_PATHS) {
-      if (candidate !== confPath && await executor.exists(candidate)) {
+      if (candidate !== confPath && (await executor.exists(candidate))) {
         confPath = candidate;
         found = true;
         break;
@@ -264,6 +343,7 @@ export async function detectOpenRestyPaths(
 
   return {
     bin,
+    compiledConfPath,
     confPath,
     confDir,
     sitesDir: `${confDir}/sites-enabled`,
@@ -277,55 +357,99 @@ export async function detectOpenRestyPaths(
 /**
  * Build the OpenResty reload command from detected paths.
  *
- * Primary (both modes): `openresty -t` then `-s reload` — graceful, zero-downtime.
+ * Container-confined reload only: validate the complete config, then ask that
+ * container's nginx CLI to signal its own master. It must never start or kill a
+ * daemon. Starting in the old fallback caused #700 by launching a second master.
  *
- * What happens when reload FAILS is where this gets dangerous, because the wrong
- * recovery takes every site on the box down. Three layers, in order:
- *
- *   1. `opts.containerEdge` — set by the two container-edge providers, so for the
- *      paths we control the command CONTAINS no kill at all. Nothing to reason
- *      about at runtime.
- *   2. `/proc/1/comm` — a runtime backstop for any path that reaches the bare
- *      command while actually running inside the edge container (a caller that
- *      forgot the flag, `ensureLuaScripts` on a containerized box). The master IS
- *      pid 1 there, so `pkill` kills the container's init: the `docker exec`
- *      returns non-zero, registerRoute's self-rollback restores the PREVIOUS
- *      vhost, and the deploy reports "Routing failed" while every site blips.
- *      Restarting a dead master is the supervisor's job in that mode — fail
- *      loudly, surfacing the reload's real stderr.
- *   3. BARE host — a failed reload usually does mean "not running", so starting it
- *      is right. But recover WITHOUT a pattern kill: `pkill -f openresty` also
- *      matches a host-networked edge CONTAINER's master (see edge-check.test.ts),
- *      so the blind kill could take down the very edge it was recovering. Only
- *      start when no live master holds the pid file; otherwise report it rather
- *      than killing a process we can't identify.
+ * Bare hosts MUST use `reloadBareOpenResty` instead. `nginx -s reload` trusts a
+ * mutable PID file, so a stale file can HUP an unrelated PID before any fallback
+ * gets a chance to verify it.
  */
-export function buildReloadCommand(
-  paths: OpenRestyPaths,
-  opts: { containerEdge?: boolean } = {},
-): string {
-  if (opts.containerEdge) {
-    return `${paths.bin} -t 2>&1 || exit 1
-${paths.bin} -s reload 2>&1 || exit 1`;
+export function buildReloadCommand(paths: OpenRestyPaths): string {
+  const bin = sq(paths?.bin || "openresty");
+  const config = sq(paths?.confPath || "/etc/openresty/nginx.conf");
+  return `${bin} -t -c ${config} 2>&1 || exit 1
+${bin} -s reload -c ${config} 2>&1 || exit 1`;
+}
+
+/**
+ * Ensure the placeholder certificate the :443 catch-all presents for unrouted
+ * hostnames exists, creating it if not. Returns null when it could not be produced.
+ *
+ * Only the BARE/legacy edge needs this: the container edge gets the same pair baked
+ * into its image at build time, where it cannot be missing.
+ *
+ * Never throws, and returning null is a real outcome rather than a formality — the
+ * caller then writes the `ssl_reject_handshake` catch-all instead. Naming a
+ * certificate that is not on disk does not degrade the page, it stops OpenResty
+ * loading the config at all: `openresty -t` fails, so the deploy's reload is
+ * refused and every subsequent route change on the box is refused with it. A box
+ * with no openssl keeps the unfriendly TLS error; it does not lose routing.
+ *
+ * 10 years, like the per-domain bootstrap cert in nginx.ts: nothing trusts this
+ * cert, so a short life buys no security, while an EXPIRED one would put the box
+ * back to a hard TLS failure on a date nobody is watching.
+ *
+ * EC P-256 rather than the RSA-2048 used per-domain, because this key signs a
+ * DIFFERENT kind of traffic. `ssl_reject_handshake` aborted in the servername
+ * callback, before any asymmetric work; presenting a certificate means every
+ * connection to an unrouted host now costs a real signature — and the case #431 is
+ * about is wildcard DNS aimed at the box, i.e. unbounded distinct hostnames all
+ * landing here. P-256 signing is roughly an order of magnitude cheaper than
+ * RSA-2048, so the page does not come with a cheap amplifier attached. (It also
+ * keygens in milliseconds instead of seconds, which matters on the bare path where
+ * this runs inline in a deploy.)
+ */
+async function ensureEdgeDefaultCert(
+  executor: CommandExecutor,
+  confDir: string,
+): Promise<{ certPath: string; keyPath: string } | null> {
+  const { dir, certPath, keyPath } = edgeDefaultCertPaths(confDir);
+  try {
+    if ((await executor.exists(certPath)) && (await executor.exists(keyPath))) {
+      return { certPath, keyPath };
+    }
+  } catch {
+    return null;
   }
 
-  return `${paths.bin} -t 2>&1 || exit 1
-
-reload_err=$(${paths.bin} -s reload 2>&1) && exit 0
-
-if [ "$(cat /proc/1/comm 2>/dev/null)" = "openresty" ] || [ "$(cat /proc/1/comm 2>/dev/null)" = "nginx" ]; then
-  echo "openresty reload failed and openresty is PID 1 (containerized edge) — not killing it; the container supervisor owns restarts." >&2
-  echo "$reload_err" >&2
-  exit 1
-fi
-
-if [ -f ${paths.pidPath} ] && kill -0 "$(cat ${paths.pidPath} 2>/dev/null)" 2>/dev/null; then
-  echo "openresty (pid $(cat ${paths.pidPath})) is running but refused -s reload" >&2
-  exit 1
-fi
-
-rm -f ${paths.pidPath}
-${paths.bin}`;
+  // Unique per attempt, like ensureBootstrapCert's. A shared `${dir}.staging` that
+  // we pre-clear is a race between two concurrent deploys to the same box: the
+  // second one's cleanup deletes the first one's staging mid-openssl, so the first
+  // writes the `ssl_reject_handshake` fallback and the box silently regresses to a
+  // TLS error until some later deploy happens to win.
+  const staging = `${dir}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
+  try {
+    await executor.mkdir(staging);
+    // Remote executors run through a login shell, so every argument is quoted even
+    // though these are all derived from our own constants.
+    await executor.exec(
+      `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 ` +
+        `-subj ${sq(`/CN=${EDGE_DEFAULT_CERT_CN}`)} ` +
+        `-keyout ${sq(`${staging}/privkey.pem`)} -out ${sq(`${staging}/fullchain.pem`)} 2>/dev/null`,
+    );
+    // Before the move, so the key is never readable at its final path. OpenSSL 3
+    // already writes `-keyout` 0600, but that has not always been true and this
+    // runs on whatever openssl a legacy box happens to have.
+    await executor.exec(`chmod 600 ${sq(`${staging}/privkey.pem`)}`);
+    await executor.mkdir(dir);
+    // Move the pair together: OpenResty must never see a cert beside a key that
+    // does not open it, which is what a reload racing a half-written dir would get.
+    await executor.exec(
+      `mv -f ${sq(`${staging}/fullchain.pem`)} ${sq(`${staging}/privkey.pem`)} ${sq(dir)}/`,
+    );
+    if (!(await executor.exists(certPath)) || !(await executor.exists(keyPath))) return null;
+    return { certPath, keyPath };
+  } catch (err) {
+    console.warn(
+      `[openresty] could not create the edge's default certificate — an unrouted HTTPS host ` +
+        `will get a TLS error instead of the "service not found" page ` +
+        `(is openssl installed?): ${safeErrorMessage(err)}`,
+    );
+    return null;
+  } finally {
+    await executor.rm(staging).catch(() => undefined);
+  }
 }
 
 /**
@@ -348,21 +472,22 @@ export async function ensureOpenRestyConfig(
   await executor.mkdir(pidDir);
 
   // Base server blocks: the loopback management API and the default catch-all
-  // (incl. the 443 unknown-SNI reject). Written here - not just at install - so
-  // an already-deployed box self-heals the catch-all on its next deploy and no
-  // longer cross-serves an unrouted HTTPS host. Idempotent overwrite of static
-  // content; a stale copy is replaced. The deploy's route reload applies it.
+  // (incl. the 443 default that owns unmatched SNI). Written here - not just at
+  // install - so an already-deployed box self-heals the catch-all on its next
+  // deploy and no longer cross-serves an unrouted HTTPS host. Idempotent overwrite
+  // of static content; a stale copy is replaced. The deploy's route reload applies
+  // it, and that reload is why the cert is resolved FIRST: a config naming a
+  // missing ssl_certificate fails `openresty -t`, which rejects the reload and
+  // freezes every later route change on the box.
+  const defaultCert = await ensureEdgeDefaultCert(executor, paths.confDir);
   await executor.writeFile(`${paths.sitesDir}/_management.conf`, MANAGEMENT_BLOCK);
-  await executor.writeFile(`${paths.sitesDir}/_default.conf`, DEFAULT_BLOCK);
+  await executor.writeFile(`${paths.sitesDir}/_default.conf`, edgeDefaultCatchAllConf(defaultCert));
 
   // Bootstrap: if nginx.conf doesn't exist (e.g. after a reinstall that
   // removed the old config), write a minimal working config.
   if (!(await executor.exists(paths.confPath))) {
     await executor.mkdir(paths.confDir);
-    await executor.writeFile(
-      paths.confPath,
-      MINIMAL_NGINX_CONF(paths.confDir, paths.sitesDir),
-    );
+    await executor.writeFile(paths.confPath, MINIMAL_NGINX_CONF(paths.confDir, paths.sitesDir));
     return; // Fresh config already has the include - no sed needed.
   }
 
@@ -391,6 +516,26 @@ export async function ensureOpenRestyConfig(
       );
     }
   }
+
+  // Raise the upload ceiling on a box whose nginx.conf predates the default.
+  //
+  // MINIMAL_NGINX_CONF only runs on a FRESH install, so without this every box installed
+  // before EDGE_CLIENT_MAX_BODY_SIZE existed stays on nginx's 1 MB — the exact silent 413
+  // the constant exists to prevent, and one an operator cannot fix from the dashboard
+  // because the project panel writes SERVER scope, not this.
+  //
+  // Idempotent by grep, and it only ADDS: an operator who tuned this line themselves keeps
+  // their value, because rewriting an existing directive would quietly overrule a
+  // deliberate choice on their own machine.
+  const hasBodySize = await executor
+    .exec(`grep -qE '^[[:space:]]*client_max_body_size' ${paths.confPath}`)
+    .then(() => true)
+    .catch(() => false);
+  if (!hasBodySize) {
+    await executor.exec(
+      `sed -i '/http *{/a \\    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};' ${paths.confPath}`,
+    );
+  }
 }
 
 /** Minimal nginx.conf that OpenResty can boot with. */
@@ -409,6 +554,9 @@ http {
     # \`nginx -t\` outright for any server_name past ~63 chars, refusing the reload
     # and wedging every route on the box, not just the long one.
     server_names_hash_bucket_size ${EDGE_SERVER_NAMES_HASH_BUCKET_SIZE};
+    # See EDGE_CLIENT_MAX_BODY_SIZE — nginx's 1 MB default 413s an upload before the app
+    # ever sees it. A project's own value overrides this (server beats http).
+    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};
     include ${sitesDir}/*.conf;
 }
 `;
@@ -527,9 +675,15 @@ export const ACME_HTTP01_PORT = 49180;
  * The `/.well-known/acme-challenge/` location block — proxies the HTTP-01
  * challenge to certbot's transient standalone server. SHARED by the default
  * catch-all here and the per-vhost templates in nginx.ts so all three agree.
+ *
+ * `^~` is load-bearing, not decoration: a REGEX location outranks a plain prefix one
+ * however specific the prefix is, so a `vercel.json` catch-all (`"source": "/(.*)"`)
+ * compiled to `location ~ ^/(.*)$` would otherwise swallow the challenge and every
+ * certificate for that host would fail to issue. `^~` tells nginx to stop at this
+ * prefix and never try the regexes.
  */
 export const ACME_CHALLENGE_LOCATION = `\
-    location /.well-known/acme-challenge/ {
+    location ^~ /.well-known/acme-challenge/ {
         proxy_pass http://127.0.0.1:${ACME_HTTP01_PORT};
         proxy_set_header Host $host;
     }`;
@@ -558,7 +712,10 @@ export const EDGE_CHALLENGE_URL_PREFIX = "/.well-known/oblien-proxy-challenge/";
  * recreate with the old list and lose the tokens.
  */
 export const EDGE_CHALLENGE_ROOT = "/var/www/acme/oblien";
-export const EDGE_CHALLENGE_DIR = `${EDGE_CHALLENGE_ROOT}${EDGE_CHALLENGE_URL_PREFIX}`.replace(/\/$/, "");
+export const EDGE_CHALLENGE_DIR = `${EDGE_CHALLENGE_ROOT}${EDGE_CHALLENGE_URL_PREFIX}`.replace(
+  /\/$/,
+  "",
+);
 
 /**
  * The same directory as seen from the HOST, for the one provider whose file ops
@@ -569,30 +726,28 @@ export const EDGE_CHALLENGE_DIR = `${EDGE_CHALLENGE_ROOT}${EDGE_CHALLENGE_URL_PR
  * (`/var/lib/openship/edge/acme` → `/var/www/acme`). Forgetting that is a mistake
  * with history here — see the mail-SSL webroot note.
  */
-export const EDGE_CHALLENGE_HOST_DIR = `${EDGE_HOST_STATE_DIR}/acme/oblien${EDGE_CHALLENGE_URL_PREFIX}`.replace(
-  /\/$/,
-  "",
-);
+export const EDGE_CHALLENGE_HOST_DIR =
+  `${EDGE_HOST_STATE_DIR}/acme/oblien${EDGE_CHALLENGE_URL_PREFIX}`.replace(/\/$/, "");
 
 /**
  * The location that serves those tokens. SHARED by the per-vhost templates in
  * nginx.ts, the per-target challenge vhost, and the baked container config — so
  * every place that can receive the edge's probe agrees.
  *
- * Deliberately NOT in `DEFAULT_BLOCK`, and the reason is that no catch-all is the
- * mechanism here. The container edge is the only INSTALL path and skips
- * `ensureOpenRestyConfig`; `DEFAULT_BLOCK` is still evaluated on every deploy to a
- * legacy bare box or a Docker-less server (see `platform.ts`), so it is
- * legacy-but-live, not dead. Either way both catch-alls are version-pinned to
- * whatever that box last got — the baked one to its image, `DEFAULT_BLOCK` to a
- * config written once and only patched thereafter — so neither can be relied on to
- * carry a location added later.
+ * Deliberately NOT in the bare catch-all (`edgeDefaultCatchAllConf`), and the reason
+ * is that no catch-all is the mechanism here. The container edge is the only INSTALL
+ * path and skips `ensureOpenRestyConfig`; the bare catch-all is still evaluated on
+ * every deploy to a legacy bare box or a Docker-less server (see `platform.ts`), so
+ * it is legacy-but-live, not dead. Either way both catch-alls are version-pinned to
+ * whatever that box last got — the baked one to its image, the bare one to a
+ * `_default.conf` written once and only patched thereafter — so neither can be
+ * relied on to carry a location added later.
  *
  * What IS relied on is the per-target challenge vhost (`serveEdgeChallenge`): our own
  * code writes it into the bind-mounted sites-enabled on every edge-ensure, so it
  * reaches a box on an old image, a rolled-back one, and a bare one alike. The
  * catch-alls are belt-and-braces; the baked image gets the location because it costs
- * nothing there, and `DEFAULT_BLOCK` does not because emitting it into a file we only
+ * nothing there, and the bare one does not because emitting it into a file we only
  * ever patch would read like coverage that arrives, and it wouldn't.
  *
  * Token-agnostic in config, token-specific in data. Two things follow, and both
@@ -606,32 +761,165 @@ export const EDGE_CHALLENGE_HOST_DIR = `${EDGE_HOST_STATE_DIR}/acme/oblien${EDGE
  * reply, and point their slug at us.
  */
 export const EDGE_CHALLENGE_LOCATION = `\
-    location ${EDGE_CHALLENGE_URL_PREFIX} {
+    location ^~ ${EDGE_CHALLENGE_URL_PREFIX} {
         root ${EDGE_CHALLENGE_ROOT};
         default_type text/plain;
         try_files $uri =404;
     }`;
 
 /**
- * The HTTPS catch-all — shared by the bare edge's `DEFAULT_BLOCK` and the baked
- * container config, comment included, because the RATIONALE is the part that must
- * not drift: a future reader who thinks this block is decorative will delete it
- * from whichever copy they happen to be holding.
+ * The per-target challenge vhost, written to
+ * `sites-enabled/_oblien-challenge-<slug>.conf` by `serveEdgeChallenge` on every
+ * edge-ensure. Exported so the proxy-scanner tests can feed the REAL bytes: this
+ * file lands in sites-enabled on every box, container and bare alike, so it is
+ * parsed back by every scan that reads a vhost.
+ *
+ * `host` must already be validated (`assertValidDomain`) — it is interpolated into
+ * a config the edge loads.
+ *
+ * It carries the shared not-found page because a named `server_name` beats the
+ * catch-all for EVERY URI of that host, not just the challenge one. Without a
+ * `location /` nginx fell through to its compiled-in `root html; index index.html`
+ * and answered a plain visit with OpenResty's welcome page — version banner and
+ * all — which is exactly the direct-IP case #431 reported (edge-ensure passes the
+ * box's own IP as a routing target, so this vhost claims it).
+ */
+export function edgeChallengeVhostConf(host: string): string {
+  return `# Auto-generated by Openship - do not edit manually
+# openship-oblien-challenge: answers ${EDGE_CHALLENGE_URL_PREFIX}<token> for
+# Host: ${host}, so Openship Cloud's shared edge can prove this box controls that
+# routing target. Everything else gets the shared not-found page - this is
+# scaffolding, not a site.
+server {
+    listen 80;
+    server_name ${host};
+
+${EDGE_CHALLENGE_LOCATION}
+
+${EDGE_NOT_FOUND_LOCATION}
+}
+`;
+}
+
+/**
+ * The HTTPS catch-all with NO certificate to present — the fallback, kept for the
+ * one case that can still reach it: a bare box where we could not produce the
+ * placeholder cert (no openssl, unwritable conf dir).
+ *
+ * BARE-ONLY, despite the shared-looking name: the baked container config always has
+ * a certificate (the image creates it at build time, and could not start without
+ * it), so it renders the block below this one and never this one. Reaching this is
+ * a bare box that failed to produce the placeholder.
+ *
+ * The long comment is carried in the config text rather than only here because the
+ * RATIONALE is the part that must not drift: a reader who thinks this block is
+ * decorative will delete it from whichever copy they happen to be holding — and
+ * deleting it hands unmatched SNI to another app's vhost.
  */
 export const EDGE_HTTPS_REJECT_BLOCK = `\
 # HTTPS catch-all. WITHOUT a 443 default_server, nginx serves the first-loaded
 # 443 vhost to any request whose SNI matches no server_name - so a domain we do
 # NOT route (removed / never-added / just pointed at this IP) silently gets some
 # other app's cert + backend. That is cross-serving, a security hole. Owning the
-# 443 default and rejecting unknown SNI closes it: an unrouted host gets a TLS
-# handshake failure, never a fallthrough. ssl_reject_handshake (OpenResty/nginx
-# >= 1.19.4; our installer pulls the newest LTS) needs no certificate.
+# 443 default closes it: an unrouted host is answered HERE, never by a fallthrough.
+#
+# This is the no-certificate variant, used only when the placeholder cert could not
+# be created. It refuses the handshake, so the visitor gets a raw TLS error and a
+# Cloudflare-proxied host gets error 525 - correct, but unfriendly. See
+# edgeHttpsDefaultBlock. ssl_reject_handshake (OpenResty/nginx >= 1.19.4; our
+# installer pulls the newest LTS) needs no certificate.
 server {
     listen 443 ssl default_server;
     ssl_reject_handshake on;
 }`;
 
-const DEFAULT_BLOCK = `\
+/**
+ * The HTTPS catch-all, serving the branded not-found page (#431).
+ *
+ * Rejecting the handshake was right about the security question and wrong about the
+ * visitor: a mistyped subdomain, or a wildcard DNS record aimed at this box, got
+ * `ERR_SSL_UNRECOGNIZED_NAME_ALERT` — and behind Cloudflare, whose "Full" mode does
+ * not validate the origin certificate, it got error 525 on a page CF served in our
+ * name. Presenting a self-signed placeholder lets the handshake complete so the
+ * request reaches a page that says what is actually wrong.
+ *
+ * The cross-serving hole this block exists to close stays closed, and the reason is
+ * structural rather than a property of the certificate: we still OWN
+ * `443 ssl default_server`, so an unmatched SNI can never fall through to some
+ * other app's vhost. What it now gets is our own dead-end block — one
+ * `ssl_certificate` that belongs to no domain, no `proxy_pass`, no `root`, nothing
+ * but a `return`. Nothing trusts the placeholder, so possessing its key
+ * impersonates nothing: a direct visitor still sees a browser warning, exactly as
+ * they do today for a domain whose real cert has not been issued yet.
+ *
+ * Stated precisely, because "closed" is doing narrower work than it was: nginx picks
+ * the virtual server twice for HTTPS — by SNI for the handshake, then by `Host:` for
+ * the request. Completing a handshake here therefore lets a client go on to name any
+ * vhost on the box by `Host:` and reach it. That is not an escalation (the same
+ * client could have sent that name as its SNI and been routed there properly, and
+ * the per-vhost `access_by_lua_file` rules still run in the access phase, after the
+ * Host-selected server is set) — but it does mean the guarantee is now about the
+ * CERTIFICATE, not the backend. Never add an `ssl_certificate` at `http` scope: this
+ * block would inherit a real domain's cert and the guarantee would be gone.
+ *
+ * Two things this does not fix, so nobody promises them: Cloudflare "Full (Strict)"
+ * validates the origin certificate and will reject the placeholder, turning error
+ * 525 into 526 — same class of unfriendly page, and the only answers remain Full,
+ * grey-cloud, or a CF Origin CA cert. And a browser holding an HSTS pin for a
+ * hostname that once had a real cert hard-fails on the placeholder with no
+ * click-through. (Which is why this block must never send HSTS itself.)
+ */
+export function edgeHttpsDefaultBlock(cert?: { certPath: string; keyPath: string } | null): string {
+  if (!cert) return EDGE_HTTPS_REJECT_BLOCK;
+  return `\
+# HTTPS catch-all. WITHOUT a 443 default_server, nginx serves the first-loaded
+# 443 vhost to any request whose SNI matches no server_name - so a domain we do
+# NOT route (removed / never-added / just pointed at this IP) silently gets some
+# other app's cert + backend. That is cross-serving, a security hole. Owning the
+# 443 default closes it: an unrouted host is answered HERE, never by a fallthrough.
+#
+# The cert below belongs to no domain and is trusted by nothing - it exists so the
+# handshake COMPLETES and the request can be answered with a page instead of
+# ERR_SSL_UNRECOGNIZED_NAME_ALERT (Cloudflare "Full" reports the refusal as error
+# 525; "Full (Strict)" validates the cert and will still show 526). Keep this block a
+# dead end: no proxy_pass, no root, no HSTS, no reuse of a real certificate - that is
+# what stops it from becoming the cross-serving it prevents. And never set
+# ssl_certificate at http scope: this block would inherit a real domain's cert.
+server {
+    listen 443 ssl default_server;
+    server_name _;
+
+    ssl_certificate ${cert.certPath};
+    ssl_certificate_key ${cert.keyPath};
+
+${EDGE_NOT_FOUND_LOCATION}
+}`;
+}
+
+/**
+ * The bare edge's catch-all pair, written to `sites-enabled/_default.conf`.
+ *
+ * Takes the placeholder cert rather than baking a path in, because on a bare box
+ * the file may not exist: nginx refuses to load a config whose `ssl_certificate` is
+ * missing, and refusing to load means `openresty -t` fails, the reload is rejected,
+ * and NO route change lands on that box again. Passing null falls back to
+ * `ssl_reject_handshake`, which is where this box already was.
+ *
+ * Exported so the `sanitizeEdgeVhosts` guard can be tested against the bytes we
+ * actually write. That pairing is load-bearing: a bare→container conversion copies
+ * this file into the edge's mounted sites-enabled, where a SECOND
+ * `443 ssl default_server` beside the image's own is `[emerg] a duplicate default
+ * server` — a permanent crash loop. It survives because the sanitizer's rule is
+ * per-FILE and negative: it drops any conf where NO line declares a `server_name`
+ * other than `_`. So the pair goes as a unit, and it keeps going even in the
+ * no-cert case where the 443 block carries no `server_name` at all. Adding a real
+ * hostname to either block — for any reason — would make the sanitizer keep the
+ * file and hand the container the duplicate default it exists to prevent.
+ */
+export function edgeDefaultCatchAllConf(
+  cert?: { certPath: string; keyPath: string } | null,
+): string {
+  return `\
 # Openship default catch-all - prevents the stock OpenResty welcome page AND
 # stops an unmatched Host/SNI from being served the first real vhost by default.
 # Auto-generated - do not edit manually
@@ -641,19 +929,17 @@ server {
 
 ${ACME_CHALLENGE_LOCATION}
 
-    location / {
-        return 404;
-    }
+${EDGE_NOT_FOUND_LOCATION}
 }
 
-${EDGE_HTTPS_REJECT_BLOCK}
+${edgeHttpsDefaultBlock(cert)}
 `;
+}
 
 // ── Deployment ───────────────────────────────────────────────────────────────
 
 const LUA_SCRIPTS = [
   "site_logger.lua",
-  "pipe_log.lua",
   "pipe_stream.lua",
   "mgmt_api.lua",
   "geo_country.lua",
@@ -722,7 +1008,12 @@ export async function ensureLuaScripts(
     const listing = await executor
       .exec(`ls -1 '${OPENRESTY_LUA_DIR}' 2>/dev/null || true`)
       .catch(() => "");
-    const present = new Set(listing.split("\n").map((s) => s.trim()).filter(Boolean));
+    const present = new Set(
+      listing
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
     const missing = LUA_SCRIPTS.filter((name) => !present.has(name));
     // Read the marker directly (it's a dotfile, so `ls -1` won't list it).
     const onBoxVersion = (await executor.readFile(LUA_VERSION_MARKER).catch(() => "")).trim();
@@ -743,14 +1034,16 @@ export async function ensureLuaScripts(
     console.warn(`[openresty] (re)installed Lua (${reason}) — reloading edge.`);
     // Reload so OpenResty picks up the scripts (a vhost that had been 500ing on
     // a missing file recovers; fresh workers get a fresh Lua VM). Best-effort.
-    await executor.exec(buildReloadCommand(paths)).catch((err) => {
+    await reloadBareOpenResty(executor, paths).catch((err) => {
       console.error(`[openresty] reload after Lua (re)install failed: ${safeErrorMessage(err)}`);
     });
 
     return { repaired: missing.length ? missing : [...LUA_SCRIPTS], available: true };
   } catch (err) {
     // Contract: never throw. A repair failure must not abort the deploy.
-    console.error(`[openresty] ensureLuaScripts failed (deploy continues): ${safeErrorMessage(err)}`);
+    console.error(
+      `[openresty] ensureLuaScripts failed (deploy continues): ${safeErrorMessage(err)}`,
+    );
     return { repaired: [], available: false };
   }
 }
@@ -769,28 +1062,33 @@ export async function ensureLuaScripts(
  */
 async function installGeoDeps(executor: CommandExecutor): Promise<void> {
   // ── 1. libmaxminddb (C library) ───────────────────────────────────────
-  // Detect package manager on the remote server and install accordingly.
-  try {
-    const hasPkg = async (cmd: string) => {
-      try { await executor.exec(`command -v ${cmd}`); return true; }
-      catch { return false; }
-    };
+  //
+  // This used to be its own package-manager ladder (`command -v apt-get`, then dnf,
+  // then yum, then apk) that simply RAN OUT on anything else: nothing installed,
+  // nothing logged, and geo_country then returned nil for every lookup with no trace
+  // of why. The host answers which package it wants; a host that can't answer says so.
+  const profile = await resolveEnvironment(executor).catch((err) => safeErrorMessage(err));
+  const install =
+    typeof profile === "string"
+      ? refused(`the host profile could not be read: ${profile}`)
+      : envOps(profile).pkgInstallVariants({
+          apt: answered(["libmaxminddb0", "libmaxminddb-dev"]),
+          dnf: answered(["libmaxminddb", "libmaxminddb-devel"]),
+          yum: answered(["libmaxminddb", "libmaxminddb-devel"]),
+          apk: answered(["libmaxminddb"]),
+          brew: refused("the bare edge is Linux-only, so Openship has no macOS package for it."),
+        });
 
-    if (await hasPkg("apt-get")) {
-      await executor.exec(
-        "apt-get update -qq && apt-get install -y -qq libmaxminddb0 libmaxminddb-dev",
+  if (install.supported) {
+    await executor.exec(opScript(install.value)).catch((err) => {
+      console.warn(
+        `[openresty] libmaxminddb install failed — geo lookups return nil: ${safeErrorMessage(err)}`,
       );
-    } else if (await hasPkg("dnf")) {
-      await executor.exec("dnf install -y libmaxminddb libmaxminddb-devel");
-    } else if (await hasPkg("yum")) {
-      await executor.exec("yum install -y libmaxminddb libmaxminddb-devel");
-    } else if (await hasPkg("apk")) {
-      // Alpine — the openresty base image's distro, and the branch whose absence
-      // meant geo could never initialise on a containerized edge.
-      await executor.exec("apk add --no-cache libmaxminddb");
-    }
-  } catch {
-    // Non-fatal - geo just won't work
+    });
+  } else {
+    console.warn(
+      `[openresty] libmaxminddb not installed — geo lookups return nil: ${install.reason}`,
+    );
   }
 
   // ── 2. GeoLite2-Country database ──────────────────────────────────────
@@ -798,9 +1096,7 @@ async function installGeoDeps(executor: CommandExecutor): Promise<void> {
     const exists = await executor.exists(GEOIP_DB_PATH);
     if (!exists) {
       await executor.mkdir(GEOIP_DIR);
-      await executor.exec(
-        `curl -fsSL -o ${GEOIP_DB_PATH} "${GEOIP_DB_URL}"`,
-      );
+      await executor.exec(`curl -fsSL -o ${GEOIP_DB_PATH} "${GEOIP_DB_URL}"`);
     }
   } catch {
     // Non-fatal
@@ -838,10 +1134,7 @@ export async function deployLuaScripts(
   await executor.mkdir(OPENRESTY_LUA_DIR);
 
   for (const name of LUA_SCRIPTS) {
-    await executor.writeFile(
-      `${OPENRESTY_LUA_DIR}/${name}`,
-      readLua(name),
-    );
+    await executor.writeFile(`${OPENRESTY_LUA_DIR}/${name}`, readLua(name));
   }
 
   // ── Ensure nginx.conf + sites-enabled directory ───────────────────────
@@ -887,5 +1180,5 @@ export async function deployLuaScripts(
   // ensureOpenRestyConfig above - single writer, so they self-heal every deploy.
 
   // ── Validate + reload ────────────────────────────────────────────────
-  await executor.exec(buildReloadCommand(paths));
+  await reloadBareOpenResty(executor, paths);
 }

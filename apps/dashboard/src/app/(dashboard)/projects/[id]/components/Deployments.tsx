@@ -3,10 +3,9 @@
 import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
-import { deployApi, projectsApi, isAbortError, getApiErrorMessage } from "@/lib/api";
+import { deployApi, projectsApi, isAbortError } from "@/lib/api";
 import type { PendingAction } from "@/lib/api/projects";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
-import { type Service } from "@/lib/api/services";
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -14,7 +13,11 @@ import { useRouter } from "next/navigation";
 import { Rocket, ChevronDown, RefreshCw, Layers } from "lucide-react";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
-
+import {
+  hasConnectedDomain,
+  isPotentiallyPublicService,
+  shouldWarnAboutUnreachableServices,
+} from "./redeploy-unreachable-warning";
 export const Deployments = () => {
   const {
     id,
@@ -23,7 +26,7 @@ export const Deployments = () => {
     servicesData,
     refreshServices,
     hasMultipleServices,
-    updateProjectData,
+    domainsData,
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
@@ -31,39 +34,9 @@ export const Deployments = () => {
   const router = useRouter();
 
   const [isRedeploying, setIsRedeploying] = React.useState(false);
-  const [isRetryingRoute, setIsRetryingRoute] = React.useState(false);
   // The Openship control-plane self-app has no deployable source and updates
   // itself via the CLI — redeploy/self-update controls would only 403, so hide them.
   const isSelfApp = projectData?.appTemplateId === "openship";
-
-  /** Re-run just the free .opsh.io edge-route sync (no rebuild). On success the
-   *  routing warning clears and the project flips back to Live; on failure the
-   *  same guidance is re-surfaced as an error toast. */
-  const handleRetryRouting = async () => {
-    if (!projectData?.id || isRetryingRoute) return;
-    setIsRetryingRoute(true);
-    try {
-      const res = await projectsApi.retryRouting(projectData.id);
-      if (res?.ok) {
-        updateProjectData({ routingUnsynced: false });
-        showToast(t.projects.routingRetry.success, "success", t.projects.routingRetry.title);
-      } else {
-        showToast(
-          res?.warning || res?.error || t.projects.routingRetry.failed,
-          "error",
-          t.projects.routingRetry.title,
-        );
-      }
-    } catch (err) {
-      showToast(
-        getApiErrorMessage(err) || t.projects.routingRetry.failed,
-        "error",
-        t.projects.routingRetry.title,
-      );
-    } finally {
-      setIsRetryingRoute(false);
-    }
-  };
 
   // "Project outdated" banner. Two shapes discriminated by `mode`: a commit
   // project is behind its branch HEAD; a release/dist project has a newer
@@ -140,9 +113,7 @@ export const Deployments = () => {
       .getPendingActions(projectData.id)
       .then((res) => {
         if (cancelled) return;
-        setBlockedAction(
-          res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null,
-        );
+        setBlockedAction(res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null);
       })
       .catch(() => {
         /* best-effort — the status badge already says Action Required */
@@ -210,8 +181,12 @@ export const Deployments = () => {
       if (hasMultipleServices) {
         const services =
           servicesData.services.length > 0 ? servicesData.services : await refreshServices();
-        if (shouldWarnAboutUnreachableServices(services)) {
-          const candidateServices = services.filter(isPotentiallyPublicService);
+        if (shouldWarnAboutUnreachableServices(services, domainsData.domains, projectData.port)) {
+          const candidateServices = services.filter(
+            (s) =>
+              isPotentiallyPublicService(s) &&
+              !hasConnectedDomain(s, domainsData.domains, projectData.port),
+          );
           let modalId = "";
           modalId = showModal({
             customContent: (
@@ -231,10 +206,10 @@ export const Deployments = () => {
                         className="rounded-lg bg-foreground/[0.06] px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
                         onClick={() => {
                           hideModal(modalId);
-                          setActiveTab("services");
+                          setActiveTab("domains");
                         }}
                       >
-                        {t.projects.redeploy.openServices}
+                        {t.projects.redeploy.openDomains}
                       </button>
                       <button
                         type="button"
@@ -304,25 +279,8 @@ export const Deployments = () => {
         />
       )}
 
-      {/* Routing-not-synced nudge — the release is live on the server but its
-          free .opsh.io edge route didn't sync. A dedicated Retry re-runs just
-          the edge sync (no rebuild); on success the warning clears. */}
-      {projectData.routingUnsynced && !projectData.awaitingDecision && (
-        <WarningCallout
-          title={t.projects.routingRetry.title}
-          description={t.projects.routingRetry.description}
-          actions={
-            <button
-              type="button"
-              onClick={handleRetryRouting}
-              disabled={isRetryingRoute}
-              className="rounded-lg bg-warning-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-warning-solid/90 disabled:opacity-60"
-            >
-              {isRetryingRoute ? t.projects.routingRetry.retrying : t.projects.routingRetry.retry}
-            </button>
-          }
-        />
-      )}
+      {/* Routing-not-synced lives on Domains & Routes (RoutingUnsyncedCallout):
+          the release itself shipped fine, so the fix belongs beside the routes. */}
 
       {/* Action-required nudge — the live release is a partial-failure deploy
           still awaiting a keep/reject decision. Links to the build screen where
@@ -490,19 +448,3 @@ export const Deployments = () => {
     </div>
   );
 };
-
-function hasConnectedDomain(service: Service) {
-  if (!service.exposed) return false;
-  if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
-  return Boolean(service.domain?.trim());
-}
-
-function isPotentiallyPublicService(service: Service) {
-  return service.enabled && (service.ports?.length ?? 0) > 0;
-}
-
-function shouldWarnAboutUnreachableServices(services: Service[]) {
-  const candidateServices = services.filter(isPotentiallyPublicService);
-  if (candidateServices.length === 0) return false;
-  return candidateServices.every((service) => !hasConnectedDomain(service));
-}

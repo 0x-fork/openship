@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { EnsureProjectBody } from "../../../src/modules/projects/project.schema";
+import { EnsureProjectBody } from "@repo/contracts";
 
 /**
  * #427 — POST /projects/ensure returned 400 Bad Request when creating a project
@@ -33,6 +33,11 @@ describe("EnsureProjectBody — outputDirectory blank default (#427)", () => {
     };
 
     expect(Value.Check(EnsureProjectBody, wizardPayload)).toBe(true);
+  });
+
+  it("accepts human-readable framework display labels like 'Static Site' and 'Next.js' (#427)", () => {
+    expect(Value.Check(EnsureProjectBody, { name: "my-app", framework: "Static Site" })).toBe(true);
+    expect(Value.Check(EnsureProjectBody, { name: "my-app", framework: "Next.js" })).toBe(true);
   });
 
   it("still accepts a real outputDirectory", () => {

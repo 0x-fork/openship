@@ -3,16 +3,16 @@
 import type { ComponentType, ReactNode } from "react";
 
 /**
- * The shell both home attention surfaces share: a status-bordered card with a
- * tinted header strip (icon tile + title + count + one line of context), a
- * neutral body, and an optional footer.
+ * The shell both home attention surfaces share: a card with a header strip (icon
+ * tile + title + count + one line of context), a neutral body, and an optional
+ * footer.
  *
- * It exists because the home cards had drifted into being FLATTER than the
- * product tip they replace — the tip carries a gradient and a tinted border,
- * while "your edge is down" was a plain panel with a bare 16px icon. This is not
- * a new visual language: it's the one the project Danger Zone already uses
- * (`AdvancedSettings.tsx`) — the border and header carry the severity so the body
- * can stay readable, instead of tinting every row until nothing leads the eye.
+ * Severity lives in the icon tile and the title, NOT in the card's edge. A tinted
+ * border makes the whole card a status object, so a column holding two of them
+ * reads as a wall of colored boxes and the tint stops meaning anything — and it
+ * puts the loudest element on the least informative pixel. The border stays the
+ * same neutral hairline every other card on the page uses; the eye is led by the
+ * colored tile, title, and (for outages only) the solid action button.
  */
 /**
  * `neutral` exists for advisories that sit BESIDE louder panels — on the `/issues`
@@ -24,21 +24,18 @@ import type { ComponentType, ReactNode } from "react";
  */
 export type AlertTone = "danger" | "warning" | "neutral";
 
-const TONE: Record<AlertTone, { edge: string; tile: string; icon: string; title: string }> = {
+const TONE: Record<AlertTone, { tile: string; icon: string; title: string }> = {
   danger: {
-    edge: "border-danger-border",
     tile: "bg-danger-bg",
     icon: "text-danger",
     title: "text-danger",
   },
   warning: {
-    edge: "border-warning-border",
     tile: "bg-warning-bg",
     icon: "text-warning",
     title: "text-warning",
   },
   neutral: {
-    edge: "border-border/60",
     tile: "bg-muted",
     icon: "text-muted-foreground",
     title: "text-foreground",
@@ -94,8 +91,8 @@ export default function AlertPanel({
 }: AlertPanelProps) {
   const s = TONE[tone];
   return (
-    <div className={`overflow-hidden rounded-2xl border bg-card ${s.edge}`}>
-      <div className={`flex items-start gap-3 border-b px-5 py-4 ${s.edge}`}>
+    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+      <div className="flex items-start gap-3 border-b border-border/50 px-5 py-4">
         <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${s.tile}`}>
           <Icon className={`size-4 ${s.icon}`} />
         </div>
@@ -149,10 +146,14 @@ export function AlertRow({
         <div className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${s.tile}`}>
           <Icon className={`size-3.5 ${s.icon}`} />
         </div>
+        {/* Name and label split the line 50/50 (both `flex-1 min-w-0`), each
+            ellipsizing within its half — so a long label can't squeeze the name
+            down to "G..", and a long name can't push the label off the row. When
+            there's no label the name takes the whole width. */}
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <p className="truncate text-[13px] font-medium text-foreground">{title}</p>
+          <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{title}</p>
           {label && (
-            <span className="shrink-0 text-[11px] text-muted-foreground">{label}</span>
+            <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{label}</span>
           )}
         </div>
         {action}

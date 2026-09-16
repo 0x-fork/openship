@@ -1,8 +1,9 @@
 {
-  "title": "Probleme",
+  "title": "Monitoring",
   "subtitle": "Alles, was Openship in deinen Projekten, Servern und Domains gefunden hat.",
   "tabs": {
     "open": "Offen",
+    "health": "Gesundheit",
     "resolved": "Behoben"
   },
   "resolvedNote": "Der Verlauf umfasst Container- und Server-Vorfälle — die übrigen Prüfungen melden den aktuellen Zustand, ein behobenes Zertifikat oder Deployment verschwindet hier also einfach.",
@@ -13,7 +14,8 @@
     "all": "Alle",
     "outage": "Ausfall",
     "action_required": "Aktion nötig",
-    "advisory": "Hinweis"
+    "advisory": "Hinweis",
+    "clear": "Filter zurücksetzen"
   },
   "scopes": {
     "platform": "Openship",
@@ -56,11 +58,19 @@
   "selfUpdateNote": "Diese Installation aktualisiert sich über die Kommandozeile.",
   "empty": {
     "openTitle": "Nichts benötigt Aufmerksamkeit",
-    "openBody": "Keine Ausfälle, keine blockierten Deployments, keine Zertifikats- oder Domain-Probleme, nichts veraltet. Die Prüfungen laufen im Hintergrund weiter.",
+    "openBody": "Keine blockierten oder wartenden Deployments, keine Zertifikats- oder Domain-Probleme, nichts veraltet, nichts auf dem falschen Port. Die Prüfungen laufen im Hintergrund weiter.",
     "resolvedTitle": "Keine behobenen Vorfälle",
     "resolvedBody": "Container- und Server-Vorfälle erscheinen hier, sobald sie sich erholt haben, und werden 30 Tage aufbewahrt.",
     "filteredTitle": "Keine Treffer",
-    "filteredBody": "Keine Probleme entsprechen diesem Filter."
+    "filteredBody": "Es gibt offene Probleme — keines entspricht diesem Filter."
+  },
+  "summary": {
+    "title": "Übersicht",
+    "subtitle": "Zustand auf einen Blick",
+    "totalOpen": "offen",
+    "totalResolved": "behoben",
+    "bySeverity": "Nach Schweregrad",
+    "byArea": "Nach Bereich"
   },
   "home": {
     "attentionTitle": "Benötigt Aufmerksamkeit",
