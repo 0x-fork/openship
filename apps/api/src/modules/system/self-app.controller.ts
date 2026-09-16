@@ -18,19 +18,19 @@
 
 import type { Context } from "hono";
 import type { ImportedSite, ManualCert } from "@repo/adapters";
-import { repos, db, schema, eq } from "@repo/db";
+import { repos } from "@repo/db";
 import { SYSTEM, safeErrorMessage } from "@repo/core";
-import { sshManager } from "../../lib/ssh-manager";
-import { env } from "../../config";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { env } from "@repo/platform/engine/config/index";
 import { assertNotCloud, platform } from "../../lib/controller-helpers";
 import { ensureLocalUser } from "../../lib/local-user";
-import { createProject } from "../projects/project-crud.service";
-import { getCloudConnectionStatusForOrg } from "../../lib/cloud/session";
-import { ensureManagedEdgeProxy, ManagedEdgeError } from "../../lib/managed-edge-proxy";
+import { createProject } from "@repo/platform/engine/modules/projects/project-crud.service";
+import { getCloudConnectionStatusForOrg } from "@repo/platform/engine/lib/cloud/session";
+import { ensureManagedEdgeProxy, ManagedEdgeError } from "@repo/platform/engine/lib/managed-edge-proxy";
 import { ensureAdoptDeployment, provisionSelfAppEdge } from "../../lib/startup/self-deploy";
-import { ensureLocalServer } from "../../lib/startup/self-server";
-import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
-import { refreshSelfAppPublicUrl } from "../../lib/public-url";
+import { ensureLocalServer } from "@repo/platform/engine/lib/startup/self-server";
+import { reapplyProjectLiveRoutes } from "@repo/platform/engine/modules/domains/project-route.service";
+import { refreshSelfAppPublicUrl } from "@repo/platform/engine/lib/public-url";
 import { streamSSE } from "../../lib/sse";
 import {
   createSetupSession,
@@ -39,7 +39,7 @@ import {
   appendSetupLog,
   finishSetupSession,
   subscribeSetupSession,
-} from "./setup-session";
+} from "@repo/platform/engine/modules/system/setup-session";
 
 const APP_SLUG = "openship";
 const APP_TEMPLATE_ID = "openship";
@@ -59,13 +59,7 @@ const APP_TEMPLATE_ID = "openship";
  * Query the admin row directly to avoid that. Returns null on a box with no admin.
  */
 export async function foundingAdminId(): Promise<string | null> {
-  const [admin] = await db
-    .select({ id: schema.user.id })
-    .from(schema.user)
-    .where(eq(schema.user.autoProvisioned, false))
-    .orderBy(schema.user.createdAt)
-    .limit(1);
-  return admin?.id ?? null;
+  return (await repos.user.findFoundingAdmin())?.id ?? null;
 }
 
 async function resolveOrg(): Promise<{ userId: string; organizationId: string }> {
@@ -133,7 +127,7 @@ export async function cloudConnect(c: Context) {
     const { exchangeCodeWithCloud, mirrorCloudUser, storeCloudSession } = await import(
       "../../lib/cloud-auth-proxy"
     );
-    const { clearAuthModeCache, isAuthModePinned } = await import("../../lib/auth-mode");
+    const { clearAuthModeCache, isAuthModePinned } = await import("@repo/platform/engine/lib/auth-mode");
     const data = await exchangeCodeWithCloud(body.code, body.codeVerifier);
     if (!data) return c.json({ error: "Could not verify with Openship Cloud" }, 401);
     const email = (data.user as { email?: string | null }).email ?? null;
@@ -205,6 +199,10 @@ export async function selfRegister(c: Context) {
     edgeTakeover?: boolean;
     /** User accepted migrating the existing proxy's sites before taking over. */
     edgeMigrate?: boolean;
+    /** Corrected static roots (keyed by primary hostname) the wizard copied into
+     *  the edge's static bind mount host-side, for adopted static sites the
+     *  container edge couldn't otherwise reach. See #456. */
+    staticRootOverrides?: Record<string, string>;
     /** Bare install: stand up a LOCAL host edge (OpenResty on :80) on this box.
      *  A free domain's Cloud edge forwards to :80 here, so the box needs the
      *  vhost + the same foreign-proxy takeover a custom domain does — just no
@@ -293,7 +291,7 @@ export async function selfRegister(c: Context) {
         dashPort,
         {
           onLog: (message, level) => appendSetupLog(session.id, "edge", message, level),
-          onStep: (step, status) => updateComponentProgress(session.id, step, status),
+          onStep: (step, status, detail) => updateComponentProgress(session.id, step, status, detail),
         },
         // No cert step: the row above is `domainType: "free"`, so both the
         // provisioner and manageDomainSsl skip issuance (tlsIssuedElsewhere) —
@@ -303,6 +301,7 @@ export async function selfRegister(c: Context) {
         {
           edgeTakeover: body.edgeTakeover === true,
           edgeMigrate: body.edgeMigrate === true,
+          ...(body.staticRootOverrides ? { staticRootOverrides: body.staticRootOverrides } : {}),
           managedEdgeSyncedByCaller: true,
         },
       )
@@ -392,9 +391,13 @@ export async function selfRegister(c: Context) {
       {
         backoffs: [15_000, 45_000], // shorter than the boot hook so the spinner resolves
         onLog: (message, level) => appendSetupLog(session.id, "edge", message, level),
-        onStep: (step, status) => updateComponentProgress(session.id, step, status),
+        onStep: (step, status, detail) => updateComponentProgress(session.id, step, status, detail),
       },
-      { edgeTakeover: body.edgeTakeover === true, edgeMigrate: body.edgeMigrate === true },
+      {
+        edgeTakeover: body.edgeTakeover === true,
+        edgeMigrate: body.edgeMigrate === true,
+        ...(body.staticRootOverrides ? { staticRootOverrides: body.staticRootOverrides } : {}),
+      },
     )
       .then(async (res) => {
         await repos.domain
@@ -447,19 +450,33 @@ export async function selfEdgePreflight(c: Context) {
   }
 
   try {
-    const { detectEdge, importSites } = await import("@repo/adapters");
+    const { detectEdge, importSites, unreachableStaticRoots, dockerAvailable } =
+      await import("@repo/adapters");
     // Host-op executor: LocalExecutor bare, SSH→host.docker.internal when
     // containerized (OPENSHIP_HOST_SSH_* set). Inspecting the api container's
     // own netns would return a wrong migrate/takeover prompt in docker mode.
     // Pooled — this endpoint is polled by the CLI/wizard, and a per-call executor
     // is what leaked sshd sessions until OOM (#291).
-    const { status, sites, warnings } = await sshManager.withHostExecutor(async (executor) => {
-      const detected = await detectEdge(executor);
-      // Scan the foreign proxy's sites (if importable) so the CLI can offer migration.
-      const scanned = await importSites(executor, detected);
-      return { status: detected, sites: scanned.sites, warnings: scanned.warnings };
-    });
-    return c.json({ status, sites, warnings });
+    const { status, sites, warnings, containerEdge } = await sshManager.withHostExecutor(
+      async (executor) => {
+        const detected = await detectEdge(executor);
+        // Scan the foreign proxy's sites (if importable) so the CLI can offer migration.
+        const scanned = await importSites(executor, detected);
+        // Whether the edge that WILL serve these sites is a container. `docker` mode
+        // is the obvious yes; but the bare wizard also installs a CONTAINER edge on any
+        // Docker-equipped host, and keying only on OPENSHIP_EDGE_MODE hid the unreachable
+        // roots from exactly that path — so OR in a live Docker probe (#456).
+        const containerEdge =
+          process.env.OPENSHIP_EDGE_MODE === "docker" || (await dockerAvailable(executor));
+        return { status: detected, sites: scanned.sites, warnings: scanned.warnings, containerEdge };
+      },
+    );
+    // Identify static sites whose docroot is outside the edge container's bind
+    // mounts — migrating them verbatim produces a 500 (try_files can't find the
+    // index in a directory that isn't mounted). Surfacing this BEFORE cutover
+    // lets the wizard prompt the operator to copy/mount/skip each path.
+    const unreachable = unreachableStaticRoots(sites, { containerEdge });
+    return c.json({ status, sites, warnings, unreachableStaticRoots: unreachable });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
@@ -482,7 +499,7 @@ export async function selfEdgePreflight(c: Context) {
 export async function edgeImportSites(c: Context) {
   const guard = assertNotCloud(c); if (guard) return guard;
 
-  let body: { sites?: unknown; certPems?: unknown };
+  let body: { sites?: unknown; certPems?: unknown; staticRootOverrides?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -496,6 +513,12 @@ export async function edgeImportSites(c: Context) {
     body.certPems && typeof body.certPems === "object"
       ? (body.certPems as Record<string, ManualCert>)
       : undefined;
+  // Corrected static roots the CLI copied host-side before `docker compose up`
+  // (the container edge can't read the host source dir itself). See #456.
+  const staticRootOverrides =
+    body.staticRootOverrides && typeof body.staticRootOverrides === "object"
+      ? (body.staticRootOverrides as Record<string, string>)
+      : undefined;
 
   try {
     const { registerImportedSites } = await import("@repo/adapters");
@@ -504,6 +527,7 @@ export async function edgeImportSites(c: Context) {
     const warnings: string[] = [];
     const registered = await registerImportedSites(p.routing, p.ssl, p.executor, sites, {
       certPems,
+      staticRootOverrides,
       warnings,
       onLog: (entry) => console.log(`[edge-import] ${entry.message}`),
     });

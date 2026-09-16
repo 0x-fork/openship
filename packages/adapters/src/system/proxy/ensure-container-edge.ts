@@ -27,8 +27,17 @@ import {
   OPENRESTY_DEFAULT_PATHS,
 } from "../../infra/openresty-lua";
 import { sq } from "../local-shell";
+import {
+  containerImageRef,
+  dockerAvailable,
+  fromSourceImageMissingMessage,
+  imageExistsLocally,
+  managedImagesAreFromSource,
+  swapManagedImage,
+} from "../managed-image";
 import { containerCommand, edgeContainerExecutor } from "../edge-container-executor";
 import { waitForPortListening } from "../port-listen";
+import { rootChecked, rootOrDegrade, type RootChecked } from "../privilege";
 import {
   EDGE_CONTAINER_NAME,
   edgeCrashReason,
@@ -94,48 +103,6 @@ export interface ContainerEdgeResult {
   edgeDown?: boolean;
 }
 
-/** Is Docker usable on this box? The container edge needs it; a bare edge doesn't. */
-export async function dockerAvailable(executor: CommandExecutor): Promise<boolean> {
-  return executor
-    .exec("docker version --format '{{.Server.Version}}' 2>/dev/null")
-    .then((v) => Boolean(v.trim()))
-    .catch(() => false);
-}
-
-/**
- * A container's existence, run state and created-with image ref, in one
- * `docker inspect`. `null` means no such container (or the daemon didn't answer).
- *
- * Run state comes from `.State.Running` and NEVER from the inspect having
- * succeeded: `docker inspect` answers happily for a STOPPED container, so
- * "inspect returned an image ref" proves existence only. Conflating the two is
- * what made a stopped mail engine report as running — and its one-click repair a
- * no-op that logged "already running".
- */
-export async function containerState(
-  executor: CommandExecutor,
-  container: string,
-): Promise<{ running: boolean; image: string | null } | null> {
-  const out = await executor
-    .exec(`docker inspect -f '{{.State.Running}}\t{{.Config.Image}}' ${sq(container)} 2>/dev/null`)
-    .catch(() => "");
-  const line = out
-    .split("\n")
-    .map((l) => l.trim())
-    .find(Boolean);
-  if (!line) return null;
-  const [running, image] = line.split("\t");
-  return { running: running?.trim() === "true", image: image?.trim() || null };
-}
-
-/** The image ref a container was created from, running or not. */
-export async function containerImageRef(
-  executor: CommandExecutor,
-  container: string,
-): Promise<string | null> {
-  return (await containerState(executor, container))?.image ?? null;
-}
-
 /**
  * Options a caller may pass through to the underlying NginxProvider. `executor`,
  * `paths` and `pinPaths` are decided HERE and are deliberately not overridable —
@@ -145,6 +112,36 @@ export type EdgeProviderOptions = Omit<
   NginxProviderOptions,
   "executor" | "paths" | "pinPaths" | "containerEdge" | "challengeDir"
 >;
+
+/**
+ * Elevate the HOST executor an edge provider will drive, before the container layer
+ * wraps it.
+ *
+ * Every side of this needs root on a non-root login and none of it was elevated: the
+ * vhost writes land in root-owned `/var/lib/openship/edge`, `/etc/letsencrypt` is
+ * 0700 root, and `docker exec` needs the daemon socket. `edgeContainerExecutor`'s
+ * docstring says privilege is the caller's problem — and then no caller solved it, so
+ * a deploy to a `deploy@host` box built and ran the app and quietly routed nothing.
+ * That was the one failure in this area that produced no error at all: routing gaps
+ * never fail a deploy, so the operator got a green deploy and an unreachable URL.
+ *
+ * Deliberately the INNER executor: `edgeContainerExecutor` composes commands into
+ * `docker exec …`, so elevating on the outside would produce
+ * `sudo -n sh -c 'docker exec …'` — right for the command half, but its file ops pass
+ * through to the inner executor and would stay unelevated. Elevating underneath gets
+ * both, and keeps the composition order the one thing the edge executor's tests pin.
+ * That ordering is why this is a named function for one call: it is a decision, and a
+ * decision inlined into an argument list is a decision nobody reads.
+ */
+function edgeHostExecutor(executor: CommandExecutor): Promise<RootChecked> {
+  return rootOrDegrade(executor, {
+    purpose: "Configuring routing and TLS",
+    consequence:
+      "Vhosts and certificates may not be writable, and routing will be incomplete — " +
+      "the deploy continues and the app still runs on its port.",
+    report: (message) => console.error(`[edge] ${message}`),
+  });
+}
 
 /**
  * Build the routing/SSL provider for a box whose edge is a CONTAINER reached from
@@ -164,7 +161,7 @@ export async function containerEdgeProvider(
     // migrate proxy scan, cert reuse, the mail cert symlinks — keeps working),
     // while reload/certbot run inside the container.
     paths: EDGE_HOST_PATHS,
-    executor: edgeContainerExecutor(executor, container),
+    executor: edgeContainerExecutor(await edgeHostExecutor(executor), container),
     // Challenge tokens go to the HOST side of the ACME mount, for the same reason
     // vhosts do. This is the ONE mount whose two sides differ
     // (/var/lib/openship/edge/acme → /var/www/acme), so the write path and the
@@ -200,7 +197,16 @@ export async function localContainerEdgeProvider(
   return new Provider({
     ...opts,
     paths: OPENRESTY_DEFAULT_PATHS,
-    executor: new DockerEdgeExecutor({ containerName: container }),
+    // The one place the privilege gate is the WRONG instrument, so the reason is stated
+    // instead: this executor's commands run inside the EDGE container, so probing
+    // through it would measure that container's interior and brand the result with a
+    // verdict about the wrong machine. Privilege here comes from the deployment shape —
+    // the api process is root in its own container, the vhost dir is a bind mount it
+    // owns, and the daemon socket is mounted in. There is no login to elevate.
+    executor: rootChecked(
+      new DockerEdgeExecutor({ containerName: container }),
+      "compose: api is root in its own container, writing shared mounts over a mounted socket",
+    ),
     // nginx.conf + the Lua are BAKED into the image — nothing to detect, install
     // or patch, and detection would answer from inside the container anyway.
     pinPaths: true,
@@ -238,11 +244,12 @@ async function startEdgeContainer(
   container: string,
   image: string,
   onLog: SystemLogCallback,
+  mounts: readonly EdgeContainerMount[],
 ): Promise<boolean> {
   await sanitizeEdgeVhosts(executor, EDGE_HOST_PATHS.sitesDir, onLog).catch(() => {});
   await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
   const run = await executor.streamExec(
-    buildEdgeRunCommand(container, image),
+    buildEdgeRunCommand(container, image, mounts),
     onLog as (l: LogEntry) => void,
   );
   // Identity just changed; nobody may keep answering from a pre-start memo.
@@ -250,9 +257,73 @@ async function startEdgeContainer(
   return run.code === 0;
 }
 
+export type EdgeContainerMount = Readonly<{ host: string; container: string }>;
+
+/** Marks the start of each mount's output in the batched resolve exec below. */
+const MOUNT_RESOLVE_MARKER = "__OPENSHIP_MOUNT__";
+
+/**
+ * Resolve bind sources on the machine that owns the Docker daemon.
+ *
+ * This cannot use Node's `realpath`: `executor` may point at an SSH server, in
+ * which case resolving in the API process would canonicalize the wrong machine.
+ * `pwd -P` is POSIX and resolves existing directory symlinks on both macOS and
+ * Linux. In particular, it turns macOS `/var` and `/etc` into `/private/var` and
+ * `/private/etc`, which Docker Desktop/OrbStack must receive as bind sources.
+ *
+ * All four mounts resolve in ONE exec, never one each (#774): each exec opens
+ * its own channel on the shared multiplexed SSH connection, and four concurrent
+ * channels is one more than sshd grants on hosts hardened to the common
+ * `MaxSessions 3` baseline — the fourth open failed, which failed edge recovery
+ * and route retries outright. Each `cd` runs in a subshell with stderr folded
+ * into its segment, so one missing directory can't leak a working directory
+ * into the next mount and still names its cause; the trailing `true` keeps a
+ * failed segment from turning the whole batch into a nonzero exit.
+ */
+export async function resolveEdgeContainerMounts(
+  executor: Pick<CommandExecutor, "exec">,
+): Promise<EdgeContainerMount[]> {
+  const script =
+    EDGE_CONTAINER_MOUNTS.map(
+      (mount) => `echo ${MOUNT_RESOLVE_MARKER}; (cd ${sq(mount.host)} && pwd -P) 2>&1`,
+    ).join("; ") + "; true";
+
+  let raw: string;
+  try {
+    raw = await executor.exec(script);
+  } catch (err) {
+    throw new Error(
+      `Could not resolve edge bind-mount sources on the target host: ${safeErrorMessage(err)}`,
+    );
+  }
+
+  const segments = raw.split(MOUNT_RESOLVE_MARKER).slice(1);
+  if (segments.length !== EDGE_CONTAINER_MOUNTS.length) {
+    throw new Error(
+      `Could not resolve edge bind-mount sources on the target host: ` +
+        `expected ${EDGE_CONTAINER_MOUNTS.length} paths, received ${JSON.stringify(raw)}.`,
+    );
+  }
+
+  return EDGE_CONTAINER_MOUNTS.map((mount, i) => {
+    const host = segments[i].trim();
+    if (!host.startsWith("/") || host.includes("\n")) {
+      throw new Error(
+        `Could not resolve edge bind-mount source ${mount.host} on the target host: ` +
+          `expected one absolute path, received ${JSON.stringify(host)}.`,
+      );
+    }
+    return { host, container: mount.container };
+  });
+}
+
 /** `docker run` argv for the edge: host networking (it owns 80/443) + the mounts. */
-export function buildEdgeRunCommand(container: string, image: string): string {
-  const mounts = EDGE_CONTAINER_MOUNTS.map(
+export function buildEdgeRunCommand(
+  container: string,
+  image: string,
+  edgeMounts: readonly EdgeContainerMount[] = EDGE_CONTAINER_MOUNTS,
+): string {
+  const mounts = edgeMounts.map(
     // `:z` relabels for SELinux-enforcing hosts; a no-op elsewhere.
     (m) => `-v ${sq(`${m.host}:${m.container}:z`)}`,
   ).join(" ");
@@ -267,56 +338,59 @@ export function buildEdgeRunCommand(container: string, image: string): string {
 }
 
 /**
- * Move a running edge onto a new image: pull, recreate, verify — and put the OLD
- * image back if the new one doesn't come up.
- *
- * Same ordering rule as the bare→container conversion: nothing is torn down until
- * the replacement is on the box. Best-effort by design — a failed update must leave
- * the edge serving, so it logs and reports false rather than throwing.
+ * Whether a running container uses the bind sources we would choose now.
+ * `null` means Docker could not answer, so a transient inspect failure never
+ * tears down an otherwise-serving edge.
  */
-async function swapEdgeImage(
+async function edgeContainerMountsMatch(
   executor: CommandExecutor,
   container: string,
-  from: string,
-  to: string,
-  opts: ContainerEdgeOptions,
-): Promise<{ swapped: boolean; edgeDown: boolean }> {
-  const { onLog } = opts;
-  onLog(log(`Updating the edge: ${from} → ${to}`));
-  const pull = await executor.streamExec(`docker pull ${sq(to)}`, onLog as (l: LogEntry) => void);
-  if (pull.code !== 0) {
-    // Nothing was torn down yet — the old edge is still serving.
-    onLog(log(`Could not pull ${to} — the edge stays on ${from}.`, "warn"));
-    return { swapped: false, edgeDown: false };
+  expected: readonly EdgeContainerMount[],
+): Promise<boolean | null> {
+  let raw: string;
+  try {
+    raw = await executor.exec(
+      `docker inspect -f '{{range .HostConfig.Binds}}{{println .}}{{end}}' ${sq(container)}`,
+    );
+  } catch {
+    return null;
   }
 
-  const start = async (image: string) => {
-    if (!(await startEdgeContainer(executor, container, image, onLog))) return false;
-    // The SAME verdict the create path uses. An image swap that leaves a
-    // crash-looping container behind must read as a failed swap, not a successful
-    // one — `waitForPortListening` alone said "listening" whenever ANY proxy held
-    // :80, including the one we were replacing.
+  const actual = new Map<string, string>();
+  for (const line of raw.split("\n")) {
+    // These four sources and destinations are fixed Unix absolute paths, so `:`
+    // is unambiguous here. Read HostConfig.Binds rather than `.Mounts.Source`:
+    // Docker Desktop may report the latter as its VM-internal `/host_mnt/...`
+    // path, while HostConfig preserves the host argument we need to audit.
+    const [source, destination] = line.trim().split(":");
+    if (!source || !destination) continue;
+    actual.set(destination, source);
+  }
+  return expected.every((mount) => actual.get(mount.container) === mount.host);
+}
+
+/**
+ * The edge's "start this image AND prove it's actually serving" callback — the unit
+ * `swapManagedImage` drives. It is the SAME verdict the create path uses: an image swap that leaves a
+ * crash-looping container behind must read as a failed swap, not a successful one —
+ * `waitForPortListening` alone said "listening" whenever ANY proxy held :80,
+ * including the one we were replacing.
+ */
+function makeEdgeStart(
+  executor: CommandExecutor,
+  container: string,
+  opts: ContainerEdgeOptions,
+  mounts: readonly EdgeContainerMount[],
+): (image: string) => Promise<boolean> {
+  const { onLog } = opts;
+  return async (image: string) => {
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) return false;
     const verdict = await verifyEdgeServing(executor, container, {
       timeoutMs: opts.verifyTimeoutMs ?? 30_000,
     });
     if (!verdict.serving && verdict.reason) onLog(log(`Edge ${image}: ${verdict.reason}`, "warn"));
     return verdict.serving;
   };
-
-  if (await start(to)) {
-    onLog(log(`Edge updated to ${to}`));
-    return { swapped: true, edgeDown: false };
-  }
-
-  onLog(log(`Edge ${to} failed to come up — rolling back to ${from}...`, "error"));
-  if (await start(from)) {
-    // Rolled back cleanly: not updated, but still serving on the old image.
-    return { swapped: false, edgeDown: false };
-  }
-  // Both failed: say so loudly AND report it. The box is now without an edge, and
-  // that must not be discoverable only by a user noticing a 502.
-  onLog(log(`Rollback to ${from} ALSO failed — the edge is down on this server.`, "error"));
-  return { swapped: false, edgeDown: true };
 }
 
 /** Verdict of {@link verifyEdgeServing}. `reason` is set iff `serving` is false. */
@@ -394,6 +468,20 @@ export async function ensureContainerEdge(
   const { onLog } = opts;
   const container = opts.container?.trim() || EDGE_CONTAINER_NAME;
   const image = resolveEdgeImage(opts.image);
+  let resolvedMounts: EdgeContainerMount[] | null = null;
+
+  const targetMounts = async (checked?: RootChecked): Promise<EdgeContainerMount[]> => {
+    if (resolvedMounts) return resolvedMounts;
+    const host =
+      checked ??
+      (await rootOrDegrade(executor, {
+        purpose: "Resolving the edge's bind-mount sources",
+        consequence: "Docker may mount a different host directory than Openship writes.",
+        report: (message) => onLog(log(message, "warn")),
+      }));
+    resolvedMounts = await resolveEdgeContainerMounts(host);
+    return resolvedMounts;
+  };
 
   // `fresh`: this call decides whether to CREATE an edge. A memo saying "yes" when
   // the container is gone skips the install and leaves the box with no proxy.
@@ -415,22 +503,49 @@ export async function ensureContainerEdge(
       // loop permanent: the one code path that could have fixed it was skipped
       // because the flapper counted as "already installed".
     } else {
-      // Already ours and serving. The only thing left to reconcile is the IMAGE: the
-      // edge's Lua and nginx.conf are baked in, so an edge left on an old tag keeps
-      // serving rules a newer API assumes it rewrote. Upgrading the API upgrades the
-      // edge.
-      const current = await containerImageRef(executor, existing);
-      if (current && current !== image) {
-        const swap = await swapEdgeImage(executor, existing, current, image, opts);
-        return {
-          container: existing,
-          image,
-          converted: false,
-          updated: swap.swapped,
-          edgeDown: swap.edgeDown,
-        };
+      // A listener is not proof that the container sees the host's vhosts. On
+      // macOS an old command may have mounted `/var/...` from Docker's VM while
+      // Openship wrote through the host symlink at `/private/var/...`: nginx is
+      // healthy and every domain still returns the unrouted 404. Compare Docker's
+      // actual sources with the target host's physical paths and recreate on drift.
+      const mounts = await targetMounts();
+      const mountsMatch = await edgeContainerMountsMatch(executor, existing, mounts);
+      if (mountsMatch === false) {
+        onLog(
+          log("The edge container uses stale or non-canonical bind mounts; recreating it...", "warn"),
+        );
+      } else {
+        // Already ours and serving. The only thing left to reconcile is the IMAGE: the
+        // edge's Lua and nginx.conf are baked in, so an edge left on an old tag keeps
+        // serving rules a newer API assumes it rewrote. Upgrading the API upgrades the
+        // edge. Staleness is a plain tag-compare: the dev tag is content-derived
+        // (`…-dev.<hash>`), so a source edit moves it exactly like a prod version bump —
+        // no image-ID probe needed. `swapManagedImage` pulls only if the target tag
+        // isn't already on the box (deliver placed the dev image there first).
+        const current = await containerImageRef(executor, existing);
+        // A null ref (the image reads back empty in a TOCTOU) is left alone, not judged
+        // stale — recreating a serving container onto the same image buys nothing.
+        const stale = current != null && current !== image;
+        if (stale) {
+          const start = makeEdgeStart(executor, existing, opts, mounts);
+          const swap = await swapManagedImage(executor, {
+            kind: "edge",
+            from: current ?? image,
+            to: image,
+            label: "edge",
+            onLog,
+            start,
+          });
+          return {
+            container: existing,
+            image,
+            converted: false,
+            updated: swap.swapped,
+            edgeDown: swap.down,
+          };
+        }
+        return { container: existing, image, converted: false };
       }
-      return { container: existing, image, converted: false };
     }
   }
 
@@ -445,17 +560,56 @@ export async function ensureContainerEdge(
   //    registry failure has to land here: past the consent gate the old proxy is
   //    already down, so "the box is unchanged and still serving" would be a lie and
   //    a failed pull would leave a live box with no proxy at all.
-  onLog(log(`Pulling edge image ${image}...`));
-  const pull = await executor.streamExec(`docker pull ${sq(image)}`, onLog as (l: LogEntry) => void);
-  if (pull.code !== 0) {
-    throw new Error(
-      `Could not pull the edge image ${image} — the box is unchanged and still serving. ` +
-        "Check the server's network access to the registry, then retry.",
-    );
+  //
+  //    Skipped when the image is already on the box: in dev the control plane built
+  //    the `…-dev.<hash>` image from our source and shipped it here (see
+  //    deliverManagedImage), so the unpublished tag is present and a pull would 404.
+  //    In prod the tag is absent → this pulls `:APP_VERSION` from the registry.
+  if (!(await imageExistsLocally(executor, image))) {
+    if (managedImagesAreFromSource("edge")) {
+      // The image is an unpublished from-source (dev) tag that the control plane was
+      // meant to build and ship here (deliverManagedImage). It isn't on the box, so
+      // that build/ship didn't run or didn't finish — a pull can only 404. Fail with
+      // the real cause instead of "check the server's network access to the registry".
+      throw new Error(fromSourceImageMissingMessage("edge", image));
+    }
+    onLog(log(`Pulling edge image ${image}...`));
+    const pull = await executor.streamExec(`docker pull ${sq(image)}`, onLog as (l: LogEntry) => void);
+    if (pull.code !== 0) {
+      throw new Error(
+        `Could not pull the edge image ${image} — the box is unchanged and still serving. ` +
+          "Check the server's network access to the registry, then retry.",
+      );
+    }
   }
+  // These are the edge's entire persistent state — vhosts, certs, ACME webroot. A
+  // swallowed failure here does not stop the edge from starting: Docker creates a
+  // missing bind source itself, as an EMPTY root-owned dir, so the container comes up
+  // serving nothing and every later vhost write fails somewhere else entirely. Say it
+  // once, here, where the cause is still in hand.
+  // Through the gate, for the reason `edgeHostExecutor` goes through it: these are
+  // root-owned paths under /var/lib/openship, so on a box we log into as a non-root sudo
+  // user the unelevated `mkdir` fails — and the failure was swallowed into a warning
+  // nobody acts on, leaving the empty-bind-mount outcome the comment above describes.
+  // `installContainerEdge` already gates the same work; this reconcile entrypoint never
+  // did. Degrades rather than throws, so an unmeasurable host keeps today's behaviour.
+  const hostState = await rootOrDegrade(executor, {
+    purpose: "Creating the edge's state directories",
+    consequence: "Docker will create them empty, so vhosts and certificates may not persist.",
+    report: (message) => onLog(log(message, "warn")),
+  });
   for (const mount of EDGE_CONTAINER_MOUNTS) {
-    await executor.exec(`mkdir -p ${sq(mount.host)}`).catch(() => {});
+    await hostState.exec(`mkdir -p ${sq(mount.host)}`).catch((err: unknown) => {
+      onLog(
+        log(
+          `Could not create the edge state directory ${mount.host}: ${safeErrorMessage(err)}. ` +
+            `Docker will create it empty, so vhosts and certificates may not persist.`,
+          "warn",
+        ),
+      );
+    });
   }
+  const mounts = await targetMounts(hostState);
 
   // 2. Whatever holds 80/443 → the ONE consent/takeover gate, which prompts, imports
   //    the occupant's sites, journals how to restore it, stops it, and waits for the
@@ -474,7 +628,7 @@ export async function ensureContainerEdge(
     // 3. Start. The ports are PROVABLY free by now, so failing to bind here is a real
     //    failure and not a race we should have waited out.
     onLog(log("Starting the edge container..."));
-    if (!(await startEdgeContainer(executor, container, image, onLog))) {
+    if (!(await startEdgeContainer(executor, container, image, onLog, mounts))) {
       throw new Error("the edge container failed to start");
     }
 

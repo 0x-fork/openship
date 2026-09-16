@@ -5,13 +5,24 @@
  * downloadUpdate() (streams the platform installer with progress) →
  * installUpdate() (seamless self-replace + relaunch).
  *
- * No code signing needed: we download the installer and swap the app
- * ourselves (not Squirrel.Mac, which requires signing). A detached script
- * does the swap because a running app can't overwrite its own bundle.
+ * We download the installer and swap the app ourselves (not Squirrel.Mac, which
+ * requires signing). A detached script does the swap because a running app can't
+ * overwrite its own bundle.
+ *
+ * Trust: the release feed and asset host are pinned, and the download must match
+ * the release's sha256 sidecar or it is refused. That's integrity only — the
+ * sidecar shares the asset's trust domain, so an attacker who can replace the
+ * release asset can replace it too. Real code-signature verification is the
+ * remaining gap.
  */
 
 import { app, net, shell } from "electron";
-import { resolveDesktopUpdate, type GithubReleasePayload } from "@repo/core";
+import {
+  changelogMarkdownUrl,
+  extractChangelogSection,
+  resolveDesktopUpdate,
+  type GithubReleasePayload,
+} from "@repo/core";
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -25,6 +36,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { advisoryManifestUrl, parseManifest, type Advisory, type AdvisoryManifest } from "@repo/core";
+import { isAllowedUpdateAssetUrl } from "./security";
 
 const RELEASES_API = "https://api.github.com/repos/oblien/openship/releases/latest";
 
@@ -49,9 +61,10 @@ export interface UpdateInfo {
 export type UpdateCheck = UpdateInfo | { available: false };
 
 /**
- * Ask GitHub for the latest release + the advisory manifest pinned to its tag,
- * and hand both to `resolveDesktopUpdate`. Never throws — a failed check
- * (offline, rate-limited) resolves to "no update".
+ * Ask GitHub for the latest release, then read the changelog and advisory
+ * manifest pinned to its tag before handing the result to
+ * `resolveDesktopUpdate`. Never throws — a failed release check (offline,
+ * rate-limited) resolves to "no update".
  *
  * This function is I/O only. The whole decision — which asset this platform
  * pulls, whether the release is newer, and whether an advisory authorizes
@@ -69,15 +82,38 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
     });
     if (!res.ok) return { available: false };
     const data = (await res.json()) as GithubReleasePayload;
+    const tag = (data?.tag_name ?? "").trim();
+    // These are independent, fail-soft reads. A missing changelog must never
+    // suppress a critical advisory (or the reverse).
+    const [manifest, changelogNotes] = await Promise.all([
+      fetchManifest(tag),
+      fetchChangelog(tag),
+    ]);
     return resolveDesktopUpdate({
       releasePayload: data,
       platform: process.platform,
       arch: process.arch,
       currentVersion: app.getVersion(),
-      manifest: await fetchManifest((data?.tag_name ?? "").trim()),
+      manifest,
+      changelogNotes,
     });
   } catch {
     return { available: false };
+  }
+}
+
+/** Exact release section from the immutable changelog at this release tag. */
+async function fetchChangelog(tag: string): Promise<string | null> {
+  if (!tag) return null;
+  try {
+    const res = await net.fetch(changelogMarkdownUrl(tag), {
+      headers: { Accept: "text/markdown", "User-Agent": "Openship-Desktop" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    return extractChangelogSection(await res.text(), tag);
+  } catch {
+    return null;
   }
 }
 
@@ -108,6 +144,13 @@ export async function downloadUpdate(
   asset: UpdateAsset,
   onProgress: (fraction: number) => void,
 ): Promise<string> {
+  // The release feed comes from the pinned repo, but the asset URL inside it was
+  // previously followed wherever it pointed — so a tampered feed could source the
+  // installer from any host. Pin it to GitHub's own release hosts.
+  if (!isAllowedUpdateAssetUrl(asset.url)) {
+    throw new Error(`Refusing to download update from untrusted URL: ${asset.url}`);
+  }
+
   const dir = join(app.getPath("temp"), "openship-update");
   mkdirSync(dir, { recursive: true });
   const dest = join(dir, asset.name);
@@ -144,33 +187,43 @@ export async function downloadUpdate(
     file.on("error", j);
   });
 
-  // Integrity gate: verify the sha256 sidecar the release publishes. A MISMATCH
-  // = corrupted/tampered download → refuse (delete + throw). A MISSING sidecar
-  // is a warning, not a hard block (OS code-signing/Gatekeeper is the backstop),
-  // so a release that omits it can never brick auto-update. Mirrors the CLI
-  // dashboard bundle's verify, tuned to fail-open on absence.
+  // Integrity gate: verify the sha256 sidecar the release publishes, and FAIL
+  // CLOSED. A mismatch and a missing sidecar are both refusals — treating absence
+  // as "install anyway" made the check bypassable by whoever could swap the asset,
+  // which is the only attacker it defends against. release.yml publishes a sidecar
+  // for every desktop artifact, and the sidecar is always read from the release
+  // we're installing, so failing closed can't strand a real release.
+  //
+  // This is integrity, NOT authenticity: the sidecar shares the asset's trust
+  // domain. Genuine signature verification is still missing.
   const digest = hash.digest("hex");
   let expected: string | null = null;
+  let sidecarError = "unreachable";
   try {
     const shaRes = await net.fetch(`${asset.url}.sha256`, {
       headers: { "User-Agent": "Openship-Desktop" },
       signal: AbortSignal.timeout(10_000),
     });
-    if (shaRes.ok) {
+    if (!shaRes.ok) sidecarError = `HTTP ${shaRes.status}`;
+    else {
       const tok = (await shaRes.text()).trim().split(/\s+/)[0]?.toLowerCase();
       if (tok && /^[0-9a-f]{64}$/.test(tok)) expected = tok;
+      else sidecarError = "malformed";
     }
   } catch {
-    /* sidecar unreachable → treat as absent (warn below) */
+    sidecarError = "unreachable";
   }
-  if (expected && expected !== digest) {
+  if (!expected) {
+    rmSync(dest, { force: true });
+    throw new Error(
+      `Update integrity check failed — no usable .sha256 for ${asset.name} (${sidecarError}). Refusing to install.`,
+    );
+  }
+  if (expected !== digest) {
     rmSync(dest, { force: true });
     throw new Error(
       `Update checksum mismatch — refusing to install ${asset.name} (expected ${expected}, got ${digest}).`,
     );
-  }
-  if (!expected) {
-    console.warn(`[updater] no .sha256 sidecar for ${asset.name}; skipping integrity check.`);
   }
   return dest;
 }

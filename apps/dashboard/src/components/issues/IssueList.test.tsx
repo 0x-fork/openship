@@ -30,6 +30,19 @@ const render = (issues = ISSUE_FIXTURES.mixed!) =>
 const groupOrder = (html: string) =>
   [...html.matchAll(/text-\[14px\] font-semibold [^"]*">([^<]+)</g)].map((m) => m[1]);
 
+/**
+ * Each panel header's title → its tone class (`text-danger` / `text-warning` /
+ * `text-foreground`), so one panel's tint is assertable without matching over the
+ * whole page — the "muted beneath something louder" rule is per-panel, not global.
+ */
+const panelTones = (html: string) =>
+  Object.fromEntries(
+    [...html.matchAll(/text-\[14px\] font-semibold (text-[^"]*)">([^<]+)</g)].map((m) => [
+      m[2],
+      m[1],
+    ]),
+  );
+
 describe("grouping", () => {
   it("renders one panel per scope present, outward by blast radius", () => {
     expect(groupOrder(render())).toEqual(["Openship", "Servers", "Projects", "Domains"]);
@@ -64,9 +77,10 @@ describe("grouping", () => {
 });
 
 describe("tone comes from the worst row in the panel", () => {
-  it("borders a panel danger when it holds an outage, even beside milder rows", () => {
+  it("heads a panel danger when it holds an outage, even beside milder rows", () => {
     const html = render(ISSUE_FIXTURES.outage!);
-    expect(html).toContain("border-danger-border");
+    expect(html).toContain("bg-danger-bg");
+    expect(html).toContain("text-danger");
   });
 
   it("never renders danger for a page of setup gaps and held decisions", () => {
@@ -74,17 +88,41 @@ describe("tone comes from the worst row in the panel", () => {
     // not things that are down. If either escalates, every panel looks like an
     // outage and the distinction stops being readable.
     const html = render(ISSUE_FIXTURES.action!);
-    expect(html).toContain("border-warning-border");
-    expect(html).not.toContain("border-danger-border");
+    expect(html).toContain("bg-warning-bg");
+    expect(html).not.toContain("bg-danger-bg");
+    expect(html).not.toContain("text-danger");
     expect(html).not.toContain("bg-danger-solid");
   });
 
-  it("keeps advisories on the muted surface, with no status color anywhere", () => {
+  it("wears amber on a page of pure advisories — the home Updates identity", () => {
+    // Nothing here outranks an advisory, so there's no louder tier to blur into: the
+    // panels carry the same amber the standalone Updates card does, never danger.
     const html = render(ISSUE_FIXTURES.advisory!);
-    expect(html).not.toContain("border-danger-border");
-    expect(html).not.toContain("border-warning-border");
-    expect(html).not.toContain("text-warning");
-    expect(html).toContain("border-border/60");
+    expect(html).toContain("bg-warning-bg");
+    expect(html).toContain("text-warning");
+    expect(html).not.toContain("bg-danger-bg");
+    expect(html).not.toContain("text-danger");
+  });
+
+  it("drops advisories back to the muted surface the moment something louder shares the page", () => {
+    // In the mixed feed an outage is present, so the advisory-only Openship panel must
+    // NOT read amber — "a new version exists" can't look like "down" when both show at
+    // once. The louder panels keep their own tone.
+    const tones = panelTones(render(ISSUE_FIXTURES.mixed!));
+    expect(tones.Openship).toBe("text-foreground"); // advisory, muted beneath louder
+    expect(tones.Servers).toBe("text-danger"); // outage
+    expect(tones.Domains).toBe("text-warning"); // action_required
+  });
+
+  it("draws the same neutral edge whatever the tone", () => {
+    // Severity belongs to the header tile and title. Tinting the border makes the
+    // card itself the status object, so a page of panels reads as colored boxes.
+    for (const fixture of [ISSUE_FIXTURES.outage!, ISSUE_FIXTURES.action!, ISSUE_FIXTURES.advisory!]) {
+      const html = render(fixture);
+      expect(html).toContain("border-border/50");
+      expect(html).not.toContain("border-danger-border");
+      expect(html).not.toContain("border-warning-border");
+    }
   });
 });
 
