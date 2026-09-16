@@ -8,19 +8,20 @@ The previous integration worktree and old branches, including `ship`, were remov
 
 ## Progress
 
-14 already-fixed-main; 56 deferred-feature; 21 fixed-in-branch; 5 needs-reproduction; 6 partial-branch; 5 partial-main. Every report has completed this review pass. Partial and reproduction-dependent reports remain open. Nothing in this branch has been merged into main.
+16 already-fixed-main; 57 deferred-feature; 23 fixed-in-branch; 4 needs-reproduction; 4 partial-branch; 4 partial-main. Every report has completed this review pass. Partial and reproduction-dependent reports remain open. Nothing in this branch has been merged into main.
 
 ## Issue ledger
 
 | Issue | Report | Status | Linked PRs |
 | --- | --- | --- | --- |
+| [#894](https://github.com/oblien/openship/issues/894) | feat(webmail): refresh the inbox when new mail arrives | deferred-feature | — |
 | [#893](https://github.com/oblien/openship/issues/893) | Compose-mode: env var update never reaches container once its compose-referenced value is cached (reconcileFromCompose bootstrap lock-in) | fixed-in-branch | — |
 | [#879](https://github.com/oblien/openship/issues/879) | [Bug]: [0.7.2] Custom domains at project level are verified + certified but never routed locally; self-app domain cannot converge (host-port claim conflict) | fixed-in-branch | — |
 | [#878](https://github.com/oblien/openship/issues/878) | [Improvement]: Deployments don't use external repository and rebuild images instead | needs-reproduction | — |
 | [#877](https://github.com/oblien/openship/issues/877) | [Feature]: Add Porkbun as a supported DNS Provider | deferred-feature | — |
 | [#876](https://github.com/oblien/openship/issues/876) | [Bug]: Email service is waiting for emails to go out forever | needs-reproduction | [#885](https://github.com/oblien/openship/pull/885) |
-| [#873](https://github.com/oblien/openship/issues/873) | [Bug]: `openship.json`'s `monorepo` config (and CLI `project create --type monorepo`) is documented and schema-valid, but doesn't actually produce a multi-app project through any available path | partial-main | — |
-| [#872](https://github.com/oblien/openship/issues/872) | [Bug]: Global GitHub device-flow connection intermittently shows "rejected".  The status is backed by a Redis cache entry with a ~100 second TTL, not the actual GitHub authorization state | needs-reproduction | — |
+| [#873](https://github.com/oblien/openship/issues/873) | [Bug]: `openship.json`'s `monorepo` config (and CLI `project create --type monorepo`) is documented and schema-valid, but doesn't actually produce a multi-app project through any available path | already-fixed-main | — |
+| [#872](https://github.com/oblien/openship/issues/872) | [Bug]: Global GitHub device-flow connection intermittently shows "rejected".  The status is backed by a Redis cache entry with a ~100 second TTL, not the actual GitHub authorization state | already-fixed-main | — |
 | [#869](https://github.com/oblien/openship/issues/869) | Migrate to self-hosted server never actually deploys (3 stacked bugs: missing deploy trigger, release-dist path/packaging mismatch, PGlite assets crash) | partial-main | — |
 | [#856](https://github.com/oblien/openship/issues/856) | [Feature]: Add Authentik to the one-click app catalog | deferred-feature | [#857](https://github.com/oblien/openship/pull/857) |
 | [#849](https://github.com/oblien/openship/issues/849) | [Feature Request] Add CLI commands for self-hosted jobs | deferred-feature | [#850](https://github.com/oblien/openship/pull/850) |
@@ -39,7 +40,7 @@ The previous integration worktree and old branches, including `ship`, were remov
 | [#672](https://github.com/oblien/openship/issues/672) | feature: service restarting auto detection after new deployments in background (not blocking) and mark project partial failed or action required if there's loop restarting | deferred-feature | — |
 | [#671](https://github.com/oblien/openship/issues/671) | feature:  on deployments list add standalone remove snapshot option and ensure the snapshot data removed when delete the deployment info | deferred-feature | — |
 | [#669](https://github.com/oblien/openship/issues/669) | feature: add publish env button after update env / updated env without need to redeploy it, as fast env update in services / project | deferred-feature | [#681](https://github.com/oblien/openship/pull/681) |
-| [#668](https://github.com/oblien/openship/issues/668) | Services logs hang out / takes too much time to show logs, terminal not load with silent fail in desktop | partial-branch | — |
+| [#668](https://github.com/oblien/openship/issues/668) | Services logs hang out / takes too much time to show logs, terminal not load with silent fail in desktop | fixed-in-branch | — |
 | [#667](https://github.com/oblien/openship/issues/667) | feature: showing the live service / project logs after deployment finish in deployment page if the deployment success instead of keeping the logs | deferred-feature | [#708](https://github.com/oblien/openship/pull/708) |
 | [#662](https://github.com/oblien/openship/issues/662) | feature request: support deploy another service on same domain but with another path | deferred-feature | — |
 | [#661](https://github.com/oblien/openship/issues/661) | ensure release checks not duplicated | fixed-in-branch | — |
@@ -73,7 +74,7 @@ The previous integration worktree and old branches, including `ship`, were remov
 | [#487](https://github.com/oblien/openship/issues/487) | OPENSHIP_PGDATA detection picks the volume root when re-installing over an existing pgdata/ subdirectory | fixed-in-branch | [#494](https://github.com/oblien/openship/pull/494) |
 | [#483](https://github.com/oblien/openship/issues/483) | add X as a notification delivery channel | deferred-feature | — |
 | [#433](https://github.com/oblien/openship/issues/433) | 🔄 Request: More Frequent `dev` Branch Updates + Release Channel Switcher | deferred-feature | — |
-| [#429](https://github.com/oblien/openship/issues/429) | [Bug + Feature Request] Deleted emails stuck with TRASH label & no auto-refresh on new email | partial-branch | [#430](https://github.com/oblien/openship/pull/430), [#478](https://github.com/oblien/openship/pull/478) |
+| [#429](https://github.com/oblien/openship/issues/429) | [Bug + Feature Request] Deleted emails stuck with TRASH label & no auto-refresh on new email | fixed-in-branch | [#430](https://github.com/oblien/openship/pull/430), [#478](https://github.com/oblien/openship/pull/478) |
 | [#428](https://github.com/oblien/openship/issues/428) | Feature Request: Show a friendly "Service Not Found" page for unrecognized hostnames instead of raw SSL/TLS errors | deferred-feature | — |
 | [#426](https://github.com/oblien/openship/issues/426) | [Bug] Terminal session counter not reset after browser disconnect — ghost sessions block new shells indefinitely | fixed-in-branch | [#432](https://github.com/oblien/openship/pull/432), [#579](https://github.com/oblien/openship/pull/579) |
 | [#424](https://github.com/oblien/openship/issues/424) | How to change the binding IP address of container? | already-fixed-main | — |
@@ -160,21 +161,37 @@ Verification: Rechecked against main 4e66349c and all issue comments after #891 
 
 ### #876: needs-reproduction
 
-Amavis restart PID cleanup from contributor PR #885 is now in main via #891. The reported fresh-install mail deferral still needs its actual queue reason and daemon log; no follow-up diagnostics supplied.
+Amavis restart PID cleanup from contributor PR #885 is already in main through #891; #892 also includes #477's persisted filter-TLS repair. These verified related defects do not establish the cause of this fresh-install report.
+
+Re-read the live report and inspected its original screenshot: the only deferred reason shown is "temporary failure". No queue/daemon diagnostic reply supplies a current cause. Kept open and posted the current merge status plus per-message queue inspection/cancellation commands.
 
 Verification: Rechecked against main 4e66349c and all issue comments after #891 merged.
 
-### #873: partial-main
+Verification: Rechecked the original screenshot, production boot scripts, #885 real-daemon coverage and #477 real-Postfix evidence; no claim of a verified fresh-install reproduction.
 
-Main now rejects empty explicit monorepo creation, detects duplicate/unmatched overrides, and documents scanner-backed workspace import. Declaring independent same-root processes without Docker is a separate capability; keep the issue open for that remainder.
+### #873: already-fixed-main
 
-Verification: Rechecked against main 4e66349c and all issue comments after #891 merged.
+Main rejects duplicate normalized monorepo override roots, reports unmatched workspace overrides, and rejects explicit monorepo creation without detected app metadata before any project/group write. Native SDK and HTTP both preserve supported two-app creation.
 
-### #872: needs-reproduction
+Closed the silent-fallback and validation bugs already merged through #891. Independent Docker-free processes sharing a source root remain a separate runtime-role capability tracked in #231; the documentation states the supported scanner-backed workflow.
 
-Main reloads encrypted credentials after cache expiry and keeps GitHub rate limits retryable, with bounded verification requests. No diagnostic follow-up establishes a remaining intermittent rejection.
+Closure: https://github.com/oblien/openship/issues/873#issuecomment-5694011281
 
-Verification: Rechecked against main 4e66349c and all issue comments after #891 merged.
+Commits: [`7841d472`](https://github.com/oblien/openship/commit/7841d47210949c5f2fe16988442d453ba4406f66).
+
+Verification: Configuration parsing, source preparation/root discovery and native SDK/HTTP create/ensure regressions pass in the closure recheck. The linked fix is an ancestor of main and #892.
+
+### #872: already-fixed-main
+
+Main reloads the encrypted instance credential on cache expiry. GitHub 403 primary/secondary rate limits, 429 responses, network failures and timeouts remain retryable; actual authorization rejection still requests reconnection.
+
+Closed the verified credential-handling defect after rechecking the implementation and its Settings/device-flow regressions. The fix landed through #891 and is inherited by #892; an additional intermittent failure requires a concrete reproduction rather than keeping the resolved defect open.
+
+Closure: https://github.com/oblien/openship/issues/872#issuecomment-5694010013
+
+Commits: [`2715609a`](https://github.com/oblien/openship/commit/2715609ae84060c2907a4e36cd79886093401c5f).
+
+Verification: Rechecked main 4e66349c and #892 at 0285ccb2. Identity, device-flow and Settings-response regression suites pass, including a cold-cache retry after throttling.
 
 ### #869: partial-main
 
@@ -194,13 +211,19 @@ The report has no bug description, version, or reproduction steps; no response t
 
 Verification: Rechecked against main 4e66349c and all issue comments after #891 merged.
 
-### #668: partial-branch
+### #668: fixed-in-branch
 
-Reproduced stale-target reconnects, late terminal events overwriting a new connection, stale log status, and replaced log streams disconnecting their successor. Connections now have explicit ownership and cleanup; shell and log handshakes fail visibly after 60 seconds. Build streaming retains stable disconnect controls. The report contains no version, target or latency trace, so unspecified backend slowness remains unverified and the issue stays open.
+Reproduced stale-target reconnects, late terminal events overwriting a new connection, stale log status, and replaced log streams disconnecting their successor. Connections now have explicit ownership and cleanup; shell and log handshakes fail visibly after 60 seconds. Build streaming retains stable disconnect controls.
+
+Closed the reproduced connection bugs with the #892 fix and pending-main status. The report has no separate server-delay reproduction; a new concrete failure can be reopened rather than keeping the verified lifecycle fixes indefinitely partial.
+
+Closure: https://github.com/oblien/openship/issues/668#issuecomment-5694012488
 
 Commits: [`30c564b0`](https://github.com/oblien/openship/commit/30c564b0ed741246e3e75195de9e0f97ddc556a4).
 
 Verification: 17 React lifecycle and real ReadableStream cases pass; 12 reproduced failures on main. Dashboard TypeScript passes.
+
+Verification: Closure recheck: all 17 terminal/log lifecycle cases pass again at 0285ccb2.
 
 ### #661: fixed-in-branch
 
@@ -340,13 +363,19 @@ Commits: [`49c580fe`](https://github.com/oblien/openship/commit/49c580fecb21e8d0
 
 Verification: 153 CLI storage/configuration cases and CLI TypeScript pass. Seven cases fail on main. The actual read-only Docker probe correctly distinguishes root, subdirectory, empty, lost+found-only, foreign and unavailable-daemon cases; temporary volumes were removed.
 
-### #429: partial-branch
+### #429: fixed-in-branch
 
-Deletion fixed by contributor PR #430, adapted and merged into #892 with actual GitHub merge credit. All delete entry points preserve the source mailbox and use the existing IMAP delete handler. Automatic inbox refresh remains a separate deferred feature; issue stays open. Closed overlapping PR #478 with the reason.
+Deletion fixed by contributor PR #430, adapted and merged into #892 with actual GitHub merge credit. All delete entry points preserve the source mailbox and use the existing IMAP delete handler. Closed overlapping PR #478 with the reason.
+
+Closed the verified deletion bug, waiting for #892 to merge into main. The separate automatic inbox-refresh feature is preserved in open issue #894, attributed to its original request in #429.
+
+Closure: https://github.com/oblien/openship/issues/429#issuecomment-5694066964
 
 Commits: [`5dbd9b2b`](https://github.com/oblien/openship/commit/5dbd9b2b1455739791d4533a2921f0de676e8201).
 
 Verification: 4 client-to-tRPC-to-IMAP regressions pass; 3 fail on main. All 64 mail server tests, server TypeScript and mail client production build pass. IMAP transport is substituted in the regressions.
+
+Verification: Closure recheck: all four client-to-tRPC-to-IMAP deletion cases pass again.
 
 ### #426: fixed-in-branch
 
@@ -496,7 +525,7 @@ Verification: Reviewed the original report and closed PR #319; current main alre
 
 ### #231: partial-branch
 
-Read the complete body and all eleven long follow-up comments. The multi-role/runtime and release-phase requests remain outside this bug batch.
+Read the complete body and follow-up discussion, including the September 16 Rails-preset request. Replied with implemented/pending-main status and confirmed that the multi-role/runtime and release-phase decision remains outside this bug batch.
 
 Contributor PR #468 is integrated: Rails storage persistence, build/start defaults and resolved Gemfile.lock dependencies use the existing core mechanisms.
 
@@ -629,7 +658,8 @@ Verification: Six regressions fail on current main.
 - Documentation verification passes: 160 pages, 367 SDK methods, 559 HTTP routes, 205 CLI command paths, 226 CLI examples and 107 public-SDK examples. CLI references were regenerated from the built package.
 - Issue-specific negative tests fail on the unchanged main baseline and pass with their fixes; the findings above link the relevant commits. Real Docker, SSH, browser, mail and runtime probes are recorded beside the affected issues.
 - Production API/dashboard build passes (10 tasks), including the Next.js production compilation and TypeScript check.
-- Final refresh: main remains 4e66349c; all 107 reports are classified. The 35 resolved reports are closed with evidence (21 fixed here, 14 already fixed in main); 72 partial, reproduction-dependent or feature reports remain open. No unreviewed new issue was found.
 - CI matrix selection is verified with actual Turbo dry runs; the compound-script argument forwarding regression is corrected, and every workspace test plus script tests remains included.
+- Closure recheck: 108 reports are classified, including the new feature follow-up #894. All 39 resolved reports are closed with evidence (23 fixed here, 16 already fixed in main). The 69 remaining reports have explicit partial, reproduction-dependent or feature status.
+- Closure recheck at 0285ccb2: 354 targeted GitHub, monorepo, log/terminal, Compose, service-state, app-routing and mail regression cases pass across 20 files. Application code is unchanged by the tracking update.
 
 Feature requests remain outside this bug batch. Reproduction gaps stay open with a diagnostic request. Issues fixed on this branch are closed with a comment identifying #892 and the pending merge to main; partial and ongoing umbrella reports stay open.
