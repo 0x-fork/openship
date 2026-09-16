@@ -4,10 +4,11 @@ import React from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
+import { AnalyticsError } from "@/components/monitoring/AnalyticsError";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
-import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
+import { useProjectInfo, useAnalyticsData, invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import {
@@ -48,7 +49,13 @@ export const OverviewTab = () => {
   // concurrent fetches across components (e.g. OverviewTab and
   // MonitoringTab share one summary fetch).
   const projectInfoQuery = useProjectInfo(id);
-  const analytics = useAnalyticsData(id, selectedDomain);
+  // Wait for this project's selected domain. An unscoped request aggregates
+  // every domain and can delay the scoped request that immediately follows it.
+  const analytics = useAnalyticsData(
+    projectData.id === id && selectedDomain ? id : null,
+    selectedDomain,
+  );
+  const showAnalyticsError = !!analytics.error && !analytics.isLoading;
   const analyticsData = analytics.data;
   const services = servicesData.services;
   const serviceCount = servicesData.isLoading
@@ -298,7 +305,10 @@ export const OverviewTab = () => {
       </div>
 
       {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
-      {hasDomain && (
+      {hasDomain && showAnalyticsError && (
+        <AnalyticsError error={analytics.error!} onRetry={() => invalidateProjectCaches(id)} />
+      )}
+      {hasDomain && !showAnalyticsError && (
         <>
       {/* Compact stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
