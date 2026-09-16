@@ -8,12 +8,13 @@ The previous integration worktree and old branches, including `ship`, were remov
 
 ## Progress
 
-5 already-fixed-main; 54 deferred-feature; 7 fixed-in-branch; 5 needs-reproduction; 2 partial-branch; 2 partial-main; 31 pending-review. Pending reports have not yet completed review. Nothing in this branch has been merged into main.
+14 already-fixed-main; 56 deferred-feature; 21 fixed-in-branch; 5 needs-reproduction; 6 partial-branch; 5 partial-main. Every report has completed this review pass. Partial and reproduction-dependent reports remain open. Nothing in this branch has been merged into main.
 
 ## Issue ledger
 
 | Issue | Report | Status | Linked PRs |
 | --- | --- | --- | --- |
+| [#893](https://github.com/oblien/openship/issues/893) | Compose-mode: env var update never reaches container once its compose-referenced value is cached (reconcileFromCompose bootstrap lock-in) | fixed-in-branch | — |
 | [#879](https://github.com/oblien/openship/issues/879) | [Bug]: [0.7.2] Custom domains at project level are verified + certified but never routed locally; self-app domain cannot converge (host-port claim conflict) | fixed-in-branch | — |
 | [#878](https://github.com/oblien/openship/issues/878) | [Improvement]: Deployments don't use external repository and rebuild images instead | needs-reproduction | — |
 | [#877](https://github.com/oblien/openship/issues/877) | [Feature]: Add Porkbun as a supported DNS Provider | deferred-feature | — |
@@ -53,75 +54,95 @@ The previous integration worktree and old branches, including `ship`, were remov
 | [#577](https://github.com/oblien/openship/issues/577) | Feature: let a catalog app declare its default backup policy, so one click covers every service instead of a ten-field form each | deferred-feature | [#578](https://github.com/oblien/openship/pull/578) |
 | [#568](https://github.com/oblien/openship/issues/568) | [Bug] Webmail branding: siteTitle and siteDescription are accepted but never rendered, and the vendor footer is not brandable | already-fixed-main | — |
 | [#558](https://github.com/oblien/openship/issues/558) | [Feature] Make Projects the entrypoint of app deployment | deferred-feature | [#744](https://github.com/oblien/openship/pull/744) |
-| [#556](https://github.com/oblien/openship/issues/556) | Upstream-down hostnames return a raw OpenResty 502 instead of a friendly “Application unavailable” page | pending-review | [#557](https://github.com/oblien/openship/pull/557) |
+| [#556](https://github.com/oblien/openship/issues/556) | Upstream-down hostnames return a raw OpenResty 502 instead of a friendly “Application unavailable” page | fixed-in-branch | [#557](https://github.com/oblien/openship/pull/557) |
 | [#541](https://github.com/oblien/openship/issues/541) | feat(cli): `openship deployment bisect` — binary-search deployment history for the first bad deploy | deferred-feature | [#542](https://github.com/oblien/openship/pull/542) |
 | [#535](https://github.com/oblien/openship/issues/535) | [Feature] Support buildStrategy: "local" for Docker stacks — build the image on the control-plane host and ship it to the target server | deferred-feature | — |
 | [#530](https://github.com/oblien/openship/issues/530) | feat: enable the Uptime Kuma app template | deferred-feature | [#531](https://github.com/oblien/openship/pull/531) |
-| [#527](https://github.com/oblien/openship/issues/527) | Experience as first time / new user | pending-review | — |
+| [#527](https://github.com/oblien/openship/issues/527) | Experience as first time / new user | partial-main | — |
 | [#521](https://github.com/oblien/openship/issues/521) | RFC: External installable plugin architecture (versioned outside core) | deferred-feature | — |
 | [#513](https://github.com/oblien/openship/issues/513) | Add Kan.bn to the apps catalog | deferred-feature | [#522](https://github.com/oblien/openship/pull/522), [#534](https://github.com/oblien/openship/pull/534) |
 | [#512](https://github.com/oblien/openship/issues/512) | Add Shoutrrr to the apps catalog | deferred-feature | [#526](https://github.com/oblien/openship/pull/526), [#534](https://github.com/oblien/openship/pull/534) |
-| [#509](https://github.com/oblien/openship/issues/509) | Docker app deployment fails because the host channel is not provisioned | pending-review | [#518](https://github.com/oblien/openship/pull/518) |
-| [#506](https://github.com/oblien/openship/issues/506) | [Bug] Same-server migration leaves app unreachable — "Auto" routing mode doesn't publish a loopback port | pending-review | [#499](https://github.com/oblien/openship/pull/499), [#508](https://github.com/oblien/openship/pull/508) |
+| [#509](https://github.com/oblien/openship/issues/509) | Docker app deployment fails because the host channel is not provisioned | already-fixed-main | [#518](https://github.com/oblien/openship/pull/518) |
+| [#506](https://github.com/oblien/openship/issues/506) | [Bug] Same-server migration leaves app unreachable — "Auto" routing mode doesn't publish a loopback port | fixed-in-branch | [#499](https://github.com/oblien/openship/pull/499), [#508](https://github.com/oblien/openship/pull/508) |
 | [#505](https://github.com/oblien/openship/issues/505) | [Feature] Allow dismissing/ignoring an issue (edge_absent et al.) — or a per-server component opt-out | deferred-feature | — |
-| [#504](https://github.com/oblien/openship/issues/504) | ConnectionCard is hidden for non-catalog projects — "Use in a project" is unreachable for single-app/compose/monorepo sources | pending-review | [#507](https://github.com/oblien/openship/pull/507) |
+| [#504](https://github.com/oblien/openship/issues/504) | ConnectionCard is hidden for non-catalog projects — "Use in a project" is unreachable for single-app/compose/monorepo sources | fixed-in-branch | [#507](https://github.com/oblien/openship/pull/507) |
 | [#501](https://github.com/oblien/openship/issues/501) | Laravel asset build fails when a package ships CSS from vendor/ (Livewire Flux, Filament) — the asset stage has no vendor/ | fixed-in-branch | [#467](https://github.com/oblien/openship/pull/467) |
 | [#500](https://github.com/oblien/openship/issues/500) | `onFailure` destroys carried-forward (still-live) containers when a compose deploy fails — a failed redeploy can take down the running app | already-fixed-main | [#517](https://github.com/oblien/openship/pull/517) |
 | [#495](https://github.com/oblien/openship/issues/495) | [Feature]: MFA for server accounts | deferred-feature | [#772](https://github.com/oblien/openship/pull/772) |
-| [#488](https://github.com/oblien/openship/issues/488) | up dry-run reports POSTGRES_PASSWORD=<preserved> but writes a newly generated password | pending-review | [#496](https://github.com/oblien/openship/pull/496) |
-| [#487](https://github.com/oblien/openship/issues/487) | OPENSHIP_PGDATA detection picks the volume root when re-installing over an existing pgdata/ subdirectory | pending-review | [#494](https://github.com/oblien/openship/pull/494) |
+| [#488](https://github.com/oblien/openship/issues/488) | up dry-run reports POSTGRES_PASSWORD=<preserved> but writes a newly generated password | fixed-in-branch | [#496](https://github.com/oblien/openship/pull/496) |
+| [#487](https://github.com/oblien/openship/issues/487) | OPENSHIP_PGDATA detection picks the volume root when re-installing over an existing pgdata/ subdirectory | fixed-in-branch | [#494](https://github.com/oblien/openship/pull/494) |
 | [#483](https://github.com/oblien/openship/issues/483) | add X as a notification delivery channel | deferred-feature | — |
 | [#433](https://github.com/oblien/openship/issues/433) | 🔄 Request: More Frequent `dev` Branch Updates + Release Channel Switcher | deferred-feature | — |
-| [#429](https://github.com/oblien/openship/issues/429) | [Bug + Feature Request] Deleted emails stuck with TRASH label & no auto-refresh on new email | pending-review | [#430](https://github.com/oblien/openship/pull/430), [#478](https://github.com/oblien/openship/pull/478) |
+| [#429](https://github.com/oblien/openship/issues/429) | [Bug + Feature Request] Deleted emails stuck with TRASH label & no auto-refresh on new email | partial-branch | [#430](https://github.com/oblien/openship/pull/430), [#478](https://github.com/oblien/openship/pull/478) |
 | [#428](https://github.com/oblien/openship/issues/428) | Feature Request: Show a friendly "Service Not Found" page for unrecognized hostnames instead of raw SSL/TLS errors | deferred-feature | — |
 | [#426](https://github.com/oblien/openship/issues/426) | [Bug] Terminal session counter not reset after browser disconnect — ghost sessions block new shells indefinitely | fixed-in-branch | [#432](https://github.com/oblien/openship/pull/432), [#579](https://github.com/oblien/openship/pull/579) |
-| [#424](https://github.com/oblien/openship/issues/424) | How to change the binding IP address of container? | pending-review | — |
+| [#424](https://github.com/oblien/openship/issues/424) | How to change the binding IP address of container? | already-fixed-main | — |
 | [#417](https://github.com/oblien/openship/issues/417) | Support Cloudflare Email Sending in self-hosted SMTP settings | deferred-feature | — |
 | [#415](https://github.com/oblien/openship/issues/415) | Add OpenTelemetry Collector to the apps catalog | deferred-feature | [#416](https://github.com/oblien/openship/pull/416), [#534](https://github.com/oblien/openship/pull/534) |
 | [#411](https://github.com/oblien/openship/issues/411) | [Feature Request] Allow login with username only (without @domain) on single-domain setup | deferred-feature | — |
 | [#410](https://github.com/oblien/openship/issues/410) | Rollback action permanently disabled on every deployment — status string mismatch ("ready" vs "success") | already-fixed-main | [#542](https://github.com/oblien/openship/pull/542) |
-| [#408](https://github.com/oblien/openship/issues/408) | Docker health check shows Unhealthy on external server added via SSH (password auth) despite Docker running normally | pending-review | [#422](https://github.com/oblien/openship/pull/422) |
+| [#408](https://github.com/oblien/openship/issues/408) | Docker health check shows Unhealthy on external server added via SSH (password auth) despite Docker running normally | fixed-in-branch | [#422](https://github.com/oblien/openship/pull/422) |
 | [#402](https://github.com/oblien/openship/issues/402) | Add a standalone PostgreSQL app to Install App or make database services easier to find | deferred-feature | [#405](https://github.com/oblien/openship/pull/405) |
 | [#401](https://github.com/oblien/openship/issues/401) | Add SeaweedFS as an Install App option for self-hosted object storage | deferred-feature | [#406](https://github.com/oblien/openship/pull/406) |
 | [#399](https://github.com/oblien/openship/issues/399) | Add a standalone PostgreSQL app to Install App or make database services easier to find | deferred-feature | — |
 | [#398](https://github.com/oblien/openship/issues/398) | Add SeaweedFS as an Install App option for self-hosted object storage | deferred-feature | — |
 | [#397](https://github.com/oblien/openship/issues/397) | Add TanStack Start support to framework detection and project setup | deferred-feature | — |
-| [#396](https://github.com/oblien/openship/issues/396) | Overview page shows 0 requests / no traffic data on some projects (silent AbortError in root layout) | pending-review | [#421](https://github.com/oblien/openship/pull/421) |
-| [#392](https://github.com/oblien/openship/issues/392) | [Bug] smtp_tls_security_level set to "encrypt" breaks inbound mail delivery via Amavis | pending-review | [#423](https://github.com/oblien/openship/pull/423), [#477](https://github.com/oblien/openship/pull/477) |
-| [#391](https://github.com/oblien/openship/issues/391) | [Bug] Relay SMTP settings not applied to webmail container + logout redirects to 404 | pending-review | [#420](https://github.com/oblien/openship/pull/420), [#476](https://github.com/oblien/openship/pull/476) |
-| [#390](https://github.com/oblien/openship/issues/390) | Bug: Latest version broke the cli | pending-review | — |
-| [#388](https://github.com/oblien/openship/issues/388) | Migrating coolify to openship issues | pending-review | — |
+| [#396](https://github.com/oblien/openship/issues/396) | Overview page shows 0 requests / no traffic data on some projects (silent AbortError in root layout) | fixed-in-branch | [#421](https://github.com/oblien/openship/pull/421) |
+| [#392](https://github.com/oblien/openship/issues/392) | [Bug] smtp_tls_security_level set to "encrypt" breaks inbound mail delivery via Amavis | fixed-in-branch | [#423](https://github.com/oblien/openship/pull/423), [#477](https://github.com/oblien/openship/pull/477) |
+| [#391](https://github.com/oblien/openship/issues/391) | [Bug] Relay SMTP settings not applied to webmail container + logout redirects to 404 | partial-main | [#420](https://github.com/oblien/openship/pull/420), [#476](https://github.com/oblien/openship/pull/476) |
+| [#390](https://github.com/oblien/openship/issues/390) | Bug: Latest version broke the cli | already-fixed-main | — |
+| [#388](https://github.com/oblien/openship/issues/388) | Migrating coolify to openship issues | already-fixed-main | — |
 | [#382](https://github.com/oblien/openship/issues/382) | [Feature]: First-class Forgejo/Gitea/Gogs integration | deferred-feature | — |
-| [#381](https://github.com/oblien/openship/issues/381) | Openship Windows Path Bug | pending-review | [#425](https://github.com/oblien/openship/pull/425) |
+| [#381](https://github.com/oblien/openship/issues/381) | Openship Windows Path Bug | already-fixed-main | [#425](https://github.com/oblien/openship/pull/425) |
 | [#379](https://github.com/oblien/openship/issues/379) | Help Wanted: Replace GitHub-Only Integration with Multi-Git Provider Support | deferred-feature | [#386](https://github.com/oblien/openship/pull/386) |
-| [#378](https://github.com/oblien/openship/issues/378) | How to deploy Static HTML? | pending-review | — |
+| [#378](https://github.com/oblien/openship/issues/378) | How to deploy Static HTML? | already-fixed-main | — |
 | [#316](https://github.com/oblien/openship/issues/316) | Docker Swarm stack-native deployment support | deferred-feature | [#317](https://github.com/oblien/openship/pull/317) |
-| [#309](https://github.com/oblien/openship/issues/309) | feat/bug: Laravel deployment issues – Service stuck in Stopped state, orphan container, missing database linking, web terminal/CLI & volume persistence | pending-review | [#469](https://github.com/oblien/openship/pull/469) |
-| [#282](https://github.com/oblien/openship/issues/282) | I can't verify my custom domain - whole flow is a bit complicated, needs a bit of UX improvement as well. | pending-review | — |
-| [#278](https://github.com/oblien/openship/issues/278) | I could not find where I could change project name. | pending-review | [#313](https://github.com/oblien/openship/pull/313) |
+| [#309](https://github.com/oblien/openship/issues/309) | feat/bug: Laravel deployment issues – Service stuck in Stopped state, orphan container, missing database linking, web terminal/CLI & volume persistence | partial-main | [#469](https://github.com/oblien/openship/pull/469) |
+| [#282](https://github.com/oblien/openship/issues/282) | I can't verify my custom domain - whole flow is a bit complicated, needs a bit of UX improvement as well. | already-fixed-main | — |
+| [#278](https://github.com/oblien/openship/issues/278) | I could not find where I could change project name. | fixed-in-branch | [#313](https://github.com/oblien/openship/pull/313) |
 | [#264](https://github.com/oblien/openship/issues/264) | Email encryption at rest using OpenPGP | deferred-feature | — |
-| [#261](https://github.com/oblien/openship/issues/261) | Shell shebang should respect the correct machine setup | pending-review | — |
-| [#258](https://github.com/oblien/openship/issues/258) | Am i have to use github? which is public.. a bit not trusted... they sometime leak something... | pending-review | — |
+| [#261](https://github.com/oblien/openship/issues/261) | Shell shebang should respect the correct machine setup | already-fixed-main | — |
+| [#258](https://github.com/oblien/openship/issues/258) | Am i have to use github? which is public.. a bit not trusted... they sometime leak something... | deferred-feature | — |
 | [#256](https://github.com/oblien/openship/issues/256) | Support ACME External Account Binding (EAB / HMAC) for certificate issuance | deferred-feature | [#1](https://github.com/oblien/openship/pull/1), [#2](https://github.com/oblien/openship/pull/2), [#3](https://github.com/oblien/openship/pull/3), [#4](https://github.com/oblien/openship/pull/4), [#5](https://github.com/oblien/openship/pull/5), [#380](https://github.com/oblien/openship/pull/380) |
-| [#240](https://github.com/oblien/openship/issues/240) | [Bug] Mail health check: three false positives (SpamAssassin daemon, desktop-resolver DNS scan, DKIM baseline) | pending-review | [#319](https://github.com/oblien/openship/pull/319) |
-| [#231](https://github.com/oblien/openship/issues/231) | Discussion: multi-process apps and the single-start-command model (Laravel as the case study) | pending-review | [#468](https://github.com/oblien/openship/pull/468), [#469](https://github.com/oblien/openship/pull/469), [#592](https://github.com/oblien/openship/pull/592) |
-| [#220](https://github.com/oblien/openship/issues/220) | Webmail: CSS url()/@import bypasses remote-image blocking, leaking a read receipt with images off | pending-review | [#219](https://github.com/oblien/openship/pull/219), [#222](https://github.com/oblien/openship/pull/222) |
-| [#216](https://github.com/oblien/openship/issues/216) | Help: Heavy tests needed for the stable release | pending-review | [#193](https://github.com/oblien/openship/pull/193), [#219](https://github.com/oblien/openship/pull/219), [#224](https://github.com/oblien/openship/pull/224), [#243](https://github.com/oblien/openship/pull/243), [#247](https://github.com/oblien/openship/pull/247), [#248](https://github.com/oblien/openship/pull/248) |
+| [#240](https://github.com/oblien/openship/issues/240) | [Bug] Mail health check: three false positives (SpamAssassin daemon, desktop-resolver DNS scan, DKIM baseline) | already-fixed-main | [#319](https://github.com/oblien/openship/pull/319) |
+| [#231](https://github.com/oblien/openship/issues/231) | Discussion: multi-process apps and the single-start-command model (Laravel as the case study) | partial-branch | [#468](https://github.com/oblien/openship/pull/468), [#469](https://github.com/oblien/openship/pull/469), [#592](https://github.com/oblien/openship/pull/592) |
+| [#220](https://github.com/oblien/openship/issues/220) | Webmail: CSS url()/@import bypasses remote-image blocking, leaking a read receipt with images off | fixed-in-branch | [#219](https://github.com/oblien/openship/pull/219), [#222](https://github.com/oblien/openship/pull/222) |
+| [#216](https://github.com/oblien/openship/issues/216) | Help: Heavy tests needed for the stable release | partial-branch | [#193](https://github.com/oblien/openship/pull/193), [#219](https://github.com/oblien/openship/pull/219), [#224](https://github.com/oblien/openship/pull/224), [#243](https://github.com/oblien/openship/pull/243), [#247](https://github.com/oblien/openship/pull/247), [#248](https://github.com/oblien/openship/pull/248) |
 | [#197](https://github.com/oblien/openship/issues/197) | Feature request: Telegram notification channel | deferred-feature | — |
-| [#195](https://github.com/oblien/openship/issues/195) | Preview deploy overwrites the production active-deployment pointer | pending-review | [#196](https://github.com/oblien/openship/pull/196) |
-| [#192](https://github.com/oblien/openship/issues/192) | Publish changelog entries in GitHub Release descriptions | pending-review | [#591](https://github.com/oblien/openship/pull/591) |
+| [#195](https://github.com/oblien/openship/issues/195) | Preview deploy overwrites the production active-deployment pointer | fixed-in-branch | [#196](https://github.com/oblien/openship/pull/196) |
+| [#192](https://github.com/oblien/openship/issues/192) | Publish changelog entries in GitHub Release descriptions | fixed-in-branch | [#591](https://github.com/oblien/openship/pull/591) |
 | [#188](https://github.com/oblien/openship/issues/188) | Feature Request: Native Object Storage Support | deferred-feature | — |
-| [#163](https://github.com/oblien/openship/issues/163) | Clarification needed: Multi-node clustering storage and volume handling strategy | pending-review | — |
+| [#163](https://github.com/oblien/openship/issues/163) | Clarification needed: Multi-node clustering storage and volume handling strategy | deferred-feature | — |
 | [#159](https://github.com/oblien/openship/issues/159) | Feature Request: Resend Mail Integration | deferred-feature | — |
-| [#148](https://github.com/oblien/openship/issues/148) | Help us Keep OpenShip more secure : | pending-review | [#152](https://github.com/oblien/openship/pull/152), [#193](https://github.com/oblien/openship/pull/193), [#224](https://github.com/oblien/openship/pull/224) |
+| [#148](https://github.com/oblien/openship/issues/148) | Help us Keep OpenShip more secure : | partial-branch | [#152](https://github.com/oblien/openship/pull/152), [#193](https://github.com/oblien/openship/pull/193), [#224](https://github.com/oblien/openship/pull/224) |
 | [#137](https://github.com/oblien/openship/issues/137) | Feature Request: seperating email flow and module into dedicated install | deferred-feature | [#141](https://github.com/oblien/openship/pull/141) |
-| [#123](https://github.com/oblien/openship/issues/123) | Global rate-limiter always applies default-anon, and double-charges routes that set their own policy | pending-review | [#232](https://github.com/oblien/openship/pull/232) |
+| [#123](https://github.com/oblien/openship/issues/123) | Global rate-limiter always applies default-anon, and double-charges routes that set their own policy | fixed-in-branch | [#232](https://github.com/oblien/openship/pull/232) |
 | [#92](https://github.com/oblien/openship/issues/92) | [Feature]: Canvas feature | deferred-feature | [#600](https://github.com/oblien/openship/pull/600) |
 | [#75](https://github.com/oblien/openship/issues/75) | [Feature]: First-class GitLab integration (connect, push-to-deploy, MR previews) | deferred-feature | [#177](https://github.com/oblien/openship/pull/177), [#386](https://github.com/oblien/openship/pull/386), [#593](https://github.com/oblien/openship/pull/593) |
 | [#72](https://github.com/oblien/openship/issues/72) | [Feature]: Allow Rspamd to replace SpamAssassin as Amavis anti-spam engine | deferred-feature | — |
 | [#13](https://github.com/oblien/openship/issues/13) | Feature request: Allow the deployer to run separately from the control plane | deferred-feature | — |
 
 ## Reviewed bug findings
+
+### #893: fixed-in-branch
+
+Confirmed on main: cached scan-time environment values survive reconciliation after the project value changes; failed GitHub source reads also silently fall back to cached definitions.
+
+Restored known raw expressions and untouched legacy baseline values. New inline edits/removals record internal ownership; existing service-scoped precedence and frozen rollback semantics remain intact.
+
+Ambiguous legacy values, including rows whose baseline was already advanced, remain intact and require the existing visible Accept upstream / Keep mine review before redeployment. Code-only webhooks cannot bypass recovery. Source errors and missing Compose services fail before deployment is queued.
+
+Follow-up audit corrected an explicit advanced:null reset regression: omitted advanced settings retain operator values, while explicit null resets them and still records Compose environment provenance. No second reconciliation path was introduced.
+
+Commits: [`705b004d`](https://github.com/oblien/openship/commit/705b004d96ff6da062ef63ecf03099e5a8ef8c27), [`248ba220`](https://github.com/oblien/openship/commit/248ba220d677602c55348bc8998cb15524205622), [`5e8f044e`](https://github.com/oblien/openship/commit/5e8f044eaf5f9d23d0916810b4cea28aa9171046).
+
+Verification: 59 database/reconciliation cases and 133 lifecycle/environment/rollback cases pass; 172 service/masking cases pass, plus the added internal-marker case (52-case focused rerun).
+
+Verification: 18 new regression cases fail against main. API TypeScript check passes.
+
+Verification: The existing explicit-reset and preservation cases pass, together with the full 327-case database and 6,221-case API suites after the ownership hardening.
+
+Verification: Compose recovery fixtures use Partial<Service>; database TypeScript passes without changing runtime assertions.
 
 ### #879: fixed-in-branch
 
@@ -245,6 +266,48 @@ Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df1
 
 Verification: 10 branding HTML/hydration cases pass, plus direct inspection of the schema and rendered login footer.
 
+### #556: fixed-in-branch
+
+Adapted and merged contributor PR #557 into #892 with original history and GitHub merge credit. Proxy vhosts now serve an application-unavailable page for edge-generated 502/504, preserving status and application responses. Generation 3 upgrades existing saved routes. A completely unreachable host remains a separate Cloud-edge concern, as scoped in the report.
+
+Commits: [`90dd8681`](https://github.com/oblien/openship/commit/90dd8681034ac2c8a60acc2879156fca1a3dce88).
+
+Verification: 200 adapter cases and six real OpenResty HTTP cases pass; three HTTP cases and the generation-2 upgrade regression fail against main. API TypeScript passes.
+
+### #527: partial-main
+
+Re-read all follow-ups, including Docker 29.7.2 still unhealthy after reinstall, edge installed/absent disagreement and Ghost public URL behavior. Main now supports explicit host-channel accounts, real authentication diagnostics, direct key upload, and correct local socket/edge selection. The newer installation-specific symptoms are not proven resolved; keep open for current doctor/component errors and the affected public URL.
+
+The confirmed stale-group failure from #408 is fixed in this branch. Whether it explains this report still requires the Docker error; the Ghost public URL report remains unresolved.
+
+Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df13697c1b6d4a95f7a6cf4a3d6).
+
+Verification: 47 existing adapter/API component, local-target and host-channel cases pass; this is not a reproduction of the reporter’s server.
+
+### #509: already-fixed-main
+
+Main already provisions and preserves the host channel, reports key generation/authentication failures, probes from the API container, and exposes the same diagnosis in doctor. Environment changes force recreation after prefetch. Local compose targets use the Docker socket/shared edge without treating the pooled host executor as a remote box. PR #518 adds a weaker file-presence check and duplicates these implemented paths.
+
+Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df13697c1b6d4a95f7a6cf4a3d6).
+
+Verification: 188 existing CLI configuration/host-channel cases and 47 adapter/API target, component and channel cases pass. Reviewed the localHost and OPENSHIP_EDGE_MODE wiring and repair documentation.
+
+### #506: fixed-in-branch
+
+The primary routing fix is already on main: missing live loopback bindings fall back to the observed container IP, and adopted project routes select the service owning the requested port. Removed the remaining misleading project.port fallback from service-based Overview pages; those ports are owned and displayed per service. No duplicate routing resolver was introduced.
+
+Commits: [`ba9b8085`](https://github.com/oblien/openship/commit/ba9b8085375d2f8886886a534c842534a56f0ed2).
+
+Verification: Reviewed shared upstream selection and adopted-route regressions (part of the 112 passing route/upstream/ownership cases). Existing Overview React cases pass after the display correction.
+
+### #504: fixed-in-branch
+
+Reopened and adapted contributor PR #507, then merged it into #892 with its original history and GitHub credit. Non-catalog self-hosted projects now reach the existing connection flow from Overview. The same API decides reachable outputs, including attached services on static parents; empty outputs stay hidden and synthesized internal addresses are not offered for cloud projects.
+
+Commits: [`74fe1521`](https://github.com/oblien/openship/commit/74fe15218151275399ea684186402276286d7639).
+
+Verification: Five real React connection-discovery cases pass; three fail on main. Dashboard TypeScript passes.
+
 ### #501: fixed-in-branch
 
 Confirmed missing Composer assets in main. Adapted and merged contributor PR #467 with original history and merge credit. The Node stage reuses the installed builder workspace, covering custom dependency paths and monorepos without duplicate source copies or assuming vendor always exists.
@@ -261,6 +324,30 @@ Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df1
 
 Verification: 20 lifecycle, retained-resource and reject-manifest tests pass; the same cleanup owner serves failure and cancellation.
 
+### #488: fixed-in-branch
+
+Main already preserves parsed secrets and writes .env atomically. Closed the remaining safety gap: Docker inspection failures are not treated as proof that no database exists, and the final writer revalidates missing-secret risk before minting configuration. The preview uses the same resolved input as the writer.
+
+Commits: [`49c580fe`](https://github.com/oblien/openship/commit/49c580fecb21e8d045afe5f759b65b5ec6caa203).
+
+Verification: 153 CLI storage/configuration cases and CLI TypeScript pass. Seven cases fail on main. The actual read-only Docker probe correctly distinguishes root, subdirectory, empty, lost+found-only, foreign and unavailable-daemon cases; temporary volumes were removed.
+
+### #487: fixed-in-branch
+
+Main already detects root/subdirectory clusters, but failed probes still guessed pgdata/ and prefetch could bypass the refusal. The shared resolver now has an explicit unresolved result; preview, prefetch and the final writer refuse unknown or foreign layouts before changing configuration. Pinned paths remain unchanged.
+
+Commits: [`49c580fe`](https://github.com/oblien/openship/commit/49c580fecb21e8d045afe5f759b65b5ec6caa203).
+
+Verification: 153 CLI storage/configuration cases and CLI TypeScript pass. Seven cases fail on main. The actual read-only Docker probe correctly distinguishes root, subdirectory, empty, lost+found-only, foreign and unavailable-daemon cases; temporary volumes were removed.
+
+### #429: partial-branch
+
+Deletion fixed by contributor PR #430, adapted and merged into #892 with actual GitHub merge credit. All delete entry points preserve the source mailbox and use the existing IMAP delete handler. Automatic inbox refresh remains a separate deferred feature; issue stays open. Closed overlapping PR #478 with the reason.
+
+Commits: [`5dbd9b2b`](https://github.com/oblien/openship/commit/5dbd9b2b1455739791d4533a2921f0de676e8201).
+
+Verification: 4 client-to-tRPC-to-IMAP regressions pass; 3 fail on main. All 64 mail server tests, server TypeScript and mail client production build pass. IMAP transport is substituted in the regressions.
+
 ### #426: fixed-in-branch
 
 Confirmed orphan sessions when a browser disconnects during shell/audit setup. Adapted and merged contributor PR #579, preserving original authorship and GitHub merge credit. Also made unaudited IDs collision-free and closed service-runtime leases on rejected or failed handshakes. Established sessions still park for reconnect.
@@ -268,6 +355,12 @@ Confirmed orphan sessions when a browser disconnects during shell/audit setup. A
 Commits: [`380d2526`](https://github.com/oblien/openship/commit/380d25260649cf8eb590854d7833c5ca3dea037e).
 
 Verification: 15 behavioral regressions plus six existing registry cases pass; 11 of the new cases fail against main. API TypeScript passes.
+
+### #424: already-fixed-main
+
+Configuration question: explicit service/Compose host-interface port mappings already support LAN IP:port access. Answered with the current Networking Ports setting and 0.0.0.0:8080:5173 example; the managed classic-app loopback default stays intentional.
+
+Verification: Traced service editor, service deployment input and shared Docker parsePortBindings; explicit host interfaces are preserved.
 
 ### #410: already-fixed-main
 
@@ -277,4 +370,257 @@ Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df1
 
 Verification: Three restore UI tests pass; reviewed mapping and the actual menu caller on main.
 
-Feature requests and their PRs stay open. Reproduction gaps stay open with a concrete diagnostic request. Issues fixed on this branch are closed with a comment identifying #892 and the pending merge to main.
+### #408: fixed-in-branch
+
+Follow-up confirmed stale SSH supplementary groups after usermod. Re-check refreshes the shared pool only on a Docker permission refusal with changed account groups; subsequent operations use the new login. Active commands and retained terminals survive, retired transports are disposed, and unknown or unchanged permissions remain failures. Closed PR #422 because switching the probe command cannot fix this.
+
+Commits: [`a435f5c9`](https://github.com/oblien/openship/commit/a435f5c90aa895bc2d5c031092f2f2609926f2a5).
+
+Verification: 53 API/pool/authorization and 15 Docker diagnostic cases pass; API TypeScript passes. Three handler cases fail on main. A real SSH fixture verified old-session denial, refreshed-session access and retained-session survival using a group-protected probe; temporary container removed.
+
+### #396: fixed-in-branch
+
+Confirmed on main, including the follow-up comment: Overview sent an expensive domainless request before the domain effect, silently displayed empty traffic after timeouts, and invalidated requests could overwrite newer cached data.
+
+Adapted and merged contributor PR #421 into the integration branch with its original history and GitHub merge credit. Shared retry UI preserves independent resource/geo panels; render-time selection prevents unscoped and cross-project requests; cache and polling reject stale responses.
+
+Commits: [`0834b84c`](https://github.com/oblien/openship/commit/0834b84ce52dc0eaa9bbc73337e055e7bf94408a).
+
+Verification: 99 relevant dashboard cases (98-case suite plus the added polling regression) pass. Ten new cases fail against main. Dashboard TypeScript check passes.
+
+### #392: fixed-in-branch
+
+Main already exempted the Amavis transport TLS level, but implicit relay TLS still disabled the filter and switching 465 to 587 left wrapper mode enabled. Persisted config also missed image-default repairs until a relay was resaved.
+
+Adapted and merged contributor PR #477 with original history and GitHub merge credit, retaining required external relay encryption. Both legacy and container relay updates repair Amavis before changing credentials and fail visibly on repair errors; image boot repairs persistent master.cf too.
+
+Commits: [`da951633`](https://github.com/oblien/openship/commit/da951633373c139e0edbcef2ba14e82568914032).
+
+Verification: 62 mail regression cases pass; four new cases fail against main. API TypeScript and mail shell syntax checks pass.
+
+Verification: Real Debian Postfix reproduced the main implicit-TLS/Amavis deferral, delivered the queued message after the production repair, verified idempotence, and refused plaintext delivery to a relay without STARTTLS. The isolated test container was removed.
+
+### #391: partial-main
+
+Current main has same-origin webmail authentication and explicit /login route guards; the undefined redirect is no longer present.
+
+Managed webmail intentionally submits to its own Postfix on 465, which then uses the configured external relay. The original network timeout still needs current Mail Health/Test diagnostics; issue stays open.
+
+PR #476 was closed as superseded/incompatible: its obsolete redirect path is gone and a universal loopback mail backend breaks separate container/server deployments.
+
+Verification: 6 split-delivery, reachability, and client-origin regression cases pass.
+
+### #390: already-fixed-main
+
+Reviewed the complete report and follow-ups. Current main uses a Node-based official installer: a system Node >=22 or a private vendored Node, with a stable launcher and removal of the old Bun-global command. The npm bin remains a Node wrapper for correct Windows launchers; its engine requirement matches the public package.
+
+This resolves the reported installer/runtime mismatch and avoids the Bun cpu-features/libuv crash path for the supported installation. It does not claim upstream Bun native-addon compatibility is fixed.
+
+Verification: Built and installed the actual public package outside the workspace under Node 22.21.1: ESM/CJS, NodeNext declarations, passive imports, native deployment and persistence, tenant isolation/revocation, cleanup, npm command resolution and CLI help/version all pass. Compared the installer/runtime source with main.
+
+### #388: already-fixed-main
+
+Current main imports foreign stacks as services projects, preserves stack-qualified identities, removes pinned host ports, and keeps internal container ports for routing. Imported services no longer collide with Openship Postgres or each other through their old host bindings.
+
+Domains & Routes exposes each imported service/port separately. Configure Convex backend HTTP and site endpoints on their actual container ports and the dashboard on its own endpoint. Host exposure changes are explicit migration warnings.
+
+Verification: 82 migration, Docker-inspection, preparation, and static-recipe cases pass. Verified the relevant migration and routing implementation already exists in main; this is not a claim of running a full live Coolify migration.
+
+### #381: already-fixed-main
+
+Main already uses POSIX remote nginx/certbot paths, validates the actual certificate/key, reads certificate expiry, persists it for renewal, and does not infer failure from certbot donation text.
+
+Issue closed with update/retry guidance for old domain records; linked PR #425 was already closed.
+
+Verification: 17 Windows-path and certbot-diagnostic regression cases pass.
+
+### #378: already-fixed-main
+
+The reported packageManager=unknown validation error is fixed in main: preparation normalizes an undetected package manager before returning the public configuration. Static Site detects index.html and defaults to output directory . with no build/start command.
+
+Provided a minimal repository/import walkthrough. The separate Docker static root-routing defect is fixed by #879 in this branch.
+
+Verification: 82 preparation, static-recipe, and migration cases pass, including no-manifest package-manager normalization.
+
+### #309: partial-main
+
+The current app-row reconciler keeps the source-built app when sidecars are added, inherits project build/env/storage settings, and repairs only recognized never-successful phantom rows. Live service state is resolved from the host using labels/names/tracked IDs instead of stale deployment status.
+
+Terminal and persistent-volume controls now exist. SQLite still requires an initialized database on a persisted path (for example under /app/storage) or an external database; automatic migrations/process roles are separate feature work.
+
+The old project/container mismatch in this report cannot be certified repaired without current project/service/deployment metadata. Left open for a current reproduction rather than guessing which legacy container to adopt.
+
+Verification: 33 app-row reconciliation cases and 24 live-service identity/state cases pass.
+
+Verification: Read the complete report and follow-up; traced start/provision, source recipe inheritance, live container resolution and Laravel persistence defaults.
+
+### #282: already-fixed-main
+
+All three follow-up defects are addressed on current main: optimistic domains never invent persisted IDs and verification waits for a real row; custom service endpoints remain authoritative through the route/Cloud gate; editable production ports update the selected endpoint and use its actual hostname in the label.
+
+The reviewed domain components and guard are unchanged between main and this integration branch.
+
+Verification: 18 dashboard verification/default-domain/target cases pass; current API custom-route and free-domain-guard cases pass.
+
+Verification: Read the empty initial body and all detailed follow-up comments; reviewed service endpoint persistence and the port input change handler.
+
+### #278: fixed-in-branch
+
+Main already exposes display-name editing in the project menu and keeps project/group slugs, routes and volumes stable. The remaining follow-up was CLI parity.
+
+Added project rename through the existing SDK update operation, passing only a trimmed name. Blank names are rejected before a request; backend conflicts remain authoritative. PR #313 is already closed and targets an obsolete UI location.
+
+Commits: [`782171b6`](https://github.com/oblien/openship/commit/782171b6c8d8eea4831d6efbfc06a9fabb79b241).
+
+Verification: 14 CLI project cases and CLI TypeScript pass, including SDK request ownership, blank-name rejection and server-conflict propagation.
+
+Verification: Existing API rename coverage verifies immutable slugs, group-name propagation and unchanged routing.
+
+### #261: already-fixed-main
+
+Reviewed the complete report and follow-ups. Current main uses a Node-based official installer: a system Node >=22 or a private vendored Node, with a stable launcher and removal of the old Bun-global command. The npm bin remains a Node wrapper for correct Windows launchers; its engine requirement matches the public package.
+
+This resolves the reported installer/runtime mismatch and avoids the Bun cpu-features/libuv crash path for the supported installation. It does not claim upstream Bun native-addon compatibility is fixed.
+
+Verification: Built and installed the actual public package outside the workspace under Node 22.21.1: ESM/CJS, NodeNext declarations, passive imports, native deployment and persistence, tenant isolation/revocation, cleanup, npm command resolution and CLI help/version all pass. Compared the installer/runtime source with main.
+
+### #240: already-fixed-main
+
+Reviewed all three false positives and the installer/CLI follow-ups against current main. Standalone spamd is informational because Amavis embeds SpamAssassin; the scan queries public resolvers and reports synthetic fake-IP answers as unknown; DKIM comparison normalizes whitespace and split TXT strings.
+
+The current installer uses the mail-engine container rather than running iRedMail.sh on the host, preserving the host firewall. Existing legacy installations are not automatically reconfigured. CLI server install-respond and server check are implemented and documented.
+
+Verification: 69 DNS, mail-health endpoint/probe and firewall cases pass.
+
+Verification: Reviewed the original report and closed PR #319; current main already covers its standalone-SpamAssassin correction with the current mail topology.
+
+### #231: partial-branch
+
+Read the complete body and all eleven long follow-up comments. The multi-role/runtime and release-phase requests remain outside this bug batch.
+
+Contributor PR #468 is integrated: Rails storage persistence, build/start defaults and resolved Gemfile.lock dependencies use the existing core mechanisms.
+
+Valkey now uses the shared Redis/RDB catalog and producer, including VALKEY_PASSWORD and images providing only valkey-cli. Restore refuses unknown AOF settings, failed or oversized probes, and unconfirmed snapshot disabling before opening the artifact.
+
+Contributor PR #469 is integrated with its original commit and GitHub merge credit: production Ruby native-gem builds, matching Bundler settings and runtime libraries, Debian/Alpine support, and an unprivileged runtime reuse the current planner. Historical PHP/Vite and app-service reconciliation fixes were checked in main; PHP vendor-assets repair #467 is in this branch. SQLite persistence requires an explicit persisted database path. Multi-process roles and release phases (#592) remain outside this bug batch, so #231 stays open.
+
+Producer preflight refusals now remain non-destructive in restore reporting. The orchestrator records possible writes only when it hands the artifact stream to the producer, with a cancellation check before that boundary. AOF/credential refusal no longer claims partial data loss; earlier partial writes still retain their warning.
+
+Commits: [`f1dc8a74`](https://github.com/oblien/openship/commit/f1dc8a740210c542215de0e287740abef259db5f), [`38cc1a03`](https://github.com/oblien/openship/commit/38cc1a0395ac3f2c4b34b005cf0d5d450d66d6a6), [`9ede7762`](https://github.com/oblien/openship/commit/9ede77620bc7eb500ee1568aa7f3d46d61932703), [`3822b062`](https://github.com/oblien/openship/commit/3822b0620f5cb4f1c57e462b5a441023d1df6846), [`e4587335`](https://github.com/oblien/openship/commit/e4587335306102f65db4db55a339b45500c32b9c).
+
+Verification: PR #468: 1,059 core cases and 224 API stack/language cases pass; nine new cases fail against main.
+
+Verification: Valkey: 57 adapter and 52 core cases pass; eight selected regressions fail against main. A real Valkey 8.1.10 container captures and restores authenticated data after restart, and refuses invalid credentials, denied CONFIG SET and AOF without writes. Adapter TypeScript passes.
+
+Verification: PR #469: 63 recipe/entrypoint tests and adapter TypeScript pass. Real Debian and Alpine images compile/load a native gem, run without build tools as UID 1000, and retain storage across replacement containers; main-generated images fail the native-gem build.
+
+Verification: All 255 backup/restore tests pass. Two unsafe-RDB preflight reporting regressions fail on main and pass here; the full API suite also passes.
+
+Verification: The host-command ownership guard now recognizes the generated Ruby Dockerfile as image installation, separately from host provisioning. Its allowance is restricted to the Debian/Alpine install verbs; the full adapter suite passes 3,788 tests.
+
+### #220: fixed-in-branch
+
+Current main blocks style elements but still leaks through escaped CSS URL names/schemes, image-set strings and CSS-variable substitution; reproduced four bypasses in Chromium.
+
+Adapted and merged contributor PR #222 with its history and GitHub merge credit. One parsed-HTML/CSS policy handles images and CSS; only inline resources are exempt. Existing XSS protections are retained. Relative URLs are blocked, data srcset commas are preserved, and inactive CSS text is not rewritten.
+
+Unresolved CSS variables/attribute substitutions and unparseable declarations fail closed while remote images are blocked. Enabling images uses original sanitized styles.
+
+Commits: [`8138b1ee`](https://github.com/oblien/openship/commit/8138b1ee521579d77fef05a3b81ff690db369bca).
+
+Verification: 77 mail-server regression cases and TypeScript pass; 11 cases fail against main.
+
+Verification: 12 Chromium checks: six payloads in blocked and enabled modes. All blocked requests were suppressed; enabled positive controls fetched. Requests were intercepted and aborted, not delivered to external trackers.
+
+### #216: partial-branch
+
+PR #219 is adapted to the email server’s existing Bun runner and merged into the integration branch with Ahmed Hesham Abdelkader’s original commits and GitHub merge credit. It adds crypto, IP, rate-limit, schema and sanitizer coverage while retaining current privacy tests. This ongoing test-coverage umbrella remains open.
+
+Contributor PRs #243 and #248 are integrated with cherchali mohamed walid’s original commits and GitHub merge credit. Current dashboard parsers, stream callbacks and Button behavior gain coverage using the existing Vitest/Happy DOM setup. Existing phase/status suites are retained; unused legacy phase helpers and malformed-payload quirks are not treated as production fixes. PR #247 is already merged and #224 already closed; #193 is already merged.
+
+Commits: [`b6a41165`](https://github.com/oblien/openship/commit/b6a41165d65f94325510179335cbff7456774ceb), [`508adde8`](https://github.com/oblien/openship/commit/508adde85b4bac18c6124e510f2569f145bc2a7e), [`0558e611`](https://github.com/oblien/openship/commit/0558e611cfbd2ccd02cbec6bafb2203a0af7c943).
+
+Verification: PR #219: all 110 mail-server tests pass (33 added); server TypeScript and an isolated typecheck of the adapted tests pass.
+
+Verification: PR #243 adds 23 environment/subdomain cases; 68 tests pass with the existing status/log-entry suites. PR #248 adds 78 stream and ten Button cases; 91 pass with the existing install-phase suite, and dashboard TypeScript passes. The full dashboard suite passes 1,462 cases.
+
+### #195: fixed-in-branch
+
+Confirmed on main: the environment flag selects an env_var set and does not change the project id, so preview builds could replace production runtime state.
+
+One platform policy now rejects non-production variable sets on a production target before deploy/refresh/build-access mutations, on redeploy, and before legacy queued workers start. Successful previews still activate their own project row.
+
+The shared native/remote source workflow passes its deployment variable set to ensureProject, which validates before updating configuration/services or creating a production target. Existing per-project default variable sets remain compatible. Documented the explicit preview-project workflow.
+
+Commits: [`e965f5cb`](https://github.com/oblien/openship/commit/e965f5cb71865fc2b27c3da5ca9a95ca780cf51d), [`ece434ec`](https://github.com/oblien/openship/commit/ece434ecf72ef7c7e9d271c6a41e5fbe7598c1cb).
+
+Verification: 262 API/engine/parity cases, 17 SDK source cases, and API TypeScript pass. All 11 focused environment regressions pass after the final policy review.
+
+Verification: Seven API regressions plus the SDK ensure-payload regression fail against main.
+
+Verification: Final public-package audit caught and fixed a TypeBox declaration-generation failure from spreading the shared environment schema. The builder-based schema preserves the same contract; full public SDK/CLI build and isolated installed-package lifecycle verification now pass.
+
+### #192: fixed-in-branch
+
+Main still used notes-from-tag for lightweight release tags. Contributor PR #591 is merged with author history and GitHub merge credit, adapted to the existing core changelog owner.
+
+Website, updater and release workflow share exact version parsing. Workflow passes notes as a file, has a missing-entry fallback and bounded output, preserves edited notes and never treats a failed read as empty. Parser-only imports work without installing dependencies.
+
+Commits: [`d4d62906`](https://github.com/oblien/openship/commit/d4d6290614441a1a48d8dc485cc8b7cd66791f77).
+
+Verification: 30 script cases and 27 core changelog/updater cases pass; core and website TypeScript pass.
+
+Verification: One exact-version regression fails against main; two argument/truncation regressions fail against the original PR.
+
+Verification: Bare checkout extraction succeeds. Extracted workflow shell passes fresh-release, empty-description, manual-description, failed-read and failed-edit cases with stubbed GitHub commands.
+
+### #148: partial-branch
+
+Revalidated the historical SECURITY.md findings against main. SEC-01 already enforces scoped-token, read-only and expiry ceilings. SEC-02 and SEC-03 remain real and are fixed in this branch: local host/socket access requires the host-owning organization in self-hosted mode, and active deployment references must match both project and organization before runtime, container, log, terminal, monitoring, routing or cleanup use. Project import preview/apply and restore validation reject invalid bindings. One core ownership predicate and shared engine loaders enforce the same rule across callers.
+
+The security-help umbrella remains open. The September 5 report is retained with current remediation status; the bounded checks are not an exhaustive security certification. Contributor security PRs #152 and #193 are already merged; #224 is already closed.
+
+Commits: [`3c35e5ba`](https://github.com/oblien/openship/commit/3c35e5bad490c6e631eef167d03c8f936e758aff).
+
+Verification: 18 API boundary regressions and three database import regressions fail against main and pass on the integration branch. The full API suite passes 6,221 tests across 523 files; the full database suite passes 327 tests across 40 files. API TypeScript passes. Valid owner/native/desktop paths, historical deployment logs, and rollback/Compose lifecycle cases remain covered.
+
+### #123: fixed-in-branch
+
+Main already applies per-user/per-route limits after authentication and one central policy to raw Better Auth routes. The missing follow-up was a coarse limit before session lookup.
+
+Adapted and merged contributor PR #232 with original history and GitHub merge credit. A distinct flood-ip bucket runs before authentication; cloud/explicit edge trust bypasses only that ceiling, retaining per-route and login policies. Configuration uses the current platform schema.
+
+Commits: [`328d5ceb`](https://github.com/oblien/openship/commit/328d5cebe2802bb61a513c3e501637f18031aa9e).
+
+Verification: 55 rate-limit and auth/invitation cases and API TypeScript pass.
+
+Verification: Three behavioral regressions fail with the flood guard disabled; IP buckets stay independent and a rejected flood never reaches authentication.
+
+
+## Related contributor PR repairs
+
+### PR #196: Retry failed SSL renewals and preserve CLI login endpoints
+
+Status: merged-into-integration. Commit: [`2f37a0a3`](https://github.com/oblien/openship/commit/2f37a0a394bd2bbe445d398b89f391ec0278d69d).
+
+Reviewed all five original fixes: deploy response IDs, server-removal guards and failed-install exit codes already exist in main. The certificate retry and login endpoint defects remain valid.
+
+Adapted the contributor PR to current platform/SDK ownership and merged with original history plus GitHub merge credit. Due errored certificates retry; organization renewals share the configured window, skip externally managed TLS and require a verified renewal outcome. Login preserves independently configured endpoints and saves only after token validation.
+
+Verification: 47 API/TLS/server-removal cases, 17 CLI cases and a real PGlite selector case pass; API and CLI TypeScript pass.
+
+Verification: Six regressions fail on current main.
+
+
+## Integration validation
+
+- API: 6,221 tests across 523 files; database: 327 tests across 40 files. Full suites pass, including Compose, import/restore, terminal and workload ownership regressions.
+- Core: 1,068; adapters: 3,788; contracts: 14; SDK: 153; platform: 115; CLI: 549; dashboard: 1,462; email server: 110; script tests: 30. All pass. Workspace runs use bounded worker counts.
+- Repository-wide lint/typechecks and their build dependencies pass (22 tasks); the email server and adapted mail tests also type-check.
+- The built public openship package installs and runs on Node 22.21.1: ESM/CommonJS, NodeNext declarations, passive imports, native deployment/redeployment, tenant isolation, revocation, persistence, remote submission, and CLI lifecycle/cleanup pass.
+- Documentation verification passes: 160 pages, 367 SDK methods, 559 HTTP routes, 205 CLI command paths, 226 CLI examples and 107 public-SDK examples. CLI references were regenerated from the built package.
+- Issue-specific negative tests fail on the unchanged main baseline and pass with their fixes; the findings above link the relevant commits. Real Docker, SSH, browser, mail and runtime probes are recorded beside the affected issues.
+- Production API/dashboard build passes (10 tasks), including the Next.js production compilation and TypeScript check.
+- Final refresh: main remains 4e66349c; all 107 reports are classified. The 35 resolved reports are closed with evidence (21 fixed here, 14 already fixed in main); 72 partial, reproduction-dependent or feature reports remain open. No unreviewed new issue was found.
+
+Feature requests remain outside this bug batch. Reproduction gaps stay open with a diagnostic request. Issues fixed on this branch are closed with a comment identifying #892 and the pending merge to main; partial and ongoing umbrella reports stay open.

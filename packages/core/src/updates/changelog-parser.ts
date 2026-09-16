@@ -58,4 +58,3 @@ export function extractChangelogSection(markdown: string, version: string): stri
   const target = normalizeChangelogVersion(version);
   return parseChangelog(markdown).find((entry) => entry.version === target)?.body ?? "";
 }
-
