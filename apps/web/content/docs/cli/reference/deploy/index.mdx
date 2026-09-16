@@ -19,7 +19,7 @@ openship deploy [options]
 | `--project <id>` | Project ID (defaults to the linked project in .openship/project.json) |
 | `--branch <name>` | Git branch to deploy (defaults to the current branch) |
 | `--commit <sha>` | Specific commit SHA (defaults to the latest commit on the branch) |
-| `--env <environment>` | Target environment: production \| preview (default: "production") |
+| `--env <environment>` | Variable set: production \| preview (project ID selects the runtime) (default: "production") |
 | `--force-all` | Rebuild every enabled service (skip smart per-service routing) |
 | `--service-ids <ids>` | Comma-separated service IDs to deploy (smart routing) |
 | `--smart-route` | Rebuild only services changed since the active deploy |
