@@ -213,6 +213,51 @@ bun run --cwd packages/db db:studio  # Open Drizzle Studio (database browser)
 
 Schema lives in `packages/db/src/schema/`.
 
+## Testing
+
+Most workspaces run [Vitest](https://vitest.dev/), and most colocate tests with the code they
+cover, so `foo.test.ts` sits next to `foo.ts`. Some group them under a `test/` directory
+instead (`packages/adapters/test/`, `apps/cli/test/`), and `apps/email/server` uses Bun's
+built-in test runner rather than Vitest. Follow whichever convention the workspace you are
+editing already uses.
+
+The rest of this section covers `apps/dashboard`, which is Vitest with colocated tests.
+
+### Dashboard test environments
+
+Dashboard tests use Node by default. Component tests opt into jsdom with a
+`@vitest-environment jsdom` file comment, import the jest-dom matchers, and register
+Testing Library cleanup locally. Follow the existing component tests; no global
+setup file is required. The `@/*` alias and automatic JSX runtime already match
+those used by the app.
+
+```tsx
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+
+import { MyComponent } from "./my-component";
+
+afterEach(cleanup);
+
+describe("MyComponent", () => {
+  it("renders its title", () => {
+    render(<MyComponent title="Projects" />);
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+  });
+});
+```
+
+Keep parser and other pure-logic tests on Node. Run a focused dashboard suite with
+`bun run --cwd apps/dashboard test src/lib/dotenv.test.ts`, or omit the path for
+all dashboard tests.
+
+### Prove the test can fail
+
+A test that cannot fail proves nothing. Before opening a PR, deliberately break the code
+under test, confirm the test fails, then restore it. Say so in the PR description.
+
 ## Verification
 
 The root test and build scripts run the corresponding tasks across the workspaces that
