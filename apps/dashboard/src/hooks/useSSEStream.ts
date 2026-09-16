@@ -285,7 +285,9 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
           const json = await response.json();
           message = json.error || message;
         } catch {}
-        throw new Error(`SSE connection failed: ${message}`);
+        throw Object.assign(new Error(`SSE connection failed: ${message}`), {
+          status: response.status,
+        });
       }
 
       reader = response.body?.getReader();

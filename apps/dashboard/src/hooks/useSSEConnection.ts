@@ -276,8 +276,9 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
   const isReconnectingRef = useRef(false);
   const terminalStateRef = useRef(false);
   const manualDisconnectRef = useRef(false);
+  const connectionGenerationRef = useRef(0);
   const lastStartBuildRef = useRef(true);
-  // Highest seq the client already has (from the history snapshot). Sent as
+  // Highest seq received from the history snapshot or live stream. Sent as
   // ?since= so the server replays only newer events instead of the whole buffer.
   const sinceSeqRef = useRef<number | undefined>(undefined);
   const callbacksRef = useRef(callbacks);
@@ -307,28 +308,42 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
   }, [clearReconnectTimer]);
 
   // Create message processor
-  const messageProcessor = useMemo(() => createBuildMessageProcessor({
-    onLog: (...args) => callbacksRef.current.onLog?.(...args),
-    onPhaseChange: (...args) => callbacksRef.current.onPhaseChange?.(...args),
-    onProgress: (...args) => callbacksRef.current.onProgress?.(...args),
-    onReconnected: (...args) => callbacksRef.current.onReconnected?.(...args),
-    onContainerExit: (...args) => callbacksRef.current.onContainerExit?.(...args),
-    onPrompt: (...args) => callbacksRef.current.onPrompt?.(...args),
-    onServiceStatus: (...args) => callbacksRef.current.onServiceStatus?.(...args),
-    onInstallPhase: (...args) => callbacksRef.current.onInstallPhase?.(...args),
-    onSuccess: (...args) => {
-      stopReconnects();
-      callbacksRef.current.onSuccess?.(...args);
-    },
-    onFailure: (...args) => {
-      stopReconnects();
-      callbacksRef.current.onFailure?.(...args);
-    },
-    onCanceled: (...args) => {
-      stopReconnects();
-      callbacksRef.current.onCanceled?.(...args);
-    },
-  }), [stopReconnects]);
+  const messageProcessor = useMemo<ReturnType<typeof createBuildMessageProcessor>>(() => {
+    const processor = createBuildMessageProcessor({
+      onLog: (...args) => callbacksRef.current.onLog?.(...args),
+      onPhaseChange: (...args) => callbacksRef.current.onPhaseChange?.(...args),
+      onProgress: (...args) => callbacksRef.current.onProgress?.(...args),
+      onReconnected: (...args) => callbacksRef.current.onReconnected?.(...args),
+      onContainerExit: (...args) => callbacksRef.current.onContainerExit?.(...args),
+      onPrompt: (...args) => callbacksRef.current.onPrompt?.(...args),
+      onServiceStatus: (...args) => callbacksRef.current.onServiceStatus?.(...args),
+      onInstallPhase: (...args) => callbacksRef.current.onInstallPhase?.(...args),
+      onSuccess: (...args) => {
+        stopReconnects();
+        callbacksRef.current.onSuccess?.(...args);
+      },
+      onFailure: (...args) => {
+        stopReconnects();
+        callbacksRef.current.onFailure?.(...args);
+      },
+      onCanceled: (...args) => {
+        stopReconnects();
+        callbacksRef.current.onCanceled?.(...args);
+      },
+    });
+    return {
+      ...processor,
+      handleMessage(message, context) {
+        const eventId = message.eventId;
+        if (typeof eventId === "number" && Number.isSafeInteger(eventId) && eventId >= 0) {
+          if (sinceSeqRef.current !== undefined && eventId <= sinceSeqRef.current) return;
+          sinceSeqRef.current = eventId;
+        }
+        // Filter replay before the processor writes bytes or calls the viewer.
+        return processor.handleMessage(message, context);
+      },
+    };
+  }, [stopReconnects]);
 
   // Initialize SSE stream
   const sseStream = useSSEStream({
@@ -356,7 +371,6 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
       setIsConnected(false);
       setIsConnecting(false);
       onDisconnectRef.current?.();
-      scheduleReconnect();
     },
     onError: (err) => {
       isConnectedRef.current = false;
@@ -364,13 +378,14 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
       setIsConnected(false);
       setIsConnecting(false);
       onErrorRef.current?.(err);
-      scheduleReconnect(err);
+      if (shouldStopReconnect(err)) stopReconnects();
     },
   });
   const disconnectSSE = sseStream.disconnect;
 
   useEffect(() => {
     return () => {
+      connectionGenerationRef.current += 1;
       manualDisconnectRef.current = true;
       activeDeploymentIdRef.current = null;
       isConnectedRef.current = false;
@@ -383,6 +398,7 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
 
   const openStream = useCallback(async (deploymentId: string, startBuild: boolean, reconnecting = false) => {
     if (connectingRef.current) return;
+    const generation = ++connectionGenerationRef.current;
     connectingRef.current = true;
     lastStartBuildRef.current = startBuild;
 
@@ -399,6 +415,7 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
             'Content-Type': 'application/json',
           },
           idleTimeoutMs: BUILD_STREAM_IDLE_TIMEOUT_MS,
+          connectTimeoutMs: BUILD_STREAM_IDLE_TIMEOUT_MS,
         });
       } else {
         const since = sinceSeqRef.current;
@@ -412,36 +429,36 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
             'Accept': 'text/event-stream',
           },
           idleTimeoutMs: BUILD_STREAM_IDLE_TIMEOUT_MS,
+          connectTimeoutMs: BUILD_STREAM_IDLE_TIMEOUT_MS,
         });
       }
     } finally {
-      connectingRef.current = false;
-      setIsConnecting(false);
+      // connect() owns the whole stream, including its end callbacks. Retry only
+      // after releasing that attempt; a replaced stream cannot alter its successor.
+      if (connectionGenerationRef.current === generation) {
+        connectingRef.current = false;
+        setIsConnecting(false);
+        scheduleReconnect();
+      }
     }
   }, [sseStream]);
 
   function shouldStopReconnect(error: Error) {
+    const status = (error as Error & { status?: number }).status;
     const message = error.message.toLowerCase();
     // Only permission failures are truly terminal. A transient "not found" can
     // happen while the session is briefly unavailable mid-deploy (reconnect gap,
     // proxied/promoted deploy); keep retrying and let the getBuildStatus poll own
     // terminal detection — otherwise the stream gives up while the deploy is live.
     return (
+      status === 401 || status === 403 ||
       message.includes('unauthorized') ||
       message.includes('forbidden')
     );
   }
 
-  function scheduleReconnect(error?: Error) {
-    if (error && shouldStopReconnect(error)) {
-      terminalStateRef.current = true;
-      isReconnectingRef.current = false;
-      setIsReconnecting(false);
-      return;
-    }
-
-    // If a fresh connect is already in progress, don't queue a parallel
-   if (connectingRef.current) return;
+  function scheduleReconnect() {
+    if (connectingRef.current) return;
 
     const deploymentId = activeDeploymentIdRef.current;
     const canReconnect =
@@ -528,6 +545,7 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
    * Disconnect from stream
    */
   const disconnect = useCallback(() => {
+    connectionGenerationRef.current += 1;
     manualDisconnectRef.current = true;
     connectingRef.current = false;
     activeDeploymentIdRef.current = null;
