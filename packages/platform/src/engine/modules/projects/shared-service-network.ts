@@ -1,3 +1,4 @@
+import { findActiveDeployment, listActiveServiceDeployments } from "@repo/platform/engine/lib/active-deployment";
 import { ValidationError } from "@repo/core";
 import { repos, type Project, type Deployment } from "@repo/db";
 import type { RuntimeAdapter } from "@repo/adapters";
@@ -48,7 +49,7 @@ export async function disconnectSharedServiceNetwork(
   removedLinkId: string,
 ): Promise<void> {
   const sourceDeployment = source.activeDeploymentId
-    ? await repos.deployment.findById(source.activeDeploymentId) : null;
+    ? await findActiveDeployment(source) : null;
   if (!sourceDeployment) return;
   await withServiceRuntime(source, sourceDeployment, undefined, async runtime => {
     if (!runtime.leaveServiceGroupContainers) return;
@@ -58,7 +59,7 @@ export async function disconnectSharedServiceNetwork(
     if (targetLinks.length > 0) return;
     const ids = new Set(await runtime.listProjectContainerIds?.(target.id) ?? []);
     if (target.activeDeploymentId) {
-      for (const row of await repos.service.listByDeployment(target.activeDeploymentId)) {
+      for (const row of await listActiveServiceDeployments(target)) {
         if (row.containerId) ids.add(row.containerId);
       }
     }

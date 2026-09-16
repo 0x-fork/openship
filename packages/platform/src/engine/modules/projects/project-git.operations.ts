@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { ProjectControlSchemas } from "@repo/contracts";
 import type { ResourceServices } from "../../../resource-operations";
 import type { ProjectDependencies } from "../../../projects";
@@ -74,14 +75,14 @@ async function reRegisterDomainRoute(
 ): Promise<void> {
   if (!project.activeDeploymentId) return;
   try {
-    const dep = await repos.deployment.findById(project.activeDeploymentId);
+    const dep = await findActiveDeployment(project);
     if (!dep) return;
     // Find the service deployment to get the container target. Prefer a row with
     // a container to inspect — a stored ip alone is just the last-known value.
     //
     // Via the same picker the access URL uses: these rows come back in insertion
     // (dependency) order, so the first one with a container was the database (#498).
-    const svcDeps = await repos.service.listByDeployment(project.activeDeploymentId);
+    const svcDeps = await repos.service.listByDeployment(dep.id);
     const [projectServices, domainRows] = await Promise.all([
       repos.service.listByProject(project.id).catch(() => []),
       repos.domain.listByProject(project.id).catch(() => []),

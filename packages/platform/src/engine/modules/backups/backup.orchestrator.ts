@@ -17,6 +17,7 @@
  * surface stays identical.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import {
   repos,
   type Project,
@@ -435,7 +436,7 @@ export class BackupOrchestrator {
         serviceHandle = await this.buildServiceHandle(serviceRow);
 
         const activeDeployment = project.activeDeploymentId
-          ? await repos.deployment.findById(project.activeDeploymentId)
+          ? await findActiveDeployment(project)
           : null;
         // Resolved from the SERVICE, not just the snapshot: an adopted service (the
         // control plane's own compose stack above all) is a container whose adopt
@@ -1037,7 +1038,7 @@ export class BackupOrchestrator {
     serviceRow: Service,
   ): Promise<{ containerId: string | null; running: boolean | null; environment?: string }> {
     if (!project.activeDeploymentId) return { containerId: null, running: null };
-    const dep = await repos.deployment.findById(project.activeDeploymentId);
+    const dep = await findActiveDeployment(project);
     if (!dep) return { containerId: null, running: null };
     const live = await liveContainerForService(project, dep, serviceRow, {
       projectId: project.id,

@@ -137,6 +137,7 @@ describe("service route upstream (migration cutover)", () => {
     reconcileProjectRoutes.mockResolvedValue(undefined);
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1",
+      projectId: "proj_1",
       organizationId: "org_1",
       meta: { deployTarget: "server", serverId: "srv_1", runtimeMode: "docker" },
     });

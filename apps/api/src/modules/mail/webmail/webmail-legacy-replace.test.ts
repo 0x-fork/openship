@@ -76,7 +76,7 @@ vi.mock("@repo/db", () => ({
       findFirstBySlug: vi.fn(async () => null),
     },
     service: { listByProject: vi.fn(async () => [{ id: "svc1", name: "webmail" }]) },
-    deployment: { findById: vi.fn(async () => ({ status: "ready" })) },
+    deployment: { findById: vi.fn(async () => ({ id: h.linked?.activeDeploymentId, projectId: h.linked?.id, organizationId: "org1", status: "ready" })) },
   },
 }));
 

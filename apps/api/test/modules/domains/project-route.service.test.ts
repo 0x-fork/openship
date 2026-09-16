@@ -226,6 +226,7 @@ describe("reapplyProjectLiveRoutes self-app loopback route (issue #129)", () => 
     // runtime does NOT support containerIp → host resolves to 127.0.0.1.
     findDeployment.mockResolvedValue({
       id: "dep-1",
+      projectId: project.id,
       containerId: "dep-1",
       meta: { runtimeMode: "bare" },
       organizationId: "org-1",
@@ -286,6 +287,7 @@ describe("reapplyProjectLiveRoutes static (path-targeted) routes", () => {
   /** `containerId` on a static-file-serve deployment is its release root on the host. */
   const deployment = (meta: Record<string, unknown>) => ({
     id: "dep-1",
+    projectId: staticProject.id,
     containerId: "/var/lib/openship/releases/site-42",
     meta,
     organizationId: "org-1",
@@ -568,6 +570,7 @@ describe("container-served static project routes (#879)", () => {
     listByProject.mockReset().mockResolvedValue([route()]);
     findDeployment.mockReset().mockResolvedValue({
       id: "dep-site",
+      projectId: project.id, organizationId: project.organizationId,
       containerId,
       imageRef: null,
       meta: { workload: "static", runtimeMode: "docker", staticServeOutputDir: null },
@@ -882,6 +885,7 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
     // The adopted deployment: the sentinel, NOT a container id.
     findDeployment.mockResolvedValue({
       id: "dep-1",
+      projectId: project.id,
       containerId: "compose",
       meta: { deployTarget: "server", serverId: "srv-1", runtimeMode: "docker", adopt: true },
       organizationId: "org-1",
@@ -934,6 +938,7 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
     listServicesByDeployment.mockResolvedValue([]);
     findDeployment.mockResolvedValue({
       id: "dep-1",
+      projectId: project.id,
       containerId: "c-web",
       meta: { runtimeMode: "docker" },
       organizationId: "org-1",
@@ -1048,6 +1053,7 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
     listByProject.mockResolvedValue([projectDomain(9999)]);
     findDeployment.mockResolvedValue({
       id: "dep-1",
+      projectId: project.id,
       containerId: "c-web",
       meta: { deployTarget: "server", serverId: "srv-1", runtimeMode: "docker" },
       organizationId: "org-1",
@@ -1095,6 +1101,7 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
     listByProject.mockResolvedValue([projectDomain(3000)]);
     findDeployment.mockResolvedValue({
       id: "dep-1",
+      projectId: project.id,
       containerId: "c-postgres",
       meta: { deployTarget: "server", serverId: "srv-1", runtimeMode: "docker" },
       organizationId: "org-1",
@@ -1132,6 +1139,7 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
     listServicesByProject.mockResolvedValue([]);
     findDeployment.mockResolvedValue({
       id: "dep-1",
+      projectId: project.id,
       containerId: "c-single",
       meta: { runtimeMode: "docker" },
       organizationId: "org-1",

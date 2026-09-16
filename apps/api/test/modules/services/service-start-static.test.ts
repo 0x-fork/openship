@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   },
   deployment: {
     id: "dep_1",
+    organizationId: "org_1",
     projectId: "proj_1",
     environment: "production",
     meta: { framework: "vite", startCommand: "" },

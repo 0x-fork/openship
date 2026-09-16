@@ -84,7 +84,7 @@ const project = {
   isControlPlane: false,
 };
 
-const deployment = { id: "dep_1", projectId: "proj_1", environment: "production", meta: {} };
+const deployment = { id: "dep_1", organizationId: "org_1", projectId: "proj_1", environment: "production", meta: {} };
 
 const service = { id: "svc_web", projectId: "proj_1", name: "web", enabled: true };
 

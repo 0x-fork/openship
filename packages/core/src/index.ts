@@ -59,6 +59,7 @@ export {
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./deployment-class";
+export * from "./deployment-ownership";
 export * from "./updates";
 export * from "./proxy-settings";
 export * from "./audit-taxonomy";

@@ -12,6 +12,7 @@
  * request includes parsed compose services.
  */
 
+import { listActiveServiceDeployments } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import type { Deployment, Project } from "@repo/db";
 import type {
@@ -284,7 +285,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // safe result is a failed deployment with no newly-created artifact to leak.
   const priorCloudWorkspaceServiceIds = checksCloudImageRefresh
     ? new Set(
-        (await repos.service.listByDeployment(project.activeDeploymentId!))
+        (await listActiveServiceDeployments(project))
           .filter((row) => Boolean(row.containerId))
           .map((row) => row.serviceId),
       )

@@ -100,7 +100,7 @@ const project = (over: Partial<Project> = {}) =>
     gitBranch: "main",
     appTemplateId: null,
     releaseSource: null,
-    activeDeploymentId: "dep_live",
+    activeDeploymentId: over.id ? `dep_${over.id}` : "dep_live",
     ...over,
   }) as Project;
 
@@ -132,6 +132,11 @@ function setup(projects: Project[], rows: UpdateStatus[]) {
   projectRepo.listByOrganization.mockResolvedValue({ rows: projects });
   projectRepo.findById.mockResolvedValue(projects[0]);
   updateStatusRepo.listByOrg.mockResolvedValue(rows);
+  const deployments = new Map(projects.filter((p) => p.activeDeploymentId).map((p) => [
+    p.activeDeploymentId,
+    { id: p.activeDeploymentId, projectId: p.id, organizationId: p.organizationId, commitSha: SHIPPED },
+  ]));
+  deploymentRepo.findById.mockImplementation(async (id: string) => deployments.get(id));
 }
 
 beforeEach(() => {
@@ -146,7 +151,7 @@ beforeEach(() => {
   resolveUpstreamDrift.mockReset();
   updateStatusRepo.upsert.mockResolvedValue(undefined);
   updateStatusRepo.deleteByProject.mockResolvedValue(undefined);
-  deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+  deploymentRepo.findById.mockResolvedValue({ id: "dep_live", projectId: "proj_1", organizationId: "org_1", commitSha: SHIPPED });
   deploymentRepo.findInProgressByCommit.mockResolvedValue(undefined);
   deploymentRepo.findInProgressByReleaseVersion.mockResolvedValue(undefined);
   serviceRepo.listByProject.mockResolvedValue([]);
@@ -216,7 +221,7 @@ describe("when the cached row is allowed to answer", () => {
     // ran, and none is needed — the deployed side was never in the cache.
     const p = project();
     setup([p], [cachedRow({ key: commitSourceKey(p), latestSha: NEWER, ageMs: 30 * MINUTE })]);
-    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: NEWER });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", projectId: "proj_1", organizationId: "org_1", commitSha: NEWER });
 
     const items = await listOrganizationUpdates(ctx, { behindOnly: true });
 
@@ -228,7 +233,7 @@ describe("when the cached row is allowed to answer", () => {
     // Cache was invalidated on deploy, so no cached row exists for this project:
     setup([p], []);
     resolveUpstreamDrift.mockResolvedValue(upstream(p, NEWER));
-    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: NEWER });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", projectId: "proj_1", organizationId: "org_1", commitSha: NEWER });
 
     const items = await listOrganizationUpdates(ctx, { behindOnly: true });
 

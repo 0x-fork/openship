@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Project } from "@repo/db";
 import { AppError, isLoopbackHost as isCoreLoopbackHost } from "@repo/core";
 import { env } from "../config/env";
@@ -63,7 +64,7 @@ export async function resolveProjectServerHost(project?: Project): Promise<strin
   if (!project) return env.SERVER_IP ?? null;
 
   const deployment = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId)
+    ? await findActiveDeployment(project)
     : await repos.deployment.findLatestByProject(project.id);
 
   const snapshot = (deployment?.meta ?? null) as DeploymentSnapshotLike | null;

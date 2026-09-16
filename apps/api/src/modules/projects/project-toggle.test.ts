@@ -72,6 +72,7 @@ vi.mock("@repo/db", () => ({
     deployment: {
       findById: async () => ({
         id: "dep_1",
+        projectId: "proj_1",
         organizationId: "org_1",
         containerId: h.containerId,
         status: "ready",

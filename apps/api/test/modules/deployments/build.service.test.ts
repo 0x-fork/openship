@@ -462,6 +462,7 @@ describe("resolveSnapshotTarget", () => {
   function project(overrides: Record<string, unknown> = {}) {
     return {
       id: "project-1",
+      organizationId: "org-1",
       activeDeploymentId: null,
       cloudWorkspaceId: null,
       serverId: null,
@@ -481,6 +482,7 @@ describe("resolveSnapshotTarget", () => {
   // rather than inherit the bad "local" from active meta.
   it("keeps a server-bound project on the server even when active meta says local", async () => {
     repos.deployment.findById.mockResolvedValue({
+      id: "dep_old", projectId: "project-1", organizationId: "org-1",
       meta: { deployTarget: "local" } as DeploymentConfigSnapshot,
     });
     const t = await resolveSnapshotTarget(
@@ -507,6 +509,7 @@ describe("resolveSnapshotTarget", () => {
   // active deployment's stamped meta — step 5 in the precedence.
   it("infers server from legacy active-meta serverId when the column is empty", async () => {
     repos.deployment.findById.mockResolvedValue({
+      id: "dep_old", projectId: "project-1", organizationId: "org-1",
       meta: { serverId: "srv_legacy" } as DeploymentConfigSnapshot,
     });
     const t = await resolveSnapshotTarget(
@@ -1446,7 +1449,7 @@ describe("triggerDeployment", () => {
       }),
     );
     repos.deployment.findById.mockResolvedValue({
-      id: "dep-live",
+      id: "dep-live", projectId: "project-1", organizationId: "org-1",
       imageRef: "openship/app:bld_live",
       commitSha: "abc123",
       commitMessage: "live commit",
@@ -1486,7 +1489,7 @@ describe("triggerDeployment", () => {
   ])("keeps a forced topology refresh at its requested scope ($expected)", async ({ serviceIds, expected }) => {
     repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-live" }));
     repos.deployment.findById.mockResolvedValue({
-      id: "dep-live", commitSha: "running-commit", createdAt: new Date("2026-08-20T00:00:00Z"),
+      id: "dep-live", projectId: "project-1", organizationId: "org-1", commitSha: "running-commit", createdAt: new Date("2026-08-20T00:00:00Z"),
     });
     repos.service.listByProject.mockResolvedValue([
       { id: "svc-api", name: "api", enabled: true, image: "acme/api:1" },
@@ -1509,7 +1512,7 @@ describe("triggerDeployment", () => {
   it("returns an actionable 409 for a services project with nothing enabled", async () => {
     repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-live" }));
     repos.deployment.findById.mockResolvedValue({
-      id: "dep-live",
+      id: "dep-live", projectId: "project-1", organizationId: "org-1",
       createdAt: new Date("2026-08-23T00:00:00Z"),
     });
     repos.service.listByProject.mockResolvedValue([]);
@@ -1549,7 +1552,7 @@ describe("triggerDeployment", () => {
       }),
     );
     repos.deployment.findById.mockResolvedValue({
-      id: "dep-live",
+      id: "dep-live", projectId: "project-1", organizationId: "org-1",
       createdAt: new Date("2026-08-23T00:00:00Z"),
     });
     resolveServicePipelineMode.mockResolvedValue({
@@ -1573,7 +1576,7 @@ describe("triggerDeployment", () => {
       }),
     );
     repos.deployment.findById.mockResolvedValue({
-      id: "dep-live",
+      id: "dep-live", projectId: "project-1", organizationId: "org-1",
       imageRef: "ws-live",
       createdAt: new Date("2026-08-23T00:00:00Z"),
     });
@@ -1669,6 +1672,7 @@ describe("redeployBuildSession environment snapshot", () => {
   it("updates update_status cache when resolving a new commit on redeploy", async () => {
     const project = baseProject({
       id: "project-1",
+      organizationId: "org-1",
       activeDeploymentId: "dep-old",
       gitOwner: "oblien",
       gitRepo: "openship",

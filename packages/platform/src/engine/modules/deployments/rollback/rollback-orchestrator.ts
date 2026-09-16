@@ -39,6 +39,7 @@
  * `commit_sha_before`.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Project } from "@repo/db";
 import { DockerRuntime, type DeploymentRef, type ResourceConfig } from "@repo/adapters";
 import { AppError, safeErrorMessage } from "@repo/core";
@@ -303,7 +304,7 @@ async function restoreViaRedeploy(
   // Where are we rolling back FROM? The currently-active release's commit —
   // recorded so this restore is itself reversible.
   const currentActive = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId)
+    ? await findActiveDeployment(project)
     : null;
   const prevSha = currentActive?.commitSha ?? target.commitShaBefore ?? undefined;
 
@@ -405,7 +406,7 @@ async function restoreViaUnitSwap(
 
   const currentActive =
     (project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId)
+      ? await findActiveDeployment(project)
       : null) ?? null;
 
   try {

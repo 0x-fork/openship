@@ -31,7 +31,7 @@ import { resolveOrgCloudUserId } from "./cloud/transport";
 import { platform } from "./platform-config";
 import { buildSshConfig, sshManager } from "./ssh-manager";
 import { createProvisionLock } from "./provision-lock";
-import { isLocalHostRow } from "./box-org";
+import { boxOwningOrgId, isLocalHostRow } from "./box-org";
 import { isConnectionLoss } from "./remote-state";
 import { resolveAcmeProviderOptions } from "./acme-config";
 import { findLocalServer } from "./startup/self-server";
@@ -268,7 +268,33 @@ async function resolveServerTargetTopology(
   organizationId: string | undefined,
 ): Promise<{ server: OrgServer; isLocal: boolean }> {
   const server = await resolveOrgServer(serverId, organizationId);
-  return { server, isLocal: await isLocalHostRow(server) };
+  const isLocal = await isLocalHostRow(server);
+  if (isLocal) await assertLocalDeploymentAccess(organizationId);
+  return { server, isLocal };
+}
+
+/** One authority check before either a host channel or the local Docker socket. */
+async function assertLocalDeploymentAccess(organizationId?: string): Promise<void> {
+  const target = platform().target;
+  if (env.CLOUD_MODE || target === "cloud") {
+    throw new AppError("The cloud control plane cannot be a local deployment target", 403, "LOCAL_HOST_ACCESS_DENIED");
+  }
+  // An embedding application explicitly owns its native runtime policy. Desktop
+  // runs on its user's machine; the multi-organization host boundary is selfhosted.
+  if (process.env.OPENSHIP_NATIVE === "true") {
+    if (process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") {
+      throw new AppError("Host execution is disabled by this native installation's policy", 403, "HOST_EXECUTION_DISABLED");
+    }
+    return;
+  }
+  if (target === "desktop") return;
+  if (!organizationId || organizationId !== await boxOwningOrgId()) {
+    throw new AppError(
+      "Local deployments require the organization that owns this host. Select a server belonging to this organization.",
+      403,
+      "LOCAL_HOST_ACCESS_DENIED",
+    );
+  }
 }
 
 /**
@@ -539,8 +565,8 @@ export async function resolveTargetPlatform(
   serverId?: string,
   organizationId?: string,
 ): Promise<Platform> {
+  if (target === "local") await assertLocalDeploymentAccess(organizationId);
   if (process.env.OPENSHIP_NATIVE === "true" && target === "local") {
-    if (process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") throw new AppError("Host execution is disabled by this native installation's policy", 403, "HOST_EXECUTION_DISABLED");
     const owned = platform();
     if (owned.runtime.name !== runtimeMode) throw new AppError("This native installation is configured for a different local runtime", 409, "RUNTIME_UNAVAILABLE");
     // Reuse the instance-owned runtime, including its work directory and
@@ -1185,6 +1211,7 @@ export async function resolveDeploymentRuntimeForRead(
     };
   }
   if (effectiveTarget === "local") {
+    await assertLocalDeploymentAccess(dep.organizationId);
     return {
       runtime: await DockerRuntime.create({ transport: "socket" }),
       serverId: null,

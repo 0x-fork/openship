@@ -9,6 +9,7 @@
  * which re-pushes (so a reloaded/reinstalled edge with an empty dict repopulates).
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import type { RouteRuleSpec } from "@repo/core";
 import { safeErrorMessage } from "@repo/core";
@@ -118,7 +119,7 @@ export async function resolveProjectPushTarget(
   if (!project) return null;
   if (project.cloudWorkspaceId) return null; // cloud edge is not OpenResty
   if (!project.activeDeploymentId) return { serverId: null }; // not deployed → local default
-  const deployment = await repos.deployment.findById(project.activeDeploymentId);
+  const deployment = await findActiveDeployment(project);
   if (!deployment) return { serverId: null };
   // Wrapped even though only the TARGET is wanted: resolving a platform for a
   // remote server binds a Docker-over-SSH bridge before this function ever looks

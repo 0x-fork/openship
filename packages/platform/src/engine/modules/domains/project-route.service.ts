@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Domain, type Project } from "@repo/db";
 import { resolveWorkload, safeErrorMessage } from "@repo/core";
 import { edgeProxyFor, resolveServedStaticPath } from "@repo/adapters";
@@ -419,7 +420,7 @@ export async function reapplyProjectLiveRoutes(
 
   // Self-hosted: resolve the deployment's routing + runtime ONCE (the same
   // resolver deploy/delete use), then compute each upstream from the container.
-  const deployment = await repos.deployment.findById(project.activeDeploymentId!);
+  const deployment = await findActiveDeployment(project);
   if (!deployment) {
     warn(
       `[project-route] ${project.slug}: no active deployment row — skipping live route re-apply`,

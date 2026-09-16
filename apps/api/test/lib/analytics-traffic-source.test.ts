@@ -31,7 +31,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: async () => h.project },
-    deployment: { findById: async () => (h.deploymentMeta ? { meta: h.deploymentMeta } : null) },
+    deployment: { findById: async () => (h.deploymentMeta ? { id: "d1", projectId: "p1", organizationId: "org-owning-this-project", meta: h.deploymentMeta } : null) },
     domain: {
       getPrimaryByProject: async () => ({ hostname: "app.example.com", isPrimary: true }),
       listByProject: async () => [{ hostname: "app.example.com", isPrimary: true }],

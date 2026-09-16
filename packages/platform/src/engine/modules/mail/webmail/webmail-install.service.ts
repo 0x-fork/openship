@@ -26,6 +26,7 @@
  * so the operator cannot repoint it and we front it for them.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import {
   AppError,
   getAppEndpoints,
@@ -646,7 +647,7 @@ export async function resolveWebmailSummary(
     (proxied ? mailHostname(mailServer.domain) : rows === null ? "" : await routedServiceHostname(project));
 
   return {
-    installed: await isLiveDeploymentReady(project.activeDeploymentId),
+    installed: (await findActiveDeployment(project).catch(() => null))?.status === "ready",
     hostname,
     url: hostname ? `https://${hostname}` : "",
     // Withholding the hostname is the safe half; saying so is the other half. Without
@@ -677,12 +678,6 @@ async function routedServiceHostname(project: Pick<Project, "id" | "slug" | "nam
     if (custom?.customDomain) return custom.customDomain;
   }
   return "";
-}
-
-async function isLiveDeploymentReady(deploymentId: string | null): Promise<boolean> {
-  if (!deploymentId) return false;
-  const dep = await repos.deployment.findById(deploymentId).catch(() => null);
-  return dep?.status === "ready";
 }
 
 // ─── Deploy-success hook ─────────────────────────────────────────────────────

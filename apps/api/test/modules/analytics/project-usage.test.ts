@@ -92,7 +92,7 @@ const container = (id: string, service: string, state = "running") => ({
 
 beforeEach(() => {
   h.project = { id: "p1", organizationId: "org1", slug: "app", name: "App", activeDeploymentId: "d1" };
-  h.deployment = { id: "d1", containerId: "c-primary", meta: {}, organizationId: "org1" };
+  h.deployment = { id: "d1", projectId: "p1", containerId: "c-primary", meta: {}, organizationId: "org1" };
   h.services = [];
   h.serviceDeployments = [];
   h.liveContainers = [];
@@ -122,7 +122,7 @@ describe("single-container app", () => {
   });
 
   it("returns no targets when the deployment has no container yet", async () => {
-    h.deployment = { id: "d1", containerId: null, meta: {}, organizationId: "org1" };
+    h.deployment = { id: "d1", projectId: "p1", containerId: null, meta: {}, organizationId: "org1" };
     const r = await collectProjectUsage(ctx, "p1");
     expect(r.services).toEqual([]);
     expect(r.overall.cpuPercent).toBe(0);

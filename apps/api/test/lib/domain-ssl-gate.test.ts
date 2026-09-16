@@ -53,7 +53,7 @@ vi.mock("@repo/db", () => ({
       })),
     },
     deployment: {
-      findById: vi.fn(async (id: string) => ({ id, organizationId: "org_1", meta: {} })),
+      findById: vi.fn(async (id: string) => ({ id, projectId: "proj_1", organizationId: "org_1", meta: {} })),
     },
     server: { findLocal: vi.fn(async () => null) },
   },

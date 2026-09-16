@@ -14,6 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, unresolvedComposeEnvironmentKeys, type Project, type Service } from "@repo/db";
 import {
   AppError,
@@ -132,13 +133,14 @@ function throwPreflightFailure(preflight: PreflightResult): never {
 }
 
 /** Wrap a snapshot with the project's currently-active deployment id (rollback target). */
-export function metaWithPrevious(
+export async function metaWithPrevious(
   snapshot: DeploymentConfigSnapshot,
   project: Project,
-): DeploymentConfigSnapshot {
+): Promise<DeploymentConfigSnapshot> {
+  const previous = await findActiveDeployment(project);
   return {
     ...snapshot,
-    previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
+    previousActiveDeploymentId: previous?.id,
     envCapture: "flat-v1",
   };
 }
@@ -998,7 +1000,7 @@ export async function resolveSnapshotTarget(
   override?: { deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" },
 ): Promise<{ deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" }> {
   const activeMeta = project.activeDeploymentId
-    ? ((await repos.deployment.findById(project.activeDeploymentId).catch(() => null))
+    ? ((await findActiveDeployment(project).catch(() => null))
         ?.meta as DeploymentConfigSnapshot | null)
     : null;
 
@@ -1973,7 +1975,7 @@ export async function requestBuildAccess(
     commitMessage,
     environment: env,
     framework: snapshot.framework,
-    meta: metaWithPrevious(snapshot, project),
+    meta: await metaWithPrevious(snapshot, project),
     envVars: deploymentEnvVars,
     rollbackStrategy,
     commitShaBefore,
@@ -2331,7 +2333,7 @@ export async function redeployBuildSession(
     trigger: opts?.trigger ?? "redeploy",
     environment: oldDep.environment,
     framework: oldDep.framework || refreshedMeta.framework,
-    meta: metaWithPrevious(refreshedMeta, project),
+    meta: await metaWithPrevious(refreshedMeta, project),
     envVars: Object.keys(currentProjectEnv).length > 0 ? currentProjectEnv : null,
     rollbackStrategy,
     commitShaBefore,
@@ -2563,7 +2565,7 @@ export async function triggerDeployment(
       .findInProgressByCommit(project.id, requestedCommitSha)
       .catch(() => undefined);
     const active = project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+      ? await findActiveDeployment(project).catch(() => null)
       : null;
     const existing =
       inFlight ??
@@ -2697,7 +2699,7 @@ export async function triggerDeployment(
   let refreshActive: Awaited<ReturnType<typeof repos.deployment.findById>> | null = null;
   if (data.refresh) {
     refreshActive = project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+      ? await findActiveDeployment(project).catch(() => null)
       : null;
     if (!refreshActive) {
       throw new AppError("Nothing to refresh yet — deploy the project first.", 409);
@@ -2853,7 +2855,7 @@ export async function triggerDeployment(
     trigger: data.trigger ?? "manual",
     environment,
     framework: snapshot.framework,
-    meta: metaWithPrevious(snapshot, project),
+    meta: await metaWithPrevious(snapshot, project),
     envVars: encryptedEnvVars,
     rollbackStrategy,
     commitShaBefore,

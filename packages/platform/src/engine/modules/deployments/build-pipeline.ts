@@ -1,5 +1,6 @@
 /** Build → deploy execution engine. Extracted from build.service.ts — private pipeline: kickoffBuild fires executeBuildAndDeploy, which runs the build, deploy phases, and post-deploy sync. */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { posix as pathPosix } from "node:path";
 import { repos, type Project, type Deployment, type Domain } from "@repo/db";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
@@ -377,7 +378,7 @@ async function archivePreviousDeployment(
     const { onDeploymentReady } = await import("./rollback/index");
     const finalDep = await repos.deployment.findById(dep.id);
     const prevDep = project.activeDeploymentId
-      ? await repos.deployment.findById(project.activeDeploymentId)
+      ? await findActiveDeployment(project)
       : null;
     if (finalDep) {
       await onDeploymentReady({ newDeployment: finalDep, previousActive: prevDep ?? null });
@@ -2059,6 +2060,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
       }
     : undefined;
 
+  const prevDep = await findActiveDeployment(project);
   const deployConfig: DeployConfig = {
     deploymentId: dep.id,
     projectId: project.id,
@@ -2106,13 +2108,10 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     volumes: snapshot.volumes ?? [],
     // Bare uses this to hard-link identical files across releases.
     // Other runtimes ignore it.
-    previousDeploymentId: project.activeDeploymentId ?? undefined,
+    previousDeploymentId: prevDep?.id,
   };
 
   // Resolve the previous deployment + its runtime so we can deactivate it cleanly.
-  const prevDep = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId)
-    : null;
   // A DISTINCT platform from this deploy's, so on a remote server it binds its own
   // bridge. Registered rather than released here: `deployEnv` closes over it to
   // deactivate/destroy the old containers, so it has to outlive this line — and the

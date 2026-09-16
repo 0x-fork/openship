@@ -33,6 +33,7 @@ vi.mock("@repo/db", () => ({
 // The row IS this box; keyed off the flag so the test doesn't depend on loopback
 // resolution or env.
 vi.mock("@repo/platform/engine/lib/box-org", () => ({
+  boxOwningOrgId: async () => "org1",
   isLocalHostRow: async (row: { isLocal?: boolean }) => Boolean(row?.isLocal),
 }));
 
@@ -201,3 +202,5 @@ describe("hostChannelDeployNotice", () => {
     expect(hostChannelDeployNotice(undefined)).toBeNull();
   });
 });
+
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted" }) }));
