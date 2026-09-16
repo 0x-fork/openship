@@ -389,10 +389,10 @@ export const BACKUP_PAYLOADS: Record<PayloadKind, BackupPayloadSpec> = {
   },
   redis_rdb: {
     kind: "redis_rdb",
-    label: "Redis",
+    label: "Redis / Valkey",
     method: "RDB snapshot",
     shape: "database",
-    images: { names: ["redis"], namespaces: ["redis"] },
+    images: { names: ["redis", "valkey/valkey"], namespaces: ["redis"] },
     restoreNeedsLiveContainer: true,
     // The one kind whose write is inert until the service restarts. See the field doc.
     restoreAppliesAfterBounce: true,
