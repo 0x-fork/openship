@@ -36,7 +36,10 @@
     "docs": "Docs",
     "docsDesc": "Learn more",
     "activityTitle": "Activity",
-    "successRate": "Success rate",
+    "systemStatus": "System status",
+    "operational": "Operational",
+    "oneIssue": "1 issue",
+    "manyIssues": "{n} issues",
     "recentTitle": "Recent",
     "activityEmpty": "Your activity will appear here",
     "appsEmptyTitle": "No apps yet",
@@ -52,11 +55,13 @@
     }
   },
   "nav": {
+    "scale": "Scale",
     "home": "Home",
     "new-project": "New Project",
     "projects": "Projects",
     "apps": "Apps",
     "deployments": "Deployments",
+    "issues": "Monitoring",
     "backups": "Backups",
     "domains": "Domains",
     "monitoring": "Monitoring",
@@ -64,11 +69,19 @@
     "emails": "Emails",
     "jobs": "Jobs",
     "settings": "Settings",
-    "billing": "Billing",
+    "billing": "Billing & Usage",
+    "audit": "Audit log",
+    "mailSetup": "Set up mail",
+    "mailSetupProgress": "Setup progress",
+    "addMailbox": "Add mailbox",
+    "webmail": "Webmail",
     "sections": {
       "main": "Main",
       "settings": "Settings",
       "infrastructure": "Infrastructure",
+      "mail": "Mail",
+      "delivery": "Delivery",
+      "system": "System",
       "account": "Account"
     }
   },
@@ -95,6 +108,7 @@
       "popular": "Popular apps",
       "alsoDeploy": "You can also deploy",
       "browseAll": "Browse all apps",
+      "moreApps": "+{count} more",
       "catalogTitle": "Install an app",
       "catalogDescription": "One-click managed services. Pick one to install it as an app.",
       "catalogSearchPlaceholder": "Search apps…",
@@ -145,6 +159,11 @@
         "rollbacks": "Rollbacks",
         "rollbacksDesc": "One-click revert",
         "commandPalette": "Or press {key} to open command palette"
+      },
+      "view": {
+        "label": "View",
+        "list": "List",
+        "grid": "Grid"
       }
     },
     "deployments": {
@@ -168,7 +187,7 @@
       "description": "Account, team, and platform settings."
     },
     "billing": {
-      "title": "Billing",
+      "title": "Billing & Usage",
       "description": "Manage your subscription, usage, and payment methods."
     }
   },
@@ -196,7 +215,7 @@
       "description": "Custom domains"
     },
     "billing": {
-      "title": "Billing",
+      "title": "Billing & Usage",
       "description": "Usage & plans"
     }
   }

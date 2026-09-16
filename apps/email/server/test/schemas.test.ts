@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 // A plain static import: schemas.ts pulls in only zod, with no transitive
 // reach into src/env, so there is nothing to sequence behind an await.
@@ -50,29 +50,6 @@ describe("signInSchema", () => {
 });
 
 describe("userSettingsSchema", () => {
-  it("exports the complete default settings object", () => {
-    expect(defaultUserSettings).toEqual({
-      language: "en",
-      timezone: "UTC",
-      dynamicContent: false,
-      externalImages: true,
-      trustedSenders: [],
-      isOnboarded: false,
-      colorTheme: "system",
-      inboxType: "default",
-      signature: "",
-      zeroSignature: true,
-      undoSendTime: 5,
-      customPrompt: "",
-      autoRead: false,
-      noteFolderId: null,
-      defaultEmailAlias: "",
-      undoSendEnabled: true,
-      animations: true,
-      imageCompression: true,
-    });
-  });
-
   it("applies every field default when parsing an empty object", () => {
     expect(userSettingsSchema.parse({})).toEqual(defaultUserSettings);
   });

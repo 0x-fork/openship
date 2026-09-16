@@ -2,6 +2,23 @@
 
 Thanks for your interest in contributing! This guide covers everything you need to get started.
 
+## Before you open an issue
+
+Every issue must use exactly one of the repository's issue categories. Choose the matching form from
+the **New issue** page; blank, untyped issues are not accepted.
+
+| Category      | Title prefix    | Label           | GitHub issue type |
+| ------------- | --------------- | --------------- | ----------------- |
+| Bug           | `[Bug]`         | `bug`           | Bug               |
+| Feature       | `[Feature]`     | `enhancement`   | Feature           |
+| Improvement   | `[Improvement]` | `enhancement`   | Feature           |
+| Documentation | `[Docs]`        | `documentation` | Task              |
+| Question      | `[Question]`    | `question`      | Task              |
+
+If you create an issue through an API, CLI, or AI assistant instead of the GitHub form chooser,
+you must apply the matching title prefix, label, and GitHub issue type from the table above. Never
+create a generic or untyped issue. Issues without a category are incomplete and may be closed.
+
 ## Before you open a pull request
 
 **Bug fixes, tests, docs, and small self-contained improvements** are welcome as direct pull
@@ -31,6 +48,13 @@ Every PR is reviewed by a human, so make it easy to trust:
 - **Explain the why.** State what was broken (or what the linked issue agreed), and exactly how you
   verified it — the commands you ran and the before/after behavior.
 - **Prove it.** Add a test that fails without your change and passes with it, and say so in the PR.
+- **No test spam.** A test earns its place by catching a regression that could actually happen.
+  Don't add tests to move a coverage number, and don't submit ones that assert a constant equals
+  itself, re-check what the type system already guarantees, only verify that a mock you just wrote
+  was called, or restate the implementation line by line. Those pass forever, catch nothing, and
+  every future contributor pays to read and maintain them. Coverage percentage is not a review
+  criterion — one test that genuinely fails without your change is worth more than twenty that
+  can't fail at all.
 - **Green before you open.** `bun run test`, the relevant typecheck (`bun run --cwd <workspace>
   lint`), and `bun format` all pass locally.
 
@@ -38,6 +62,8 @@ Every PR is reviewed by a human, so make it easy to trust:
 
 AI tools are fine to use — but **you** are the author and are accountable for every line you submit:
 
+- **Type every issue.** When an AI assistant opens an issue, it must use one of the five issue forms
+  or apply the exact category mapping above. It must never create a generic or untyped issue.
 - **Understand your whole diff.** If you can't explain a line in review, don't submit it.
 - **Verify, don't trust.** Actually run the change and confirm it does what the PR claims. Do not
   paste generated code — or a generated PR description — that you haven't checked against the real
@@ -63,7 +89,7 @@ cd openship
 bun install --frozen-lockfile
 cp apps/api/.env.example apps/api/.env
 cp apps/dashboard/.env.example apps/dashboard/.env
-bun dev:local
+bun dev
 ```
 
 This starts the API and dashboard used for local development:
@@ -152,6 +178,29 @@ If you're adding something that should only exist in the cloud version:
 1. Gate it behind `CLOUD_MODE` in `apps/api/src/app.ts`
 2. Make any required env vars (like Stripe keys) optional in `apps/api/src/config/env.ts`
 3. Self-hosters should never see 500s from missing cloud config
+
+## Adding an App to the Catalog
+
+The one-click **Apps** catalog is data, not code — adding one is a small pull request that adds a
+single JSON file. No TypeScript required.
+
+1. Write `packages/core/src/apps/catalog/<id>.json` (start it with
+   `"$schema": "https://openship.io/app.schema.json"` for editor autocomplete)
+2. Regenerate the merged artifact and validate:
+
+```bash
+cd packages/core
+bun scripts/gen-catalog.ts                  # rewrites src/apps/catalog.json (a drift test fails CI without it)
+bunx vitest run src/apps/catalog.test.ts    # shape + referential validation for every app
+```
+
+3. Keep `"available": false` until it deploys cleanly end to end
+
+Apps must be open-source, use an official image **pinned** to a version, and auto-generate any
+credentials. Full walkthrough and field reference:
+
+- **[Add an app](https://openship.io/docs/guides/add-an-app)** — builds a real two-service app step by step
+- **[App catalog JSON](https://openship.io/docs/reference/app-catalog)** — every field
 
 ## Database
 

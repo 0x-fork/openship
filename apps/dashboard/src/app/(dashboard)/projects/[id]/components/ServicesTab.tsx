@@ -4,9 +4,11 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { serviceKind, serviceCanStartWithoutBuild, servicesApi, sortServicesByPublicFirst, type Service, type ServiceContainer, type ServiceInput } from "@/lib/api/services";
-import { getApiErrorMessage } from "@/lib/api/client";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
+import { getApiErrorMessage, isAbortError } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
-import { resolveServiceHostnameLabel, internalServiceAddress } from "@repo/core";
+import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
+import { serviceDisplayUrl } from "@/utils/route-display";
 import { useRouter } from "next/navigation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
@@ -14,16 +16,18 @@ import {
   Layers,
   RefreshCw,
   Globe,
-  Container,
   AlertCircle,
   AlertTriangle,
   ChevronRight,
   ArrowLeft,
   Plus,
+  Waypoints,
 } from "lucide-react";
 
 import { ServiceDetailPanel } from "./services/ServiceDetailPanel";
 import { AddServiceModal } from "./services/AddServiceModal";
+import { LinkedAppsCard } from "./services/LinkedAppsCard";
+import { ResourceSettings } from "./ResourceSettings";
 
 /** Render a drift diff value (arrays → csv, objects → keys, scalars → string). */
 const fmtDriftVal = (v: unknown): string => {
@@ -56,7 +60,12 @@ export const ServicesTab = () => {
     () => sortServicesByPublicFirst(servicesData.services),
     [servicesData.services],
   );
-  const loading = servicesData.isLoading || containersLoading;
+  // Skeleton only when there is nothing to show. containersLoading flips on
+  // every refetch (and every remount of this tab), so OR-ing it raw flashed
+  // the full-tab skeleton on every action and tab switch (#666) — rows render
+  // fine without container data (status falls back per service).
+  const loading =
+    servicesData.isLoading || (containersLoading && services.length === 0);
   const projectSlugBase = projectData.slug || projectData.name || "project";
   const selectedId = slug?.[1] ?? null;
   const hasProjectId = Boolean(id && id !== "undefined");
@@ -71,10 +80,22 @@ export const ServicesTab = () => {
     try {
       setContainersLoading(true);
       setError(null);
-      const [, ctRes] = await Promise.all([refreshServices(), servicesApi.containers(id)]);
+      // allSettled, not all: with `all`, a rejection from the SECOND promise once
+      // the first has already rejected is orphaned, and an unhandled rejection
+      // surfaces as a bare runtime error overlay instead of this component's
+      // error state. The container read is also the one that can time out
+      // (it reflects live runtime state), so it must not take the tab down.
+      const [, containersResult] = await Promise.allSettled([
+        refreshServices(),
+        servicesApi.containers(id),
+      ]);
+      if (containersResult.status === "rejected") throw containersResult.reason;
+      const ctRes = containersResult.value;
       if (ctRes.success) setContainers(ctRes.containers ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.projects.services.failedLoad);
+      // An aborted request's message is "signal is aborted without reason" —
+      // useless to a user, so fall back to the generic copy for it.
+      setError(!isAbortError(e) && e instanceof Error ? e.message : t.projects.services.failedLoad);
     } finally {
       setContainersLoading(false);
     }
@@ -88,19 +109,14 @@ export const ServicesTab = () => {
 
   const selectedService = services.find((s) => s.id === selectedId);
 
-  const resolveServiceUrl = (service: Service) => {
-    if (!service.exposed) return null;
-    if (service.domainType === "custom" && service.customDomain) {
-      return `https://${service.customDomain}`;
-    }
-    const subdomain = resolveServiceHostnameLabel(
-      projectSlugBase,
-      service.name,
-      service.domain,
-      serviceKind(service),
-    );
-    return `https://${subdomain}.${baseDomain}`;
-  };
+  // Null for a service with no route — it is reachable on its port, and linking
+  // to a derived `<project>-<service>` host sent people to a name nobody created.
+  const resolveServiceUrl = (service: Service) =>
+    serviceDisplayUrl(service, {
+      projectLabel: projectSlugBase,
+      baseDomain,
+      kind: serviceKind(service),
+    });
 
   const openService = (serviceId: string) => {
     if (!hasProjectId) return;
@@ -216,7 +232,12 @@ export const ServicesTab = () => {
   }
 
   /* ── Error state ───────────────────────────────────────────────── */
-  if (error || servicesData.error) {
+  // Full-tab error only when there is nothing to show. A failed refetch with
+  // rows on screen keeps them and reports the failure inline — blanking a
+  // working list on a transient 5xx was the same complaint as the skeleton
+  // flash (#666).
+  const failure = error || servicesData.error;
+  if (failure && services.length === 0) {
     return (
       <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
         <AlertCircle className="size-8 text-danger mx-auto mb-3" />
@@ -236,7 +257,7 @@ export const ServicesTab = () => {
   /* ── Empty state ───────────────────────────────────────────────── */
   if (services.length === 0) {
     return (
-      <>
+      <div className="space-y-5">
         <div className="bg-card rounded-2xl border border-border/50 px-6 pb-10 text-center">
           {/* SVG illustration - central app card linked to three service
               nodes (database, cache, queue). Uses the same `th-*` token
@@ -351,14 +372,19 @@ export const ServicesTab = () => {
             </button>
           </div>
         </div>
+        {/* A project can have a linked app before it has any service of its own
+            (wired at creation, not deployed yet) — don't hide the link behind
+            the empty state. */}
+        {hasProjectId && <LinkedAppsCard projectId={id} />}
         <AddServiceModal
+          projectId={id}
           open={createOpen}
           projectName={projectSlugBase}
           isCloudProject={projectData?.deployTarget === "cloud"}
           onClose={() => setCreateOpen(false)}
           onSubmit={handleCreateService}
         />
-      </>
+      </div>
     );
   }
 
@@ -398,6 +424,7 @@ export const ServicesTab = () => {
           projectType={(projectData as { projectType?: string })?.projectType}
           activeDeploymentId={projectData?.activeDeploymentId}
           deployTarget={projectData?.deployTarget}
+          serverId={(projectData as { serverId?: string | null })?.serverId}
           siblingServices={servicesData.services}
         />
       </div>
@@ -426,6 +453,13 @@ export const ServicesTab = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => router.push(`/projects/${id}/topology`)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+            >
+              <Waypoints className="size-3.5" />
+              {t.projects.sidebar.tabs.topology}
+            </button>
             <button
               onClick={fetchData}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
@@ -509,6 +543,19 @@ export const ServicesTab = () => {
         </div>
       )}
 
+      {failure && (
+        <div className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/[0.06] px-3 py-2 text-xs text-danger">
+          <AlertCircle className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">{failure}</span>
+          <button
+            onClick={fetchData}
+            className="font-medium underline underline-offset-2"
+          >
+            {t.projects.services.retry}
+          </button>
+        </div>
+      )}
+
       <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/30 overflow-hidden">
         {services.map((svc) => {
           const ct = containerFor(svc.id);
@@ -549,8 +596,8 @@ export const ServicesTab = () => {
               onClick={() => openService(svc.id)}
               className="w-full flex items-center gap-4 px-5 py-4 text-start transition-colors hover:bg-foreground/[0.025]"
             >
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-muted/50">
-                <Container className="size-[18px] text-muted-foreground" />
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-muted/50 overflow-hidden">
+                <ServiceIcon service={svc} />
               </div>
 
               <div className="flex-1 min-w-0">
@@ -592,15 +639,17 @@ export const ServicesTab = () => {
                   ) : svc.exposed && urlHost ? (
                     // Exposed compose service — its public URL.
                     urlHost
-                  ) : ct?.ip ? (
-                    // Internal service that's running — its real internal IP on
-                    // the openship network (what the user actually wants to see).
-                    <span className="font-mono">{ct.ip}</span>
                   ) : (
-                    // Not running yet — fall back to the stable address SIBLINGS
-                    // use to reach it (service-name:port).
+                    // Internal service — the STABLE address siblings use to reach
+                    // it (alias:port), NOT the container's ephemeral bridge IP.
+                    // The IP changes every restart and is never what you'd put in
+                    // another service's env; the alias is. Custom alias wins when
+                    // set (effectiveServiceAlias), matching what DNS resolves.
                     <span className="font-mono">
-                      {internalServiceAddress(svc.name, svc.ports as string[])}
+                      {internalServiceAddress(
+                        effectiveServiceAlias(svc.name, (svc.advanced as ComposeAdvanced | null)?.alias),
+                        svc.ports as string[],
+                      )}
                     </span>
                   )}
                 </p>
@@ -615,7 +664,19 @@ export const ServicesTab = () => {
         })}
       </div>
 
+      {/* Apps wired into this project — not services we own (no container, no
+          start/stop), but part of what it runs against. */}
+      <LinkedAppsCard projectId={id} />
+
+      {/* Project-wide cpu/memory caps. This lives here (not only in the Runtime
+          tab) because the Runtime tab is HIDDEN for a service-first project —
+          which is exactly the shape that had no way to change the limits its
+          containers ran with. A service can still override per-service via its
+          compose `mem_limit`. */}
+      <ResourceSettings />
+
       <AddServiceModal
+        projectId={id}
         open={createOpen}
         projectName={projectSlugBase}
         isCloudProject={projectData?.deployTarget === "cloud"}
@@ -628,40 +689,54 @@ export const ServicesTab = () => {
 
 /* ── Status Badge ───────────────────────────────────────────────────── */
 
+// Hollow status ring + colored label — the same calmer treatment as the service
+// detail panel and the Servers view, rather than a filled pill per row. `ring`
+// is a BORDER on an empty circle, not a solid pip.
 function StatusBadge({ status, t }: { status: string; t: Dictionary }) {
-  const map: Record<string, { dot: string; badge: string; label: string }> = {
+  const map: Record<string, { ring: string; text: string; label: string }> = {
     running: {
-      dot: "bg-success-solid",
-      badge: "bg-success-bg text-success",
+      ring: "border-success-solid",
+      text: "text-success",
       label: t.projects.serviceStatus.running,
     },
     stopped: {
-      dot: "bg-muted-foreground/30",
-      badge: "bg-muted/60 text-muted-foreground/70",
+      ring: "border-muted-foreground/40",
+      text: "text-muted-foreground",
       label: t.projects.serviceStatus.stopped,
     },
     disabled: {
-      dot: "bg-muted-foreground/20",
-      badge: "bg-muted/40 text-muted-foreground/50",
+      ring: "border-muted-foreground/30",
+      text: "text-muted-foreground/60",
       label: t.projects.serviceStatus.disabled,
     },
     failed: {
-      dot: "bg-danger-solid",
-      badge: "bg-danger-bg text-danger",
+      ring: "border-danger-solid",
+      text: "text-danger",
       label: t.projects.serviceStatus.failed,
     },
     starting: {
-      dot: "bg-warning-solid",
-      badge: "bg-warning-bg text-warning",
+      ring: "border-warning-solid animate-pulse",
+      text: "text-warning",
       label: t.projects.serviceStatus.starting,
+    },
+    // A bouncing container is NOT running — it used to render green, which hid
+    // whole stacks in a crash loop.
+    restarting: {
+      ring: "border-warning-solid animate-pulse",
+      text: "text-warning",
+      label: t.projects.serviceStatus.restarting,
+    },
+    // The host couldn't be reached — say so instead of echoing a stale status.
+    unknown: {
+      ring: "border-muted-foreground/40",
+      text: "text-muted-foreground",
+      label: t.projects.serviceStatus.unknown,
     },
   };
   const s = map[status] ?? map.stopped;
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.badge}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.text}`}>
+      <span className={`size-2.5 rounded-full border-2 ${s.ring}`} />
       {s.label}
     </span>
   );

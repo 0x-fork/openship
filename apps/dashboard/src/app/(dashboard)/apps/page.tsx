@@ -13,7 +13,6 @@ import {
   Plus,
   Mail,
   Database,
-  Workflow,
   FileText,
   Activity,
   KeyRound,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { AppLogo } from "@/components/AppLogo";
+import { HelpMenu } from "@/components/HelpMenu";
 
 /**
  * Apps tab — catalog-installed managed services. Shares `projects/home` data with
@@ -40,13 +40,13 @@ interface FeaturedApp {
   icon: LucideIcon;
 }
 
-// Enabled apps (mail / n8n / convex) lead; the rest render dimmed "coming soon"
+// Enabled apps (mail / neon / convex) lead; the rest render dimmed "coming soon"
 // (single source: AVAILABLE_APP_IDS in @repo/core).
 const FEATURED_APPS: FeaturedApp[] = [
   { id: "supabase", name: "Supabase", desc: "Postgres backend + Studio", icon: Database },
   { id: "convex", name: "Convex", desc: "Reactive backend & database", icon: Database },
   { id: "mongodb", name: "MongoDB", desc: "Document database + Mongo Express", icon: Database },
-  { id: "n8n", name: "n8n", desc: "Workflow automation", icon: Workflow },
+  { id: "neon", name: "Neon", desc: "Serverless Postgres engine", icon: Database },
   { id: "mail", name: "Openship Mail", desc: "Self-hosted mail server + webmail", icon: Mail },
   { id: "ghost", name: "Ghost", desc: "Publishing & newsletters", icon: FileText },
   { id: "uptime-kuma", name: "Uptime Kuma", desc: "Uptime monitoring", icon: Activity },
@@ -114,15 +114,22 @@ export default function AppsPage() {
                 })}
           </p>
         </div>
-        {apps.length > 0 && (
-          <Link
-            href="/apps/new"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 w-full sm:w-auto justify-center"
-          >
-            <Plus className="size-4" />
-            <span>{ap.createButton}</span>
-          </Link>
-        )}
+        {/* Primary action + the shared ⋮ help menu (support / report issue /
+            feedback / docs / community) that the other page headers carry. The
+            menu renders even with no apps installed — the header's Install
+            button doesn't, but help shouldn't depend on having apps. */}
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          {apps.length > 0 && (
+            <Link
+              href="/apps/new"
+              className="inline-flex flex-1 items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 sm:flex-none justify-center"
+            >
+              <Plus className="size-4" />
+              <span>{ap.createButton}</span>
+            </Link>
+          )}
+          <HelpMenu className="ms-auto sm:ms-0" />
+        </div>
       </div>
 
       {isLoading ? (
@@ -188,7 +195,7 @@ export default function AppsPage() {
               {ap.popular}
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {FEATURED_APPS.map((a) => {
+              {FEATURED_APPS.slice(0, 5).map((a) => {
                 const enabled = isAppEnabled(a.id);
                 return (
                   <button
@@ -220,6 +227,25 @@ export default function AppsPage() {
                   </button>
                 );
               })}
+              {/* Explore-all tile — collapses the rest of the catalog into one
+                  card next to the last featured app instead of a wall of dimmed
+                  "coming soon" rows. Routes into the full catalog. */}
+              <button
+                type="button"
+                onClick={() => router.push("/apps/new")}
+                className="group flex items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-md"
+              >
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
+                  <Plus className="size-5 text-muted-foreground transition-colors group-hover:text-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground">{ap.browseAll}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {interpolate(ap.moreApps, { count: String(FEATURED_APPS.length - 5) })}
+                  </p>
+                </div>
+                <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground" />
+              </button>
             </div>
           </div>
         </div>
@@ -256,10 +282,9 @@ export default function AppsPage() {
                   </p>
                   <div className="space-y-2">
                     {suggestions.map((a) => (
-                      <button
+                      <Link
                         key={a.id}
-                        type="button"
-                        onClick={() => router.push(`/apps/new/${a.id}`)}
+                        href={`/apps/new/${a.id}`}
                         className="group flex w-full items-center gap-3 rounded-xl border border-border/50 p-3 text-left transition-all hover:border-primary/40 hover:bg-muted/30"
                       >
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60">
@@ -270,7 +295,7 @@ export default function AppsPage() {
                           <p className="truncate text-[11px] text-muted-foreground">{a.desc}</p>
                         </div>
                         <ArrowRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-foreground rtl:rotate-180" />
-                      </button>
+                      </Link>
                     ))}
                   </div>
                   <Link

@@ -1,21 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-
-// `client-ip.ts` imports `hono/bun`, whose barrel also pulls in the SSG and
-// websocket adapters — those dereference the `Bun` global at module load, so
-// importing it under vitest's Node runtime throws `Bun is not defined` before
-// a single test runs. Only `getConnInfo` is actually used here, and its own
-// module is runtime-agnostic: it reads `env.server.requestIP(c.req.raw)`.
-// Re-implementing that one function keeps the real `clientIp` under test
-// (header precedence, trimming, and the throwing-fallback path are all its
-// own logic) while sidestepping the unrelated adapter side effects.
-vi.mock("hono/bun", () => ({
-  getConnInfo: (c: { env?: ConnectionEnv; req: { raw: Request } }) => {
-    const server = c.env?.server;
-    if (!server) throw new Error("env.server is not defined");
-    return { remote: server.requestIP(c.req.raw) ?? {} };
-  },
-}));
 
 import { clientIp } from "../src/lib/client-ip";
 

@@ -7,7 +7,7 @@ const { mockEnv, mockRuntimeTarget } = vi.hoisted(() => ({
   mockEnv: { OPENSHIP_PUBLIC_URL: undefined as string | undefined },
   mockRuntimeTarget: { api: "http://localhost:4000", dashboard: "http://localhost:3001" },
 }));
-vi.mock("../../src/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", () => ({
   env: mockEnv,
   runtimeTarget: mockRuntimeTarget,
   // public-url.ts reads localDashboardUrl for resolveDashboardPublicUrl's fallback.
@@ -20,8 +20,9 @@ import {
   sharedWebhookUrl,
   domainWebhookUrl,
   resolveAuthBaseUrl,
+  requestApiPublicUrl,
   requestPublicOrigin,
-} from "../../src/lib/public-url";
+} from "@repo/platform/engine/lib/public-url";
 
 afterEach(() => {
   mockEnv.OPENSHIP_PUBLIC_URL = undefined;
@@ -87,6 +88,21 @@ describe("requestPublicOrigin (MCP WWW-Authenticate)", () => {
   it("falls back to the request origin when nothing else is available", () => {
     const req = new Request("http://127.0.0.1:4000/api/mcp", { method: "POST" });
     expect(requestPublicOrigin(req)).toBe("http://127.0.0.1:4000");
+  });
+});
+
+describe("requestApiPublicUrl (URLs handed back to the caller)", () => {
+  it("is the proxied public base when a public URL is configured", () => {
+    mockEnv.OPENSHIP_PUBLIC_URL = "https://ops.example.com";
+    const req = new Request("http://127.0.0.1:4000/api/projects/folder/session", { method: "POST" });
+    expect(requestApiPublicUrl(req)).toBe("https://ops.example.com/api/proxy");
+  });
+
+  it("uses the origin the caller reached us on when unconfigured (dynamic port / LAN)", () => {
+    const req = new Request("http://192.168.1.20:41235/api/projects/folder/session", {
+      method: "POST",
+    });
+    expect(requestApiPublicUrl(req)).toBe("http://192.168.1.20:41235");
   });
 });
 

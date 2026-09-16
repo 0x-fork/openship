@@ -1,15 +1,18 @@
 "use client";
 
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useState } from "react";
 import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { CustomSelect } from "@/components/ui/CustomSelect";
+import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
+import { CloudWaitlistModal } from "./CloudWaitlistModal";
+import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
+import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
+import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
 import { useCloneStrategyGate } from "./CloneStrategyNudge";
-import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
-import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
+import { serviceDisplayHost } from "@/utils/route-display";
 import { useDeployment } from "@/context/DeploymentContext";
 import {
   publicEndpointsNeedCloud,
@@ -19,12 +22,12 @@ import {
 } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
 import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
-import { useGitHub } from "@/context/GitHubContext";
 import { useModal } from "@/context/ModalContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
-import { projectsApi, githubApi, serverGithubApi, getApiErrorMessage } from "@/lib/api";
+import { projectsApi, githubApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { attachDeploymentDomainIds, deploymentDnsTargets } from "@/lib/deployment-dns";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
 
@@ -36,6 +39,16 @@ const ComposeChecklist: React.FC = () => {
   if (services.length === 0) return null;
 
   const exposedServices = services.filter((s) => s.exposed);
+  // Only services that HAVE a route belong in a list of domains. This used to
+  // print `<service-name>.<baseDomain>` for a service with no chosen subdomain —
+  // a host the deploy never creates. Port-only services are still counted in the
+  // "exposed" checklist row above; they just aren't domains.
+  const routedServices = exposedServices
+    .map((svc) => ({
+      svc,
+      host: serviceDisplayHost(svc, { projectLabel: config.projectName ?? "", baseDomain }),
+    }))
+    .filter((entry): entry is { svc: typeof entry.svc; host: string } => !!entry.host);
   const exposableServices = services.filter((s) => s.ports.length > 0);
   const envConfigured = services.filter(
     (s) => Object.keys(s.environment).length > 0,
@@ -119,24 +132,18 @@ const ComposeChecklist: React.FC = () => {
       </div>
 
       {/* Exposed domains quick list */}
-      {exposedServices.length > 0 && (
+      {routedServices.length > 0 && (
         <div className="pt-2 border-t border-border/30 space-y-1.5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             {t.deploy.checklist.domains}
           </p>
-          {exposedServices.map((svc) => {
-            const domain =
-              svc.domainType === "custom" && svc.customDomain
-                ? svc.customDomain
-                : `${svc.domain || svc.name}.${baseDomain}`;
-            return (
-              <div key={svc.name} className="flex items-center gap-2">
-                <Globe className="size-3 text-primary" />
-                <span className="text-sm text-primary font-medium truncate">{domain}</span>
-                <span className="text-xs text-muted-foreground ms-auto">{svc.name}</span>
-              </div>
-            );
-          })}
+          {routedServices.map(({ svc, host }) => (
+            <div key={svc.name} className="flex items-center gap-2">
+              <Globe className="size-3 text-primary" />
+              <span className="text-sm text-primary font-medium truncate">{host}</span>
+              <span className="text-xs text-muted-foreground ms-auto">{svc.name}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -146,15 +153,26 @@ const ComposeChecklist: React.FC = () => {
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
 const Sidebar: React.FC = () => {
-  const { config, state, updateConfig, startDeployment } = useDeployment();
+  const { config, state, updateConfig, startDeployment, rescanWithBranch, isRescanning } =
+    useDeployment();
   const { t } = useI18n();
   const { requireCloud } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
-  const { installUrl, state: githubState } = useGitHub();
+  // Desktop mode: the workload can't run on this machine yet (builds still can).
+  const localDeployGate = useLocalDeployGate();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const router = useRouter();
   const isServices = usesServiceDeployment(config);
+  const [branchError, setBranchError] = React.useState<string | null>(null);
+  const handleBranchChange = useCallback(
+    async (branch: string) => {
+      setBranchError(null);
+      const result = await rescanWithBranch(branch);
+      if (!result.success && result.error) setBranchError(result.error);
+    },
+    [rescanWithBranch],
+  );
 
   // Copy a ready-to-run `git clone` command with a short-lived GitHub App
   // installation token. Cloud / GitHub-App mode only — surfaces a clear
@@ -182,33 +200,6 @@ const Sidebar: React.FC = () => {
   // build vs PAT vs existing GitHub credential). Opshcloud has its own
   // connect-account flow, local builds don't need a remote credential.
   const cloneGate = useCloneStrategyGate();
-  const openGithubConnect = useServerGitHubConnectModal();
-
-  // Lazy branch list. In config-edit mode the wizard hydrates from saved data
-  // with only the current branch seeded (no repo round-trip on load). The full
-  // list is fetched once, on first open of the branch dropdown — never for
-  // local-sourced projects (no remote repo to list).
-  const branchesFetchedRef = useRef(false);
-  const loadBranches = useCallback(async () => {
-    if (branchesFetchedRef.current) return;
-    if (!config.projectId || !config.owner || config.owner === "local") return;
-    // Only when the list is "thin" (config-edit seeds just the current branch);
-    // the first-deploy path already preloads the full list via prepare.
-    if (config.branches.length > 1) return;
-    branchesFetchedRef.current = true;
-    try {
-      const res = await projectsApi.getBranches(config.projectId);
-      const names: string[] = (res?.data ?? [])
-        .map((b: { name?: string }) => b?.name)
-        .filter((n: unknown): n is string => typeof n === "string" && n.length > 0);
-      if (names.length) {
-        const merged = Array.from(new Set([config.branch, ...names].filter(Boolean)));
-        updateConfig({ branches: merged });
-      }
-    } catch {
-      branchesFetchedRef.current = false; // allow a retry on next open
-    }
-  }, [config.projectId, config.owner, config.branch, config.branches.length, updateConfig]);
 
   const handleOpenEnvironmentCreator = useCallback(() => {
     if (!config.projectId) return;
@@ -224,16 +215,88 @@ const Sidebar: React.FC = () => {
   // Runtime isolation (Direct/Sandbox) for self-hosted server apps is now an
   // inline setting in the target step (ServerRuntimePicker) — config.runtimeMode
   // already carries the choice, so deploy proceeds with no interruption.
-  const continueDeploy = useCallback(async (overrides?: { buildStrategy?: BuildStrategy }) => {
+  const doDeploy = useCallback(async (overrides?: { buildStrategy?: BuildStrategy }) => {
     const deploymentId = await startDeployment(overrides);
     if (deploymentId) {
       router.push(`/build/${deploymentId}`);
     }
   }, [startDeployment, router]);
 
+  const continueDeploy = useCallback(async (overrides?: { buildStrategy?: BuildStrategy }) => {
+    // Pre-deploy DNS gate (self-hosted custom domain): surface the records to add
+    // BEFORE the deploy so DNS is pointed when the first-deploy SSL attempt runs.
+    // A failed attempt just marks the domain Action Required — never blocks the
+    // deploy. Informational-blocking: Deploy proceeds, Cancel aborts.
+    let dnsTargets = selfHosted ? deploymentDnsTargets(config) : [];
+    if (dnsTargets.length > 0) {
+      if (config.projectId) {
+        const projectInfo = await projectsApi.getInfo(config.projectId).catch(() => null);
+        const domainRows = Array.isArray(projectInfo?.data?.project?.domains)
+          ? projectInfo.data.project.domains
+          : [];
+        dnsTargets = attachDeploymentDomainIds(dnsTargets, domainRows);
+      }
+      let modalId = "";
+      modalId = showModal({
+        customContent: (
+          <DnsRecordsModal
+            targets={dnsTargets}
+            serverId={config.deployTarget === "server" ? config.serverId : undefined}
+            onConfirm={() => {
+              hideModal(modalId);
+              void doDeploy(overrides);
+            }}
+            onCancel={() => hideModal(modalId)}
+          />
+        ),
+        maxWidth: "560px",
+      });
+      return;
+    }
+    await doDeploy(overrides);
+  }, [doDeploy, selfHosted, config, showModal, hideModal]);
+
   const handleDeploy = useCallback(async () => {
+    // TODO: removed — temporary SaaS gate. The managed cloud isn't open yet, so
+    // pressing Deploy on the hosted control plane shows the "Cloud is almost
+    // here" waitlist instead of running a deploy. Self-hosted / desktop deploys
+    // are unaffected. Delete this block (+ CloudWaitlistModal + the
+    // /api/cloud-waitlist route) when Cloud launches.
+    if (!selfHosted) {
+      let modalId = "";
+      modalId = showModal({
+        customContent: <CloudWaitlistModal onClose={() => hideModal(modalId)} />,
+        maxWidth: "460px",
+      });
+      return;
+    }
+
+    // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
+    // remote servers; the workload can't run on this machine yet. Scoped to NEW
+    // projects on purpose — a project that already lives locally stays fully
+    // redeployable, so nobody is stranded mid-work. Building locally is
+    // untouched; only the deploy destination is gated.
+    if (
+      !config.projectId &&
+      localDeployGate.blocks({ deployTarget: config.deployTarget, serverId: config.serverId })
+    ) {
+      let modalId = "";
+      modalId = showModal({
+        customContent: (
+          <LocalDeployComingSoonModal
+            onClose={() => hideModal(modalId)}
+            onServerAdded={(server) =>
+              updateConfig({ deployTarget: "server", serverId: server.id })
+            }
+          />
+        ),
+        maxWidth: "460px",
+      });
+      return;
+    }
+
     if (config.deployTarget === "cloud") {
-      if (!requireCloud(t.deploy.targetStep.requireCloudFeature)) return;
+      if (!(await requireCloud("cloud-deploy-target"))) return;
     }
 
     // ── Clone-strategy resolution (self-hosted server deploys) ──────────
@@ -247,92 +310,21 @@ const Sidebar: React.FC = () => {
     // modal (and even that degrades to an api-host clone server-side).
     // buildStrategy="local" already clones on the API host; cloud targets go
     // through requireCloud; local targets don't clone.
+    // Server-side clone is the default. We do NOT guess client-side whether a
+    // GitHub credential exists — that duplicated the server's tokenFor("remote")
+    // priority and drifted from it (the "client says OK, server rejects at
+    // preflight" dead-end). The server preflight is the single authority now: a
+    // genuinely-missing credential fails preflight and the deploy catch opens
+    // the DeployCredentialModal (useDeploymentBuild.maybeOpenCredentialModal),
+    // identical for the wizard and redeploy. The only client decision kept here
+    // is the explicit "build on this machine" preference.
     let buildStrategyOverride: BuildStrategy | undefined;
-    if (config.deployTarget === "server" && config.buildStrategy === "server") {
-      const ghAvailable = !!githubState?.sources.ghCli.available;
-      const appAvailable =
-        !!githubState?.sources.openshipApp.connected &&
-        !!githubState?.sources.openshipApp.hasInstallations;
-      // gh counts as a remote credential now — forwarded over the relay on
-      // desktop, or (self-hosted) it just lets the backend gracefully degrade
-      // to an api-host clone rather than dead-end.
-      let remoteCredential = appAvailable || cloneGate.hasGlobalToken || ghAvailable;
-      const willBuildLocal = cloneGate.preference === "local";
-
-      // The target server may hold its OWN GitHub credential (device-login
-      // token / PAT / SSH key or per-repo deploy key). That's a valid remote
-      // clone path the App/PAT signals above don't see, so it must suppress the
-      // dead-end modal. Only worth a round-trip in the would-be dead-end — check
-      // it solely when we're otherwise about to surface the modal.
-      if (!willBuildLocal && !remoteCredential && config.serverId) {
-        try {
-          const st = await serverGithubApi.get(config.serverId);
-          if (st.connected) remoteCredential = true;
-        } catch {
-          // Unreadable status → treat as absent and fall through to the modal.
-        }
-      }
-
-      if (willBuildLocal) {
-        buildStrategyOverride = "local";
-      } else if (!remoteCredential && config.owner) {
-        // No gh, no App, no PAT, no per-server credential — genuinely nothing to
-        // clone with. This is the only case worth a modal. The deploy waits
-        // until the user picks or skips.
-        let goConnectServer = false;
-        await new Promise<void>((resolve) => {
-          let modalId = "";
-          modalId = showModal({
-            customContent: (
-              <DeployCredentialModal
-                trigger="preflight-gate"
-                owner={config.owner!}
-                installUrl={installUrl ?? null}
-                projectId={config.projectId ?? null}
-                serverId={config.serverId ?? null}
-                deployTarget={config.deployTarget}
-                buildStrategy={config.buildStrategy}
-                selfHosted={selfHosted}
-                ghCliAvailable={ghAvailable}
-                hasGlobalToken={cloneGate.hasGlobalToken}
-                onChoice={(choice) => {
-                  if (choice.kind === "build-local") {
-                    buildStrategyOverride = "local";
-                    updateConfig({ buildStrategy: "local" });
-                  } else if (choice.kind === "connect-server-github") {
-                    goConnectServer = true;
-                  }
-                  hideModal(modalId);
-                  resolve();
-                }}
-                onDismiss={() => {
-                  hideModal(modalId);
-                  resolve();
-                }}
-              />
-            ),
-            maxWidth: "640px",
-          });
-        });
-        // Chose to connect the server itself → abandon this attempt and open the
-        // shared connect model; deploying again once connected clones via the
-        // per-server credential.
-        if (goConnectServer) {
-          if (config.serverId) {
-            openGithubConnect(config.serverId, {
-              onConnected: () =>
-                showToast(
-                  "GitHub connected — deploy again to continue.",
-                  "success",
-                  "GitHub",
-                ),
-            });
-          }
-          return;
-        }
-      }
-      // else: a remote credential (App/PAT) is available → proceed with the
-      // server-side clone; the backend resolves the token via tokenFor("remote").
+    if (
+      config.deployTarget === "server" &&
+      config.buildStrategy === "server" &&
+      cloneGate.preference === "local"
+    ) {
+      buildStrategyOverride = "local";
     }
 
     if (
@@ -342,20 +334,12 @@ const Sidebar: React.FC = () => {
       config.deployTarget !== "cloud" &&
       publicEndpointsNeedCloud(config.publicEndpoints)
     ) {
-      if (!requireCloud({
-        feature: interpolate(t.deploy.sidebar.freeDomainFeature, { domain: baseDomain }),
-        description: interpolate(t.deploy.sidebar.freeDomainDesc, { domain: baseDomain }),
-        secondaryHint: t.deploy.sidebar.freeDomainHint,
-      })) return;
+      if (!(await requireCloud("managed-project-domain", { domain: baseDomain }))) return;
     }
 
     // Compose services with free managed domains require cloud
     if (isServices && servicesNeedCloud(config.services)) {
-      if (!requireCloud({
-        feature: interpolate(t.deploy.sidebar.servicesFreeDomainFeature, { domain: baseDomain }),
-        description: interpolate(t.deploy.sidebar.servicesFreeDomainDesc, { domain: baseDomain }),
-        secondaryHint: t.deploy.sidebar.servicesFreeDomainHint,
-      })) return;
+      if (!(await requireCloud("managed-compose-domains", { domain: baseDomain }))) return;
     }
 
     if (isServices && shouldWarnAboutUnreachableServices(config.services)) {
@@ -406,7 +390,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy(buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined);
-  }, [baseDomain, canConnectCloud, cloneGate.hasGlobalToken, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, githubState, hideModal, installUrl, isServices, openGithubConnect, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
+  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
 
   // Edit mode (opened from the project Runtime page with ?mode=config): the
   // finish button SAVES the config to the project and returns — no deploy, no
@@ -478,15 +462,16 @@ const Sidebar: React.FC = () => {
           </div>
           {config.branches.length > 0 && (
             <div className="mt-3">
-              <CustomSelect
+              <RepositoryBranchSelect
+                owner={config.owner}
+                repo={config.repo}
+                projectId={config.projectId}
                 value={config.branch}
-                onChange={(val) => updateConfig({ branch: val })}
-                onOpen={loadBranches}
-                options={config.branches.map(branch => ({
-                  value: branch,
-                  label: branch,
-                  icon: <GitBranch className="w-3.5 h-3.5" />
-                }))}
+                onChange={(val) => void handleBranchChange(val)}
+                disabled={isRescanning || isSaving || state.isDeploying}
+                initialBranches={config.branches}
+                initialPage={config.branchPage}
+                initialHasMore={config.branchesHasMore}
                 footerAction={config.projectId
                   ? {
                       label: t.deploy.sidebar.newEnvironment,
@@ -494,9 +479,21 @@ const Sidebar: React.FC = () => {
                       onClick: handleOpenEnvironmentCreator,
                     }
                   : undefined}
-                placeholder={t.deploy.sidebar.selectBranch}
-                className="w-full"
               />
+              {isRescanning && (
+                <p
+                  role="status"
+                  className="flex items-center gap-2 mt-2 text-sm text-muted-foreground"
+                >
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  {t.importProject.buildSettings.composePath.scanning}
+                </p>
+              )}
+              {branchError && (
+                <p role="alert" className="mt-2 text-sm text-danger break-words">
+                  {branchError}
+                </p>
+              )}
             </div>
           )}
           {config.branches.length === 0 && config.branch && (
@@ -546,7 +543,7 @@ const Sidebar: React.FC = () => {
       {isConfigMode ? (
         <button
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || isRescanning}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? (
@@ -564,7 +561,7 @@ const Sidebar: React.FC = () => {
       ) : (
         <button
           onClick={handleDeploy}
-          disabled={state.isDeploying}
+          disabled={state.isDeploying || isRescanning}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {state.isDeploying ? (
@@ -595,8 +592,21 @@ function hasConnectedDomain(service: {
   customDomain?: string;
   domain?: string;
   name?: string;
+  publicEndpoints?: Array<{
+    domainType?: "free" | "custom";
+    customDomain?: string;
+    domain?: string;
+  }>;
 }) {
   if (!service.exposed) return false;
+  if (service.publicEndpoints && service.publicEndpoints.length > 0) {
+    const hasEndpointDomain = service.publicEndpoints.some((ep) =>
+      ep.domainType === "custom"
+        ? Boolean(ep.customDomain?.trim())
+        : Boolean(ep.domain?.trim()),
+    );
+    if (hasEndpointDomain) return true;
+  }
   if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
   return Boolean(service.domain?.trim() || service.name?.trim());
 }

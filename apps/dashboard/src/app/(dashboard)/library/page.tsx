@@ -8,6 +8,7 @@ import { useCloud } from "@/context/CloudContext";
 import { ConnectPrompt } from "./components/ConnectPrompt";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { RepositoryList } from "./components/RepositoryList";
+import { useLibraryRepos } from "./useLibraryRepos";
 import { GhCliConsent } from "./components/GhCliConsent";
 import { LocalProjects } from "./components/LocalProjects";
 import { FolderUpload } from "./components/FolderUpload";
@@ -15,6 +16,7 @@ import { LibrarySidebar } from "./components/LibrarySidebar";
 import { UrlImport } from "./components/UrlImport";
 import { TemplateGrid } from "./components/TemplateGrid";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { HelpMenu } from "@/components/HelpMenu";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
@@ -43,11 +45,13 @@ export default function LibraryPage() {
     accounts,
     selectedOwner,
     setSelectedOwner,
-    repos,
-    loadingRepos,
     refresh,
     installUrl,
   } = useGitHub();
+  // Server-paginated repo list for the Library (own hook so the shared
+  // GitHubContext.repos — used by the GitSettings + migration pickers — stays a
+  // full-set, client-side list). Fetches a page at a time + authoritative counts.
+  const libRepos = useLibraryRepos(selectedOwner, connected);
   const { selfHosted, deployMode } = usePlatform();
   // Only the desktop app can read the user's folder off disk (native picker +
   // co-located API). A remote self-hosted browser can't — it uploads like SaaS.
@@ -71,9 +75,14 @@ export default function LibraryPage() {
     localStorage.setItem(GH_CLI_CONSENT_KEY, "1");
     setGhCliConsent(true);
   }, []);
-  // Gate only the gh-CLI source; the Openship App (OAuth) is already an explicit
-  // connection and needs no extra prompt.
-  const needsGhCliConsent = state.primary === "gh-cli" && !ghCliConsent;
+  // Gate ONLY a credential we found on the host by ourselves. A device sign-in or
+  // a pasted token was handed over by the operator inside Openship — asking them
+  // to consent again to the thing they just did is a dead end that made a fresh
+  // token look broken until the prompt was noticed and accepted.
+  const needsGhCliConsent =
+    state.primary === "gh-cli" &&
+    (state.sources.ghCli.method ?? "host-cli") === "host-cli" &&
+    !ghCliConsent;
 
   // One "Folder" tab, environment-dependent behavior:
   //   - self-hosted / desktop → deploy straight from a path on the box (native
@@ -93,11 +102,17 @@ export default function LibraryPage() {
   return (
     <PageContainer>
       {/* ── Header ───────────────────────────────────────────── */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
-          {t.library.page.title}
-        </h1>
-        <p className="text-sm text-muted-foreground/70 mt-1">{t.library.page.subtitle}</p>
+      {/* No primary action here (the tabs below are the action), so the shared ⋮
+          help menu sits alone at the title's trailing edge — level with the
+          heading, matching the Projects / Apps headers. */}
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
+            {t.library.page.title}
+          </h1>
+          <p className="text-sm text-muted-foreground/70 mt-1">{t.library.page.subtitle}</p>
+        </div>
+        <HelpMenu className="shrink-0" />
       </div>
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
@@ -171,20 +186,30 @@ export default function LibraryPage() {
               cliAction={cliAction}
               onRefresh={refresh}
               selfHosted={selfHosted}
-              cloudConnected={cloudConnected}
-              onConnectCloud={startCloudConnect}
             />
           ) : needsGhCliConsent ? (
             <GhCliConsent login={state.sources.ghCli.login} onAllow={allowGhCli} />
           ) : (
             <RepositoryList
-              repos={repos}
+              repos={libRepos.repos}
               accounts={accounts}
               selectedOwner={selectedOwner}
               setSelectedOwner={setSelectedOwner}
               loading={loading}
-              loadingRepos={loadingRepos}
+              loadingRepos={libRepos.loading}
               installUrl={installUrl}
+              server={{
+                search: libRepos.search,
+                onSearch: libRepos.setSearch,
+                visibility: libRepos.visibility,
+                onVisibility: libRepos.setVisibility,
+                sort: libRepos.sort,
+                onSort: libRepos.setSort,
+                page: libRepos.meta.page,
+                totalPages: libRepos.meta.totalPages,
+                onPage: libRepos.setPage,
+                count: libRepos.meta.count,
+              }}
             />
           )}
         </div>
@@ -192,10 +217,15 @@ export default function LibraryPage() {
         {/* ── RIGHT COLUMN ───────────────────────────────────────── */}
         <LibrarySidebar
           selectedOwner={selectedOwner}
-          repos={repos}
+          repos={libRepos.repos}
           selfHosted={selfHosted}
           state={state}
           cloudConnected={cloudConnected}
+          counts={{
+            total: libRepos.meta.total,
+            publicCount: libRepos.meta.publicCount,
+            privateCount: libRepos.meta.privateCount,
+          }}
         />
       </div>
 

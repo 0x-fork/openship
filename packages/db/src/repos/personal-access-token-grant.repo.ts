@@ -7,13 +7,34 @@
  */
 
 import { and, eq, sql } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import {
+  generateId,
+  parseSourceAccessScope,
+  serializeSourceAccessScope,
+  type SourceAccessScope,
+} from "@repo/core";
 
 import type { Database } from "../client";
 import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
 import type { Permission, ResourceGrant, ResourceType } from "./resource-grant.repo";
 
 type Row = typeof personalAccessTokenGrant.$inferSelect;
+
+export interface PatGrantInput {
+  resourceType: ResourceType;
+  resourceId: string;
+  permissions: Permission[];
+  scope?: SourceAccessScope | null;
+}
+
+/** The same normalized grant insert participates in token and OAuth-binding transactions. */
+export async function insertPatGrants(db: Pick<Database, "insert">, tokenId: string, grants: readonly PatGrantInput[]): Promise<void> {
+  if (grants.length === 0) return;
+  await db.insert(personalAccessTokenGrant).values(grants.map(g => ({
+    id: generateId("patgrant"), tokenId, resourceType: g.resourceType, resourceId: g.resourceId,
+    permissionsJson: JSON.stringify(g.permissions), scopeJson: serializeSourceAccessScope(g.scope),
+  })));
+}
 
 function rowToGrant(row: Row): ResourceGrant {
   let permissions: Permission[] = [];
@@ -37,6 +58,7 @@ function rowToGrant(row: Row): ResourceGrant {
     resourceType: row.resourceType as ResourceType,
     resourceId: row.resourceId,
     permissions,
+    scope: parseSourceAccessScope(row.scopeJson),
     grantedByUserId: null,
     createdAt: row.createdAt,
   };
@@ -74,18 +96,9 @@ export function createPersonalAccessTokenGrantRepo(db: Database) {
 
     async createMany(
       tokenId: string,
-      grants: Array<{ resourceType: ResourceType; resourceId: string; permissions: Permission[] }>,
+      grants: PatGrantInput[],
     ): Promise<void> {
-      if (grants.length === 0) return;
-      await db.insert(personalAccessTokenGrant).values(
-        grants.map((g) => ({
-          id: generateId("patgrant"),
-          tokenId,
-          resourceType: g.resourceType,
-          resourceId: g.resourceId,
-          permissionsJson: JSON.stringify(g.permissions),
-        })),
-      );
+      await insertPatGrants(db, tokenId, grants);
     },
 
     async deleteByToken(tokenId: string): Promise<void> {

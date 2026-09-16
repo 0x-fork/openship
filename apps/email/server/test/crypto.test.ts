@@ -1,6 +1,12 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 
 const INITIAL_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+const previousProcessEnv = {
+  SESSION_ENCRYPTION_KEY: process.env.SESSION_ENCRYPTION_KEY,
+  BRANDING_ADMIN_TOKEN: process.env.BRANDING_ADMIN_TOKEN,
+};
+let previousKey: string;
 
 // Set both values before src/env is loaded. Otherwise its development fallback
 // writes generated secrets to .dev-secrets.json during the test run.
@@ -14,12 +20,23 @@ let env: typeof import("../src/env").env;
 beforeAll(async () => {
   ({ encryptSecret, decryptSecret } = await import("../src/lib/crypto"));
   ({ env } = await import("../src/env"));
+  previousKey = env.SESSION_ENCRYPTION_KEY;
+});
+
+beforeEach(() => {
+  env.SESSION_ENCRYPTION_KEY = INITIAL_KEY;
 });
 
 // getKey reads the imported env object on every call. Restore it so one key
 // validation case cannot change the credentials used by a later case.
 afterEach(() => {
-  env.SESSION_ENCRYPTION_KEY = INITIAL_KEY;
+  env.SESSION_ENCRYPTION_KEY = previousKey;
+});
+afterAll(() => {
+  for (const [key, value] of Object.entries(previousProcessEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 
 describe("encryptSecret / decryptSecret", () => {

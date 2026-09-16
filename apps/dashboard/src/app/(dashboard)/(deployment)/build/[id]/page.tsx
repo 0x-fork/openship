@@ -9,31 +9,10 @@ import DeploymentProcessing from "@/components/import-project/DeploymentProcessi
 import ComposeDeploymentProcessing from "@/components/import-project/ComposeDeploymentProcessing";
 import BuildSkeleton from "@/components/import-project/BuildSkeleton";
 import { useAuth } from "@/context/AuthContext";
-import { useGitHub } from "@/context/GitHubContext";
-import { useModal } from "@/context/ModalContext";
-import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
-import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
-import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
+import { BUILD_SESSION_ERROR_FALLBACK } from "@/context/deployment/load-session";
 import { ResourceNotFound } from "@/components/resource-not-found";
-import { Rocket, Home, PackageX } from "lucide-react";
-
-/**
- * Error codes that mean "the deploy couldn't get a clone token for the
- * repo's owner". Throwing these from the backend currently lands as a
- * toast + a 'failed' build screen. This module catches those codes and
- * opens DeployCredentialModal so the user gets actual recovery options
- * instead of a dead-end.
- *
- * See apps/api/src/modules/deployments/preflight.ts and
- * apps/api/src/modules/github/github.token.ts for the throw sites.
- */
-const CLONE_TOKEN_ERROR_CODES = new Set([
-  "GITHUB_APP_INSTALLATION_REQUIRED",
-  "GITHUB_CLI_REMOTE_BUILD_REJECTED",
-  "GITHUB_REMOTE_TOKEN_REQUIRED",
-  "GITHUB_TOKEN_REQUIRED",
-]);
+import { Rocket, Home, PackageX, RotateCcw, TriangleAlert } from "lucide-react";
 
 const BuildPage: React.FC = () => {
   const params = useParams();
@@ -41,14 +20,17 @@ const BuildPage: React.FC = () => {
   const router = useRouter();
   const { isLoggedIn } = useAuth();
   const deploymentId = params.id as string;
-  const { state, config, connectToBuild, loadBuildSession, redeploy, updateConfig } = useDeployment();
-  const { installUrl, state: githubState } = useGitHub();
-  const { selfHosted } = usePlatform();
-  const { showModal, hideModal } = useModal();
-  const openGithubConnect = useServerGitHubConnectModal();
+  const { state, config, connectToBuild, loadBuildSession, redeploy, maybeOpenCredentialModal } = useDeployment();
   const { t } = useI18n();
   const initializedDeploymentRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  /** Load failure that is NOT a missing deployment — a hydration exception,
+   *  5xx, or network error while the deployment usually exists (#604). Rendered
+   *  as an error state with a retry, never as "not found". */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /** Bumped by the error state's retry so the init effect re-runs for the same
+   *  deployment id (the `initializedDeploymentRef` guard alone would ignore it). */
+  const [loadRetryNonce, setLoadRetryNonce] = useState(0);
   /** Ref tracking which (deploymentId × errorCode) tuple already opened
    *  the modal — prevents reopening on every re-render. */
   const shownModalRef = useRef<string | null>(null);
@@ -86,7 +68,15 @@ const BuildPage: React.FC = () => {
       }
       const result = await loadBuildSession(deploymentId);
       if (!result.success) {
-        setNotFound(true);
+        // Only the server saying "this doesn't exist" (soft-failed status or
+        // HTTP 404) renders the not-found screen. Anything else — a throw while
+        // hydrating a successful response, a 5xx, a network blip — keeps the
+        // deployment one retry away instead of presenting it as deleted (#604).
+        if (result.notFound) {
+          setNotFound(true);
+        } else {
+          setLoadError(result.error || BUILD_SESSION_ERROR_FALLBACK);
+        }
       }
     };
 
@@ -101,7 +91,16 @@ const BuildPage: React.FC = () => {
     loadBuildSession,
     router,
     searchParams,
+    loadRetryNonce,
   ]);
+
+  // Retry a failed (non-not-found) load: clear the error, release the init
+  // guard, and re-run the effect via the nonce.
+  const retryLoadSession = useCallback(() => {
+    setLoadError(null);
+    initializedDeploymentRef.current = null;
+    setLoadRetryNonce((n) => n + 1);
+  }, []);
 
   // Handle redeploy with URL update.
   //
@@ -145,70 +144,54 @@ const BuildPage: React.FC = () => {
   // with no next step.
   useEffect(() => {
     if (!state.deploymentFailed || !state.errorCode) return;
-    if (!CLONE_TOKEN_ERROR_CODES.has(state.errorCode)) return;
-
-    // De-dupe — same deployment + same code shouldn't reopen the modal
-    // on every state tick.
+    // De-dupe — same deployment + same code shouldn't reopen the modal on every
+    // state tick. The shared handler (useDeploymentBuild.maybeOpenCredentialModal)
+    // owns the modal + its options; here we just pass the build-fail trigger and
+    // an auto-redeploy on the user's fix.
     const key = `${deploymentId}:${state.errorCode}`;
     if (shownModalRef.current === key) return;
-    shownModalRef.current = key;
-
-    let modalId = "";
-    modalId = showModal({
-      customContent: (
-        <DeployCredentialModal
-          trigger="build-fail"
-          owner={config.owner || t.misc.buildPage.thisRepo}
-          installUrl={installUrl ?? null}
-          projectId={config.projectId ?? null}
-          serverId={config.serverId ?? null}
-          deployTarget={config.deployTarget}
-          buildStrategy={config.buildStrategy}
-          selfHosted={selfHosted}
-          ghCliAvailable={!!githubState?.sources.ghCli.available}
-          onChoice={(choice) => {
-            if (choice.kind === "build-local") {
-              updateConfig({ buildStrategy: "local" });
-              hideModal(modalId);
-              void handleRedeploy();
-            } else if (choice.kind === "install-app") {
-              // App popup closed; redeploy lets the backend re-check.
-              hideModal(modalId);
-              void handleRedeploy();
-            } else if (choice.kind === "connect-server-github") {
-              // Open the shared per-server connect model; redeploy once connected.
-              hideModal(modalId);
-              if (config.serverId)
-                openGithubConnect(config.serverId, { onConnected: () => void handleRedeploy() });
-            } else {
-              // add-token (navigated away) or dismiss — just close.
-              hideModal(modalId);
-            }
-          }}
-          onDismiss={() => hideModal(modalId)}
-        />
-      ),
-      maxWidth: "640px",
+    const opened = maybeOpenCredentialModal(state.errorCode, {
+      trigger: "build-fail",
+      onResolved: () => void handleRedeploy(),
     });
-  }, [
-    state.deploymentFailed,
-    state.errorCode,
-    deploymentId,
-    config.owner,
-    config.deployTarget,
-    config.buildStrategy,
-    config.projectId,
-    config.serverId,
-    installUrl,
-    githubState,
-    selfHosted,
-    showModal,
-    hideModal,
-    openGithubConnect,
-    updateConfig,
-    handleRedeploy,
-    t,
-  ]);
+    if (opened) shownModalRef.current = key;
+  }, [state.deploymentFailed, state.errorCode, deploymentId, maybeOpenCredentialModal, handleRedeploy]);
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <ResourceNotFound
+          icon={<TriangleAlert className="size-7" />}
+          title={t.chrome.error.title}
+          description={
+            <>
+              {t.chrome.error.description}
+              <span className="mt-1 block break-all font-mono text-xs opacity-80">{loadError}</span>
+            </>
+          }
+          detail={deploymentId}
+          detailCopyLabel={t.chrome.notFound.copyId}
+          actions={[
+            {
+              label: t.chrome.error.tryAgain,
+              icon: <RotateCcw className="size-4" />,
+              onClick: retryLoadSession,
+            },
+            {
+              href: "/deployments",
+              label: t.misc.buildPage.viewDeployments,
+              icon: <Rocket className="size-4" />,
+            },
+            {
+              href: "/",
+              label: t.misc.buildPage.goHome,
+              variant: "secondary",
+            },
+          ]}
+        />
+      </div>
+    );
+  }
 
   if (notFound) {
     return (

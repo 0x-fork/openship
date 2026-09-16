@@ -12,51 +12,50 @@
  */
 
 import { safeErrorMessage } from "@repo/core";
-import type { CommandExecutor } from "../../types";
+import type { CommandExecutor, ManualCert } from "../../types";
+import type { RoutingProvider, SslProvider } from "../../infra/types";
 import type { EdgeStatus, ImportedSite, SystemLog, SystemLogCallback } from "../types";
-import { freeEdgeTargets, sq, stopTargetsForStatus } from "./detect";
-import { installOpenResty } from "../installer";
-import { checkOpenResty } from "../checks";
+import { freeEdgeTargets, resolveOurEdgeContainer, sq, stopTargetsForStatus } from "./detect";
+import { collectProxyCerts, edgeProxy } from "./api";
+import { isSafeCertPath, readDeclaredPair, validateCertFor } from "./cert-material";
+import { buildJournal, clearJournal, rollback, writeJournal, EDGE_STOP_ELEVATION } from "./takeover-journal";
+import { installContainerEdge } from "../installer";
+import { containerEdgeProvider, type EdgeProviderOptions } from "./ensure-container-edge";
+import { checkEdge } from "../checks";
 import { NginxProvider } from "../../infra/nginx";
 import { detectOpenRestyPaths } from "../../infra/openresty-lua";
+import { rootOrDegrade } from "../privilege";
 
-const JOURNAL_DIR = "/var/lib/openship";
-const JOURNAL_PATH = `${JOURNAL_DIR}/edge-takeover.json`;
 const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 
 function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
   return { timestamp: new Date().toISOString(), message, level };
 }
 
-/** A filesystem path safe to pass to the shell (absolute, no metacharacters). */
-function isSafePath(p: string): boolean {
-  return /^\/[A-Za-z0-9._/-]+$/.test(p);
-}
-
-async function tryExec(executor: CommandExecutor, cmd: string): Promise<string | null> {
-  try {
-    return await executor.exec(cmd);
-  } catch {
-    return null;
-  }
-}
-
-interface TakeoverJournal {
-  startedAt: string;
-  units: Array<{ unit: string; wasEnabled: boolean }>;
-  containers: Array<{ name: string; restart: string }>;
-  /** Bare (non-systemd, non-docker) processes we killed — relaunched on rollback. */
-  processes: Array<{ pid: number; command?: string }>;
-  /** Set true only after all routes are registered; recovery rolls back if absent. */
-  completed?: boolean;
-}
 
 export interface EdgeTakeoverOptions {
   status: EdgeStatus;
   sites: ImportedSite[];
   acmeEmail?: string;
+  nginx?: EdgeProviderOptions;
   /** Extra routes to register beyond the imported sites (e.g. the control plane's own hostname). */
   extraRoutes?: Array<{ domain: string; targetUrl: string; tls: boolean }>;
+  /** Pinned edge image; the API always supplies its own (never a caller's value). */
+  edgeImage?: string;
+  /**
+   * Cert PEMs the caller already read from the source proxy, keyed by hostname or
+   * cert path. When omitted this harvests them itself (before stopping the proxy —
+   * see `runEdgeTakeover`). `openship up` supplies them because a containerized
+   * edge can't read the host filesystem.
+   */
+  certPems?: Record<string, ManualCert>;
+  /**
+   * Corrected static docroots keyed by primary hostname, for adopted static sites
+   * whose original root the containerized edge can't see. The CLI copies the tree
+   * into the edge's static bind mount host-side (see `copyStaticRootIntoEdge`) and
+   * passes the new root here; without it the site 500s after cutover. See #456.
+   */
+  staticRootOverrides?: Record<string, string>;
 }
 
 export interface EdgeTakeoverResult {
@@ -66,136 +65,194 @@ export interface EdgeTakeoverResult {
   warnings: string[];
 }
 
-/** Capture how to restore each foreign owner before we stop/disable it. */
-async function buildJournal(executor: CommandExecutor, status: EdgeStatus): Promise<TakeoverJournal> {
-  const units = new Map<string, { unit: string; wasEnabled: boolean }>();
-  const containers = new Map<string, { name: string; restart: string }>();
-  const processes = new Map<number, { pid: number; command?: string }>();
-
-  for (const o of status.occupants) {
-    if (o.containerName && !containers.has(o.containerName)) {
-      const r = await tryExec(
-        executor,
-        `docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' ${sq(o.containerName)} 2>/dev/null`,
-      );
-      containers.set(o.containerName, { name: o.containerName, restart: r?.trim() || "no" });
-    } else if (o.systemdUnit && !units.has(o.systemdUnit)) {
-      const en = await tryExec(executor, `systemctl is-enabled ${sq(o.systemdUnit)} 2>/dev/null`);
-      units.set(o.systemdUnit, { unit: o.systemdUnit, wasEnabled: en?.trim() === "enabled" });
-    } else if (!o.containerName && !o.systemdUnit && o.pid && !processes.has(o.pid)) {
-      // Bare process — record its command line so rollback can relaunch it.
-      processes.set(o.pid, { pid: o.pid, command: o.rawCommand });
-    }
-  }
-
-  return {
-    startedAt: new Date().toISOString(),
-    units: [...units.values()],
-    containers: [...containers.values()],
-    processes: [...processes.values()],
-  };
+export interface RegisterImportedSitesOptions {
+  onLog: SystemLogCallback;
+  /** Accumulates per-domain problems (unsupported names, TLS-not-ready, errors). */
+  warnings: string[];
+  /**
+   * Inline cert PEMs for callers that read the foreign certs out-of-band. The
+   * containerized edge can't `cat` the HOST filesystem, so `openship up` reads the
+   * host PEMs and hands them here; the host takeover leaves this unset and the
+   * certs are read via the executor.
+   *
+   * Keyed by the source cert PATH (`site.tls.certPath`) **or** by HOSTNAME. The
+   * path key came first, but caddy and traefik keep certs in their own stores with
+   * no per-site path to key on — a hostname key is the only thing that can carry
+   * those, and every producer already knows the hostname.
+   */
+  certPems?: Record<string, ManualCert>;
+  /**
+   * Corrected static docroots keyed by primary hostname (`serverNames[0]`), for
+   * adopted static sites the containerized edge can't reach at their original
+   * root. The CLI copies the tree into the edge's static bind mount host-side and
+   * supplies the new root here; substituted into `staticRoot` so the corrected
+   * path is what lands in the route sidecar (and survives cert renewal). See #456.
+   */
+  staticRootOverrides?: Record<string, string>;
 }
 
-async function writeJournal(executor: CommandExecutor, journal: TakeoverJournal): Promise<void> {
-  try {
-    await executor.mkdir(JOURNAL_DIR);
-    await executor.writeFile(JOURNAL_PATH, JSON.stringify(journal, null, 2));
-  } catch {
-    // Non-fatal: rollback still runs in-process; only crash-recovery is lost.
-  }
-}
-
-async function clearJournal(executor: CommandExecutor): Promise<void> {
-  await tryExec(executor, `rm -f ${JOURNAL_PATH}`);
-}
-
-/** Restart & re-enable the foreign proxy captured in the journal. */
-async function rollback(
+/**
+ * Register a set of sites parsed from a foreign proxy as Openship routes on the
+ * given routing/SSL provider — the executor-generic core shared by the HOST
+ * takeover (`runEdgeTakeover`, NginxProvider on a LocalExecutor) and the
+ * CONTAINER edge (the api's DockerEdgeExecutor provider, via the
+ * `edge/import-sites` endpoint). Reuse both certs (install-if-present) and issue
+ * fresh ones (provision) exactly as before; never throws — every failure is
+ * collected into `opts.warnings`. Returns the domains actually registered.
+ */
+export async function registerImportedSites(
+  routing: RoutingProvider,
+  ssl: SslProvider,
   executor: CommandExecutor,
-  journal: TakeoverJournal,
-  onLog: SystemLogCallback,
-): Promise<void> {
-  onLog(log("Rolling back — restoring the previous proxy...", "warn"));
-  // Stop AND disable OpenResty so it releases 80/443 durably — otherwise both it
-  // and the restored proxy stay `enabled` and race for the port on next reboot.
-  await tryExec(
-    executor,
-    "systemctl disable --now openresty 2>/dev/null || systemctl stop openresty 2>/dev/null || true; " +
-      "systemctl reset-failed openresty 2>/dev/null || true",
-  );
-  for (const u of journal.units) {
-    await tryExec(
-      executor,
-      u.wasEnabled
-        ? `systemctl enable --now ${sq(u.unit)} 2>/dev/null || true`
-        : `systemctl start ${sq(u.unit)} 2>/dev/null || true`,
-    );
-  }
-  for (const c of journal.containers) {
-    await tryExec(executor, `docker update --restart=${sq(c.restart)} ${sq(c.name)} 2>/dev/null || true`);
-    await tryExec(executor, `docker start ${sq(c.name)} 2>/dev/null || true`);
-  }
-  for (const p of journal.processes ?? []) {
-    if (p.command) {
-      // Best-effort relaunch, detached from this session.
-      await tryExec(executor, `setsid -f sh -c ${sq(p.command)} 2>/dev/null || (nohup sh -c ${sq(p.command)} >/dev/null 2>&1 &) || true`);
-    } else {
-      onLog(log(`Could not restore process ${p.pid} — no command captured.`, "warn"));
-    }
-  }
-}
-
-async function registerSite(
-  nginx: NginxProvider,
-  executor: CommandExecutor,
-  site: ImportedSite,
-  onLog: SystemLogCallback,
-  warnings: string[],
+  sites: ImportedSite[],
+  opts: RegisterImportedSitesOptions,
 ): Promise<string[]> {
   const registered: string[] = [];
-  const domains = site.serverNames.filter((d) => {
-    if (DOMAIN_RE.test(d) && d.length <= 253) return true;
-    warnings.push(`skipped unsupported domain "${d}" (wildcards/regex names aren't migratable)`);
-    return false;
-  });
+  for (const site of sites) {
+    const domains = site.serverNames.filter((d) => {
+      if (DOMAIN_RE.test(d) && d.length <= 253) return true;
+      opts.warnings.push(`skipped unsupported domain "${d}" (wildcards/regex names aren't migratable)`);
+      return false;
+    });
 
-  for (const domain of domains) {
-    try {
-      if (site.target.kind === "proxy") {
-        await nginx.registerRoute({ domain, tls: site.ssl, targetUrl: site.target.url });
-      } else {
-        await nginx.registerRoute({ domain, tls: site.ssl, staticRoot: site.target.root });
-      }
-
-      if (site.ssl) {
-        // Reuse the existing cert only when both paths are safe absolute paths
-        // (they come from parsing the foreign config — never trust them raw in a shell).
-        const reusable = site.tls && isSafePath(site.tls.certPath) && isSafePath(site.tls.keyPath);
-        if (site.tls && !reusable) {
-          warnings.push(`${domain}: existing cert path looks unsafe — issuing a fresh certificate instead`);
-        }
-        if (reusable) {
-          const certPem = await tryExec(executor, `cat ${sq(site.tls!.certPath)} 2>/dev/null`);
-          const keyPem = await tryExec(executor, `cat ${sq(site.tls!.keyPath)} 2>/dev/null`);
-          if (certPem && keyPem) {
-            await nginx.installCert(domain, { certPem, keyPem });
-          } else {
-            const r = await nginx.provisionCert(domain);
-            if (!r.verified) warnings.push(`${domain}: TLS not ready yet (${r.reason ?? "pending"})`);
-          }
+    for (const domain of domains) {
+      try {
+        if (site.target.kind === "proxy") {
+          // Non-root locations, plus an exact `/`, become proxy locations ahead
+          // of the inclusive primary `/` so both fan-out and nginx exact matching
+          // survive the takeover.
+          const proxyLocations = (site.routes ?? [])
+            .filter((r) => r.path !== "/" || r.exact)
+            .map((r) => ({
+              pathPrefix: r.path,
+              targetUrl: r.url,
+              ...(r.exact ? { exact: true } : {}),
+            }));
+          await routing.registerRoute({
+            domain,
+            tls: site.ssl,
+            // An imported site's TLS becomes ours the moment we take :443 over, and
+            // its cert may not land until the carry/ACME step below. Keep a :443
+            // listener up throughout: without one the domain falls through to the
+            // edge's 443 catch-all mid-takeover, which since #431 answers with the
+            // placeholder cert and the branded not-found page — so a live site reads
+            // as "no application configured here" (#308).
+            terminatesTlsLocally: site.ssl,
+            targetUrl: site.target.url,
+            ...(proxyLocations.length ? { proxyLocations } : {}),
+            // Carry the source vhost's tunables (upload limit, upstream timeouts).
+            // Taking the ports over swaps the config the site is served from, so
+            // without this a 20 MB-upload site starts 413ing at nginx's 1 MB the
+            // moment we bind — a regression the operator never asked for and has
+            // no reason to connect to the takeover. Already sanitized by the parser.
+            ...(site.proxy ? { proxy: site.proxy } : {}),
+          });
         } else {
-          const r = await nginx.provisionCert(domain);
-          if (!r.verified) warnings.push(`${domain}: TLS not ready yet (${r.reason ?? "pending"})`);
+          // Adopted: this root is what the operator's own proxy was already serving, so
+          // it is allowed outside the managed base (see assertValidStaticRoot). When a
+          // containerized edge can't see that root, the CLI copied the tree into the
+          // static bind mount and passed the corrected root here (keyed on the primary
+          // hostname) — otherwise the site 500s after cutover (#456).
+          await routing.registerRoute({
+            domain,
+            tls: site.ssl,
+            terminatesTlsLocally: site.ssl,
+            staticRoot: opts.staticRootOverrides?.[site.serverNames[0]] ?? site.target.root,
+            staticRootAdopted: true,
+            ...(site.proxy ? { proxy: site.proxy } : {}),
+          });
         }
-      }
 
-      onLog(log(`Migrated ${domain} → ${site.target.kind === "proxy" ? site.target.url : site.target.root}`));
-      registered.push(domain);
-    } catch (err) {
-      warnings.push(`${domain}: ${safeErrorMessage(err)}`);
+        if (site.ssl) {
+          const manual = await resolveCert(executor, site, domain, opts);
+          if (manual) {
+            // Reuse the source's existing certificate — no ACME, no network round-trip.
+            await ssl.installCert(domain, manual);
+          } else {
+            // The slow path: a fresh per-domain ACME issuance, serialized against
+            // Let's Encrypt. This is the one step of a migrate that can take real
+            // wall-clock time (and hit rate limits), so announce it BEFORE the call —
+            // otherwise a migrate that's busy reissuing certs is indistinguishable
+            // from a hang. The WHY (expired / unreadable / doesn't cover the host)
+            // is already in `warnings` from resolveCert.
+            opts.onLog(
+              log(
+                `${domain}: existing certificate couldn't be carried over — requesting a new one (this can take a while)…`,
+                "warn",
+              ),
+            );
+            const r = await ssl.provisionCert(domain);
+            if (!r.verified) {
+              // The source was serving HTTPS, but we couldn't carry its certificate
+              // AND couldn't issue a fresh one — so the edge is now answering :443 with
+              // the self-signed placeholder. That's invisible to a browser hitting the
+              // box directly (it just warns), but a CDN fronting the origin with strict
+              // origin TLS (Cloudflare "Full (strict)") REJECTS the placeholder and
+              // returns a 525 with no hint of the cause. Name it here, next to the fix,
+              // so the migrate log isn't the only place the operator can learn why a
+              // site that worked a minute ago now 525s.
+              opts.warnings.push(
+                `${domain}: was serving HTTPS, but its certificate could not be carried over and a ` +
+                  `new one could not be issued (${r.reason ?? "pending"}). The edge is serving a temporary ` +
+                  `self-signed certificate — a CDN in front (e.g. Cloudflare "Full (strict)") will reject it ` +
+                  `with a 525. Upload the origin certificate from the domain's SSL menu, or issue one via DNS-01.`,
+              );
+            }
+          }
+        }
+
+        opts.onLog(log(`Migrated ${domain} → ${site.target.kind === "proxy" ? site.target.url : site.target.root}`));
+        registered.push(domain);
+      } catch (err) {
+        opts.warnings.push(`${domain}: ${safeErrorMessage(err)}`);
+      }
     }
   }
   return registered;
+}
+
+/**
+ * The cert material to carry for a domain, or null to fall back to a fresh
+ * certbot issuance.
+ *
+ * Inline PEMs win (the caller read them out-of-band and already vetted them),
+ * keyed by cert path or hostname. Otherwise this delegates to the shared reader,
+ * which validates that the cert actually covers the domain and hasn't expired —
+ * this used to `cat` the paths and hand back whatever came out, so a vhost naming
+ * two hosts off a single-host cert carried that cert to BOTH.
+ *
+ * A rejection is a warning, not a silent fallthrough: the operator was told these
+ * sites would migrate, so "reissuing instead, because …" has to reach them.
+ */
+async function resolveCert(
+  executor: CommandExecutor,
+  site: ImportedSite,
+  domain: string,
+  opts: RegisterImportedSitesOptions,
+): Promise<ManualCert | null> {
+  const inline = opts.certPems?.[domain] ?? (site.tls ? opts.certPems?.[site.tls.certPath] : undefined);
+  if (inline) return inline;
+
+  if (!site.tls) return null;
+  // Checked here as well as inside readDeclaredPair so the operator gets the real
+  // cause — "the path in your config looks unsafe" is a different problem from
+  // "the file wouldn't read", and only one of them means someone should look at
+  // the config.
+  if (!isSafeCertPath(site.tls.certPath) || !isSafeCertPath(site.tls.keyPath)) {
+    opts.warnings.push(`${domain}: existing cert path looks unsafe — issuing a fresh certificate instead`);
+    return null;
+  }
+  const pems = await readDeclaredPair(executor, site.tls.certPath, site.tls.keyPath);
+  if (!pems) {
+    opts.warnings.push(`${domain}: existing cert at ${site.tls.certPath} unreadable — issuing a fresh certificate`);
+    return null;
+  }
+  const candidate = validateCertFor(domain, pems, site.tls.certPath);
+  if (!candidate.cert) {
+    opts.warnings.push(`${domain}: issuing a fresh certificate — ${candidate.reason}`);
+    return null;
+  }
+  return { certPem: candidate.cert.certPem, keyPem: candidate.cert.keyPem };
 }
 
 /**
@@ -208,34 +265,139 @@ export async function runEdgeTakeover(
   onLog: SystemLogCallback,
 ): Promise<EdgeTakeoverResult> {
   const warnings: string[] = [];
-  const journal = await buildJournal(executor, opts.status);
+  const journal = await buildJournal(executor, opts.status, onLog);
   await writeJournal(executor, journal);
 
   onLog(log(`Migrating ${opts.sites.length} site(s) from the existing proxy, then taking over 80/443...`));
-  await freeEdgeTargets(executor, stopTargetsForStatus(opts.status), (m, l) => onLog(log(m, l)));
 
-  // Install OpenResty (ports are now free; takeover authorized as a backstop).
-  const install = await installOpenResty(executor, onLog, {
+  // Harvest the source proxy's certs BEFORE stopping it. A containerized caddy or
+  // traefik keeps its cert store inside the container, so once it's stopped there's
+  // no way left to read it and every migrated domain would silently fall back to a
+  // fresh ACME issuance. Skipped when the caller already read them host-side
+  // (`openship up` does, because a containerized edge can't cat the host FS).
+  let certPems = opts.certPems;
+  if (!certPems) {
+    const source = await edgeProxy(executor, { status: opts.status }).catch(() => null);
+    if (source) {
+      const harvest = await collectProxyCerts(source, opts.sites);
+      certPems = harvest.certPems;
+      warnings.push(...harvest.warnings);
+      const carried = Object.keys(harvest.certPems).length;
+      if (carried > 0) onLog(log(`Carrying ${carried} existing certificate(s) from ${source.kind}.`));
+    }
+  }
+
+  // Same snapshot-then-free as beginEdgeTakeover; kept inline because this
+  // function holds the journal in memory for its own rollback (a best-effort
+  // journal WRITE can fail, and an in-process rollback must still work).
+  //
+  // Freeing the ports is host MUTATION — `systemctl disable --now`, `docker update
+  // --restart=no`, `kill` — and every one of those is swallowed by `|| true` inside
+  // freeEdgeTargets. Unelevated on a non-root login they're all refused, so nothing
+  // stopped, the ports stayed bound, and the message below blamed an unnamed other
+  // holder: an operator sent to retry a takeover that can never succeed as this user.
+  // Degrade-but-SAY-IT rather than refuse, matching the vhost writes below and the
+  // container edge (`edgeHostExecutor`) — the login may still own the process holding
+  // the port. The port PROOF rides the same executor because freeEdgeTargets takes
+  // one; that changes nothing, a LISTEN socket is world-readable either way.
+  let elevationDegraded = false;
+  const stopExecutor = await rootOrDegrade(executor, {
+    // Shared with `beginEdgeTakeover`: same refusal, so the same sentence.
+    ...EDGE_STOP_ELEVATION,
+    report: (message) => {
+      elevationDegraded = true;
+      warnings.push(message);
+    },
+  });
+  const freed = await freeEdgeTargets(stopExecutor, stopTargetsForStatus(opts.status), (m, l) =>
+    onLog(log(m, l)),
+  );
+  if (!freed.freed) {
+    // "I stopped its owner" is not ":80 is bindable". Installing anyway starts an
+    // edge that loses the race for the socket and crash-loops on
+    // `bind() … (98: Address already in use)` — while `docker run` exits 0, so this
+    // function would report a successful migration of a box serving nothing.
+    const plural = freed.stillBound.length > 1;
+    const rolledBack = await rollback(executor, journal, onLog);
+    await clearJournal(executor);
+    const ports =
+      `port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ${plural ? "are" : "is"} ` +
+      "still in use, so the edge can't bind — nothing was installed.";
+    warnings.push(
+      // The retry advice has to match the actual cause: told to hunt for another
+      // holder, an operator retries the same unprivileged takeover forever. "Stopped
+      // the existing proxy" is also untrue on that arm — the stop is what was refused.
+      elevationDegraded
+        ? `The ${ports} Openship could not run the stop as root on this host (see the privilege ` +
+          "warning above), so stopping the existing proxy was almost certainly refused — retrying " +
+          "as this user will fail the same way. Reconnect as root, or as a user with passwordless sudo."
+        : `Stopped the existing proxy, but ${ports} Find what else is holding the port and retry.`,
+    );
+    if (!rolledBack) warnings.push("The previous proxy did NOT come back — nothing is serving :80.");
+    return { ok: false, rolledBack, registered: [], warnings };
+  }
+
+  // Bring up OUR edge (ports are now free; takeover authorized as a backstop).
+  // Goes through the same component installer as every other path, so this is the
+  // CONTAINER edge wherever Docker exists and the host install only on a box
+  // without it — a takeover must not be the one flow that still needs apt.
+  const install = await installContainerEdge(executor, onLog, {
     edgePolicy: { mode: "takeover", stopTargets: [] },
+    edgeImage: opts.edgeImage,
   });
   if (!install.success) {
-    await rollback(executor, journal, onLog);
+    // `rolledBack` is what the caller reports to the operator, so it carries the
+    // VERIFIED outcome: false here means the box is dark, not just that the restore
+    // commands ran.
+    const rolledBack = await rollback(executor, journal, onLog);
     await clearJournal(executor);
-    return { ok: false, rolledBack: true, registered: [], warnings: [install.error ?? "OpenResty install failed"] };
+    return { ok: false, rolledBack, registered: [], warnings: [install.error ?? "Edge install failed"] };
   }
 
   try {
-    const paths = await detectOpenRestyPaths(executor);
-    const nginx = new NginxProvider({ paths, executor, acmeEmail: opts.acmeEmail });
+    // Which edge did we just get? The migrated vhosts have to be written where THAT
+    // edge reads them: the bind-mounted host dir for a container, the detected
+    // OpenResty tree for a bare host. Getting this wrong writes every migrated site
+    // to a directory nothing serves from — the foreign proxy is already stopped by
+    // this point, so it would read as "migrated 0 sites" with the box dark.
+    // `fresh` is mandatory here: the install above JUST created the container, and
+    // ensureEdgeClear probed (and cached `null`) moments earlier in this same
+    // teardown. A memo hit would build a BARE-paths provider and write every
+    // migrated vhost where the container never reads — with the foreign proxy
+    // already stopped.
+    const container = await resolveOurEdgeContainer(executor, { fresh: true });
+    const providerOptions = { ...opts.nginx, acmeEmail: opts.acmeEmail ?? opts.nginx?.acmeEmail };
+    const nginx = container
+      ? await containerEdgeProvider(executor, container, providerOptions)
+      : new NginxProvider({
+          paths: await detectOpenRestyPaths(executor),
+          // The container branch elevates inside `containerEdgeProvider`; this one had
+          // nothing, so on a non-root login every migrated vhost hit EACCES — after the
+          // foreign proxy was already stopped, which is the worst possible moment.
+          // `warnings` rather than a log line because this one has a report to land in.
+          executor: await rootOrDegrade(executor, {
+            purpose: "Writing migrated vhosts",
+            consequence: "Migrated vhosts and certificates may not be writable.",
+            report: (message) => warnings.push(message),
+          }),
+          ...providerOptions,
+        });
 
-    const registered: string[] = [];
-    for (const site of opts.sites) {
-      registered.push(...(await registerSite(nginx, executor, site, onLog, warnings)));
-    }
+    const registered = await registerImportedSites(nginx, nginx, executor, opts.sites, {
+      onLog,
+      warnings,
+      ...(certPems ? { certPems } : {}),
+      ...(opts.staticRootOverrides ? { staticRootOverrides: opts.staticRootOverrides } : {}),
+    });
 
     for (const route of opts.extraRoutes ?? []) {
       try {
-        await nginx.registerRoute({ domain: route.domain, tls: route.tls, targetUrl: route.targetUrl });
+        await nginx.registerRoute({
+          domain: route.domain,
+          tls: route.tls,
+          terminatesTlsLocally: route.tls,
+          targetUrl: route.targetUrl,
+        });
         if (route.tls) await nginx.provisionCert(route.domain);
         registered.push(route.domain);
       } catch (err) {
@@ -243,7 +405,7 @@ export async function runEdgeTakeover(
       }
     }
 
-    const health = await checkOpenResty(executor);
+    const health = await checkEdge(executor);
     if (!health.healthy) {
       warnings.push(`OpenResty came up but isn't fully healthy: ${health.message}`);
     }
@@ -257,41 +419,9 @@ export async function runEdgeTakeover(
     return { ok: true, rolledBack: false, registered, warnings };
   } catch (err) {
     warnings.push(safeErrorMessage(err));
-    await rollback(executor, journal, onLog);
+    const rolledBack = await rollback(executor, journal, onLog);
     await clearJournal(executor);
-    return { ok: false, rolledBack: true, registered: [], warnings };
+    if (!rolledBack) warnings.push("The previous proxy did NOT come back — nothing is serving :80.");
+    return { ok: false, rolledBack, registered: [], warnings };
   }
-}
-
-/**
- * On boot, if a takeover journal is present it means a previous run crashed
- * mid-flight (success clears it). If OpenResty isn't healthy, restore the
- * foreign proxy so 80/443 aren't left dark; otherwise just clear the journal.
- */
-export async function recoverInterruptedTakeover(
-  executor: CommandExecutor,
-  onLog: SystemLogCallback,
-): Promise<void> {
-  const raw = await tryExec(executor, `cat ${JOURNAL_PATH} 2>/dev/null`);
-  if (!raw?.trim()) return;
-
-  let journal: TakeoverJournal;
-  try {
-    journal = JSON.parse(raw);
-  } catch {
-    await clearJournal(executor);
-    return;
-  }
-
-  // A finished run marks the journal completed before clearing it. A journal
-  // present WITHOUT that marker means the run didn't finish (routes may be
-  // half-registered even if OpenResty is "healthy") → restore the old proxy.
-  if (journal.completed) {
-    await clearJournal(executor);
-    return;
-  }
-
-  onLog(log("Found an interrupted edge takeover — restoring the previous proxy.", "warn"));
-  await rollback(executor, journal, onLog);
-  await clearJournal(executor);
 }

@@ -28,10 +28,8 @@ Open **Settings** and choose the **Instance** tab. Scroll to the **Updates** sec
 - Which version you're on now, and whether a newer one exists — either **"You're on the latest version"**
   or **"Openship _x.y.z_ is available"**.
 - A **Check now** button to ask GitHub again right away (Openship also checks on its own).
-- A **View changelog & releases** link that opens the release notes on GitHub.
+- A **View changelog & releases** link that opens the product changelog on the Openship website.
 - Toggles for **Automatic updates** (desktop only) and **Update & security notifications**.
-
-<Callout title="Screenshot">Settings → Instance tab, the **Updates** section showing the current version, the "Check now" button, and the toggles. *(screenshot pending)*</Callout>
 
 ## Updating
 
@@ -51,8 +49,6 @@ The desktop app updates itself — you just say yes.
 
 When a new version is out, a notice slides in at the **top of the dashboard**: *"Openship _x.y.z_ is
 available."* It sits just above the page, so you don't have to go looking for it.
-
-<Callout title="Screenshot">The update notice at the top of the dashboard with an **Update now** button. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -87,7 +83,7 @@ changes.
 <Tab value="Self-hosted server (CLI)">
 
 A self-hosted server (installed with the CLI) updates from the terminal. The `openship update` command
-reinstalls the CLI — which bundles the API server — at the latest release.
+updates the CLI — which bundles the API server — to the latest release.
 
 <Steps>
 
@@ -99,8 +95,11 @@ reinstalls the CLI — which bundles the API server — at the latest release.
 openship update
 ```
 
-Openship checks GitHub, and if there's a newer version it reinstalls itself with your package manager
-(it uses **bun** if you have it, otherwise **npm**). If you're already current, it just says so and stops.
+Openship checks GitHub, and if there's a newer version it updates itself in place. If you used the
+**install script** (the default), it re-downloads the checksum-verified release bundle and swaps it in —
+refreshing the Node runtime first if a release ever needs a newer one. If you installed the **npm package**
+instead, it reinstalls with your package manager (**bun** if you have it, otherwise **npm**). If you're
+already current, it just says so and stops.
 
 </Step>
 
@@ -132,7 +131,8 @@ It tells you your current version and whether a newer one is available — then 
 nothing.
 </Callout>
 
-Force a specific package manager if you need to:
+Installed the npm package? Force a specific package manager if you need to (ignored for install-script
+installs, which always update from the verified release bundle):
 
 ```bash
 openship update --via npm    # or: --via bun
@@ -151,7 +151,7 @@ What it does **not** do is change versions on its own. It keeps running whatever
 after `openship update` you re-run `openship up` to restart it on the new release (and `openship stop` to
 take it down). See [Installation](/docs/getting-started/installation) for the full service commands.
 
-## If something goes wrong
+## Troubleshooting
 
 <Callout title="“Could not reach GitHub to check for updates”" type="warn">
 Openship pulls updates straight from GitHub, so the check needs internet access — and GitHub limits how
@@ -161,8 +161,17 @@ keeps failing, reinstall by hand with the same install method you used originall
 </Callout>
 
 <Callout title="The CLI update failed partway" type="error">
-`openship update` reinstalls the global package with bun or npm. If that step errors, it prints the exact
-reinstall command to run by hand — copy it and run it yourself. Then restart with `openship up`.
+`openship update` either re-downloads the verified release bundle (install-script installs) or reinstalls
+the global package with bun or npm. If that step errors, it prints the exact command to run by hand — copy
+it and run it yourself. Then restart with `openship up`.
+</Callout>
+
+<Callout title="The update stopped, naming POSTGRES_PASSWORD or BETTER_AUTH_SECRET" type="error">
+A Compose install keeps its generated secrets only in `~/.openship/compose/.env`. If an update can't read that
+file while the database volume is still present, it stops **without changing anything** rather than generating
+values that couldn't work — most often because it ran as a different user (`sudo` reads `/root/.openship`). Re-run
+as the user that owns the install, or restore the file (the previous one is kept at `.env.bak`). Full steps:
+[Troubleshooting → openship up refuses to regenerate secrets](/docs/troubleshooting#symptom-openship-up-refuses-to-regenerate-secrets).
 </Callout>
 
 <Callout title="I updated but still see the old version" type="warn">
@@ -170,7 +179,7 @@ The running server hasn't been restarted yet. On a self-hosted server, run `open
 the new version. On the desktop app, fully quit and reopen it if it didn't relaunch on its own.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Installation" href="/docs/getting-started/installation" description="Every way to install Openship — and the full openship up / stop service commands." />

@@ -68,8 +68,10 @@ describe("scanNginx", () => {
     expect(res.warnings.some((w) => w.includes("variable"))).toBe(true);
   });
 
-  test("path-routing: migrates the root location, warns about extra upstreams (no silent collapse)", async () => {
-    // `location /` is declared AFTER `/api` — the primary must still be `/`.
+  test("path-routing: keeps EVERY location upstream in `routes`, primary stays `/`", async () => {
+    // `location /` is declared AFTER `/api` — the primary must still be `/`, and
+    // the extra upstream is RETAINED (not dropped to a warning) so the edge can
+    // path-route it.
     const conf = `
       server {
         server_name app.example.com;
@@ -82,11 +84,70 @@ describe("scanNginx", () => {
     expect(res.sites).toHaveLength(1);
     // primary = the root location, not the first-appearing one
     expect(res.sites[0].target).toEqual({ kind: "proxy", url: "http://127.0.0.1:3000" });
-    // the /api upstream is NOT dropped silently — it's surfaced as a warning
-    const w = res.warnings.find((x) => x.includes("path-routes"));
-    expect(w).toBeTruthy();
-    expect(w).toContain("/api");
-    expect(w).toContain("http://127.0.0.1:9000");
+    // both upstreams are retained in source order, each with its path
+    expect(res.sites[0].routes).toEqual([
+      { path: "/api", url: "http://127.0.0.1:9000" },
+      { path: "/", url: "http://127.0.0.1:3000" },
+    ]);
+    // no "re-add manually" warning anymore — nothing is dropped
+    expect(res.warnings.find((x) => x.includes("path-routes"))).toBeUndefined();
+  });
+
+  test("preserves an exact-match location as a clean path plus an exact flag", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name example.com;
+        location = /mcp {
+          proxy_pass http://127.0.0.1:3100;
+        }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0].target).toEqual({ kind: "proxy", url: "http://127.0.0.1:3100" });
+    expect(res.sites[0].routes).toEqual([
+      { path: "/mcp", url: "http://127.0.0.1:3100", exact: true },
+    ]);
+    expect(res.warnings).toEqual([]);
+  });
+
+  test("normalizes ^~ prefixes and skips only regex/named proxy locations", async () => {
+    const conf = `
+      server {
+        server_name mixed.example.com;
+        location / { proxy_pass http://127.0.0.1:3000; }
+        location ^~ /assets/ { proxy_pass http://127.0.0.1:3100; }
+        location ~ ^/users/[0-9]+$ { proxy_pass http://127.0.0.1:3200; }
+        location ~* \\.php$ { proxy_pass http://127.0.0.1:3300; }
+        location @fallback { proxy_pass http://127.0.0.1:3400; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0].routes).toEqual([
+      { path: "/", url: "http://127.0.0.1:3000" },
+      { path: "/assets/", url: "http://127.0.0.1:3100" },
+    ]);
+    expect(res.warnings).toHaveLength(3);
+    expect(
+      res.warnings.every((w) => w.includes("mixed.example.com") && w.includes("skipped")),
+    ).toBe(true);
+  });
+
+  test("does not widen an unsupported-only location into a root route", async () => {
+    const conf = `
+      server {
+        server_name regex.example.com;
+        location ~ ^/private { proxy_pass http://127.0.0.1:3200; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toEqual([]);
+    expect(res.warnings.some((w) => w.includes('location "~ ^/private"'))).toBe(true);
   });
 
   test("nested if/location braces don't truncate the block", async () => {
@@ -116,6 +177,150 @@ describe("scanNginx", () => {
     expect(res.warnings.some((w) => w.includes("redir.example.com"))).toBe(true);
   });
 
+  test("certbot HTTP→HTTPS stubs + the default catch-all are skipped SILENTLY", async () => {
+    // The real shape of a certbot-managed nginx (the hekai box): per host a :443
+    // vhost with the route and a :80 stub that only upgrades to HTTPS, plus one
+    // default_server. Every route must be found and NOTHING may be reported as
+    // "won't migrate" — that warning is how a clean scan looked broken.
+    const hosts = [
+      ["api.onvo.me", "http://localhost:1010"],
+      ["onvo.me", "http://127.0.0.1:39801"],
+      ["reflx.me", "http://localhost:3100"],
+    ];
+    const conf = `
+      server { listen 80 default_server; server_name _; return 444; }
+      ${hosts
+        .map(
+          ([host, up]) => `
+        server {
+          listen 80;
+          server_name ${host};
+          return 301 https://$host$request_uri;
+        }
+        server {
+          listen 443 ssl;
+          server_name ${host};
+          ssl_certificate /etc/letsencrypt/live/${host}/fullchain.pem;
+          ssl_certificate_key /etc/letsencrypt/live/${host}/privkey.pem;
+          location / { proxy_pass ${up}; }
+        }`,
+        )
+        .join("\n")}
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toHaveLength(hosts.length);
+    for (const [host, up] of hosts) {
+      const site = res.sites.find((s) => s.serverNames.includes(host));
+      // `localhost` is pinned to IPv4 on the way in — see the normalization test
+      // below for why carrying it verbatim breaks.
+      expect(site?.target).toEqual({
+        kind: "proxy",
+        url: up.replace("//localhost:", "//127.0.0.1:"),
+      });
+      expect(site?.ssl).toBe(true);
+    }
+    expect(res.warnings).toEqual([]);
+  });
+
+  test("pins a localhost upstream to IPv4 (nginx resolves localhost to ::1 first)", async () => {
+    // Carried verbatim, this 502s against any app bound to IPv4 only:
+    // `connect() failed (111: Connection refused) … upstream: http://[::1]:4000`.
+    const conf = `
+      server { listen 443 ssl; server_name a.example.com; location / { proxy_pass http://localhost:4000; } }
+      server { listen 443 ssl; server_name b.example.com; location / { proxy_pass http://localhost:5000/api/; } }
+      server { listen 443 ssl; server_name c.example.com; location / { proxy_pass http://127.0.0.1:6000; } }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    const url = (host: string) =>
+      (res.sites.find((s) => s.serverNames.includes(host))?.target as { url: string }).url;
+    expect(url("a.example.com")).toBe("http://127.0.0.1:4000");
+    // The path suffix survives the host rewrite.
+    expect(url("b.example.com")).toBe("http://127.0.0.1:5000/api/");
+    expect(url("c.example.com")).toBe("http://127.0.0.1:6000");
+  });
+
+  test("a certbot :80 helper never overwrites the real :443 site for the same host", async () => {
+    // The shape that silently lost sites: the :80 half carries BOTH the ACME
+    // webroot `root` and the redirect, so it used to parse as a STATIC site and
+    // then win the one-file-per-host race against the real proxy vhost.
+    const conf = `
+      server {
+        listen 80;
+        server_name apistage.example.com;
+        location /.well-known/acme-challenge/ { root /var/www/certbot; }
+        return 301 https://$host$request_uri;
+      }
+      server {
+        listen 443 ssl;
+        server_name apistage.example.com;
+        ssl_certificate /etc/letsencrypt/live/apistage.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/apistage.example.com/privkey.pem;
+        location / { proxy_pass http://127.0.0.1:5002; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0].ssl).toBe(true);
+    expect(res.sites[0].target).toEqual({ kind: "proxy", url: "http://127.0.0.1:5002" });
+    expect(res.sites[0].tls?.certPath).toContain("apistage.example.com");
+  });
+
+  test("an ACME-only webroot block is not migrated as a static site", async () => {
+    // certbot's `--webroot-path` pointed at a nonexistent dir. Imported as a
+    // static root it becomes a vhost whose try_files loops → 500.
+    const conf = `
+      server {
+        listen 80;
+        server_name www.example.com;
+        root /var/lib/letsencrypt/http_01_nonexistent;
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites).toHaveLength(0);
+  });
+
+  test("Openship's own edge-target challenge vhost is not a site (IP or hostname)", async () => {
+    // `_oblien-challenge-<slug>.conf` proves this box controls a routing target for
+    // Openship Cloud's edge. Reading it as a site would surface it in the orphan
+    // sweep, the domain-claim warning and the migrate importer — all three read this
+    // classifier, which is why the fix belongs here and not in each of them.
+    const conf = `
+      server {
+        listen 80;
+        server_name 203.0.113.10;
+        location /.well-known/oblien-proxy-challenge/ {
+          root /var/www/acme/oblien;
+          default_type text/plain;
+          try_files $uri =404;
+        }
+      }
+      server {
+        listen 80;
+        server_name edge.example.com;
+        location /.well-known/oblien-proxy-challenge/ {
+          root /var/www/acme/oblien;
+          default_type text/plain;
+          try_files $uri =404;
+        }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites).toHaveLength(0);
+  });
+
+  test("a literal same-host HTTPS upgrade is silent, a cross-host redirect still warns", async () => {
+    const conf = `
+      server { server_name self.example.com; return 301 https://self.example.com$request_uri; }
+      server { server_name away.example.com; return 301 https://other.example.com$request_uri; }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.warnings.some((w) => w.includes("self.example.com"))).toBe(false);
+    expect(res.warnings.some((w) => w.includes("away.example.com"))).toBe(true);
+  });
+
   test("ssl detection: IPv6 :443 counts, 8443 does not false-positive", async () => {
     const conf = `
       server {
@@ -133,6 +338,209 @@ describe("scanNginx", () => {
     const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
     expect(res.sites.find((s) => s.serverNames.includes("six.example.com"))?.ssl).toBe(true);
     expect(res.sites.find((s) => s.serverNames.includes("eight.example.com"))?.ssl).toBe(false);
+  });
+
+  /**
+   * A foreign vhost's reverse-proxy tunables are the difference between a migrated
+   * site that still accepts a 50 MB upload and one that starts 413-ing the day it
+   * moves. Two fields, deliberately:
+   *
+   *   `proxy`    — what we can adopt and re-render unchanged.
+   *   `proxyRaw` — what the box is actually serving, verbatim, including values our
+   *                own validators reject. Showing "not set" for a limit that IS set
+   *                is the one lie the read-back must not tell.
+   */
+  test("carries the tunables a foreign vhost is serving", async () => {
+    const conf = `
+      server {
+        listen 443 ssl;
+        server_name limits.example.com;
+        client_max_body_size 50m;
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+        gzip on;
+        gzip_comp_level 6;
+        ssl_certificate /etc/ssl/x.crt;
+        ssl_certificate_key /etc/ssl/x.key;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    const site = res.sites.find((s) => s.serverNames.includes("limits.example.com"))!;
+
+    expect(site.proxy).toEqual({
+      clientMaxBodySize: "50m",
+      proxyReadTimeout: "300s",
+      proxyBuffering: false,
+      gzip: true,
+      gzipCompLevel: 6,
+    });
+    expect(site.proxyRaw).toEqual({
+      clientMaxBodySize: "50m",
+      proxyReadTimeout: "300s",
+      proxyBuffering: "off",
+      gzip: "on",
+      gzipCompLevel: "6",
+    });
+  });
+
+  test("normalizes a value nginx accepts but our validators spell differently", async () => {
+    // `20M` is valid nginx; our regex is lowercase. Normalizing on the way in is what
+    // makes the value adoptable instead of unreadable.
+    const conf = `
+      server {
+        listen 80;
+        server_name upper.example.com;
+        client_max_body_size 20M;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    const site = res.sites[0]!;
+    expect(site.proxy).toEqual({ clientMaxBodySize: "20m" });
+    // Display keeps what the file says.
+    expect(site.proxyRaw).toEqual({ clientMaxBodySize: "20M" });
+  });
+
+  test("shows an unrepresentable value without offering to adopt it", async () => {
+    // `1d` and `2000` are legal nginx outside our curated grammar. Adopting them
+    // would let the next save silently rewrite them into something else.
+    const conf = `
+      server {
+        listen 80;
+        server_name odd.example.com;
+        client_max_body_size 512;
+        proxy_read_timeout 1d;
+        gzip_comp_level 42;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    const site = res.sites[0]!;
+    expect(site.proxy).toBeUndefined();
+    expect(site.proxyRaw).toEqual({
+      clientMaxBodySize: "512",
+      proxyReadTimeout: "1d",
+      gzipCompLevel: "42",
+    });
+  });
+
+  test("leaves both fields off a vhost that tunes nothing", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name plain.example.com;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites[0]!.proxy).toBeUndefined();
+    expect(res.sites[0]!.proxyRaw).toBeUndefined();
+  });
+
+  test("does not confuse a directive with its longer namesake", async () => {
+    // `gzip_types` must not read as `gzip`, and `proxy_busy_buffers_size` must not
+    // read as `proxy_buffers` — a prefix match here would invent settings nobody set.
+    const conf = `
+      server {
+        listen 80;
+        server_name prefix.example.com;
+        gzip_types text/plain;
+        proxy_busy_buffers_size 32k;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites[0]!.proxy).toEqual({ proxyBusyBuffersSize: "32k" });
+    expect(res.sites[0]!.proxyRaw).toEqual({ proxyBusyBuffersSize: "32k" });
+  });
+
+  test("skips nginx's shipped default vhost without warning about it", async () => {
+    // Stock upstream nginx.conf. `server_name localhost` + the prefix-relative
+    // `root html` is a placeholder welcome page, not a site: importing it used to
+    // reach the vhost writer and die on "must be an absolute path", surfacing as
+    // "1 site not served" for something the operator never hosted.
+    const conf = `
+      server {
+        listen 80 default_server;
+        server_name localhost;
+        root html;
+        index index.html;
+      }
+      server {
+        listen 80;
+        server_name real.example.com;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites.map((s) => s.serverNames)).toEqual([["real.example.com"]]);
+    // An expected skip, so it must not be reported as a site the operator lost.
+    expect(res.warnings.join("\n")).not.toMatch(/localhost/);
+  });
+
+  test("keeps the real hostname on a vhost that also answers localhost", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name localhost app.example.com;
+        location / { proxy_pass http://127.0.0.1:3000; }
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites).toHaveLength(1);
+    expect(res.sites[0]!.serverNames).toEqual(["app.example.com"]);
+  });
+
+  test("absolutizes a prefix-relative static root against nginx's --prefix", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name docs.example.com;
+        root html;
+      }
+    `;
+    const res = await scanNginx(
+      makeExecutor([
+        ["nginx -T", conf],
+        ["nginx -V", "nginx version: nginx/1.24.0\nconfigure arguments: --prefix=/usr/share/nginx --with-http_v2_module"],
+      ]),
+    );
+    expect(res.sites[0]!.target).toEqual({ kind: "static", root: "/usr/share/nginx/html" });
+  });
+
+  test("skips a relative static root when no prefix is reported, with a reason", async () => {
+    // Guessing nginx's compiled default would publish the wrong directory.
+    const conf = `
+      server {
+        listen 80;
+        server_name docs.example.com;
+        root html;
+      }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites).toHaveLength(0);
+    expect(res.warnings.join("\n")).toMatch(/docs\.example\.com.*relative to nginx's compiled prefix/);
+  });
+
+  test("does not run -V when every root is already absolute", async () => {
+    const conf = `
+      server {
+        listen 80;
+        server_name static.example.com;
+        root /var/www/site;
+      }
+    `;
+    const calls: string[] = [];
+    const executor = {
+      exec: async (cmd: string) => {
+        calls.push(cmd);
+        return cmd.includes("nginx -T") ? conf : "";
+      },
+    } as unknown as CommandExecutor;
+    const res = await scanNginx(executor);
+    expect(res.sites[0]!.target).toEqual({ kind: "static", root: "/var/www/site" });
+    expect(calls.some((c) => c.includes("-V"))).toBe(false);
   });
 });
 

@@ -3,9 +3,12 @@
 import React from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { workloadOf } from "@/context/deployment/types";
+import { AnalyticsError } from "@/components/monitoring/AnalyticsError";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
-import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
+import { UsedByCard } from "./UsedByCard";
+import { useProjectInfo, useAnalyticsData, invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import {
@@ -25,7 +28,6 @@ import {
 export const OverviewTab = () => {
   const {
     projectData,
-    gitData,
     buildData,
     setActiveTab,
     id,
@@ -47,7 +49,13 @@ export const OverviewTab = () => {
   // concurrent fetches across components (e.g. OverviewTab and
   // MonitoringTab share one summary fetch).
   const projectInfoQuery = useProjectInfo(id);
-  const analytics = useAnalyticsData(id, selectedDomain);
+  // Wait for this project's selected domain. An unscoped request aggregates
+  // every domain and can delay the scoped request that immediately follows it.
+  const analytics = useAnalyticsData(
+    projectData.id === id && selectedDomain ? id : null,
+    selectedDomain,
+  );
+  const showAnalyticsError = !!analytics.error && !analytics.isLoading;
   const analyticsData = analytics.data;
   const services = servicesData.services;
   const serviceCount = servicesData.isLoading
@@ -65,15 +73,20 @@ export const OverviewTab = () => {
           ? t.projects.overview.platformLocal
           : "-";
   const hasGit = !!(projectData.gitOwner && projectData.gitRepo);
-  const isStaticRuntime =
-    projectData.hasServer === false ||
-    projectData.options?.hasServer === false ||
-    projectData.productionMode === "static";
-  const modeLabel = isStaticRuntime
-    ? t.projects.overview.modeStatic
-    : projectData.productionMode === "standalone"
-      ? t.projects.overview.modeStandalone
-      : t.projects.overview.modeServer;
+  // A worker shares hasServer=false with a static site, so classify via the
+  // resolved workload — otherwise a worker mislabels as "Static" (#538).
+  const workload = workloadOf({
+    workloadType: projectData.workloadType ?? projectData.options?.workloadType,
+    hasServer: projectData.hasServer ?? projectData.options?.hasServer,
+  });
+  const modeLabel =
+    workload === "static"
+      ? t.projects.overview.modeStatic
+      : workload === "worker"
+        ? t.projects.overview.modeWorker
+        : projectData.productionMode === "standalone"
+          ? t.projects.overview.modeStandalone
+          : t.projects.overview.modeServer;
 
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -173,9 +186,10 @@ export const OverviewTab = () => {
 
   return (
     <div className="space-y-5">
-      {/* Catalog-app connection details (URLs + generated keys) — surfaced so the
-          user copies them into the app; nothing renders for apps without one. */}
-      {projectData.isApp && (
+      {/* The API resolves reachable outputs, including services attached to a
+          static project. The card hides itself when none exist. Synthesized
+          internal addresses are only useful on self-hosted targets. */}
+      {projectData.id && (projectData.isApp || deployTarget !== "cloud") && (
         <ConnectionCard
           projectId={projectData.id}
           appTemplateId={projectData.appTemplateId}
@@ -186,6 +200,10 @@ export const OverviewTab = () => {
 
       {/* Databases/apps wired INTO this project (renders nothing when none). */}
       {projectData.id && <ConnectedServicesCard projectId={projectData.id} />}
+
+      {/* …and the mirror: projects consuming THIS one. A shared database backs many
+          apps, so its own page has to show what depends on it. */}
+      {projectData.id && <UsedByCard projectId={projectData.id} />}
 
       {/* ── Info sections ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -201,10 +219,10 @@ export const OverviewTab = () => {
             value={modeLabel}
             loading={showProjectInfoSkeleton}
           />
-          {/* Port row shown when loading (we don't know hasServer yet)
-              or when there's an actual server runtime. Once project
-              info hydrates and we know it's static, the row is hidden. */}
-          {(showProjectInfoSkeleton || !isStaticRuntime) && (
+          {/* project.port belongs to the single-app runtime. Service projects
+              own their ports per service; showing this fallback for an adopted
+              stack contradicts its actual routing (#506). */}
+          {serviceCount === 0 && (showProjectInfoSkeleton || workload === "web") && (
             <Item
               label={t.projects.overview.port}
               value={String(projectData.port || 3000)}
@@ -265,15 +283,21 @@ export const OverviewTab = () => {
             value={projectData.gitBranch || projectData.branch || "main"}
             loading={showProjectInfoSkeleton}
           />
+          {/* Both read the /info payload, NOT the Source tab's `gitData`: that
+              slice is fetched only when GitSettings mounts (it also pulls recent
+              commits from GitHub), so on a cold load straight to Overview it was
+              undefined — and every project whose pushes really do deploy rendered
+              "auto-deploy off". `autoDeploy` is the column webhook-push.ts gates
+              on, so this row now shows what actually governs a push. */}
           <StatusItem
             label={t.projects.overview.autoDeploy}
-            active={!!gitData?.autoDeployEnabled}
+            active={!!projectData.autoDeploy}
             loading={showProjectInfoSkeleton}
             t={t}
           />
           <StatusItem
             label={t.projects.overview.webhook}
-            active={!!gitData?.webhookActive}
+            active={!!projectData.webhookActive}
             loading={showProjectInfoSkeleton}
             t={t}
           />
@@ -281,7 +305,10 @@ export const OverviewTab = () => {
       </div>
 
       {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
-      {hasDomain && (
+      {hasDomain && showAnalyticsError && (
+        <AnalyticsError error={analytics.error!} onRetry={() => invalidateProjectCaches(id)} />
+      )}
+      {hasDomain && !showAnalyticsError && (
         <>
       {/* Compact stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -360,7 +387,7 @@ export const OverviewTab = () => {
                 className="absolute inset-0 w-full h-full text-primary"
                 viewBox="0 0 1000 200"
                 preserveAspectRatio="none"
-                style={{ color: "hsl(var(--primary))" }}
+                style={{ color: "var(--primary)" }}
               >
                 <defs>
                   <linearGradient id="overviewAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
