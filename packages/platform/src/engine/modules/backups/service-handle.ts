@@ -19,32 +19,17 @@
 
 import { repos, type Service } from "@repo/db";
 import type { BackupExecutor, ServiceHandle } from "@repo/adapters";
+import { ValidationError } from "@repo/core";
 import { decryptEnvMap } from "../../lib/encryption";
+import { mergeServiceDeployEnv } from "../deployments/compose/service-env-layers";
 
 /**
- * Env as a producer will see it, decrypted at this boundary so no producer has to
- * hold a key.
+ * Decrypt and resolve current configuration with the deploy path's precedence,
+ * Compose templates and legacy empty-value rules. Capture and restore share this
+ * boundary so their producers receive the same database credentials.
  *
- * The layering MIRRORS the deploy path's `mergeServiceDeployEnv`
- * (project → inline → service), and that is the whole requirement: the container
- * being dumped was started by that function, so any other order means
- * `pg_dump -U $POSTGRES_USER -d $POSTGRES_DB` is aimed somewhere the running
- * database is not.
- *
- * It previously called `listEnvVars(projectId)` with NEITHER an environment NOR a
- * serviceId. `envVarScope` only narrows on the arguments it is given, so that
- * returned EVERY env_var row in the project — every other service's rows and every
- * environment's rows — flattened with no ordering, and then spread ABOVE the
- * service's own inline compose env. So in a normal compose project where the app
- * service also carries `POSTGRES_DB` (it needs it, to build its DSN), the postgres
- * service was dumped using the APP's value; with `production` and `preview` rows for
- * one key, whichever the query happened to return last won. Both produce a green run
- * whose artifact is a dump of the wrong database — and the wrong name is recorded
- * into the manifest, so the restore agrees with the mistake.
- *
- * A failed env-var read degrades to the compose defaults rather than aborting — the
- * behaviour both call sites already had. It does mean "no user-set variables" and
- * "could not read them" produce the same map.
+ * Failed env reads retain the fallback to Compose defaults. Required variables
+ * must still resolve before a producer can run against a guessed database.
  */
 async function resolveServiceEnv(
   serviceRow: Service,
@@ -57,11 +42,22 @@ async function resolveServiceEnv(
     repos.project.getEnvMap(serviceRow.projectId, environment, null).catch(() => ({})),
     repos.project.getEnvMap(serviceRow.projectId, environment, serviceRow.id).catch(() => ({})),
   ]);
-  return {
-    ...decryptEnvMap(projectLevel),
-    ...inline,
-    ...decryptEnvMap(serviceScoped),
-  };
+  const resolved = mergeServiceDeployEnv(
+    {
+      project: decryptEnvMap(projectLevel),
+      frozen: {},
+      inline,
+      templateKeys: serviceRow.advanced?.environmentTemplateKeys,
+      service: decryptEnvMap(serviceScoped),
+    },
+    false,
+  );
+  if (resolved.missingRequired.length > 0) {
+    throw new ValidationError(
+      `Service "${serviceRow.name}" is missing required Compose environment variables: ${resolved.missingRequired.map(({ variable }) => variable).join(", ")}`,
+    );
+  }
+  return resolved.env;
 }
 
 /** The handle for a real service row, given its project slug and an
