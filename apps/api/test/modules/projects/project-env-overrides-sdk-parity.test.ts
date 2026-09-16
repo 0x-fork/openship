@@ -5,6 +5,7 @@ import { seedOwner } from "../jobs/_harness";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
+import { ENV_MASK } from "@repo/platform/engine/lib/secret-env";
 import { projectRoutes } from "../../../src/modules/projects/project.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
@@ -39,6 +40,69 @@ import { seedProject } from "../../helpers/seed";
 import { encrypt, decrypt } from "@repo/platform/engine/lib/encryption";
 
 describe("project env override diagnostics through SDK/HTTP (#844)", () => {
+  it("lists only project variables, even when services reuse their keys", async () => {
+    const { owner, targets } = await clients();
+    const project = await seedProject(owner.orgId);
+    const service = await repos.service.create({ projectId: project.id, name: "worker" });
+    for (const row of [
+      {
+        key: "SHARED",
+        value: "project-value",
+        serviceId: null,
+        environment: "production",
+        isSecret: false,
+      },
+      {
+        key: "PROJECT_SECRET",
+        value: "project-secret",
+        serviceId: null,
+        environment: "production",
+        isSecret: true,
+      },
+      {
+        key: "SHARED",
+        value: "preview-project-value",
+        serviceId: null,
+        environment: "preview",
+        isSecret: false,
+      },
+      {
+        key: "SHARED",
+        value: "service-value",
+        serviceId: service.id,
+        environment: "production",
+        isSecret: false,
+      },
+      {
+        key: "SERVICE_ONLY",
+        value: "service-only-value",
+        serviceId: service.id,
+        environment: "production",
+        isSecret: false,
+      },
+    ]) {
+      await repos.project.setEnvVar({ ...row, projectId: project.id, value: encrypt(row.value) });
+    }
+
+    for (const client of targets) {
+      const production = await client.projects.listEnvVars(project.id, {
+        environment: "production",
+      });
+      expect(production.map(({ key }) => key).sort()).toEqual(["PROJECT_SECRET", "SHARED"]);
+      expect(production.find(({ key }) => key === "SHARED")?.value).toBe("project-value");
+      expect(production.find(({ key }) => key === "PROJECT_SECRET")?.value).toBe(ENV_MASK);
+
+      const allEnvironments = await client.projects.listEnvVars(project.id);
+      expect(allEnvironments).toHaveLength(3);
+      expect(allEnvironments.find(({ environment }) => environment === "preview")?.value).toBe(
+        "preview-project-value",
+      );
+      expect(JSON.stringify(allEnvironments)).not.toMatch(
+        /service-value|service-only-value|project-secret/,
+      );
+    }
+  });
+
   it("warns for literal and service-scoped overrides without returning their values", async () => {
     const { owner, targets } = await clients();
     const project = await seedProject(owner.orgId);

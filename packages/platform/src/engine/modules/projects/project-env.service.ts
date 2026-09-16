@@ -16,7 +16,8 @@ export async function listEnvVars(projectId: string, organizationId: string, env
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  const vars = await repos.project.listEnvVars(projectId, environment);
+  // Match project writes: service-scoped rows belong to the service env API.
+  const vars = await repos.project.listEnvVars(projectId, environment, null);
 
   return vars.map((v) => {
     let plainValue: string;
