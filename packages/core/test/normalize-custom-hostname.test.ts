@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeCustomHostname, isValidCustomHostname } from "../src/utils";
+import {
+  normalizeCustomHostname,
+  isValidCustomHostname,
+  isApexDomain,
+  isWildcardHostname,
+  wwwSiblingHostname,
+} from "../src/utils";
 
 describe("normalizeCustomHostname", () => {
   it("produces one canonical form so storage and lookup always agree", () => {
@@ -21,7 +27,9 @@ describe("normalizeCustomHostname", () => {
   it("is idempotent (canonical input is unchanged)", () => {
     const canonical = "api.acme.io";
     expect(normalizeCustomHostname(canonical)).toBe(canonical);
-    expect(normalizeCustomHostname(normalizeCustomHostname("HTTPS://Api.Acme.io/"))).toBe(canonical);
+    expect(normalizeCustomHostname(normalizeCustomHostname("HTTPS://Api.Acme.io/"))).toBe(
+      canonical,
+    );
   });
 
   it("returns empty for blank/scheme-only input", () => {
@@ -29,12 +37,78 @@ describe("normalizeCustomHostname", () => {
     expect(normalizeCustomHostname("   ")).toBe("");
     expect(normalizeCustomHostname("https://")).toBe("");
   });
+
+  // Regression guard: the www-strip belongs at the apex INPUT layer only. The
+  // shared normalizer backs service-route storage AND domain lookups, and the
+  // www toggle stores `www.<apex>` as its own endpoint — stripping www here would
+  // collapse that endpoint and make www-primary hosts unroutable.
+  it("does NOT strip a www. prefix", () => {
+    expect(normalizeCustomHostname("www.example.com")).toBe("www.example.com");
+    expect(normalizeCustomHostname("HTTPS://WWW.Example.com/")).toBe("www.example.com");
+  });
+  it("preserves wildcard prefix on normalization", () => {
+    expect(normalizeCustomHostname(" *.example.com/ ")).toBe("*.example.com");
+    expect(wwwSiblingHostname("*.example.com")).toBeNull();
+  });
+});
+
+describe("isApexDomain", () => {
+  it("is true for registrable apex domains", () => {
+    for (const h of ["example.com", "acme.io", "example.co.uk", "shop.com.au", "example.co.nz"]) {
+      expect(isApexDomain(h)).toBe(true);
+    }
+  });
+
+  it("is false for subdomains (www.<apex> makes no sense there)", () => {
+    for (const h of [
+      "www.example.com",
+      "app.example.com",
+      "api.acme.io",
+      "fresh.hekai.org",
+      "foo.example.co.uk", // subdomain under a multi-part TLD
+    ]) {
+      expect(isApexDomain(h)).toBe(false);
+    }
+  });
+
+  it("is false for a bare public suffix or invalid host", () => {
+    for (const h of ["co.uk", "com", "localhost", "", "1.2.3.4"]) {
+      expect(isApexDomain(h)).toBe(false);
+    }
+  });
+
+  it("normalizes casing / trailing dot before classifying", () => {
+    expect(isApexDomain("Example.COM")).toBe(true);
+    expect(isApexDomain("example.com.")).toBe(true);
+    expect(isApexDomain("WWW.example.com")).toBe(false);
+  });
+  it("is false for wildcard domains", () => {
+    expect(isApexDomain("*.example.com")).toBe(false);
+    expect(isApexDomain("*.sub.example.com")).toBe(false);
+  });
 });
 
 describe("isValidCustomHostname", () => {
   it("accepts real multi-label public hostnames", () => {
-    for (const h of ["example.com", "app.example.com", "a.b.c.example.co.uk", "xn--80ak6aa92e.com"]) {
+    for (const h of [
+      "example.com",
+      "app.example.com",
+      "a.b.c.example.co.uk",
+      "xn--80ak6aa92e.com",
+    ]) {
       expect(isValidCustomHostname(h)).toBe(true);
+    }
+  });
+  it("accepts wildcard hostnames", () => {
+    for (const h of ["*.example.com", "*.app.example.com", "*.example.co.uk"]) {
+      expect(isValidCustomHostname(h)).toBe(true);
+      expect(isWildcardHostname(h)).toBe(true);
+    }
+  });
+
+  it("rejects invalid wildcard shapes", () => {
+    for (const h of ["*example.com", "app.*.example.com", "*.", "*.com", "*"]) {
+      expect(isValidCustomHostname(h)).toBe(false);
     }
   });
 

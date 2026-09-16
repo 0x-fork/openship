@@ -35,6 +35,7 @@
   <a href="docs/i18n/README.pt.md"><img src="https://img.shields.io/badge/lang-Português-555" alt="Português" /></a>
   <a href="docs/i18n/README.de.md"><img src="https://img.shields.io/badge/lang-Deutsch-555" alt="Deutsch" /></a>
   <a href="docs/i18n/README.tr.md"><img src="https://img.shields.io/badge/lang-Türkçe-555" alt="Türkçe" /></a>
+  <a href="docs/i18n/README.ko.md"><img src="https://img.shields.io/badge/lang-한국어-555" alt="한국어" /></a>
 </p>
 
 <p align="center">
@@ -76,9 +77,12 @@ From the desktop app you connect a server (SSH) or Openship Cloud and deploy to 
 Install the CLI (it bundles the API + dashboard), then run **`openship`** — an interactive wizard creates the first admin, wires your domain, and installs Openship as a boot service. Run it again anytime to manage the instance.
 
 ```bash
-curl -fsSL https://get.openship.io | sh          # install  (or: npm i -g openship)
+curl -fsSL https://get.openship.io | sh          # install  (or: npm i -g openship — needs Node 22+)
 openship                                          # guided setup, then control panel
 ```
+
+The install script brings its own Node when your system one is older than 22; a package-manager
+install runs on the Node you already have.
 
 For CI / headless boxes, skip the wizard and drive `openship up` directly:
 
@@ -97,7 +101,8 @@ A self-hosted instance **always requires login** (the admin you create in setup)
 > **Preview an unreleased build (dev).** To run the CLI built straight from source — a branch, tag, or `main` ahead of the next release — install the from-source build:
 >
 > ```bash
-> curl -fsSL https://get.openship.io/dev | sh     # or: OPENSHIP_REF=my-branch curl ... | sh
+> curl -fsSL https://get.openship.io/dev | sh                  # main (default)
+> curl -fsSL https://get.openship.io/dev | OPENSHIP_REF=dev sh  # a branch/tag (var goes on sh, not curl)
 > openship-dev                                     # same CLI, built from source
 > openship-dev update                              # pull latest source + rebuild (no release needed)
 > ```
@@ -115,6 +120,31 @@ openship deploy
 Full server guide + complete CLI reference: **[openship.io/docs](https://openship.io/docs)**.
 
 <details>
+<summary>Shell completion (bash/zsh/fish)</summary>
+
+Two ways to enable Tab-completion for `openship`:
+
+| | Setup | Trade-off |
+|---|---|---|
+| **Static file** (recommended) | `openship completion <shell> > <path>` | Instant shell startup. Regenerate after upgrading to pick up newly added commands. |
+| **Live-sourced** | add `source <(openship completion <shell>)` to your shell config | Always reflects the currently installed version. Adds a small delay to every new shell session. |
+
+**Static file:**
+```bash
+openship completion bash > /etc/bash_completion.d/openship
+openship completion zsh  > ~/.zsh/completions/_openship
+openship completion fish > ~/.config/fish/completions/openship.fish
+```
+Open a new terminal — done.
+
+**Live-sourced** (zsh example):
+```bash
+echo 'source <(openship completion zsh)' >> ~/.zshrc
+```
+
+</details>
+
+<details>
 <summary>Self-host with raw Docker Compose (no CLI)</summary>
 
 The self-hosted stack lives in **`docker/docker-compose.yml`** and **pulls** published images from GitHub Container Registry (`ghcr.io/oblien/*`) — no build tooling, no monorepo compile. Run it from the repo root:
@@ -127,7 +157,9 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 
 The stack is **postgres + redis + api + dashboard + edge**. The `edge` is OpenResty on **:80/:443** as a container (`network_mode: host`) — routing + Let's Encrypt, no bare host install. **Linux only** (host networking); on mac/win use `openship up` (bare). The `api` container mounts the host Docker socket so the control plane can build + run your apps as host containers — it's host-privileged through the socket, so run it only on a trusted host.
 
-**Upgrade:** pin `OPENSHIP_VERSION` in `.env` for reproducible pulls, then `docker compose --env-file .env -f docker/docker-compose.yml pull && … up -d` (or just `openship update`). **Build from source instead:** add `-f docker/docker-compose.build.yml … up -d --build`.
+**Upgrade:** pin `OPENSHIP_VERSION` in `.env` for reproducible pulls, then `docker compose --env-file .env -f docker/docker-compose.yml pull && … up -d`. `openship update` only reconciles a stack the CLI installed, and `openship up` would *adopt* this one — don't reach for either here. **Build from source instead:** add `-f docker/docker-compose.build.yml … up -d --build`.
+
+**Host operations** (`:80`/`:443` takeover, the mail engine, host terminal/port scans) need the container→host SSH channel, which `openship up` provisions and this path does not — the five manual steps are in `.env.example` under *Host operations from the container*, and the failure it produces is [Troubleshooting → Host control channel](https://openship.io/docs/troubleshooting/host-channel). Everything else, including deploys, works without it.
 
 > The **root** `docker-compose.yml` is a different file: it's the SaaS / from-source **control plane** (builds from source, ships the marketing site, no edge/socket). It does **not** self-host your apps — use `docker/docker-compose.yml` above or `openship up`.
 
@@ -175,7 +207,7 @@ An **MCP** endpoint (for AI agents) and a **REST API** round it out for automati
 | **CDN** | Edge caching, HTTP/3, Brotli compression, instant purge |
 | **Mail server** | Built-in SMTP with DKIM/SPF/DMARC — no Mailgun or SES needed |
 | **Backups** | Scheduled, databases + volumes, one-click restore, export anytime |
-| **Real-time monitoring** | Live build logs, container metrics, and resource usage streamed to your screen |
+| **Real-time monitoring** | Live build logs, container metrics, visitor geography and per-code response mix — [~1.4 µs per request, zero DB writes per request](docs/monitoring.md) |
 | **Scaling** | Auto-scaling on cloud, multi-node ready on self-hosted |
 | **Portability** | Standard Docker containers — move between providers freely |
 | **Docker Compose** | Deploy existing compose files as-is |
@@ -207,32 +239,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## Releasing
-
-Cut a release with the version script — it syncs every package's version,
-commits the bump, tags `vX.Y.Z`, and pushes:
-
-```bash
-bun scripts/release.ts 0.2.0        # explicit version
-# or a bump keyword: patch | minor | major | rc   (minor from 0.1.x → 0.2.0)
-```
-
-Pushing the tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which:
-
-- builds the **macOS / Windows / Linux installers** and the server tarballs (with SHA-256 sidecars),
-- **publishes the `openship` CLI to npm** — via npm [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) (no token), and
-- creates the **GitHub Release** with the built assets (notes come from the tag).
-
-Official Docker images (`ghcr.io/oblien/openship-{api,dashboard,edge}`) publish from
-[`.github/workflows/docker-images.yml`](.github/workflows/docker-images.yml) — on a version tag, or on demand with `bun scripts/release.ts docker`.
-
-To flag a release as **critical** (or add recommended/info advisories) in the
-in-app updater, add an entry to [`release-advisories.json`](release-advisories.json)
-**before** tagging — clients pull it pinned to the release tag. High-level notes
-live in [`CHANGELOG.md`](CHANGELOG.md).
-
----
-
 ## Security
 
 Found a vulnerability? We welcome your report — please disclose it **privately**,
@@ -245,33 +251,11 @@ Good-faith security research is **authorized** under our
 [safe-harbor policy](SECURITY.md#safe-harbor), and we're happy to credit valid
 first reports.
 
----
-## ⭐ Star History
-
-<p align="center">
-  <a href="https://star-history.com/#oblien/openship&Date">
-    <picture>
-      <source
-        media="(prefers-color-scheme: dark)"
-        srcset="https://api.star-history.com/svg?repos=oblien/openship&type=Date&theme=dark"
-      />
-      <source
-        media="(prefers-color-scheme: light)"
-        srcset="https://api.star-history.com/svg?repos=oblien/openship&type=Date"
-      />
-      <img
-        alt="Star History Chart"
-        src="https://api.star-history.com/svg?repos=oblien/openship&type=Date"
-      />
-    </picture>
-  </a>
-</p>
-
----
 ## License
 
-Openship is **open-source** software, licensed under the [Apache License 2.0](LICENSE).
-
-You may use, run, modify, self-host, and distribute it — including in commercial
-and closed-source products — under the terms of the Apache 2.0 license. See
-[LICENSE](LICENSE) for the full text.
+Openship-authored code is licensed under the [Apache License 2.0](LICENSE).
+Bundled third-party components retain their own licenses. In particular,
+the [iRedMail engine](apps/email/engine/LICENSE) is GPL-licensed and is included
+in several control-plane distributions even when mail setup is not used.
+See the [component and packaging inventory](docs/licensing.md) for the recorded
+license boundaries and outstanding upstream notice review.

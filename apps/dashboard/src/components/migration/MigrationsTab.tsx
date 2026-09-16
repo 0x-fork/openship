@@ -1,66 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowRight,
-  Boxes,
-  CheckCircle2,
-  ChevronRight,
-  Clock,
-  Loader2,
-  Plus,
-  ShieldCheck,
-  XCircle,
-} from "lucide-react";
-import {
-  dockerMigrationApi,
-  type MigrationRun,
-  type MigrationStatus,
-} from "@/lib/api/server-migration";
+import { Loader2, Plus } from "lucide-react";
+import { dockerMigrationApi, type MigrationRun } from "@/lib/api/server-migration";
 import { systemApi } from "@/lib/api";
-import { formatBytes } from "@/lib/formatBytes";
 import { useI18n } from "@/components/i18n-provider";
 import { ServerConnectionCard } from "@/app/(dashboard)/servers/[serverId]/_components/connection-card";
 import { ServerMigrationWizard } from "./ServerMigrationWizard";
-
-const IN_FLIGHT: MigrationStatus[] = [
-  "queued",
-  "adopting",
-  "moving_data",
-  "deploying",
-  "verifying",
-  "awaiting_cutover",
-  "cutover",
-];
-const isInFlight = (s: MigrationStatus) => IN_FLIGHT.includes(s);
-
-/** Status → theme-aware tone + icon (semantic tokens, never hardcoded colors). */
-function statusTone(status: MigrationStatus): {
-  text: string;
-  bg: string;
-  Icon: React.ElementType;
-  spin?: boolean;
-} {
-  if (status === "succeeded")
-    return { text: "text-success", bg: "bg-success-bg", Icon: CheckCircle2 };
-  if (status === "failed" || status === "rolled_back")
-    return { text: "text-danger", bg: "bg-danger-bg", Icon: XCircle };
-  if (status === "awaiting_cutover" || status === "partial")
-    return { text: "text-warning", bg: "bg-warning-bg", Icon: AlertTriangle };
-  if (status === "queued")
-    return { text: "text-muted-foreground", bg: "bg-muted", Icon: Clock };
-  return { text: "text-warning", bg: "bg-warning-bg", Icon: Loader2, spin: true };
-}
-
-function relTime(iso?: string | null): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return "";
-  }
-}
+// The rows themselves are shared with the project's own migration history — one list, two
+// viewpoints. See MigrationRunList.
+import { MigrationRunList, isRunInFlight } from "./MigrationRunList";
 
 /**
  * Server-detail "Migrations" tab. Two in-page states, no modals:
@@ -118,7 +67,7 @@ export function MigrationsTab({
 
   // Poll while anything is in flight (and only while showing the list) so the
   // rows reflect live status without a second stream.
-  const anyInFlight = Boolean(runs?.some((r) => isInFlight(r.status)));
+  const anyInFlight = Boolean(runs?.some((r) => isRunInFlight(r.status)));
   useEffect(() => {
     if (flow || !anyInFlight) return;
     const iv = setInterval(() => void fetchRuns(), 3500);
@@ -145,96 +94,35 @@ export function MigrationsTab({
     );
   }
 
-  const peerName = (run: MigrationRun): string | null => {
-    if (run.mode === "same_server") return tab.inPlace;
-    const peerId = run.targetServerId === serverId ? run.sourceServerId : run.targetServerId;
-    return peerId ? (names[peerId] ?? tab.crossServer) : tab.crossServer;
-  };
+  if (runs === null) {
+    return (
+      <div className="flex items-center justify-center rounded-2xl border border-border/50 bg-card py-16 text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+      </div>
+    );
+  }
 
-  // ── List ── two columns (rows left, Connection card right), same shell as
-  // the other server tabs + the flow view — the tab spans full width, so the
-  // right column lives here, not in the page's global sidebar.
+  // No migrations yet → land STRAIGHT on the scan view (no separate "New
+  // migration" step). The wizard shows the main migration illustration + the
+  // scan card, renders found containers inline, and drops into live progress on
+  // start; Close returns to the now-populated list. `flow` is only used once
+  // runs exist — to open a row, or to start another via "New migration".
+  if (runs.length === 0) {
+    return <ServerMigrationWizard variant="tab" serverId={serverId} server={server} onClose={backToList} />;
+  }
+
+  // ── List ── existing runs on the left; Connection card + "New migration"
+  // (which opens the same scan view, with a Back) on the right. The tab spans
+  // full width, so the right column lives here, not the page's global sidebar.
   return (
     <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_340px]">
       <div className="min-w-0">
-      {runs === null ? (
-        <div className="flex items-center justify-center rounded-2xl border border-border bg-card py-16 text-muted-foreground">
-          <Loader2 className="size-5 animate-spin" />
-        </div>
-      ) : runs.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
-          <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-            <Boxes className="size-6" />
-          </span>
-          <div className="space-y-1.5">
-            <p className="text-sm font-medium text-foreground">{tab.empty}</p>
-            <p className="mx-auto max-w-md text-xs leading-relaxed text-muted-foreground">
-              {tab.emptyDesc}
-            </p>
-          </div>
-          <button
-            onClick={() => setFlow({})}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
-          >
-            <Plus className="size-4" />
-            {tab.new}
-          </button>
-          {/* Crystal-clear safety guarantee — migration COPIES, never moves;
-              the source keeps running and nothing is deleted unless you opt in. */}
-          <div className="mt-1 flex max-w-md items-start gap-2.5 rounded-xl border border-success-border bg-success-bg/40 px-4 py-3 text-left">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground">{tab.safetyTitle}</span> {tab.safetyBody}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-          {runs.map((run) => {
-            const tone = statusTone(run.status);
-            const bytes = run.bytesMoved ? formatBytes(run.bytesMoved) : null;
-            return (
-              <button
-                key={run.id}
-                onClick={() => setFlow({ runId: run.id })}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-muted/40"
-              >
-                <span
-                  className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full ${tone.bg} ${tone.text}`}
-                >
-                  <tone.Icon className={`size-4 ${tone.spin ? "animate-spin" : ""}`} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {run.projectName || "—"}
-                    </span>
-                    <span className={`shrink-0 text-[11px] font-medium ${tone.text}`}>
-                      {tab.status[run.status] ?? run.status}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      {names[serverId] ?? tab.crossServer}
-                      <ArrowRight className="size-3" />
-                      {peerName(run)}
-                    </span>
-                    <span>·</span>
-                    <span>{relTime(run.startedAt)}</span>
-                    {bytes && (
-                      <>
-                        <span>·</span>
-                        <span className="tabular-nums">{bytes}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            );
-          })}
-        </div>
-      )}
+        <MigrationRunList
+          runs={runs}
+          serverNames={names}
+          viewpoint={{ kind: "server", serverId }}
+          onOpen={(runId) => setFlow({ runId })}
+        />
       </div>
 
       <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">

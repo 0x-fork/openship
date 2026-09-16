@@ -7,24 +7,21 @@
  */
 
 import { Hono } from "hono";
-import { tbValidator } from "@hono/typebox-validator";
-import { localOnly } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./job.controller";
-import { UpdateJobBody, CreateJobBody } from "./job.schema";
+import { UpdateJobBody, CreateJobBody } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "jobs",
   basePath: "/api/jobs",
+  localOnly: true,
 });
 
-r.use("*", localOnly);
 
 r.get("/", { tag: "job:read", mcp: { description: "List system + custom jobs with cron, next run, and recent run history." } }, ctrl.list);
 r.post(
   "/",
-  { tag: "job:write", mcp: { description: "Create a custom job that runs a command on one or more servers (cron / one-time / manual), with retry, env, secrets, dependencies, triggers, and notifications.", body: CreateJobBody } },
-  tbValidator("json", CreateJobBody),
+  { tag: "job:write", auditHandledByOperation: true, body: CreateJobBody, mcp: { description: "Create a custom job that runs a command on one or more servers (cron / one-time / manual), with retry, env, secrets, dependencies, triggers, and notifications." } },
   ctrl.create,
 );
 // Literal GET routes are registered before `/:key` so they don't get captured
@@ -37,11 +34,10 @@ r.get("/:key/runs", { tag: "job:read", mcp: { description: "List a job's run his
 r.get("/:key", { tag: "job:read", mcp: { description: "Get one job's config, schedule, and recent runs." } }, ctrl.get);
 r.patch(
   "/:key",
-  { tag: "job:write", mcp: { description: "Update a job's schedule/enabled (any job) or full config (custom jobs).", body: UpdateJobBody } },
-  tbValidator("json", UpdateJobBody),
+  { tag: "job:write", auditHandledByOperation: true, body: UpdateJobBody, mcp: { description: "Update a job's schedule/enabled (any job) or full config (custom jobs)." } },
   ctrl.update,
 );
-r.delete("/:key", { tag: "job:write", mcp: { description: "Delete a custom job (system jobs can't be deleted)." } }, ctrl.remove);
-r.post("/:key/run", { tag: "job:write", mcp: { description: "Run a job immediately (custom jobs stream live; returns a runId)." } }, ctrl.run);
+r.delete("/:key", { tag: "job:write", auditHandledByOperation: true, mcp: { description: "Delete a custom job (system jobs can't be deleted)." } }, ctrl.remove);
+r.post("/:key/run", { tag: "job:write", auditHandledByOperation: true, mcp: { description: "Run a job immediately (custom jobs stream live; returns a runId)." } }, ctrl.run);
 
 export const jobRoutes = r.hono;

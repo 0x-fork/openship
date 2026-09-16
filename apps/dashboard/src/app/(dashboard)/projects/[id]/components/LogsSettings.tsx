@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { Terminal, Server } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { workloadOf } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
 import { TerminalLogs } from "./logs/TerminalLogs";
 import { ServerLogs } from "./logs/ServerLogs";
@@ -31,10 +32,16 @@ export const LogsSettings = () => {
     typeof projectData?.options?.hasServer === "boolean" ||
     typeof projectData?.hasServer === "boolean" ||
     buildData.isLoading === false;
+  // A worker runs a container and produces logs like a web app; only a static
+  // (edge-served) deploy has no runtime logs. Resolve the workload so a worker
+  // (hasServer=false) still gets its logs surfaced (#538). Gate on
+  // hasResolvedServerMode so we don't assume "web" before the data loads.
   const effectiveHasServer =
-    projectData?.options?.hasServer === true ||
-    projectData?.hasServer === true ||
-    (buildData.isLoading === false && buildData.hasServer === true);
+    hasResolvedServerMode &&
+    workloadOf({
+      workloadType: projectData?.workloadType ?? projectData?.options?.workloadType ?? buildData.workloadType,
+      hasServer: projectData?.options?.hasServer ?? projectData?.hasServer ?? buildData.hasServer,
+    }) !== "static";
   const searchParams = useSearchParams();
   const router = useRouter();
   const serviceIdFromUrl = searchParams.get("service");
@@ -61,14 +68,20 @@ export const LogsSettings = () => {
   // `effectiveHasServer` as a project-runtime log target was the bug: it offered
   // + defaulted "Project runtime" for services projects, which 404'd.
   const hasProjectRuntime = effectiveHasServer && !hasServices;
-  // Cloud deploys (including static apps) always have edge-access
-  // logs available via the same /server-logs/* endpoints — those
-  // endpoints route by `resolveProjectTrafficSource` server-side and
-  // fall back to Oblien's edge proxy when there's no runtime
-  // container. So a static .opsh.io page still has request logs even
-  // with no runtime stdout to stream.
+  // Request logs come from the EDGE, not from a runtime process — so anything
+  // served through an edge has them, whether or not it has a container to stream
+  // stdout from. That's every project with a domain: cloud (Oblien's edge proxy)
+  // and self-hosted alike (`/server-logs/stream` → the edge's mgmt API, including
+  // a containerized edge via execMgmtStream).
+  //
+  // This used to be `deployTarget === "cloud"`, which meant a STATIC app on a
+  // server — the case with no runtime logs by definition — showed "No runtime
+  // logs, nothing to stream" while its edge was logging every request. The
+  // backend already supported it (ServerLogs handles `kind: "self-hosted"`); only
+  // this gate said no.
   const deployTarget = projectData?.deployTarget as string | null | undefined;
-  const canShowRequestLogs = deployTarget === "cloud";
+  const hasDomain = (projectData?.domains?.length ?? 0) > 0;
+  const canShowRequestLogs = deployTarget === "cloud" || hasDomain;
   const canShowRuntimeLogs = effectiveHasServer || hasServices;
   const canShowLogs = canShowRuntimeLogs || canShowRequestLogs;
   // Terminal (container stdout) still requires an actual runtime —

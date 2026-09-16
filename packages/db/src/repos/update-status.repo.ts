@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
-import type { Database } from "../client";
+import type { Database, DatabaseTransaction } from "../client";
 import { updateStatus } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -11,30 +11,40 @@ export type NewUpdateStatus = typeof updateStatus.$inferInsert;
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createUpdateStatusRepo(db: Database) {
+  async function write<T>(run: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+    return db.transaction(async (tx) => {
+      // Cache maintenance must not occupy a pooled connection indefinitely on
+      // a row lock. LOCAL keeps these limits out of unrelated transactions.
+      await tx.execute(sql`SET LOCAL lock_timeout = '1500ms'`);
+      await tx.execute(sql`SET LOCAL statement_timeout = '2000ms'`);
+      return run(tx);
+    });
+  }
   return {
-    /** Upsert the scan result for a project (unique on projectId). */
+    /** Upsert the polled upstream state for a project (unique on projectId). */
     async upsert(data: Omit<NewUpdateStatus, "id">): Promise<void> {
       const id = generateId("ups");
-      await db
-        .insert(updateStatus)
-        .values({ id, ...data })
-        .onConflictDoUpdate({
-          target: updateStatus.projectId,
-          set: {
-            organizationId: data.organizationId,
-            kind: data.kind,
-            behind: data.behind,
-            latestInProgress: data.latestInProgress,
-            currentLabel: data.currentLabel ?? null,
-            latestLabel: data.latestLabel ?? null,
-            detail: data.detail ?? null,
-            checkedAt: data.checkedAt ?? new Date(),
-            updatedAt: new Date(),
-          },
-        });
+      const checkedAt = data.checkedAt ?? new Date();
+      await write(async (tx) => {
+        await tx
+          .insert(updateStatus)
+          .values({ id, ...data, checkedAt })
+          .onConflictDoUpdate({
+            target: updateStatus.projectId,
+            set: {
+              organizationId: data.organizationId,
+              kind: data.kind,
+              detail: data.detail ?? null,
+              checkedAt,
+              updatedAt: new Date(),
+            },
+            // An older poll may acquire its connection/lock after a newer one.
+            setWhere: lte(updateStatus.checkedAt, sql`excluded.checked_at`),
+          });
+      });
     },
 
-    /** All cached statuses for an org (newest check first). */
+    /** All cached upstream rows for an org (newest poll first). */
     async listByOrg(organizationId: string): Promise<UpdateStatus[]> {
       const rows = await db.query.updateStatus.findMany({
         where: eq(updateStatus.organizationId, organizationId),
@@ -42,16 +52,8 @@ export function createUpdateStatusRepo(db: Database) {
       return rows.sort((a, b) => b.checkedAt.getTime() - a.checkedAt.getTime());
     },
 
-    /** Only the entities that currently have an update available. */
-    async listBehindByOrg(organizationId: string): Promise<UpdateStatus[]> {
-      const rows = await db.query.updateStatus.findMany({
-        where: and(
-          eq(updateStatus.organizationId, organizationId),
-          eq(updateStatus.behind, true),
-        ),
-      });
-      return rows.sort((a, b) => b.checkedAt.getTime() - a.checkedAt.getTime());
-    },
+    // No listBehindByOrg: "behind" is not stored. It's a comparison against the
+    // project's live deployment, computed in updates.service on read.
 
     async getByProject(projectId: string): Promise<UpdateStatus | undefined> {
       return db.query.updateStatus.findFirst({
@@ -59,8 +61,17 @@ export function createUpdateStatusRepo(db: Database) {
       });
     },
 
-    async deleteByProject(projectId: string): Promise<void> {
-      await db.delete(updateStatus).where(eq(updateStatus.projectId, projectId));
+    async deleteByProject(projectId: string, checkedBefore?: Date): Promise<void> {
+      await write(async (tx) => {
+        await tx
+          .delete(updateStatus)
+          .where(
+            and(
+              eq(updateStatus.projectId, projectId),
+              checkedBefore ? lte(updateStatus.checkedAt, checkedBefore) : undefined,
+            ),
+          );
+      });
     },
   };
 }

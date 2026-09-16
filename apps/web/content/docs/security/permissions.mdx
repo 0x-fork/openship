@@ -34,6 +34,10 @@ Your role in an org sets your baseline access. From most to least powerful:
 An **owner** holds the keys to the money — plans, payment, and cancellation. An **admin** runs the day-to-day: they can invite teammates, deploy, add domains, and read the audit log, but they can't touch billing. A **member** is a trusted teammate who ships work but doesn't manage the team or see billing. **Restricted** starts with an empty keyring and gets keys one at a time.
 </Callout>
 
+<Callout title="The standard roles are coarse by design (beta)" type="warn">
+Owner, admin, and member are graded by resource **type**, not by action: a member has read, write, **and delete** across projects, servers, deployments, domains, jobs, and environment variables — the same as an admin apart from managing people and the audit log. Per-**action** (read vs write vs admin) and per-**resource** limits are enforced only through the **restricted** role and **scoped access tokens** described below. Treat member and admin as trusted, near-equal roles, and reach for a restricted member or a scoped token whenever you need real least-privilege. Fine-grained delegation for the standard roles is still maturing.
+</Callout>
+
 ## Permission tags: `resource:action`
 
 Under the hood, each route declares a short tag that names a resource and an action, like `project:read` or `domain:write`. Sub-resources add a middle segment — `project:service:write` means "edit a service that lives inside a project."
@@ -103,8 +107,6 @@ Team management lives under **Settings → Team**.
 
 Go to **Settings → Team** and press **Invite member**. Enter the person's email address.
 
-<Callout title="Screenshot">Settings → Team tab, member list with the **Invite member** button. *(screenshot pending)*</Callout>
-
 </Step>
 
 <Step>
@@ -115,8 +117,6 @@ Pick **Member**, **Admin**, or **Restricted**. (Owner is the org creator's role 
 
 - **Member** and **Admin** get their access immediately on joining.
 - **Restricted** opens a resource picker on the right, where you choose exactly what the invite unlocks.
-
-<Callout title="Screenshot">The Invite member dialog with the three role cards (Member, Admin, Restricted) and, for Restricted, the resource picker pane on the right. *(screenshot pending)*</Callout>
 
 </Step>
 
@@ -151,7 +151,7 @@ When you try to touch something you're not allowed to, Openship returns **404 No
 A 403 quietly confirms the resource *exists* — you just can't see it. A 404 gives nothing away. This protects against **IDOR** (Insecure Direct Object Reference — guessing ids to probe for resources you shouldn't know about). If a project id isn't yours, the platform behaves as if it simply isn't there.
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Authentication" href="/docs/security/auth" description="Sessions, personal access tokens, and how you prove who you are." />

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -15,18 +15,30 @@ const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../d
  * dedup that stops double-deploys. FK enforcement is disabled so we can insert
  * rows without the org/project chain.
  */
+/**
+ * Migrating a fresh PGlite is the expensive part (~1s idle, several seconds when
+ * the whole monorepo's suites run in parallel), so it happens ONCE per file and
+ * each test just gets an empty table. Doing it per test pushed the `beforeEach`
+ * past vitest's 10s hook timeout under `turbo run test` — a flake that had
+ * nothing to do with the code under test.
+ */
 async function freshRepo() {
   const client = new PGlite("memory://");
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   await client.exec("SET session_replication_role = replica;");
-  return createWebhookDeliveryRepo(db);
+  return { client, repo: createWebhookDeliveryRepo(db) };
 }
 
 describe("webhookDelivery repo — GitHub idempotency (claim) + feed", () => {
-  let repo: Awaited<ReturnType<typeof freshRepo>>;
+  let client: PGlite;
+  let repo: Awaited<ReturnType<typeof freshRepo>>["repo"];
+  beforeAll(async () => {
+    ({ client, repo } = await freshRepo());
+  });
+  // Per-test isolation without re-migrating: the repo only touches this table.
   beforeEach(async () => {
-    repo = await freshRepo();
+    await client.exec("TRUNCATE webhook_delivery;");
   });
 
   it("claims a delivery once; a redelivery of the same id is dropped", async () => {
@@ -47,6 +59,32 @@ describe("webhookDelivery repo — GitHub idempotency (claim) + feed", () => {
     expect(a).not.toBe(b);
     const page = await repo.listByHook("h1");
     expect(page.rows.length).toBe(2);
+  });
+
+  it("lets one redelivery reclaim a finished failure and deduplicates it after success (#847)", async () => {
+    const input = { deliveryId: "retry", event: "push", outcome: "received" };
+    const first = await repo.claimGithub(input);
+    await repo.markProcessed(first.id, { outcome: "failed", statusCode: 500, error: "deployment busy" });
+    const claims = await Promise.all([repo.claimGithub(input), repo.claimGithub(input)]);
+    expect(claims.filter((claim) => claim.claimed)).toEqual([
+      { claimed: true, id: first.id, handledProjectIds: [] },
+    ]);
+    await repo.markProcessed(first.id, { outcome: "received", statusCode: 200 });
+    expect(await repo.claimGithub(input)).toEqual({ claimed: false, id: "" });
+  });
+
+  it("preserves completed project receipts for the one caller that reclaims a partial failure", async () => {
+    const input = { deliveryId: "partial-retry", event: "push", outcome: "received" };
+    const first = await repo.claimGithub(input);
+    await repo.markProcessed(first.id, {
+      outcome: "failed",
+      statusCode: 500,
+      summary: { handledProjectIds: ["project-already-handled"] },
+    });
+    const claims = await Promise.all([repo.claimGithub(input), repo.claimGithub(input)]);
+    expect(claims.filter((claim) => claim.claimed)).toEqual([
+      { claimed: true, id: first.id, handledProjectIds: ["project-already-handled"] },
+    ]);
   });
 
   it("keyset pagination returns every row exactly once, newest first", async () => {

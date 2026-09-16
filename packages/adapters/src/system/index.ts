@@ -3,14 +3,28 @@
  */
 
 export type {
+  DistroFamily,
   EnvironmentProfile,
   LinuxDistro,
   SystemArch,
+  SystemFirewall,
+  SystemLibc,
   SystemOs,
   SystemPackageManager,
+  SystemSelinux,
   SystemServiceManager,
 } from "./environment";
-export { resolveEnvironment } from "./environment";
+export {
+  ENVIRONMENT_PROFILE_TTL_MS,
+  invalidateEnvironment,
+  resolveEnvironment,
+} from "./environment";
+export type { EnvOps, HostCommands, HostFacts, Op, PackageVariants, ReleaseArch } from "./environment-ops";
+export { envOps, HOST_STATE_DIR, opScript } from "./environment-ops";
+export {
+  invalidateLocalEnvironment,
+  resolveLocalEnvironmentSync,
+} from "./environment-local";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type {
@@ -39,6 +53,7 @@ export {
   EdgeConflictError,
   EdgeMigrateRequested,
   freeEdgeTargets,
+  ourEdgeContainerRunning,
   probeEdge,
   stopTargetsForStatus,
 } from "./proxy/detect";
@@ -46,10 +61,15 @@ export type { EdgeConflictDetails, ImportedSite, ProxyScanResult } from "./types
 export { scanImportableSites, canImportProxy } from "./proxy/import";
 export {
   runEdgeTakeover,
-  recoverInterruptedTakeover,
   type EdgeTakeoverOptions,
   type EdgeTakeoverResult,
 } from "./proxy/takeover";
+export {
+  recoverInterruptedTakeover,
+  beginEdgeTakeover,
+  rollbackEdgeTakeover,
+  completeEdgeTakeover,
+} from "./proxy/takeover-journal";
 // The consolidated reverse-proxy / edge facade (single point for the chain).
 export { detectEdge, importSites, takeoverOnMigrate, foreignProxyOnEdge, ensureEdge } from "./proxy";
 
@@ -62,31 +82,34 @@ export { LocalExecutor, SshExecutor, SystemSshExecutor, createExecutor } from ".
 // Privilege elevation for non-root SSH users (component installs use it; the
 // broader remote-exec surface can adopt it as a follow-up — see #84).
 export { elevatedExecutor, elevateCommand } from "./elevated-executor";
+export type { Privileged, RootChecked } from "./privilege";
+export { privilegedExecutor, rootChecked, rootOrDegrade } from "./privilege";
 
 // ─── Checks ──────────────────────────────────────────────────────────────────
 export {
   checkAll,
   checkComponents,
-  checkCertbot,
   checkDocker,
+  needsDockerGroupRefresh,
   checkGit,
-  checkOpenResty,
+  checkEdge,
   checkRsync,
   COMPONENT_CHECKS,
 } from "./checks";
+export {
+  REMOTE_SERVER_REQUIRED_COMPONENTS,
+  resolveSystemComponentInstallPlan,
+} from "./requirements";
 
 // ─── Installers ───────────────────────────────────────────────────────────────
 export {
   COMPONENT_INSTALLERS,
   COMPONENT_UNINSTALLERS,
   getRemovalSupport,
-  installCertbot,
   installDocker,
   installGit,
-  installOpenResty,
   installRsync,
-  uninstallCertbot,
-  uninstallOpenResty,
+  uninstallEdge,
   uninstallRsync,
 } from "./installer";
 
