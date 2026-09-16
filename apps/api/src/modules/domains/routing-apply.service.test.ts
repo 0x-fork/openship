@@ -26,7 +26,7 @@ vi.mock("@repo/db", async (importOriginal) => {
 // The service resolves a PLATFORM now (`{platform:{routing,runtime}}`) and releases
 // its docker transport when done, so the flat stub above is adapted to that shape
 // rather than re-written per test.
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   usesManagedRouting,
   disposePlatform: () => {},
   resolveDeploymentPlatform: async (...args: unknown[]) => {
@@ -34,10 +34,10 @@ vi.mock("../../lib/deployment-runtime", () => ({
     return { platform: flat, effectiveTarget: flat.effectiveTarget, serverId: flat.serverId };
   },
 }));
-vi.mock("../../lib/route-apply.service", () => ({ reconcileProjectRoutes }));
+vi.mock("@repo/platform/engine/lib/route-apply.service", () => ({ reconcileProjectRoutes }));
 vi.mock("../../lib/controller-helpers", () => ({ platform: () => ({ target: "selfhosted" }) }));
 
-import { applyProjectRouting } from "./routing-apply.service";
+import { applyProjectRouting } from "@repo/platform/engine/modules/domains/routing-apply.service";
 
 function emittedRegisters() {
   expect(reconcileProjectRoutes).toHaveBeenCalledTimes(1);
@@ -512,3 +512,8 @@ describe("applyProjectRouting — static frontend composite", () => {
     warn.mockRestore();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted" }) }));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({ platform: () => ({ target: "selfhosted" }) }));

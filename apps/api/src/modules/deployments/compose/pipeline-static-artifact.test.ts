@@ -15,8 +15,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * reported ready and every request 404'd.
  *
  * The exemption must stay NARROW (a genuinely undeployed service's image is still
- * garbage) and must NOT extend to a failed deploy, whose staging dirs are garbage by
- * definition.
+ * garbage). Aggregate failure is not sufficient evidence: a later prepare hook can
+ * fail after a static root was promoted and published, so that live root must remain.
  */
 
 // Everything the pipeline touches is a side effect on the DB, the SSH host or the
@@ -34,14 +34,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("./build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
-vi.mock("./deploy.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/compose/build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
+vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () => ({
   deployComposeServices: mocks.deployComposeServices,
   // The no-changes settle is a separate branch that runs AFTER the cleanup loop
   // under test; every result below deployed something.
   composeDeployMadeNoChanges: () => false,
 }));
-vi.mock("../deployment-lifecycle", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
   cleanupBuildArtifact: mocks.cleanupBuildArtifact,
   onCancelled: vi.fn(async () => {}),
   onFailure: mocks.onFailure,
@@ -51,12 +51,12 @@ vi.mock("../deployment-lifecycle", () => ({
   setDeploymentStatus: mocks.setDeploymentStatus,
   routeIssuesWarning: (issues: string[]) => issues.join(", "),
 }));
-vi.mock("../session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
 }));
 
-import { executeComposePipeline } from "./pipeline";
+import { executeComposePipeline } from "@repo/platform/engine/modules/deployments/compose/pipeline";
 
 const SNAPSHOT = {
   repoUrl: "https://example.com/repo.git",
@@ -133,6 +133,7 @@ async function run(
     ctx: { dep: { id: "d1" }, provisioned: {} } as never,
     snapshot: SNAPSHOT as never,
     buildSessionId: "bld_x",
+    composeInterpolationEnv: {},
     buildEnvVars: {},
     buildResources: DEFAULT_RESOURCE_CONFIG,
     runtimeResources: DEFAULT_RESOURCE_CONFIG,
@@ -190,7 +191,22 @@ describe("executeComposePipeline — built-artifact cleanup", () => {
     expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
   });
 
-  it("reclaims every built artifact, static one included, when the deploy failed", async () => {
+  it("does not delete a published artifact through an unused sibling sharing its ref", async () => {
+    await run(
+      new Map([
+        ["svc_1", STATIC_ROOT],
+        ["svc_2", STATIC_ROOT],
+      ]),
+      composeResult("ready", [
+        { serviceId: "svc_1", serviceName: "site", status: "running", staticRoot: STATIC_ROOT },
+        { serviceId: "svc_2", serviceName: "alias", status: "skipped" },
+      ]),
+    );
+
+    expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
+  });
+
+  it("retains published artifacts but reclaims unused ones when a later step fails", async () => {
     await run(
       new Map([
         ["svc_1", STATIC_ROOT],
@@ -201,10 +217,10 @@ describe("executeComposePipeline — built-artifact cleanup", () => {
       ]),
     );
 
-    // Separate, deliberately unconditional loop: a failed deploy publishes nothing,
-    // so its staging dir is garbage even though the service reported a staticRoot.
-    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledTimes(2);
-    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), STATIC_ROOT);
+    // A required prepare step can fail after this static root was promoted and
+    // routed. Deleting it here would turn that live vhost into an immediate 404.
+    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledTimes(1);
+    expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalledWith(expect.anything(), STATIC_ROOT);
     expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(
       expect.anything(),
       "openship/svc_2:bld_x",

@@ -172,12 +172,15 @@
       "runningStatus": "Läuft — {status}"
     },
     "cache": {
-      "title": "Cache",
-      "description": "Zwischengespeicherte Build-Artefakte und Abhängigkeitsinstallationen leeren",
+      "title": "Docker-Build-Cache",
+      "description": "Ungenutzter Build-Cache wird automatisch auf 5 GB pro Server begrenzt",
       "clearInstall": "Installations-Cache leeren",
       "clearInstallDesc": "Zwischengespeicherte node_modules entfernen",
       "clearBuild": "Build-Cache leeren",
-      "clearBuildDesc": "Zwischengespeicherte Build-Ausgabe entfernen"
+      "clearBuildDesc": "Ungenutzten Cache auf dem Docker-Server dieses Projekts entfernen",
+      "clearBuildConfirm": "Gesamten ungenutzten Docker-Build-Cache auf diesem Server leeren? Andere Projekte müssen beim nächsten Deployment möglicherweise Abhängigkeiten neu bauen.",
+      "clearBuildSuccess": "{size} Build-Cache freigegeben",
+      "clearBuildEmpty": "Kein ungenutzter Build-Cache vorhanden"
     },
     "transfer": {
       "title": "Übertragen & Klonen",
@@ -362,8 +365,8 @@
       "appliesOnDeploy": "Wird beim nächsten Deploy angewendet."
     },
     "env": {
-      "title": "Umgebungsvariablen",
-      "description": "Verschlüsselt gespeichert. Geheimnisse bleiben maskiert — nur die von Ihnen geänderten Werte werden geschrieben.",
+      "title": "Projektumgebung (Build und gemeinsame Laufzeit)",
+      "description": "Wird für Image-Builds und als gemeinsame Laufzeiteingabe verwendet. Compose-Werte und dienstspezifische Laufzeitwerte haben zur Laufzeit Vorrang. Geheimnisse bleiben verborgen.",
       "edit": "Bearbeiten"
     }
   },
@@ -372,10 +375,10 @@
     "saveChanges": "Änderungen speichern",
     "close": "Schließen",
     "applyTitle": "Ohne Neubau anwenden",
-    "applyText": "Gespeichert. Wenden Sie diese auf den laufenden Dienst an — er startet mit der neuen Umgebung neu, ohne Klon oder Neubau.",
+    "applyText": "Gespeichert. Neustarten, um Laufzeitänderungen anzuwenden. Erneut bauen und bereitstellen, um beim Image-Build verwendete Werte anzuwenden.",
     "applyButton": "Anwenden (Neustart, kein Neubau)",
-    "title": "Umgebungsvariablen",
-    "description": "Produktion. Verschlüsselt gespeichert. Geheimnisse werden als gesetzt angezeigt — tippen zum Ersetzen; leer lassen zum Beibehalten.",
+    "title": "Projektumgebung (Build und gemeinsame Laufzeit)",
+    "description": "Produktionsvariablen des Projekts. Geheimnisse bleiben verborgen; ein gespeichertes Geheimnis leer lassen, um es beizubehalten. Dienstwerte haben bei gleichem Schlüssel Vorrang.",
     "empty": "Noch keine Umgebungsvariablen.",
     "keyPlaceholder": "KEY",
     "secretPlaceholder": "•••••••• (gesetzt — tippen zum Ersetzen)",
@@ -558,6 +561,9 @@
     "title": "Maschinenleistung",
     "description": "CPU- und Speichergrenzen für die Container dieses Projekts.",
     "loading": "Zielmaschine wird gelesen …",
+    "unavailable": "Maschinenleistung nicht verfügbar",
+    "loadFailed": "Maschinenleistung konnte nicht geladen werden",
+    "retry": "Erneut versuchen",
     "machineCapacity": "Maschine: {cpu} vCPU · {memory}",
     "exceedsMachine": "Übersteigt diese Maschine",
     "appliesOnNextDeploy": "Grenzen werden beim Neuerstellen des Containers angewendet – für eine Änderung neu deployen.",
@@ -855,5 +861,13 @@
       "noIndex": "Unter {path} liegt eine Ausgabe, aber keine Index-Datei — Anfragen liefern 404. Prüfen Sie Ihr Ausgabeverzeichnis.",
       "notServed": "Der Edge-Proxy antwortete mit HTTP {status} für {path} — dieser Pfad wird nicht ausgeliefert. Prüfen Sie Ihr Ausgabeverzeichnis und die Route."
     }
+  },
+  "serviceEnvironment": {
+    "title": "Laufzeitumgebung des Dienstes",
+    "description": "Gilt nur zur Laufzeit für diesen Dienst. Diese Werte überschreiben Compose-Werte und gleichnamige Projektvariablen. Sie werden beim Neustart oder Bereitstellen angewendet.",
+    "overrides": "Diese Schlüssel haben für diesen Dienst Vorrang vor den Projektwerten: {keys}.",
+    "buildArguments": "Explizite Image-Build-Argumente werden in der Compose-Datei oder Quellkonfiguration bearbeitet. Zum Anwenden erneut bauen und bereitstellen; dieser Editor ändert nur Laufzeitvariablen.",
+    "projectLink": "Gemeinsame Projektumgebung bearbeiten",
+    "loadFailed": "Die Namen der Projektvariablen konnten nicht zum Prüfen von Überschreibungen geladen werden."
   }
 }

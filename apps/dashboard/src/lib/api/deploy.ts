@@ -55,7 +55,7 @@ export interface RestorePlanUI {
   reason?: string;
 }
 
-export type PrepareProjectSource =
+export type PrepareProjectSource = { includeEnv?: boolean } & (
   | {
       source?: "github";
       owner: string;
@@ -73,7 +73,7 @@ export type PrepareProjectSource =
       composePath?: string;
       /** Env already configured for this deploy, for compose interpolation. */
       env?: Record<string, string>;
-    };
+    });
 
 export interface PrepareComposeService {
   /** Set only when this service was hydrated from a PERSISTED row (an edit / redeploy
@@ -176,6 +176,7 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
     clone_url?: string;
     html_url?: string;
     branches?: Array<{ name: string }>;
+    branches_has_more?: boolean;
   };
   singleAppCandidate?: PrepareSingleAppCandidate;
   /** The compose path this scan used (request value, or the one openship.json
@@ -185,6 +186,8 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
   monorepoApps?: PrepareMonorepoApp[];
   monorepoWorkspace?: PrepareMonorepoWorkspace;
   rootEnv?: Record<string, string>;
+  /** Names explicitly declared under openship.json `env` (values stay masked). */
+  openshipEnvKeys?: string[];
   /** Routing config parsed from the repo's vercel.json (persisted on the project). */
   routing?: RoutingConfig;
   // ── Declared overlay (repo-root openship.json) — present only when the repo
@@ -239,7 +242,14 @@ export const deployApi = {
     api.get<any>(endpoints.deploy.list, { params: opts }),
 
   /** Cancel a deployment */
-  cancel: (id: string) => api.post<any>(endpoints.deploy.cancel(id)),
+  cancel: (id: string) =>
+    api.post<{
+      success: boolean;
+      pending: boolean;
+      status: "cancelling" | "cancelled";
+      message: string;
+      error?: string;
+    }>(endpoints.deploy.cancel(id)),
 
   /** Delete a deployment */
   deleteDeployment: (id: string) => api.delete<any>(endpoints.deploy.delete(id)),
@@ -326,6 +336,8 @@ export const deployApi = {
     branch?: string;
     environment?: string;
     envVars?: Record<string, string>;
+    /** Masked root .env rows explicitly selected for trusted server-side import. */
+    sourceEnvKeys?: string[];
     publicEndpoints?: Array<{
       port?: string;
       targetPath?: string;

@@ -30,6 +30,7 @@ const deploymentRepo = vi.hoisted(() => ({
   findInProgressByReleaseVersion: vi.fn(),
 }));
 const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn(), listByDeployment: vi.fn() }));
+const compareCommits = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
@@ -39,12 +40,17 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
+vi.mock("@repo/platform/engine/modules/github/github.service", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  compareCommits,
+}));
+
 import {
   commitSourceKey,
   evaluateDrift,
   releaseSourceKey,
   type UpstreamDrift,
-} from "../../../src/modules/projects/project-crud.service";
+} from "@repo/platform/engine/modules/projects/project-crud.service";
 import type { Project } from "@repo/db";
 
 const SHIPPED = "13140747f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6";
@@ -80,9 +86,79 @@ beforeEach(() => {
   deploymentRepo.findInProgressByReleaseVersion.mockResolvedValue(undefined);
   serviceRepo.listByProject.mockResolvedValue([]);
   serviceRepo.listByDeployment.mockResolvedValue([]);
+  compareCommits.mockReset();
 });
 
 describe("commit drift — the deployed side is live", () => {
+  it("ignores commits outside the project root (#637)", async () => {
+    const p = gitProject({ rootDirectory: "services/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({
+      files: ["services/client/page.tsx"],
+      truncated: false,
+    });
+
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER), {} as never)).toMatchObject({
+      behind: false,
+    });
+    expect(compareCommits).toHaveBeenCalledWith({}, "oblien", "openship", SHIPPED, NEWER);
+  });
+
+  it("reports an update when the project root changed", async () => {
+    const p = gitProject({ rootDirectory: "services/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({
+      files: ["services/backend/src/index.ts"],
+      truncated: false,
+    });
+
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER), {} as never)).toMatchObject({
+      behind: true,
+    });
+  });
+
+  it.each(["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"])(
+    "keeps repository-wide build input %s actionable",
+    async (file) => {
+      const p = gitProject({ rootDirectory: "services/backend" });
+      deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+      compareCommits.mockResolvedValue({ files: [file], truncated: false });
+
+      expect(await evaluateDrift(p, commitUpstream(p, NEWER), {} as never)).toMatchObject({
+        behind: true,
+      });
+    },
+  );
+
+  it("keeps configured shared-package changes actionable", async () => {
+    const p = gitProject({
+      rootDirectory: "services/backend",
+      monorepoSharedPaths: ["packages/shared"],
+    });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({
+      files: ["packages/shared/index.ts"],
+      truncated: false,
+    });
+
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER), {} as never)).toMatchObject({
+      behind: true,
+    });
+  });
+
+  it("keeps the update actionable when GitHub truncates the changed-file list", async () => {
+    const p = gitProject({ rootDirectory: "services/backend" });
+    deploymentRepo.findById.mockResolvedValue({ id: "dep_live", commitSha: SHIPPED });
+    compareCommits.mockResolvedValue({
+      files: ["services/client/page.tsx"],
+      truncated: true,
+    });
+
+    expect(await evaluateDrift(p, commitUpstream(p, NEWER), {} as never)).toMatchObject({
+      behind: true,
+    });
+  });
+
   it("reports no update once the deployment shipped the cached HEAD", async () => {
     // The exact reported case: the cached upstream is old (polled while an older
     // release was live), but the project has since deployed that very commit.

@@ -65,7 +65,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentRuntime: vi.fn(async (dep: { id: string }) =>
     h.resolveErrors[dep.id]
       ? Promise.reject(h.resolveErrors[dep.id])
@@ -85,19 +85,19 @@ vi.mock("../../lib/controller-helpers", () => ({
   platform: () => ({ runtime: { name: "bare" }, routing: { removeRoute: h.removeRoute } }),
 }));
 
-vi.mock("./cleanup-keep-set", () => ({ computeCleanupKeepSet: vi.fn(async () => h.keep) }));
-vi.mock("../../lib/routing-domains", () => ({
+vi.mock("@repo/platform/engine/modules/projects/cleanup-keep-set", () => ({ computeCleanupKeepSet: vi.fn(async () => h.keep) }));
+vi.mock("@repo/platform/engine/lib/routing-domains", () => ({
   buildServiceRouteDomains: () => h.derivedServiceRoutes,
 }));
-vi.mock("../../lib/managed-edge-proxy", () => ({
+vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   releaseManagedHostnames: h.releaseManagedHostnames,
 }));
-vi.mock("../../lib/server-reachability", () => ({
+vi.mock("@repo/platform/engine/lib/server-reachability", () => ({
   createReachabilityProbe: () => ({ isReachable: h.isReachable }),
 }));
-vi.mock("../../lib/cloud/transport", () => ({ resolveOrgCloudUserId: vi.fn(async () => null) }));
-vi.mock("../services/live-state", () => ({ resolveLiveServiceState: () => new Map() }));
-vi.mock("../deployments/pinned-host-ports", () => ({
+vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: vi.fn(async () => null) }));
+vi.mock("@repo/platform/engine/modules/services/live-state", () => ({ resolveLiveServiceState: () => new Map() }));
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   convergeTargetHostPortClaims: h.convergeClaims,
 }));
 
@@ -108,7 +108,7 @@ import {
   executeCleanup,
   type CleanupManifest,
   type CleanupRouteContext,
-} from "./project-cleanup.service";
+} from "@repo/platform/engine/modules/projects/project-cleanup.service";
 
 /** A compose static sub-app's doc-root, as written into `service_deployment.image_ref`. */
 const STATIC_BUILD_DIR = "/opt/openship/static/.builds/bld_1-svc_1";
@@ -673,3 +673,12 @@ describe("collectDeploymentManifest — protectRetained covers directories too",
     expect(typesOf(manifest, FOREIGN_IMAGE)).toEqual([]);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ runtime: { name: "bare" }, routing: { removeRoute: h.removeRoute } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ runtime: { name: "bare" }, routing: { removeRoute: h.removeRoute } }),
+}));

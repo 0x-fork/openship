@@ -104,7 +104,7 @@ vi.mock("@repo/adapters", () => {
 
 vi.mock("../../lib/controller-helpers", () => ({ platform: vi.fn() }));
 
-vi.mock("../../lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   disposeRuntime: vi.fn(),
   resolveDeploymentRuntime: vi.fn(),
   resolveDeploymentPlatform: vi.fn(),
@@ -112,36 +112,36 @@ vi.mock("../../lib/deployment-runtime", () => ({
   hostChannelDeployNotice: vi.fn(() => null),
 }));
 
-vi.mock("../domains/project-route.service", () => ({
+vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   resolveProjectRouteState: vi.fn(async () => ({
     publicEndpoints: [],
     primarySlug: "release-app",
   })),
 }));
 
-vi.mock("../github/clone-auth", () => ({
+vi.mock("@repo/platform/engine/modules/github/clone-auth", () => ({
   cloneOnServerAvailable: vi.fn(() => ({ available: false })),
   resolveBuildGitToken: (...args: unknown[]) => mocks.resolveBuildGitToken(...args),
 }));
 
-vi.mock("../../lib/git-forwarding", () => ({
+vi.mock("@repo/platform/engine/lib/git-forwarding/index", () => ({
   openDeployRelay: (...args: unknown[]) => mocks.openDeployRelay(...args),
 }));
 
-vi.mock("../../lib/org-actor", () => ({ resolveOrgOwner: vi.fn(async () => null) }));
-vi.mock("../settings/settings.service", () => ({
+vi.mock("@repo/platform/engine/lib/org-actor", () => ({ resolveOrgOwner: vi.fn(async () => null) }));
+vi.mock("@repo/platform/engine/modules/settings/settings.service", () => ({
   resolveStrategy: vi.fn(async () => "server"),
 }));
-vi.mock("../../lib/encryption", () => ({
+vi.mock("@repo/platform/engine/lib/encryption", () => ({
   decryptEnvMap: (env: Record<string, string>) => env,
 }));
-vi.mock("../../lib/resources", () => ({
+vi.mock("@repo/platform/engine/lib/resources", () => ({
   resolveRuntimeResources: vi.fn(() => ({})),
   resolveBuildResources: vi.fn(() => ({})),
 }));
 vi.mock("../../lib/request-context", () => ({ buildBackgroundContext: vi.fn(() => ({})) }));
 
-vi.mock("./session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   createSession: vi.fn(),
   appendLog: (...args: unknown[]) => mocks.appendLog(...args),
   updateStatus: vi.fn(),
@@ -149,24 +149,24 @@ vi.mock("./session-manager", () => ({
   endSession: vi.fn(),
 }));
 
-vi.mock("./service-checks", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/service-checks", () => ({
   preCreateServiceDeployments: vi.fn(async () => new Map()),
   emitServiceCheckRun: vi.fn(async () => undefined),
   emitInitialServiceChecks: vi.fn(async () => undefined),
   rollupDeploymentStatus: vi.fn(() => "ready"),
 }));
 
-vi.mock("./compose", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/compose/index", () => ({
   executeComposePipeline: vi.fn(),
   resolveProjectServicePreflightServices: vi.fn(async () => []),
   shouldUseProjectServicePipeline: vi.fn(async () => false),
 }));
 
-vi.mock("../backups/triggers/pre-deploy", () => ({
+vi.mock("@repo/platform/engine/modules/backups/triggers/pre-deploy", () => ({
   firePreDeployBackups: vi.fn(async () => ({ enqueued: 0, failed: 0 })),
 }));
 
-vi.mock("./deployment-lifecycle", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
   onFailure: (...args: unknown[]) => mocks.onFailure(...args),
   onSuccess: (...args: unknown[]) => mocks.onSuccess(...args),
   onCancelled: (...args: unknown[]) => mocks.onCancelled(...args),
@@ -175,11 +175,11 @@ vi.mock("./deployment-lifecycle", () => ({
   routeIssuesWarning: vi.fn(() => "routing warning"),
 }));
 
-vi.mock("./rollback", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/rollback/index", () => ({
   onDeploymentReady: (...args: unknown[]) => mocks.onDeploymentReady(...args),
 }));
 
-vi.mock("../../lib/routing-domains", () => ({
+vi.mock("@repo/platform/engine/lib/routing-domains", () => ({
   auditRoutedDomainTls: vi.fn(async () => []),
   buildProjectRouteDomains: vi.fn(() => []),
   createTrackedSslProvider: vi.fn((ssl) => ssl),
@@ -188,37 +188,37 @@ vi.mock("../../lib/routing-domains", () => ({
   withEnsuredDomainRecord: vi.fn((route) => route),
 }));
 
-vi.mock("../../lib/openship-manifest-sync", () => ({
+vi.mock("@repo/platform/engine/lib/openship-manifest-sync", () => ({
   syncProjectToServerManifest: vi.fn(async () => undefined),
 }));
-vi.mock("./attach-linked-networks", () => ({ attachLinkedNetworks: vi.fn(async () => undefined) }));
-vi.mock("./port-audit.service", () => ({ auditPorts: vi.fn(async () => []) }));
-vi.mock("./stability-audit.service", () => ({ verifyDeployedContainers: vi.fn(async () => []) }));
-vi.mock("./readiness-gate", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/attach-linked-networks", () => ({ attachLinkedNetworks: vi.fn(async () => undefined) }));
+vi.mock("@repo/platform/engine/modules/deployments/port-audit.service", () => ({ auditPorts: vi.fn(async () => []) }));
+vi.mock("@repo/platform/engine/modules/deployments/stability-audit.service", () => ({ verifyDeployedContainers: vi.fn(async () => []) }));
+vi.mock("@repo/platform/engine/modules/deployments/readiness-gate", () => ({
   resolveReadinessGate: vi.fn(() => ({ active: false })),
   runReadinessGate: vi.fn(),
 }));
-vi.mock("./output-audit.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/output-audit.service", () => ({
   auditStaticOutput: vi.fn(async () => []),
   describeOutputFinding: vi.fn(() => ""),
   outputFindingIsBroken: vi.fn(() => false),
   staticOutputTargets: vi.fn(() => []),
 }));
-vi.mock("../../lib/managed-edge-proxy", () => ({
+vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   syncManagedEdgeRoutes: vi.fn(async () => ({ failures: [] })),
   edgeUnsyncedWarning: vi.fn(() => ""),
 }));
-vi.mock("../../lib/project-routing-fields", () => ({
+vi.mock("@repo/platform/engine/lib/project-routing-fields", () => ({
   compileProjectRoutingFields: vi.fn(() => ({})),
 }));
-vi.mock("../../lib/edge-challenge", () => ({ ensureEdgeChallengeReady: vi.fn() }));
-vi.mock("../../lib/edge-vhost-repair", () => ({ repairEdgeVhosts: vi.fn() }));
-vi.mock("../../lib/edge-reconcile", () => ({
+vi.mock("@repo/platform/engine/lib/edge-challenge", () => ({ ensureEdgeChallengeReady: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/edge-vhost-repair", () => ({ repairEdgeVhosts: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/edge-reconcile", () => ({
   ensureRoutingReady: (...args: unknown[]) => mocks.ensureRoutingReady(...args),
 }));
-vi.mock("../../lib/acme-config", () => ({ resolveAcmeProviderOptions: vi.fn(() => ({})) }));
-vi.mock("../../lib/ssh-manager", () => ({ sshManager: {} }));
-vi.mock("./pinned-host-ports", () => ({
+vi.mock("@repo/platform/engine/lib/acme-config", () => ({ resolveAcmeProviderOptions: vi.fn(() => ({})) }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: {} }));
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   listTargetPinnedHostPorts: vi.fn(async () => []),
   prepareTargetPinnedHostPorts: (...args: unknown[]) => mocks.prepareTargetPinnedHostPorts(...args),
   allocateAndReservePinnedHostPort: (...args: unknown[]) =>
@@ -254,9 +254,9 @@ function allocatePinnedHostPort(input: {
   }));
 }
 
-import { platform } from "../../lib/controller-helpers";
-import { resolveDeploymentPlatform } from "../../lib/deployment-runtime";
-import { kickoffBuild } from "./build-pipeline";
+import { platform } from "@repo/platform/engine/lib/platform-config";
+import { resolveDeploymentPlatform } from "@repo/platform/engine/lib/deployment-runtime";
+import { kickoffBuild } from "@repo/platform/engine/modules/deployments/build-pipeline";
 
 const SOURCE_IMAGE = "ghcr.io/acme/release-app:v1.2.3";
 const RESOLVED_IMAGE = "ghcr.io/acme/release-app@sha256:abc123";
@@ -459,6 +459,9 @@ describe("single-app prebuilt release-image pipeline", () => {
         imageRef: RESOLVED_IMAGE,
         prebuiltImage: true,
         startCommand: "",
+        // The decrypted deployment snapshot is also the runtime payload; a
+        // secret must not disappear after being used for image preparation.
+        envVars: { API_TOKEN: "secret" },
       }),
       expect.any(Function),
     );
@@ -714,3 +717,8 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.build).not.toHaveBeenCalled();
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: vi.fn() }));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({ platform: vi.fn() }));

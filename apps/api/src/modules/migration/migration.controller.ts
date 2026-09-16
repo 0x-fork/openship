@@ -12,7 +12,7 @@ import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
-import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
+import { parseRevealKeys, pickRevealed } from "@repo/platform/engine/lib/env-reveal";
 import { isControlPlaneProject, isServerInOrg, param } from "../../lib/controller-helpers";
 import { streamRunSSE } from "../../lib/run-sse";
 import { streamSSE } from "../../lib/sse";
@@ -21,13 +21,13 @@ import {
   revealContainerEnv,
   type DiscoveredStack,
   type DiscoveredService,
-} from "./docker-inspect.service";
-import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "./migrate.service";
-import { assertProjectMovable, ProjectMoveRefused, type ProjectMoveIntent } from "./project-move";
-import { maskEnv, maskServicesEnv } from "../../lib/secret-env";
-import { buildMigrationPreview } from "./migration-preflight";
-import { migrationOrchestrator } from "./migration.orchestrator";
-import { migrationRunBus } from "./migration.sse";
+} from "@repo/platform/engine/modules/migration/docker-inspect.service";
+import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "@repo/platform/engine/modules/migration/migrate.service";
+import { assertProjectMovable, ProjectMoveRefused, type ProjectMoveIntent } from "@repo/platform/engine/modules/migration/project-move";
+import { maskEnv, maskServicesEnv } from "@repo/platform/engine/lib/secret-env";
+import { buildMigrationPreview } from "@repo/platform/engine/modules/migration/migration-preflight";
+import { migrationOrchestrator } from "@repo/platform/engine/modules/migration/migration.orchestrator";
+import { migrationRunBus } from "@repo/platform/engine/modules/migration/migration.sse";
 import {
   sanitizeVolumeStrategies,
   sanitizeSubpaths,
@@ -37,12 +37,12 @@ import {
   sanitizeCustomPaths,
   sanitizeRoutes,
   sanitizeConflictResolution,
-} from "./migration-input";
+} from "@repo/platform/engine/modules/migration/migration-input";
 import {
   getTransferPrefs,
   isValidTransferMode,
   isValidTransferCompression,
-} from "../settings/settings.service";
+} from "@repo/platform/engine/modules/settings/settings.service";
 
 const TERMINAL_MIGRATION = ["succeeded", "failed", "rolled_back"];
 

@@ -16,7 +16,7 @@ vi.mock("@repo/db", async (importOriginal) => {
   };
 });
 
-import { enrichProject } from "../../../src/modules/projects/project-crud.service";
+import { enrichProject } from "@repo/platform/engine/modules/projects/project-crud.service";
 
 const baseProject = {
   id: "proj_1",

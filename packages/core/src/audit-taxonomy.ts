@@ -174,6 +174,13 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     tone: "warning",
     description: "Cleanup did not complete, so the app record was kept for a safe retry.",
   },
+  "project.build_cache.cleared": {
+    category: "apps",
+    action: "cleared the Docker build cache for",
+    label: "Build cache cleared",
+    tone: "warning",
+    description: "Unused build cache was removed from the app's Docker host.",
+  },
   "project:write": {
     category: "apps",
     action: "changed",
@@ -469,7 +476,7 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     tone: "warning",
   },
   // Catalogued because the taxonomy scan is deliberately over-inclusive: it greps
-  // apps/api/src for `eventType:` literals, so a notification-only emit that never
+  // the HTTP API and shared engine for `eventType:` literals, so a notification-only emit that never
   // writes an audit_event row is caught the same as an audit write. Without this the
   // suite fails; with it, an operator who DOES surface these sees a real label.
   "mail.inbound_received": {
@@ -480,6 +487,13 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
   },
 
   /* ---------------- Members & access ---------------- */
+  "identity.provisioned": {
+    category: "members",
+    action: "provisioned the identity",
+    label: "Identity provisioned",
+    tone: "info",
+    description: "A trusted host mapped an external identity to an Openship user.",
+  },
   "organization.created": {
     category: "members",
     action: "created the organization",
@@ -516,6 +530,13 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     action: "changed the role of",
     label: "Member role changed",
     tone: "warning",
+  },
+  "member.updated": {
+    category: "members",
+    action: "changed the membership of",
+    label: "Membership updated by the host",
+    tone: "warning",
+    description: "A trusted host added, changed or removed an organization membership.",
   },
   "member.joined": {
     category: "members",
@@ -556,6 +577,13 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     label: "Invitation sent with pending permissions",
     tone: "info",
     description: "Grants were queued and will apply the moment the invitee joins.",
+  },
+  "invitation.resent": {
+    category: "members",
+    action: "renewed the invitation for",
+    label: "Invitation renewed",
+    tone: "info",
+    description: "The invitation's authority and expiry were renewed; delivery may use email or a link.",
   },
   "invitation.accepted": {
     category: "members",
@@ -820,6 +848,53 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     label: "GitHub app installed",
     tone: "info",
   },
+  "github.source.created": {
+    category: "system",
+    action: "registered the GitHub App source",
+    label: "GitHub App source registered",
+    tone: "info",
+    description:
+      "An organization-owned GitHub App was verified and stored. Secret values are never recorded.",
+  },
+  "github.source.updated": {
+    category: "system",
+    action: "updated the GitHub App source",
+    label: "GitHub App source updated",
+    tone: "info",
+    description: "A GitHub App's identity, endpoint, or encrypted credentials changed.",
+  },
+  "github.source.verified": {
+    category: "system",
+    action: "verified the GitHub App source",
+    label: "GitHub App source verified",
+    tone: "info",
+  },
+  "github.source.defaulted": {
+    category: "system",
+    action: "made the default GitHub App source",
+    label: "Default GitHub App source changed",
+    tone: "info",
+  },
+  "github.source.deleted": {
+    category: "system",
+    action: "deleted the GitHub App source",
+    label: "GitHub App source deleted",
+    tone: "warning",
+    description:
+      "The local App credentials and installation bindings were removed; the GitHub App itself was not uninstalled on GitHub.",
+  },
+  "github.connect": {
+    category: "system",
+    action: "started connecting GitHub for",
+    label: "GitHub connection started",
+    tone: "info",
+  },
+  "github.installation.claim": {
+    category: "system",
+    action: "claimed the GitHub installation for",
+    label: "GitHub installation claimed",
+    tone: "info",
+  },
   "github.disconnect": {
     category: "system",
     action: "disconnected GitHub from",
@@ -900,6 +975,11 @@ export const AUDIT_EVENTS: Record<string, AuditEventDef> = {
     category: "system",
     action: "changed the notification defaults of",
     label: "Notification defaults changed",
+  },
+  "notification_delivery.seen": {
+    category: "system",
+    action: "marked as seen",
+    label: "Notification marked as seen",
   },
   "notifications:write": {
     category: "system",

@@ -10,7 +10,12 @@ export type DeploymentStatus =
   | "deploying"
   | "ready"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "partial_failure"
+  | "action_required"
+  | "rejected"
+  | "no_changes"
+  | "reconciling";
 
 export type Environment = "production" | "preview" | "development";
 
@@ -232,6 +237,25 @@ export type ComposeAdvancedPatch = {
 
 export type ComposeAdvanced = {
   /**
+   * Provenance for a Compose `image:` expression. `resolved` remains in the
+   * service's ordinary `image` column for display and rollback snapshots; this
+   * record keeps the authored expression so deployment can evaluate it against
+   * the final project environment instead of freezing a scan-time value.
+   *
+   * `unresolvedVariables` describes the scan-time scope. It lets deploy safely
+   * reuse a concrete value supplied by the compose-adjacent `.env` file when
+   * that file is not part of the runtime environment, while still refusing a
+   * genuinely unresolved expression. Internal/compose-owned.
+   */
+  imageTemplate?: {
+    expression: string;
+    unresolvedVariables: string[];
+    /** Value produced by the compose-adjacent `.env` before project env is
+     * overlaid. Used only to recognize an untouched legacy scan during the
+     * one-time provenance migration. */
+    sourceValue?: string;
+  };
+  /**
    * Environment keys whose stored inline value is the original Compose
    * interpolation expression. Values stay in the masked `environment` column;
    * this names-only marker lets deploy resolve them against the final env layers
@@ -239,6 +263,9 @@ export type ComposeAdvanced = {
    * Internal/compose-owned: API clients do not author this field.
    */
   environmentTemplateKeys?: string[];
+  /** Inline environment keys explicitly edited, removed, or kept during drift
+   * review. Names only; template provenance still controls interpolation. */
+  environmentOverrideKeys?: string[];
   /**
    * Build-argument keys whose stored value is the original expression from a
    * raw Compose file. Unlike `buildArgs` received from the CLI (already expanded
@@ -250,6 +277,9 @@ export type ComposeAdvanced = {
    */
   buildArgTemplateKeys?: string[];
   healthcheck?: ComposeHealthcheck;
+  /** False opts this service out of steady-state outage monitoring and Docker
+   * event acceleration. Deployment readiness remains independent. */
+  monitoringEnabled?: boolean;
   /**
    * Per-service deploy-time readiness gate, overriding the project's for THIS
    * service. Absent ⇒ inherit the project's; neither ⇒ off.

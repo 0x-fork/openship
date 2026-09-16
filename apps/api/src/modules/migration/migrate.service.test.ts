@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import type { DiscoveredService } from "./docker-reconcile";
+import type { DiscoveredService } from "@repo/platform/engine/modules/migration/docker-reconcile";
 
 const getFileContent = vi.hoisted(() => vi.fn());
 
-vi.mock("../github/github.service", async (importOriginal) => ({
+vi.mock("@repo/platform/engine/modules/github/github.service", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getFileContent,
 }));
@@ -12,7 +12,7 @@ import {
   buildAdoptedServiceRows,
   parseRepoCompose,
   type RepoComposeService,
-} from "./migrate.service";
+} from "@repo/platform/engine/modules/migration/migrate.service";
 
 const repoSvc = (over: Partial<RepoComposeService> & { name: string }): RepoComposeService => ({
   ports: [],

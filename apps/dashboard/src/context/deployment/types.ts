@@ -1,9 +1,23 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
-import { getBuildImage, STACKS, resolveWorkload, type WorkloadType, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier } from "@repo/core";
+import {
+  getBuildImage,
+  STACKS,
+  resolveWorkload,
+  type WorkloadType,
+  type ProjectType,
+  type BuildStrategy,
+  type DeployTarget,
+  type RuntimeMode,
+  type StackId,
+  type RoutingConfig,
+  type OpenshipReadiness,
+  type ResourceTier as CoreResourceTier,
+} from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import type { BuildSessionLoadResult } from "./load-session";
+import type { PersistedProjectEnv } from "@/lib/project-env-diff";
 import { randomUUID } from "@/lib/random-uuid";
 
 // ─── Monorepo sub-app ────────────────────────────────────────────────────────
@@ -177,6 +191,8 @@ export interface PublicEndpoint {
   id: string;
   port: string;
   targetPath: string;
+  /** Preserve an imported nginx `location = <path>` route during migration. */
+  exact?: boolean;
   domain: string;
   customDomain: string;
   domainType: "free" | "custom";
@@ -384,10 +400,19 @@ export interface DeploymentConfig {
   buildImage: string;
   publicEndpoints: PublicEndpoint[];
   envVars: EnvironmentVariable[];
-  /** Root .env values detected during prepare; user must import before they apply. */
+  /**
+   * Authoritative production-env snapshot used to persist only the wizard's
+   * changes. `null` means an existing project's env was never loaded, which is
+   * intentionally different from a project with no saved variables.
+   */
+  projectEnvBaseline: PersistedProjectEnv[] | null;
+  /** Root .env values detected during prepare; user must import before they apply.
+   *  Explicit openship.json env is placed directly in envVars instead. */
   rootEnvVars: EnvironmentVariable[];
   branch: string;
   branches: string[];
+  branchPage: number;
+  branchesHasMore: boolean;
   services: ComposeServiceInfo[];
   /**
    * Compose/import projects can either deploy each parsed service, or ignore the
@@ -469,6 +494,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   noPublicRoute: false,
   branch: "main",
   branches: [],
+  branchPage: 0,
+  branchesHasMore: false,
   services: [],
   serviceDeploymentMode: "single",
   cloudResourceTier: "low",
@@ -487,14 +514,13 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
     workloadType: "web",
   },
   envVars: [],
+  projectEnvBaseline: null,
   rootEnvVars: [],
 };
 
 function isSingleFlowAppStack(framework: string | undefined): framework is StackId {
   return Boolean(
-    framework &&
-    framework in STACKS &&
-    !NON_APP_SINGLE_FLOW_STACKS.has(framework as FrameworkId),
+    framework && framework in STACKS && !NON_APP_SINGLE_FLOW_STACKS.has(framework as FrameworkId),
   );
 }
 
@@ -521,7 +547,10 @@ export function getRecommendedSingleAppBuildImage(
 }
 
 export function resolveBuildImageForDeploymentMode(
-  config: Pick<DeploymentConfig, "projectType" | "serviceDeploymentMode" | "framework" | "packageManager" | "buildImage">,
+  config: Pick<
+    DeploymentConfig,
+    "projectType" | "serviceDeploymentMode" | "framework" | "packageManager" | "buildImage"
+  >,
   nextMode: DeploymentConfig["serviceDeploymentMode"] = config.serviceDeploymentMode,
 ): string {
   if (config.projectType !== "services") {
@@ -559,13 +588,12 @@ export function resolveBuildImageForDeploymentMode(
 // importers are unchanged and client + server share one definition.
 export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } from "@repo/core";
 
-export function createPublicEndpoint(
-  overrides: Partial<PublicEndpoint> = {},
-): PublicEndpoint {
+export function createPublicEndpoint(overrides: Partial<PublicEndpoint> = {}): PublicEndpoint {
   return {
     id: overrides.id ?? randomUUID(),
     port: overrides.port ?? "",
     targetPath: overrides.targetPath ?? "",
+    ...(overrides.exact ? { exact: true } : {}),
     domain: overrides.domain ?? "",
     customDomain: overrides.customDomain ?? "",
     domainType: overrides.domainType ?? "free",
@@ -607,8 +635,8 @@ function normalizePublicEndpointForMode(
     return createPublicEndpoint({
       ...endpoint,
       port: opts.isPrimary
-        ? (opts.runtimePort || endpoint.port || "")
-        : (endpoint.port || opts.runtimePort || ""),
+        ? opts.runtimePort || endpoint.port || ""
+        : endpoint.port || opts.runtimePort || "",
       targetPath: "",
     });
   }
@@ -620,9 +648,7 @@ function normalizePublicEndpointForMode(
   });
 }
 
-export function syncPublicEndpointState(
-  config: DeploymentConfig,
-): DeploymentConfig {
+export function syncPublicEndpointState(config: DeploymentConfig): DeploymentConfig {
   const workload = workloadOf(config.options);
 
   // A worker (#538) binds no port and is never routed — it has no public
@@ -638,11 +664,7 @@ export function syncPublicEndpointState(
 
   const isWeb = workload === "web";
   const linkedRuntimePort = isWeb
-    ? (
-        config.options.productionPort ||
-        config.publicEndpoints[0]?.port ||
-        ""
-      )
+    ? config.options.productionPort || config.publicEndpoints[0]?.port || ""
     : config.options.productionPort;
   const endpoints = ensurePublicEndpoints(
     config.publicEndpoints,
@@ -653,11 +675,13 @@ export function syncPublicEndpointState(
       : {
           targetPath: "/",
         },
-  ).map((endpoint, index) => normalizePublicEndpointForMode(endpoint, {
-    hasServer: isWeb,
-    runtimePort: linkedRuntimePort,
-    isPrimary: index === 0,
-  }));
+  ).map((endpoint, index) =>
+    normalizePublicEndpointForMode(endpoint, {
+      hasServer: isWeb,
+      runtimePort: linkedRuntimePort,
+      isPrimary: index === 0,
+    }),
+  );
   const primary = endpoints[0];
 
   return {
@@ -666,7 +690,7 @@ export function syncPublicEndpointState(
     options: {
       ...config.options,
       productionPort: isWeb
-        ? (linkedRuntimePort || primary?.port || "")
+        ? linkedRuntimePort || primary?.port || ""
         : config.options.productionPort,
     },
   };
@@ -703,10 +727,10 @@ export function getPublicEndpointHosts(
       const label = endpoint.domain?.trim();
       return label && baseDomain ? `${label}.${baseDomain}` : "";
     })
-    .filter((hostname, index, hostnames) => Boolean(hostname) && hostnames.indexOf(hostname) === index);
+    .filter(
+      (hostname, index, hostnames) => Boolean(hostname) && hostnames.indexOf(hostname) === index,
+    );
 }
-
-
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -743,6 +767,8 @@ export interface DeploymentState {
   deploymentSuccess: boolean;
   deploymentFailed: boolean;
   deploymentCanceled: boolean;
+  /** A cancelled row whose worker lease has not acknowledged completion yet. */
+  cancellationPending: boolean;
   failureMessage: string;
   warningMessage: string;
   /**
@@ -813,6 +839,7 @@ export const INITIAL_STATE: DeploymentState = {
   deploymentSuccess: false,
   deploymentFailed: false,
   deploymentCanceled: false,
+  cancellationPending: false,
   failureMessage: "",
   warningMessage: "",
   decisionPending: false,
@@ -863,6 +890,8 @@ export type DeploymentStatus = "building" | "deploying" | "ready" | "failed" | "
 export interface DeploymentContextType {
   // Single source of truth
   config: DeploymentConfig;
+  /** Source detection is in flight; save/deploy must wait for a consistent config. */
+  isRescanning: boolean;
   state: DeploymentState;
   terminalRef: React.MutableRefObject<Terminal | null>;
   canStreamContainer: React.MutableRefObject<boolean>;
@@ -876,11 +905,22 @@ export interface DeploymentContextType {
     owner: string,
     repo: string,
     force?: string,
-    context?: { branch?: string; projectId?: string; composePath?: string },
+    context?: {
+      branch?: string;
+      projectId?: string;
+      composePath?: string;
+      env?: Record<string, string>;
+      preserveEnvState?: boolean;
+    },
   ) => Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }>;
   initializeFromLocal: (
     path: string,
-    context?: { projectId?: string; composePath?: string },
+    context?: {
+      projectId?: string;
+      composePath?: string;
+      env?: Record<string, string>;
+      preserveEnvState?: boolean;
+    },
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
   /**
    * Re-run detection pinned to an explicit compose file path (or clear it with
@@ -895,6 +935,8 @@ export interface DeploymentContextType {
   rescanWithComposePath: (
     composePath: string,
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
+  /** Re-detect the selected branch before applying its name and build defaults. */
+  rescanWithBranch: (branch: string) => Promise<{ success: boolean; error?: string }>;
   /** Folder-upload hydration — seed from the user-picked stack's defaults
    *  (no auto-detection); falls back to the session scan when no stack given. */
   initializeFromUpload: (
@@ -908,7 +950,11 @@ export interface DeploymentContextType {
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
 
   // Build lifecycle
-  startDeployment: (overrides?: { runtimeMode?: RuntimeMode; buildStrategy?: BuildStrategy; saveConfigOnly?: boolean }) => Promise<string | null>;
+  startDeployment: (overrides?: {
+    runtimeMode?: RuntimeMode;
+    buildStrategy?: BuildStrategy;
+    saveConfigOnly?: boolean;
+  }) => Promise<string | null>;
   connectToBuild: (deploymentId?: string, startBuild?: boolean) => Promise<void>;
   loadBuildSession: (deploymentId: string) => Promise<BuildSessionLoadResult>;
   stopDeployment: () => Promise<void>;

@@ -25,20 +25,22 @@ import {
   type CommandExecutor,
 } from "@repo/adapters";
 import { getRequestContext } from "../../lib/request-context";
-import { withDeploymentPlatform } from "../../lib/deployment-runtime";
-import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
-import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
+import { withDeploymentPlatform } from "@repo/platform/engine/lib/deployment-runtime";
+import { ensureEdgeChallengeReady } from "@repo/platform/engine/lib/edge-challenge";
+import { repairEdgeVhosts } from "@repo/platform/engine/lib/edge-vhost-repair";
 import { permission } from "../../lib/permission";
 import { param } from "../../lib/controller-helpers";
 import { streamSSE } from "../../lib/sse";
-import { sshManager } from "../../lib/ssh-manager";
-import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
-import { deliverManagedImage } from "../../lib/deliver-managed-image";
-import { resolveAcmeProviderOptions } from "../../lib/acme-config";
-import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
-import { applyProjectRouting } from "./routing-apply.service";
-import { reapplyProjectLiveRoutes } from "./project-route.service";
-import { resolveProjectLiveDeployTarget } from "../projects/project-deploy-target";
+import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
+import { pinnedEdgeImage, withPinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
+import { deliverManagedImage } from "@repo/platform/engine/lib/deliver-managed-image";
+import { resolveAcmeProviderOptions } from "@repo/platform/engine/lib/acme-config";
+import { withLiveProjectRuntimeMutation } from "@repo/platform/engine/lib/project-runtime-lock";
+import { applyProjectRouting } from "@repo/platform/engine/modules/domains/routing-apply.service";
+import { reapplyProjectLiveRoutes } from "@repo/platform/engine/modules/domains/project-route.service";
+import { canRouteSelfApp } from "@repo/platform/engine/lib/self-app-routing";
+import { resolveProjectLiveDeployTarget } from "@repo/platform/engine/modules/projects/project-deploy-target";
+import { findLocalServer } from "@repo/platform/engine/lib/startup/self-server";
 import {
   createEdgeConsentSession,
   getEdgeConsentSession,
@@ -87,7 +89,7 @@ export async function resolveProjectServer(
   // The active deployment snapshot is where the live edge actually runs. The
   // mutable project binding is only the canonical resolver's fallback for a
   // legacy/partial snapshot, never the first choice.
-  const { deployTarget, serverId } = await resolveProjectLiveDeployTarget(project);
+  let { deployTarget, serverId } = await resolveProjectLiveDeployTarget(project);
   if (deployTarget === "cloud") {
     return {
       error: "Cloud projects manage routing at the edge automatically",
@@ -97,6 +99,13 @@ export async function resolveProjectServer(
   }
   if (!project.activeDeploymentId)
     return { error: "Deploy the project before setting up its edge", status: 400 };
+  if (!serverId && deployTarget === "local") {
+    // A derived local target is represented by the absence of a durable server
+    // binding. Resolve its canonical row for the edge executor, but do not write
+    // it back to the project: edge-status is read-only, and doing so would change
+    // the destination of the project's next deployment from local to server.
+    serverId = (await findLocalServer().catch(() => null))?.id ?? null;
+  }
   if (!serverId) return { error: "Project is not deployed to a server", status: 400 };
   // Snapshot metadata is historical input, not an authorization boundary.
   // Reject a stale/foreign id before any reachability or SSH operation uses it.
@@ -251,6 +260,7 @@ export async function ensureEdgeStream(c: Context) {
       });
 
       appendEdgeLog(session.id, "Edge ready — applying routes…");
+      let routeWarnings = false;
       const routesApplied = await withLiveProjectRuntimeMutation(id, async (liveProject) => {
         // The consent/install phase can take minutes. Resolve the live target again
         // only after taking the teardown lock: a redeploy may have moved the project,
@@ -279,20 +289,34 @@ export async function ensureEdgeStream(c: Context) {
         // The shared runtime lock remains held even when either best-effort write
         // times out or fails, so deletion cannot finish and then have this callback
         // recreate a route for a project that no longer exists.
+        const onWarning = (message: string) => {
+          routeWarnings = true;
+          appendEdgeLog(session.id, message, "warn");
+        };
         await reapplyProjectLiveRoutes(liveProject, [], {
           managedEdgeSyncedByCaller: true,
-        }).catch((e) =>
-          appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn"),
-        );
-        await applyProjectRouting(id).catch((e) =>
-          appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn"),
-        );
+          isSelfApp: await canRouteSelfApp(ctx, id),
+          onWarning,
+        }).catch((e) => {
+          routeWarnings = true;
+          appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn");
+        });
+        await applyProjectRouting(id, { onWarning }).catch((e) => {
+          routeWarnings = true;
+          appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn");
+        });
         return true;
       });
       if (!routesApplied) {
         throw new Error("The project was deleted while edge setup was in progress");
       }
-      appendEdgeLog(session.id, "Done — routes are live.");
+      appendEdgeLog(
+        session.id,
+        routeWarnings
+          ? "Edge setup finished with route warnings. Review the messages above."
+          : "Edge setup and route application finished.",
+        routeWarnings ? "warn" : "info",
+      );
       finishEdgeConsentSession(session.id, "completed");
     } catch (err) {
       appendEdgeLog(session.id, safeErrorMessage(err), "error");

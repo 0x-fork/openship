@@ -1,4 +1,5 @@
 export { user, session, account, verification } from "./auth";
+export { externalIdentity, externalNamespace, platformInstance } from "./embedding";
 export { organization, member, invitation } from "./organization";
 export { auditEvent } from "./audit-event";
 export { auditSettings } from "./audit-settings";
@@ -8,8 +9,9 @@ export { orphanedResource } from "./orphaned-resource";
 export { hostPortClaim } from "./host-port-claim";
 export { resourceGrant } from "./resource-grant";
 export { invitationPendingGrant } from "./invitation-pending-grant";
+export { gitSource } from "./git-source";
 export { gitInstallation } from "./github";
-export { githubInstallState } from "./github-install-state";
+export { githubInstallState, type GithubInstallStatePayload } from "./github-install-state";
 export { projectGroup, project, envVar } from "./project";
 export { deployment, buildSession } from "./deployment";
 export { domain } from "./domain";
@@ -42,6 +44,7 @@ export { resourceUsage, RESOURCE_BUCKET_MINUTES, SINGLE_APP_SERVICE_KEY } from "
 export { terminalSessions } from "./terminal-sessions";
 export { serviceTerminalSessions } from "./service-terminal-sessions";
 export { cloudHandoffCode } from "./cloud-handoff-code";
+export { dataTransferSession, dataTransferChunk } from "./data-transfer";
 export { personalAccessToken } from "./personal-access-token";
 export { personalAccessTokenGrant } from "./personal-access-token-grant";
 export { oauthApplication, oauthAccessToken, oauthConsent } from "./oauth";

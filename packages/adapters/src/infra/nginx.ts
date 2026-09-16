@@ -68,6 +68,7 @@ import {
   type ProxySettings,
 } from "@repo/core";
 import { cloudEdgeRealIpConf, isCloudFrontedHost } from "./edge-real-ip";
+import { EDGE_UPSTREAM_DOWN_HANDLER } from "./edge-upstream-down";
 import { sq } from "../system/local-shell";
 import type { RootChecked } from "../system/privilege";
 import { edgeDownExplanation } from "../system/edge-exec-error";
@@ -196,8 +197,11 @@ const FORWARD_VARS = `    set $openship_fwd_proto $scheme;
  * 2 — `proxy_pass_header X-Accel-Buffering`, so an upstream's no-buffering instruction
  *     survives the second proxy hop. Vhosts written before it stall SSE behind Cloud's
  *     edge (GH-570).
+ * 3 — the upstream-down `error_page` handler ({@link EDGE_UPSTREAM_DOWN_HANDLER}). Vhosts
+ *     written before it serve OpenResty's stock 502 — which, behind Openship Cloud's
+ *     edge, is a page branded for a third party on the operator's own domain (#556).
  */
-export const VHOST_GENERATION = 2;
+export const VHOST_GENERATION = 3;
 
 /** Marker line carrying {@link VHOST_GENERATION}, matched by {@link readVhostGeneration}. */
 const GENERATION_MARKER = `# openship-vhost-gen: ${VHOST_GENERATION}`;
@@ -273,8 +277,9 @@ const WEBHOOK_LOCATION_PREFIX = "/_openship/hooks/";
  * rewrites. `httpsUpgrade` adds {@link HTTPS_UPGRADE} ahead of that chain, for the one
  * block that must bounce plain HTTP.
  *
- * The emitted set is unique BY NAME, built through `claimed`: nginx's duplicate check
- * compares location names and `^~` only sets `noregex`, so a `pathPrefix: "/"` — which a
+ * The emitted set is unique BY MATCH TYPE + NAME, built through `claimed`: nginx permits
+ * an exact and inclusive location for the same path, but compares inclusive location
+ * names without regard to `^~`. Thus a prefix `pathPrefix: "/"` — which a
  * capture-free `vercel.json` rewrite produces, one of Vercel's own documented shapes —
  * sat next to `location /` as `[emerg] duplicate location "/"`. The whole vhost is then
  * refused, and since a routing failure never fails a deploy the domain went dark behind
@@ -288,7 +293,13 @@ const WEBHOOK_LOCATION_PREFIX = "/_openship/hooks/";
 function renderProxyLocations(route: RouteConfig, opts: { httpsUpgrade: boolean }): string {
   if (!route.proxyLocations || route.proxyLocations.length === 0) return "";
   const head = `${opts.httpsUpgrade ? HTTPS_UPGRADE : ""}${renderRedirectRules(route, "        ")}`;
-  const claimed = new Set<string>(["/", WEBHOOK_LOCATION_PREFIX]);
+  const claimed = new Set<string>([
+    "prefix:/",
+    `prefix:${WEBHOOK_LOCATION_PREFIX}`,
+    // An exact webhook match would not be a duplicate, but it would outrank and
+    // hijack the edge-owned delivery endpoint just as surely as a prefix would.
+    `exact:${WEBHOOK_LOCATION_PREFIX}`,
+  ]);
   const blocks: string[] = [];
   for (const loc of route.proxyLocations) {
     assertValidUpstream(loc.targetUrl);
@@ -296,10 +307,12 @@ function renderProxyLocations(route: RouteConfig, opts: { httpsUpgrade: boolean 
     const headers = loc.external ? externalProxyHeaders(loc.targetUrl) : PROXY_HEADERS;
     if (!loc.pattern || !loc.upstreamPath) {
       assertValidLiteralPath(loc.pathPrefix, "proxy location prefix");
-      if (claimed.has(loc.pathPrefix)) continue;
-      claimed.add(loc.pathPrefix);
+      const kind = loc.exact ? "exact" : "prefix";
+      const key = `${kind}:${loc.pathPrefix}`;
+      if (claimed.has(key)) continue;
+      claimed.add(key);
       blocks.push(`
-    location ^~ ${loc.pathPrefix} {
+    location ${loc.exact ? "=" : "^~"} ${loc.pathPrefix} {
         ${head}proxy_pass ${loc.targetUrl};
         ${headers}
     }`);
@@ -312,8 +325,8 @@ function renderProxyLocations(route: RouteConfig, opts: { httpsUpgrade: boolean 
     // only the pattern's own captures may be `$…` there.
     assertNoRuntimeVariable(loc.upstreamPath, "rewrite upstream path", true);
     const match = `^${toNginxPattern(loc.pattern)}$`;
-    if (claimed.has(`~ ${match}`)) continue;
-    claimed.add(`~ ${match}`);
+    if (claimed.has(`regex:${match}`)) continue;
+    claimed.add(`regex:${match}`);
     blocks.push(`
     location ~ ${match} {
         ${head}rewrite ${match} ${loc.upstreamPath} break;
@@ -1876,10 +1889,22 @@ export class NginxProvider implements RoutingProvider, SslProvider {
         ? `\n\n${renderSlashFallback(route.staticRoot)}`
         : "";
 
+    // The upstream-down page (#556), appended to every block that serves — same reason as
+    // `slashFallback` above: it is a named location, so it has to exist in whichever server
+    // block the `error_page` fired in.
+    //
+    // Only where something can actually 502. A host redirect has no upstream at all, and a
+    // static route serves from disk — EXCEPT when a compiled `vercel.json` gave it proxy
+    // locations, which is why this tests for an upstream rather than for `!staticRoot`.
+    const proxiesUpstream =
+      !hostRedirect &&
+      (!("staticRoot" in route && route.staticRoot) || (route.proxyLocations?.length ?? 0) > 0);
+    const upstreamDown = proxiesUpstream ? `\n\n${EDGE_UPSTREAM_DOWN_HANDLER}` : "";
+
     // `location /` for a block that serves the app.
     const serveLocation = `    location / {
         ${redirectRules}${urlShape}${locationBody}
-    }${slashFallback}`;
+    }${slashFallback}${upstreamDown}`;
 
     // `location /` for the :80 block of a route that has a real cert: send the
     // visitor to https — unless a CDN already terminated TLS and reached us on
@@ -1895,7 +1920,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       ? serveLocation
       : `    location / {
         ${HTTPS_UPGRADE}${redirectRules}${urlShape}${locationBody}
-    }${slashFallback}`;
+    }${slashFallback}${upstreamDown}`;
 
     // Everything both server blocks share, after the per-block preamble.
     const sharedBody = `${serverHeaders}${proxyOpts}

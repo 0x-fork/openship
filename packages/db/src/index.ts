@@ -1,5 +1,5 @@
 // ─── Database client ─────────────────────────────────────────────────────────
-export { db, getDriver, getPgPool, closeDb, type Database, type Driver } from "./client";
+export { db, getDriver, getPgPool, closeDb, type Database, type DatabaseTransaction, type Driver } from "./client";
 // The dev hot-reload contract: shutdown must free the PGlite lock inside the
 // successor's takeover grace, or every reload hard-kills the DB mid-close.
 export { DEV_LOCK_TAKEOVER_GRACE_MS, isDevWatchReload } from "./pglite-lock";
@@ -29,6 +29,7 @@ export {
   dumpSubgraph,
   countInstanceSubgraphTables,
   restoreSubgraph,
+  restoreSubgraphInTransaction,
   deleteProjectSubgraph,
   dumpDatabase,
   restoreDatabase,
@@ -52,6 +53,7 @@ export {
   createSessionRepo,
   createAccountRepo,
   createGitInstallationRepo,
+  createGitSourceRepo,
   createProjectGroupRepo,
   createProjectRepo,
   createDeploymentRepo,
@@ -62,6 +64,7 @@ export {
   normalizeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
+  unresolvedComposeEnvironmentKeys,
   composeSpecDiff,
   createSettingsRepo,
   createServerRepo,
@@ -77,6 +80,8 @@ export {
   type Account,
   type GitInstallation,
   type NewGitInstallation,
+  type GitSource,
+  type NewGitSource,
   type ProjectGroup,
   type NewProjectGroup,
   type Project,
@@ -134,6 +139,7 @@ export {
   type NewBackupRestore,
   type BackupRunStatus,
   type BackupRestoreStatus,
+  type PolicyLastRunSummary,
   type DockerMigrationRun,
   type NewDockerMigrationRun,
   type DockerMigrationStatus,
@@ -214,3 +220,4 @@ export {
   sql,
   count,
 } from "drizzle-orm";
+export * from "./project-transfer";

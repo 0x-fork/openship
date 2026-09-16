@@ -13,12 +13,12 @@
   },
   "topupsComingSoon": "Einmalige Guthaben-Aufladungen kommen bald – hier können Sie zusätzlich zu Ihrem monatlichen Kontingent Guthaben hinzufügen.",
   "header": {
-    "credits": "Compute",
-    "creditsSuffix": "of {limit}",
-    "overQuota": "Over quota",
+    "credits": "Credits",
+    "creditsSuffix": "von {limit}",
+    "overQuota": "Kontingent überschritten",
     "bandwidth": "Bandwidth",
-    "bandwidthNote": "combined in + out",
-    "build": "Build time",
+    "bandwidthNote": "Ein- und Ausgang gesamt",
+    "build": "Build-Zeit",
     "min": "min",
     "capacity": "Capacity",
     "workspaces": "workspaces",
@@ -35,9 +35,10 @@
     "invoices": "Rechnungen"
   },
   "portal": {
-    "openButton": "Stripe-Portal öffnen",
+    "openButton": "Abrechnungsportal öffnen",
     "errorMissingUrl": "Portal-URL fehlt in der Antwort",
-    "errorOpenFailed": "Stripe-Portal konnte nicht geöffnet werden"
+    "errorOpenFailed": "Stripe-Portal konnte nicht geöffnet werden",
+    "supportButton": "Support kontaktieren"
   },
   "unavailable": {
     "notConnected": {
@@ -67,7 +68,10 @@
     "loadError": "Tarife konnten nicht geladen werden",
     "genericError": "Etwas ist schiefgelaufen",
     "tryAgain": "Erneut versuchen",
-    "checkoutError": "Bezahlvorgang konnte nicht gestartet werden"
+    "checkoutError": "Bezahlvorgang konnte nicht gestartet werden",
+    "replacementNotice": "Ein Wechsel des Tarifs oder Abrechnungsintervalls startet nach der Zahlung einen neuen Zeitraum zum vollen gewählten Preis. Es gibt keine automatische anteilige Verrechnung.",
+    "changeViaSupport": "Kontaktiere den Support, um dein aktuelles Abonnement zu ändern.",
+    "billingUnavailable": "Käufe sind für dieses Konto noch nicht verfügbar."
   },
   "pricing": {
     "custom": "Individuell",
@@ -75,26 +79,31 @@
     "currentPlan": "Aktueller Tarif",
     "contactSales": "Vertrieb kontaktieren",
     "freeForever": "Für immer kostenlos",
-    "upgrade": "Upgrade"
+    "upgrade": "Upgrade",
+    "comingSoon": "Demnächst",
+    "billingInterval": "Abrechnungsintervall",
+    "monthly": "Monatlich",
+    "annual": "Jährlich",
+    "billedAnnually": "Jährliche Abrechnung"
   },
   "topups": {
     "loadError": "Aufladepakete konnten nicht geladen werden",
     "title": "Guthaben aufladen",
-    "description": "Einmalige Guthabenpakete, die über Stripe abgerechnet werden. Guthaben verfällt nie und wird zusätzlich zu deinem monatlichen Kontingent gutgeschrieben.",
+    "description": "Einmalige Credit-Pakete werden nach der Zahlung deinem Cloud-Guthaben gutgeschrieben.",
     "tryAgain": "Erneut versuchen",
-    "credits": "Compute-Minuten",
+    "credits": "Credits",
     "redirecting": "Weiterleitung…",
     "buy": "Kaufen",
     "empty": "Derzeit sind keine Aufladepakete verfügbar.",
     "receiptsTitle": "Letzte Aufladungen",
-    "receiptsDescription": "Belege werden in Stripe verwaltet – öffne das Abrechnungsportal, um deinen Rechnungsverlauf einzusehen und Belege herunterzuladen.",
+    "receiptsDescription": "Belege für Credit-Käufe anzeigen oder anfordern.",
     "opening": "Wird geöffnet…",
-    "openPortal": "Stripe-Portal öffnen",
+    "openPortal": "Abrechnungsportal öffnen",
     "checkoutError": "Bezahlvorgang konnte nicht gestartet werden",
     "portalError": "Abrechnungsportal konnte nicht geöffnet werden"
   },
   "overview": {
-    "creditsLeft": "Compute-Minuten übrig",
+    "creditsLeft": "Credits übrig",
     "planLabel": "Tarif {name}",
     "usedThisPeriod": "In diesem Zeitraum verbraucht",
     "resets": "Zurücksetzung",
@@ -106,12 +115,12 @@
     "viewFullUsage": "Vollständige Nutzung anzeigen",
     "noUsageYet": "Noch keine Nutzung",
     "usageError": "Nutzung konnte nicht geladen werden",
-    "needMoreCredits": "Mehr Compute-Minuten benötigt?",
+    "needMoreCredits": "Mehr Credits benötigt?",
     "oneTimeTopups": "Einmalige Aufladungen, keine Änderung des Abonnements",
     "seeAllPacks": "Alle Pakete ansehen",
     "packsError": "Pakete konnten nicht geladen werden",
     "noPacks": "Keine Aufladepakete verfügbar.",
-    "creditsAmount": "{n} Compute-Minuten",
+    "creditsAmount": "{n} Credits",
     "oneTime": "{price} einmalig",
     "buy": "Kaufen",
     "checkoutError": "Bezahlvorgang konnte nicht gestartet werden"
@@ -122,7 +131,7 @@
       "balance": "Guthaben",
       "balanceSuffix": "von {limit} Credits",
       "consumed": "In diesem Zeitraum verbraucht",
-      "credits": "Compute-Minuten",
+      "credits": "Credits",
       "burnRate": "Verbrauchsrate",
       "burnRateSuffix": "Credits/Tag (letzte 7 T.)",
       "projected": "Prognose zum Periodenende",
@@ -141,7 +150,7 @@
       "subtitle": "Credits werden anteilig der abgerechneten Ressourcennutzung im ausgewählten Zeitraum zugeordnet.",
       "resource": "Ressource",
       "units": "Einheiten",
-      "credits": "Compute-Minuten",
+      "credits": "Credits",
       "percentOfTotal": "% der Gesamtsumme",
       "loading": "Wird geladen…",
       "empty": "Keine Nutzung im ausgewählten Zeitraum."
@@ -201,14 +210,36 @@
       "unpaid": "Unbezahlt",
       "paused": "Pausiert"
     },
-    "includedTitle": "Enthaltene Leistungen"
+    "includedTitle": "Enthaltene Leistungen",
+    "perYear": "${price}/Jahr"
   },
   "paymentPanel": {
     "title": "Zahlungsmethode",
-    "description": "Karten, Bankkonten und Abrechnungsdetails werden im Stripe-Kundenportal verwaltet. Öffne das Portal, um deine Zahlungsmethoden hinzuzufügen, zu entfernen oder zu aktualisieren."
+    "description": "Zahlungsmethoden und Rechnungsdaten verwalten."
   },
   "invoicesPanel": {
     "title": "Rechnungen",
-    "description": "Rechnungen und Belege befinden sich im Stripe-Kundenportal. Öffne das Portal, um deinen Abrechnungsverlauf einzusehen und PDF-Rechnungen herunterzuladen."
+    "description": "Rechnungsverlauf und Rechnungen anzeigen oder anfordern."
+  },
+  "subscription": {
+    "title": "Abonnement",
+    "renewsOn": "Verlängert sich am {date}",
+    "endsOn": "Verlängerung gestoppt. Dein Abonnement endet am {date}.",
+    "endsAtPeriodEnd": "Verlängerung gestoppt. Dein Abonnement endet nach dem bezahlten Zeitraum.",
+    "renewalEnabled": "Automatische Verlängerung ist aktiviert.",
+    "ended": "Abonnement beendet. Wähle einen Tarif, um es erneut abzuschließen.",
+    "billedMonthly": "Monatliche Abrechnung",
+    "cancel": "Abonnement kündigen",
+    "resume": "Verlängerung fortsetzen",
+    "cancelNotice": "Die Verlängerung endet nach dem bezahlten Zeitraum. Dein Abonnement bleibt bis dahin bestehen.",
+    "confirmCancel": "Verlängerung stoppen",
+    "keepPlan": "Abonnement behalten",
+    "error": "Dein Abonnement konnte nicht aktualisiert werden. Bitte versuche es erneut."
+  },
+  "checkout": {
+    "checking": "Dein Cloud-Tarif und Guthaben werden aktualisiert. Die Zahlung kann einen Moment dauern.",
+    "active": "Dein Cloud-Tarif ist aktiv.",
+    "pending": "Deine Zahlung wird möglicherweise noch verarbeitet. Aktualisiere diese Seite, um Tarif und Guthaben zu prüfen. Kontaktiere den Support, wenn eine abgeschlossene Zahlung fehlt.",
+    "support": "Support kontaktieren"
   }
 }

@@ -55,6 +55,7 @@ import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryL
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { CustomSelect } from "@/components/ui/CustomSelect";
+import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import { Switch } from "@/components/ui/Switch";
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -291,6 +292,7 @@ type ServerRouteSpec = {
   domain?: string;
   customDomain?: string;
   targetPath?: string;
+  exact?: boolean;
 };
 function toServerRoutes(
   routes: Record<string, PublicEndpoint[]> | undefined,
@@ -307,7 +309,8 @@ function toServerRoutes(
       domainType: ep.domainType === "custom" ? "custom" : "free",
       ...(ep.domainType === "custom" ? { customDomain: domain } : { domain }),
       ...(ep.port ? { exposedPort: String(ep.port) } : {}),
-      ...(targetPath && targetPath !== "/" ? { targetPath } : {}),
+      ...(targetPath && (targetPath !== "/" || ep.exact) ? { targetPath } : {}),
+      ...(ep.exact ? { exact: true } : {}),
     };
   }
   return Object.keys(out).length > 0 ? out : undefined;
@@ -993,7 +996,8 @@ export function ServerMigrationWizard({
                 port: firstContainerPort(s),
                 domainType: "custom",
                 customDomain: r.domains[0],
-                ...(r.path && r.path !== "/" ? { targetPath: r.path } : {}),
+                ...(r.path && (r.path !== "/" || r.exact) ? { targetPath: r.path } : {}),
+                ...(r.exact ? { exact: true } : {}),
               }),
             );
         } else if (mode === "free" || mode === "custom") {
@@ -3474,25 +3478,7 @@ function RepoSourceCard({
   const s = t.migration.wizard.steps;
   const [urlInput, setUrlInput] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
-  const [branches, setBranches] = useState<string[]>([]);
   const repo = project.repo;
-
-  useEffect(() => {
-    if (!repo) {
-      setBranches([]);
-      return;
-    }
-    let on = true;
-    githubApi
-      .listBranches(repo.owner, repo.repo)
-      .then((res) => {
-        if (on) setBranches((res?.data ?? []).map((b) => b.name).filter(Boolean));
-      })
-      .catch(() => {});
-    return () => {
-      on = false;
-    };
-  }, [repo?.owner, repo?.repo]);
 
   const applyUrl = () => {
     const parsed = parseGitHubRepo(urlInput);
@@ -3568,14 +3554,11 @@ function RepoSourceCard({
           </div>
           <div className="space-y-1.5">
             <label className="text-[13px] font-medium text-muted-foreground">{s.branch}</label>
-            <CustomSelect
+            <RepositoryBranchSelect
+              owner={repo.owner}
+              repo={repo.repo}
               value={repo.branch}
               onChange={(val) => onRepoChange({ ...repo, branch: val })}
-              options={(branches.length ? branches : [repo.branch]).map((b) => ({
-                value: b,
-                label: b,
-                icon: <GitBranch className="size-3.5" />,
-              }))}
             />
           </div>
         </div>
@@ -3766,7 +3749,7 @@ function ServiceConfigCard({
   // Flat {domain, path} pairs the foreign proxy already serves for this service —
   // a path-fan-out vhost yields several (e.g. api.onvo.me `/`, api.onvo.me `/v3`).
   const keptRoutes = (existing ?? []).flatMap((r) =>
-    r.domains.map((domain) => ({ domain, path: r.path })),
+    r.domains.map((domain) => ({ domain, path: r.path, exact: r.exact })),
   );
   const keptDomain0 = keptRoutes[0]?.domain;
   const volumeNames = service.volumes
@@ -3951,9 +3934,9 @@ function ServiceConfigCard({
                     >
                       {r.domain}
                     </a>
-                    {r.path !== "/" && (
+                    {(r.path !== "/" || r.exact) && (
                       <span className="rounded bg-muted px-1 py-px text-[11px] font-mono text-muted-foreground">
-                        {r.path}
+                        {r.exact ? `= ${r.path}` : r.path}
                       </span>
                     )}
                   </div>

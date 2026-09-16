@@ -26,8 +26,9 @@
 
 import { sql, eq, inArray, count, getTableColumns } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
-import { db, getDriver } from "./client";
+import { db, getDriver, type DatabaseTransaction } from "./client";
 import * as schema from "./schema";
+import { SERVICE_SECRET_FIELDS, DEPLOYMENT_SECRET_FIELDS } from "./configuration-secrets";
 
 export const DUMP_FORMAT_VERSION = 1;
 
@@ -189,6 +190,14 @@ export interface TableSpec {
 }
 
 const TABLES: ReadonlyArray<TableSpec> = [
+  {
+    sqlName: "external_identity", table: schema.externalIdentity,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false,
+  },
+  {
+    sqlName: "external_namespace", table: schema.externalNamespace,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true,
+  },
   // Auth + identity — instance-only (SaaS already has its own user/auth rows).
   {
     sqlName: "user",
@@ -314,6 +323,15 @@ const TABLES: ReadonlyArray<TableSpec> = [
   },
 
   // GitHub — instance-only.
+  // Custom App credentials are tied to this control plane's callback/webhook
+  // URLs. They travel in a whole-instance migration (with secrets re-sealed),
+  // but never in a project/org promotion to another control plane.
+  {
+    sqlName: "git_source",
+    table: schema.gitSource,
+    scopes: [{ in: "instance", via: "all-rows" }],
+    hasOrganizationId: true,
+  },
   {
     sqlName: "git_installation",
     table: schema.gitInstallation,
@@ -715,6 +733,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  platform_instance: "the receiving installation retains its own identity and encryption-key binding",
   // Ephemeral / in-flight — re-created on demand, meaningless on another host.
   build_session: "in-flight build state; a migration never resumes a build mid-flight",
   deployment_check_run: "GitHub check-run mirror, re-created by the next deploy",
@@ -723,6 +742,8 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   verification: "Better Auth one-shot nonces, all short-TTL",
   github_install_state: "one-shot install nonce, deleted on callback",
   cloud_handoff_code: "60s one-time cloud-connect codes",
+  data_transfer_session: "short-lived whole-instance transfer capability and upload lease",
+  data_transfer_chunk: "short-lived chunk staging for a whole-instance transfer",
   oauth_access_token:
     "live MCP bearer/refresh tokens; the client re-authenticates against the " +
     "oauth_application + oauth_consent rows that DO travel, so shipping them adds " +
@@ -908,6 +929,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "backup_destination", column: "sftpKeyPassphraseEnc" },
   { table: "dns_credential", column: "apiTokenEnc" },
   { table: "credential", column: "secretsEnc" },
+  { table: "git_source", column: "secretsEnc" },
   { table: "servers", column: "sshPassword" },
   { table: "servers", column: "sshPrivateKey" },
   { table: "servers", column: "sshKeyPassphrase" },
@@ -927,7 +949,9 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "instance_settings", column: "tunnelToken" },
   { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },
-  { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl"] },
+  ...SERVICE_SECRET_FIELDS.map(column => ({ table: "service", column })),
+  { table: "deployment", column: "meta", secretPaths: [...DEPLOYMENT_SECRET_FIELDS] },
+  { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl", "botToken"] },
 ];
 
 /**
@@ -1189,6 +1213,13 @@ export interface RestoreOptions {
    * their guaranteed PK collision.
    */
   mergeConflictSkip?: string[];
+  /** Trusted control-plane imports can update matching project records by PK.
+   * Secret cells are handled separately, in the SAME transaction. */
+  mergeConflictUpdate?: string[];
+  mergePreserveColumns?: Record<string, string[]>;
+  /** Filled with exactly the rows inserted/updated, never conflict-skipped rows. */
+  writtenIds?: Map<string, Set<string>>;
+  writtenRows?: { count: number };
 }
 
 /**
@@ -1297,7 +1328,16 @@ export function assertDumpSelfContained(dump: DatabaseDump): void {
   }
 }
 
-export async function restoreSubgraph(dump: DatabaseDump, opts: RestoreOptions): Promise<void> {
+/**
+ * Restore using a caller-owned transaction. This is the composition point for
+ * workflows that must commit follow-up writes (for example credential
+ * re-encryption) atomically with the restored rows.
+ */
+export async function restoreSubgraphInTransaction(
+  tx: DatabaseTransaction,
+  dump: DatabaseDump,
+  opts: RestoreOptions,
+): Promise<void> {
   if (dump.formatVersion !== DUMP_FORMAT_VERSION) {
     throw new Error(
       `Dump format version ${dump.formatVersion} cannot be restored by this build (expected ${DUMP_FORMAT_VERSION}).`,
@@ -1308,177 +1348,200 @@ export async function restoreSubgraph(dump: DatabaseDump, opts: RestoreOptions):
   // caller supplies a dump for a DIFFERENT org — reject cross-tenant FKs there.
   if (opts.remapOrgId) assertDumpSelfContained(dump);
 
-  await db.transaction(async (tx) => {
-    // Kept for the day the schema declares its FKs DEFERRABLE — but DO NOT rely on
-    // it. Postgres applies this only to constraints declared DEFERRABLE, and none of
-    // ours are, so today it is a silent no-op. Correctness comes from
-    // topoOrderedTables(), not from this line.
-    await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
+  // Kept for the day the schema declares its FKs DEFERRABLE — but DO NOT rely on
+  // it. Postgres applies this only to constraints declared DEFERRABLE, and none of
+  // ours are, so today it is a silent no-op. Correctness comes from
+  // topoOrderedTables(), not from this line.
+  await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
 
-    if (opts.mode === "wipe") {
-      // Engine-level last-resort gate: a whole-instance TRUNCATE must NEVER run
-      // on the multi-tenant SaaS. The API route is unmounted in CLOUD_MODE and
-      // exportInstance/importInstance refuse too, but this stops even a stray
-      // in-process restoreSubgraph({mode:'wipe'}) from truncating every tenant if
-      // those layers are ever bypassed. packages/db has no apps/api env → read raw.
-      if (process.env.CLOUD_MODE === "true") {
-        throw new Error(
-          "Refusing a wipe restore on a multi-tenant (CLOUD_MODE) instance — this would truncate every tenant.",
-        );
-      }
-      // Truncate only the tables this scope claims, in reverse order.
-      // For project / organization scope we don't TRUNCATE because that
-      // would wipe other tenants — `wipe` mode is conceptually a "this
-      // scope only" wipe and the caller is responsible for ensuring the
-      // dump covers every row in that scope. Today we only support wipe
-      // for instance scope; org/project use merge.
-      if (dump.scope.kind !== "instance") {
-        throw new Error(
-          `wipe mode is only supported for instance-scope dumps; got ${dump.scope.kind}.`,
-        );
-      }
-      // Reverse of the derived insert order = children before parents.
-      const reverse = [...topoOrderedTables()].reverse();
-      for (const spec of reverse) {
-        if (!pickResolver(spec, dump.scope)) continue;
-        await tx.execute(
-          sql`TRUNCATE TABLE ${sql.identifier(spec.sqlName)} RESTART IDENTITY CASCADE`,
-        );
-      }
+  if (opts.mode === "wipe") {
+    // Engine-level last-resort gate: a whole-instance TRUNCATE must NEVER run
+    // on the multi-tenant SaaS. The API route is unmounted in CLOUD_MODE and
+    // exportInstance/importInstance refuse too, but this stops even a stray
+    // in-process restoreSubgraph({mode:'wipe'}) from truncating every tenant if
+    // those layers are ever bypassed. packages/db has no apps/api env → read raw.
+    if (process.env.CLOUD_MODE === "true") {
+      throw new Error(
+        "Refusing a wipe restore on a multi-tenant (CLOUD_MODE) instance — this would truncate every tenant.",
+      );
     }
-
-    // Pre-compute the encrypted-column specs keyed by table so the insert
-    // loop below can redact those fields without re-scanning ENCRYPTED_COLUMNS
-    // per row. Redaction on restore is REQUIRED (not optional like the
-    // dump-side `stripEncrypted` flag): ciphertext from the wire was
-    // encrypted under a foreign instance's BETTER_AUTH_SECRET, so we
-    // could never decrypt it anyway, AND accepting it verbatim lets a
-    // malicious caller plant arbitrary bytes in slots that downstream
-    // code treats as "trusted encrypted blob" (env_var.value, notification
-    // config, clone tokens, backup destination secrets, etc.). Always
-    // redact these — receivers re-link credentials post-restore (the
-    // data-transfer module re-hydrates them under the local key separately).
-    const encryptedByTable = new Map<string, EncryptedColumnSpec[]>();
-    for (const spec of ENCRYPTED_COLUMNS) {
-      const list = encryptedByTable.get(spec.table) ?? [];
-      list.push(spec);
-      encryptedByTable.set(spec.table, list);
+    // Truncate only the tables this scope claims, in reverse order.
+    // For project / organization scope we don't TRUNCATE because that
+    // would wipe other tenants — `wipe` mode is conceptually a "this
+    // scope only" wipe and the caller is responsible for ensuring the
+    // dump covers every row in that scope. Today we only support wipe
+    // for instance scope; org/project use merge.
+    if (dump.scope.kind !== "instance") {
+      throw new Error(
+        `wipe mode is only supported for instance-scope dumps; got ${dump.scope.kind}.`,
+      );
     }
-
-    // Derived parent-before-child order — NOT `TABLES` order. See
-    // topoOrderedTables: the FKs are not DEFERRABLE, so this is what keeps the
-    // inserts legal.
-    for (const spec of topoOrderedTables()) {
+    // Reverse of the derived insert order = children before parents.
+    const reverse = [...topoOrderedTables()].reverse();
+    for (const spec of reverse) {
       if (!pickResolver(spec, dump.scope)) continue;
-      const rows = dump.tables[spec.sqlName];
-      if (!rows || rows.length === 0) continue;
+      await tx.execute(
+        sql`TRUNCATE TABLE ${sql.identifier(spec.sqlName)} RESTART IDENTITY CASCADE`,
+      );
+    }
+  }
 
-      const encryptedCols = encryptedByTable.get(spec.sqlName);
-      const colMeta = encryptedCols ? columnMetaFor(spec.sqlName) : {};
+  // Pre-compute the encrypted-column specs keyed by table so the insert
+  // loop below can redact those fields without re-scanning ENCRYPTED_COLUMNS
+  // per row. Redaction on restore is REQUIRED (not optional like the
+  // dump-side `stripEncrypted` flag): ciphertext from the wire was
+  // encrypted under a foreign instance's BETTER_AUTH_SECRET, so we
+  // could never decrypt it anyway, AND accepting it verbatim lets a
+  // malicious caller plant arbitrary bytes in slots that downstream
+  // code treats as "trusted encrypted blob" (env_var.value, notification
+  // config, clone tokens, backup destination secrets, etc.). Always
+  // redact these — receivers re-link credentials post-restore (the
+  // data-transfer module re-hydrates them under the local key separately).
+  const encryptedByTable = new Map<string, EncryptedColumnSpec[]>();
+  for (const spec of ENCRYPTED_COLUMNS) {
+    const list = encryptedByTable.get(spec.table) ?? [];
+    list.push(spec);
+    encryptedByTable.set(spec.table, list);
+  }
 
-      // The set of columns THIS build's schema knows for the table. `prepared`
-      // is filtered to it below so a version-skewed dump ingests cleanly:
-      //   - sender NEWER than receiver → a column the receiver lacks would make
-      //     Postgres reject the whole insert ("column X of relation Y does not
-      //     exist"), because Drizzle derives the INSERT column list from the
-      //     row's keys. Dropping the unknown key lets the row land (the receiver
-      //     can't store what it doesn't model anyway).
-      //   - sender OLDER than receiver → a column the receiver added is simply
-      //     absent from the row; Drizzle emits DEFAULT for it. Safe ONLY if that
-      //     column is nullable or has a default — the additive-migration rule.
-      // This is the cross-version robustness that DUMP_FORMAT_VERSION (bumped
-      // only on breaking shape changes) deliberately does not cover for plain
-      // column additions.
-      const columns = getTableColumns(spec.table);
-      const knownCols = new Set(Object.keys(columns));
+  // Derived parent-before-child order — NOT `TABLES` order. See
+  // topoOrderedTables: the FKs are not DEFERRABLE, so this is what keeps the
+  // inserts legal.
+  for (const spec of topoOrderedTables()) {
+    if (!pickResolver(spec, dump.scope)) continue;
+    const rows = dump.tables[spec.sqlName];
+    if (!rows || rows.length === 0) continue;
 
-      // Timestamp/date columns arrive as ISO strings whenever the dump crossed
-      // the wire as JSON (cloud ingest, project transfer) — JSON.stringify turns
-      // a Date into a string, and Drizzle's timestamp mapToDriverValue then calls
-      // `.toISOString()` on it and throws. Revive them to Date before insert.
-      // (In-process restores keep real Dates and skip the `typeof === string`
-      // branch, so this is a no-op there.)
-      const dateCols = Object.entries(columns)
-        .filter(([, col]) => (col as { dataType?: string }).dataType === "date")
-        .map(([name]) => name);
+    const encryptedCols = encryptedByTable.get(spec.sqlName);
+    const colMeta = encryptedCols ? columnMetaFor(spec.sqlName) : {};
 
-      // Shallow-clone each row (filtered to known columns) so we don't mutate the
-      // caller's input dump. redactEncryptedCell deep-clones any nested JSONB it
-      // edits (secretPaths), so a top-level copy is enough here.
-      const droppedCols = new Set<string>();
-      const prepared = rows.map((r) => {
-        const { row: next, dropped } = filterRowToKnownColumns(r, knownCols);
-        for (const d of dropped) droppedCols.add(d);
-        if (opts.remapOrgId && spec.hasOrganizationId) {
-          next.organizationId = opts.remapOrgId;
+    // The set of columns THIS build's schema knows for the table. `prepared`
+    // is filtered to it below so a version-skewed dump ingests cleanly:
+    //   - sender NEWER than receiver → a column the receiver lacks would make
+    //     Postgres reject the whole insert ("column X of relation Y does not
+    //     exist"), because Drizzle derives the INSERT column list from the
+    //     row's keys. Dropping the unknown key lets the row land (the receiver
+    //     can't store what it doesn't model anyway).
+    //   - sender OLDER than receiver → a column the receiver added is simply
+    //     absent from the row; Drizzle emits DEFAULT for it. Safe ONLY if that
+    //     column is nullable or has a default — the additive-migration rule.
+    // This is the cross-version robustness that DUMP_FORMAT_VERSION (bumped
+    // only on breaking shape changes) deliberately does not cover for plain
+    // column additions.
+    const columns = getTableColumns(spec.table);
+    const knownCols = new Set(Object.keys(columns));
+
+    // Timestamp/date columns arrive as ISO strings whenever the dump crossed
+    // the wire as JSON (cloud ingest, project transfer) — JSON.stringify turns
+    // a Date into a string, and Drizzle's timestamp mapToDriverValue then calls
+    // `.toISOString()` on it and throws. Revive them to Date before insert.
+    // (In-process restores keep real Dates and skip the `typeof === string`
+    // branch, so this is a no-op there.)
+    const dateCols = Object.entries(columns)
+      .filter(([, col]) => (col as { dataType?: string }).dataType === "date")
+      .map(([name]) => name);
+
+    // Shallow-clone each row (filtered to known columns) so we don't mutate the
+    // caller's input dump. redactEncryptedCell deep-clones any nested JSONB it
+    // edits (secretPaths), so a top-level copy is enough here.
+    const droppedCols = new Set<string>();
+    const prepared = rows.map((r) => {
+      const { row: next, dropped } = filterRowToKnownColumns(r, knownCols);
+      for (const d of dropped) droppedCols.add(d);
+      if (opts.remapOrgId && spec.hasOrganizationId) {
+        next.organizationId = opts.remapOrgId;
+      }
+      if (encryptedCols) {
+        for (const encSpec of encryptedCols) redactEncryptedCell(next, encSpec, colMeta);
+      }
+      for (const col of dateCols) {
+        if (typeof next[col] === "string") next[col] = new Date(next[col] as string);
+      }
+      return next;
+    });
+    if (droppedCols.size > 0) {
+      // Version skew, not a fault — the receiver's schema predates these
+      // columns. Log once per table so it's diagnosable without failing.
+      console.warn(
+        `[restore] ${spec.sqlName}: dropped ${droppedCols.size} unknown column(s) not in this build's schema: ${[...droppedCols].join(", ")}`,
+      );
+    }
+
+    // Shared parents (e.g. project_app, which owns many project environments
+    // via the `from-root-project` resolver) may already exist on the target
+    // — a re-promote re-supplies the same row, and inserting it again is a
+    // no-op, not a conflict. Skip on conflict for those; and, in merge mode,
+    // for tables the caller flagged as expected-to-collide (singleton/auth).
+    // Every other table keeps strict insert so a real collision still
+    // surfaces as PkCollision.
+    const skipOnConflict =
+      spec.scopes.some((s) => s.via === "from-root-project") ||
+      (opts.mode === "merge" && !!opts.mergeConflictSkip?.includes(spec.sqlName));
+    const updateOnConflict = opts.mode === "merge" && opts.mergeConflictUpdate?.includes(spec.sqlName);
+
+    try {
+      // Chunked: one INSERT per `insertChunkSize(spec.table)` rows, so a large
+      // table cannot exceed the 65535 bind-parameter cap.
+      const chunk = insertChunkSize(spec.table);
+      for (let i = 0; i < prepared.length; i += chunk) {
+        const batch = prepared.slice(i, i + chunk);
+        let written: Array<Record<string, unknown>>;
+        if (updateOnConflict && columns.id) {
+          const secretNames = new Set([
+            ...(encryptedCols?.map((col) => col.column) ?? []),
+            ...(opts.mergePreserveColumns?.[spec.sqlName] ?? []),
+          ]);
+          const set = Object.fromEntries(Object.entries(columns)
+            .filter(([key]) => key !== "id" && !secretNames.has(key) && batch.some((row) => key in row))
+            .map(([key, column]) => [key, sql`excluded.${sql.identifier(column.name)}`]));
+          written = await tx.insert(spec.table).values(batch as never)
+            .onConflictDoUpdate({ target: columns.id, set }).returning();
+        } else if (skipOnConflict) {
+          written = await tx
+            .insert(spec.table)
+            .values(batch as never)
+            .onConflictDoNothing().returning();
+        } else {
+          written = await tx.insert(spec.table).values(batch as never).returning();
         }
-        if (encryptedCols) {
-          for (const encSpec of encryptedCols) redactEncryptedCell(next, encSpec, colMeta);
+        if (opts.writtenIds) {
+          const ids = opts.writtenIds.get(spec.sqlName) ?? new Set<string>();
+          for (const row of written) if (typeof row.id === "string") ids.add(row.id);
+          opts.writtenIds.set(spec.sqlName, ids);
         }
-        for (const col of dateCols) {
-          if (typeof next[col] === "string") next[col] = new Date(next[col] as string);
-        }
-        return next;
-      });
-      if (droppedCols.size > 0) {
-        // Version skew, not a fault — the receiver's schema predates these
-        // columns. Log once per table so it's diagnosable without failing.
-        console.warn(
-          `[restore] ${spec.sqlName}: dropped ${droppedCols.size} unknown column(s) not in this build's schema: ${[...droppedCols].join(", ")}`,
+        if (opts.writtenRows) opts.writtenRows.count += written.length;
+      }
+    } catch (err) {
+      // PostgreSQL unique_violation = 23505 (PGlite mirrors this).
+      // Surface as a typed error so callers (project transfer wizard,
+      // cloud ingest) can distinguish "this row already exists on the
+      // target" from a real server fault. The code lives on the driver
+      // error, which Drizzle wraps — resolve it through the cause chain.
+      const pg = resolvePgError(err);
+      if (pg?.code === "23505") {
+        throw new PkCollisionError(spec.sqlName, pg);
+      }
+      // Drizzle's top-level `.message` is only the "Failed query: … params:"
+      // wrapper; the actual reason (column/constraint/detail) lives on the pg
+      // cause. Re-throw with that reason in the message so it survives error
+      // serialization to the transfer/ingest caller and reaches the operator,
+      // instead of the useless wrapper. Keep the original as `cause`.
+      if (pg) {
+        const detail = (pg as { detail?: string }).detail;
+        throw new Error(
+          `restore ${spec.sqlName}: ${pg.message}${pg.code ? ` [${pg.code}]` : ""}${detail ? ` (${detail})` : ""}`,
+          { cause: err },
         );
       }
-
-      // Shared parents (e.g. project_app, which owns many project environments
-      // via the `from-root-project` resolver) may already exist on the target
-      // — a re-promote re-supplies the same row, and inserting it again is a
-      // no-op, not a conflict. Skip on conflict for those; and, in merge mode,
-      // for tables the caller flagged as expected-to-collide (singleton/auth).
-      // Every other table keeps strict insert so a real collision still
-      // surfaces as PkCollision.
-      const skipOnConflict =
-        spec.scopes.some((s) => s.via === "from-root-project") ||
-        (opts.mode === "merge" && !!opts.mergeConflictSkip?.includes(spec.sqlName));
-
-      try {
-        // Chunked: one INSERT per `insertChunkSize(spec.table)` rows, so a large
-        // table cannot exceed the 65535 bind-parameter cap.
-        const chunk = insertChunkSize(spec.table);
-        for (let i = 0; i < prepared.length; i += chunk) {
-          const batch = prepared.slice(i, i + chunk);
-          if (skipOnConflict) {
-            await tx
-              .insert(spec.table)
-              .values(batch as never)
-              .onConflictDoNothing();
-          } else {
-            await tx.insert(spec.table).values(batch as never);
-          }
-        }
-      } catch (err) {
-        // PostgreSQL unique_violation = 23505 (PGlite mirrors this).
-        // Surface as a typed error so callers (project transfer wizard,
-        // cloud ingest) can distinguish "this row already exists on the
-        // target" from a real server fault. The code lives on the driver
-        // error, which Drizzle wraps — resolve it through the cause chain.
-        const pg = resolvePgError(err);
-        if (pg?.code === "23505") {
-          throw new PkCollisionError(spec.sqlName, pg);
-        }
-        // Drizzle's top-level `.message` is only the "Failed query: … params:"
-        // wrapper; the actual reason (column/constraint/detail) lives on the pg
-        // cause. Re-throw with that reason in the message so it survives error
-        // serialization to the transfer/ingest caller and reaches the operator,
-        // instead of the useless wrapper. Keep the original as `cause`.
-        if (pg) {
-          const detail = (pg as { detail?: string }).detail;
-          throw new Error(
-            `restore ${spec.sqlName}: ${pg.message}${pg.code ? ` [${pg.code}]` : ""}${detail ? ` (${detail})` : ""}`,
-            { cause: err },
-          );
-        }
-        throw err;
-      }
+      throw err;
     }
+  }
+}
+
+/** Restore a subgraph in one transaction. */
+export async function restoreSubgraph(dump: DatabaseDump, opts: RestoreOptions): Promise<void> {
+  await db.transaction(async (rawTx) => {
+    await restoreSubgraphInTransaction(rawTx as DatabaseTransaction, dump, opts);
   });
 }
 

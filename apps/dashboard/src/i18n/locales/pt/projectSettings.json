@@ -172,12 +172,15 @@
       "runningStatus": "Em andamento — {status}"
     },
     "cache": {
-      "title": "Cache",
-      "description": "Limpe os artefactos de compilação e as instalações de dependências em cache",
+      "title": "Cache de compilação do Docker",
+      "description": "A cache de compilação não utilizada é limitada automaticamente a 5 GB por servidor",
       "clearInstall": "Limpar cache de instalação",
       "clearInstallDesc": "Remover node_modules em cache",
       "clearBuild": "Limpar cache de compilação",
-      "clearBuildDesc": "Remover o resultado de compilação em cache"
+      "clearBuildDesc": "Remover a cache não utilizada do servidor Docker deste projeto",
+      "clearBuildConfirm": "Limpar toda a cache de compilação do Docker não utilizada neste servidor? Outros projetos poderão reconstruir dependências na próxima implantação.",
+      "clearBuildSuccess": "Foram recuperados {size} de cache de compilação",
+      "clearBuildEmpty": "Não há cache de compilação não utilizada para limpar"
     },
     "transfer": {
       "title": "Transferir e clonar",
@@ -362,16 +365,16 @@
       "appliesOnDeploy": "Aplicado no próximo deploy."
     },
     "env": {
-      "title": "Variáveis de ambiente",
-      "description": "Encriptadas em repouso. Os segredos permanecem ocultos — apenas os valores que alterar são gravados.",
+      "title": "Ambiente do projeto (compilação e execução compartilhada)",
+      "description": "Usado para compilar imagens e como entrada compartilhada em execução. Os valores do Compose e do serviço têm prioridade em execução. Os segredos permanecem ocultos.",
       "edit": "Editar"
     }
   },
   "envVars": {
     "cancel": "Cancelar",
     "saveChanges": "Guardar alterações",
-    "title": "Variáveis de ambiente",
-    "description": "Produção. Encriptadas em repouso. Os segredos aparecem como definidos — escreva para substituir; deixe em branco para manter.",
+    "title": "Ambiente do projeto (compilação e execução compartilhada)",
+    "description": "Variáveis de produção do projeto. Os segredos permanecem ocultos; deixe um segredo salvo em branco para mantê-lo. Os valores do serviço têm prioridade para a mesma chave.",
     "empty": "Ainda não há variáveis de ambiente.",
     "keyPlaceholder": "CHAVE",
     "secretPlaceholder": "•••••••• (definido — escreva para substituir)",
@@ -398,7 +401,8 @@
     "linkedTitle": "Integração vinculada",
     "linkedBody": "Este valor vem da conexão do {app}. Gerencie-o por esse app — alterações aqui não são mantidas.",
     "unlink": "Remover conexão",
-    "close": "Fechar"
+    "close": "Fechar",
+    "applyText": "Salvo. Reinicie para aplicar alterações de execução. Compile e implante novamente para aplicar valores usados na compilação de uma imagem."
   },
   "gitInfo": {
     "autoDeploy": "Implementação automática"
@@ -551,6 +555,9 @@
     "title": "Potência da máquina",
     "description": "Limites de CPU e memória para os contêineres deste projeto.",
     "loading": "Lendo a máquina de destino…",
+    "unavailable": "Potência da máquina indisponível",
+    "loadFailed": "Não foi possível carregar a potência da máquina",
+    "retry": "Tentar novamente",
     "machineCapacity": "Máquina: {cpu} vCPU · {memory}",
     "exceedsMachine": "Excede esta máquina",
     "appliesOnNextDeploy": "Os limites são aplicados quando o contêiner é recriado — reimplante para a alteração ter efeito.",
@@ -848,5 +855,13 @@
       "noIndex": "Existe saída em {path}, mas não há arquivo index — as solicitações retornarão 404. Verifique seu diretório de saída.",
       "notServed": "O proxy respondeu HTTP {status} para {path} — este caminho não está sendo servido. Verifique seu diretório de saída e a rota."
     }
+  },
+  "serviceEnvironment": {
+    "title": "Ambiente de execução do serviço",
+    "description": "Aplica-se apenas a este serviço em execução. Estes valores substituem os do Compose e as variáveis do projeto com a mesma chave. Aplique-os ao reiniciar ou implantar.",
+    "overrides": "Estas chaves têm prioridade sobre os valores do projeto para este serviço: {keys}.",
+    "buildArguments": "Os argumentos explícitos de compilação são editados no arquivo Compose ou na configuração do código-fonte. Compile e implante novamente para aplicá-los; este editor altera apenas variáveis de execução.",
+    "projectLink": "Editar ambiente compartilhado do projeto",
+    "loadFailed": "Não foi possível carregar os nomes das variáveis do projeto para verificar substituições."
   }
 }

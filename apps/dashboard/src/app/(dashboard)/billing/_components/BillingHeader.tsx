@@ -35,7 +35,8 @@ interface UsageResponse {
   data: { usage: { totals?: UsageTotals } | null };
 }
 
-function fmtCredits(milli: number): string {
+function fmtCredits(milli: number | null): string {
+  if (milli === null) return "∞";
   return Math.floor(milli / 1000).toLocaleString();
 }
 function fmtNum(n: number | undefined, digits = 1): string {

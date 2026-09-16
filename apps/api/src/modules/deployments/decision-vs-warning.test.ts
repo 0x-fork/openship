@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 // large graph, and loading it inside a test spent the test's own 20s budget on the
 // import: under CI load the whole file failed with "Test timed out in 20000ms" while
 // passing in ~6s alone. Module-scope imports are resolved before any test's clock starts.
-import { routeIssuesWarning } from "./deployment-lifecycle";
+import { routeIssuesWarning } from "@repo/platform/engine/modules/deployments/deployment-lifecycle";
 
 /**
  * A WARNING is not a DECISION.
@@ -19,8 +19,9 @@ import { routeIssuesWarning } from "./deployment-lifecycle";
  * Two halves, both pinned: the server SAYS when it is holding a decision, and the client believes
  * only that.
  */
-const pipeline = readFileSync(new URL("./build-pipeline.ts", import.meta.url), "utf8");
-const lifecycle = readFileSync(new URL("./deployment-lifecycle.ts", import.meta.url), "utf8");
+const pipeline = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/deployments/build-pipeline.ts", import.meta.url), "utf8");
+const lifecycle = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/deployments/deployment-lifecycle.ts", import.meta.url), "utf8");
+const deploymentService = readFileSync(new URL("../../../../../packages/platform/src/engine/modules/deployments/deployment.service.ts", import.meta.url), "utf8");
 
 const codeOnly = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
@@ -38,6 +39,13 @@ describe("the server announces a held decision on the live event", () => {
     // A routing/TLS warning on success must not carry it — that is the whole bug.
     const code = codeOnly(pipeline);
     expect(code.match(/decisionPending: true/g) ?? []).toHaveLength(1);
+  });
+});
+
+describe("resolved decisions stop replaying from the terminal session", () => {
+  it("clears cached decision state after both keep and reject", () => {
+    expect(codeOnly(deploymentService).match(/clearDecisionPending\(deploymentId\)/g) ?? [])
+      .toHaveLength(2);
   });
 });
 

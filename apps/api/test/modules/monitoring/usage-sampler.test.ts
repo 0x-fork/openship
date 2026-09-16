@@ -61,7 +61,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentRuntimeForRead: vi.fn(async (dep: { meta?: { serverId?: string } }) => {
     h.resolveCalls += 1;
     const key = dep.meta?.serverId ?? "__local__";
@@ -90,13 +90,13 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   }),
 }));
 
-vi.mock("../../../src/lib/system-debug", () => ({
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({
   systemDebug: vi.fn(),
   formatDuration: () => "1ms",
 }));
 
 const { runUsageSampleSweep, bucketMinuteFor } = await import(
-  "../../../src/modules/monitoring/usage-sampler"
+  "@repo/platform/engine/modules/monitoring/usage-sampler"
 );
 
 const container = (id: string, service: string, state = "running") => ({

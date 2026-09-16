@@ -7,7 +7,7 @@
  */
 
 import { PRICING } from "@repo/core";
-import type { BuildStrategy, ProxySettings } from "@repo/core";
+import type { BuildStrategy, ProxySettings, BuildStep, LogEntry } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
 
@@ -448,43 +448,7 @@ export interface DeploymentResult {
   status: ContainerStatus;
 }
 
-/**
- * Pipeline step identifiers for stepper UI.
- *
- * "prepare" is one-time server provisioning (toolchain install, source
- * transfer) that runs BEFORE the build timer starts — so it's shown as its own
- * phase and excluded from the reported build duration.
- */
-export type BuildStep = "prepare" | "clone" | "install" | "build" | "deploy";
-
-export const BUILD_STEPS: readonly BuildStep[] = [
-  "prepare",
-  "clone",
-  "install",
-  "build",
-  "deploy",
-] as const;
-
-export interface LogEntry {
-  timestamp: string;
-  message: string;
-  level: "info" | "warn" | "error";
-  /** When present, this entry is a step event for the stepper UI */
-  step?: BuildStep;
-  /** Step lifecycle status */
-  stepStatus?: "running" | "completed" | "failed" | "skipped";
-  /** Compose service name when this log belongs to one service. */
-  serviceName?: string;
-  /** Stable id of the service this log belongs to (compose deployments). Routes
-   *  the line to its per-service tab without fragile name matching. */
-  serviceId?: string;
-  /** Pre-encoded base64 data - passed through to SSE without re-encoding. */
-  rawData?: string;
-  /** Monotonic sequence assigned by the session manager at append time, used as
-   *  the SSE event id / client dedup cursor. Decoupled from the ring-buffer
-   *  index so it never plateaus when the buffer trims. */
-  seq?: number;
-}
+export { BUILD_STEPS, type BuildStep, type LogEntry } from "@repo/core";
 
 /**
  * A serialization gate for server/workspace-scoped provisioning. The API injects
@@ -495,7 +459,7 @@ export interface LogEntry {
  * `run`; when no lock is injected, callers fall back to running `fn` directly.
  */
 export interface ProvisionLock {
-  run<T>(fn: () => Promise<T>): Promise<T>;
+  run<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
 export interface ContainerInfo {
@@ -532,10 +496,12 @@ export interface ResourceUsage {
   networkTxBytes: number;
 }
 
-/** An extra path-prefix location that reverse-proxies to another target. */
+/** An extra literal-path location that reverse-proxies to another target. */
 export interface RouteProxyLocation {
-  /** nginx location prefix, e.g. "/api/". */
+  /** nginx location path, e.g. "/api/". */
   pathPrefix: string;
+  /** true -> `location = <path>`; unset/false -> `location ^~ <path>`. */
+  exact?: boolean;
   /** Proxy target, e.g. "http://10.0.0.5:3000". When `upstreamPath` is set this is
    *  the ORIGIN only (no path) — the path comes from the template instead. */
   targetUrl: string;
@@ -832,6 +798,20 @@ export interface ExecOnly {
  */
 export interface CommandExecutor extends ExecOnly {
   /**
+   * Bind an AbortSignal to command/file operations started by `fn`.
+   *
+   * Remote executors use an async-local scope rather than mutable instance
+   * state: one deployment may be cancelled while another caller legitimately
+   * shares the pooled connection.  Implementations must not resolve the scope
+   * until an operation which already started has quiesced its transport.  That
+   * invariant lets provisioning locks release safely after cancellation.
+   *
+   * Optional for compatibility with lightweight/custom executors. Callers must
+   * still pass explicit signals to APIs that expose one.
+   */
+  runWithAbortSignal?<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T>;
+
+  /**
    * Run a command with real-time log streaming.
    * Resolves when the command exits - the log callback fires for each line.
    *
@@ -847,8 +827,15 @@ export interface CommandExecutor extends ExecOnly {
     opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }>;
 
-  /** Write content to a file on the target machine. Creates dirs as needed. */
-  writeFile(path: string, content: string): Promise<void>;
+  /**
+   * Write content to a file on the target machine. Creates dirs as needed.
+   *
+   * `mode` is applied before any payload bytes become reachable at `path`. This
+   * matters for credentials: write-then-chmod briefly publishes a secret under
+   * the login user's umask. Callers that need an atomic replacement should write
+   * a unique sibling and rename it after this call.
+   */
+  writeFile(path: string, content: string, opts?: { mode?: number }): Promise<void>;
 
   /** Read a file from the target machine. */
   readFile(path: string): Promise<string>;

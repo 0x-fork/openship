@@ -278,12 +278,15 @@
       "runningStatus": "Sürüyor — {status}"
     },
     "cache": {
-      "title": "Önbellek",
-      "description": "Önbelleğe alınmış derleme çıktılarını ve bağımlılık kurulumlarını temizleyin",
+      "title": "Docker Derleme Önbelleği",
+      "description": "Kullanılmayan derleme önbelleği sunucu başına otomatik olarak 5 GB ile sınırlandırılır",
       "clearInstall": "Kurulum Önbelleğini Temizle",
       "clearInstallDesc": "Önbelleğe alınmış node_modules klasörünü kaldır",
       "clearBuild": "Derleme Önbelleğini Temizle",
-      "clearBuildDesc": "Önbelleğe alınmış derleme çıktısını kaldır"
+      "clearBuildDesc": "Bu projenin Docker sunucusundaki kullanılmayan önbelleği kaldır",
+      "clearBuildConfirm": "Bu sunucudaki tüm kullanılmayan Docker derleme önbelleği temizlensin mi? Diğer projeler bir sonraki dağıtımda bağımlılıkları yeniden derleyebilir.",
+      "clearBuildSuccess": "{size} derleme önbelleği geri kazanıldı",
+      "clearBuildEmpty": "Temizlenecek kullanılmayan derleme önbelleği yok"
     },
     "transfer": {
       "title": "Taşıma ve Klonlama",
@@ -496,8 +499,8 @@
       "appliesOnDeploy": "Bir sonraki dağıtımda uygulanır."
     },
     "env": {
-      "title": "Ortam değişkenleri",
-      "description": "Depolanırken şifrelenir. Gizli veriler maskeli kalır — yalnızca değiştirdiğiniz değerler yazılır.",
+      "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+      "description": "İmaj derlemelerinde ve ortak çalışma zamanı girdisi olarak kullanılır. Çalışma zamanında Compose ve servise özel değerler önceliklidir. Gizli değerler maskeli kalır.",
       "edit": "Düzenle"
     }
   },
@@ -506,10 +509,10 @@
     "saveChanges": "Değişiklikleri kaydet",
     "close": "Kapat",
     "applyTitle": "Yeniden derleme olmadan uygula",
-    "applyText": "Kaydedildi. Bunları çalışan servise uygulayın — yeni ortam değişkenleriyle yeniden başlatılır, klonlama veya yeniden derleme yapılmaz.",
+    "applyText": "Kaydedildi. Çalışma zamanı değişikliklerini uygulamak için yeniden başlatın. İmaj derlenirken kullanılan değerler için yeniden derleyip dağıtın.",
     "applyButton": "Uygula (yeniden başlat, derleme yok)",
-    "title": "Ortam değişkenleri",
-    "description": "Canlı ortam. Depolanırken şifrelenir. Gizli veriler ayarlandı olarak görünür — değiştirmek için yazın; korumak için boş bırakın.",
+    "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
+    "description": "Projenin üretim ortamı değişkenleri. Gizli değerler maskeli kalır; kayıtlı bir gizli değeri korumak için boş bırakın. Aynı anahtar için servis değerleri önceliklidir.",
     "empty": "Henüz ortam değişkeni yok.",
     "keyPlaceholder": "ANAHTAR",
     "secretPlaceholder": "•••••••• (ayarlandı — değiştirmek için yazın)",
@@ -692,6 +695,9 @@
     "title": "Makine gücü",
     "description": "Bu projenin konteynerleri için CPU ve bellek sınırları.",
     "loading": "Hedef makine okunuyor…",
+    "unavailable": "Makine gücü kullanılamıyor",
+    "loadFailed": "Makine gücü yüklenemedi",
+    "retry": "Yeniden dene",
     "machineCapacity": "Makine: {cpu} vCPU · {memory}",
     "exceedsMachine": "Bu makineyi aşıyor",
     "appliesOnNextDeploy": "Sınırlar konteyner yeniden oluşturulduğunda uygulanır — değişikliğin etkili olması için yeniden dağıtın.",
@@ -873,7 +879,7 @@
       "includeWwwDesc": "Ayrıca www.{domain} için de kayıtlar oluştur",
       "includeWwwFallback": "alanadiniz.com",
       "externalIngress": "Harici trafik girişi ve TLS",
-      "externalIngressDesc": "TLS upstream katmanında sonlandırılır (Cloudflare Tunnel veya yük dengeleyici). Yalnızca TXT kaydıyla doğrulayın — alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "externalIngressDesc": "TLS ters proxy’nizde (Cloudflare Tunnel, Nginx Proxy Manager veya yük dengeleyici) sonlandırılır. Alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
       "dnsChallenge": "DNS-01 doğrulamasını kullan",
       "dnsChallengeDesc": "Sertifikayı bağlı DNS sağlayıcınız üzerinden düzenleyin ve yenileyin. Port 80'e erişilemiyorsa bunu kullanın.",
       "dnsChallengeWildcardDesc": "Wildcard sertifikalar DNS-01 ve bağlı bir DNS sağlayıcısı gerektirir.",
@@ -1027,5 +1033,13 @@
       "attempts": "Şu ana kadar {count} başarısız deneme.",
       "pillHint": "Nedenini göster"
     }
+  },
+  "serviceEnvironment": {
+    "title": "Servis çalışma zamanı ortamı",
+    "description": "Yalnızca bu servisin çalışma zamanında uygulanır. Bu değerler Compose ortamını ve aynı adlı proje değişkenlerini geçersiz kılar. Yeniden başlatma veya dağıtımla uygulayın.",
+    "overrides": "Bu serviste şu anahtarlar proje değerlerinden önceliklidir: {keys}.",
+    "buildArguments": "Açık imaj derleme argümanları Compose dosyasında veya kaynak yapılandırmasında düzenlenir. Uygulamak için yeniden derleyip dağıtın; bu düzenleyici yalnızca çalışma zamanı değişkenlerini değiştirir.",
+    "projectLink": "Ortak proje ortamını düzenle",
+    "loadFailed": "Geçersiz kılmaları denetlemek için proje değişkenlerinin adları yüklenemedi."
   }
 }

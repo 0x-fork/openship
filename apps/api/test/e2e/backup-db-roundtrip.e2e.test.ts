@@ -47,9 +47,9 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DockerRuntime, initPlatform, resetPlatform, scopedVolumeName } from "@repo/adapters";
 import { repos } from "@repo/db";
-import { env } from "../../src/config";
+import { env } from "@repo/platform/engine/config/index";
 import type { RequestContext } from "../../src/lib/request-context";
-import { resolvePlatformConfig } from "../../src/lib/controller-helpers";
+import { resolvePlatformConfig } from "@repo/platform/engine/lib/platform-config";
 import { backupE2EHarness } from "../helpers/backup-e2e";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import {

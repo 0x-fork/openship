@@ -27,8 +27,9 @@
  */
 
 import React from "react";
-import { AlertCircle, ArrowUpDown, Gauge, RefreshCw, Server, Users } from "lucide-react";
+import { ArrowUpDown, Gauge, Server, Users } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { AnalyticsError } from "./AnalyticsError";
 import { ResourceCards } from "./ResourceCards";
 import { ResourceHistoryChart, type UsageHistoryBucket } from "./ResourceHistoryChart";
 import { VisitorMap } from "./VisitorMap";
@@ -58,9 +59,6 @@ export interface MonitoringViewProps {
   isUsageConnected: boolean;
   usageError: string | null;
   onReconnectUsage: () => void;
-  /** Error surfaced by the analytics overview fetch; when present the stats strip
-   *  and traffic chart are replaced by a scoped retry card instead of blanking
-   *  the whole tab. */
   analyticsError?: string | null;
   onRetryAnalytics?: () => void;
   /**
@@ -156,6 +154,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
   live,
 }) => {
   const { t } = useI18n();
+  const showAnalyticsError = !!analyticsError && !isLoadingAnalytics;
   const m = t.projects.monitoring;
 
   const showResources = hasMeasurableWorkload(usage, usageError);
@@ -179,7 +178,6 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
   const visitorsLabel = isCloudGeo ? m.visitors : m.visitorDays;
 
   const hasAnalytics = !!analytics;
-  const showAnalyticsError = !!analyticsError && !isLoadingAnalytics;
 
   return (
     <div className="space-y-5">
@@ -216,36 +214,13 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
       )}
 
       {/* ── Reference numbers, as a strip ─────────────────────────────────── */}
-      {showAnalyticsError ? (
-        <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
-          <AlertCircle className="size-8 text-danger mx-auto mb-3" />
-          <p className="text-sm font-medium text-foreground mb-1">
-            {t.projects.analytics.loadFailed}
-          </p>
-          <p className="text-xs text-muted-foreground mb-4">{analyticsError}</p>
-          {onRetryAnalytics && (
-            <button
-              type="button"
-              onClick={onRetryAnalytics}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
-            >
-              <RefreshCw className="size-3.5" />
-              {t.projects.services.retry}
-            </button>
-          )}
-        </div>
-      ) : (
+      {showAnalyticsError && <AnalyticsError error={analyticsError!} onRetry={onRetryAnalytics} />}
+      {!showAnalyticsError && (
         <div className="grid grid-cols-2 divide-border/50 overflow-hidden rounded-2xl bg-card sm:grid-cols-4 sm:divide-x">
           <StatTile
             icon={<Server className="size-4" />}
             label={t.projects.stats.serverRequests}
-            value={
-              hasAnalytics
-                ? formatCount(analytics!.summary.totalRequests)
-                : isLoadingAnalytics
-                  ? "…"
-                  : "0"
-            }
+            value={hasAnalytics ? formatCount(analytics!.summary.totalRequests) : isLoadingAnalytics ? "…" : "0"}
             hint={
               hasAnalytics
                 ? interpolate(t.projects.stats.requestsSubtext, {
@@ -276,13 +251,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
           <StatTile
             icon={<ArrowUpDown className="size-4" />}
             label={t.projects.stats.bandwidthOut}
-            value={
-              hasAnalytics
-                ? analytics!.bandwidth.totalOutFormatted
-                : isLoadingAnalytics
-                  ? "…"
-                  : "0 B"
-            }
+            value={hasAnalytics ? analytics!.bandwidth.totalOutFormatted : isLoadingAnalytics ? "…" : "0 B"}
             hint={
               hasAnalytics
                 ? interpolate(t.projects.stats.bandwidthInSubtext, {
@@ -412,6 +381,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
           scopeLabel={scopeLabel}
         />
       )}
+
     </div>
   );
 };

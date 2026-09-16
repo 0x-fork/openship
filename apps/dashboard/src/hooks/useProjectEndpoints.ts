@@ -188,7 +188,9 @@ interface AsyncState<T> {
  * Invalidation: call `invalidateProjectCaches(id)` after a mutation that
  * could change the underlying data (e.g. after a domain save).
  */
-type CacheEntry<T> = { kind: "loading"; promise: Promise<T> } | { kind: "ready"; data: T };
+type CacheEntry<T> =
+  | { kind: "loading"; promise: Promise<T> }
+  | { kind: "ready"; data: T };
 
 const infoCache = new Map<string, CacheEntry<ProjectInfoData>>();
 const overviewCache = new Map<string, CacheEntry<AnalyticsOverviewResponse>>();
@@ -318,11 +320,15 @@ function useEndpoint<T>(
 
     promise
       .then((data) => {
-        cache.set(id, { kind: "ready", data });
+        // A retry/invalidation may already own this key with another promise.
+        const current = cache.get(id);
+        if (current?.kind === "loading" && current.promise === promise) {
+          cache.set(id, { kind: "ready", data });
+        }
         // Guard: don't write A's result into B's state if id has
         // changed since the effect started. Both flags together cover
         // synchronous (cancelled) and racy (idRef mismatch) cases.
-        if (cancelled || idRef.current !== id) return;
+        if (cancelled || idRef.current !== id || (revKey && getRevision(revKey) !== revision)) return;
         loadedIdRef.current = id;
         setState({ data, isLoading: false, error: null });
       })
@@ -330,8 +336,9 @@ function useEndpoint<T>(
         // Errors are NOT cached — drop the entry so a future mount /
         // refresh re-fires the request. Otherwise a transient 5xx
         // permanently bricks the page until full reload.
-        cache.delete(id);
-        if (cancelled || idRef.current !== id) return;
+        const current = cache.get(id);
+        if (current?.kind === "loading" && current.promise === promise) cache.delete(id);
+        if (cancelled || idRef.current !== id || (revKey && getRevision(revKey) !== revision)) return;
         const message = err instanceof Error ? err.message : "Request failed";
         // The data goes with the error, so the next revision must report loading again rather
         // than revalidating something that is no longer on screen.

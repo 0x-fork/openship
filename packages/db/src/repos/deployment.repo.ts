@@ -1,6 +1,7 @@
 import { eq, and, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
-import type { Database } from "../client";
+import type { Database } from "../connection";
+import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { deployment, buildSession, project } from "../schema";
 import { detailOf } from "./storable-detail";
 import { withProjectWorkAdmission } from "./project-work-admission";
@@ -14,25 +15,27 @@ export type NewBuildSession = typeof buildSession.$inferInsert;
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
-export function createDeploymentRepo(db: Database) {
+export function createDeploymentRepo(db: Database, encryption: ConfigurationEncryption) {
+  const codec = createConfigurationSecrets(encryption);
   return {
     // ── Deployments ────────────────────────────────────────────────────
 
     async findById(id: string) {
-      return db.query.deployment.findFirst({
+      return codec.openDeployment(await db.query.deployment.findFirst({
         where: eq(deployment.id, id),
-      });
+      }));
     },
 
     /** All deployments in a given status (e.g. "reconciling") — drives the
      *  reconcile sweep. Bounded to avoid pulling an unbounded history. */
     async listByStatus(status: string, limit = 200) {
-      return db
+      const rows = await db
         .select()
         .from(deployment)
         .where(eq(deployment.status, status))
         .orderBy(desc(deployment.createdAt))
         .limit(limit);
+      return rows.map(codec.openDeployment);
     },
 
     async listByProject(
@@ -48,12 +51,12 @@ export function createDeploymentRepo(db: Database) {
         conditions.push(eq(deployment.environment, opts.environment));
       }
 
-      const rows = await db.query.deployment.findMany({
+      const rows = (await db.query.deployment.findMany({
         where: and(...conditions),
         orderBy: [desc(deployment.createdAt)],
         limit: perPage,
         offset,
-      });
+      })).map(codec.openDeployment);
 
       const [{ value: total }] = await db
         .select({ value: sql<number>`count(*)` })
@@ -76,7 +79,7 @@ export function createDeploymentRepo(db: Database) {
      * status side at one; the EXISTS side covers its still-running cancelled
      * worker without trusting that terminal-looking status. */
     async listInFlightByProject(projectId: string): Promise<Deployment[]> {
-      return db.query.deployment.findMany({
+      return (await db.query.deployment.findMany({
         where: and(
           eq(deployment.projectId, projectId),
           or(
@@ -91,7 +94,7 @@ export function createDeploymentRepo(db: Database) {
             )`,
           ),
         ),
-      }) as Promise<Deployment[]>;
+      })).map(codec.openDeployment);
     },
 
     async hasLiveBuildExecution(deploymentId: string, projectId: string): Promise<boolean> {
@@ -119,12 +122,12 @@ export function createDeploymentRepo(db: Database) {
       const perPage = opts?.perPage ?? 50;
       const offset = (page - 1) * perPage;
 
-      const rows = await db.query.deployment.findMany({
+      const rows = (await db.query.deployment.findMany({
         where: eq(deployment.organizationId, organizationId),
         orderBy: [desc(deployment.createdAt)],
         limit: perPage,
         offset,
-      });
+      })).map(codec.openDeployment);
 
       const [{ value: total }] = await db
         .select({ value: sql<number>`count(*)` })
@@ -142,7 +145,7 @@ export function createDeploymentRepo(db: Database) {
      * of soft-deleted projects stay out of the counts, matching what the
      * org-scoped project listings show.
      */
-    async countByStatusForOrganization(organizationId: string): Promise<Record<string, number>> {
+    async countByStatusForOrganization(organizationId: string, projectIds?: readonly string[]): Promise<Record<string, number>> {
       const rows = await db
         .select({
           status: deployment.status,
@@ -150,7 +153,7 @@ export function createDeploymentRepo(db: Database) {
         })
         .from(deployment)
         .innerJoin(project, eq(deployment.projectId, project.id))
-        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)))
+        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt), projectIds ? inArray(project.id, [...projectIds]) : undefined))
         .groupBy(deployment.status);
 
       const out: Record<string, number> = {};
@@ -200,10 +203,10 @@ export function createDeploymentRepo(db: Database) {
 
         const [inserted] = await tx
           .insert(deployment)
-          .values({ id, ...rest })
+          .values(codec.sealDeployment({ id, ...rest }))
           .onConflictDoNothing()
           .returning();
-        return inserted as Deployment | undefined;
+        return codec.openDeployment(inserted as Deployment | undefined);
       });
     },
 
@@ -371,14 +374,14 @@ export function createDeploymentRepo(db: Database) {
      */
     async findInProgressByCommit(projectId: string, commitSha: string | null | undefined) {
       if (!commitSha) return undefined;
-      return db.query.deployment.findFirst({
+      return codec.openDeployment(await db.query.deployment.findFirst({
         where: and(
           eq(deployment.projectId, projectId),
           eq(deployment.commitSha, commitSha),
           inArray(deployment.status, ["queued", "building", "deploying"]),
         ),
         orderBy: [desc(deployment.createdAt)],
-      });
+      }));
     },
 
     /**
@@ -393,14 +396,14 @@ export function createDeploymentRepo(db: Database) {
       releaseVersion: string | null | undefined,
     ) {
       if (!releaseVersion) return undefined;
-      return db.query.deployment.findFirst({
+      return codec.openDeployment(await db.query.deployment.findFirst({
         where: and(
           eq(deployment.projectId, projectId),
           eq(deployment.releaseVersion, releaseVersion),
           inArray(deployment.status, ["queued", "building", "deploying"]),
         ),
         orderBy: [desc(deployment.createdAt)],
-      });
+      }));
     },
 
     /**
@@ -426,8 +429,30 @@ export function createDeploymentRepo(db: Database) {
     ): Promise<boolean> {
       const rows = await db
         .update(deployment)
-        .set({ status, ...extra, updatedAt: new Date() })
+        .set(codec.sealDeployment({ status, ...extra, updatedAt: new Date() }))
         .where(and(eq(deployment.id, id), ne(deployment.status, "cancelled")))
+        .returning();
+      return rows.length > 0;
+    },
+
+    /**
+     * Atomically make cancellation the terminal outcome only while the work is
+     * actually in flight. A read followed by updateStatus is not sufficient:
+     * the worker can become ready between those calls, and a late cancel would
+     * then overwrite a successful live release and clean up its resources.
+     * Conversely, once this transition wins, updateStatus's cancelled guard
+     * prevents the worker from publishing ready/failure over the user's cancel.
+     */
+    async cancelInFlight(id: string, extra?: Partial<NewDeployment>): Promise<boolean> {
+      const rows = await db
+        .update(deployment)
+        .set(codec.sealDeployment({ ...extra, status: "cancelled", updatedAt: new Date() }))
+        .where(
+          and(
+            eq(deployment.id, id),
+            inArray(deployment.status, ["queued", "building", "deploying"]),
+          ),
+        )
         .returning();
       return rows.length > 0;
     },
@@ -558,10 +583,10 @@ export function createDeploymentRepo(db: Database) {
 
     /** Find the most recent deployment for a project (any status) */
     async findLatestByProject(projectId: string) {
-      return db.query.deployment.findFirst({
+      return codec.openDeployment(await db.query.deployment.findFirst({
         where: eq(deployment.projectId, projectId),
         orderBy: [desc(deployment.createdAt)],
-      });
+      }));
     },
 
     /**
@@ -575,10 +600,10 @@ export function createDeploymentRepo(db: Database) {
      */
     async findLatestByProjects(projectIds: string[]): Promise<Map<string, Deployment>> {
       if (projectIds.length === 0) return new Map();
-      const rows = await db.query.deployment.findMany({
+      const rows = (await db.query.deployment.findMany({
         where: inArray(deployment.projectId, projectIds),
         orderBy: [desc(deployment.createdAt)],
-      });
+      })).map(codec.openDeployment);
       const out = new Map<string, Deployment>();
       for (const row of rows) {
         if (!out.has(row.projectId)) out.set(row.projectId, row);
@@ -608,20 +633,20 @@ export function createDeploymentRepo(db: Database) {
       if (ids.length === 0) return new Map();
       const rows = await db.select().from(deployment).where(inArray(deployment.id, ids));
       const out = new Map<string, Deployment>();
-      for (const row of rows) out.set(row.id, row);
+      for (const row of rows) out.set(row.id, codec.openDeployment(row));
       return out;
     },
 
     /** Find the most recent successful deployment for rollback */
     async findLatestReady(projectId: string, environment: string) {
-      return db.query.deployment.findFirst({
+      return codec.openDeployment(await db.query.deployment.findFirst({
         where: and(
           eq(deployment.projectId, projectId),
           eq(deployment.environment, environment),
           eq(deployment.status, "ready"),
         ),
         orderBy: [desc(deployment.createdAt)],
-      });
+      }));
     },
 
     /**
@@ -634,14 +659,14 @@ export function createDeploymentRepo(db: Database) {
      * that did come up.
      */
     async getLatestSuccessfulForBranch(projectId: string, branch: string) {
-      return db.query.deployment.findFirst({
+      return codec.openDeployment(await db.query.deployment.findFirst({
         where: and(
           eq(deployment.projectId, projectId),
           eq(deployment.branch, branch),
           inArray(deployment.status, ["ready", "partial_failure"]),
         ),
         orderBy: [desc(deployment.createdAt)],
-      });
+      }));
     },
 
     // ── Rollback / retention ───────────────────────────────────────────
@@ -686,10 +711,10 @@ export function createDeploymentRepo(db: Database) {
       if (environment) {
         conditions.push(eq(deployment.environment, environment));
       }
-      return db.query.deployment.findMany({
+      return (await db.query.deployment.findMany({
         where: and(...conditions),
         orderBy: [desc(deployment.createdAt)],
-      });
+      })).map(codec.openDeployment);
     },
 
     // ── Build sessions ─────────────────────────────────────────────────

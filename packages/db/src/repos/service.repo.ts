@@ -7,7 +7,8 @@ import {
   resolveCommandArgv,
   type ComposeAdvanced,
 } from "@repo/core";
-import type { Database } from "../client";
+import type { Database } from "../connection";
+import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
 
@@ -103,6 +104,124 @@ export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) 
   canonicalSpec(a) === canonicalSpec(b);
 
 /**
+ * Environment keys a repo compose edit would DELETE from the imported
+ * baseline. Values may be credentials or the only copy of legacy configuration,
+ * so deletion is the one compose change that must never auto-apply during a
+ * redeploy. The drift-approval path remains the explicit deletion operation.
+ */
+export function removedComposeEnvironmentKeys(
+  baseInput: ComposeServiceSpec,
+  nextInput: ComposeServiceSpec,
+): string[] {
+  const base = toComposeSpec(baseInput).environment ?? {};
+  const next = toComposeSpec(nextInput).environment ?? {};
+  return Object.keys(base)
+    .filter((key) => !Object.hasOwn(next, key))
+    .sort();
+}
+
+/** A raw source expression was replaced before inline edits had ownership
+ * metadata. It may be an old interpolation result or an intentional edit. */
+export function unresolvedComposeEnvironmentKeys(
+  ours: Pick<Service, "environment" | "advanced">,
+  source: ComposeServiceSpec,
+): string[] {
+  const overrides = new Set(ours.advanced?.environmentOverrideKeys ?? []);
+  return (source.advanced?.environmentTemplateKeys ?? []).filter(
+    (key) => !overrides.has(key) && ours.environment?.[key] !== source.environment?.[key],
+  );
+}
+
+/** Restore source expressions only with ownership evidence. Unknown legacy
+ * literals must be reviewed, not permanently accepted as edits or overwritten. */
+function restoreComposeEnvironment(
+  ours: ComposeServiceSpec,
+  theirs: ComposeServiceSpec,
+  preview: Record<string, string> | undefined,
+  base: ComposeServiceSpec | null,
+) {
+  const environment = { ...(ours.environment ?? {}) };
+  const templateKeys = new Set(ours.advanced?.environmentTemplateKeys ?? []);
+  const overrideKeys = new Set(ours.advanced?.environmentOverrideKeys ?? []);
+  const unresolved: string[] = [];
+  const legacyBaseline = base !== null && !Object.hasOwn(base.advanced ?? {}, "environmentTemplateKeys");
+  for (const key of theirs.advanced?.environmentTemplateKeys ?? []) {
+    const expression = theirs.environment?.[key];
+    if (expression === undefined) continue;
+    if (overrideKeys.has(key)) continue;
+    const value = environment[key];
+    if (
+      value === expression ||
+      (base === null && value === preview?.[key]) ||
+      (legacyBaseline && value === base.environment?.[key]) ||
+      (base === null && !Object.hasOwn(environment, key))
+    ) {
+      environment[key] = expression;
+      templateKeys.add(key);
+    } else if (legacyBaseline) {
+      // A real old baseline distinguishes a subsequent inline edit from a
+      // scan-time value, even when today's interpolation produces another value.
+      overrideKeys.add(key);
+      templateKeys.delete(key);
+    } else {
+      unresolved.push(key);
+    }
+  }
+  return {
+    environment,
+    advanced: mergeAdvanced(ours.advanced ?? null, {
+      ...(Object.hasOwn(ours.advanced ?? {}, "environmentTemplateKeys") ||
+        Object.hasOwn(theirs.advanced ?? {}, "environmentTemplateKeys")
+        ? { environmentTemplateKeys: [...templateKeys] }
+        : {}),
+      ...(overrideKeys.size ? { environmentOverrideKeys: [...overrideKeys] } : {}),
+    }),
+    unresolved,
+  };
+}
+
+/**
+ * A current parser adds provenance metadata that older imported baselines could
+ * not contain. That is a representation upgrade, not a repo edit. It used to
+ * raise a review banner where the masked environment showed the same keys on
+ * both sides and `advanced` differed only by *TemplateKeys.
+ *
+ * Narrow by design: this applies only when the OLD baseline lacks a provenance
+ * marker the new parse carries, every non-environment compose field is equal
+ * after stripping those internal markers, and the environment key set is
+ * unchanged. Untouched values regain their source expressions; differing live
+ * values remain operator-owned.
+ */
+export function isComposeProvenanceUpgrade(
+  baseInput: ComposeServiceSpec,
+  nextInput: ComposeServiceSpec,
+): boolean {
+  const base = toComposeSpec(baseInput);
+  const next = toComposeSpec(nextInput);
+  const baseAdvanced = { ...(base.advanced ?? {}) } as Record<string, unknown>;
+  const nextAdvanced = { ...(next.advanced ?? {}) } as Record<string, unknown>;
+  const markerKeys = ["imageTemplate", "environmentTemplateKeys", "buildArgTemplateKeys"] as const;
+  const addsMarker = markerKeys.some(
+    (key) => !Object.hasOwn(baseAdvanced, key) && Object.hasOwn(nextAdvanced, key),
+  );
+  if (!addsMarker) return false;
+  for (const key of markerKeys) {
+    delete baseAdvanced[key];
+    delete nextAdvanced[key];
+  }
+  const envKeys = (value: Record<string, string>) => Object.keys(value).sort();
+  const comparable = (spec: ComposeServiceSpec, advanced: Record<string, unknown>) => ({
+    ...spec,
+    environment: envKeys(spec.environment ?? {}),
+    advanced,
+  });
+  return (
+    JSON.stringify(canonicalize(comparable(base, baseAdvanced))) ===
+    JSON.stringify(canonicalize(comparable(next, nextAdvanced)))
+  );
+}
+
+/**
  * The compose-owned fields as an UPDATE payload, with `advanced` MERGED onto the
  * stored blob rather than replacing it.
  *
@@ -121,6 +240,7 @@ export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) 
 export function composeWritePatch(
   parsed: ParsedComposeService,
   stored?: {
+    image?: string | null;
     advanced?: ComposeAdvanced | null;
     buildArgs?: Record<string, string | null> | null;
     command?: string | null;
@@ -139,13 +259,22 @@ export function composeWritePatch(
     parsed.buildArgs !== undefined && suppliedBuildArgCount > 0 && !hasBuildArgMarker
       ? { ...(parsed.advanced ?? {}), buildArgTemplateKeys: [] }
       : parsed.advanced;
-  const advanced = mergeAdvanced(stored?.advanced ?? null, parsedAdvanced);
+  const hasImageTemplateMarker = Object.hasOwn(parsed.advanced ?? {}, "imageTemplate");
+  const usesLiteralImage = parsed.image !== undefined && !hasImageTemplateMarker;
+  const spec = toComposeSpec({ ...parsed, advanced: parsedAdvanced });
+  const advanced = mergeAdvanced(stored?.advanced ?? null, spec.advanced);
+  if (usesLiteralImage) {
+    // A writer that supplies an image without parser provenance means that
+    // image literally. This includes manual edits AND old frozen snapshots;
+    // inheriting the current row's expression would make either one deploy a
+    // different artifact than it requested.
+    delete advanced.imageTemplate;
+  }
   // An explicit empty map clears build args and any stale template provenance,
   // but should not add metadata to an otherwise byte-for-byte snapshot replay.
   if (parsed.buildArgs !== undefined && suppliedBuildArgCount === 0 && !hasBuildArgMarker) {
     delete advanced.buildArgTemplateKeys;
   }
-  const spec = toComposeSpec(parsed);
   // A deploy/rollback can replay a snapshot produced before buildArgs existed.
   // Its omission means "this writer has no opinion", not "delete every arg".
   // A fresh authoritative compose parse is different: an absent args block is a
@@ -175,7 +304,7 @@ export function composeWritePatch(
     ...spec,
     buildArgs,
     ...(commandArgv !== undefined ? { commandArgv } : {}),
-    advanced: composeAuthoritative ? clearComposeOwnedKeys(advanced, parsedAdvanced) : advanced,
+    advanced: composeAuthoritative ? clearComposeOwnedKeys(advanced, spec.advanced) : advanced,
   };
 }
 
@@ -207,7 +336,9 @@ const COMPOSE_OWNED_ADVANCED_KEYS = [
   "networkMode",
   "pidMode",
   "entrypoint",
+  "imageTemplate",
   "environmentTemplateKeys",
+  "environmentOverrideKeys",
   "buildArgTemplateKeys",
 ] as const;
 
@@ -400,14 +531,15 @@ export function normalizeRoutingFields(input: {
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
-export function createServiceRepo(db: Database) {
+export function createServiceRepo(db: Database, encryption: ConfigurationEncryption) {
+  const codec = createConfigurationSecrets(encryption);
   return {
     // ── Services ───────────────────────────────────────────────────────
 
     async findById(id: string) {
-      return db.query.service.findFirst({
+      return codec.openService(await db.query.service.findFirst({
         where: eq(service.id, id),
-      });
+      }));
     },
 
     /** Batch id → display name, for naming services in list responses. */
@@ -420,16 +552,16 @@ export function createServiceRepo(db: Database) {
     },
 
     async findByName(projectId: string, name: string) {
-      return db.query.service.findFirst({
+      return codec.openService(await db.query.service.findFirst({
         where: and(eq(service.projectId, projectId), eq(service.name, name)),
-      });
+      }));
     },
 
     async listByProject(projectId: string) {
-      return db.query.service.findMany({
+      return (await db.query.service.findMany({
         where: eq(service.projectId, projectId),
         orderBy: [asc(service.sortOrder), asc(service.name)],
-      });
+      })).map(codec.openService);
     },
 
     /**
@@ -467,10 +599,10 @@ export function createServiceRepo(db: Database) {
      */
     async listByProjects(projectIds: string[]): Promise<Map<string, Service[]>> {
       if (projectIds.length === 0) return new Map();
-      const rows = await db.query.service.findMany({
+      const rows = (await db.query.service.findMany({
         where: inArray(service.projectId, projectIds),
         orderBy: [asc(service.sortOrder), asc(service.name)],
-      });
+      })).map(codec.openService);
       const out = new Map<string, Service[]>();
       for (const id of projectIds) out.set(id, []);
       for (const row of rows) {
@@ -482,15 +614,17 @@ export function createServiceRepo(db: Database) {
 
     async create(data: Omit<NewService, "id">) {
       const id = generateId("svc");
-      const row = { id, ...data };
-      await db.insert(service).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Service;
+      // Return the persisted defaults and timestamps. Synthesizing a Service
+      // from the input omitted fields such as namespaceVolumes and made create
+      // disagree with the next read of the same row.
+      const [row] = await db.insert(service).values(codec.sealService({ id, ...data })).returning();
+      return codec.openService(row!);
     },
 
     async update(id: string, data: Partial<NewService>) {
       await db
         .update(service)
-        .set({ ...data, updatedAt: new Date() })
+        .set(codec.sealService({ ...data, updatedAt: new Date() }))
         .where(eq(service.id, id));
     },
 
@@ -512,10 +646,10 @@ export function createServiceRepo(db: Database) {
 
     /** List only the rows of one kind under a project. */
     async listByProjectKind(projectId: string, kind: "compose" | "monorepo") {
-      return db.query.service.findMany({
+      return (await db.query.service.findMany({
         where: and(eq(service.projectId, projectId), eq(service.kind, kind)),
         orderBy: [asc(service.sortOrder), asc(service.name)],
-      });
+      })).map(codec.openService);
     },
 
     /**
@@ -652,6 +786,9 @@ export function createServiceRepo(db: Database) {
       const removeMissing = opts?.removeMissing ?? true;
       // Default false: only a caller that just re-read the compose file may treat
       // an absent compose-owned key as a deletion (see COMPOSE_OWNED_ADVANCED_KEYS).
+      // That same authoritative read establishes/advances the 3-way-merge
+      // baseline. Without it, an image edited immediately after import is
+      // indistinguishable from a stale scan value during the first deployment.
       const composeAuthoritative = opts?.composeAuthoritative ?? false;
       // Defensive filter - even though every caller should already strip
       // non-compose entries before reaching here, an explicit kind="monorepo"
@@ -688,15 +825,18 @@ export function createServiceRepo(db: Database) {
           await this.update(ex.id, {
             ...patch,
             ...routing,
+            ...(composeAuthoritative ? { importedSpec: toComposeSpec(p), driftSpec: null } : {}),
             // enabled + sortOrder left as-is (already on ex)
           });
           results.push({
             ...ex,
             ...patch,
             ...routing,
+            ...(composeAuthoritative ? { importedSpec: toComposeSpec(p), driftSpec: null } : {}),
             updatedAt: new Date(),
           } as Service);
         } else {
+          const importedSpec = composeAuthoritative ? toComposeSpec(p) : undefined;
           // Create new - new compose services default to enabled.
           const svc = await this.create({
             projectId,
@@ -704,6 +844,7 @@ export function createServiceRepo(db: Database) {
             kind: "compose",
             ...toComposeSpec(p),
             ...routing,
+            ...(importedSpec ? { importedSpec } : {}),
             enabled: true,
             sortOrder: i,
           });
@@ -731,6 +872,7 @@ export function createServiceRepo(db: Database) {
      * values ("ours"):
      *   • repo unchanged             → keep ours (clear any stale drift)
      *   • repo changed, not edited   → auto-apply theirs, advance baseline
+     *   • repo deletes env keys       → keep ours, require explicit approval
      *   • repo changed, edited       → keep ours, set `driftSpec` (needs approval)
      *   • new upstream service       → create (baseline = theirs)
      *   • removed upstream, unedited → remove; edited/unknown baseline → keep
@@ -749,6 +891,7 @@ export function createServiceRepo(db: Database) {
       const existingByName = new Map(composeExisting.map((s) => [s.name, s]));
       const incomingNames = new Set(composeParsed.map((s) => s.name));
       const driftedNames: string[] = [];
+      const unresolvedEnvironment: Array<{ name: string; keys: string[] }> = [];
 
       for (let i = 0; i < composeParsed.length; i++) {
         const p = composeParsed[i];
@@ -785,24 +928,24 @@ export function createServiceRepo(db: Database) {
         // sortOrder is NEVER reset by reconcile — it's user-editable (dashboard
         // reordering) and the compose file has no ordering to authoritatively sync.
         if (base === null) {
-          // Older/import-wizard rows may hold scan-time interpolation results.
-          // Adopt the raw expression only where that result is still untouched;
-          // a value the operator changed remains intact, but is marked as a
-          // template target so deploy can consume final scoped env consistently.
-          const environment = {
-            ...((ex.environment as Record<string, string> | null) ?? {}),
-          };
-          for (const [key, expression] of Object.entries(p.environmentTemplates ?? {})) {
-            if (environment[key] === p.environment?.[key]) environment[key] = expression;
-          }
+          const restored = restoreComposeEnvironment(ours, theirs, p.environment, base);
           const storedBuildArgs = (ex.buildArgs as Record<string, string | null> | null) ?? {};
           const buildArgs =
             Object.keys(storedBuildArgs).length > 0 ? storedBuildArgs : (theirs.buildArgs ?? {});
           const buildArgTemplateKeys = (theirs.advanced?.buildArgTemplateKeys ?? []).filter(
             (key) => buildArgs[key] === theirs.buildArgs?.[key],
           );
-          const advanced = mergeAdvanced(ex.advanced as ComposeAdvanced | null, {
-            environmentTemplateKeys: theirs.advanced?.environmentTemplateKeys ?? [],
+          const parsedImageTemplate = theirs.advanced?.imageTemplate;
+          const storedImageTemplate = (ex.advanced as ComposeAdvanced | null)?.imageTemplate;
+          const mayAdoptImageTemplate =
+            !!parsedImageTemplate &&
+            (!!storedImageTemplate || ours.image === parsedImageTemplate.sourceValue);
+          const advanced = mergeAdvanced(restored.advanced, {
+            // A legacy row has no 3-way baseline. The source-only scan value is
+            // therefore the ownership proof: attach the expression when the
+            // stored image still matches it, but never graft provenance onto a
+            // different (operator-owned) literal image.
+            imageTemplate: mayAdoptImageTemplate ? parsedImageTemplate : null,
             // A manually changed arg is a literal override, not the raw repo
             // expression whose provenance this marker describes.
             buildArgTemplateKeys: Object.hasOwn(theirs.advanced ?? {}, "buildArgTemplateKeys")
@@ -810,16 +953,48 @@ export function createServiceRepo(db: Database) {
               : null,
           });
           await this.update(ex.id, {
-            environment,
+            environment: restored.environment,
             // buildArgs is new compose-owned state. Every pre-#689 row has the
             // column default `{}`, so keeping "ours" here would permanently
             // strand affected rows: the baseline advances to `theirs`, the next
             // reconcile sees repo===baseline, and the args never apply.
             buildArgs,
             advanced,
-            importedSpec: theirs,
-            driftSpec: null,
+            importedSpec: restored.unresolved.length ? null : theirs,
+            driftSpec: restored.unresolved.length ? theirs : null,
           });
+          if (restored.unresolved.length) {
+            unresolvedEnvironment.push({ name: p.name, keys: restored.unresolved });
+            driftedNames.push(p.name);
+          }
+          continue;
+        }
+
+        // Parser provenance was introduced after many compose baselines were
+        // stored. Upgrade untouched environment values and preserve edits;
+        // treating metadata alone as a repo edit creates an unresolvable,
+        // false-positive drift banner on every redeploy.
+        if (isComposeProvenanceUpgrade(base, theirs)) {
+          const restored = restoreComposeEnvironment(ours, theirs, p.environment, base);
+          const imageTemplate = theirs.advanced?.imageTemplate;
+          // Provenance may be attached only to the value it describes. If the
+          // live image diverged from the old baseline, it is an operator-owned
+          // override; attaching the newly discovered expression would make the
+          // build silently replace that override even though this branch is
+          // explicitly a metadata-only baseline upgrade.
+          const imageStillMatchesBaseline = ours.image === base.image;
+          await this.update(ex.id, {
+            environment: restored.environment,
+            advanced: mergeAdvanced(restored.advanced, {
+              ...(imageTemplate && imageStillMatchesBaseline ? { imageTemplate } : {}),
+            }),
+            importedSpec: theirs,
+            driftSpec: restored.unresolved.length ? theirs : null,
+          });
+          if (restored.unresolved.length) {
+            unresolvedEnvironment.push({ name: p.name, keys: restored.unresolved });
+            driftedNames.push(p.name);
+          }
           continue;
         }
 
@@ -828,11 +1003,41 @@ export function createServiceRepo(db: Database) {
         // missing `buildArgs` key is the deployment layer's version marker for
         // deciding whether a code-only webhook may skip the repo scan.
         if (composeSpecsEqual(theirs, base)) {
-          if (!Object.hasOwn(base, "buildArgs")) {
+          const restored = restoreComposeEnvironment(ours, theirs, p.environment, base);
+          if (restored.unresolved.length) {
+            if (!ex.driftSpec || !composeSpecsEqual(ex.driftSpec, theirs)) {
+              await this.update(ex.id, { driftSpec: theirs });
+            }
+            unresolvedEnvironment.push({ name: p.name, keys: restored.unresolved });
+            driftedNames.push(p.name);
+          } else if (!composeSpecsEqual(ours, {
+            ...ours, environment: restored.environment, advanced: restored.advanced,
+          })) {
+            await this.update(ex.id, {
+              environment: restored.environment, advanced: restored.advanced,
+              importedSpec: theirs, driftSpec: null,
+            });
+          } else if (!Object.hasOwn(base, "buildArgs")) {
             await this.update(ex.id, { importedSpec: theirs, driftSpec: null });
           } else if (ex.driftSpec) {
             await this.update(ex.id, { driftSpec: null });
           }
+          continue;
+        }
+
+        // Environment deletion is deliberately destructive even when the row is
+        // otherwise untouched. Compose env used to be the only storage layer for
+        // many legacy installs (including credentials); silently applying a repo
+        // deletion here can erase the last durable copy BEFORE the deployment
+        // reaches runtime preflight. Keep the current row and route the proposed
+        // deletion through the existing explicit drift-approval UI instead.
+        if (removedComposeEnvironmentKeys(base, theirs).length > 0) {
+          if (!ex.driftSpec || !composeSpecsEqual(ex.driftSpec, theirs)) {
+            await this.update(ex.id, { driftSpec: theirs });
+          }
+          driftedNames.push(p.name);
+          const unresolved = unresolvedComposeEnvironmentKeys(ex, base);
+          if (unresolved.length) unresolvedEnvironment.push({ name: p.name, keys: unresolved });
           continue;
         }
 
@@ -866,6 +1071,8 @@ export function createServiceRepo(db: Database) {
           await this.update(ex.id, { driftSpec: theirs });
         }
         driftedNames.push(p.name);
+        const unresolved = unresolvedComposeEnvironmentKeys(ex, base);
+        if (unresolved.length) unresolvedEnvironment.push({ name: p.name, keys: unresolved });
       }
 
       // Removed upstream: remove only if the user never edited it; otherwise keep.
@@ -877,7 +1084,7 @@ export function createServiceRepo(db: Database) {
       }
 
       const services = await this.listByProject(projectId);
-      return { services, driftedNames };
+      return { services, driftedNames, unresolvedEnvironment };
     },
 
     // ── Service Deployments ────────────────────────────────────────────

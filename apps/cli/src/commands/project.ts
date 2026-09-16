@@ -9,15 +9,14 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { apiRequest, paginate, ApiError } from "../lib/api-client";
-import { sseRequest } from "../lib/sse";
+import { getShipClient, ApiError } from "../lib/ship-client";
+import type { CreateProjectInput, TSetReleaseSourceBody } from "@repo/sdk";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
 import {
   renderReleaseImage,
   validateReleaseRepository,
   validateReleaseVersionUrl,
-  type ReleaseSource,
 } from "@repo/core";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -51,6 +50,8 @@ function printProject(project: Record<string, unknown>): void {
       project.gitOwner && project.gitRepo ? `${project.gitOwner}/${project.gitRepo}` : null,
     ],
     ["gitBranch", project.gitBranch],
+    ["deployTarget", project.deployTarget],
+    ["serverId", project.serverId],
     ["autoDeploy", project.autoDeploy],
     ["status", project.status],
   ];
@@ -70,7 +71,7 @@ interface ReleaseImageOptions {
 }
 
 /** Build the complete source-transition payload before touching the API. */
-export function releaseImageSourceFromOptions(opts: ReleaseImageOptions): ReleaseSource {
+export function releaseImageSourceFromOptions(opts: ReleaseImageOptions): TSetReleaseSourceBody {
   const imageTemplate = opts.imageTemplate.trim();
   const repo = opts.githubRepo?.trim() || undefined;
   const versionUrl = opts.versionUrl?.trim() || undefined;
@@ -125,14 +126,19 @@ const listCmd = new Command("list")
   .action(
     action(async () => {
       const rows: Record<string, unknown>[] = [];
-      for await (const p of paginate<Record<string, unknown>>("/projects")) {
-        rows.push({
-          id: p.id,
-          name: p.name,
-          slug: p.slug,
-          repo: p.gitOwner && p.gitRepo ? `${p.gitOwner}/${p.gitRepo}` : "",
-          source: p.source ?? "local",
-        });
+      const projects = getShipClient().projects;
+      for (let page = 1; ; page++) {
+        const result = await projects.list({ page, perPage: 50 });
+        for (const p of result.data) {
+          rows.push({
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            repo: p.gitOwner && p.gitRepo ? `${p.gitOwner}/${p.gitRepo}` : "",
+            source: p.source ?? "local",
+          });
+        }
+        if (!result.data.length || rows.length >= result.total) break;
       }
       printTable(rows, ["id", "name", "slug", "repo", "source"]);
     }),
@@ -145,10 +151,7 @@ const getCmd = new Command("get")
   .argument("<id>", "Project ID")
   .action(
     action(async (id: string) => {
-      const { data } = await apiRequest<{ data: Record<string, unknown> }>(
-        `/projects/${encodeURIComponent(id)}`,
-      );
-      printProject(data);
+      printProject(await getShipClient().projects.get(id));
     }),
   );
 
@@ -167,12 +170,9 @@ const releaseImageCmd = new Command("release-image")
   .action(
     action(async (id: string, opts: ReleaseImageOptions) => {
       const source = releaseImageSourceFromOptions(opts);
-      const result = await apiRequest<{ data: Record<string, unknown> }>(
-        `/projects/${encodeURIComponent(id)}/release-image-source`,
-        { method: "PUT", body: JSON.stringify(source) },
-      );
+      const result = await getShipClient().projects.setReleaseImageSource(id, source);
       if (isJsonMode()) {
-        printJson(result.data);
+        printJson(result);
         return;
       }
       const upstream =
@@ -198,9 +198,10 @@ const createCmd = new Command("create")
   .option("--local-path <path>", "Local source path")
   .option("--port <port>", "Container port", (v) => Number(v))
   .option("--type <type>", "Project type: app | docker | services | monorepo")
+  .option("--server <id>", "Registered server ID (see `openship server list`)")
   .action(
     action(async (opts) => {
-      const body: Record<string, unknown> = { name: opts.name };
+      const body: CreateProjectInput = { name: opts.name };
       if (opts.slug) body.slug = opts.slug;
       if (opts.gitOwner) body.gitOwner = opts.gitOwner;
       if (opts.gitRepo) body.gitRepo = opts.gitRepo;
@@ -209,11 +210,13 @@ const createCmd = new Command("create")
       if (opts.localPath) body.localPath = opts.localPath;
       if (opts.port) body.port = opts.port;
       if (opts.type) body.projectType = opts.type;
+      if (opts.server) body.serverId = opts.server;
 
-      const { data } = await apiRequest<{ data: Record<string, unknown> }>("/projects", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      // The shared import scans Compose/monorepo metadata before creating rows.
+      const client = getShipClient();
+      const data = body.localPath
+        ? await client.projects.importLocal({ ...body, localPath: body.localPath })
+        : await client.projects.create(body);
       ok(`\n  Created project ${data.name} (${data.id})\n`);
       printProject(data);
     }),
@@ -242,15 +245,17 @@ const deleteCmd = new Command("delete")
           return;
         }
       }
-      const query = new URLSearchParams();
-      if (opts.force) query.set("force", "true");
-      if (opts.forceOrphan) query.set("forceOrphan", "true");
-      if (opts.wipeVolumes) query.set("wipeVolumes", "true");
-      const qs = query.toString();
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}${qs ? `?${qs}` : ""}`,
-        { method: "DELETE" },
-      );
+      const result = await getShipClient().projects.remove(id, {
+        ...(opts.force && { force: true }),
+        ...(opts.forceOrphan && { forceOrphan: true }),
+        ...(opts.wipeVolumes && { wipeVolumes: true }),
+      });
+      if (!result.ok) {
+        if (isJsonMode()) printJson(result);
+        else err(`\n  ${result.message}\n`);
+        process.exitCode = 1;
+        return;
+      }
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -270,10 +275,7 @@ envCmd
   .option("--environment <env>", "Filter by environment (production|preview|development)")
   .action(
     action(async (id: string, opts) => {
-      const qs = opts.environment ? `?environment=${encodeURIComponent(opts.environment)}` : "";
-      const { data } = await apiRequest<{ data: Record<string, unknown>[] }>(
-        `/projects/${encodeURIComponent(id)}/env${qs}`,
-      );
+      const data = await getShipClient().projects.listEnvVars(id, { environment: opts.environment });
       printTable(
         data.map((v) => ({
           key: v.key,
@@ -333,13 +335,7 @@ envCmd
         process.exitCode = 1;
         return;
       }
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/env`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ environment: opts.environment, upserts, deletes }),
-        },
-      );
+      const result = await getShipClient().projects.mergeEnvVars(id, { environment: opts.environment, upserts, deletes });
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -347,6 +343,7 @@ envCmd
       ok(
         `\n  Updated env (${opts.environment}): ${upserts.length} upserted, ${deletes.length} deleted\n`,
       );
+      for (const warning of result.warnings ?? []) info(`  Warning: ${warning}\n`);
     }),
   );
 
@@ -364,18 +361,9 @@ gitCmd
   .option("--installation-id <id>", "GitHub App installation id", (v) => Number(v))
   .action(
     action(async (id: string, opts) => {
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/git/link`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            owner: opts.owner,
-            repo: opts.repo,
-            branch: opts.branch,
-            installationId: opts.installationId,
-          }),
-        },
-      );
+      const result = await getShipClient().projects.linkRepo(id, {
+        owner: opts.owner, repo: opts.repo, branch: opts.branch, installationId: opts.installationId,
+      });
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -395,10 +383,7 @@ gitCmd
   .argument("<branch>", "Branch name")
   .action(
     action(async (id: string, branch: string) => {
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/branch`,
-        { method: "POST", body: JSON.stringify({ branch }) },
-      );
+      const result = await getShipClient().projects.setBranch(id, { branch });
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -422,10 +407,7 @@ gitCmd
         return;
       }
       const enabled = !!opts.enable;
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/auto-deploy`,
-        { method: "POST", body: JSON.stringify({ enabled }) },
-      );
+      const result = await getShipClient().projects.setAutoDeploy(id, { enabled });
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -451,13 +433,7 @@ gitCmd
         process.exitCode = 1;
         return;
       }
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/webhook-domain`,
-        {
-          method: "POST",
-          body: JSON.stringify({ domain: opts.clear ? null : domain }),
-        },
-      );
+      const result = await getShipClient().projects.setWebhookDomain(id, { domain: opts.clear ? null : domain! });
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -476,13 +452,7 @@ const connectCmd = new Command("connect")
   .option("--include-www", "Also connect the www. variant")
   .action(
     action(async (id: string, domain: string, opts) => {
-      const result = await apiRequest<{ domain: Record<string, unknown>; records: unknown }>(
-        `/projects/${encodeURIComponent(id)}/connect`,
-        {
-          method: "POST",
-          body: JSON.stringify({ domain, includeWww: !!opts.includeWww }),
-        },
-      );
+      const result = await getShipClient().projects.connectDomain(id, { domain, includeWww: !!opts.includeWww });
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -500,10 +470,7 @@ const enableCmd = new Command("enable")
   .argument("<id>", "Project ID")
   .action(
     action(async (id: string) => {
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/enable`,
-        { method: "POST" },
-      );
+      const result = await getShipClient().projects.enable(id);
       if (isJsonMode()) printJson(result);
       else ok(`\n  Project enabled\n`);
     }),
@@ -514,10 +481,7 @@ const disableCmd = new Command("disable")
   .argument("<id>", "Project ID")
   .action(
     action(async (id: string) => {
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/disable`,
-        { method: "POST" },
-      );
+      const result = await getShipClient().projects.disable(id);
       if (isJsonMode()) printJson(result);
       else ok(`\n  Project disabled\n`);
     }),
@@ -532,15 +496,12 @@ const sleepModeCmd = new Command("sleep-mode")
   .argument("<mode>", `One of: ${SLEEP_MODES.join(", ")}`)
   .action(
     action(async (id: string, mode: string) => {
-      if (!SLEEP_MODES.includes(mode)) {
+      if (mode !== "auto_sleep" && mode !== "always_on") {
         err(`  mode must be one of: ${SLEEP_MODES.join(", ")}`);
         process.exitCode = 1;
         return;
       }
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/sleep-mode`,
-        { method: "POST", body: JSON.stringify({ sleep_mode: mode }) },
-      );
+      const result = await getShipClient().projects.setSleepMode(id, { sleep_mode: mode });
       if (isJsonMode()) printJson(result);
       else ok(`\n  Sleep mode set to ${mode}\n`);
     }),
@@ -562,10 +523,9 @@ const transferCmd = new Command("transfer")
         return;
       }
       requireSelfHost(await fetchCaps());
-      const result = await apiRequest<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(id)}/transfer/${direction}`,
-        { method: "POST", body: JSON.stringify({}) },
-      );
+      const result = direction === "to-cloud"
+        ? await getShipClient().projects.transferToCloud(id)
+        : await getShipClient().projects.transferToSelfHosted(id);
       if (isJsonMode()) {
         printJson(result);
         return;
@@ -588,11 +548,8 @@ const logsCmd = new Command("logs")
   .option("-f, --follow", "Stream logs until interrupted")
   .action(
     action(async (id: string, opts) => {
-      const tailQs = opts.tail ? `?tail=${opts.tail}` : "";
       if (!opts.follow) {
-        const { data } = await apiRequest<{ data: Record<string, unknown>[] }>(
-          `/projects/${encodeURIComponent(id)}/logs${tailQs}`,
-        );
+        const data = await getShipClient().projects.runtimeLogs(id, { tail: opts.tail });
         if (isJsonMode()) {
           printJson(data);
           return;
@@ -601,9 +558,7 @@ const logsCmd = new Command("logs")
         return;
       }
 
-      for await (const ev of sseRequest(
-        `/projects/${encodeURIComponent(id)}/logs/stream${tailQs}`,
-      )) {
+      for await (const ev of getShipClient().projects.streamRuntimeLogs(id, { tail: opts.tail })) {
         if (ev.event === "error") {
           const parsed = safeParse(ev.data);
           err(`  ${(parsed?.error as string) ?? ev.data}`);
@@ -631,12 +586,11 @@ const serverLogsCmd = new Command("server-logs")
   .option("-f, --follow", "Stream request logs until interrupted")
   .action(
     action(async (id: string, opts) => {
-      const base = `/projects/${encodeURIComponent(id)}/server-logs`;
-      const domainQs = opts.domain ? `domain=${encodeURIComponent(opts.domain)}` : "";
+      const domain = opts.domain as string | undefined;
 
       if (!opts.follow) {
-        const q = [opts.limit ? `limit=${opts.limit}` : "", domainQs].filter(Boolean).join("&");
-        const { logs } = await apiRequest<{ logs: unknown[] }>(`${base}/recent${q ? `?${q}` : ""}`);
+        const limit = opts.limit ? Math.min(Math.max(Math.trunc(opts.limit) || 50, 1), 200) : undefined;
+        const { logs } = await getShipClient().projects.recentServerLogs(id, { domain, limit });
         printJson(logs);
         return;
       }
@@ -644,20 +598,16 @@ const serverLogsCmd = new Command("server-logs")
       // Streaming path branches on deployment shape. Cloud projects mint an edge
       // token the browser connects to directly — not yet wired in the CLI — so we
       // only follow self-hosted OpenResty streams here.
-      const token = await apiRequest<{ kind: string }>(
-        `${base}/stream-token${domainQs ? `?${domainQs}` : ""}`,
-      );
+      const token = await getShipClient().projects.getServerLogStreamToken(id, { domain });
       if (token.kind === "cloud") {
         info("  Cloud server-log streaming is coming soon — view it in the dashboard.");
         info("  Showing recent entries instead:");
-        const { logs } = await apiRequest<{ logs: unknown[] }>(
-          `${base}/recent${domainQs ? `?${domainQs}` : ""}`,
-        );
+        const { logs } = await getShipClient().projects.recentServerLogs(id, { domain });
         printJson(logs);
         return;
       }
 
-      for await (const ev of sseRequest(`${base}/stream${domainQs ? `?${domainQs}` : ""}`)) {
+      for await (const ev of getShipClient().projects.streamServerLogs(id, { domain })) {
         if (ev.event === "error") {
           const parsed = safeParse(ev.data);
           err(`  ${(parsed?.error as string) ?? ev.data}`);

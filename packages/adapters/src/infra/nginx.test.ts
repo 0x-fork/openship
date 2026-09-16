@@ -696,6 +696,105 @@ describe("NginxProvider.serveEdgeChallenge", () => {
   });
 });
 
+/**
+ * #556 — a routed host whose app is not answering used to get OpenResty's stock 502. That
+ * matters beyond looks: Openship Cloud's shared edge forwards to the box and relays the
+ * box's response, so the stock page is what a visitor to the operator's OWN domain reads,
+ * branded for a third party. The page only belongs in vhosts where something can 502.
+ */
+describe("NginxProvider upstream-down page", () => {
+  const handlerCount = (c: string) => (c.match(/location @osh_upstream_down \{/g) ?? []).length;
+
+  test("upgrades an existing generation-2 route without changing its upstream", async () => {
+    const { nginx, files, conf } = setup();
+    await nginx.registerRoute({ domain: "legacy.example.com", tls: false, targetUrl: "http://127.0.0.1:3009" });
+    files.set(`${SITES}/legacy-example-com.conf`, `# openship-vhost-gen: 2
+server {
+    listen 80;
+    server_name legacy.example.com;
+    location / { proxy_pass http://127.0.0.1:3009; }
+}`);
+    const result = await nginx.reapplyStoredRoutes();
+    expect(result.repaired).toEqual(["legacy.example.com"]);
+    expect(result.failed).toEqual([]);
+    expect(readVhostGeneration(conf("legacy-example-com")!)).toBeGreaterThan(2);
+    expect(conf("legacy-example-com")).toContain("openship-edge-upstream-down");
+    expect(conf("legacy-example-com")).toContain("proxy_pass http://127.0.0.1:3009");
+  });
+
+  test("a proxy vhost carries it in BOTH serving blocks", async () => {
+    // A named location is server-scoped, so a block missing it would answer the
+    // `error_page` with a 500 instead of the page.
+    const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
+    await nginx.registerRoute(PROXY);
+    const c = conf("app-example-com")!;
+    expect(handlerCount(c)).toBe(2);
+    // And the body actually ships, rather than an empty handler that yields a blank 502.
+    expect(c).toContain("openship-edge-upstream-down");
+    expect(c).toContain("Application unavailable");
+  });
+
+  test("the error_page sits at SERVER scope, not inside location /", async () => {
+    // Server scope is what makes it cover the extra locations a compiled vercel.json adds.
+    // Indentation is the readable proxy for scope here: 4 spaces is the server block.
+    const { nginx, conf } = setup();
+    await nginx.registerRoute(PROXY);
+    expect(conf("app-example-com")!).toMatch(/^ {4}error_page 502 504 @osh_upstream_down;$/m);
+  });
+
+  test("intercepts 502 and 504 only — never 503", async () => {
+    // `blockStatus` and `rateLimit.status` are operator-overridable and `limit_req_status`
+    // is 429; a 503 arm would brand a deliberate block as an outage.
+    const { nginx, conf } = setup();
+    await nginx.registerRoute(PROXY);
+    const line = conf("app-example-com")!.match(/^ {4}error_page .*$/m)![0];
+    expect(line).toContain("502");
+    expect(line).toContain("504");
+    expect(line).not.toContain("503");
+  });
+
+  test("passes the intercepted code through — no `=` before the named location", async () => {
+    // Verified against openresty 1.27.1.1: `= @loc` makes the named location's own return
+    // code replace the original, collapsing a real 504 into a 502.
+    const { nginx, conf } = setup();
+    await nginx.registerRoute(PROXY);
+    expect(conf("app-example-com")!).not.toContain("= @osh_upstream_down");
+  });
+
+  test("a host redirect carries none — it has no upstream to be down", async () => {
+    const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
+    await nginx.registerRoute({
+      ...OURS,
+      domain: "www.example.com",
+      redirectHost: { target: "example.com", statusCode: 301 },
+    });
+    expect(handlerCount(conf("www-example-com")!)).toBe(0);
+  });
+
+  test("a static vhost carries none — it serves from disk", async () => {
+    const { nginx, conf } = setup();
+    await nginx.registerRoute({
+      domain: "site.example.com",
+      tls: false,
+      staticRoot: "/opt/openship/static/site/dist",
+    });
+    expect(handlerCount(conf("site-example-com")!)).toBe(0);
+  });
+
+  test("a static vhost WITH vercel.json proxy locations does carry it", async () => {
+    // The case a `!staticRoot` gate would have missed: the disk root cannot 502, but the
+    // `/api/` location proxying to a real upstream can.
+    const { nginx, conf } = setup();
+    await nginx.registerRoute({
+      domain: "hybrid.example.com",
+      tls: false,
+      staticRoot: "/opt/openship/static/hybrid/dist",
+      proxyLocations: [{ pathPrefix: "/api/", targetUrl: "http://10.0.0.5:3000" }],
+    });
+    expect(handlerCount(conf("hybrid-example-com")!)).toBe(1);
+  });
+});
+
 describe("NginxProvider config generation", () => {
   test("proxy route with no cert yet → HTTP-only block", async () => {
     const { nginx, conf, files } = setup();
@@ -2344,6 +2443,41 @@ describe("vercel.json path redirects", () => {
     expect(c).not.toContain("rewrite ");
   });
 
+  test("emits exact and prefix locations for the same path independently", async () => {
+    const { nginx, conf } = setup();
+    await nginx.registerRoute({
+      ...PROXY,
+      proxyLocations: [
+        { pathPrefix: "/mcp", targetUrl: "http://10.0.0.5:3000", exact: true },
+        { pathPrefix: "/mcp", targetUrl: "http://10.0.0.6:3000" },
+        { pathPrefix: "/", targetUrl: "http://10.0.0.7:3000", exact: true },
+      ],
+    });
+    const c = appConf(conf);
+
+    expect(c).toContain("location = /mcp {");
+    expect(c).toContain("location ^~ /mcp {");
+    expect(c).toContain("location = / {");
+    expect(c.match(/location = \/mcp \{/g)).toHaveLength(1);
+    expect(c.match(/location \^~ \/mcp \{/g)).toHaveLength(1);
+  });
+
+  test("keeps validating the path separately from its exact-match flag", async () => {
+    const { nginx } = setup();
+    await expect(
+      nginx.registerRoute({
+        ...PROXY,
+        proxyLocations: [
+          {
+            pathPrefix: "/mcp;add_header X-Injected yes",
+            targetUrl: "http://10.0.0.5:3000",
+            exact: true,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/proxy location prefix/);
+  });
+
   // The rewrite twin of the `location /` duplication fixed for redirects above: a
   // capture-free destination keeps `pathPrefix: "/"` (Vercel's own documented shape), and
   // nginx compares location NAMES — `^~` only sets `noregex` — so `^~ /` next to `/` is
@@ -2390,7 +2524,14 @@ describe("vercel.json path redirects", () => {
     await nginx.registerRoute({
       ...PROXY,
       webhookProxy: "http://127.0.0.1:4000/api/webhooks/",
-      proxyLocations: [{ pathPrefix: "/_openship/hooks/", targetUrl: "http://attacker.example" }],
+      proxyLocations: [
+        { pathPrefix: "/_openship/hooks/", targetUrl: "http://attacker.example" },
+        {
+          pathPrefix: "/_openship/hooks/",
+          targetUrl: "http://exact-attacker.example",
+          exact: true,
+        },
+      ],
     });
     const c = appConf(conf);
     expect(c.match(/location \^~ \/_openship\/hooks\/ \{/g)).toHaveLength(1);

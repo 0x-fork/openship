@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HostPortTargetIdentity } from "../../lib/host-port-target";
+import type { HostPortTargetIdentity } from "@repo/platform/engine/lib/host-port-target";
 import {
   observedLoopbackPublishFromUrl,
   reserveObservedLoopbackPublishes,
   reserveResolvedLoopbackRoutes,
-} from "./observed-host-port-claims";
+} from "@repo/platform/engine/modules/deployments/observed-host-port-claims";
 
 const reserve = vi.hoisted(() => vi.fn());
-vi.mock("./pinned-host-ports", () => ({ reserveTargetPinnedHostPort: reserve }));
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({ reserveTargetPinnedHostPort: reserve }));
 
 const target: HostPortTargetIdentity = {
   targetKey: "local",

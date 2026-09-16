@@ -1,3 +1,4 @@
+import { RouteRuleInputSchema, ConnectProjectDomainInputSchema, SourceScanOptionsSchema } from "@repo/contracts";
 /**
  * Project routes - mounted at /api/projects in app.ts.
  *
@@ -12,9 +13,11 @@
  * local handler. See lib/cloud/project-router.ts.
  */
 
+import { UpdateCloneTokenSchema } from "@repo/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureRouter } from "../../lib/secure-router";
+import { requireInstanceAdmin } from "../../middleware/instance-admin";
 import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
@@ -38,11 +41,11 @@ import {
   SetBranchBody,
   SetSleepModeBody,
   SetOptionsBody,
-} from "./project.schema";
+} from "@repo/contracts";
 import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
-} from "../incoming-webhooks/incoming.schema";
+} from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -60,23 +63,23 @@ r.get("/local", { tag: "project:list", localOnly: true }, ctrl.listLocal);
 // session default); no :id in the URL — the controller resolves the
 // project from the JSON body. `collection: true` keeps the existing
 // :id-required default safe for per-resource routes below.
-r.post("/scan", { tag: "project:write", collection: true, localOnly: true }, ctrl.scanLocal);
-r.post("/import", { tag: "project:write", collection: true, localOnly: true }, ctrl.importLocal);
+r.post("/scan", { tag: "project:write", collection: true, localOnly: true, auditHandledByOperation: true }, ctrl.scanLocal);
+r.post("/import", { tag: "project:write", collection: true, projectCreate: true, localOnly: true, auditHandledByOperation: true }, ctrl.importLocal);
 
 /* ─── Live edge config read-back (saved vs. served, per hostname) ───────── */
 r.get("/:id/edge-config", { tag: "project:read", localOnly: true }, edgeConfig.getEdgeConfig);
 
 /* ─── Route rules (self-hosted OpenResty edge: rate-limit · ban · allow/deny) ── */
 r.get("/:id/route-rules", { tag: "project:read", localOnly: true }, routeRules.listRouteRules);
-r.post("/:id/route-rules", { tag: "project:write", localOnly: true }, routeRules.createRouteRule);
+r.post("/:id/route-rules", { tag: "project:write", localOnly: true, body: RouteRuleInputSchema, auditHandledByOperation: true }, routeRules.createRouteRule);
 r.patch(
   "/:id/route-rules/:ruleId",
-  { tag: "project:write", localOnly: true },
+  { tag: "project:write", localOnly: true, auditHandledByOperation: true },
   routeRules.updateRouteRule,
 );
 r.delete(
   "/:id/route-rules/:ruleId",
-  { tag: "project:write", localOnly: true },
+  { tag: "project:write", localOnly: true, auditHandledByOperation: true },
   routeRules.deleteRouteRule,
 );
 
@@ -105,7 +108,7 @@ r.post(
   "/folder/session",
   {
     tag: "project:write",
-    collection: true,
+    collection: true, collectionProject: true, auditHandledByOperation: true,
     body: FolderSessionBody,
     mcp: {
       description:
@@ -118,7 +121,8 @@ r.post(
   "/folder/scan/:sessionId",
   {
     tag: "project:write",
-    collection: true,
+    collection: true, collectionProject: true, auditHandledByOperation: true,
+    body: SourceScanOptionsSchema,
     mcp: {
       description:
         "Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty ({}). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present.",
@@ -131,7 +135,7 @@ r.post(
   // toggle — one service, only the keys the body names. Write-gated
   // (project:write); no mcp — reveal is a dashboard action.
   "/folder/scan/:sessionId/env-reveal",
-  { tag: "project:write", collection: true },
+  { tag: "project:write", collection: true, collectionProject: true, auditHandledByOperation: true },
   folder.revealSessionEnv,
 );
 // The relay upload is SELF-HOSTED ONLY: on the SaaS the browser uploads
@@ -139,7 +143,7 @@ r.post(
 // 404s this in CLOUD_MODE; the 300MB bodyLimit only runs once localOnly passes.
 r.post(
   "/folder/upload/:sessionId",
-  { tag: "project:write", collection: true, localOnly: true },
+  { tag: "project:write", collection: true, collectionProject: true, auditHandledByOperation: true, localOnly: true },
   bodyLimit({
     maxSize: 300_000_000,
     onError: (c) =>
@@ -158,6 +162,8 @@ r.post(
     tag: "project:write",
     collection: true,
     body: EnsureProjectBody,
+    collectionProject: true,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Folder-upload deploy — STEP 3/4. Create or update the project that carries the build config — deployments/build/access reads config from the PROJECT ROW, not the upload session, so this must run first. Map the folder/scan fields in (framework = the scan's stack id) and set gitProvider:'upload'. For a docker-compose folder, pass the scan's `services` array through too — that persists the project's service set — AND pass `uploadSessionId` with it, since the scan masks env values (`••••••••`) and that is what restores them. Pass projectId to update an existing project. Returns the project id for STEP 4.",
@@ -173,6 +179,7 @@ r.post(
     collection: true,
     projectCreate: true,
     body: CreateProjectBody,
+    auditHandledByOperation: true,
     mcp: {
       description:
         "Create a project from a git or local source (build config baked into the project). For a folder-upload deploy use projects/ensure instead (it accepts the folder/scan config and gitProvider:'upload').",
@@ -196,12 +203,13 @@ r.patch(
   {
     tag: "project:write",
     body: UpdateProjectBody,
+    auditHandledByOperation: true,
     mcp: { description: "Update a project's configuration (build config, source, options)." },
   },
   cloudProjectProxy,
   ctrl.update,
 );
-r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
+r.delete("/:id", { auditHandledByOperation: true, tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
 r.get(
   "/:id/info",
   {
@@ -223,6 +231,7 @@ r.get(
 r.post(
   "/:id/environments",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     body: CreateProjectEnvironmentBody,
     mcp: { description: "Create a project environment (e.g. a preview)." },
@@ -244,6 +253,7 @@ r.get(
 r.post(
   "/:id/options",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     body: SetOptionsBody,
     mcp: { description: "Set build/deploy options for a project." },
@@ -276,11 +286,25 @@ r.post(
   cloudProjectProxy,
   ctrl.outputCheck,
 );
+r.post(
+  "/:id/clear-build",
+  { auditHandledByOperation: true,
+    tag: "project:admin",
+    localOnly: true,
+    mcp: {
+      description:
+        "Clear all unused Docker build cache on the project's self-hosted Docker server. Build cache is host-wide, so other projects on that server may rebuild dependencies on their next deployment. Returns reclaimed bytes.",
+    },
+  },
+  requireInstanceAdmin(),
+  ctrl.clearBuildCache,
+);
 
 /* ─── Enable / Disable ─────────────────────────────────────────────────── */
 r.post(
   "/:id/enable",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     mcp: { description: "Enable a project (allow deploys / bring online)." },
   },
@@ -290,6 +314,7 @@ r.post(
 r.post(
   "/:id/disable",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     mcp: { description: "Disable a project (pause deploys / take offline)." },
   },
@@ -301,6 +326,7 @@ r.post(
 r.post(
   "/:id/routing/retry",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     mcp: {
       description:
@@ -358,6 +384,7 @@ r.get(
 r.patch(
   "/:id/env",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     // Validated by the auto-wired tbValidator (spec.body) → a wrong-shape body
     // is a 400, not a 500 in the service's data.upserts.map. #231
@@ -372,7 +399,7 @@ r.patch(
 
 /* ─── Per-project clone token (git credential override) ────────────────── */
 r.get("/:id/clone-token", { tag: "project:read" }, cloudProjectProxy, ctrl.getCloneToken);
-r.patch("/:id/clone-token", { tag: "project:admin" }, cloudProjectProxy, ctrl.updateCloneToken);
+r.patch("/:id/clone-token", { auditHandledByOperation: true, body: UpdateCloneTokenSchema, tag: "project:admin" }, cloudProjectProxy, ctrl.updateCloneToken);
 
 /* ─── Git ──────────────────────────────────────────────────────────────── */
 r.get(
@@ -406,7 +433,7 @@ r.get(
 );
 r.post(
   "/:id/git/link",
-  {
+  { auditHandledByOperation: true,
     tag: "project:write",
     body: LinkRepoBody,
     mcp: { description: "Link a git repository to the project." },
@@ -416,7 +443,7 @@ r.post(
 );
 r.put(
   "/:id/release-image-source",
-  {
+  { auditHandledByOperation: true,
     tag: "project:write",
     body: SetReleaseSourceBody,
     mcp: {
@@ -435,7 +462,7 @@ r.get(
 );
 r.post(
   "/:id/auto-deploy",
-  {
+  { auditHandledByOperation: true,
     tag: "project:write",
     body: SetAutoDeployBody,
     mcp: { description: "Enable/disable auto-deploy on push." },
@@ -443,10 +470,11 @@ r.post(
   cloudProjectProxy,
   ctrl.setAutoDeploy,
 );
-r.post("/:id/webhook-domain", { tag: "project:write" }, cloudProjectProxy, ctrl.setWebhookDomain);
+r.post("/:id/webhook-domain", { auditHandledByOperation: true, tag: "project:write" }, cloudProjectProxy, ctrl.setWebhookDomain);
 r.post(
   "/:id/branch",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     body: SetBranchBody,
     mcp: { description: "Set the project's deploy branch." },
@@ -468,7 +496,7 @@ r.get(
 r.post(
   "/:id/incoming-webhooks",
   {
-    tag: "project:write",
+    tag: "project:write", auditHandledByOperation: true,
     body: CreateIncomingWebhookBody,
     mcp: {
       description: "Create an incoming webhook that fires a deploy or job when its URL is called.",
@@ -480,7 +508,7 @@ r.post(
 r.patch(
   "/:id/incoming-webhooks/:hookId",
   {
-    tag: "project:write",
+    tag: "project:write", auditHandledByOperation: true,
     body: UpdateIncomingWebhookBody,
     mcp: { description: "Update an incoming webhook (name/enabled/action/auth)." },
   },
@@ -490,7 +518,7 @@ r.patch(
 r.post(
   "/:id/incoming-webhooks/:hookId/rotate",
   {
-    tag: "project:write",
+    tag: "project:write", auditHandledByOperation: true,
     mcp: { description: "Rotate an incoming webhook's token / HMAC secret." },
   },
   cloudProjectProxy,
@@ -498,7 +526,7 @@ r.post(
 );
 r.delete(
   "/:id/incoming-webhooks/:hookId",
-  { tag: "project:write", mcp: { description: "Delete an incoming webhook." } },
+  { tag: "project:write", auditHandledByOperation: true, mcp: { description: "Delete an incoming webhook." } },
   cloudProjectProxy,
   incomingWebhooks.remove,
 );
@@ -524,6 +552,13 @@ r.get(
   incomingWebhooks.deliveries,
 );
 
+r.post(
+  "/:id/incoming-webhooks/:hookId/invoke",
+  { tag: "project:write", auditHandledByOperation: true, mcp: { description: "Invoke an enabled incoming webhook with the current and saved actor's permissions." } },
+  cloudProjectProxy,
+  incomingWebhooks.invoke,
+);
+
 /* ─── Resources ────────────────────────────────────────────────────────── */
 r.get(
   "/:id/resources",
@@ -546,6 +581,7 @@ r.get(
 r.patch(
   "/:id/resources",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     body: UpdateResourcesBody,
     mcp: { description: "Update the project's CPU/RAM/disk, sleep mode, or port." },
@@ -553,12 +589,13 @@ r.patch(
   cloudProjectProxy,
   ctrl.updateResources,
 );
-r.post("/:id/resources", { tag: "project:write" }, cloudProjectProxy, ctrl.updateResources);
+r.post("/:id/resources", { auditHandledByOperation: true, tag: "project:write" }, cloudProjectProxy, ctrl.updateResources);
 
 /* ─── Sleep mode ───────────────────────────────────────────────────────── */
 r.post(
   "/:id/sleep-mode",
   {
+    auditHandledByOperation: true,
     tag: "project:write",
     body: SetSleepModeBody,
     mcp: { description: "Set the project's sleep mode (auto_sleep / always_on)." },
@@ -585,7 +622,7 @@ r.post(
 );
 
 /* ─── Custom domain ────────────────────────────────────────────────────── */
-r.post("/:id/connect", { tag: "project:write" }, cloudProjectProxy, ctrl.connectDomain);
+r.post("/:id/connect", { tag: "project:write", body: ConnectProjectDomainInputSchema, auditHandledByOperation: true }, cloudProjectProxy, ctrl.connectDomain);
 
 /* ─── Runtime logs ─────────────────────────────────────────────────────── */
 r.get(
@@ -620,12 +657,12 @@ r.get("/:id/server-logs/stream", { tag: "project:read" }, cloudProjectProxy, ctr
 // 404s them there — never proxied, never run in CLOUD_MODE.
 r.post(
   "/:id/transfer/to-cloud",
-  { tag: "project:admin", localOnly: true },
+  { tag: "project:admin", localOnly: true, auditHandledByOperation: true },
   transfer.transferToCloud,
 );
 r.post(
   "/:id/transfer/to-self-hosted",
-  { tag: "project:admin", localOnly: true },
+  { tag: "project:admin", localOnly: true, auditHandledByOperation: true },
   transfer.transferToSelfHosted,
 );
 

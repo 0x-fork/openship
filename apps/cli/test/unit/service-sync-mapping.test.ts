@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { mapComposeService } from "../../src/commands/service";
+import { mapComposeService } from "../../../../packages/sdk/src/compose";
 
 /**
  * `openship service sync` maps `docker compose config --format json` to the sync
@@ -63,6 +63,35 @@ describe("service sync — compose config JSON mapping", () => {
       buildArgs: { APP_PACKAGE: "@myorg/api", EMPTY: "", FROM_ENV: null },
       advanced: { buildArgTemplateKeys: [] },
     });
+    expect(errors).toEqual([]);
+  });
+
+  it("marks normalized environment as final so escaped dollars are not expanded twice (#751)", () => {
+    const errors: string[] = [];
+    const svc = mapComposeService(
+      "web",
+      {
+        image: "nginx",
+        // docker compose config has already turned `$${APP_HOST}` into this.
+        environment: { ESCAPED_LITERAL: "${APP_HOST}", NODE_ENV: "production" },
+      },
+      "/repo",
+      errors,
+    );
+
+    expect(svc).toMatchObject({
+      environment: { ESCAPED_LITERAL: "${APP_HOST}", NODE_ENV: "production" },
+      advanced: { environmentTemplateKeys: [] },
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it("keeps Docker-normalized images literal instead of inventing interpolation provenance", () => {
+    const errors: string[] = [];
+    const svc = mapComposeService("api", { image: "ghcr.io/acme/api:1.2.3" }, "/repo", errors);
+
+    expect(svc.image).toBe("ghcr.io/acme/api:1.2.3");
+    expect(svc).not.toHaveProperty("advanced.imageTemplate");
     expect(errors).toEqual([]);
   });
 
