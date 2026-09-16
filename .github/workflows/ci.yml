@@ -85,8 +85,8 @@ jobs:
           - suite: SDK and CLI
             command: bunx turbo run test --filter=@repo/sdk --filter=@repo/cli --concurrency=1 --log-order=stream
           # Exclusions keep new workspace test scripts included automatically.
-          # Invoke Turbo directly: arguments to the root compound test script
-          # reach its trailing script-tests command, not the workspace runner.
+          # Keep filters on the workspace runner. Script tests run once below,
+          # independently of the root command's argument-forwarding behavior.
           - suite: Other packages
             command: |
               bunx turbo run test --filter=!@repo/api --filter=!@repo/db --filter=!@repo/sdk --filter=!@repo/cli --filter=!@repo/email --concurrency=1 --log-order=stream
