@@ -1082,12 +1082,6 @@ export class RestoreOrchestrator {
           // rather than as "not safe to restore".
           const hasher = new HashingPassthrough();
           const targetLabel = this.artifactTargetLabel(recorded, serviceHandle);
-          await this.markDestructive(restoreId, targetLabel);
-          wroteInto = targetLabel;
-          // Before the write, because for these kinds the destruction starts with it:
-          // the volume helper's clear happens in its prelude, `tar -x` writes file by
-          // file, `mysql` commits statement by statement.
-          if (!failureLeavesTargetIntact(recorded.payloadKind)) unfinishedTarget = targetLabel;
           try {
             await producer.restore(
               serviceHandle,
@@ -1098,7 +1092,23 @@ export class RestoreOrchestrator {
                 payloadKind: recorded.payloadKind,
                 sha256: recorded.sha256 ?? "",
                 sizeBytes: recorded.sizeBytes,
-                open: async () => (await destination.get(recorded.key)).pipe(hasher),
+                open: async () => {
+                  // Producers finish their preflight before opening the artifact.
+                  // An AOF/credential refusal must not claim it damaged Redis data.
+                  await this.throwIfCancelRequested(restoreId, wroteInto);
+                  const body = await destination.get(recorded.key);
+                  try {
+                    await this.markDestructive(restoreId, targetLabel);
+                    wroteInto = targetLabel;
+                    // Mark before handing bytes to the producer: a volume helper
+                    // may clear its target before it reads the first byte.
+                    if (!failureLeavesTargetIntact(recorded.payloadKind)) unfinishedTarget = targetLabel;
+                    return body.pipe(hasher);
+                  } catch (error) {
+                    body.destroy();
+                    throw error;
+                  }
+                },
               },
               {
                 clearTarget: await this.shouldClearTarget(sourceRun, recorded.payloadKind),
@@ -1113,7 +1123,7 @@ export class RestoreOrchestrator {
             // service restarted on a half-written volume, because only the
             // partial-write paths decline that restart. So a cancel that was in
             // fact requested owns the failure.
-            if (await this.cancelRequested(restoreId)) throw new RestoreCancelled(targetLabel);
+            if (await this.cancelRequested(restoreId)) throw new RestoreCancelled(wroteInto);
             throw err;
           }
           // Null when the producer didn't drain the stream (a pg_restore that

@@ -124,6 +124,7 @@ vi.mock("@repo/db", () => ({
     project: {
       findById: async () => ({
         id: "prj_1",
+        organizationId: "org_1",
         name: "shop",
         slug: "shop",
         activeDeploymentId: h.activeDeploymentId,
@@ -146,7 +147,7 @@ vi.mock("@repo/db", () => ({
       listByProject: async () => h.serviceIds.map((id) => ({ id })),
     },
     deployment: {
-      findById: async () => ({ id: "dep_1", containerId: h.depContainerId, meta: {} }),
+      findById: async () => ({ id: "dep_1", projectId: "prj_1", organizationId: "org_1", containerId: h.depContainerId, meta: {} }),
     },
   },
 }));
@@ -208,7 +209,7 @@ class TestExecutor extends DockerBackupExecutor {
   /**
    * Producers also plain-exec for probes — the redis one asks `CONFIG GET appendonly`
    * before it will write, because an AOF-enabled Redis loads its append-only file at
-   * startup and would ignore a restored RDB entirely. `h.execStdout` scripts the answer.
+   * startup and would ignore a restored RDB entirely. Use the real --raw reply shape.
    */
   async execStream(
     _service: ServiceHandle,
@@ -217,7 +218,7 @@ class TestExecutor extends DockerBackupExecutor {
   ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
     const joined = cmd.join(" ");
     h.calls.push(`probe:${joined.includes("appendonly") ? "appendonly" : "config"}`);
-    const out = joined.includes("appendonly") ? h.appendonly : "";
+    const out = joined.includes("appendonly") ? `appendonly\n${h.appendonly}\n` : "OK\n";
     return {
       stdout: Readable.from([Buffer.from(out)]),
       awaitExit: Promise.resolve({ code: 0, stderr: "" }),
@@ -699,7 +700,7 @@ describe("a payload restored THROUGH the container must not have it stopped firs
     expect(h.containers.get("ctr_redis")!.Running).toBe(true);
   });
 
-  it("refuses an RDB restore into an AOF-enabled redis instead of no-oping", async () => {
+  it.each(["yes", "unknown"])("refuses an unsafe RDB restore without claiming data was changed (appendonly: %s)", async (appendonly) => {
     // With `appendonly yes` Redis loads its append-only file at startup and never
     // looks at dump.rdb, so even a correct write plus a correct bounce changes
     // nothing. `CONFIG SET appendonly no` does not help either — the container's own
@@ -708,7 +709,7 @@ describe("a payload restored THROUGH the container must not have it stopped firs
     h.containers.set("ctr_redis", { Running: true, Mounts: [] });
     h.liveContainerId = "ctr_redis";
     h.activeDeploymentId = "dep_1";
-    h.appendonly = "yes";
+    h.appendonly = appendonly;
     h.artifacts = [
       {
         name: "redis-dump.rdb",
@@ -724,6 +725,9 @@ describe("a payload restored THROUGH the container must not have it stopped firs
 
     expect(terminal.status).toBe("failed");
     expect(String(terminal.patch?.errorMessage)).toContain("AOF persistence");
+    expect(String(terminal.patch?.errorMessage)).not.toContain("partial data");
+    expect(terminal.patch?.meta).not.toMatchObject({ partialWrite: true });
+    expect(terminal.patch?.meta).not.toMatchObject({ destructive: true });
     // Refused BEFORE writing anything, so nothing was touched.
     expect(h.calls).not.toContain("exec:running");
     expect(h.containers.get("ctr_redis")!.Running).toBe(true);
