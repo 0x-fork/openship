@@ -262,7 +262,12 @@ export function composeWritePatch(
   const hasImageTemplateMarker = Object.hasOwn(parsed.advanced ?? {}, "imageTemplate");
   const usesLiteralImage = parsed.image !== undefined && !hasImageTemplateMarker;
   const spec = toComposeSpec({ ...parsed, advanced: parsedAdvanced });
-  const advanced = mergeAdvanced(stored?.advanced ?? null, spec.advanced);
+  // An explicit reset discards the stored blob, while retaining provenance
+  // supplied by this incoming parse. Omission still preserves operator fields.
+  const advanced = mergeAdvanced(
+    parsed.advanced === null ? null : (stored?.advanced ?? null),
+    spec.advanced,
+  );
   if (usesLiteralImage) {
     // A writer that supplies an image without parser provenance means that
     // image literally. This includes manual edits AND old frozen snapshots;
