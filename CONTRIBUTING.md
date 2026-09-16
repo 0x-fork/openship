@@ -223,6 +223,10 @@ editing already uses.
 
 The rest of this section covers `apps/dashboard`, which is Vitest with colocated tests.
 
+Run repository script tests with `bun run test:scripts`; CI includes them in its
+Other packages job. The root `bun run test` command runs workspace tests and accepts
+Turbo filters, such as `bun run test --filter=@repo/sdk`.
+
 ### Dashboard test environments
 
 Dashboard tests use Node by default. Tests that need browser events opt into the
