@@ -538,11 +538,15 @@ PR #219 is adapted to the email server’s existing Bun runner and merged into t
 
 Contributor PRs #243 and #248 are integrated with cherchali mohamed walid’s original commits and GitHub merge credit. Current dashboard parsers, stream callbacks and Button behavior gain coverage using the existing Vitest/Happy DOM setup. Existing phase/status suites are retained; unused legacy phase helpers and malformed-payload quirks are not treated as production fixes. PR #247 is already merged and #224 already closed; #193 is already merged.
 
-Commits: [`b6a41165`](https://github.com/oblien/openship/commit/b6a41165d65f94325510179335cbff7456774ceb), [`508adde8`](https://github.com/oblien/openship/commit/508adde85b4bac18c6124e510f2569f145bc2a7e), [`0558e611`](https://github.com/oblien/openship/commit/0558e611cfbd2ccd02cbec6bafb2203a0af7c943).
+Final integration validation caught argument forwarding in the compound root test script: matrix filters were reaching its trailing script-test command, causing both filtered CI jobs to rerun the full workspace suite. CI now invokes Turbo directly for those groups and runs script tests once in Other packages. Native SDK/CLI bundle builds remain sequential; the required aggregate Test check is unchanged.
+
+Commits: [`b6a41165`](https://github.com/oblien/openship/commit/b6a41165d65f94325510179335cbff7456774ceb), [`508adde8`](https://github.com/oblien/openship/commit/508adde85b4bac18c6124e510f2569f145bc2a7e), [`0558e611`](https://github.com/oblien/openship/commit/0558e611cfbd2ccd02cbec6bafb2203a0af7c943), [`435f408c`](https://github.com/oblien/openship/commit/435f408c7e3c5b156b7479c4986a1c8138cce182).
 
 Verification: PR #219: all 110 mail-server tests pass (33 added); server TypeScript and an isolated typecheck of the adapted tests pass.
 
 Verification: PR #243 adds 23 environment/subdomain cases; 68 tests pass with the existing status/log-entry suites. PR #248 adds 78 stream and ten Button cases; 91 pass with the existing install-phase suite, and dashboard TypeScript passes. The full dashboard suite passes 1,462 cases.
+
+Verification: An isolated Bun 1.3.10 probe reproduced the forwarding error. Actual Turbo dry runs select only SDK/CLI in one job and the remaining packages in the other; their union plus the API, database and dedicated mail jobs covers every test workspace without overlap. Workflow YAML parses. All 36 desktop tests also pass.
 
 ### #195: fixed-in-branch
 
@@ -615,12 +619,13 @@ Verification: Six regressions fail on current main.
 ## Integration validation
 
 - API: 6,221 tests across 523 files; database: 327 tests across 40 files. Full suites pass, including Compose, import/restore, terminal and workload ownership regressions.
-- Core: 1,068; adapters: 3,788; contracts: 14; SDK: 153; platform: 115; CLI: 549; dashboard: 1,462; email server: 110; script tests: 30. All pass. Workspace runs use bounded worker counts.
+- Core: 1,068; adapters: 3,788; contracts: 14; SDK: 153; platform: 115; CLI: 549; dashboard: 1,462; desktop: 36; email server: 110; script tests: 30. All pass. Workspace runs use bounded worker counts.
 - Repository-wide lint/typechecks and their build dependencies pass (22 tasks); the email server and adapted mail tests also type-check.
 - The built public openship package installs and runs on Node 22.21.1: ESM/CommonJS, NodeNext declarations, passive imports, native deployment/redeployment, tenant isolation, revocation, persistence, remote submission, and CLI lifecycle/cleanup pass.
 - Documentation verification passes: 160 pages, 367 SDK methods, 559 HTTP routes, 205 CLI command paths, 226 CLI examples and 107 public-SDK examples. CLI references were regenerated from the built package.
 - Issue-specific negative tests fail on the unchanged main baseline and pass with their fixes; the findings above link the relevant commits. Real Docker, SSH, browser, mail and runtime probes are recorded beside the affected issues.
 - Production API/dashboard build passes (10 tasks), including the Next.js production compilation and TypeScript check.
 - Final refresh: main remains 4e66349c; all 107 reports are classified. The 35 resolved reports are closed with evidence (21 fixed here, 14 already fixed in main); 72 partial, reproduction-dependent or feature reports remain open. No unreviewed new issue was found.
+- CI matrix selection is verified with actual Turbo dry runs; the compound-script argument forwarding regression is corrected, and every workspace test plus script tests remains included.
 
 Feature requests remain outside this bug batch. Reproduction gaps stay open with a diagnostic request. Issues fixed on this branch are closed with a comment identifying #892 and the pending merge to main; partial and ongoing umbrella reports stay open.
