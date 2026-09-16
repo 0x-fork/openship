@@ -707,6 +707,7 @@ describe("NginxProvider upstream-down page", () => {
 
   test("upgrades an existing generation-2 route without changing its upstream", async () => {
     const { nginx, files, conf } = setup();
+    await nginx.registerRoute({ domain: "legacy.example.com", tls: false, targetUrl: "http://127.0.0.1:3009" });
     files.set(`${SITES}/legacy-example-com.conf`, `# openship-vhost-gen: 2
 server {
     listen 80;

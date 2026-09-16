@@ -104,7 +104,14 @@ async function renderVhost(route: RouteConfig): Promise<string> {
     rm: async (p: string) => void files.delete(p),
   } as unknown as RootChecked;
 
-  const nginx = new NginxProvider({ paths: OPENRESTY_DEFAULT_PATHS, executor });
+  // These files will be loaded by the test container, not a bare-host daemon.
+  // Its real config test and startup happen in bootAll after every vhost is written.
+  const nginx = new NginxProvider({
+    paths: OPENRESTY_DEFAULT_PATHS,
+    executor,
+    pinPaths: true,
+    containerEdge: true,
+  });
   await nginx.registerRoute(route);
   const conf = [...files.entries()].find(([p]) => p.endsWith(".conf"));
   if (!conf) throw new Error(`registerRoute wrote no vhost for ${route.domain}`);
