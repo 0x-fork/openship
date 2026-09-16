@@ -32,8 +32,8 @@ import { join } from "node:path";
 import { expect } from "vitest";
 import { repos, type BackupRestore, type BackupRestoreStatus } from "@repo/db";
 import type { RequestContext } from "../../src/lib/request-context";
-import { backupOrchestrator } from "../../src/modules/backups/backup.orchestrator";
-import { restoreOrchestrator } from "../../src/modules/backups/restore.orchestrator";
+import { backupOrchestrator } from "@repo/platform/engine/modules/backups/backup.orchestrator";
+import { restoreOrchestrator } from "@repo/platform/engine/modules/backups/restore.orchestrator";
 import { seedBackupRun } from "./seed";
 
 export interface CapturedArtifact {

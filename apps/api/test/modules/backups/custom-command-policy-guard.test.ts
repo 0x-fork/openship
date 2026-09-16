@@ -24,12 +24,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ syncPolicySchedule: vi.fn() }));
 
 // Registering a real cron schedule is the JobRunner's business, not this guard's.
-vi.mock("../../../src/modules/backups/triggers/cron", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/modules/backups/triggers/cron")>()),
+vi.mock("@repo/platform/engine/modules/backups/triggers/cron", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/modules/backups/triggers/cron")>()),
   syncPolicySchedule: h.syncPolicySchedule,
 }));
 
-import { createPolicy, updatePolicy } from "../../../src/modules/backups/backup.service";
+import { createPolicy, updatePolicy } from "@repo/platform/engine/modules/backups/backup.service";
 import {
   seedBackupDestination,
   seedBackupPolicy,

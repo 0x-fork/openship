@@ -24,18 +24,18 @@
  */
 
 import type { Context } from "hono";
-import { auth } from "../../lib/auth";
-import { trustedOrigins } from "../../config/env";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { trustedOrigins } from "@repo/platform/engine/config/env";
 import { upgradeWebSocket } from "../../lib/ws";
 import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
-import { disposeRuntime, resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { disposeRuntime, resolveDeploymentRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
-import { checkPermission } from "../../lib/permission";
-import { containerIdForService, liveContainerIdWithRuntime } from "../services/service-container";
+import { checkPermission } from "@repo/platform/engine/lib/authorization";
+import { containerIdForService, liveContainerIdWithRuntime } from "@repo/platform/engine/modules/services/service-container";
 import {
   attachServiceWs,
   consumeServiceTerminalTicket,

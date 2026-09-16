@@ -1,4 +1,5 @@
 export { user, session, account, verification } from "./auth";
+export { externalIdentity, externalNamespace, platformInstance } from "./embedding";
 export { organization, member, invitation } from "./organization";
 export { auditEvent } from "./audit-event";
 export { auditSettings } from "./audit-settings";

@@ -32,20 +32,20 @@ const { envMock, findProjectById, findSettingsByUser, decrypt, ghAuth, canUseGit
     getLocalGhToken: vi.fn(),
   }));
 
-vi.mock("../../../src/config/env", () => ({ env: envMock }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: envMock }));
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: findProjectById },
     settings: { findByUser: findSettingsByUser },
   },
 }));
-vi.mock("../../../src/lib/encryption", () => ({ decrypt }));
-vi.mock("../../../src/modules/github/github.auth", () => ghAuth);
-vi.mock("../../../src/modules/github/github-access", () => ({ canUseGitHubRepo }));
-vi.mock("../../../src/modules/github/github.local-auth", () => ({ getLocalGhToken }));
+vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ghAuth);
+vi.mock("@repo/platform/engine/modules/github/github-access", () => ({ canUseGitHubRepo }));
+vi.mock("@repo/platform/engine/modules/github/github.local-auth", () => ({ getLocalGhToken }));
 // NOT mocked: @repo/core — requireTokenFor needs the real AppError.
 
-import { tokenFor, canResolveTokenFor, requireTokenFor } from "../../../src/modules/github/github.token";
+import { tokenFor, canResolveTokenFor, requireTokenFor } from "@repo/platform/engine/modules/github/github.token";
 
 const ctxNoOrg = { userId: "u1" } as any; // zero-auth / single-user operator
 const ctxOrg = { userId: "u1", organizationId: "o1" } as any;

@@ -50,7 +50,7 @@ vi.mock("./controller-helpers", () => ({
   platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
 }));
 
-vi.mock("./ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     acquire: async () => ({
       readFile: async (path: string) => {
@@ -67,11 +67,11 @@ vi.mock("./ssh-manager", () => ({
   }),
 }));
 
-vi.mock("./provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: (f: () => unknown) => f() }),
 }));
-vi.mock("./cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
-vi.mock("./cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: {}, getOrgCloudToken: async () => null }));
+vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
 vi.mock("@repo/db", () => ({
   repos: {
     server: {
@@ -95,7 +95,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-const mod = await import("./deployment-runtime");
+const mod = await import("@repo/platform/engine/lib/deployment-runtime");
 
 const read = (meta: Record<string, unknown>) =>
   mod.resolveDeploymentRuntimeForRead({ meta, organizationId: "org1" } as never);
@@ -198,3 +198,12 @@ describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without
     expect(h.platformCalls).toBe(0);
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
+}));

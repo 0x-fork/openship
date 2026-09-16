@@ -13,8 +13,8 @@
  *           in the queue)
  *   green = all three readings clean
  *
- * A reading we couldn't take never colours the banner. `unknown` means "we didn't
- * look", and grading it would turn an unreachable probe into an outage.
+ * A reading we couldn't take never colours the banner. An observed SMTP timeout
+ * that the API could not attribute still warns: receiving mail is unverified.
  *
  * Lives out here, as a pure function, because that ordering is the part most
  * likely to be quietly wrong — see ./health-summary.test.ts.
@@ -80,6 +80,11 @@ export function summarizeHealth(
 
   const deliveryFails = delivery?.status === "fail";
   const reachabilityFails = reachability?.status === "fail";
+  // Trust the API's classification. An unknown result with a failed TCP probe
+  // needs attention even though it cannot establish an inbound-mail outage.
+  const reachabilityUnverified =
+    reachability?.status === "unknown" &&
+    reachability.ports.some((port) => port.status === "blocked");
   // Mail waiting in the queue is worth the operator's eyes, but a warn here is
   // also how a healthy MTA rides out a receiver's greylist - so it colours the
   // banner amber and points at the card, never red.
@@ -103,6 +108,7 @@ export function summarizeHealth(
     dnsWarns === 0 &&
     !deliveryFails &&
     !reachabilityFails &&
+    !reachabilityUnverified &&
     !queueNote;
 
   if (allClean && (components || checks || delivery || reachability)) {
@@ -147,6 +153,7 @@ export function summarizeHealth(
       );
     }
     if (queueNote) almost.push(queueNote);
+    if (reachabilityUnverified) almost.push(h.reachability.unknownHint);
     const label =
       advisoryDown.length > 0
         ? h.summary.degradedLabel

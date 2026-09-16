@@ -13,10 +13,11 @@
 
 import { Hono } from "hono";
 import { db, eq, repos, schema } from "@repo/db";
-import { env } from "../../config/env";
-import { auth, isSaasDeployment } from "../../lib/auth";
+import { env } from "@repo/platform/engine/config/env";
+import { auth, isSaasDeployment } from "@repo/platform/engine/lib/auth";
 import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
-import { invitationLifecycleMiddleware } from "../../lib/invitation-lifecycle-lock";
+import { authMiddleware } from "../../middleware/auth";
+import * as organizationController from "./organization.controller";
 import { internalAuth } from "../../middleware/internal-auth";
 import { isLoopbackRequest } from "../../middleware/loopback-peer";
 import * as ctrl from "./auth.controller";
@@ -38,17 +39,15 @@ if (env.DEPLOY_MODE === "desktop") {
 // lookup requires a session, which a brand-new invitee cannot have yet.
 authRoutes.get("/invitation-preview/:id", ctrl.invitationPreview);
 
-// Better Auth's invitation lifecycle is a read + write + (for acceptance)
-// membership insert rather than one database transaction. Serialize every
-// terminal mutation by invitation id so accept cannot cross cancel/reject, and
-// use the same lock as token-bound account creation.
-for (const path of [
-  "/organization/accept-invitation",
-  "/organization/reject-invitation",
-  "/organization/cancel-invitation",
-]) {
-  authRoutes.on("POST", path, invitationLifecycleMiddleware);
-}
+// Compatibility URLs use the same authorized operations as the SDK. The shared
+// invitation service owns the serialization boundary.
+authRoutes.post("/organization/invite-member", authMiddleware, organizationController.inviteMember);
+authRoutes.post("/organization/accept-invitation", authMiddleware, organizationController.acceptInvitation);
+authRoutes.post("/organization/reject-invitation", authMiddleware, organizationController.rejectInvitation);
+authRoutes.post("/organization/cancel-invitation", authMiddleware, organizationController.cancelInvitation);
+authRoutes.post("/organization/update-member-role", authMiddleware, organizationController.updateMemberRole);
+authRoutes.post("/organization/remove-member", authMiddleware, organizationController.removeMember);
+authRoutes.post("/organization/leave", authMiddleware, organizationController.leaveOrganization);
 
 // Invite-only sign-up guard (runs BEFORE the Better Auth catch-all). SaaS keeps
 // open public signup. On self-host the ONLY Better Auth signup allowed is the

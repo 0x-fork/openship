@@ -140,6 +140,7 @@ import {
 import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
+import { GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import {
   createDockerBuildContext,
@@ -1283,11 +1284,14 @@ export class DockerRuntime implements RuntimeAdapter {
     logger: BuildLogger,
     trace?: BuildKitTraceDecoder,
     diagnosticContext: DockerBuildDiagnosticContext = {},
-  ): string | null {
-    const errorMessage = event.errorDetail?.message ?? event.error;
+  ): { errorMessage?: string; failureHint: string | null } | null {
+    const errorMessage = event.errorDetail?.message || event.error;
     if (errorMessage) {
       logger.log(errorMessage, "error");
-      return this.extractBuildFailureHint(errorMessage, diagnosticContext) ?? errorMessage;
+      return {
+        errorMessage,
+        failureHint: this.extractBuildFailureHint(errorMessage, diagnosticContext) ?? errorMessage,
+      };
     }
 
     // A BuildKit build emits its whole progress stream as protobuf traces instead of
@@ -1296,7 +1300,10 @@ export class DockerRuntime implements RuntimeAdapter {
     // string check matters — it is not decoration.
     if (event.id === "moby.buildkit.trace" && typeof event.aux === "string") {
       let hint: string | null = null;
-      for (const line of trace?.push(event.aux) ?? []) {
+      const lines = trace?.push(event.aux, (data, streamId) =>
+        logger.observeBuildOutput(data, streamId),
+      );
+      for (const line of lines ?? []) {
         // Same treatment the classic builder's `stream` lines get, deliberately: the
         // failure hints (OOM-killed install, wrong rootDirectory, BuildKit refused)
         // are the only thing that turns a bare exit code into an explanation, and
@@ -1304,13 +1311,15 @@ export class DockerRuntime implements RuntimeAdapter {
         logger.log(line.message, line.level === "error" ? "error" : parseLogLevel(line.message));
         hint = chooseDockerBuildFailureHint(
           hint,
-          this.extractBuildFailureHint(line.message, diagnosticContext),
+          this.extractBuildFailureHint(line.message, diagnosticContext) ??
+            (line.level === "error" ? line.message : null),
         );
       }
-      return hint;
+      return { failureHint: hint };
     }
 
     if (event.stream) {
+      logger.observeBuildOutput(event.stream);
       const line = event.stream.trim();
       if (!line) return null;
 
@@ -1342,7 +1351,7 @@ export class DockerRuntime implements RuntimeAdapter {
       }
 
       logger.log(line, parseLogLevel(line));
-      return this.extractBuildFailureHint(line, diagnosticContext);
+      return { failureHint: this.extractBuildFailureHint(line, diagnosticContext) };
     }
 
     if (event.status) {
@@ -1651,6 +1660,7 @@ export class DockerRuntime implements RuntimeAdapter {
         buildCmd,
         (entry) => {
           idleMonitor.progress();
+          log.observeBuildOutput(entry.message, entry.level);
           buildContainerTracker?.observeChunk(entry.message);
           streamedFailureHint = chooseDockerBuildFailureHint(
             streamedFailureHint,
@@ -1734,6 +1744,16 @@ export class DockerRuntime implements RuntimeAdapter {
             destDir: remoteContextDir,
             onLog: (entry) => log.log(entry.message, parseLogLevel(entry.message)),
           });
+          // Check for submodules. If present, the tarball is missing submodule contents.
+          const hasSubmodules = await executor
+            .exec(`test -f ${sq(`${remoteContextDir}/.gitmodules`)}`)
+            .then(
+              () => true,
+              () => false,
+            );
+          if (hasSubmodules) {
+            throw new Error("Repository contains submodules; tarball download is insufficient");
+          }
           // A tarball has no .git, but strip defensively in case a repo tracks one.
           await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
           return;
@@ -1782,7 +1802,7 @@ export class DockerRuntime implements RuntimeAdapter {
     log.log(`Cloning ${config.repoUrl} on the server → ${remoteContextDir} (${authLabel})...\n`);
     await executor.exec(`rm -rf ${dir} && mkdir -p ${dir}`);
 
-    const run = async (operation: "clone" | "fetch" | "checkout", cmd: string) => {
+    const run = async (operation: "clone" | "fetch" | "checkout" | "submodule", cmd: string) => {
       const { code } = await executor.streamExec(cmd, (entry) =>
         log.log(entry.message, parseLogLevel(entry.message)),
       );
@@ -1834,8 +1854,12 @@ export class DockerRuntime implements RuntimeAdapter {
           ),
         );
       }
-      // Never ship .git into the build image.
-      await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
+      await run(
+        "submodule",
+        `cd ${dir} && ${gitShellCommand(gitInvocation, GIT_SUBMODULE_UPDATE_ARGS.join(" "))}`,
+      );
+      // Never ship .git into the build image. Submodules may create .git files/dirs within the tree.
+      await executor.exec(`find ${sq(remoteContextDir)} -name .git -prune -exec rm -rf {} +`);
     } finally {
       await sshMaterial?.cleanup();
     }
@@ -2169,6 +2193,7 @@ export class DockerRuntime implements RuntimeAdapter {
     options: DockerodeBuildStreamOptions = {},
   ): Promise<void> {
     let fatalBuildError: string | null = null;
+    let streamedFailureHint: string | null = null;
     const timeoutMs = getDockerBuildIdleTimeoutMs();
     const diagnosticContext = options.diagnosticContext ?? {};
     const buildContainerTracker = options.legacyBuilder
@@ -2268,9 +2293,11 @@ export class DockerRuntime implements RuntimeAdapter {
           (event) => {
             idleMonitor?.progress();
             buildContainerTracker?.observe(event.stream);
-            fatalBuildError = chooseDockerBuildFailureHint(
-              fatalBuildError,
-              this.handleBuildEvent(event, log, options.trace, diagnosticContext),
+            const diagnostics = this.handleBuildEvent(event, log, options.trace, diagnosticContext);
+            fatalBuildError ??= diagnostics?.errorMessage ?? null;
+            streamedFailureHint = chooseDockerBuildFailureHint(
+              streamedFailureHint,
+              diagnostics?.failureHint ?? null,
             );
           },
         );
@@ -2295,7 +2322,12 @@ export class DockerRuntime implements RuntimeAdapter {
     }
 
     if (fatalBuildError) {
-      throw new Error(fatalBuildError);
+      const hint = chooseDockerBuildFailureHint(fatalBuildError, streamedFailureHint);
+      throw new Error(
+        hint && !hint.includes(fatalBuildError)
+          ? `${fatalBuildError}\n${hint}`
+          : (hint ?? fatalBuildError),
+      );
     }
   }
 
@@ -4891,6 +4923,7 @@ export class DockerRuntime implements RuntimeAdapter {
   async joinServiceGroupContainers(
     slug: string,
     members: Array<{ containerId: string; aliases: string[] }>,
+    options?: { strict?: boolean },
   ): Promise<void> {
     if (members.length === 0) return;
     const networkId = await this.ensureNetwork(slug);
@@ -4904,14 +4937,40 @@ export class DockerRuntime implements RuntimeAdapter {
           EndpointConfig: aliases.length ? { Aliases: aliases } : {},
         });
       } catch (err) {
-        // Already-on-network races are fine; anything else is swallowed — this is
-        // best-effort and must never block the migration deploy.
+        // Migration joins are advisory; shared service connections require success.
         const msg = (err as { message?: string })?.message ?? "";
         if (!/already exists|already connected/i.test(msg)) {
+          if (options?.strict) throw err;
           console.warn(
             `[docker] group join failed for ${m.containerId.slice(0, 12)} (${aliases.join(", ")}): ${msg}`,
           );
         }
+      }
+    }
+  }
+
+  async leaveServiceGroupContainers(slug: string, containerIds: string[]): Promise<void> {
+    const network = this.docker.getNetwork(`openship-${slug}`);
+    let info: Awaited<ReturnType<typeof network.inspect>>;
+    try { info = await network.inspect(); }
+    catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return;
+      throw error;
+    }
+    for (const containerId of new Set(containerIds)) {
+      if (!info.Containers?.[containerId]) continue;
+      try { await network.disconnect({ Container: containerId, Force: true }); }
+      catch (error) {
+        if ((error as { statusCode?: number }).statusCode !== 404) throw error;
+      }
+    }
+    const remaining = await network.inspect();
+    if (Object.keys(remaining.Containers ?? {}).length === 0) {
+      // Another connection may arrive between inspect and remove. Docker refuses
+      // to remove an occupied network; leave it for that connection.
+      try { await network.remove(); }
+      catch (error) {
+        if (![404, 409].includes((error as { statusCode?: number }).statusCode ?? 0)) throw error;
       }
     }
   }
@@ -5039,24 +5098,24 @@ export class DockerRuntime implements RuntimeAdapter {
   /**
    * Attach every container of `projectId` to the given networks (by name) — for
    * cross-project service links: a consumer joins a linked database app's
-   * `openship-<slug>` network so it resolves that app's service alias
-   * (`mongo:27017`) with no public port. Best-effort + idempotent; a network that
-   * doesn't exist (source not deployed) is skipped and nothing here ever throws —
-   * a link networking failure must never fail the consumer's deploy.
+   * network so private aliases resolve. Legacy joins are advisory; callers can
+   * require success and prune previously linked networks for service sharing.
    */
   async attachToExternalNetworks(
     projectId: string,
     networkNames: string[],
     extraContainerIds: string[] = [],
+    options?: { prunePrefix?: string; retain?: string[]; strict?: boolean },
   ): Promise<void> {
-    if (networkNames.length === 0) return;
+    if (networkNames.length === 0 && !options?.prunePrefix) return;
     let containers: Awaited<ReturnType<typeof this.docker.listContainers>>;
     try {
       containers = await this.docker.listContainers({
         all: true,
         filters: { label: [`openship.project=${projectId}`] },
       });
-    } catch {
+    } catch (error) {
+      if (options?.strict) throw error;
       return;
     }
     /**
@@ -5084,9 +5143,19 @@ export class DockerRuntime implements RuntimeAdapter {
             HostConfig: { NetworkMode: info.HostConfig?.NetworkMode },
           } as unknown as (typeof containers)[number]);
           seen.add(info.Id);
-        } catch {
-          // Gone / unreachable — nothing to join. Never throws: a link networking
-          // failure must not fail the consumer's deploy.
+        } catch (error) {
+          // A recorded container may already have been replaced by this deploy.
+          if (options?.strict && !isDockerNotFoundError(error)) throw error;
+        }
+      }
+    }
+    if (options?.prunePrefix) {
+      const retain = new Set([...networkNames, ...(options.retain ?? [])]);
+      for (const container of containers) {
+        for (const name of Object.keys(container.NetworkSettings?.Networks ?? {})) {
+          if (name.startsWith(options.prunePrefix) && !retain.has(name)) {
+            await this.leaveServiceGroupContainers(name.slice("openship-".length), [container.Id]);
+          }
         }
       }
     }
@@ -5096,7 +5165,8 @@ export class DockerRuntime implements RuntimeAdapter {
       try {
         const info = await network.inspect();
         netId = info.Id;
-      } catch {
+      } catch (error) {
+        if (options?.strict) throw error;
         continue; // network absent (source app not deployed) — skip
       }
       for (const c of containers) {
@@ -5104,12 +5174,16 @@ export class DockerRuntime implements RuntimeAdapter {
           (n) => n?.NetworkID === netId,
         );
         if (onNetwork) continue;
-        if (this.cannotJoinNetworks(c)) continue;
+        if (this.cannotJoinNetworks(c)) {
+          if (options?.strict) throw new Error("Private service connections require containers with bridge networking.");
+          continue;
+        }
         try {
           await network.connect({ Container: c.Id });
         } catch (err) {
           const msg = (err as { message?: string })?.message ?? "";
           if (!/already exists|already connected/i.test(msg)) {
+            if (options?.strict) throw err;
             console.warn(`[docker] link-connect failed for ${c.Id.slice(0, 12)} → ${name}: ${msg}`);
           }
         }

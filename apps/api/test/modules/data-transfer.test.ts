@@ -11,12 +11,12 @@ import { db, eq, schema } from "@repo/db";
 
 // Skip the full zod-validated env (which refuses to load outside desktop mode
 // without INTERNAL_TOKEN); the crypto helpers only need BETTER_AUTH_SECRET.
-vi.mock("../../src/config/env", () => ({
-  env: { BETTER_AUTH_SECRET: "test-secret-for-data-transfer-unit-tests", CLOUD_MODE: false },
+vi.mock("@repo/platform/engine/config/env", async () => ({
+  env: { BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? (await import("@repo/db/encryption")).DEFAULT_ENCRYPTION_SECRET, CLOUD_MODE: false },
 }));
 
-import { decrypt, encrypt, encryptBytesWithKey, encryptWithKey } from "../../src/lib/encryption";
-import { encryptSecretField, decryptSecretField } from "../../src/lib/credential-encryption";
+import { decrypt, encrypt, encryptBytesWithKey, encryptWithKey } from "@repo/platform/engine/lib/encryption";
+import { encryptSecretField, decryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 import {
   sealSecretBundle,
   openSecretBundle,
@@ -225,6 +225,18 @@ describe("one-time direct instance transfer", () => {
     await expect(sendDirectTransfer({ code: differentWorkerCode })).rejects.toThrow(
       "same instance",
     );
+  });
+
+  it("rejects project direct transfers before contacting the destination", async () => {
+    const fetchImpl = vi.fn();
+    await expect(
+      sendDirectTransfer({
+        code: "unused",
+        selection: { scope: "projects", projectIds: ["project_1"], history: [] },
+        fetchImpl,
+      }),
+    ).rejects.toThrow("download an export file");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("uses bounded chunks and safely retries an ambiguous finalization", async () => {
@@ -566,7 +578,7 @@ describe("one-time direct instance transfer", () => {
     const file = {
       kind: "openship-instance-export",
       envelopeVersion: 1,
-      dump: { scope: { kind: "instance" }, tables: {} },
+      dump: { formatVersion: 1, scope: { kind: "instance" }, tables: {} },
     } as unknown as DataTransferFile;
     await expect(
       importPreparedInstance({

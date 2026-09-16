@@ -257,7 +257,6 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         if (res?.capabilities) setCapabilities(res.capabilities as GitHubCapabilities);
 
         if (nextState.primary !== null) {
-          setCliAction(null);
           setAccounts(res.accounts ?? []);
           const primaryLogin =
             nextState.sources.openshipApp.login ?? nextState.sources.ghCli.login ?? "";
@@ -494,12 +493,12 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   }, [cliAction, refresh, showToast]);
 
   /* ── Auto-detect a completed login ──────────────────────────── */
-  // Any pending CLI action (the device flow OR a `gh auth login` the operator ran
-  // on the instance) clears the moment the connection lands, so the UI never gets
-  // stuck showing a code/command after success.
+  // Only a terminal login completes through a status probe. A device grant has
+  // its own authoritative poll above; a previously connected App or stale CLI
+  // identity must not dismiss the new code before the operator authorizes it.
   useEffect(() => {
-    if (connected && cliAction) setCliAction(null);
-  }, [connected, cliAction]);
+    if (cliAction?.type === "terminal" && state.sources.ghCli.available) setCliAction(null);
+  }, [state.sources.ghCli.available, cliAction]);
 
   // Terminal (`gh auth login`) has no device code to poll — refresh the status
   // periodically so the UI flips to connected as soon as the operator finishes,

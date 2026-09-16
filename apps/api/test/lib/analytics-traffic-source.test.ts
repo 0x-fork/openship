@@ -52,12 +52,12 @@ vi.mock("@repo/adapters", () => ({
   resolveOurEdgeContainer: async () => null,
   sq: (s: string) => s,
 }));
-vi.mock("../../src/lib/ssh-tunnel", () => ({ tunnelRequest: async () => ({}), tunnelStream: async () => ({}) }));
-vi.mock("../../src/lib/ssh-manager", () => ({ sshManager: { retain: () => {}, release: () => {} } }));
-vi.mock("../../src/lib/platform-mode", () => ({ isOblienBackedDeployment: () => h.isCloud }));
-vi.mock("../../src/lib/system-debug", () => ({ systemDebug: () => {} }));
+vi.mock("@repo/platform/engine/lib/ssh-tunnel", () => ({ tunnelRequest: async () => ({}), tunnelStream: async () => ({}) }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: { retain: () => {}, release: () => {} } }));
+vi.mock("@repo/platform/engine/lib/platform-mode", () => ({ isOblienBackedDeployment: () => h.isCloud }));
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({ systemDebug: () => {} }));
 
-const { resolveProjectTrafficSource } = await import("../../src/lib/project-analytics");
+const { resolveProjectTrafficSource } = await import("@repo/platform/engine/lib/project-analytics");
 
 beforeEach(() => {
   h.project = { id: "p1", organizationId: "org-owning-this-project", activeDeploymentId: "d1" };

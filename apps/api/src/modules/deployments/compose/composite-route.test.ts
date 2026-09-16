@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildDomainFanoutRegistrations } from "./composite-route";
+import { buildDomainFanoutRegistrations } from "@repo/platform/engine/modules/deployments/compose/composite-route";
 import type { ProjectCompositeRoute } from "@repo/core";
 
 const onvo: ProjectCompositeRoute = {

@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { ZodError } from "zod";
 import { AppError } from "@repo/core";
+import { OperationError } from "@repo/contracts";
 import { redactSensitiveRequestPath } from "../lib/request-log-redaction";
 
 /**
@@ -56,6 +57,9 @@ export function handleApiError(err: unknown, c: Context) {
     if (statusCode >= 500) console.error(`[API ERROR] ${requestTag(c)}`, err);
     return c.json(
       {
+        // Only application failures explicitly carrying public recovery data may
+        // add fields. Provider errors never expose their arbitrary object graph.
+        ...(err instanceof OperationError ? err.details : {}),
         error: message,
         code,
         // A plan refusal carries structured detail the client needs to be

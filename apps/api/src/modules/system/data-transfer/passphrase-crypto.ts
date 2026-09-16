@@ -11,7 +11,7 @@
 
 import { randomBytes, scryptSync } from "node:crypto";
 
-import { decryptWithKey, encryptWithKey } from "../../../lib/encryption";
+import { decryptWithKey, encryptWithKey } from "@repo/platform/engine/lib/encryption";
 import type { SealedSecrets, SecretBundle } from "./types";
 
 const KDF = { algo: "scrypt" as const, N: 32768, r: 8, p: 1, keyLen: 32 };

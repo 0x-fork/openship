@@ -40,7 +40,7 @@ const EMPTY_STATE: GitHubConnectionState = {
 
 /**
  * What the backend says is offerable here. Mirrors GitHubCapabilities in
- * apps/api/src/modules/github/github.capabilities.ts.
+ * packages/platform/src/engine/modules/github/github.capabilities.ts.
  *
  * The dashboard deliberately derives NOTHING about availability itself anymore —
  * it used to branch on `selfHosted` / `deployMode` and drifted from the resolver
@@ -129,6 +129,14 @@ export function GitHubConnection() {
     window.addEventListener(GITHUB_SOURCES_CHANGED_EVENT, refreshForSourceChange);
     return () => window.removeEventListener(GITHUB_SOURCES_CHANGED_EVENT, refreshForSourceChange);
   }, [loadStatus]);
+
+  // The provider finishes device/token sign-in asynchronously. This card owns
+  // a separate status snapshot, so refresh it when the pending action finishes.
+  const previousActionRef = useRef(cliAction);
+  useEffect(() => {
+    if (previousActionRef.current && !cliAction) void loadStatus(true);
+    previousActionRef.current = cliAction;
+  }, [cliAction, loadStatus]);
 
   // Connect/install opens a separate window (OAuth popup or the GitHub App
   // install tab). The connect call returns as soon as that window opens, so
@@ -285,12 +293,7 @@ export function GitHubConnection() {
       iconBg="bg-foreground/5"
       iconColor="text-foreground"
     >
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-          <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-          {t.settings.github.checkingConnection}
-        </div>
-      ) : !anyConnected && cliAction ? (
+      {cliAction ? (
         /* A login is in flight. It's the only actionable thing on the card, so it
            replaces the chooser entirely instead of appearing underneath it. */
         <DeviceFlowPanel
@@ -298,6 +301,11 @@ export function GitHubConnection() {
           onRefresh={() => void loadStatus(true)}
           isDesktop={isDesktop}
         />
+      ) : loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+          <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          {t.settings.github.checkingConnection}
+        </div>
       ) : anyConnected ? (
         <div className="space-y-4">
           {/* The identity that is actually authorizing clones, first. */}

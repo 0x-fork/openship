@@ -1,11 +1,11 @@
-import { COMPOSE_SENTINEL } from "../../../lib/container-ref";
+import { COMPOSE_SENTINEL } from "@repo/platform/engine/lib/container-ref";
 import { describe, it, expect } from "vitest";
 import {
   ROLLBACK_ERROR_CODES,
   planNeedsRepository,
   planRestore,
   type RestorePlanInput,
-} from "./restore-plan";
+} from "@repo/platform/engine/modules/deployments/rollback/restore-plan";
 
 const FROZEN_RELEASE_IMAGE = `ghcr.io/acme/app@sha256:${"a".repeat(64)}`;
 

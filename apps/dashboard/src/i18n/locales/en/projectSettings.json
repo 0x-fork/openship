@@ -530,8 +530,8 @@
       "appliesOnDeploy": "Applied on the next deploy."
     },
     "env": {
-      "title": "Environment variables",
-      "description": "Encrypted at rest. Secrets stay masked — only the values you change are written.",
+      "title": "Project environment (build + shared runtime)",
+      "description": "Used for image builds and shared runtime input. Compose values and service runtime overrides take precedence at runtime. Secrets stay masked.",
       "edit": "Edit"
     }
   },
@@ -540,10 +540,10 @@
     "saveChanges": "Save changes",
     "close": "Close",
     "applyTitle": "Apply without a rebuild",
-    "applyText": "Saved. Apply these to the running service — it restarts with the new env, no clone or rebuild.",
+    "applyText": "Saved. Restart to apply runtime changes. Rebuild and redeploy to apply values used when building an image.",
     "applyButton": "Apply (restart, no rebuild)",
-    "title": "Environment variables",
-    "description": "Production. Encrypted at rest. Secrets show as set — type to replace; leave blank to keep.",
+    "title": "Project environment (build + shared runtime)",
+    "description": "Production project variables. Secrets stay masked; leave a saved secret blank to keep it. Service runtime values take precedence for the same key.",
     "empty": "No environment variables yet.",
     "keyPlaceholder": "KEY",
     "secretPlaceholder": "•••••••• (set — type to replace)",
@@ -915,7 +915,7 @@
       "includeWwwDesc": "Also generate records for www.{domain}",
       "includeWwwFallback": "yourdomain.com",
       "externalIngress": "External ingress & TLS",
-      "externalIngressDesc": "TLS terminates upstream (Cloudflare Tunnel, load balancer). Verify by TXT only — the domain need not point at this server, and we won't issue a certificate.",
+      "externalIngressDesc": "TLS terminates at your reverse proxy (Cloudflare Tunnel, Nginx Proxy Manager, or a load balancer). The domain need not point at this server, and Openship won't issue a certificate.",
       "dnsChallenge": "Use DNS-01 challenge",
       "dnsChallengeDesc": "Issue and renew the certificate through your connected DNS provider. Use this when port 80 cannot be reached.",
       "dnsChallengeWildcardDesc": "Wildcard certificates require DNS-01 and a connected DNS provider.",
@@ -1069,5 +1069,13 @@
       "attempts": "{count} failed attempt(s) so far.",
       "pillHint": "Show why"
     }
+  },
+  "serviceEnvironment": {
+    "title": "Service runtime environment",
+    "description": "Applies only to this service at runtime. These values override Compose environment and same-named project variables. Apply them with a restart or deployment.",
+    "overrides": "These keys take precedence over project values for this service: {keys}.",
+    "buildArguments": "Explicit image build arguments are edited in the Compose file or source configuration. Rebuild and redeploy to apply them; this editor changes runtime variables only.",
+    "projectLink": "Edit shared project environment",
+    "loadFailed": "Could not load project variable names to check overrides."
   }
 }

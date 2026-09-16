@@ -10,7 +10,12 @@ export type DeploymentStatus =
   | "deploying"
   | "ready"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "partial_failure"
+  | "action_required"
+  | "rejected"
+  | "no_changes"
+  | "reconciling";
 
 export type Environment = "production" | "preview" | "development";
 

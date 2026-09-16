@@ -215,6 +215,34 @@ describe("summarizeHealth", () => {
     expect(s?.label).toBe(h.summary.allGoodLabel);
   });
 
+  it("warns instead of declaring mail healthy when inbound SMTP is unverified", () => {
+    const s = summarizeHealth(
+      NINE_UP,
+      [dns("pass")],
+      delivery(),
+      h,
+      reachability({
+        status: "unknown",
+        ports: [
+          {
+            key: "smtp",
+            port: 25,
+            label: "SMTP inbound",
+            status: "blocked",
+            listening: true,
+            exposed: true,
+            reachable: false,
+            failure: "timeout",
+          },
+        ],
+      }),
+    );
+
+    expect(s?.banner).toContain("warning");
+    expect(s?.label).toBe(h.summary.almostLabel);
+    expect(s?.sub).toBe(h.reachability.unknownHint);
+  });
+
   /**
    * The #565 defect: a dead ClamAV painted the same red "Issues need attention"
    * banner as a dead Postfix, so the one signal that means "stop what you are doing"

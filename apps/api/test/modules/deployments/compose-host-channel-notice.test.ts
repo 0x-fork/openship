@@ -82,16 +82,16 @@ vi.mock("@repo/db", () => ({
 
 // The row IS this box. Keyed off the flag so the test doesn't depend on loopback
 // resolution or on which org owns the box.
-vi.mock("../../../src/lib/box-org", () => ({
+vi.mock("@repo/platform/engine/lib/box-org", () => ({
   isLocalHostRow: async (row: { isLocal?: boolean }) => Boolean(row?.isLocal),
   boxOwningOrgId: async () => "org1",
 }));
 
-vi.mock("../../../src/lib/provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: (f: () => unknown) => f() }),
 }));
 
-vi.mock("../../../src/modules/deployments/pinned-host-ports", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   withHostPortTargetLock: (_target: unknown, fn: () => unknown) => fn(),
   prepareTargetPinnedHostPorts: (...args: unknown[]) => h.prepareTargetPinnedHostPorts(...args),
   convergeTargetHostPortClaims: (...args: unknown[]) => h.convergeTargetHostPortClaims(...args),
@@ -102,13 +102,13 @@ vi.mock("../../../src/modules/deployments/pinned-host-ports", () => ({
   releaseNewPinnedHostPortClaims: (...args: unknown[]) => h.releaseNewPinnedHostPortClaims(...args),
 }));
 
-vi.mock("../../../src/modules/deployments/observed-host-port-claims", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/observed-host-port-claims", () => ({
   reserveResolvedLoopbackRoutes: (...args: unknown[]) => h.reserveResolvedLoopbackRoutes(...args),
 }));
 
-const { resolveServerExecutor } = await import("../../../src/lib/deployment-runtime");
+const { resolveServerExecutor } = await import("@repo/platform/engine/lib/deployment-runtime");
 const { deployComposeServices } =
-  await import("../../../src/modules/deployments/compose/deploy.service");
+  await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
 
 /** Collects what the deploy log was told, in order. */
 function recordingLogger() {

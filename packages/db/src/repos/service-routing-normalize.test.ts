@@ -1,3 +1,5 @@
+import { createConfigurationSecrets } from "../configuration-secrets";
+import { createEncryption } from "../encryption";
 import { describe, expect, it } from "vitest";
 import {
   composeWritePatch,
@@ -7,6 +9,9 @@ import {
   toComposeSpec,
 } from "./service.repo";
 import type { Database } from "../client";
+
+const testEncryption = createEncryption("repository-test-secret");
+const configuration = createConfigurationSecrets(testEncryption);
 
 const multiRoute = [
   { port: 3210, domainType: "free" as const, domain: "acme-backend" },
@@ -81,13 +86,13 @@ describe("reconcileFromCompose keeps the route set", () => {
       query: { service: { findMany: async () => [{ ...existing, importedSpec }] } },
       update: () => ({
         set: (data: Record<string, unknown>) => {
-          writes.push(data);
+          writes.push(configuration.openService(data));
           return { where: async () => undefined };
         },
       }),
     } as unknown as Database;
 
-    await createServiceRepo(db).reconcileFromCompose("proj_1", [
+    await createServiceRepo(db, testEncryption).reconcileFromCompose("proj_1", [
       { name: "backend", image: "convex:2" },
     ]);
 
@@ -123,13 +128,13 @@ describe("reconcileFromCompose bootstraps dynamic env provenance (#673)", () => 
       },
       update: () => ({
         set: (data: Record<string, unknown>) => {
-          writes.push(data);
+          writes.push(configuration.openService(data));
           return { where: async () => undefined };
         },
       }),
     } as unknown as Database;
 
-    await createServiceRepo(db).reconcileFromCompose("proj_1", [
+    await createServiceRepo(db, testEncryption).reconcileFromCompose("proj_1", [
       {
         name: "api",
         environment: {
@@ -207,13 +212,13 @@ describe("legacy compose provenance baselines", () => {
       },
       update: () => ({
         set: (data: Record<string, unknown>) => {
-          writes.push(data);
+          writes.push(configuration.openService(data));
           return { where: async () => undefined };
         },
       }),
     } as unknown as Database;
 
-    const result = await createServiceRepo(db).reconcileFromCompose("proj_1", [parsedNow]);
+    const result = await createServiceRepo(db, testEncryption).reconcileFromCompose("proj_1", [parsedNow]);
 
     expect(result.driftedNames).toEqual([]);
     expect(writes).toHaveLength(1);
@@ -251,13 +256,13 @@ describe("legacy compose provenance baselines", () => {
       },
       update: () => ({
         set: (data: Record<string, unknown>) => {
-          writes.push(data);
+          writes.push(configuration.openService(data));
           return { where: async () => undefined };
         },
       }),
     } as unknown as Database;
 
-    await createServiceRepo(db).reconcileFromCompose("proj_1", [parsedWithImageTemplate]);
+    await createServiceRepo(db, testEncryption).reconcileFromCompose("proj_1", [parsedWithImageTemplate]);
 
     expect(writes).toHaveLength(1);
     expect(writes[0].advanced).toBeUndefined();
@@ -335,7 +340,7 @@ describe("Compose image provenance (#809)", () => {
       query: { service: { findMany: async () => [row] } },
       update: () => ({
         set: (data: Record<string, unknown>) => ({
-          where: async () => writes.push(data),
+          where: async () => writes.push(configuration.openService(data)),
         }),
       }),
     } as unknown as Database;
@@ -345,7 +350,7 @@ describe("Compose image provenance (#809)", () => {
       advanced: stored.advanced,
     };
 
-    await createServiceRepo(db).syncFromCompose("proj_1", [parsed], {
+    await createServiceRepo(db, testEncryption).syncFromCompose("proj_1", [parsed], {
       removeMissing: false,
       composeAuthoritative: true,
     });
@@ -376,7 +381,7 @@ describe("Compose image provenance (#809)", () => {
         query: { service: { findMany: async () => [row] } },
         update: () => ({
           set: (data: Record<string, unknown>) => ({
-            where: async () => writes.push(data),
+            where: async () => writes.push(configuration.openService(data)),
           }),
         }),
       } as unknown as Database;
@@ -392,7 +397,7 @@ describe("Compose image provenance (#809)", () => {
         },
       };
 
-      await createServiceRepo(db).reconcileFromCompose("proj_1", [parsed]);
+      await createServiceRepo(db, testEncryption).reconcileFromCompose("proj_1", [parsed]);
       return writes[0];
     };
 
@@ -430,13 +435,13 @@ describe("reconcileFromCompose bootstraps legacy build args (#689)", () => {
       query: { service: { findMany: async () => [{ ...row, importedSpec: oldBaseline }] } },
       update: () => ({
         set: (data: Record<string, unknown>) => {
-          writes.push(data);
+          writes.push(configuration.openService(data));
           return { where: async () => undefined };
         },
       }),
     } as unknown as Database;
 
-    await createServiceRepo(db).reconcileFromCompose("proj_1", [
+    await createServiceRepo(db, testEncryption).reconcileFromCompose("proj_1", [
       { name: "api", image: "example/api:1" },
     ]);
 
@@ -484,13 +489,13 @@ describe("reconcileFromCompose bootstraps legacy build args (#689)", () => {
         },
         update: () => ({
           set: (data: Record<string, unknown>) => {
-            writes.push(data);
+            writes.push(configuration.openService(data));
             return { where: async () => undefined };
           },
         }),
       } as unknown as Database;
 
-      await createServiceRepo(db).reconcileFromCompose("proj_1", [
+      await createServiceRepo(db, testEncryption).reconcileFromCompose("proj_1", [
         {
           name: "api",
           build: ".",

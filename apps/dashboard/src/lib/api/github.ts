@@ -90,6 +90,15 @@ export interface UpdateGitHubSourceInput {
   webBaseUrl?: string;
 }
 
+export interface BranchPageResponse {
+  data: Array<{ name: string; sha?: string; protected?: boolean }>;
+  pagination: {
+    page: number;
+    perPage: number;
+    hasMore: boolean;
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  /github/status request dedup (in-flight only — NOT a cache)        */
 /* ------------------------------------------------------------------ */
@@ -154,8 +163,10 @@ export const githubApi = {
 
   /** List a repo's branches (used before a project exists — e.g. the migration
    *  wizard's link-repo step, which can't use projectsApi.getBranches). */
-  listBranches: (owner: string, repo: string) =>
-    api.get<{ data: Array<{ name: string }> }>(endpoints.github.repoBranches(owner, repo)),
+  listBranches: (owner: string, repo: string, page = 1) =>
+    api.get<BranchPageResponse>(endpoints.github.repoBranches(owner, repo), {
+      params: { page },
+    }),
 
   /**
    * Mint a short-lived GitHub App installation token for cloning a repo and

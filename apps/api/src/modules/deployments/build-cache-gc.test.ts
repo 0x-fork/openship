@@ -6,7 +6,7 @@ import {
   collectBuildCacheTargets,
   runBuildCacheGcSweep,
   type BuildCacheGcDependencies,
-} from "./build-cache-gc";
+} from "@repo/platform/engine/modules/deployments/build-cache-gc";
 
 const project = (overrides: Record<string, unknown> = {}) =>
   ({

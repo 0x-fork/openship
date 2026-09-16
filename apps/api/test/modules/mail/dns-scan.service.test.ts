@@ -71,13 +71,13 @@ const BASE_STATE = {
  */
 let state: Record<string, unknown> = BASE_STATE;
 
-vi.mock("../../../src/lib/ssh-manager", () => ({
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     withExecutor: async (_serverId: string, fn: (exec: unknown) => unknown) => fn({}),
   },
 }));
 
-vi.mock("../../../src/modules/mail/mail-state", () => ({
+vi.mock("@repo/platform/engine/modules/mail/mail-state", () => ({
   readState: async () => state,
 }));
 

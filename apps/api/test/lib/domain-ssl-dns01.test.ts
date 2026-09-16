@@ -61,11 +61,11 @@ vi.mock("../../src/lib/controller-helpers", () => ({
   platform: () => ({ target: "selfhosted", runtime: {} }),
 }));
 
-vi.mock("../../src/lib/provision-lock", () => ({
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
   createProvisionLock: () => ({ run: <T>(fn: () => Promise<T>) => fn() }),
 }));
 
-vi.mock("../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   disposePlatform: h.disposePlatform,
   resolveDeploymentPlatform: vi.fn(async () => ({
     platform: {
@@ -78,7 +78,7 @@ vi.mock("../../src/lib/deployment-runtime", () => ({
   })),
 }));
 
-vi.mock("../../src/modules/dns/dns-credential.service", () => ({
+vi.mock("@repo/platform/engine/modules/dns/dns-credential.service", () => ({
   resolveDnsManager: vi.fn(async () => h.dnsManagerResult),
 }));
 
@@ -86,7 +86,7 @@ import {
   manageDomainSsl,
   provisionDomainCertForVerify,
   createDnsHookScripts,
-} from "../../src/lib/domain-ssl";
+} from "@repo/platform/engine/lib/domain-ssl";
 
 function domain(hostname: string, extra: Record<string, unknown> = {}) {
   h.domains.set(hostname, {
@@ -246,3 +246,12 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
     expect(calledOpts.dnsCleanupHookScript).toContain("DELETE");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));
+
+vi.mock("@repo/platform/engine/lib/resource-access", () => ({
+  platform: () => ({ target: "selfhosted", runtime: {} }),
+}));
