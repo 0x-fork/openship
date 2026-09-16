@@ -5,8 +5,10 @@
  */
 
 import type { CommandExecutor } from "../../../types";
-import type { ProxyKind, ProxyScanResult } from "../../types";
-import { scanNginx, scanOpenshipEdge } from "./nginx";
+import type { ImportedSite, ProxyKind, ProxyScanResult } from "../../types";
+import { EDGE_CONTAINER_MOUNTS } from "../../../infra/openresty-lua";
+import { sq } from "../detect";
+import { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanForeignOpenResty } from "./nginx";
 import { scanCaddy } from "./caddy";
 import { scanApache } from "./apache";
 import { scanTraefik } from "./traefik";
@@ -50,9 +52,7 @@ const INSTALLED_MARKERS: Array<{ proxy: ProxyKind; paths: string[] }> = [
  *
  * Returns null when nothing importable is installed.
  */
-export async function detectInstalledProxy(
-  executor: CommandExecutor,
-): Promise<ProxyKind | null> {
+export async function detectInstalledProxy(executor: CommandExecutor): Promise<ProxyKind | null> {
   const probe = INSTALLED_MARKERS.map(({ proxy, paths }) => {
     const test = paths.map((p) => `[ -f '${p}' ]`).join(" || ");
     return `{ ${test}; } && echo ${proxy}`;
@@ -91,10 +91,11 @@ export async function scanImportableSites(
     case "traefik":
       return scanTraefik(executor);
     case "openresty":
-      // Same parser: OpenResty vhosts ARE nginx syntax. scanOpenshipEdge already
-      // reads the two bare-host sites-enabled layouts, which is exactly where a
-      // host OpenResty (ours or hand-rolled) keeps them.
-      return scanOpenshipEdge(executor);
+      // A host OpenResty is a MIGRATION SOURCE — a legacy bare Openship edge or a
+      // hand-rolled one. Dump its fully-resolved config so vhosts are found wherever
+      // the install `include`s them; the fixed-glob read missed a non-default layout
+      // and the migrate offer collapsed to takeover-only (dropping every live site).
+      return scanForeignOpenResty(executor);
     default:
       return {
         proxy,
@@ -122,4 +123,91 @@ export function canImportProxy(proxy: ProxyKind | undefined): boolean {
   );
 }
 
-export { scanNginx, scanOpenshipEdge, scanCaddy, scanApache, scanTraefik };
+export { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanCaddy, scanApache, scanTraefik };
+
+/** One adopted static site whose docroot the containerized edge cannot read. */
+export interface UnreachableStaticRoot {
+  /** Primary hostname (what the operator recognises). */
+  host: string;
+  /** The docroot as the foreign proxy declared it — a HOST path. */
+  root: string;
+}
+
+/**
+ * Adopted static sites whose docroot lives outside the edge container's bind
+ * mounts — i.e. the paths the edge simply cannot see.
+ *
+ * A bare host proxy could serve any directory on the box; the containerized edge
+ * only sees {@link EDGE_CONTAINER_MOUNTS}. Migrating `root /home/app/dist`
+ * verbatim therefore produces a vhost that answers **500** (`try_files` →
+ * `/index.html` → "rewrite or internal redirection cycle"), which reads as a
+ * broken site rather than a missing mount. Surfacing this BEFORE the cutover lets
+ * the caller offer the real choices: copy the tree under `/opt/openship/static`
+ * (already mounted), add a bind mount, or knowingly leave it.
+ *
+ * Returns [] for a bare-host edge, where every path is readable already.
+ */
+export function unreachableStaticRoots(
+  sites: ImportedSite[],
+  opts: { containerEdge: boolean },
+): UnreachableStaticRoot[] {
+  if (!opts.containerEdge) return [];
+  const visible = EDGE_CONTAINER_MOUNTS.map((m) => m.host.replace(/\/+$/, ""));
+  const out: UnreachableStaticRoot[] = [];
+  for (const site of sites) {
+    if (site.target.kind !== "static") continue;
+    const root = site.target.root.replace(/\/+$/, "");
+    // Prefix match on a path BOUNDARY — `/opt/openship/staticstuff` is not
+    // inside `/opt/openship/static`.
+    const reachable = visible.some((v) => root === v || root.startsWith(`${v}/`));
+    if (!reachable) out.push({ host: site.serverNames[0] ?? root, root: site.target.root });
+  }
+  return out;
+}
+
+/**
+ * The edge's bind-mounted static dir (host path == container path), where copies
+ * of adopted-but-unreachable static roots land so the containerized edge can
+ * actually serve them. Derived from {@link EDGE_CONTAINER_MOUNTS} so it tracks
+ * the baked mounts rather than hardcoding the path in two places.
+ */
+const EDGE_STATIC_MOUNT =
+  EDGE_CONTAINER_MOUNTS.find((m) => m.host === "/opt/openship/static")?.host ??
+  "/opt/openship/static";
+
+/**
+ * Copy an adopted static site's docroot INTO the edge's bind-mounted static dir
+ * and return the new (container-visible) root. The migrate flow rewrites the
+ * route's `staticRoot` to this value so the site keeps serving after cutover
+ * instead of 500ing — see {@link unreachableStaticRoots}.
+ *
+ * The source is a HOST path the foreign proxy served (e.g. `/home/app/dist`) that
+ * the edge container cannot see; the dest `/opt/openship/static/_adopted/<host>`
+ * is inside {@link EDGE_CONTAINER_MOUNTS}, mounted at the SAME path inside the
+ * container. This is a point-in-time SNAPSHOT: later changes to the original tree
+ * do NOT propagate (the operator can re-copy or add a bind mount for live files).
+ *
+ * Copies CONTENTS (`<root>/.`) so files land directly under <dest>, matching the
+ * `root <dest>;` the vhost emits. MUST run on the HOST executor (the only one that
+ * sees both paths) — i.e. the CLI's LocalExecutor before `docker compose up`, not
+ * the containerized API. Throws if the source is unreadable; callers treat a copy
+ * failure as "leave this site as-is".
+ */
+export async function copyStaticRootIntoEdge(
+  executor: CommandExecutor,
+  opts: { root: string; host: string },
+): Promise<string> {
+  const slug =
+    opts.host
+      .replace(/[^a-zA-Z0-9._-]/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "site";
+  const src = opts.root.replace(/\/+$/, "");
+  const dest = `${EDGE_STATIC_MOUNT}/_adopted/${slug}`;
+  await executor.exec(`mkdir -p ${sq(dest)}`);
+  // `<src>/.` copies CONTENTS (incl. dotfiles) so files land directly under <dest>,
+  // matching the `root <dest>;` the vhost emits; quote the whole argument so a path
+  // with spaces stays one token.
+  await executor.exec(`cp -a ${sq(`${src}/.`)} ${sq(`${dest}/`)}`);
+  return dest;
+}

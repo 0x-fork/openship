@@ -1,9 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 
-import { floodGuard, rateLimiterFor } from "../../src/middleware/rate-limiter";
+import { authRouteLimiter, floodGuard, rateLimiterFor } from "../../src/middleware/rate-limiter";
 import { POLICIES } from "../../src/lib/rate-limit/policies";
-import { env } from "../../src/config";
+import { shutdownRateLimit } from "../../src/lib/rate-limit";
+import { env } from "@repo/platform/engine/config/index";
+
+const originalEnv = { CLOUD_MODE: env.CLOUD_MODE, OPENSHIP_TRUST_EDGE: env.OPENSHIP_TRUST_EDGE };
+const floodLimit = POLICIES["flood-ip"].limit;
+beforeEach(() => {
+  env.CLOUD_MODE = false;
+  env.OPENSHIP_TRUST_EDGE = false;
+  vi.stubEnv("OPENSHIP_RATE_LIMIT_STORE", "memory");
+});
+afterEach(async () => {
+  await shutdownRateLimit();
+  Object.assign(env, originalEnv);
+  POLICIES["flood-ip"].limit = floodLimit;
+  vi.unstubAllEnvs();
+});
 
 // The pre-auth flood guard (#123 follow-up): with the global /api limiter gone,
 // nothing throttled requests before authMiddleware's session lookup. floodGuard
@@ -32,6 +47,42 @@ describe("flood-ip policy", () => {
 });
 
 describe("floodGuard middleware", () => {
+  it("rejects a flood before the authentication lookup or route policy runs", async () => {
+    POLICIES["flood-ip"].limit = 1;
+    const authenticationLookup = vi.fn();
+    const app = new Hono();
+    app.use("*", withIp("203.0.113.50"));
+    app.use("/api/*", floodGuard);
+    app.get("/api/private", async (c, next) => {
+      authenticationLookup();
+      c.set("ctx", { userId: "u1", organizationId: "o1" } as never);
+      await next();
+    }, rateLimiterFor("default-authed"), (c) => c.json({ ok: true }));
+
+    expect((await app.request("/api/private")).status).toBe(200);
+    const rejected = await app.request("/api/private");
+
+    expect(rejected.status).toBe(429);
+    expect(rejected.headers.get("Retry-After")).toBeTruthy();
+    expect(rejected.headers.get("X-RateLimit-Limit")).toBe("1");
+    expect(authenticationLookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the raw auth-route limit active behind a trusted edge", async () => {
+    env.OPENSHIP_TRUST_EDGE = true;
+    const app = new Hono();
+    app.use("*", withIp("203.0.113.51"));
+    app.use("/api/*", floodGuard);
+    app.use("/api/auth/*", authRouteLimiter);
+    app.post("/api/auth/sign-in", (c) => c.json({ ok: true }));
+
+    const res = await app.request("/api/auth/sign-in", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-RateLimit-Limit")).toBe(String(POLICIES["auth-tight"].limit));
+    expect(res.headers.get("X-RateLimit-Remaining")).toBe(String(POLICIES["auth-tight"].limit - 1));
+  });
+
   it("applies the flood-ip ceiling to an ordinary /api request", async () => {
     const app = new Hono();
     app.use("*", withIp("203.0.113.10"));

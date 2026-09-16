@@ -11,6 +11,7 @@ import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useBuildStream } from "@/hooks/useSSEConnection";
 import { deployApi, projectsApi } from "@/lib/api";
 import { randomUUID } from "@/lib/random-uuid";
+import { redirectPayloadFields } from "@/lib/public-endpoint-payload";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
@@ -18,21 +19,43 @@ import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubCon
 import type { DeploymentConfig, DeploymentState, DeploymentStatus, ServiceDeployStatus } from "./types";
 import { syncActiveModeSnapshot } from "./mode-config";
 import {
+  planDeploymentEnvPersistence,
+  planMatchedExistingProjectEnvPersistence,
+} from "./env-payload";
+import { createProjectEnvEditState, type ProjectEnvDiff } from "@/lib/project-env-diff";
+import {
   BUILD_PHASES,
   DEFAULT_CONFIG,
   INITIAL_STATE,
   ensurePublicEndpoints,
-  normalizeComposeService,
   resolveBuildElapsedMs,
   syncPublicEndpointState,
   usesServiceDeployment,
+  workloadOf,
 } from "./types";
-import type { RawComposeService } from "./types";
-import { parseCloudRequiredCode } from "@repo/core";
+import {
+  BUILD_SESSION_ERROR_FALLBACK,
+  classifyBuildSessionFailure,
+  hydrateSnapshotServices,
+  type BuildSessionLoadResult,
+} from "./load-session";
+import type { WorkloadType } from "@repo/core";
+import {
+  deployErrorCloudCapability,
+  shouldPromptCloudConnect,
+} from "@/lib/deploy-error-routing";
 
 const ERROR_DEBOUNCE_MS = 1000;
 const MAX_RENDERED_BUILD_LOGS = 2000;
 const BUILD_STATUS_POLL_MS = 3000;
+
+async function persistProjectEnvDiff(projectId: string, diff: ProjectEnvDiff | null) {
+  if (!diff || (diff.upserts.length === 0 && diff.deletes.length === 0)) return;
+  await projectsApi.mergeEnv(projectId, {
+    environment: "production",
+    ...diff,
+  });
+}
 
 // Map a getBuildStatus snapshot's per-service rows into UI service statuses.
 // Shared by the initial hydrate (loadBuildSession) and the self-heal poll so
@@ -74,6 +97,10 @@ function mapServiceStatusesFromBuildStatus(data: any): ServiceDeployStatus[] {
   });
 }
 
+// Two wire shapes, deliberately: the project API takes `port` as a number and
+// optional hostnames, the build API takes a string port and required ones. They
+// share `redirectPayloadFields` so the part that's easy to forget lives in one
+// place — see lib/public-endpoint-payload.
 function serializeProjectPublicEndpoint(
   endpoint: DeploymentConfig["publicEndpoints"][number],
   hasServer: boolean,
@@ -85,6 +112,7 @@ function serializeProjectPublicEndpoint(
     domain: endpoint.domain || undefined,
     customDomain: endpoint.customDomain || undefined,
     domainType: endpoint.domainType,
+    ...redirectPayloadFields(endpoint),
   };
 }
 
@@ -99,6 +127,7 @@ function serializeBuildPublicEndpoint(
     domain: endpoint.domain,
     customDomain: endpoint.customDomain,
     domainType: endpoint.domainType,
+    ...redirectPayloadFields(endpoint),
   };
 }
 
@@ -199,7 +228,10 @@ export function useDeploymentBuild(
   setConfig: React.Dispatch<React.SetStateAction<DeploymentConfig>>,
 ) {
   const { showToast } = useToast();
-  const { requireCloud } = useCloud();
+  // `connected` is read, not just `requireCloud`: the catch below has to tell
+  // "connecting is the missing step" from "we already think we're connected and the
+  // server still said no" — the two cases requireCloud's return value conflates.
+  const { requireCloud, connected: cloudConnected } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
   const { showModal, hideModal } = useModal();
   const openGithubConnect = useServerGitHubConnectModal();
@@ -217,6 +249,19 @@ export function useDeploymentBuild(
   // Wall-clock of the last self-heal poll — rate-caps the leading poll so effect
   // re-creation (dep churn) can't burst getBuildStatus into a request storm.
   const lastBuildStatusPollRef = useRef(0);
+  /**
+   * Deployment ids whose terminal state has already dropped the project cache.
+   *
+   * A deploy can be observed as finished by THREE different paths: the live SSE
+   * completion event, the self-heal poll, and the initial load of an
+   * already-finished deployment (a refresh). Only the SSE one invalidated, so
+   * refreshing mid-deploy left the project page serving whatever it had cached —
+   * which, if the user opened the project while the deploy was still running, was
+   * the pre-deploy DRAFT. "Open Dashboard" then landed on "Ready to deploy" next
+   * to a Deployed v1 in the same view. Keyed by id so the poll can fire every
+   * tick without re-invalidating.
+   */
+  const terminalInvalidatedRef = useRef<Set<string>>(new Set());
   /** Wall-clock when each build phase (by step index) became current — used to
    *  derive live per-phase durations as the build advances. Reset per deploy. */
   const phaseStartRef = useRef<Record<number, number>>({});
@@ -234,6 +279,20 @@ export function useDeploymentBuild(
           : "building";
 
   // ── Terminal helpers ──────────────────────────────────────────────────────
+
+  /**
+   * A deployment reached a terminal state → drop the project's cached info once,
+   * so the project view re-reads instead of serving a snapshot taken while the
+   * deploy was still running (draft status, no live URL, stale banners).
+   *
+   * Idempotent per deployment id: safe to call from the poll on every tick.
+   */
+  const invalidateOnTerminal = useCallback((projectId?: string, deploymentId?: string) => {
+    if (!projectId || !deploymentId) return;
+    if (terminalInvalidatedRef.current.has(deploymentId)) return;
+    terminalInvalidatedRef.current.add(deploymentId);
+    invalidateProjectCaches(projectId);
+  }, []);
 
   const writeToTerminal = useCallback((data: Uint8Array) => {
     if (terminalRef.current && isTerminalReady.current) {
@@ -272,15 +331,23 @@ export function useDeploymentBuild(
         deploymentSuccess: true,
         deploymentFailed: false,
         deploymentCanceled: false,
+        cancellationPending: false,
         currentProgress: 100,
         currentStepIndex: 5,
         isDeploying: false,
         failureMessage: "",
         warningMessage,
-        // A warning on success means a partial failure (some services failed):
-        // hold it for an explicit keep/reject decision. The server flag takes
-        // over on refresh (loadBuildSession) — false once the user keeps it.
-        decisionPending: data?.decisionPending ?? !!warningMessage,
+        // THE SERVER'S FLAG ONLY. Never inferred from the presence of a warning.
+        //
+        // This used to read `?? !!warningMessage`, on the premise that "a warning on success means
+        // a partial failure". It doesn't. A successful deploy also warns when its domains aren't
+        // routed yet, or are routed with no TLS certificate — and those warnings then opened the
+        // failed-services keep/reject modal on a deploy where nothing failed, reading
+        // "0 of 5 services failed" over a "Retry 0 Failed Services" button.
+        //
+        // A warning is information; a decision is a thing the server is holding open. Only the
+        // server knows which, and it now says so on this event (`finalizeComposeDeploy`).
+        decisionPending: !!data?.decisionPending,
         decisionFailedServiceIds: data?.partial?.failed ?? prev.decisionFailedServiceIds,
         // Advisory port-check rides the `complete` event; skips only ever arrive
         // via refresh (build-status), so keep the prior skip list here.
@@ -295,11 +362,12 @@ export function useDeploymentBuild(
     // view re-reads fresh (clears the "New commit"/"Action Required" banners).
     if (data?.project_id) invalidateProjectCaches(data.project_id);
 
-    if (warningMessage) {
-      const textEncoder = new TextEncoder();
-      writeToTerminal(textEncoder.encode(`\r\n\x1b[33m Deployment completed with warnings: ${warningMessage}\x1b[0m\r\n`));
-    }
-  }, [writeToTerminal]);
+    // No terminal write: every warning path now logs `Deployment completed with
+    // warnings: …` server-side (compose deploy.service, the edge/route rollup in
+    // executeServerDeploy, and the compose partial-failure rollup), so writing it
+    // here as well double-printed it for compose and left it out of the persisted
+    // log for the others. One writer — the server. Same rule as the failure path.
+  }, []);
 
   const handleFailureMessage = useCallback(
     (message?: string, errorCode?: string, errorDetails?: Record<string, unknown>) => {
@@ -325,11 +393,19 @@ export function useDeploymentBuild(
         errorDetails: errorDetails || null,
       }));
 
-      const textEncoder = new TextEncoder();
-      writeToTerminal(textEncoder.encode(`\r\n\x1b[31m Deployment Failed: ${errorMessage}\x1b[0m\r\n`));
+      // The TRACE is written server-side and only server-side: the pipeline logs
+      // `Error: <msg>` (build-pipeline catch) or `Deployment failed before build
+      // started: <msg>` (markDeploymentFailedFromOutside) before this ever fires,
+      // and both persist into the build session. Writing the message here too put
+      // it in the terminal TWICE — live (log event, then this) and on replay
+      // (hydrated buildLogs, then this). `onFailure` in deployment-lifecycle
+      // appends no log of its own, so the server line is the single emission.
+      //
+      // The toast is a DIFFERENT surface, not the trace, so it stays: state drives
+      // the failure banner, the toast notifies, the terminal keeps the one line.
       showToast(errorMessage, "error", "Deployment Failed");
     },
-    [showToast, writeToTerminal],
+    [showToast],
   );
 
   const handleProgressUpdate = useCallback((currentStep: number, progress: number) => {
@@ -375,6 +451,7 @@ export function useDeploymentBuild(
       setState((prev) => ({
         ...prev,
         deploymentCanceled: true,
+        cancellationPending: true,
         deploymentFailed: false,
         deploymentSuccess: false,
         isDeploying: false,
@@ -441,7 +518,9 @@ export function useDeploymentBuild(
       onProgress: handleProgressUpdate,
       onSuccess: (data) => {
         handleSuccessMessage(data);
-        if (config.options.hasServer) {
+        // A worker runs a container and streams logs like a web app; only a
+        // static (edge-served files) deploy has no container to stream (#538).
+        if (workloadOf(config.options) !== "static") {
           canStreamContainer.current = true;
         }
         buildStream.disconnect();
@@ -591,6 +670,16 @@ export function useDeploymentBuild(
       return null;
     }
 
+    const envPlan = planDeploymentEnvPersistence({
+      projectId: config.projectId,
+      envVars: config.envVars,
+      baseline: config.projectEnvBaseline,
+    });
+    if (!envPlan.ok) {
+      showToast(envPlan.error, "error", "Environment variables");
+      return null;
+    }
+
     lastErrorRef.current = null;
 
     const localBuildStartedAt = new Date().toISOString();
@@ -609,6 +698,7 @@ export function useDeploymentBuild(
         deploymentSuccess: false,
         deploymentFailed: false,
         deploymentCanceled: false,
+        cancellationPending: false,
         failureMessage: "",
         warningMessage: "",
         decisionPending: false,
@@ -635,11 +725,11 @@ export function useDeploymentBuild(
 
     try {
       // ── Save-only (Edit from the Runtime page): the project ALREADY exists,
-      // so persist build + runtime config in ONE atomic call (POST /:id/options)
-      // and STOP. Deliberately does NOT call `ensure` (which would resend git +
-      // publicEndpoints + a re-detected framework and clobber live config/routes)
-      // and does NOT touch env (env has its own per-variable editor — a blind
-      // replace here would wipe/corrupt masked secrets). No deploy. ────────────
+      // so persist build + runtime config through POST /:id/options and STOP.
+      // Deliberately does NOT call `ensure` (which would resend git + routes + a
+      // re-detected framework). Env uses the shared per-key merge contract:
+      // untouched masked secrets are omitted and explicit edits are persisted
+      // before success is reported. No deploy. ────────────────────────────────
       if (saveConfigOnly) {
         const projectId = config.projectId;
         if (!projectId) {
@@ -648,6 +738,7 @@ export function useDeploymentBuild(
         }
         try {
           await projectsApi.setOptions(projectId, {
+            ...(!isSourceless ? { gitBranch: config.branch } : {}),
             framework: config.framework,
             packageManager: config.packageManager,
             buildImage: config.buildImage,
@@ -657,16 +748,21 @@ export function useDeploymentBuild(
             outputDirectory: config.options.outputDirectory,
             productionPaths: config.options.productionPaths,
             rootDirectory: config.options.rootDirectory,
+            composePath: config.composePath ?? "",
             productionPort:
               config.options.hasServer && config.options.productionPort
                 ? Number(config.options.productionPort)
                 : undefined,
             hasServer: config.options.hasServer,
             hasBuild: config.options.hasBuild,
+            // Runtime workload (#538). A worker is only expressible here — the
+            // backend re-syncs hasServer/productionMode from it.
+            workloadType: workloadOf(config.options),
             ...(config.runtimeMode === "bare" || config.runtimeMode === "docker"
               ? { runtimeMode: config.runtimeMode }
               : {}),
           });
+          await persistProjectEnvDiff(projectId, envPlan.merge);
           showToast("Configuration saved", "success", "Saved");
           return projectId;
         } catch (err) {
@@ -694,11 +790,18 @@ export function useDeploymentBuild(
         packageManager: config.packageManager,
         buildImage: config.buildImage,
         buildCommand: config.options.buildCommand,
-        outputDirectory: config.options.outputDirectory,
+        // Blank default must be OMITTED, not sent as "": the ensure schema's
+        // outputDirectory pattern rejects an empty string → 400 before the
+        // handler (#427). Mirror productionPaths' `|| undefined` on the line below.
+        outputDirectory: config.options.outputDirectory || undefined,
         productionPaths: config.options.productionPaths || undefined,
         installCommand: config.options.installCommand,
         startCommand: config.options.startCommand,
         rootDirectory: config.options.rootDirectory,
+        // Always sent, never omitted: the API normalizes blank to NULL, so this
+        // both persists a pin (the push-triggered drift reconcile needs it to
+        // re-read the SAME file) and clears one the user removed.
+        composePath: config.composePath ?? "",
         port: config.options.hasServer && config.options.productionPort
           ? Number(config.options.productionPort)
           : undefined,
@@ -714,6 +817,12 @@ export function useDeploymentBuild(
           : undefined,
         hasServer: config.options.hasServer,
         hasBuild: config.options.hasBuild,
+        // Runtime workload (#538): the only way to create a portless worker.
+        workloadType: workloadOf(config.options),
+        // Rollback retention chosen in the target panel. Only meaningful on a
+        // FIRST deploy — for an existing project the panel already persisted it.
+        ...(config.rollbackWindow !== undefined ? { rollbackWindow: config.rollbackWindow } : {}),
+        ...(config.rollbackStrategy ? { defaultRollbackStrategy: config.rollbackStrategy } : {}),
         // Monorepo: persist the per-sub-app slices + shared workspace install.
         projectType: isMonorepoDeployment ? "monorepo" : undefined,
         monorepoApps: isMonorepoDeployment
@@ -741,6 +850,9 @@ export function useDeploymentBuild(
         // Persist the repo's vercel.json routing so the backend compiles it to
         // OpenResty at deploy (single-domain rewrites, redirects, headers).
         routingConfig: config.routingConfig ?? undefined,
+        // Deploy-time readiness gate. Omitted when the Health section was left
+        // alone, which is the default — the backend then runs no post-start probe.
+        readiness: config.readiness ?? undefined,
       });
 
       if (!projectData.success || !projectData.project_id) {
@@ -753,22 +865,38 @@ export function useDeploymentBuild(
       // errors but the project row already exists at this point.
       ensuredProjectId = projectData.project_id;
 
-      // Step 2: Create deployment with config snapshot + env vars
-      const envVarsMap: Record<string, string> = {};
-      if (config.envVars && config.envVars.length > 0) {
-        for (const ev of config.envVars) {
-          if (ev.key.trim()) {
-            envVarsMap[ev.key] = ev.value;
-          }
+      let resolvedEnvPlan = envPlan;
+      if (!config.projectId && projectData.created !== true) {
+        // `ensure` de-duplicates by project slug/branch. A wizard opened as a
+        // nominally new repo can therefore resolve to an existing project even
+        // though it never loaded that project's env. Re-read the authoritative
+        // store and turn the wizard rows into a non-destructive partial merge:
+        // submitted values may update matching keys, omitted saved keys remain.
+        const envRes = await projectsApi.getEnv(projectData.project_id);
+        const matchedEnvPlan = planMatchedExistingProjectEnvPersistence({
+          envVars: config.envVars,
+          persisted: createProjectEnvEditState(envRes?.data ?? []),
+        });
+        if (!matchedEnvPlan.ok) {
+          throw new Error(matchedEnvPlan.error);
         }
+        resolvedEnvPlan = matchedEnvPlan;
       }
 
+      // Existing-project env is authoritative in its project store. Apply only
+      // the editor diff before build/access; omitting its envVars payload avoids
+      // the endpoint's legacy full-replace behavior. A genuinely new project
+      // still sends its initial values through build/access to create the store.
+      await persistProjectEnvDiff(projectData.project_id, resolvedEnvPlan.merge);
+
+      // Step 2: Create deployment with config snapshot + env vars
       const data = await deployApi.buildAccess({
         projectId: projectData.project_id,
         branch: config.branch || undefined,
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
-        envVars: Object.keys(envVarsMap).length > 0 ? envVarsMap : undefined,
+        envVars: resolvedEnvPlan.buildAccessEnvVars,
+        sourceEnvKeys: resolvedEnvPlan.sourceEnvKeys,
         // "None" routing → explicit [] (no public URL). Must be [], not
         // undefined: undefined makes the backend auto-derive a free subdomain.
         publicEndpoints: !isServiceDeployment
@@ -803,22 +931,21 @@ export function useDeploymentBuild(
           config.projectType === "docker" || isServiceDeployment
             ? "docker"
             : (overrides?.runtimeMode ?? config.runtimeMode),
-        // Send the mode for BOTH multi-app shapes so the operator's per-app vs
-        // single choice reaches the backend. Monorepo was previously omitted,
-        // leaving the backend to guess via shouldUseProjectServicePipeline.
-        serviceDeploymentMode:
-          config.projectType === "services" || config.projectType === "monorepo"
-            ? config.serviceDeploymentMode
-            : undefined,
-        // Cloud resource tier only matters for a server-backed Oblien deploy.
-        // Static (Pages) deploys and non-cloud targets ignore it.
+        // A branch scan can replace Compose with a single app. Send that choice
+        // explicitly so retained service rows from the previous branch cannot
+        // route this deployment back through the service pipeline.
+        serviceDeploymentMode: config.serviceDeploymentMode,
+        // Cloud resource tier sizes a long-lived container — a web app OR a
+        // worker (#538). Only a static (Pages) deploy has no workspace to size,
+        // so gate on the workload, not the legacy hasServer boolean (a worker
+        // shares hasServer=false with a static site).
         cloudResourceTier:
-          config.deployTarget === "cloud" && config.options.hasServer
+          config.deployTarget === "cloud" && workloadOf(config.options) !== "static"
             ? config.cloudResourceTier
             : undefined,
         cloudResourceCustom:
           config.deployTarget === "cloud" &&
-          config.options.hasServer &&
+          workloadOf(config.options) !== "static" &&
           config.cloudResourceTier === "custom"
             ? config.cloudResourceCustom
             : undefined,
@@ -828,6 +955,8 @@ export function useDeploymentBuild(
               image: service.image,
               build: service.build,
               dockerfile: service.dockerfile,
+              buildArgs: service.buildArgs,
+              advanced: service.advanced,
               ports: service.ports,
               dependsOn: service.dependsOn,
               environment: service.environment,
@@ -874,8 +1003,15 @@ export function useDeploymentBuild(
       // (copy from the shared registry — no hardcoded strings). The up-front
       // Sidebar gate handles the happy path; this is the fallback. On dismiss,
       // surface the original error; on connect, the user re-deploys.
-      const cloudCapability = parseCloudRequiredCode(errorCode);
-      if (cloudCapability && canConnectCloud) {
+      //
+      // Gated on `!cloudConnected` (see shouldPromptCloudConnect): `requireCloud`
+      // resolves TRUE immediately when the dashboard already believes it is
+      // connected, opening no modal and asking nothing — and `if (!connected)` then
+      // skipped the toast, so a 403 the server was perfectly clear about
+      // ("Free subdomain … requires Openship Cloud") reached the user as nothing at
+      // all, visible only in the network tab.
+      const cloudCapability = deployErrorCloudCapability(errorCode);
+      if (shouldPromptCloudConnect({ errorCode, canConnectCloud, cloudConnected }) && cloudCapability) {
         const connected = await requireCloud(cloudCapability, { domain: baseDomain });
         if (!connected) showToast(message, "error", "Error");
       } else if (!maybeOpenCredentialModal(errorCode)) {
@@ -886,7 +1022,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
+  }, [baseDomain, cloudConnected, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only
@@ -921,7 +1057,8 @@ export function useDeploymentBuild(
       !state.deploymentSuccess &&
       !state.deploymentFailed &&
       !state.deploymentCanceled;
-    if (!deploymentId || !active || buildStream.isConnected) return;
+    const waitingCancellation = state.deploymentCanceled && state.cancellationPending;
+    if (!deploymentId || (!active && !waitingCancellation) || buildStream.isConnected) return;
 
     let cancelled = false;
     const tick = async () => {
@@ -940,6 +1077,10 @@ export function useDeploymentBuild(
         if (typeof data.lastEventId === "number") {
           lastEventIdRef.current = data.lastEventId;
         }
+        // The poll — not just the live stream — can be what observes the finish.
+        if (!isActive && status === "ready") {
+          invalidateOnTerminal(data.project_id, deploymentId);
+        }
         setState((prev) => ({
           ...prev,
           currentProgress: data.progress ?? prev.currentProgress,
@@ -948,6 +1089,7 @@ export function useDeploymentBuild(
           deploymentSuccess: !isActive && status === "ready",
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
+          cancellationPending: !!data.cancellationPending,
           ...(mapped.length ? { serviceStatuses: mapped } : {}),
           ...(polledLogs.length > prev.buildLogs.length ? { buildLogs: polledLogs } : {}),
           ...(!isActive
@@ -987,12 +1129,13 @@ export function useDeploymentBuild(
     state.deploymentSuccess,
     state.deploymentFailed,
     state.deploymentCanceled,
+    state.cancellationPending,
     buildStream.isConnected,
     buildStream.disconnect,
   ]);
 
   const loadBuildSession = useCallback(
-    async (deploymentId: string): Promise<{ success: boolean; error?: string }> => {
+    async (deploymentId: string): Promise<BuildSessionLoadResult> => {
       try {
         lastErrorRef.current = null;
 
@@ -1006,9 +1149,13 @@ export function useDeploymentBuild(
         const data = await deployApi.getBuildStatus(deploymentId);
 
         if (!data.success) {
-          const errorMessage = data.error || "Failed to load build session";
+          const errorMessage = data.error || BUILD_SESSION_ERROR_FALLBACK;
           showToast(errorMessage, "error", "Error");
-          return { success: false, error: errorMessage };
+          // The server answered and said no: the only arm that legitimately
+          // renders the page's "not found" state (a genuine miss comes through
+          // here as a soft failure or, more often, as the 404 classified in the
+          // catch below). Everything else must stay distinguishable from it.
+          return { success: false, notFound: true, error: errorMessage };
         }
 
         // Restore config from session
@@ -1017,6 +1164,16 @@ export function useDeploymentBuild(
           const apiHasServer = apiConfig.hasServer !== undefined
             ? apiConfig.hasServer
             : config.options.hasServer;
+          // The frozen deployment's resolved workload (#538): a worker and a
+          // static site both carry hasServer=false, so this is what tells "Edit
+          // Configuration" to reopen a worker as a worker. Absent (older status
+          // payload) → undefined, i.e. derive from hasServer as before.
+          const apiWorkloadType: WorkloadType | undefined =
+            apiConfig.workloadType === "web" ||
+            apiConfig.workloadType === "worker" ||
+            apiConfig.workloadType === "static"
+              ? apiConfig.workloadType
+              : undefined;
           const normalizedEndpoints = ensurePublicEndpoints(
             apiConfig.publicEndpoints?.map((endpoint: {
               port?: string;
@@ -1024,6 +1181,8 @@ export function useDeploymentBuild(
               domain?: string;
               customDomain?: string;
               domainType?: "free" | "custom";
+              redirectTo?: string;
+              redirectStatus?: number;
             }) => {
               let cleanDomain = endpoint.domain || "";
               const dotIdx = cleanDomain.indexOf(".");
@@ -1038,6 +1197,10 @@ export function useDeploymentBuild(
                 domain: cleanDomain,
                 customDomain: endpoint.customDomain || "",
                 domainType: endpoint.domainType || "free",
+                // Restoring a build session: the deploy sends this list back, and an
+                // omitted redirect clears the stored one.
+                redirectTo: endpoint.redirectTo || undefined,
+                redirectStatus: endpoint.redirectStatus || undefined,
               };
             }),
             apiHasServer ? undefined : { targetPath: "/" },
@@ -1078,9 +1241,13 @@ export function useDeploymentBuild(
             // "Edit Configuration" — so the compose wizard shows them even when
             // the service table is empty (e.g. a deploy that failed before its
             // rows were persisted). Falls back to whatever's already loaded.
-            services: Array.isArray(data.composeServices)
-              ? (data.composeServices as RawComposeService[]).map(normalizeComposeService)
-              : prev.services,
+            // `carryServiceIds` (inside the helper): the snapshot has no service-row ids,
+            // and this assignment REPLACES the list — so without it, hydrating here after
+            // the rows had loaded dropped the ids the env editor needs to reveal stored
+            // values. The helper also falls back to the loaded list when the snapshot ships
+            // an EMPTY array, which a `services`-type deploy does (#604): `[]` must not
+            // blank a populated list.
+            services: hydrateSnapshotServices(data.composeServices, prev.services),
             options: {
               buildCommand: apiConfig.buildCommand || prev.options.buildCommand,
               outputDirectory: apiConfig.outputDirectory || prev.options.outputDirectory,
@@ -1093,6 +1260,7 @@ export function useDeploymentBuild(
               rootDirectory: apiConfig.rootDirectory || prev.options.rootDirectory,
               hasServer: apiHasServer,
               hasBuild: apiConfig.hasBuild !== undefined ? apiConfig.hasBuild : prev.options.hasBuild,
+              workloadType: apiWorkloadType,
             },
           })));
         }
@@ -1112,6 +1280,12 @@ export function useDeploymentBuild(
         const isTerminal = status === "ready" || status === "failed" || status === "cancelled";
         const isLive = isActive || !isTerminal;
 
+        // Landing on an ALREADY-finished deployment (the refresh case) must drop
+        // the cache too — this page instance never saw the SSE completion.
+        if (!isActive && status === "ready") {
+          invalidateOnTerminal(data.project_id, deploymentId);
+        }
+
         setState((prev) => ({
           ...prev,
           deploymentId,
@@ -1121,6 +1295,7 @@ export function useDeploymentBuild(
           deploymentSuccess: !isActive && status === "ready",
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
+          cancellationPending: !!data.cancellationPending,
           isDeploying: isLive,
           screenshots: !isActive ? (data.screenshots || []) : [],
           failureMessage: !isActive ? (data.failureMessage || "") : "",
@@ -1189,6 +1364,7 @@ export function useDeploymentBuild(
             screenshots: data.screenshots,
             project_id: data.project_id,
             warningMessage: data.warningMessage,
+            decisionPending: data.decisionPending,
           });
           if (data.warningMessage) {
             showToast(data.warningMessage, "success", "Deployment Ready With Warnings");
@@ -1204,9 +1380,14 @@ export function useDeploymentBuild(
         return { success: true };
       } catch (err) {
         console.error("Error loading build session:", err);
-        const errorMessage = getApiErrorMessage(err, "Failed to load build session");
+        // Only a server-confirmed 404 is "this deployment does not exist". A
+        // throw while hydrating a successful response — or a 5xx/network
+        // failure — is a load error the page can retry, not proof the resource
+        // is gone (#604: this catch used to feed every one of them into the
+        // "not found" screen).
+        const { notFound, error: errorMessage } = classifyBuildSessionFailure(err);
         showToast(errorMessage, "error", "Error");
-        return { success: false, error: errorMessage };
+        return { success: false, notFound, error: errorMessage };
       }
     },
     [buildStream, setConfig, showToast, writeToTerminal, handleSuccessMessage, handleFailureMessage, handleCanceled],
@@ -1219,11 +1400,18 @@ export function useDeploymentBuild(
 
     try {
       const response = await deployApi.cancel(state.deploymentId);
-      if (response.success) {
+      if (response.success || response.pending) {
         buildStream.disconnect();
         canStreamContainer.current = false;
         handleCanceled(response.message);
-        showToast(response.message || "Deployment cancelled", "success", "Cancelled");
+        if (response.pending) {
+          showToast(response.message, "info", "Cancellation pending");
+        } else {
+          // The API only returns this branch after build_session.finishedAt is
+          // durable, so no follow-up poll is required to prove quiescence.
+          setState((prev) => ({ ...prev, cancellationPending: false }));
+          showToast(response.message || "Deployment cancelled", "success", "Cancelled");
+        }
       } else {
         showToast(response.error || "Failed to stop deployment", "error", "Error");
       }
@@ -1273,6 +1461,7 @@ export function useDeploymentBuild(
           deploymentSuccess: false,
           deploymentFailed: false,
           deploymentCanceled: false,
+          cancellationPending: false,
           failureMessage: "",
           warningMessage: "",
           decisionPending: false,

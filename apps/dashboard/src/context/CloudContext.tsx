@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Cloud, ExternalLink, X, Rocket, Shield, Globe, Zap, Loader2 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
+import { defaultDomainType } from "@/lib/default-domain-type";
 import {
   getCloudConnectHandoffUrl,
   generatePkceVerifier,
@@ -78,6 +79,11 @@ export function useCloud() {
   const ctx = useContext(CloudContext);
   if (!ctx) throw new Error("useCloud must be used within CloudProvider");
   return ctx;
+}
+
+/** {@link defaultDomainType} for components — reads the live Cloud connection. */
+export function useDefaultDomainType(): "free" | "custom" {
+  return defaultDomainType(useCloud().connected);
 }
 
 /* ------------------------------------------------------------------ */
@@ -351,7 +357,14 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const handle = openAuthWindow();
     prepareConnectUrl()
       .then((url) => handle.navigate(url))
-      .catch(() => handle.close());
+      .catch((error) => {
+        // Never silently close the popup. Self-hosted dashboards are often
+        // served over private-LAN HTTP, where browser security APIs differ
+        // from HTTPS. Keep the window open with an actionable local error if
+        // setup still fails after the PKCE fallback.
+        console.error("Unable to prepare Openship Cloud sign-in", error);
+        handle.navigate(`${window.location.origin}/cloud-connect-callback?setup_error=pkce`);
+      });
     handle.onClose(() => checkStatus());
   }, [prepareConnectUrl, checkStatus]);
 

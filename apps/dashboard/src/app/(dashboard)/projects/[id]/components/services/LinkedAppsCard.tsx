@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Globe, Loader2, Network, PlugZap, Unplug } from "lucide-react";
 import { connectionsApi, type ProjectConnection } from "@/lib/api/connections";
+import { useProjectConnections } from "@/hooks/use-project-connections";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppLogo } from "@/components/AppLogo";
 import { useToast } from "@/context/ToastContext";
@@ -25,31 +26,26 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const c = t.projects.connections;
   const { showToast } = useToast();
-  const [links, setLinks] = useState<ProjectConnection[] | null>(null);
+  const links = useProjectConnections(projectId);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    connectionsApi
-      .list(projectId)
-      .then((res) => setLinks(res?.data ?? []))
-      .catch(() => setLinks([]));
-  }, [projectId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
 
   if (!links || links.length === 0) return null;
 
   // One row per linked APP — an app can inject several env vars into the same
   // project, and the row represents the app, not each variable.
-  const byApp = new Map<string, { name: string; appTemplateId: string | null; links: ProjectConnection[] }>();
+  const byApp = new Map<string, { name: string; owner: string; projectId: string; serviceId?: string | null; appTemplateId: string | null; links: ProjectConnection[] }>();
   for (const l of links) {
-    const group = byApp.get(l.sourceProjectId);
+    const key = l.sourceServiceId ?? l.sourceProjectId;
+    const group = byApp.get(key);
     if (group) group.links.push(l);
     else
-      byApp.set(l.sourceProjectId, {
-        name: l.sourceName,
+      byApp.set(key, {
+        name: l.sourceServiceName ?? l.sourceName,
+        owner: l.sourceName,
+        projectId: l.sourceProjectId,
+        serviceId: l.sourceServiceId,
         appTemplateId: l.sourceAppTemplateId,
         links: [l],
       });
@@ -64,7 +60,6 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
         await connectionsApi.remove(projectId, l.id);
       }
       showToast(c.removed, "success");
-      load();
     } catch (err) {
       showToast(getApiErrorMessage(err, c.failed), "error", group.name);
     } finally {
@@ -74,17 +69,21 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
-      <div className="flex items-center gap-2 px-5 py-4 border-b border-border/30">
-        <PlugZap className="size-4 text-primary shrink-0" />
-        <h3 className="text-sm font-semibold text-foreground">
-          {interpolate(byApp.size === 1 ? c.linkedCountOne : c.linkedCountOther, {
-            count: String(byApp.size),
-          })}
-        </h3>
-        <span className="text-xs text-muted-foreground">{c.linkedHint}</span>
+      <div className="flex items-center gap-3 border-b border-border/40 px-5 py-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+          <PlugZap className="size-4 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">
+            {interpolate(byApp.size === 1 ? c.linkedCountOne : c.linkedCountOther, {
+              count: String(byApp.size),
+            })}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">{c.linkedHint}</p>
+        </div>
       </div>
 
-      <div className="divide-y divide-border/30">
+      <div className="divide-y divide-border/40">
         {[...byApp].map(([sourceId, group]) => (
           <div key={sourceId} className="flex items-center gap-4 px-5 py-4">
             <div className="w-10 h-10 rounded-xl bg-muted/50 flex items-center justify-center shrink-0 overflow-hidden">
@@ -96,11 +95,12 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                 <span className="text-[14px] font-semibold text-foreground truncate">
                   {group.name}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
                   <PlugZap className="size-2.5" />
                   {c.linkedBadge}
                 </span>
               </div>
+              {group.serviceId && <p className="mt-1 text-xs text-muted-foreground">{interpolate(c.sharedFrom, { project: group.owner })}</p>}
               <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
                 {group.links.map((l) => (
                   <span key={l.id} className="inline-flex items-center gap-1">
@@ -134,10 +134,10 @@ export function LinkedAppsCard({ projectId }: { projectId: string }) {
                 )}
               </button>
               <Link
-                href={`/projects/${sourceId}`}
+                href={group.serviceId ? `/projects/${group.projectId}/services/${group.serviceId}` : `/projects/${group.projectId}`}
                 aria-label={c.openApp}
                 title={c.openApp}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-foreground/[0.1] hover:text-foreground"
               >
                 <ArrowUpRight className="size-3.5" />
               </Link>

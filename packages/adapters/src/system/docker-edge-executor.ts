@@ -4,6 +4,8 @@ import { PassThrough } from "node:stream";
 import type { CommandExecutor, LogEntry } from "../types";
 import { LocalExecutor } from "./local-executor";
 import { logEntry, sq } from "./local-shell";
+import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
+import { edgeFailureReason } from "./proxy/detect";
 
 const DEFAULT_SOCKET = "/var/run/docker.sock";
 
@@ -64,27 +66,73 @@ export class DockerEdgeExecutor implements CommandExecutor {
     this.fileMode = opts.fileMode ?? "mounted";
   }
 
+  /**
+   * Why the edge refused (or couldn't answer) a command, in one operator-facing
+   * line — the dockerode counterpart of `edgeContainerExecutor`'s host-shell probe.
+   *
+   * Reads the state and the log through the daemon API rather than a shell, which is
+   * the whole reason `edgeFailureReason` is a pure parser: the two transports agree
+   * on what counts as the cause without sharing a channel. Best-effort — a probe
+   * that fails must not replace the real failure with an error about diagnosing it.
+   *
+   * The condition this exists for used to be reported as `(HTTP code 409) … container
+   * <64-hex-id> is not running`: the RESOLVED id, no name, no cause. During `openship
+   * up` migration that surfaced as six identical 409s against the edge's own id while
+   * it was still starting, and from the cert flow it surfaced as a container the
+   * operator had no reason to think was involved at all.
+   */
+  private async explainDown(err: unknown): Promise<Error> {
+    const message = (err as { message?: string })?.message ?? String(err);
+    const container = this.docker.getContainer(this.containerName);
+    const status = await container
+      .inspect()
+      .then((info) => info.State?.Status ?? null)
+      .catch(() => null);
+    const logs = await container
+      .logs({ stdout: true, stderr: true, tail: 40, follow: false })
+      .then((out) => (Buffer.isBuffer(out) ? out.toString("utf8") : String(out)))
+      .catch(() => null);
+    const explanation = explainEdgeDown({
+      container: this.containerName,
+      status,
+      reason: logs ? edgeFailureReason(logs) : null,
+    });
+    return new Error(`${explanation}\n${message}`);
+  }
+
   /** Run one command inside the edge container, capturing stdout/stderr + exit. */
   private async run(
     command: string,
   ): Promise<{ code: number; stdout: string; stderr: string }> {
     const container = this.docker.getContainer(this.containerName);
-    const exec = await container.exec({
-      Cmd: ["/bin/sh", "-c", command],
-      AttachStdout: true,
-      AttachStderr: true,
-      Tty: false,
-    });
-    // NO `hijack` — and it must stay that way. Hijack makes docker-modem request a
-    // connection upgrade; the daemon answers `101 Switching Protocols`, and Bun's
-    // node:http does not surface that upgrade the way modem expects, so every exec
-    // died with `(HTTP code 101) unexpected`. The api image runs Bun, so in
-    // docker-edge mode that broke EVERY edge operation — config reload, certbot,
-    // and site registration all failed while the edge itself looked healthy.
-    // Verified both ways under Bun: hijack=true → 101; hijack=false → stdout,
-    // stderr and exit code all correct. Hijack only exists for interactive stdin,
-    // which no edge command uses.
-    const stream = await exec.start({ stdin: false });
+    let exec: Dockerode.Exec;
+    let stream: NodeJS.ReadWriteStream;
+    try {
+      exec = await container.exec({
+        Cmd: ["/bin/sh", "-c", command],
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: false,
+      });
+      // NO `hijack` — and it must stay that way. Hijack makes docker-modem request a
+      // connection upgrade; the daemon answers `101 Switching Protocols`, and Bun's
+      // node:http does not surface that upgrade the way modem expects, so every exec
+      // died with `(HTTP code 101) unexpected`. The api image runs Bun, so in
+      // docker-edge mode that broke EVERY edge operation — config reload, certbot,
+      // and site registration all failed while the edge itself looked healthy.
+      // Verified both ways under Bun: hijack=true → 101; hijack=false → stdout,
+      // stderr and exit code all correct. Hijack only exists for interactive stdin,
+      // which no edge command uses.
+      stream = await exec.start({ stdin: false });
+    } catch (err) {
+      // The daemon refuses the exec outright when the edge isn't up. Rewrite it into
+      // the named container plus its `[emerg]`; anything else is a genuine transport
+      // error and must reach the caller untouched (a 101 upgrade failure diagnosed as
+      // "the edge is down" would send an operator after the wrong thing entirely).
+      const message = (err as { message?: string })?.message ?? String(err);
+      if (isEdgeDownFailure(message) || /\b409\b/.test(message)) throw await this.explainDown(err);
+      throw err instanceof Error ? err : new Error(message);
+    }
 
     const outStream = new PassThrough();
     const errStream = new PassThrough();
@@ -120,6 +168,12 @@ export class DockerEdgeExecutor implements CommandExecutor {
       // Fold both streams like LocalExecutor — certbot prints its real cause to
       // stdout while stderr carries boilerplate.
       const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+      // The exec RAN, so the container was alive when it started — and the command
+      // still reported the edge as absent. `openresty -s reload` finding an empty pid
+      // file is the case that matters: nginx is PID 1 here, so the master is already
+      // gone and the container is about to be restarted under us. Diagnosing it the
+      // same way keeps "invalid PID number" from reading as a config problem.
+      if (isEdgeDownFailure(detail)) throw await this.explainDown(new Error(detail));
       throw new Error(
         detail || `command exited ${code} in edge container ${this.containerName}`,
       );
@@ -136,6 +190,13 @@ export class DockerEdgeExecutor implements CommandExecutor {
     const { code, stdout, stderr } = await this.run(command);
     const output = [stdout, stderr].filter(Boolean).join("");
     if (output) onLog(logEntry(output, code === 0 ? "info" : "error"));
+    // Streamed failures are reported, not thrown, and the caller builds its error out
+    // of what was streamed — so the explanation has to go through `onLog` to reach it.
+    if (code !== 0 && isEdgeDownFailure(output)) {
+      const explanation = (await this.explainDown(new Error(output))).message.split("\n")[0]!;
+      onLog(logEntry(explanation, "error"));
+      return { code, output: `${explanation}\n${output}` };
+    }
     return { code, output };
   }
 
@@ -153,8 +214,12 @@ export class DockerEdgeExecutor implements CommandExecutor {
     if (code !== 0) throw new Error(stderr.trim() || `Failed to rename ${from}`);
   }
 
-  async writeFile(path: string, content: string): Promise<void> {
-    if (this.fileMode === "mounted") return this.files.writeFile(path, content);
+  async writeFile(path: string, content: string, opts?: { mode?: number }): Promise<void> {
+    if (this.fileMode === "mounted") {
+      return opts === undefined
+        ? this.files.writeFile(path, content)
+        : this.files.writeFile(path, content, opts);
+    }
 
     // base64 in the COMMAND, never on stdin: `run()` deliberately doesn't hijack
     // the connection (see the note above — hijack breaks every exec under Bun),
@@ -163,13 +228,17 @@ export class DockerEdgeExecutor implements CommandExecutor {
     const encoded = Buffer.from(content, "utf8").toString("base64");
     const dir = path.replace(/\/[^/]*$/, "");
     if (dir && dir !== path) await this.exec(`mkdir -p ${sq(dir)}`);
+    if (opts?.mode !== undefined) {
+      // Tighten the destination before the first decoded payload byte lands.
+      await this.exec(`: > ${sq(path)} && chmod ${opts.mode.toString(8)} ${sq(path)}`);
+    }
     if (encoded.length === 0) {
-      await this.exec(`: > ${sq(path)}`);
+      if (opts?.mode === undefined) await this.exec(`: > ${sq(path)}`);
       return;
     }
     for (let offset = 0; offset < encoded.length; offset += WRITE_CHUNK) {
       const chunk = encoded.slice(offset, offset + WRITE_CHUNK);
-      const redirect = offset === 0 ? ">" : ">>";
+      const redirect = offset === 0 && opts?.mode === undefined ? ">" : ">>";
       await this.exec(`printf '%s' ${sq(chunk)} | base64 -d ${redirect} ${sq(path)}`);
     }
   }

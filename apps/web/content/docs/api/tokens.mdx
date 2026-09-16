@@ -1,6 +1,6 @@
 ---
-title: Tokens API
-description: Mint, list, and revoke personal access tokens, and manage the MCP clients authorized against your account.
+title: Tokens and MCP clients
+description: Create scoped access tokens and manage MCP client consent.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
@@ -11,44 +11,61 @@ OAuth. In the dashboard this is the **Settings → Access** area; from the termi
 [`openship token`](/docs/cli/access) command. Every route is self-scoped — you only ever see and manage your
 own tokens and clients.
 
-<Callout title="Base path & auth">
-All paths are relative to your instance, under **`/api`** — e.g. `https://your-host/api/tokens`.
-Send a personal access token as a bearer header (`Authorization: Bearer <token>`), created with
-[`openship token create`](/docs/cli/access). The dashboard uses your session cookie instead. See the
-[API overview](/docs/api) and the [auth model](/docs/security/auth) for details.
-</Callout>
-
-## Endpoints
-
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/tokens` | `settings:read` | List your own tokens (secrets never included). |
-| `POST /api/tokens` | `settings:write` | Mint a token — returns the plaintext secret once. |
-| `DELETE /api/tokens/:id` | `settings:write` | Revoke one of your tokens. |
-| `POST /api/tokens/mcp-authorize` | `settings:write` | Record what an OAuth MCP client may access (consent step). |
-| `GET /api/tokens/mcp-clients` | `settings:read` | List your connected MCP clients. |
-| `DELETE /api/tokens/mcp-clients/:clientId` | `settings:write` | Disconnect an MCP client and revoke its issued tokens. |
-
-The `settings:read` / `settings:write` gate means any organization member can manage their own tokens; the
-handlers then scope every operation to the calling user, so members never see each other's credentials.
-
 ## Create a token
 
 Mints a new PAT and returns the plaintext secret in `data.token` **exactly once** — it is hashed at rest and
 can never be retrieved again. List responses only ever show the short `tokenPrefix`.
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const result = await ship.tokens.create({
+  name: "deploy-bot",
+  readOnly: false,
+  grants: [
+    {
+      resourceType: "project",
+      resourceId: "proj_123",
+      permissions: ["read", "write"],
+    },
+  ],
+});
+console.log(result);
 ```
-POST /api/tokens
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/tokens" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"deploy-bot","readOnly":false,"grants":[{"resourceType":"project","resourceId":"proj_123","permissions":["read","write"]}]}'
 ```
+
+</Tab>
+</Tabs>
 
 <TypeTable
   type={{
     name: { type: 'string', description: 'Human label for the token (1–100 chars).', required: true },
     readOnly: { type: 'boolean', description: 'Read-only tokens reject mutation methods (POST/PUT/PATCH/DELETE).', default: 'false' },
     expiresInDays: { type: 'integer', description: 'Expire the token N days from now (1–365). Omit for a non-expiring token.' },
-    grants: { type: 'TokenGrant[]', description: 'Optional resource scope. When present and non-empty, the token is restricted to exactly these resources — even below the minter’s own role. Each grant must be within the minter’s own access, or the request is rejected.' },
+    grants: { type: 'TokenGrant[]', description: 'Resource scope. When present and non-empty, the token is restricted to exactly these resources — even below the minter’s own role. Each grant must be within the minter’s own access, or the request is rejected.' },
+    fullAccess: { type: 'boolean', description: 'Deliberately mint an UNSCOPED token that acts with your own full access. Required when grants is empty or omitted; sending both is rejected.' },
   }}
 />
+
+<Callout title="Scope must be stated, not inferred" type="warn">
+Send **exactly one** of `grants` (scoped) or `fullAccess: true` (unscoped). An empty or omitted
+`grants` with no `fullAccess` returns `400 TOKEN_SCOPE_REQUIRED`; sending both returns
+`400 AMBIGUOUS_TOKEN_SCOPE`.
+
+Openship used to treat an empty `grants` as full access. That made "I want no limits" and "my scoped
+selection came out empty" the same request — and it failed open for the dangerous one, so a caller
+that meant to restrict a token could silently receive full access. Intent is now explicit.
+</Callout>
 
 Each entry in `grants` is a **TokenGrant**:
 
@@ -59,18 +76,6 @@ Each entry in `grants` is a **TokenGrant**:
     permissions: { type: '("read" | "write" | "admin" | "create")[]', description: 'Actions the token may take on the resource. "create" is a collection-only capability — see the "projects it creates" scope below.', required: true },
   }}
 />
-
-```bash
-curl -X POST https://your-host/api/tokens \
-  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"deploy-bot","readOnly":false,"grants":[{"resourceType":"project","resourceId":"proj_123","permissions":["read","write"]}]}'
-```
-
-```bash
-# Same thing from the CLI:
-openship token create "deploy-bot" --grant project:proj_123:read,write
-```
 
 <Callout title="Copy the secret immediately" type="warn">
 The response's `data.token` (an `opsh_pat_…` string) is shown once and never again. `GET /api/tokens` only
@@ -99,26 +104,47 @@ nothing else. In the dashboard this is the **"Only projects it creates"** option
 
 ## List tokens
 
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const tokens = await ship.tokens.list();
+console.log(tokens);
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/tokens" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
 Returns your tokens with no secret material — each row carries `id`, `name`, `tokenPrefix`, `readOnly`,
 `scoped`, `expiresAt`, `lastUsedAt`, `revokedAt`, and `createdAt`.
 
-```
-GET /api/tokens
-```
-
-```bash
-openship token list
-```
-
 ## Revoke a token
 
-```
-DELETE /api/tokens/:id
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+await ship.tokens.revoke("pat_123");
 ```
 
+</Tab>
+<Tab value="REST API">
+
 ```bash
-openship token revoke tok_abc123
+curl -X DELETE "$OPENSHIP_URL/api/tokens/pat_123" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
+
+</Tab>
+</Tabs>
 
 <Callout title="404 — token not found" type="error">
 The `:id` isn't one of your own tokens (or was already removed). List your tokens with `GET /api/tokens`
@@ -146,7 +172,8 @@ POST /api/tokens/mcp-authorize
     clientId: { type: 'string', description: 'The OAuth client to bind. Required.', required: true },
     readOnly: { type: 'boolean', description: 'Confine the client to read-only access.', default: 'false' },
     organizationId: { type: 'string', description: 'Organization the client is confined to. Defaults to the active org; a different org must be one you belong to.' },
-    grants: { type: 'TokenGrant[]', description: 'Optional resource scope, same shape as token grants. Empty means full (unscoped) access within the org.' },
+    grants: { type: 'TokenGrant[]', description: 'Resource scope, same shape as token grants. Non-empty binds the client to exactly these resources.' },
+    fullAccess: { type: 'boolean', description: 'Deliberately record an UNSCOPED binding — the client acts with your own role. Required when grants is empty; sending both is rejected.' },
   }}
 />
 
@@ -154,6 +181,10 @@ POST /api/tokens/mcp-authorize
 Missing `clientId` returns `400 CLIENT_ID_REQUIRED`; an `organizationId` you're not a member of returns
 `403 ORG_NOT_A_MEMBER`. Invalid or over-broad grants fail the same way as token creation
 (`400 INVALID_RESOURCE_TYPE` / `403 GRANT_EXCEEDS_ACCESS`).
+
+Scope intent is explicit here too: an empty `grants` without `fullAccess: true` returns
+`400 TOKEN_SCOPE_REQUIRED`, and sending both returns `400 AMBIGUOUS_TOKEN_SCOPE`. An unscoped binding
+lets the client act with your own role, so it can never be reached by omission.
 </Callout>
 
 ### List connected clients
@@ -165,10 +196,6 @@ GET /api/tokens/mcp-clients
 Returns one entry per OAuth binding with `clientId`, `name`, `organizationId`, `organizationName`,
 `readOnly`, `scoped`, `grantCount`, `authorizedAt`, and `lastUsedAt`.
 
-```bash
-openship api /tokens/mcp-clients
-```
-
 ### Disconnect a client
 
 Revokes the client's issued tokens first (stopping it immediately), then drops the scope binding, its grants,
@@ -179,6 +206,18 @@ for everyone else.
 DELETE /api/tokens/mcp-clients/:clientId
 ```
 
-```bash
-openship api /tokens/mcp-clients/<clientId> -X DELETE
-```
+## Operations
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List your tokens without exposing their secrets. | `tokens.list()` | `GET /api/tokens`<br />`settings:read` |
+| Create a token; its secret is returned once. | `tokens.create(input)` | `POST /api/tokens`<br />`settings:write` |
+| Authorize or explicitly re-scope an MCP client binding. | `tokens.authorizeMcpClient(input)` | `POST /api/tokens/mcp-authorize`<br />`settings:write` |
+| List your authorized MCP clients. | `tokens.listMcpClients()` | `GET /api/tokens/mcp-clients`<br />`settings:read` |
+| Revoke a token by its token ID. | `tokens.revoke(id)` | `DELETE /api/tokens/:id`<br />`settings:write` |
+| Read one MCP client authorization. | `tokens.getMcpClient(id)` | `GET /api/tokens/mcp-clients/:clientId`<br />`settings:read` |
+| Revoke an MCP client authorization. | `tokens.disconnectMcpClient(id)` | `DELETE /api/tokens/mcp-clients/:clientId`<br />`settings:write` |
+
+{/* api-operations:end */}

@@ -6,10 +6,11 @@ import { ArrowRight, FolderOpen, GitBranch, Globe, Server } from "lucide-react";
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
-import { getProjectStatus, PROJECT_STATUS_META, projectStatusLabel } from "@/utils/project-status";
-import { usePlatform } from "@/context/PlatformContext";
+import { getProjectStatus, projectDisplayDomain } from "@/utils/project-status";
+import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { getHostingLabel, timeAgo } from "./ProjectCard";
+import { timeAgo } from "@/lib/time";
+import { getHostingLabel } from "./ProjectCard";
 
 /**
  * Grid (tile) view of a project — the same data as {@link ProjectCard}, stacked
@@ -20,22 +21,21 @@ import { getHostingLabel, timeAgo } from "./ProjectCard";
  * `hidden lg:` …) because it competes for one line. A tile has its own column,
  * so everything stays visible here — that is the actual reason to offer grid.
  */
-const ProjectGridCard: React.FC<{ project: Project; preferAppLogo?: boolean }> = ({
-  project,
-  preferAppLogo,
-}) => {
+const ProjectGridCard: React.FC<{
+  /** `primaryDomain` — the project's PRIMARY persisted route — is enriched onto
+   *  every row by the projects list and `/info`, but isn't declared on `Project`
+   *  (constants/mock) yet, so it's spelled out here rather than cast away. */
+  project: Project & { primaryDomain?: string | null };
+  preferAppLogo?: boolean;
+}> = ({ project, preferAppLogo }) => {
   const { t } = useI18n();
-  const { baseDomain } = usePlatform();
   const status = getProjectStatus(project);
-  const statusMeta = PROJECT_STATUS_META[status];
   const fw = getFrameworkConfig(project.framework);
   const [faviconError, setFaviconError] = useState(false);
 
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
-  const domain =
-    (project as { primaryDomain?: string }).primaryDomain ||
-    (project.slug ? `${project.slug}.${baseDomain}` : null);
+  const domain = projectDisplayDomain(project);
   const hasMultipleServices =
     project.hasMultipleServices === true || Number(project.serviceCount ?? 0) > 1;
   const hosting = getHostingLabel(project.deployTarget, project.serverName, t);
@@ -64,7 +64,7 @@ const ProjectGridCard: React.FC<{ project: Project; preferAppLogo?: boolean }> =
               onError={() => setFaviconError(true)}
             />
           ) : (
-            fw.icon("hsl(var(--foreground))")
+            fw.icon("var(--foreground)")
           )}
         </div>
 
@@ -85,11 +85,10 @@ const ProjectGridCard: React.FC<{ project: Project; preferAppLogo?: boolean }> =
           {domain && <p className="mt-0.5 truncate text-xs text-muted-foreground">{domain}</p>}
         </div>
 
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
-        >
-          {projectStatusLabel(status, t)}
-        </span>
+        <ProjectStatusBadge
+          project={project}
+          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+        />
       </div>
 
       {/* Meta — nothing is hidden here, the tile has the room the row didn't */}
@@ -127,6 +126,11 @@ const ProjectGridCard: React.FC<{ project: Project; preferAppLogo?: boolean }> =
           <span className="inline-flex items-center gap-1.5 text-xs">
             <Server className="size-3.5" />
             {t.projects.card.services}
+          </span>
+        ) : project.workloadType === "worker" ? (
+          <span className="inline-flex items-center gap-1.5 text-xs">
+            <Server className="size-3.5" />
+            {t.projects.card.worker}
           </span>
         ) : project.hasServer === false ? (
           <span className="inline-flex items-center gap-1.5 text-xs">

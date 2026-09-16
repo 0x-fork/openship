@@ -12,13 +12,16 @@ import { ALL_PACKAGE_MANAGERS } from "../stacks";
 import type { RoutingConfig } from "../metadata/types";
 import {
   OPENSHIP_DOMAIN_TYPES,
+  OPENSHIP_READINESS_FAILURE_ACTIONS,
   OPENSHIP_PRODUCTION_MODES,
   OPENSHIP_RESOURCE_TIERS,
   OPENSHIP_RESTARTS,
   OPENSHIP_RUNTIMES,
+  OPENSHIP_WORKLOADS,
   type OpenshipConfig,
   type OpenshipDomain,
   type OpenshipEnv,
+  type OpenshipReadiness,
   type OpenshipHealthcheck,
   type OpenshipMonorepo,
   type OpenshipMonorepoApp,
@@ -26,25 +29,30 @@ import {
   type OpenshipService,
   type ParseResult,
 } from "./schema";
+import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
 
 const TOP_LEVEL_KEYS = new Set([
   "$schema",
   "framework",
   "packageManager",
   "rootDirectory",
+  "composePath",
   "installCommand",
   "buildCommand",
   "startCommand",
   "outputDirectory",
   "buildImage",
   "productionPaths",
+  "volumes",
   "runtime",
   "productionMode",
+  "workload",
   "port",
   "env",
   "domains",
   "routes",
   "resources",
+  "readiness",
   "services",
   "monorepo",
 ]);
@@ -132,6 +140,38 @@ function parseEnv(ctx: Ctx, v: unknown, path: string): OpenshipEnv | undefined {
   return out;
 }
 
+/**
+ * Parse the native service build-argument map into the same normalized shape
+ * used by Compose imports. `null` deliberately means "inherit this key from
+ * the project build environment"; explicit values are strings and win later in
+ * the shared Docker build-argument resolver.
+ */
+function parseBuildArgs(
+  ctx: Ctx,
+  v: unknown,
+  path: string,
+): Record<string, string | null> | undefined {
+  if (v === undefined) return undefined;
+  if (!ctx.isObj(v)) {
+    ctx.err(path, "must be an object of string or null build arguments");
+    return undefined;
+  }
+
+  const out: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(v)) {
+    if (!isValidEnvKey(key)) {
+      ctx.err(`${path}.${key}`, "has an invalid build argument name");
+      continue;
+    }
+    if (value === null || typeof value === "string") {
+      out[key] = value;
+    } else {
+      ctx.err(`${path}.${key}`, "must be a string or null");
+    }
+  }
+  return out;
+}
+
 function parseDomains(ctx: Ctx, v: unknown, path: string): OpenshipDomain[] | undefined {
   if (v === undefined) return undefined;
   if (!Array.isArray(v)) {
@@ -179,7 +219,9 @@ function parseRoutes(ctx: Ctx, v: unknown, path: string): RoutingConfig | undefi
     return source && destination ? { source, destination } : null;
   };
   if (Array.isArray(v.rewrites)) {
-    routes.rewrites = v.rewrites.map((r, i) => rule(r, `${path}.rewrites[${i}]`)).filter(Boolean) as RoutingConfig["rewrites"];
+    routes.rewrites = v.rewrites
+      .map((r, i) => rule(r, `${path}.rewrites[${i}]`))
+      .filter(Boolean) as RoutingConfig["rewrites"];
   } else if (v.rewrites !== undefined) ctx.err(`${path}.rewrites`, "must be an array");
   if (Array.isArray(v.redirects)) {
     routes.redirects = v.redirects
@@ -208,7 +250,10 @@ function parseRoutes(ctx: Ctx, v: unknown, path: string): RoutingConfig | undefi
           ? (h.headers
               .map((kv, j) => {
                 const key = ctx.str((kv as Record<string, unknown>)?.key, `${p}.headers[${j}].key`);
-                const value = ctx.str((kv as Record<string, unknown>)?.value, `${p}.headers[${j}].value`);
+                const value = ctx.str(
+                  (kv as Record<string, unknown>)?.value,
+                  `${p}.headers[${j}].value`,
+                );
                 return key && value !== undefined ? { key, value } : null;
               })
               .filter(Boolean) as { key: string; value: string }[])
@@ -230,13 +275,43 @@ function parseResources(ctx: Ctx, v: unknown, path: string): OpenshipResources |
     ctx.err(path, "must be an object");
     return undefined;
   }
+  // `0` = no limit (self-hosted default — the machine is the cap). The upper
+  // bounds are sanity rails only: the REAL ceiling is the target machine's
+  // probed capacity, enforced server-side. A flat 4-core / 8192 MB max here made
+  // a large self-hosted box impossible to describe.
   const r: OpenshipResources = {
     tier: ctx.enumOf(v.tier, `${path}.tier`, OPENSHIP_RESOURCE_TIERS),
-    cpuCores: ctx.int(v.cpuCores, `${path}.cpuCores`, 0.25, 4),
-    memoryMb: ctx.int(v.memoryMb, `${path}.memoryMb`, 128, 8192),
-    diskMb: ctx.int(v.diskMb, `${path}.diskMb`, 64, 204800),
+    cpuCores: ctx.int(v.cpuCores, `${path}.cpuCores`, 0, 1024),
+    memoryMb: ctx.int(v.memoryMb, `${path}.memoryMb`, 0, 4194304),
+    diskMb: ctx.int(v.diskMb, `${path}.diskMb`, 0, 204800),
   };
   return r;
+}
+
+/**
+ * The project-level deploy-time readiness gate. Not to be confused with
+ * `parseHealthcheck` below, which is the Docker-native per-service HEALTHCHECK.
+ *
+ * Every field is optional and every default is off, so `"readiness": {}` is a
+ * legal no-op. The second bounds are sanity rails, not policy: a gate that can
+ * hold a deploy open for an hour is a mistake worth catching in the config
+ * rather than at deploy time.
+ */
+function parseReadiness(ctx: Ctx, v: unknown, path: string): OpenshipReadiness | undefined {
+  if (v === undefined) return undefined;
+  if (!ctx.isObj(v)) {
+    ctx.err(path, "must be an object");
+    return undefined;
+  }
+  return {
+    enabled: ctx.bool(v.enabled, `${path}.enabled`),
+    path: ctx.str(v.path, `${path}.path`),
+    port: ctx.int(v.port, `${path}.port`, 1, 65535),
+    timeoutSeconds: ctx.int(v.timeoutSeconds, `${path}.timeoutSeconds`, 1, 600),
+    stabilization: ctx.bool(v.stabilization, `${path}.stabilization`),
+    stabilizationSeconds: ctx.int(v.stabilizationSeconds, `${path}.stabilizationSeconds`, 1, 600),
+    onFailure: ctx.enumOf(v.onFailure, `${path}.onFailure`, OPENSHIP_READINESS_FAILURE_ACTIONS),
+  };
 }
 
 function parseHealthcheck(ctx: Ctx, v: unknown, path: string): OpenshipHealthcheck | undefined {
@@ -286,6 +361,7 @@ function parseServices(ctx: Ctx, v: unknown, path: string): OpenshipService[] | 
       image: ctx.str(item.image, `${p}.image`),
       build: ctx.str(item.build, `${p}.build`),
       dockerfile: ctx.str(item.dockerfile, `${p}.dockerfile`),
+      buildArgs: parseBuildArgs(ctx, item.buildArgs, `${p}.buildArgs`),
       ports: ctx.strArray(item.ports, `${p}.ports`),
       volumes: ctx.strArray(item.volumes, `${p}.volumes`),
       dependsOn: ctx.strArray(item.dependsOn, `${p}.dependsOn`),
@@ -296,6 +372,8 @@ function parseServices(ctx: Ctx, v: unknown, path: string): OpenshipService[] | 
       exposedPort: ctx.str(item.exposedPort, `${p}.exposedPort`),
       domain: ctx.str(item.domain, `${p}.domain`),
       healthcheck: parseHealthcheck(ctx, item.healthcheck, `${p}.healthcheck`),
+      readiness: parseReadiness(ctx, item.readiness, `${p}.readiness`),
+      resources: parseResources(ctx, item.resources, `${p}.resources`),
     });
   });
   return out;
@@ -329,6 +407,7 @@ function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | u
     if (!Array.isArray(v.apps)) ctx.err(`${path}.apps`, "must be an array");
     else {
       const apps: OpenshipMonorepoApp[] = [];
+      const roots = new Map<string, number>();
       v.apps.forEach((a, i) => {
         const p = `${path}.apps[${i}]`;
         if (!ctx.isObj(a)) {
@@ -341,6 +420,15 @@ function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | u
           ctx.err(p, "requires `name` and `rootDirectory`");
           return;
         }
+        const root = normalizeProjectRootDirectory(rootDirectory);
+        if (roots.has(root)) {
+          ctx.err(
+            `${p}.rootDirectory`,
+            `duplicates ${path}.apps[${roots.get(root)}]; each override must target a different detected app`,
+          );
+          return;
+        }
+        roots.set(root, i);
         apps.push({
           name,
           rootDirectory,
@@ -385,19 +473,23 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
     framework: ctx.enumOf(raw.framework, "framework", STACK_IDS),
     packageManager: parsePackageManager(ctx, raw.packageManager, "packageManager"),
     rootDirectory: ctx.str(raw.rootDirectory, "rootDirectory"),
+    composePath: ctx.str(raw.composePath, "composePath"),
     installCommand: ctx.str(raw.installCommand, "installCommand"),
     buildCommand: ctx.str(raw.buildCommand, "buildCommand"),
     startCommand: ctx.str(raw.startCommand, "startCommand"),
     outputDirectory: ctx.str(raw.outputDirectory, "outputDirectory"),
     buildImage: ctx.str(raw.buildImage, "buildImage"),
     productionPaths: ctx.strArray(raw.productionPaths, "productionPaths"),
+    volumes: ctx.strArray(raw.volumes, "volumes"),
     runtime: ctx.enumOf(raw.runtime, "runtime", OPENSHIP_RUNTIMES),
     productionMode: ctx.enumOf(raw.productionMode, "productionMode", OPENSHIP_PRODUCTION_MODES),
+    workload: ctx.enumOf(raw.workload, "workload", OPENSHIP_WORKLOADS),
     port: ctx.int(raw.port, "port", 1, 65535),
     env: parseEnv(ctx, raw.env, "env"),
     domains: parseDomains(ctx, raw.domains, "domains"),
     routes: parseRoutes(ctx, raw.routes, "routes"),
     resources: parseResources(ctx, raw.resources, "resources"),
+    readiness: parseReadiness(ctx, raw.readiness, "readiness"),
     services: parseServices(ctx, raw.services, "services"),
     monorepo: parseMonorepo(ctx, raw.monorepo, "monorepo"),
   };
