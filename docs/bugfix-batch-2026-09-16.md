@@ -540,13 +540,17 @@ Contributor PRs #243 and #248 are integrated with cherchali mohamed walid’s or
 
 Final integration validation caught argument forwarding in the compound root test script: matrix filters were reaching its trailing script-test command, causing both filtered CI jobs to rerun the full workspace suite. CI now invokes Turbo directly for those groups and runs script tests once in Other packages. Native SDK/CLI bundle builds remain sequential; the required aggregate Test check is unchanged.
 
-Commits: [`b6a41165`](https://github.com/oblien/openship/commit/b6a41165d65f94325510179335cbff7456774ceb), [`508adde8`](https://github.com/oblien/openship/commit/508adde85b4bac18c6124e510f2569f145bc2a7e), [`0558e611`](https://github.com/oblien/openship/commit/0558e611cfbd2ccd02cbec6bafb2203a0af7c943), [`435f408c`](https://github.com/oblien/openship/commit/435f408c7e3c5b156b7479c4986a1c8138cce182).
+The root test command also retains its original single-runner shape so developer --filter arguments stay compatible. Script tests have an explicit test:scripts command and execute once in CI; CONTRIBUTING.md documents both entry points.
+
+Commits: [`b6a41165`](https://github.com/oblien/openship/commit/b6a41165d65f94325510179335cbff7456774ceb), [`508adde8`](https://github.com/oblien/openship/commit/508adde85b4bac18c6124e510f2569f145bc2a7e), [`0558e611`](https://github.com/oblien/openship/commit/0558e611cfbd2ccd02cbec6bafb2203a0af7c943), [`435f408c`](https://github.com/oblien/openship/commit/435f408c7e3c5b156b7479c4986a1c8138cce182), [`d2b4d2f9`](https://github.com/oblien/openship/commit/d2b4d2f9f9f01c483adebac5d27c234050c41cc4).
 
 Verification: PR #219: all 110 mail-server tests pass (33 added); server TypeScript and an isolated typecheck of the adapted tests pass.
 
 Verification: PR #243 adds 23 environment/subdomain cases; 68 tests pass with the existing status/log-entry suites. PR #248 adds 78 stream and ten Button cases; 91 pass with the existing install-phase suite, and dashboard TypeScript passes. The full dashboard suite passes 1,462 cases.
 
 Verification: An isolated Bun 1.3.10 probe reproduced the forwarding error. Actual Turbo dry runs select only SDK/CLI in one job and the remaining packages in the other; their union plus the API, database and dedicated mail jobs covers every test workspace without overlap. Workflow YAML parses. All 36 desktop tests also pass.
+
+Verification: An actual root-command dry run with SDK and CLI filters selects exactly those two workspaces.
 
 ### #195: fixed-in-branch
 
