@@ -380,6 +380,7 @@ export { elevatedExecutor, elevateCommand } from "./system/elevated-executor";
 export type { Privileged, RootChecked } from "./system/privilege";
 export { privilegedExecutor, rootChecked, rootOrDegrade } from "./system/privilege";
 export { systemCatalog, MIN_DOCKER_VERSION } from "./system/catalog";
+export { SERVER_STATS_COMMAND } from "./system/server-stats";
 // Native-module versioning + migration framework (verify → reconcile).
 export {
   resolveVerifiedCatalog,
