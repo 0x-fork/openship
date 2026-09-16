@@ -40,8 +40,8 @@ vi.mock("@repo/db", async (importOriginal) => ({
   },
 }));
 
-vi.mock("../../../src/lib/project-analytics", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/project-analytics")>()),
+vi.mock("@repo/platform/engine/lib/project-analytics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/project-analytics")>()),
   postEdgeMgmt,
 }));
 
@@ -49,8 +49,8 @@ vi.mock("../../../src/lib/project-analytics", async (importOriginal) => ({
 // the target, and releases the transport. Stubbing the wrapper (rather than the
 // resolver under it) keeps this test about the FAN-OUT while the real wrapper's own
 // dispose/error contract is pinned in lib/with-deployment-runtime.test.ts.
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/deployment-runtime")>()),
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>()),
   withDeploymentPlatform: async (dep: unknown, fn: (resolved: unknown) => unknown) =>
     fn(await resolveDeploymentPlatform(dep)),
 }));
@@ -60,7 +60,7 @@ import {
   resolveProjectPushTarget,
   serializeProjectRules,
   type HostRuleEntry,
-} from "../../../src/modules/route-rules/route-rule.service";
+} from "@repo/platform/engine/modules/route-rules/route-rule.service";
 
 const RL: RouteRuleSpec = { rateLimit: { rps: 5, burst: 5, key: "ip" } };
 const BAN: RouteRuleSpec = { ban: { countries: ["RU"] } };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildMinutePeriod } from "./plan-guard";
+import { buildMinutePeriod } from "@repo/platform/engine/lib/plan-guard";
 
 /**
  * The build-minute window is the boundary a customer is refused on, so it gets
