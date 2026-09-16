@@ -7,6 +7,7 @@ import {
   removedComposeEnvironmentKeys,
   toComposeSpec,
   type ParsedComposeService,
+  type Service,
 } from "./service.repo";
 
 const testEncryption = createEncryption("repository-test-secret");
@@ -20,7 +21,7 @@ const fullEnvironment = {
   SMTP_HOST: "smtp.example.com",
 };
 
-function existingService(overrides: Record<string, unknown> = {}) {
+function existingService(overrides: Partial<Service> = {}) {
   const compose = {
     image: "example/api:1",
     ports: ["4000"],
@@ -235,7 +236,7 @@ describe("Compose cached environment recovery (#893)", () => {
     environment: { MY_VAR: value },
     environmentTemplates: { MY_VAR: "${MY_VAR}" },
   });
-  const row = (overrides: Record<string, unknown> = {}) => existingService({
+  const row = (overrides: Partial<Service> = {}) => existingService({
     ports: [], volumes: [], environment: { MY_VAR: "A" }, importedSpec: null, ...overrides,
   });
 
@@ -317,7 +318,8 @@ describe("Compose cached environment recovery (#893)", () => {
   });
 
   it("retains explicit deletions and known kept templates on later refreshes", async () => {
-    for (const environment of [{}, { MY_VAR: "${OLD_VAR}" }]) {
+    const environments: Record<string, string>[] = [{}, { MY_VAR: "${OLD_VAR}" }];
+    for (const environment of environments) {
       const h = harness(row({
         environment, importedSpec: toComposeSpec(source()),
         advanced: { environmentOverrideKeys: ["MY_VAR"], environmentTemplateKeys: ["MY_VAR"] },
