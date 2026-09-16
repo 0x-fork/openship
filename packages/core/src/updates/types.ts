@@ -33,10 +33,35 @@ export interface AdvisoryTarget {
   id?: string;
 }
 
+/**
+ * Which kind of install an advisory applies to.
+ *
+ *   desktop     the Electron app (its own installer + in-app updater)
+ *   selfhosted  a server/VPS install (compose or bare), updated by the operator
+ *   cloud       the managed SaaS — nothing for a user to update
+ *
+ * A release usually only matters to some of these: a desktop installer fix is
+ * noise on a VPS, and an edge/OpenResty fix is noise in the desktop app. An
+ * advisory with no `modes` applies to ALL of them (the legacy default, so
+ * existing manifests keep working).
+ */
+export type AdvisoryMode = "desktop" | "selfhosted" | "cloud";
+
+export const ADVISORY_MODES: readonly AdvisoryMode[] = ["desktop", "selfhosted", "cloud"];
+
 export interface Advisory {
   /** Stable id — used for per-advisory dismissal. */
   id: string;
   severity: AdvisorySeverity;
+  /**
+   * THE interrupt gate, declared by the advisory itself: may this one pull the
+   * user out of what they're doing (desktop launch modal, notification), or is
+   * it in-app surfaces only? `severity` is how LOUD the banner is; `announce` is
+   * whether we're allowed to interrupt — two different decisions, so this is an
+   * explicit key rather than something each client re-derives from severity.
+   * `parseManifest` always fills it in, so consumers just read it.
+   */
+  announce: boolean;
   /** Version range this targets, e.g. "<=0.1.8" or ">=0.1.0 <0.1.9". */
   affects: string;
   title: string;
@@ -44,6 +69,12 @@ export interface Advisory {
   action?: AdvisoryAction;
   /** Optional scope. Absent = platform-wide (the legacy default). */
   target?: AdvisoryTarget;
+  /**
+   * Install kinds this applies to. Absent/empty = every mode (legacy default).
+   * Filtered client-side by `matchAdvisories`, so a desktop-only advisory never
+   * reaches a VPS dashboard and vice versa.
+   */
+  modes?: AdvisoryMode[];
 }
 
 export interface AdvisoryManifest {
@@ -55,8 +86,14 @@ export interface LatestRelease {
   version: string;
   /** Raw tag, e.g. "v0.1.9". */
   tag: string;
-  /** Release notes (markdown/plain) from the GitHub release body. */
+  /** Matching version section from the product changelog (markdown/plain). */
   notes: string;
+}
+
+/** Release metadata shared with the renderer even when no installer is available. */
+export interface ReleaseFeedSnapshot {
+  latest: LatestRelease | null;
+  manifest: AdvisoryManifest | null;
 }
 
 export interface UpdateState {
@@ -65,9 +102,9 @@ export interface UpdateState {
   updateAvailable: boolean;
   /** Advisories that apply to the current version, most severe first. */
   advisories: Advisory[];
-  /** Link to all releases. */
+  /** Link to the public website changelog. */
   changelogUrl: string;
-  /** Link to the latest release's notes (tag-specific), or all releases. */
+  /** Link to the latest version on the website changelog, or the full changelog. */
   latestChangelogUrl: string;
 }
 
@@ -83,11 +120,4 @@ export const RELEASES_LATEST_API = `https://api.github.com/repos/${GITHUB_REPO}/
  */
 export function advisoryManifestUrl(tag: string): string {
   return `https://raw.githubusercontent.com/${GITHUB_REPO}/${encodeURIComponent(tag)}/release-advisories.json`;
-}
-
-/** Human-facing changelog link — a specific tag's notes, or all releases. */
-export function changelogUrl(tag?: string): string {
-  return tag
-    ? `https://github.com/${GITHUB_REPO}/releases/tag/${encodeURIComponent(tag)}`
-    : `https://github.com/${GITHUB_REPO}/releases`;
 }

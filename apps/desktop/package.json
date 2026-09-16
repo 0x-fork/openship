@@ -1,10 +1,11 @@
 {
   "name": "@repo/desktop",
   "productName": "Openship",
-  "version": "0.3.0",
+  "version": "0.7.2",
   "private": true,
   "description": "Openship Desktop - Electron wrapper for the deployment dashboard",
   "author": "Oblien",
+  "license": "Apache-2.0",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "rm -rf dist && tsc && node scripts/dev.mjs",

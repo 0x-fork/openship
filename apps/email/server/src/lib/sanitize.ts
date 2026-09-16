@@ -1,16 +1,22 @@
 /**
  * Sanitize untrusted HTML email bodies before rendering them in the
- * client. The client already strips remote images when the
- * `externalImages` preference is off; this layer handles XSS-class
- * threats (script tags, on* attributes, javascript: URLs).
+ * client. The read pane injects the result with `shadowRoot.innerHTML`
+ * in the app origin with no CSP, so this module is the only thing
+ * standing between an inbound message and script execution: it must
+ * handle XSS-class threats (script tags, on* attributes, javascript:
+ * URLs) and it must not disagree with the browser about tree shape.
+ *
+ * `blockRemoteContent` implements the "block remote images" preference,
+ * which is a privacy control rather than an XSS one.
  */
 
+import * as cheerio from 'cheerio';
+import { generate, ident, parse, walk, type CssNode } from 'css-tree';
 import sanitizeHtml from 'sanitize-html';
 
 const ALLOWED_TAGS = [
   ...sanitizeHtml.defaults.allowedTags,
   'img',
-  'style',
   'span',
   'div',
   'h1',
@@ -21,15 +27,40 @@ const ALLOWED_TAGS = [
   'h6',
 ];
 
+/**
+ * Re-parse with parse5 (via cheerio) and re-serialize before sanitizing.
+ *
+ * sanitize-html parses with htmlparser2, which disagrees with the HTML
+ * spec on several constructs. The one that mattered: in RAWTEXT content
+ * `</style/` is a valid end tag to a browser but not to htmlparser2, so
+ * a sender could write `<style></style/><img src=x onerror=...>` and
+ * htmlparser2 would treat the payload as inert CSS text and emit it
+ * verbatim — while the browser closed <style> and ran it. Foreign
+ * content (<svg>, <math>) and mis-nesting have the same failure mode.
+ *
+ * parse5 is spec-compliant, so normalizing first guarantees the
+ * sanitizer inspects the same tree the browser will build. Keep this in
+ * front of every sanitize call; dropping `style` from ALLOWED_TAGS
+ * closes the known payload, this closes the class.
+ */
+function normalizeToSpecTree(input: string): string {
+  return cheerio.load(input, null, false).html();
+}
+
 export function sanitizeMailHtml(input: string): string {
-  return sanitizeHtml(input, {
+  return sanitizeHtml(normalizeToSpecTree(input), {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: {
       '*': ['style', 'class', 'id', 'align', 'width', 'height', 'bgcolor'],
       a: ['href', 'name', 'target', 'rel'],
       img: ['src', 'srcset', 'alt', 'title', 'width', 'height'],
     },
+    // `cid:`/`data:` are how inline attachment images arrive, so they stay for
+    // src. A link never needs them: `data:text/html` in an href is a navigable
+    // XSS primitive (browsers block top-level data: today, but that is their
+    // mitigation, not ours) and `cid:` in an href is meaningless.
     allowedSchemes: ['http', 'https', 'mailto', 'cid', 'data'],
+    allowedSchemesByTag: { a: ['http', 'https', 'mailto'] },
     allowProtocolRelative: false,
     transformTags: {
       a: (tagName, attribs) => ({
@@ -40,309 +71,134 @@ export function sanitizeMailHtml(input: string): string {
   });
 }
 
-/* ─── Remote content blocking ──────────────────────────────────────────── */
-/*
- * With "load remote images" off, nothing in the message may cause a network
- * fetch — `<img src>` alone never covered that: `srcset`, `background:
- * url(…)`, `@import` and `image-set()` all fetch too, and each is enough to
- * collect a read receipt.
- *
- * Input contract: already through `sanitizeMailHtml`. sanitize-html balances
- * tags, deduplicates attributes, and re-encodes only `&amp; &lt; &gt; &quot;`
- * in attribute values — the attribute handling below relies on that.
- *
- * `<style>` bodies reach this code raw, so the comment and @import passes are
- * linear scanners: the natural regexes backtrack quadratically on crafted
- * input (`/*a/*a…`, `@import url(url(…`), a denial-of-service lever server-side.
- */
+const TRANSPARENT_GIF =
+  'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 
-// data: is self-contained and cid: is already delivered — neither leaves the
-// client, which is what keeps inline attachments rendering while blocked.
-// Single definition so the img, srcset, and CSS passes can't drift.
-const INLINE_SCHEMES = 'data:|cid:';
-const INLINE_URL = new RegExp(`^(?:${INLINE_SCHEMES})`, 'i');
+// Relative URLs also fetch, and CSS can escape any part of a URL. Only these
+// schemes are self-contained; css-tree decodes CSS strings/URLs before this test.
+const INLINE_URL = /^(?:data:|cid:)/i;
+const isInlineUrl = (url: string) => INLINE_URL.test(url.replace(/^[\u0000-\u0020]+/, ''));
 
-// `\75 rl(…)`, `@\69 mport` and `image\2dset(` are valid spellings of
-// `url(` / `@import` / `image-set(`. Decode only escapes of ASCII
-// alphanumerics and `-` — the characters that spell a fetch construct's
-// ident; decoding an escaped quote would corrupt its string, and an escaped
-// alnum or hyphen means the same character in an ident and in a string.
-const CSS_ESCAPE = /\\([0-9a-f]{1,6})(?:\r\n|[ \t\r\n\f])?|\\([^\r\n\f0-9a-f])/gi;
-
-function decodeCssEscapes(css: string): string {
-  return css.replace(CSS_ESCAPE, (match, hex?: string, ch?: string) => {
-    // Range-check before fromCharCode: it masks to 16 bits, so a huge escape
-    // like \10041 must not alias down to 'A'.
-    const cp = hex !== undefined ? parseInt(hex, 16) : -1;
-    const decoded =
-      cp === 0x2d || (cp >= 0x30 && cp <= 0x7a) ? String.fromCharCode(cp) : ch ?? '';
-    return /^[0-9a-z-]$/i.test(decoded) ? decoded : match;
-  });
-}
-
-// A comment is whitespace to the CSS tokenizer, so replace with a space —
-// otherwise `url(/*x*/https://…)` hides the fetch from the patterns below.
-// An unterminated comment runs to end of input, per spec.
-function stripCssComments(css: string): string {
-  let out = '';
-  let i = 0;
-  while (true) {
-    const open = css.indexOf('/*', i);
-    if (open === -1) return out + css.slice(i);
-    out += css.slice(i, open) + ' ';
-    const close = css.indexOf('*/', open + 2);
-    if (close === -1) return out;
-    i = close + 2;
+function stripRemoteCss(css: string): string {
+  try {
+    const ast = parse(css, { context: 'declarationList', parseCustomProperty: true });
+    if (ast.type !== 'DeclarationList') return '';
+    let blocked = false;
+    ast.children.forEach((declaration, declarationItem, declarations) => {
+      if (declaration.type !== 'Declaration') {
+        declarations.remove(declarationItem);
+        blocked = true;
+        return;
+      }
+      let unparsed = false;
+      walk(declaration.value, (node, item, list) => {
+        if (node.type === 'Raw') unparsed = true;
+        if (!item || !list) return;
+        const replace = (replacement: CssNode) => {
+          list.replace(item, list.createItem(replacement));
+          blocked = true;
+          return walk.skip;
+        };
+        if (node.type === 'Url' && !isInlineUrl(node.value) && !node.value.startsWith('#')) {
+          return replace({ type: 'Identifier', name: 'none' });
+        }
+        if (node.type !== 'Function') return;
+        const name = ident.decode(node.name).toLowerCase();
+        // Escaped function names are Function nodes, not necessarily Url nodes.
+        if (name === 'url' || name === 'src') {
+          const args = node.children.toArray();
+          if (args.length === 1 && args[0].type === 'String' && isInlineUrl(args[0].value)) {
+            list.replace(item, list.createItem({ type: 'Url', value: args[0].value }));
+            return walk.skip;
+          }
+          return replace({ type: 'Identifier', name: 'none' });
+        }
+        // Substitution can turn a seemingly inert custom-property string into an
+        // image-set URL after this pass. Unresolved values cannot be certified
+        // fetch-free on the server. Literal colors, spacing and layout survive.
+        if (name === 'var' || name === 'attr') {
+          return replace({ type: 'Identifier', name: 'none' });
+        }
+        if (name === 'image-set' || name === '-webkit-image-set' || name === 'image') {
+          // Direct string arguments are image URLs. Nested type("image/png")
+          // strings are MIME metadata, so do not rewrite those.
+          node.children.forEach((argument) => {
+            if (argument.type === 'String' && !isInlineUrl(argument.value)) {
+              argument.value = 'data:,';
+              blocked = true;
+            }
+          });
+        }
+      });
+      if (unparsed) {
+        declarations.remove(declarationItem);
+        blocked = true;
+      }
+    });
+    return blocked ? generate(ast) : css;
+  } catch {
+    // Do not pass syntax through when the parser cannot establish its meaning.
+    return '';
   }
 }
 
-// An import exists only to fetch, so drop the whole statement: to the first
-// `;` (consumed) or `}` (kept, it closes the block) outside quotes/parens,
-// so `@import "a;b"` leaves no trailing garbage. The scan skips string
-// contents — `content:"@import"` is a string token, not an at-keyword.
-function stripImports(css: string): string {
-  const lower = css.toLowerCase();
-  let out = '';
-  let copyFrom = 0;
-  let i = 0;
-  while (i < css.length) {
-    const c = css[i];
-    if (c === '"' || c === "'") {
-      for (i++; i < css.length && css[i] !== c; i++);
-      i++;
-    } else if (
-      c === '@' &&
-      lower.startsWith('@import', i) &&
-      // `-` continues a CSS ident: `@import-fake` is a different at-keyword.
-      !/[\w-]/.test(css[i + 7] ?? '')
-    ) {
-      out += css.slice(copyFrom, i);
-      copyFrom = i = importEnd(css, i + 7);
-    } else {
-      i++;
-    }
-  }
-  return out + css.slice(copyFrom);
-}
-
-function importEnd(css: string, i: number): number {
-  while (i < css.length) {
-    const c = css[i];
-    if (c === '"' || c === "'") {
-      for (i++; i < css.length && css[i] !== c; i++);
-      i++;
-    } else if (c === '(') {
-      for (i++; i < css.length && css[i] !== ')'; i++);
-      i++;
-    } else if (c === ';') {
-      return i + 1;
-    } else if (c === '}') {
-      return i;
-    } else {
-      i++;
-    }
-  }
-  return i;
-}
-
-// Non-inline url(…) → `none`, keeping the rest of the declaration valid:
-// `background: red url(x) no-repeat` → `background: red none no-repeat`.
-// The lookahead skips quotes/whitespace so `url("data:…")` counts as inline;
-// `#` is exempt because a fragment-only reference (`fill:url(#grad)`) is a
-// same-document lookup, never a fetch. The closing paren is optional because
-// an unterminated url token at end of input still fetches.
-const CSS_REMOTE_URL = new RegExp(
-  String.raw`url\((?![\s'"]*(?:${INLINE_SCHEMES}|#))[^)]*\)?`,
-  'gi',
-);
-
-// Inside image-set(…) a bare string is a URL — `image-set("https://…" 1x)`
-// fetches with no `url(` token — so rewrite non-inline strings in the span.
-// The span must be found with a quote-aware scan to its balancing paren:
-// `;`, `{`, `}` are ordinary characters inside a string token, so ending the
-// span at one of them (as a regex must) truncates it before a remote
-// candidate — `image-set("data:…;base64,…" 1x, "https://…" 2x)` would leak.
-// Escape decoding above has already normalized `image\2dset(`.
-function stripImageSets(css: string): string {
-  const lower = css.toLowerCase();
-  let out = '';
-  let copyFrom = 0;
-  let i = 0;
-  while (i < css.length) {
-    const c = css[i];
-    if (c === '"' || c === "'") {
-      for (i++; i < css.length && css[i] !== c; i++);
-      i++;
-      continue;
-    }
-    const prefixed = lower.startsWith('-webkit-image-set(', i);
-    if (
-      (prefixed || lower.startsWith('image-set(', i)) &&
-      !/[\w-]/.test(css[i - 1] ?? '')
-    ) {
-      const open = i + (prefixed ? 18 : 10);
-      const end = spanEnd(css, open);
-      out += css.slice(copyFrom, open) + rewriteSpanStrings(css.slice(open, end));
-      copyFrom = i = end;
-      continue;
-    }
-    i++;
-  }
-  return out + css.slice(copyFrom);
-}
-
-// Index just past the paren balancing an open one at `i`, quote-aware;
-// end of input if unbalanced.
-function spanEnd(css: string, i: number): number {
-  let depth = 1;
-  while (i < css.length) {
-    const c = css[i];
-    if (c === '"' || c === "'") {
-      for (i++; i < css.length && css[i] !== c; i++);
-    } else if (c === '(') {
-      depth++;
-    } else if (c === ')' && --depth === 0) {
-      return i + 1;
-    }
-    i++;
-  }
-  return i;
-}
-
-// Replace each non-inline string token in an image-set span with an inert
-// data: URL. Sequential token scan, not a regex: a regex re-anchors on the
-// closing quote of an exempt string and eats the text between two data:
-// strings.
-function rewriteSpanStrings(span: string): string {
-  let out = '';
-  let i = 0;
-  while (i < span.length) {
-    const q = span[i];
-    if (q !== '"' && q !== "'") {
-      out += q;
-      i++;
-      continue;
-    }
-    let close = i + 1;
-    while (close < span.length && span[close] !== q) close++;
-    const content = span.slice(i + 1, close);
-    out += INLINE_URL.test(content) ? span.slice(i, close + 1) : '"data:,"';
-    i = close + 1;
-  }
-  return out;
-}
-
-// Returns undefined when the CSS fetches nothing, so callers keep the
-// original text and don't report blocking for CSS that merely needed
-// normalizing (comments, escapes). Every fetch construct — even comment-split
-// or escaped — contains a literal `(`, `@`, or `\`, so their absence is a
-// cheap proof there is nothing to block.
-function stripRemoteCss(css: string): string | undefined {
-  if (!/[(@\\]/.test(css)) return undefined;
-  const normalized = decodeCssEscapes(stripCssComments(css));
-  const out = stripImageSets(stripImports(normalized).replace(CSS_REMOTE_URL, 'none'));
-  return out === normalized ? undefined : out;
-}
-
-// The browser parses the decoded attribute text (`url(&quot;data:…&quot;)`
-// is `url("data:…")` to the CSS engine), so match on the decoded form. Only
-// the four entities sanitize-html emits need handling — see contract above.
-const DECODE: Record<string, string> = { '&quot;': '"', '&amp;': '&', '&lt;': '<', '&gt;': '>' };
-const ENCODE: Record<string, string> = { '"': '&quot;', '&': '&amp;', '<': '&lt;', '>': '&gt;' };
-
-const STYLE_ELEMENT = /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi;
-const STYLE_ATTRIBUTE = /(\sstyle\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
-
-// srcset candidates can't be found by splitting on commas — data: URLs
-// contain commas — so follow the HTML parse: URL = non-whitespace run after
-// skipping whitespace/commas, descriptor runs to the next comma, and a URL
-// ending in a comma has no descriptor.
-function srcsetHasRemote(srcset: string): boolean {
-  const space = (c: number) => c === 0x20 || (c >= 0x09 && c <= 0x0d);
+function hasRemoteCandidate(srcset: string): boolean {
+  // A data URL may contain commas. Follow the HTML candidate boundary: a URL
+  // is a non-whitespace run; descriptors extend to the next comma. Adapted from
+  // #222, with the already-parsed attribute supplied by cheerio.
+  const space = (code: number) => code === 0x20 || (code >= 0x09 && code <= 0x0d);
   let i = 0;
   while (i < srcset.length) {
     while (i < srcset.length && (space(srcset.charCodeAt(i)) || srcset[i] === ',')) i++;
-    if (i >= srcset.length) break;
     const start = i;
     while (i < srcset.length && !space(srcset.charCodeAt(i))) i++;
     const run = srcset.slice(start, i);
     const url = run.replace(/,+$/, '');
-    if (url && !INLINE_URL.test(url)) return true;
+    if (url && !isInlineUrl(url)) return true;
     if (!run.endsWith(',')) while (i < srcset.length && srcset[i] !== ',') i++;
   }
   return false;
 }
 
-const BLOCKED_PIXEL =
-  'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-
-// Returns undefined when the tag was already fetch-free. A srcset with any
-// remote candidate is dropped whole — srcset outranks src in the browser, so
-// leaving it would undo the src rewrite, and a srcset of placeholder pixels
-// has no value once the src fallback takes over.
-//
-// Walks the tag's attributes sequentially rather than regexing `src=` out of
-// the raw tag text: a decoy like `alt="x src='data:,'"` would otherwise
-// satisfy a src pattern first (attribute values keep raw single quotes) and
-// shield the real remote src from inspection.
-function blockImgTag(tag: string): string | undefined {
-  const attr = /([^\s"'<>\/=]+)(\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'`<>]*))?/g;
-  attr.lastIndex = 4; // past `<img`
-  let changed = false;
-  let out = '';
-  let copyFrom = 0;
-  for (let m = attr.exec(tag); m !== null; m = attr.exec(tag)) {
-    if (m[2] === undefined) continue;
-    const name = m[1].toLowerCase();
-    if (name !== 'src' && name !== 'srcset') continue;
-    const rawValue = m[2].replace(/^\s*=\s*/, '');
-    const value = /^["']/.test(rawValue) ? rawValue.slice(1, -1) : rawValue;
-    if (name === 'src' && !INLINE_URL.test(value.trimStart())) {
-      changed = true;
-      out += tag.slice(copyFrom, m.index) + `src="${BLOCKED_PIXEL}"`;
-      copyFrom = m.index + m[0].length;
-    } else if (name === 'srcset' && srcsetHasRemote(value)) {
-      changed = true;
-      out += tag.slice(copyFrom, m.index).replace(/\s+$/, ' ');
-      copyFrom = m.index + m[0].length;
-    }
-  }
-  return changed ? out + tag.slice(copyFrom) : undefined;
-}
-
 /**
- * Block every remote-fetching construct in a sanitized email body — `<img>`
- * src/srcset, and `url()`/`@import`/`image-set()` in `<style>` bodies and
- * `style` attributes. The one entry point for the "load remote images"
- * preference: new fetch surfaces belong here, not in the route. Only fetching
- * constructs are touched, so colours, fonts and layout survive and ordinary
- * mail renders unchanged. `blocked` drives the "remote content blocked"
- * notice.
+ * Neutralize every remote fetch a message body can trigger, for the
+ * "block remote images" preference. Regex over `<img src>` alone is not
+ * enough - `srcset` and CSS `url()` in a style attribute both fetch, and
+ * both used to load with the setting on and no warning banner, handing
+ * the sender the reader's IP, user-agent and open time.
+ *
+ * Expects already-sanitized HTML: it re-parses, so it must not be the
+ * thing deciding what tags are safe.
  */
 export function blockRemoteContent(html: string): { html: string; blocked: boolean } {
+  const $ = cheerio.load(html, null, false);
   let blocked = false;
-  const mark = <T>(replacement: T): T => {
-    blocked = true;
-    return replacement;
-  };
 
-  const out = html
-    .replace(/<img\b[^>]*>/gi, (tag) => {
-      const rewritten = blockImgTag(tag);
-      return rewritten === undefined ? tag : mark(rewritten);
-    })
-    .replace(STYLE_ELEMENT, (match, open: string, css: string, close: string) => {
-      const stripped = stripRemoteCss(css);
-      return stripped === undefined ? match : mark(`${open}${stripped}${close}`);
-    })
-    .replace(STYLE_ATTRIBUTE, (match, prefix: string, dq?: string, sq?: string) => {
-      const decoded = (dq ?? sq ?? '').replace(/&(?:quot|amp|lt|gt);/g, (m) => DECODE[m]);
-      const stripped = stripRemoteCss(decoded);
-      if (stripped === undefined) return match;
-      // Re-emitting double-quoted is safe: under the input contract any `"`
-      // arrived entity-encoded and is re-encoded here.
-      return mark(`${prefix}"${stripped.replace(/[&"<>]/g, (c) => ENCODE[c])}"`);
-    });
+  $('img').each((_i, el) => {
+    const img = $(el);
 
-  return { html: out, blocked };
+    const src = img.attr('src');
+    if (src && !isInlineUrl(src)) {
+      img.attr('src', TRANSPARENT_GIF);
+      blocked = true;
+    }
+
+    const srcset = img.attr('srcset');
+    if (srcset && hasRemoteCandidate(srcset)) {
+      img.removeAttr('srcset');
+      blocked = true;
+    }
+  });
+
+  $('[style]').each((_i, el) => {
+    const node = $(el);
+    const style = node.attr('style') ?? '';
+    const stripped = stripRemoteCss(style);
+    if (stripped !== style) {
+      node.attr('style', stripped);
+      blocked = true;
+    }
+  });
+
+  return { html: $.html(), blocked };
 }

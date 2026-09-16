@@ -36,6 +36,7 @@
  */
 
 import type { Hono, MiddlewareHandler, Handler } from "hono";
+import { tbValidator } from "@hono/typebox-validator";
 import {
   requirePermission,
   publicRoute,
@@ -69,6 +70,18 @@ export interface SecureRouterOptions {
    * resource: `{ ids: { mail_server: "serverId" } }`.
    */
   ids?: Partial<Record<string, string>>;
+  /**
+   * Every route on this router is self-hosted-only. Prefer this over
+   * `r.use("*", localOnly)`: `use` is Hono middleware, so it never reaches the
+   * route REGISTRY, and anything reading the registry to decide what a route can
+   * do sees a route that looks universally available. That is how all 11 jobs
+   * tools came to be advertised over MCP on the hosted control plane, where the
+   * jobs router 404s everything.
+   *
+   * Folded into each registered spec's `localOnly`, so the registry is the single
+   * answer to "does this route exist in this mode".
+   */
+  localOnly?: boolean;
 }
 
 type MethodName = "get" | "post" | "put" | "patch" | "delete";
@@ -108,6 +121,7 @@ export function secureRouter<T extends Hono>(
   const module = options.module;
   const basePath = options.basePath ?? `/${module}`;
   const routerIds = options.ids ?? {};
+  const routerLocalOnly = options.localOnly === true;
 
   function mount(
     method: MethodName,
@@ -116,12 +130,14 @@ export function secureRouter<T extends Hono>(
     handlers: (MiddlewareHandler | Handler)[],
   ): void {
     // Inherit router-level id overrides unless the per-route spec
-    // explicitly maps the same resource → param.
+    // explicitly maps the same resource → param. Router-level `localOnly` ORs in:
+    // a route can opt itself in, but cannot opt out of its router's restriction.
     const mergedSpec: RouteSpec = isPublicSpec(spec)
-      ? spec
+      ? { ...spec, localOnly: spec.localOnly || routerLocalOnly }
       : {
           ...(spec as PermissionSpec),
           ids: { ...routerIds, ...((spec as PermissionSpec).ids ?? {}) },
+          localOnly: (spec as PermissionSpec).localOnly || routerLocalOnly,
         };
 
     registerRoute({
@@ -166,6 +182,14 @@ export function secureRouter<T extends Hono>(
         ? publicRoute({ reason: mergedSpec.reason })
         : requirePermission(mergedSpec as PermissionSpec),
     );
+    // Body validation is declared once on the spec (`body`) and auto-wired here,
+    // right after the permission check and ahead of the handlers — so the schema
+    // is never duplicated between a manual `tbValidator(...)` handler and the MCP
+    // block. Runs before any cloud proxy (validating locally before forwarding is
+    // safe: Hono caches the parsed body, so the proxy still re-reads it).
+    if (!isPublicSpec(mergedSpec) && (mergedSpec as PermissionSpec).body) {
+      chain.push(tbValidator("json", (mergedSpec as PermissionSpec).body!));
+    }
     chain.push(...handlers);
 
     // Hono's method signatures are loose — use a typed indexer.

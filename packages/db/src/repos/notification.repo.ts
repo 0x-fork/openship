@@ -11,7 +11,7 @@
  * filters and DO NOT cross-check membership themselves.
  */
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import {
@@ -30,7 +30,14 @@ export type NotificationDefault = typeof notificationDefault.$inferSelect;
 export type NotificationDelivery = typeof notificationDelivery.$inferSelect;
 export type NewNotificationDelivery = typeof notificationDelivery.$inferInsert;
 
-export type ChannelKind = "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams";
+export type ChannelKind =
+  | "email"
+  | "webhook"
+  | "in_app"
+  | "slack"
+  | "discord"
+  | "msteams"
+  | "telegram";
 export type DeliveryStatus = "queued" | "sending" | "sent" | "failed" | "seen";
 
 // ─── notification_channel repo ───────────────────────────────────────────────
@@ -81,6 +88,30 @@ export function createNotificationChannelRepo(db: Database) {
       return row;
     },
 
+    /**
+     * Batched dispatcher lookup for the org-default fallback: every enabled +
+     * verified channel owned by any of `userIds` whose kind is in `kinds`.
+     * One query instead of N×K `findFirstVerifiedOfKind` calls. Empty inputs
+     * short-circuit to [].
+     */
+    async listVerifiedForUsersByKinds(
+      userIds: string[],
+      kinds: ChannelKind[],
+    ): Promise<NotificationChannel[]> {
+      if (userIds.length === 0 || kinds.length === 0) return [];
+      return db
+        .select()
+        .from(notificationChannel)
+        .where(
+          and(
+            inArray(notificationChannel.userId, userIds),
+            inArray(notificationChannel.kind, kinds),
+            eq(notificationChannel.verified, true),
+            eq(notificationChannel.enabled, true),
+          ),
+        );
+    },
+
     async create(
       data: Omit<NewNotificationChannel, "id" | "createdAt" | "updatedAt">,
     ): Promise<NotificationChannel> {
@@ -101,6 +132,13 @@ export function createNotificationChannelRepo(db: Database) {
         .set({ ...data, updatedAt: new Date() })
         .where(eq(notificationChannel.id, id))
         .returning();
+      return row;
+    },
+
+    /** A test delivery only verifies the exact configuration that was tested. */
+    async verifyIfUnchanged(expected: Pick<NotificationChannel, "id" | "userId" | "kind" | "config">): Promise<NotificationChannel | undefined> {
+      const [row] = await db.update(notificationChannel).set({ verified: true, updatedAt: new Date() })
+        .where(and(eq(notificationChannel.id, expected.id), eq(notificationChannel.userId, expected.userId), eq(notificationChannel.kind, expected.kind), eq(notificationChannel.config, expected.config))).returning();
       return row;
     },
 
@@ -158,6 +196,29 @@ export function createNotificationSubscriptionRepo(db: Database) {
             eq(notificationSubscription.enabled, true),
           ),
         );
+    },
+
+    /**
+     * Distinct userIds that have ANY subscription row (enabled OR disabled)
+     * for one (org, category). The dispatcher uses this to know who has made
+     * an explicit choice — those members are EXCLUDED from the org-default
+     * fallback so an opt-out (a disabled row) is respected and nobody is
+     * double-fired.
+     */
+    async listUserIdsWithSubscription(
+      organizationId: string,
+      category: string,
+    ): Promise<string[]> {
+      const rows = await db
+        .selectDistinct({ userId: notificationSubscription.userId })
+        .from(notificationSubscription)
+        .where(
+          and(
+            eq(notificationSubscription.organizationId, organizationId),
+            eq(notificationSubscription.category, category),
+          ),
+        );
+      return rows.map((r) => r.userId);
     },
 
     /**
@@ -283,7 +344,7 @@ export function createNotificationDeliveryRepo(db: Database) {
     async listForUser(
       userId: string,
       organizationId: string,
-      opts?: { limit?: number; unseenOnly?: boolean },
+      opts?: { limit?: number; unseenOnly?: boolean; offset?: number; excludeFailed?: boolean },
     ): Promise<NotificationDelivery[]> {
       const conditions = [
         eq(notificationDelivery.userId, userId),
@@ -292,12 +353,14 @@ export function createNotificationDeliveryRepo(db: Database) {
       if (opts?.unseenOnly) {
         conditions.push(sql`${notificationDelivery.seenAt} IS NULL`);
       }
+      if (opts?.excludeFailed) conditions.push(sql`${notificationDelivery.status} != 'failed'`);
       return db
         .select()
         .from(notificationDelivery)
         .where(and(...conditions))
-        .orderBy(desc(notificationDelivery.createdAt))
-        .limit(opts?.limit ?? 100);
+        .orderBy(desc(notificationDelivery.createdAt), desc(notificationDelivery.id))
+        .limit(opts?.limit ?? 100)
+        .offset(opts?.offset ?? 0);
     },
 
     async findById(id: string): Promise<NotificationDelivery | undefined> {
@@ -320,21 +383,21 @@ export function createNotificationDeliveryRepo(db: Database) {
       return row;
     },
 
-    /** Worker picks up queued deliveries oldest-first. */
+    /** Atomically claim rows; concurrent workers cannot send the same queued row. */
     async claimQueued(limit = 25): Promise<NotificationDelivery[]> {
-      return db
-        .select()
-        .from(notificationDelivery)
-        .where(eq(notificationDelivery.status, "queued"))
-        .orderBy(notificationDelivery.createdAt)
-        .limit(limit);
+      return db.transaction(async tx => {
+        const rows = await tx.select().from(notificationDelivery).where(eq(notificationDelivery.status, "queued"))
+          .orderBy(notificationDelivery.createdAt).limit(limit).for("update", { skipLocked: true });
+        if (rows.length) await tx.update(notificationDelivery)
+          .set({ status: "sending", attempts: sql`${notificationDelivery.attempts} + 1` })
+          .where(inArray(notificationDelivery.id, rows.map(row => row.id)));
+        return rows;
+      });
     },
 
-    async markSending(id: string): Promise<void> {
-      await db
-        .update(notificationDelivery)
-        .set({ status: "sending", attempts: sql`${notificationDelivery.attempts} + 1` })
-        .where(eq(notificationDelivery.id, id));
+    /** Exclusive owner recovery never blindly repeats an uncertain external send. */
+    async failInterrupted(reason: string): Promise<void> {
+      await db.update(notificationDelivery).set({ status: "failed", lastError: reason }).where(eq(notificationDelivery.status, "sending"));
     },
 
     async markSent(id: string): Promise<void> {

@@ -19,6 +19,13 @@ interface TopupPack {
   price_cents: number;
   stripePriceId: string;
   sortOrder: number;
+  /**
+   * What the pack buys in recognisable units — hours of a running app, or build
+   * minutes. Derived server-side from the catalog's own rates. Nullable because
+   * the synced `credit_pack` table has no such column; a pack whose id has left
+   * the catalog simply renders without the line.
+   */
+  explains?: string | null;
 }
 
 interface TopupPacksResponse {
@@ -55,13 +62,13 @@ function formatCredits(milliCredits: number): string {
 /*  Component                                                         */
 /* ------------------------------------------------------------------ */
 
-export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) => {
-  // Marker prop — currently unused beyond context typing, but kept on the
-  // signature so the parent route can pass the same snapshot it already
-  // fetches for the overview card.
-  void _state;
-
+export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
   const { t } = useI18n();
+  // Availability is decided by Openship Cloud (billing state), NOT hardcoded —
+  // so top-ups can launch by flipping the cloud flag with no dashboard release.
+  // Absent flag → treated as not-available (coming soon).
+  const topupsAvailable = state.topups?.available === true;
+
   const [packs, setPacks] = useState<TopupPack[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +100,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
     setBuyingPackId(packId);
     setError(null);
     try {
-      const res = await api.post<CheckoutResponse>("billing/topup", { packId });
+      const res = await api.post<CheckoutResponse>("billing/topup", { packId, idempotencyKey: crypto.randomUUID() });
       window.location.href = res.data.checkoutUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.topups.checkoutError);
@@ -118,9 +125,16 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
       {/* ── Catalog ───────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border/50 bg-card p-6">
         <div className="mb-5">
-          <h2 className="text-base font-semibold text-foreground">{t.billing.topups.title}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-foreground">{t.billing.topups.title}</h2>
+            {!topupsAvailable && (
+              <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {t.billing.pricing.comingSoon}
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t.billing.topups.description}
+            {topupsAvailable ? t.billing.topups.description : t.billing.topupsComingSoon}
           </p>
         </div>
 
@@ -145,11 +159,15 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
               return (
                 <div
                   key={pack.id}
-                  className="flex flex-col rounded-xl border border-border/50 bg-background p-5 transition-colors hover:border-border"
+                  className={`flex flex-col rounded-xl border border-border/50 bg-background p-5 transition-colors ${
+                    topupsAvailable ? "hover:border-border" : "opacity-70"
+                  }`}
                 >
-                  <p className="text-sm font-medium text-muted-foreground">{pack.name}</p>
-
-                  <div className="mt-3 flex items-baseline gap-1">
+                  {/* `pack.name` is deliberately NOT rendered: it resolves to
+                      "5,000 compute minutes", which is the same figure as the big
+                      number directly below it — the card was saying the amount
+                      twice and explaining it zero times. */}
+                  <div className="flex items-baseline gap-1">
                     <Plus className="size-5 text-primary" />
                     <span className="text-3xl font-semibold tabular-nums text-foreground">
                       {formatCredits(pack.credits_milli)}
@@ -157,24 +175,40 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
                     <span className="text-sm text-muted-foreground">{t.billing.topups.credits}</span>
                   </div>
 
+                  {/* The line that makes the number mean something. */}
+                  {pack.explains ? (
+                    <p className="mt-2 text-[13px] leading-snug text-muted-foreground">
+                      {pack.explains}
+                    </p>
+                  ) : null}
+
                   <p className="mt-3 text-2xl font-medium tabular-nums text-foreground">
                     {formatPrice(pack.price_cents)}
                   </p>
 
-                  <button
-                    onClick={() => handleBuy(pack.id)}
-                    disabled={isBuying || buyingPackId !== null}
-                    className="mt-5 inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isBuying ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        {t.billing.topups.redirecting}
-                      </>
-                    ) : (
-                      <>{t.billing.topups.buy}</>
-                    )}
-                  </button>
+                  {topupsAvailable ? (
+                    <button
+                      onClick={() => handleBuy(pack.id)}
+                      disabled={isBuying || buyingPackId !== null}
+                      className="mt-5 inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isBuying ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          {t.billing.topups.redirecting}
+                        </>
+                      ) : (
+                        <>{t.billing.topups.buy}</>
+                      )}
+                    </button>
+                  ) : (
+                    <span
+                      className="mt-5 inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-border bg-muted px-4 py-2 text-sm font-medium text-muted-foreground"
+                      aria-disabled
+                    >
+                      {t.billing.pricing.comingSoon}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -207,7 +241,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
             </div>
           </div>
 
-          <button
+          {state.capabilities?.portal === true ? <button
             onClick={handleOpenPortal}
             disabled={openingPortal}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
@@ -223,7 +257,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
                 <ExternalLink className="size-3.5" />
               </>
             )}
-          </button>
+          </button> : <a href="mailto:support@openship.io" className="text-sm font-medium text-primary hover:underline">{t.billing.portal.supportButton}</a>}
         </div>
       </div>
     </div>

@@ -36,7 +36,10 @@
     "docs": "Documentation",
     "docsDesc": "En savoir plus",
     "activityTitle": "Activité",
-    "successRate": "Taux de réussite",
+    "systemStatus": "État du système",
+    "operational": "Opérationnel",
+    "oneIssue": "1 problème",
+    "manyIssues": "{n} problèmes",
     "recentTitle": "Récent",
     "activityEmpty": "Votre activité apparaîtra ici",
     "allSystemsOperational": "Tous les systèmes sont opérationnels",
@@ -52,21 +55,31 @@
     "appsEmptyDesc": "En un clic, entièrement auto-hébergé — bases de données, automatisation, analytique, coffres de mots de passe et plus encore, sur vos propres serveurs."
   },
   "nav": {
+    "scale": "Mise à l’échelle",
     "home": "Accueil",
     "new-project": "Nouveau projet",
     "projects": "Projets",
     "deployments": "Déploiements",
+    "issues": "Surveillance",
     "backups": "Sauvegardes",
     "domains": "Domaines",
     "monitoring": "Supervision",
     "servers": "Serveurs",
     "emails": "E-mails",
     "settings": "Paramètres",
-    "billing": "Facturation",
+    "billing": "Facturation et utilisation",
+    "audit": "Journal d'audit",
+    "mailSetup": "Configurer la messagerie",
+    "mailSetupProgress": "Progression de la configuration",
+    "addMailbox": "Ajouter une boîte aux lettres",
+    "webmail": "Webmail",
     "sections": {
       "main": "Principal",
       "settings": "Paramètres",
       "infrastructure": "Infrastructure",
+      "mail": "Messagerie",
+      "delivery": "Distribution",
+      "system": "Système",
       "account": "Compte"
     },
     "apps": "Applications",
@@ -112,6 +125,11 @@
         "rollbacks": "Restaurations",
         "rollbacksDesc": "Rétablissement en un clic",
         "commandPalette": "Ou appuyez sur {key} pour ouvrir la palette de commandes"
+      },
+      "view": {
+        "label": "Affichage",
+        "list": "Liste",
+        "grid": "Grille"
       }
     },
     "deployments": {
@@ -135,7 +153,7 @@
       "description": "Paramètres du compte, de l'équipe et de la plateforme."
     },
     "billing": {
-      "title": "Facturation",
+      "title": "Facturation et utilisation",
       "description": "Gérez votre abonnement, votre consommation et vos moyens de paiement."
     },
     "apps": {
@@ -150,6 +168,7 @@
       "popular": "Applications populaires",
       "alsoDeploy": "Vous pouvez aussi déployer",
       "browseAll": "Parcourir toutes les applications",
+      "moreApps": "+{count} de plus",
       "catalogTitle": "Installer une application",
       "catalogDescription": "Services gérés en un clic. Choisissez-en une pour l'installer comme application.",
       "catalogSearchPlaceholder": "Rechercher des applications…",
@@ -168,7 +187,8 @@
       "install": "Installer",
       "cancel": "Annuler",
       "nameLabel": "Nom",
-      "configTitle": "Configurer {app}"
+      "configTitle": "Configurer {app}",
+      "comingSoon": "Bientôt disponible"
     }
   },
   "quickLinks": {
@@ -195,7 +215,7 @@
       "description": "Domaines personnalisés"
     },
     "billing": {
-      "title": "Facturation",
+      "title": "Facturation et utilisation",
       "description": "Consommation et forfaits"
     }
   }

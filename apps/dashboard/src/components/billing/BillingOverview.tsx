@@ -1,10 +1,12 @@
 "use client";
 
+import { BillingSubscriptionControls } from "./BillingSubscriptionControls";
+
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Loader2, Sparkles } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
-import { PLANS } from "@repo/core";
+import { PLAN_IDS, PLANS, type PlanTierId } from "@repo/core";
 import { api } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
@@ -62,7 +64,8 @@ interface TopupCheckoutResponse {
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-function formatCredits(milliCredits: number): string {
+function formatCredits(milliCredits: number | null): string {
+  if (milliCredits === null) return "∞";
   const credits = Math.floor(milliCredits / 1000);
   return credits.toLocaleString();
 }
@@ -71,8 +74,8 @@ function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
 }
 
-function pctUsed(used: number, limit: number): number {
-  if (limit <= 0) return 0;
+function pctUsed(used: number, limit: number | null): number {
+  if (limit === null || limit <= 0) return 0;
   return Math.min(100, Math.max(0, (used / limit) * 100));
 }
 
@@ -95,6 +98,10 @@ function statusPillClass(status: string): string {
   const s = status.toLowerCase();
   if (s === "active") return "bg-success-bg text-success border-success-border";
   if (s === "past_due" || s === "unpaid") return "bg-danger-bg text-danger border-danger-border";
+  // `credit_exhausted` means Oblien has STOPPED this org's workloads. It fell through
+  // to the neutral pill below, so the state where nothing is running looked no more
+  // urgent than a tidy cancellation.
+  if (s === "credit_exhausted") return "bg-danger-bg text-danger border-danger-border";
   if (s === "canceled" || s === "cancelled") return "bg-muted text-muted-foreground border-border";
   return "bg-muted text-muted-foreground border-border";
 }
@@ -316,14 +323,14 @@ function RecentActivityCard() {
             <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <Area
                 type="monotone"
                 dataKey="credits"
-                stroke="hsl(var(--primary))"
+                stroke="var(--primary)"
                 strokeWidth={1.75}
                 fill="url(#sparkFill)"
                 isAnimationActive={false}
@@ -340,7 +347,7 @@ function RecentActivityCard() {
 /*  Quick-buy credit packs                                            */
 /* ------------------------------------------------------------------ */
 
-function BuyCreditsCard() {
+function BuyCreditsCard({ available }: { available: boolean }) {
   const { t } = useI18n();
   const [packs, setPacks] = useState<TopupPack[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -370,7 +377,7 @@ function BuyCreditsCard() {
   async function handleBuy(packId: string) {
     setBuyingPackId(packId);
     try {
-      const res = await api.post<TopupCheckoutResponse>("billing/topup", { packId });
+      const res = await api.post<TopupCheckoutResponse>("billing/topup", { packId, idempotencyKey: crypto.randomUUID() });
       window.location.href = res.data.checkoutUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.overview.checkoutError);
@@ -378,11 +385,20 @@ function BuyCreditsCard() {
     }
   }
 
+  // Buy is enabled ONLY when Openship Cloud reports top-ups available; otherwise
+  // packs render as a dimmed "coming soon" preview.
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">{t.billing.overview.needMoreCredits}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{t.billing.overview.needMoreCredits}</h3>
+            {!available && (
+              <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {t.billing.pricing.comingSoon}
+              </span>
+            )}
+          </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {t.billing.overview.oneTimeTopups}
           </p>
@@ -407,14 +423,8 @@ function BuyCreditsCard() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {packs.map((pack) => {
-            const isBuying = buyingPackId === pack.id;
-            return (
-              <button
-                key={pack.id}
-                onClick={() => handleBuy(pack.id)}
-                disabled={buyingPackId !== null}
-                className="group flex items-center justify-between rounded-xl border border-border/60 bg-background/40 px-4 py-3 text-start transition-colors hover:border-primary/40 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+            const body = (
+              <>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">
                     {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(pack.credits_milli) })}
@@ -423,17 +433,44 @@ function BuyCreditsCard() {
                     {interpolate(t.billing.overview.oneTime, { price: formatDollars(pack.price_cents) })}
                   </p>
                 </div>
-                <span className="ms-3 inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
-                  {isBuying ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                <span
+                  className={`ms-3 inline-flex shrink-0 items-center gap-1 ${
+                    available
+                      ? "text-xs font-medium text-primary"
+                      : "rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                  }`}
+                >
+                  {available ? (
+                    buyingPackId === pack.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <>
+                        {t.billing.overview.buy}
+                        <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      </>
+                    )
                   ) : (
-                    <>
-                      {t.billing.overview.buy}
-                      <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    </>
+                    t.billing.pricing.comingSoon
                   )}
                 </span>
+              </>
+            );
+            return available ? (
+              <button
+                key={pack.id}
+                onClick={() => handleBuy(pack.id)}
+                disabled={buyingPackId !== null}
+                className="group flex items-center justify-between rounded-xl border border-border/60 bg-background/40 px-4 py-3 text-start transition-colors hover:border-primary/40 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {body}
               </button>
+            ) : (
+              <div
+                key={pack.id}
+                className="flex items-center justify-between rounded-xl border border-border/60 bg-background/40 px-4 py-3 opacity-70"
+              >
+                {body}
+              </div>
             );
           })}
         </div>
@@ -452,13 +489,31 @@ function BuyCreditsCard() {
  * upgrade / manage entry point. Credits balance is the secondary card below —
  * general credits exist but aren't the first thing the user sees.
  */
+/**
+ * The next tier up the published ladder, or undefined at the top.
+ *
+ * Read from `PLAN_IDS` so inserting a tier into the catalog cannot skip it, and
+ * the negotiated top tier is excluded — its card is a sales conversation, not an
+ * upgrade button. Mirrors the derivation the sidebar previously owned; it lives
+ * here now because this is the one place that offers an upgrade.
+ */
+function nextPaidPlan(tier: PlanTierId): PlanTierId | undefined {
+  const at = PLAN_IDS.indexOf(tier);
+  const next = at < 0 ? undefined : PLAN_IDS[at + 1];
+  return next && !PLANS[next].contactSales ? next : undefined;
+}
+
 function PlanCard({ state }: { state: BillingState }) {
   const { t } = useI18n();
-  const plan = PLANS[state.tier];
+  const plan = state.plan === undefined ? PLANS[state.tier] : state.plan;
   const planName = plan?.name ?? state.tier;
   const isFree = state.tier === "free";
   const allowance = state.monthlyCreditLimit;
-  const features = plan?.features ?? [];
+  // The tier one step up the published ladder — the same derivation the sidebar
+  // used to do. Hardcoding "Pro" here was what put two DIFFERENT upgrade offers on
+  // one screen, and it would have named the wrong tier the moment a plan was
+  // inserted into the ladder.
+  const nextTier = nextPaidPlan(state.tier);
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-6">
@@ -479,7 +534,7 @@ function PlanCard({ state }: { state: BillingState }) {
           )}
         </div>
 
-        {isFree ? (
+        {isFree && nextTier ? (
           <Link
             href="/billing/plans"
             className="relative inline-flex w-fit items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium text-primary-foreground"
@@ -488,7 +543,7 @@ function PlanCard({ state }: { state: BillingState }) {
             <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary to-primary/90" />
             <span className="relative flex items-center gap-1.5">
               <Sparkles className="size-3.5" />
-              {t.billing.overview.upgradeToPro}
+              {t.billing.tabs.plans}
             </span>
           </Link>
         ) : (
@@ -502,21 +557,15 @@ function PlanCard({ state }: { state: BillingState }) {
         )}
       </div>
 
-      {(allowance != null || features.length > 0) && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {allowance != null && (
-            <span className="inline-flex items-center rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-              {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(allowance) })}
-            </span>
-          )}
-          {features.map((f) => (
-            <span
-              key={f}
-              className="inline-flex items-center rounded-lg bg-muted px-2.5 py-1 text-xs text-muted-foreground"
-            >
-              {f}
-            </span>
-          ))}
+      {/* The tier's ALLOWANCE stays — it is the one number this card is about.
+          The feature bullets moved to the right column ("What's included"), where
+          they read as a list instead of a wrapped hedge of pills, and where they
+          no longer compete with this card's status and CTA. */}
+      {allowance != null && (
+        <div className="mt-4">
+          <span className="inline-flex items-center rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+            {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(allowance) })}
+          </span>
         </div>
       )}
     </div>
@@ -532,9 +581,10 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ state }) => {
     <div className="flex flex-col gap-5">
       {/* Subscription/tier leads; credits balance is secondary. */}
       <PlanCard state={state} />
+      <BillingSubscriptionControls state={state} />
       <BalanceHero state={state} />
       <RecentActivityCard />
-      <BuyCreditsCard />
+      <BuyCreditsCard available={state.topups?.available === true} />
     </div>
   );
 };

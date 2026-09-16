@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { DeploymentMenu } from "./DeploymentMenu";
 import { CommitDetailsModal } from "./CommitDetailsModal";
 import type { Deployment } from "../types";
@@ -118,10 +118,12 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
   appTemplateId,
 }) => {
   const { t } = useI18n();
-  const router = useRouter();
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [faviconError, setFaviconError] = useState(false);
   const statusConfig = getStatusConfig(deployment.status);
   const frameworkConfig = getFrameworkConfig(deployment.framework);
+  const hasFavicon = !!deployment.favicon && !faviconError;
 
   const statusLabelMap: Record<string, string> = {
     success: t.deployments.status.deployed,
@@ -131,8 +133,10 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
     building: t.deployments.status.building,
     deploying: t.deployments.status.deploying,
     partial_failure: t.deployments.status.partial,
+    action_required: t.deployments.status.actionRequired,
     rejected: t.deployments.status.rejected,
     reconciling: t.deployments.status.verifying,
+    no_changes: t.deployments.status.noChanges,
   };
   const statusLabel = statusLabelMap[deployment.status] ?? t.deployments.status.pending;
 
@@ -141,16 +145,25 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
     deployment.commit?.message && deployment.commit.message !== "Manual deployment";
 
   return (
-    <div
-      className="group relative flex cursor-pointer items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/25"
-      onClick={() => router.push(`/build/${deployment.id}`)}
-    >
-      {/* App logo (catalog apps) → else framework icon → else initials */}
+    <div className="group relative flex items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/25">
+      <Link
+        href={`/build/${deployment.id}`}
+        aria-label={deployment.projectName || t.deployments.card.unknownProject}
+        className="absolute inset-0 z-0"
+      />
+      {/* App logo (catalog apps) → project favicon → framework icon → initials */}
       <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
         {appTemplateId ? (
           <AppLogo appId={appTemplateId} className="size-5 object-contain" />
+        ) : hasFavicon ? (
+          <img
+            src={deployment.favicon!}
+            alt=""
+            className="size-5 object-contain"
+            onError={() => setFaviconError(true)}
+          />
         ) : frameworkConfig.icon ? (
-          frameworkConfig.icon("hsl(var(--foreground))")
+          frameworkConfig.icon("var(--foreground)")
         ) : (
           <span className="text-xs font-mono font-bold text-muted-foreground">
             {(deployment.framework || "?").slice(0, 2).toUpperCase()}
@@ -274,8 +287,15 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
         </div>
       </div>
 
-      {/* Right side - commit hash + actions */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Right side - commit hash + actions.
+          `z-10` makes this a stacking context, which caps the dropdown inside
+          it — every row's actions block sat at the same z-10, so later rows
+          painted their commit hash and trigger over an open menu. Lifting the
+          whole block while the menu is open is what puts it above the siblings;
+          the dropdown's own z-50 only orders it within this block. */}
+      <div
+        className={`relative flex items-center gap-2 shrink-0 ${isMenuOpen ? "z-30" : "z-10"}`}
+      >
         {hasCommitData && (
           <button
             onClick={(e) => {
@@ -300,6 +320,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           deployment={deployment}
           triggerClassName="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground"
           onStatusChange={onStatusChange}
+          onOpenChange={setIsMenuOpen}
         />
       </div>
 

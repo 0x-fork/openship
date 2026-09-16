@@ -13,11 +13,16 @@ import { useCallback, useEffect, useState } from "react";
 import {
   RELEASES_LATEST_API,
   advisoryManifestUrl,
+  changelogMarkdownUrl,
+  extractChangelogSection,
   parseManifest,
   resolveUpdateState,
+  matchAdvisories,
+  type AdvisoryMode,
   compareSemver,
   type AdvisoryManifest,
   type LatestRelease,
+  type ReleaseFeedSnapshot,
   type UpdateState,
 } from "@repo/core";
 import { useDeploymentInfo } from "@/hooks/useDeploymentInfo";
@@ -89,36 +94,65 @@ async function persistLastSeen(version: string): Promise<void> {
 
 // Session-scoped cache: fetch GitHub once per app session (GitHub rate-limits
 // unauthenticated calls to 60/hr/IP; navigation shouldn't re-hit it).
-let remoteCache: Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> | null = null;
+let remoteCache: Promise<ReleaseFeedSnapshot> | null = null;
+let remoteInFlight: Promise<ReleaseFeedSnapshot> | null = null;
 
-async function fetchRemote(): Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> {
-  remoteCache ??= (async () => {
-    let latest: LatestRelease | null = null;
-    let manifest: AdvisoryManifest | null = null;
-    try {
-      const res = await fetch(RELEASES_LATEST_API, {
-        headers: { Accept: "application/vnd.github+json" },
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { tag_name?: string; body?: string };
-        const tag = data.tag_name ?? "";
-        if (tag) {
-          latest = { version: tag.replace(/^v/, ""), tag, notes: data.body ?? "" };
-          // Advisories pinned to the release TAG — main commits never surface.
+/** One uncached update read. Exported so the three-source failure isolation is testable. */
+export async function fetchRemoteUncached(
+  fetcher: typeof fetch = fetch,
+): Promise<{ latest: LatestRelease | null; manifest: AdvisoryManifest | null }> {
+  let latest: LatestRelease | null = null;
+  let manifest: AdvisoryManifest | null = null;
+  try {
+    const res = await fetcher(RELEASES_LATEST_API, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { tag_name?: string };
+      const tag = data.tag_name ?? "";
+      if (tag) {
+        latest = { version: tag.replace(/^v/, ""), tag, notes: "" };
+        // Both documents are pinned to the release tag. Fetch independently:
+        // a missing changelog must not hide a critical advisory, and a missing
+        // advisory must not erase the release notes.
+        const [changelogResult, manifestResult] = await Promise.allSettled([
+          fetcher(changelogMarkdownUrl(tag)),
+          fetcher(advisoryManifestUrl(tag), { headers: { Accept: "application/json" } }),
+        ]);
+        if (changelogResult.status === "fulfilled" && changelogResult.value.ok) {
           try {
-            const m = await fetch(advisoryManifestUrl(tag), { headers: { Accept: "application/json" } });
-            if (m.ok) manifest = parseManifest(await m.json());
+            latest.notes = extractChangelogSection(await changelogResult.value.text(), latest.version);
           } catch {
-            /* no manifest at this tag → no advisories */
+            /* malformed/unreadable changelog → keep notes empty */
+          }
+        }
+        if (manifestResult.status === "fulfilled" && manifestResult.value.ok) {
+          try {
+            manifest = parseManifest(await manifestResult.value.json());
+          } catch {
+            /* malformed/unreadable manifest → no advisories */
           }
         }
       }
-    } catch {
-      /* offline / rate-limited → no update info */
     }
-    return { latest, manifest };
-  })();
-  return remoteCache;
+  } catch {
+    /* offline / rate-limited → no update info */
+  }
+  return { latest, manifest };
+}
+
+function fetchRemote(force = false): Promise<ReleaseFeedSnapshot> {
+  if (remoteInFlight) return remoteInFlight;
+  if (!force && remoteCache) return remoteCache;
+  // The native process owns desktop release I/O, including the launch check.
+  // Preserve notes and advisories even when its platform has no installer.
+  const check = isDesktop() ? window.desktop?.updates?.check : undefined;
+  const request: Promise<ReleaseFeedSnapshot> = check
+    ? check(force).catch(() => ({ latest: null, manifest: null }))
+    : fetchRemoteUncached();
+  remoteInFlight = request.finally(() => { remoteInFlight = null; });
+  remoteCache = remoteInFlight;
+  return remoteInFlight;
 }
 
 // The SaaS advisory source: operator-pushed platform notices from our own API
@@ -148,6 +182,13 @@ export interface UseUpdates {
   latest: LatestRelease | null;
   muted: boolean;
   desktop: boolean;
+  /**
+   * Which install this is — the same value advisories are filtered on. Surfaces
+   * need it to offer the RIGHT action: desktop drives the native updater,
+   * self-hosted has to run the CLI on the host, cloud has nothing to update.
+   * "cloud" until deployment info loads, so nothing suggests a wrong action.
+   */
+  mode: AdvisoryMode;
   /** The version to celebrate in a "what's new" notice, or null. */
   whatsNewVersion: string | null;
   dismissAdvisory: (id: string) => void;
@@ -180,6 +221,17 @@ export function useUpdates(): UseUpdates {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
+  // Which install is this? Mode-targeted advisories are filtered on it, so a
+  // desktop-installer notice never reaches a VPS dashboard and an edge/compose
+  // notice never reaches the desktop app. Desktop wins over selfHosted: the
+  // Electron app reports selfHosted too, but it updates through its own
+  // installer, not by the operator upgrading a server.
+  const mode: AdvisoryMode = isDesktop()
+    ? "desktop"
+    : deployInfo?.selfHosted
+      ? "selfhosted"
+      : "cloud";
+
   const load = useCallback(async () => {
     // Desktop + self-hosted operators control their own install → the GitHub
     // update + advisory feed below. The managed SaaS (cloud) has nothing to
@@ -191,7 +243,7 @@ export function useUpdates(): UseUpdates {
       if (!deployInfo) return; // deploy info still loading — not yet known to be cloud
       const [prefs, manifest] = await Promise.all([getPrefs(), fetchNotices()]);
       setMutedState(prefs.muted);
-      const advisories = manifest.advisories
+      const advisories = matchAdvisories(deployInfo.version ?? "", manifest, mode)
         .filter((a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)))
         .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9));
       setState({
@@ -230,8 +282,9 @@ export function useUpdates(): UseUpdates {
       manifest: remote.manifest,
       dismissed: prefs.dismissed,
       muted: prefs.muted,
+      mode,
     });
-    const noticeAdvisories = notices.advisories.filter(
+    const noticeAdvisories = matchAdvisories(current, notices, mode).filter(
       (a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)),
     );
     const advisories = [...base.advisories, ...noticeAdvisories]
@@ -246,7 +299,7 @@ export function useUpdates(): UseUpdates {
     } else if (compareSemver(current, prefs.lastSeen) > 0) {
       setWhatsNewVersion(current);
     }
-  }, [deployInfo?.version, deployInfo?.selfHosted]);
+  }, [deployInfo?.version, deployInfo?.selfHosted, mode]);
 
   useEffect(() => {
     void load();
@@ -324,13 +377,10 @@ export function useUpdates(): UseUpdates {
       .catch(() => setUpdatePhase("idle"));
   }, []);
 
-  // Force a fresh GitHub check (the session cache is otherwise reused). Also
-  // prime the desktop main process so its pending-update state — which the
-  // native wizard + install act on — re-checks in lockstep with the renderer,
-  // instead of only being set by the boot check.
+  // Refresh the same snapshot that drives both the dashboard and native install.
+  // Concurrent consumers join the request instead of issuing duplicate checks.
   const refresh = useCallback(() => {
-    remoteCache = null;
-    void window.desktop?.updates?.check?.();
+    void fetchRemote(true);
     void load();
   }, [load]);
 
@@ -339,6 +389,7 @@ export function useUpdates(): UseUpdates {
     latest,
     muted,
     desktop: isDesktop(),
+    mode,
     whatsNewVersion,
     dismissAdvisory,
     dismissWhatsNew,
