@@ -55,12 +55,13 @@
     "viewAllApps": "Tüm {count} uygulamayı gör →"
   },
   "nav": {
+    "scale": "Ölçeklendirme",
     "home": "Ana Sayfa",
     "new-project": "Yeni Proje",
     "projects": "Projeler",
     "apps": "Uygulamalar",
     "deployments": "Dağıtımlar",
-    "issues": "Sorunlar",
+    "issues": "İzleme",
     "backups": "Yedekler",
     "domains": "Alan Adları",
     "monitoring": "İzleme",

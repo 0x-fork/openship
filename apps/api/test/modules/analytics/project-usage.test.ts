@@ -50,7 +50,8 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("../../../src/lib/deployment-runtime", () => ({
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  disposeRuntime: (runtime: { dispose?: () => Promise<void> }) => { void runtime.dispose?.(); },
   resolveDeploymentRuntimeForRead: vi.fn(async () => ({
     runtime: {
       name: "docker",
@@ -69,13 +70,13 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   })),
 }));
 
-vi.mock("../../../src/lib/host-capacity", () => ({
+vi.mock("@repo/platform/engine/lib/host-capacity", () => ({
   getHostCapacity: vi.fn(async () => h.capacity),
 }));
 
-vi.mock("../../../src/lib/system-debug", () => ({ systemDebug: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/system-debug", () => ({ systemDebug: vi.fn() }));
 
-const { collectProjectUsage } = await import("../../../src/modules/monitoring/project-usage");
+const { collectProjectUsage } = await import("@repo/platform/engine/modules/monitoring/project-usage");
 
 const ctx = { organizationId: "org1" } as never;
 

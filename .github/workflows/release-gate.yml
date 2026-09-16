@@ -63,6 +63,13 @@ jobs:
       - name: Typecheck apps/api
         run: bun run --cwd apps/api lint
 
+      - name: Typecheck SDK and shared platform
+        run: |
+          bun run --cwd packages/contracts lint
+          bun run --cwd packages/platform lint
+          bun run --cwd packages/sdk lint
+          bun run --cwd apps/cli lint
+
       # `turbo run test` across every package with a test script. Includes the two
       # migration suites in packages/db: migrate-chain (the chain applied to a
       # POPULATED database, plus a self-check proving it can fail) and
@@ -70,6 +77,24 @@ jobs:
       # coverage for "the update crash-looped on migrations".
       - name: Run tests
         run: bun run test
+
+  sdk-package:
+    name: Installed SDK (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd packages/openship build
+      - run: bun run --cwd packages/openship test:package
 
   # Rollback and restore against a REAL Docker daemon. This is the only job that proves
   # those paths work at all; every other test in the repo mocks the runtime. It lived in

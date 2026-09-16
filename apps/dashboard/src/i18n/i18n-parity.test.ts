@@ -57,12 +57,24 @@ const MISSING_BASELINE: Record<string, number> = {
   // replaced a hardcoded English "Waiting for output…" still shown under a
   // cancelled install. Translated in tr, English-first in the other 7 via
   // deepMerge.
-  projectSettings: 1359,
+  // −6: domains.outputHint reached FULL parity. It gained two keys (`noIndex` for
+  // "the doc-root is there but holds no index file" and `notServed` for "the edge
+  // answered HTTP <status>" — the two static-404 shapes the Domains tab used to
+  // compute and then render nothing for), and all three of its keys are now
+  // translated in all 9 locales, where `body` had been English-first in 6.
+  // −4: project environment scope/apply guidance now covers every locale.
+  projectSettings: 1349,
   jobs: 876,
   // +15: discover.envFromImage/Hint/Import — the collapsed "vars come from the
   // image" row and its one-click import. Translated in ar/fr/tr; the other 5
   // locales have no migration.json at all and fall back via deepMerge.
-  migration: 1252,
+  //
+  // +10: tab.retryRun/changeTarget — the two actions a FAILED PROJECT migration offers
+  // instead of "Edit & retry" (which re-scans the whole server, meaningless for a project
+  // whose workload is its own containers). Translated in every locale that HAS a
+  // migration.json — en/ar/fr/tr — so this +10 is 2 keys × the 5 locales that have no such
+  // file at all and render English through deepMerge, exactly like the 1252 above.
+  migration: 1262,
   // +64: the GitHub card's credential-health strings — 8 English-first keys for
   // "GitHub rejected the stored {method}" vs "couldn't reach GitHub to check it",
   // the manage-on-GitHub links, and the note that Disconnect does NOT revoke the

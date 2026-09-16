@@ -24,18 +24,19 @@
  */
 
 import type { Context } from "hono";
-import { auth } from "../../lib/auth";
-import { trustedOrigins } from "../../config/env";
+import { randomUUID } from "node:crypto";
+import { auth } from "@repo/platform/engine/lib/auth";
+import { trustedOrigins } from "@repo/platform/engine/config/env";
 import { upgradeWebSocket } from "../../lib/ws";
 import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
-import { disposeRuntime, resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { disposeRuntime, resolveDeploymentRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
-import { checkPermission } from "../../lib/permission";
-import { containerIdForService, liveContainerIdWithRuntime } from "../services/service-container";
+import { checkPermission } from "@repo/platform/engine/lib/authorization";
+import { containerIdForService, liveContainerIdWithRuntime } from "@repo/platform/engine/modules/services/service-container";
 import {
   attachServiceWs,
   consumeServiceTerminalTicket,
@@ -185,38 +186,43 @@ async function resolveServiceForOrg(
     };
   }
 
-  if (!runtime.supports("serviceShell") || !runtime.openServiceShell) {
-    disposeRuntime(runtime);
-    return {
-      ok: false,
-      code: "not_supported",
-      message: `Terminal not supported on ${runtime.name} runtime`,
-    };
+  let handedOff = false;
+  try {
+    if (!runtime.supports("serviceShell") || !runtime.openServiceShell) {
+      return {
+        ok: false,
+        code: "not_supported",
+        message: `Terminal not supported on ${runtime.name} runtime`,
+      };
+    }
+
+    // Resolve THIS service's own container via the shared resolver (never the
+    // compose primary — see containerIdForService), then VERIFY it against the
+    // host: a recorded id that a redeploy replaced would open a shell request on a
+    // dead container and fail with docker's "no such container".
+    const containerId = await liveContainerIdWithRuntime(runtime, {
+      service: { id: service.id, name: service.name },
+      projectId: project.id,
+      slug: project.slug,
+      tracked: await containerIdForService(dep, service),
+    });
+    if (!containerId) {
+      return {
+        ok: false,
+        code: "not_deployed",
+        message: "Service container not found — it may still be deploying.",
+      };
+    }
+
+    // On the ok path the CALLER owns `runtime`: the WS handshake hands it to the
+    // session (which disposes it when the session ends), and `issueTicket` — which
+    // only wants the validation — releases it straight away.
+    handedOff = true;
+    return { ok: true, containerId, runtime };
+  } finally {
+    if (!handedOff) disposeRuntime(runtime);
   }
 
-  // Resolve THIS service's own container via the shared resolver (never the
-  // compose primary — see containerIdForService), then VERIFY it against the
-  // host: a recorded id that a redeploy replaced would open a shell request on a
-  // dead container and fail with docker's "no such container".
-  const containerId = await liveContainerIdWithRuntime(runtime, {
-    service: { id: service.id, name: service.name },
-    projectId: project.id,
-    slug: project.slug,
-    tracked: await containerIdForService(dep, service),
-  });
-  if (!containerId) {
-    disposeRuntime(runtime);
-    return {
-      ok: false,
-      code: "not_deployed",
-      message: "Service container not found — it may still be deploying.",
-    };
-  }
-
-  // On the ok path the CALLER owns `runtime`: the WS handshake hands it to the
-  // session (which disposes it when the session ends), and `issueTicket` — which
-  // only wants the validation — releases it straight away.
-  return { ok: true, containerId, runtime };
 }
 
 // ─── Ticket endpoint ────────────────────────────────────────────────────────
@@ -329,33 +335,41 @@ export const serviceTerminalWsHandler = upgradeWebSocket(async (c) => {
     return openInitFailure(resolved.code, resolved.message, closeCode);
   }
 
-  // 4. Per-user concurrent cap (skip on resume).
-  if (!resumeToken) {
-    const inMem = countActiveServiceSessionsByUser(userId);
-    if (inMem >= maxServiceSessionsPerUser()) {
-      return openInitFailure("max_sessions", "Too many active sessions", 4429);
+  let handedOff = false;
+  try {
+    // 4. Per-user concurrent cap (skip on resume).
+    if (!resumeToken) {
+      const inMem = countActiveServiceSessionsByUser(userId);
+      if (inMem >= maxServiceSessionsPerUser()) {
+        return openInitFailure("max_sessions", "Too many active sessions", 4429);
+      }
+      const dbCount = await repos.serviceTerminalSession.countActiveByUser(userId);
+      if (dbCount >= maxServiceSessionsPerUser()) {
+        return openInitFailure("max_sessions", "Too many active sessions", 4429);
+      }
     }
-    const dbCount = await repos.serviceTerminalSession.countActiveByUser(userId);
-    if (dbCount >= maxServiceSessionsPerUser()) {
-      return openInitFailure("max_sessions", "Too many active sessions", 4429);
-    }
+
+    const clientIp = c.var.clientIp;
+    const userAgent = c.req.header("user-agent") ?? null;
+
+    const ctx: HandshakeCtx = {
+      userId,
+      serviceId: pathServiceId,
+      containerId: resolved.containerId,
+      runtime: resolved.runtime,
+      clientIp,
+      userAgent,
+      subprotocol: tokenProto,
+      resumeToken,
+    };
+
+    const handlers = buildHandlers(ctx);
+    handedOff = true;
+    return handlers;
+  } finally {
+    if (!handedOff) disposeRuntime(resolved.runtime);
   }
 
-  const clientIp = c.var.clientIp;
-  const userAgent = c.req.header("user-agent") ?? null;
-
-  const ctx: HandshakeCtx = {
-    userId,
-    serviceId: pathServiceId,
-    containerId: resolved.containerId,
-    runtime: resolved.runtime,
-    clientIp,
-    userAgent,
-    subprotocol: tokenProto,
-    resumeToken,
-  };
-
-  return buildHandlers(ctx);
 });
 
 // ─── Per-connection state ───────────────────────────────────────────────────
@@ -509,7 +523,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         console.error("[service-terminal] failed to write audit open row");
       }
 
-      const sessionId = auditId ?? `transient-${Date.now()}`;
+      const sessionId = auditId ?? `transient-${randomUUID()}`;
       const session = registerServiceSession({
         sessionId,
         userId: ctx.userId,

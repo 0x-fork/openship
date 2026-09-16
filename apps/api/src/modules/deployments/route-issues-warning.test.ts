@@ -4,15 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 // notifications, favicon probing) is a side effect the assertion doesn't want.
 // `@repo/adapters` stays REAL — `isEdgeDownMessage` is the branch being pinned.
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("../../lib/notification-dispatcher", () => ({ notification: {} }));
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({ notification: {} }));
 vi.mock("../../lib/audit", () => ({ audit: {} }));
-vi.mock("../../lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn() }));
-vi.mock("./session-manager", () => ({}));
-vi.mock("../mail/webmail/webmail-install.service", () => ({
+vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({}));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: vi.fn(),
 }));
 
-import { routeIssuesWarning } from "./deployment-lifecycle";
+import { routeIssuesWarning } from "@repo/platform/engine/modules/deployments/deployment-lifecycle";
 
 /**
  * Both pipelines fold routing failures into the same `edgeUnsynced` →
@@ -91,3 +91,6 @@ describe("routeIssuesWarning", () => {
     expect(routeIssuesWarning([])).toBe("");
   });
 });
+
+// The application seams moved with the shared engine.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: {} }));
