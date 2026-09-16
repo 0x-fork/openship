@@ -8,7 +8,7 @@ The previous integration worktree and old branches, including `ship`, were remov
 
 ## Progress
 
-3 already-fixed-main; 52 deferred-feature; 5 fixed-in-branch; 5 needs-reproduction; 2 partial-main; 39 pending-review. Pending reports have not yet completed review. Nothing in this branch has been merged into main.
+5 already-fixed-main; 54 deferred-feature; 7 fixed-in-branch; 5 needs-reproduction; 2 partial-branch; 2 partial-main; 31 pending-review. Pending reports have not yet completed review. Nothing in this branch has been merged into main.
 
 ## Issue ledger
 
@@ -23,7 +23,7 @@ The previous integration worktree and old branches, including `ship`, were remov
 | [#869](https://github.com/oblien/openship/issues/869) | Migrate to self-hosted server never actually deploys (3 stacked bugs: missing deploy trigger, release-dist path/packaging mismatch, PGlite assets crash) | partial-main | — |
 | [#856](https://github.com/oblien/openship/issues/856) | [Feature]: Add Authentik to the one-click app catalog | deferred-feature | [#857](https://github.com/oblien/openship/pull/857) |
 | [#849](https://github.com/oblien/openship/issues/849) | [Feature Request] Add CLI commands for self-hosted jobs | deferred-feature | [#850](https://github.com/oblien/openship/pull/850) |
-| [#846](https://github.com/oblien/openship/issues/846) | [Bug] Compose services cannot join a pre-existing external Docker network (background workers are unreachable from shared services) | pending-review | — |
+| [#846](https://github.com/oblien/openship/issues/846) | [Bug] Compose services cannot join a pre-existing external Docker network (background workers are unreachable from shared services) | deferred-feature | — |
 | [#819](https://github.com/oblien/openship/issues/819) | [Feature] Multi-wildcard domains, control plane isolation, 7000-series port standardization, and dashboard domain management | deferred-feature | — |
 | [#818](https://github.com/oblien/openship/issues/818) | [Feature] Outbound relay domain verification notice and client privacy header scrubbing | deferred-feature | — |
 | [#779](https://github.com/oblien/openship/issues/779) | Enhance self-hosted image retention with age-based cleanup and runtime image visibility | deferred-feature | [#794](https://github.com/oblien/openship/pull/794), [#820](https://github.com/oblien/openship/pull/820) |
@@ -34,24 +34,24 @@ The previous integration worktree and old branches, including `ship`, were remov
 | [#717](https://github.com/oblien/openship/issues/717) | [Feature]: Support Git tags and tag patterns as deployment and update triggers | deferred-feature | [#716](https://github.com/oblien/openship/pull/716) |
 | [#695](https://github.com/oblien/openship/issues/695) | OPENSHIP | needs-reproduction | — |
 | [#694](https://github.com/oblien/openship/issues/694) | [Feature]: Support release mode and update tracking for container image projects | deferred-feature | [#691](https://github.com/oblien/openship/pull/691) |
-| [#676](https://github.com/oblien/openship/issues/676) | Feature request: cap/serialize concurrent builds (auto-deploy fan-out corrupts containerd content store) | pending-review | — |
+| [#676](https://github.com/oblien/openship/issues/676) | Feature request: cap/serialize concurrent builds (auto-deploy fan-out corrupts containerd content store) | deferred-feature | — |
 | [#672](https://github.com/oblien/openship/issues/672) | feature: service restarting auto detection after new deployments in background (not blocking) and mark project partial failed or action required if there's loop restarting | deferred-feature | — |
 | [#671](https://github.com/oblien/openship/issues/671) | feature:  on deployments list add standalone remove snapshot option and ensure the snapshot data removed when delete the deployment info | deferred-feature | — |
 | [#669](https://github.com/oblien/openship/issues/669) | feature: add publish env button after update env / updated env without need to redeploy it, as fast env update in services / project | deferred-feature | [#681](https://github.com/oblien/openship/pull/681) |
-| [#668](https://github.com/oblien/openship/issues/668) | Services logs hang out / takes too much time to show logs, terminal not load with silent fail in desktop | pending-review | — |
+| [#668](https://github.com/oblien/openship/issues/668) | Services logs hang out / takes too much time to show logs, terminal not load with silent fail in desktop | partial-branch | — |
 | [#667](https://github.com/oblien/openship/issues/667) | feature: showing the live service / project logs after deployment finish in deployment page if the deployment success instead of keeping the logs | deferred-feature | [#708](https://github.com/oblien/openship/pull/708) |
 | [#662](https://github.com/oblien/openship/issues/662) | feature request: support deploy another service on same domain but with another path | deferred-feature | — |
-| [#661](https://github.com/oblien/openship/issues/661) | ensure release checks not duplicated | pending-review | — |
-| [#660](https://github.com/oblien/openship/issues/660) | home issues shortcut update need to be background based, and opening issues can view the logs inside the page instead of showing it as modal | pending-review | — |
+| [#661](https://github.com/oblien/openship/issues/661) | ensure release checks not duplicated | fixed-in-branch | — |
+| [#660](https://github.com/oblien/openship/issues/660) | home issues shortcut update need to be background based, and opening issues can view the logs inside the page instead of showing it as modal | fixed-in-branch | — |
 | [#659](https://github.com/oblien/openship/issues/659) | Server unreachable cause edge not exist issue, while the entire server is unreachable | already-fixed-main | — |
-| [#658](https://github.com/oblien/openship/issues/658) | ensuring project delete does not leave any tails or un cleaned up resources | pending-review | — |
+| [#658](https://github.com/oblien/openship/issues/658) | ensuring project delete does not leave any tails or un cleaned up resources | already-fixed-main | — |
 | [#638](https://github.com/oblien/openship/issues/638) | [Bug]: Draft project deletion executes immediately without confirmation dialog | fixed-in-branch | [#639](https://github.com/oblien/openship/pull/639) |
 | [#624](https://github.com/oblien/openship/issues/624) | Persist the git clone URL instead of building github.com/owner/repo | deferred-feature | — |
 | [#612](https://github.com/oblien/openship/issues/612) | Feature: optional label on domain entries — "Domain 2" cards lose meaning on multi-domain projects (web + websocket ports) | deferred-feature | — |
-| [#610](https://github.com/oblien/openship/issues/610) | Clarify licensing boundary for apps/email/engine | pending-review | — |
+| [#610](https://github.com/oblien/openship/issues/610) | Clarify licensing boundary for apps/email/engine | partial-branch | — |
 | [#608](https://github.com/oblien/openship/issues/608) | [Bug]: Shows no system info for macbook | fixed-in-branch | [#645](https://github.com/oblien/openship/pull/645), [#888](https://github.com/oblien/openship/pull/888) |
 | [#577](https://github.com/oblien/openship/issues/577) | Feature: let a catalog app declare its default backup policy, so one click covers every service instead of a ten-field form each | deferred-feature | [#578](https://github.com/oblien/openship/pull/578) |
-| [#568](https://github.com/oblien/openship/issues/568) | [Bug] Webmail branding: siteTitle and siteDescription are accepted but never rendered, and the vendor footer is not brandable | pending-review | — |
+| [#568](https://github.com/oblien/openship/issues/568) | [Bug] Webmail branding: siteTitle and siteDescription are accepted but never rendered, and the vendor footer is not brandable | already-fixed-main | — |
 | [#558](https://github.com/oblien/openship/issues/558) | [Feature] Make Projects the entrypoint of app deployment | deferred-feature | [#744](https://github.com/oblien/openship/pull/744) |
 | [#556](https://github.com/oblien/openship/issues/556) | Upstream-down hostnames return a raw OpenResty 502 instead of a friendly “Application unavailable” page | pending-review | [#557](https://github.com/oblien/openship/pull/557) |
 | [#541](https://github.com/oblien/openship/issues/541) | feat(cli): `openship deployment bisect` — binary-search deployment history for the first bad deploy | deferred-feature | [#542](https://github.com/oblien/openship/pull/542) |
@@ -173,6 +173,30 @@ The report has no bug description, version, or reproduction steps; no response t
 
 Verification: Rechecked against main 4e66349c and all issue comments after #891 merged.
 
+### #668: partial-branch
+
+Reproduced stale-target reconnects, late terminal events overwriting a new connection, stale log status, and replaced log streams disconnecting their successor. Connections now have explicit ownership and cleanup; shell and log handshakes fail visibly after 60 seconds. Build streaming retains stable disconnect controls. The report contains no version, target or latency trace, so unspecified backend slowness remains unverified and the issue stays open.
+
+Commits: [`30c564b0`](https://github.com/oblien/openship/commit/30c564b0ed741246e3e75195de9e0f97ddc556a4).
+
+Verification: 17 React lifecycle and real ReadableStream cases pass; 12 reproduced failures on main. Dashboard TypeScript passes.
+
+### #661: fixed-in-branch
+
+Confirmed duplicate release/changelog/advisory requests between native startup and dashboard consumers, plus overlapping web refreshes. The desktop process now shares and caches one typed snapshot; the renderer uses its IPC result and concurrent manual checks join the active request. Shared core installer types replace duplicate local definitions. Successful checks clear obsolete offers; offline failures do not invalidate a staged installer.
+
+Commits: [`829b811a`](https://github.com/oblien/openship/commit/829b811ae48ed85a27f494f4730541ad892eb7dc).
+
+Verification: Seven new native/React regressions fail on main. Fourteen update and IPC cases pass after the change; desktop and dashboard TypeScript pass.
+
+### #660: fixed-in-branch
+
+Background fleet updates and durable queued/running progress were already in main. The remaining page behavior now uses the existing prepare stream component inline for log viewing, individual fixes and install recovery. Read-only log reconnects remain GETs; switching/dismissing releases the old reader and ignores late results. Shared consent and outcome logic is retained.
+
+Commits: [`e3cb57ec`](https://github.com/oblien/openship/commit/e3cb57eca01c9fe711301526642d84377305149a).
+
+Verification: Eight React/SSE cases fail on main and pass with the change; 27 page, fleet and outcome cases and dashboard TypeScript pass. Reviewed the shared backend to confirm accepted container updates outlive observers.
+
 ### #659: already-fixed-main
 
 The shared issue feed uses open server_unreachable incidents to suppress cached edge/mail absence, down and update rows for that server. HTTP/native readers share this aggregator; no duplicate detector or patch is needed.
@@ -180,6 +204,14 @@ The shared issue feed uses open server_unreachable incidents to suppress cached 
 Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df13697c1b6d4a95f7a6cf4a3d6).
 
 Verification: 78 issue aggregation/container-state tests pass, including suppression of component warnings for an unreachable server.
+
+### #658: already-fixed-main
+
+Reviewed the shared teardown and resource manifest on main: writer locking and confirmed quiescence precede cleanup; cleanup phases respect container/data/network dependencies; port claims release only after successful workload/route cleanup. Reachable failures retain the project, and deferred cleanup must be recorded before its row can disappear. Data intentionally retained by the default volume policy or explicit record-only mode is not an untracked leak.
+
+Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df13697c1b6d4a95f7a6cf4a3d6).
+
+Verification: 60 existing teardown, resource-shape, controller and restore-cancellation cases pass.
 
 ### #638: fixed-in-branch
 
@@ -189,6 +221,14 @@ Commits: [`c4e730e6`](https://github.com/oblien/openship/commit/c4e730e61374119c
 
 Verification: Five real DOM interaction regressions fail on main and pass after the fix; dashboard TypeScript passes.
 
+### #610: partial-branch
+
+Replaced the misleading blanket Apache claim with a component and artifact inventory. iRedMail is GPL-licensed and is copied into API/mail containers, CLI payloads and desktop resources even when mail is unused. No component is relicensed. The vendored Zero Email provenance/notices still need a separate review, so the issue remains open.
+
+Commits: [`93d2349b`](https://github.com/oblien/openship/commit/93d2349b1027773b1888dab948b77869d307e823).
+
+Verification: Read the existing licenses/file notices and traced API, CLI, desktop, mail and standalone release packaging scripts.
+
 ### #608: fixed-in-branch
 
 Main produces invalid JSON on an actual Mac. Adapted contributor PR #645 into the shared adapter/platform path, preserving its history and GitHub merge credit. One portable command returns consistent memory fields and interval CPU samples, handles Intel/ARM page sizes, and fails incomplete probes. Compared #888; closing the overlapping later PR after integrating the earlier fix.
@@ -196,6 +236,14 @@ Main produces invalid JSON on an actual Mac. Adapted contributor PR #645 into th
 Commits: [`5bde4848`](https://github.com/oblien/openship/commit/5bde484890beb362925c870dec603efe9fde4e79).
 
 Verification: 7 command execution tests pass: macOS fixtures, Linux CPU accounting, large disks, failed/unsupported probes and actual macOS sh/zsh samples. All 22 workspace build/typecheck tasks pass.
+
+### #568: already-fixed-main
+
+Both substantive requests are already implemented: stored site title/description reach HTML and OpenGraph and survive hydration, and PATCH /admin/branding accepts showPoweredBy=false to hide the vendor/footer-link row. The login client honors that flag. Extra logo-upload/footer-customization capabilities are not added.
+
+Commits: [`4e66349c`](https://github.com/oblien/openship/commit/4e66349c27b48df13697c1b6d4a95f7a6cf4a3d6).
+
+Verification: 10 branding HTML/hydration cases pass, plus direct inspection of the schema and rendered login footer.
 
 ### #501: fixed-in-branch
 
