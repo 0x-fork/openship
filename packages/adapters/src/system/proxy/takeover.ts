@@ -18,12 +18,13 @@ import type { EdgeStatus, ImportedSite, SystemLog, SystemLogCallback } from "../
 import { freeEdgeTargets, resolveOurEdgeContainer, sq, stopTargetsForStatus } from "./detect";
 import { collectProxyCerts, edgeProxy } from "./api";
 import { isSafeCertPath, readDeclaredPair, validateCertFor } from "./cert-material";
-import { buildJournal, clearJournal, rollback, writeJournal } from "./takeover-journal";
+import { buildJournal, clearJournal, rollback, writeJournal, EDGE_STOP_ELEVATION } from "./takeover-journal";
 import { installContainerEdge } from "../installer";
 import { containerEdgeProvider, type EdgeProviderOptions } from "./ensure-container-edge";
 import { checkEdge } from "../checks";
 import { NginxProvider } from "../../infra/nginx";
 import { detectOpenRestyPaths } from "../../infra/openresty-lua";
+import { rootOrDegrade } from "../privilege";
 
 const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
 
@@ -48,6 +49,13 @@ export interface EdgeTakeoverOptions {
    * edge can't read the host filesystem.
    */
   certPems?: Record<string, ManualCert>;
+  /**
+   * Corrected static docroots keyed by primary hostname, for adopted static sites
+   * whose original root the containerized edge can't see. The CLI copies the tree
+   * into the edge's static bind mount host-side (see `copyStaticRootIntoEdge`) and
+   * passes the new root here; without it the site 500s after cutover. See #456.
+   */
+  staticRootOverrides?: Record<string, string>;
 }
 
 export interface EdgeTakeoverResult {
@@ -73,6 +81,14 @@ export interface RegisterImportedSitesOptions {
    * those, and every producer already knows the hostname.
    */
   certPems?: Record<string, ManualCert>;
+  /**
+   * Corrected static docroots keyed by primary hostname (`serverNames[0]`), for
+   * adopted static sites the containerized edge can't reach at their original
+   * root. The CLI copies the tree into the edge's static bind mount host-side and
+   * supplies the new root here; substituted into `staticRoot` so the corrected
+   * path is what lands in the route sidecar (and survives cert renewal). See #456.
+   */
+  staticRootOverrides?: Record<string, string>;
 }
 
 /**
@@ -102,11 +118,16 @@ export async function registerImportedSites(
     for (const domain of domains) {
       try {
         if (site.target.kind === "proxy") {
-          // Non-root locations become path-prefix proxy locations ahead of `/`
-          // so a fan-out vhost (`/ → A`, `/v3 → B`) is kept, not collapsed.
+          // Non-root locations, plus an exact `/`, become proxy locations ahead
+          // of the inclusive primary `/` so both fan-out and nginx exact matching
+          // survive the takeover.
           const proxyLocations = (site.routes ?? [])
-            .filter((r) => r.path !== "/")
-            .map((r) => ({ pathPrefix: r.path, targetUrl: r.url }));
+            .filter((r) => r.path !== "/" || r.exact)
+            .map((r) => ({
+              pathPrefix: r.path,
+              targetUrl: r.url,
+              ...(r.exact ? { exact: true } : {}),
+            }));
           await routing.registerRoute({
             domain,
             tls: site.ssl,
@@ -128,12 +149,15 @@ export async function registerImportedSites(
           });
         } else {
           // Adopted: this root is what the operator's own proxy was already serving, so
-          // it is allowed outside the managed base (see assertValidStaticRoot).
+          // it is allowed outside the managed base (see assertValidStaticRoot). When a
+          // containerized edge can't see that root, the CLI copied the tree into the
+          // static bind mount and passed the corrected root here (keyed on the primary
+          // hostname) — otherwise the site 500s after cutover (#456).
           await routing.registerRoute({
             domain,
             tls: site.ssl,
             terminatesTlsLocally: site.ssl,
-            staticRoot: site.target.root,
+            staticRoot: opts.staticRootOverrides?.[site.serverNames[0]] ?? site.target.root,
             staticRootAdopted: true,
             ...(site.proxy ? { proxy: site.proxy } : {}),
           });
@@ -142,10 +166,38 @@ export async function registerImportedSites(
         if (site.ssl) {
           const manual = await resolveCert(executor, site, domain, opts);
           if (manual) {
+            // Reuse the source's existing certificate — no ACME, no network round-trip.
             await ssl.installCert(domain, manual);
           } else {
+            // The slow path: a fresh per-domain ACME issuance, serialized against
+            // Let's Encrypt. This is the one step of a migrate that can take real
+            // wall-clock time (and hit rate limits), so announce it BEFORE the call —
+            // otherwise a migrate that's busy reissuing certs is indistinguishable
+            // from a hang. The WHY (expired / unreadable / doesn't cover the host)
+            // is already in `warnings` from resolveCert.
+            opts.onLog(
+              log(
+                `${domain}: existing certificate couldn't be carried over — requesting a new one (this can take a while)…`,
+                "warn",
+              ),
+            );
             const r = await ssl.provisionCert(domain);
-            if (!r.verified) opts.warnings.push(`${domain}: TLS not ready yet (${r.reason ?? "pending"})`);
+            if (!r.verified) {
+              // The source was serving HTTPS, but we couldn't carry its certificate
+              // AND couldn't issue a fresh one — so the edge is now answering :443 with
+              // the self-signed placeholder. That's invisible to a browser hitting the
+              // box directly (it just warns), but a CDN fronting the origin with strict
+              // origin TLS (Cloudflare "Full (strict)") REJECTS the placeholder and
+              // returns a 525 with no hint of the cause. Name it here, next to the fix,
+              // so the migrate log isn't the only place the operator can learn why a
+              // site that worked a minute ago now 525s.
+              opts.warnings.push(
+                `${domain}: was serving HTTPS, but its certificate could not be carried over and a ` +
+                  `new one could not be issued (${r.reason ?? "pending"}). The edge is serving a temporary ` +
+                  `self-signed certificate — a CDN in front (e.g. Cloudflare "Full (strict)") will reject it ` +
+                  `with a 525. Upload the origin certificate from the domain's SSL menu, or issue one via DNS-01.`,
+              );
+            }
           }
         }
 
@@ -213,7 +265,7 @@ export async function runEdgeTakeover(
   onLog: SystemLogCallback,
 ): Promise<EdgeTakeoverResult> {
   const warnings: string[] = [];
-  const journal = await buildJournal(executor, opts.status);
+  const journal = await buildJournal(executor, opts.status, onLog);
   await writeJournal(executor, journal);
 
   onLog(log(`Migrating ${opts.sites.length} site(s) from the existing proxy, then taking over 80/443...`));
@@ -238,7 +290,26 @@ export async function runEdgeTakeover(
   // Same snapshot-then-free as beginEdgeTakeover; kept inline because this
   // function holds the journal in memory for its own rollback (a best-effort
   // journal WRITE can fail, and an in-process rollback must still work).
-  const freed = await freeEdgeTargets(executor, stopTargetsForStatus(opts.status), (m, l) =>
+  //
+  // Freeing the ports is host MUTATION — `systemctl disable --now`, `docker update
+  // --restart=no`, `kill` — and every one of those is swallowed by `|| true` inside
+  // freeEdgeTargets. Unelevated on a non-root login they're all refused, so nothing
+  // stopped, the ports stayed bound, and the message below blamed an unnamed other
+  // holder: an operator sent to retry a takeover that can never succeed as this user.
+  // Degrade-but-SAY-IT rather than refuse, matching the vhost writes below and the
+  // container edge (`edgeHostExecutor`) — the login may still own the process holding
+  // the port. The port PROOF rides the same executor because freeEdgeTargets takes
+  // one; that changes nothing, a LISTEN socket is world-readable either way.
+  let elevationDegraded = false;
+  const stopExecutor = await rootOrDegrade(executor, {
+    // Shared with `beginEdgeTakeover`: same refusal, so the same sentence.
+    ...EDGE_STOP_ELEVATION,
+    report: (message) => {
+      elevationDegraded = true;
+      warnings.push(message);
+    },
+  });
+  const freed = await freeEdgeTargets(stopExecutor, stopTargetsForStatus(opts.status), (m, l) =>
     onLog(log(m, l)),
   );
   if (!freed.freed) {
@@ -249,10 +320,18 @@ export async function runEdgeTakeover(
     const plural = freed.stillBound.length > 1;
     const rolledBack = await rollback(executor, journal, onLog);
     await clearJournal(executor);
+    const ports =
+      `port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ${plural ? "are" : "is"} ` +
+      "still in use, so the edge can't bind — nothing was installed.";
     warnings.push(
-      `Stopped the existing proxy, but port${plural ? "s" : ""} ${freed.stillBound.join(" and ")} ` +
-        `${plural ? "are" : "is"} still in use, so the edge can't bind — nothing was installed. ` +
-        "Find what else is holding the port and retry.",
+      // The retry advice has to match the actual cause: told to hunt for another
+      // holder, an operator retries the same unprivileged takeover forever. "Stopped
+      // the existing proxy" is also untrue on that arm — the stop is what was refused.
+      elevationDegraded
+        ? `The ${ports} Openship could not run the stop as root on this host (see the privilege ` +
+          "warning above), so stopping the existing proxy was almost certainly refused — retrying " +
+          "as this user will fail the same way. Reconnect as root, or as a user with passwordless sudo."
+        : `Stopped the existing proxy, but ${ports} Find what else is holding the port and retry.`,
     );
     if (!rolledBack) warnings.push("The previous proxy did NOT come back — nothing is serving :80.");
     return { ok: false, rolledBack, registered: [], warnings };
@@ -292,7 +371,15 @@ export async function runEdgeTakeover(
       ? await containerEdgeProvider(executor, container, providerOptions)
       : new NginxProvider({
           paths: await detectOpenRestyPaths(executor),
-          executor,
+          // The container branch elevates inside `containerEdgeProvider`; this one had
+          // nothing, so on a non-root login every migrated vhost hit EACCES — after the
+          // foreign proxy was already stopped, which is the worst possible moment.
+          // `warnings` rather than a log line because this one has a report to land in.
+          executor: await rootOrDegrade(executor, {
+            purpose: "Writing migrated vhosts",
+            consequence: "Migrated vhosts and certificates may not be writable.",
+            report: (message) => warnings.push(message),
+          }),
           ...providerOptions,
         });
 
@@ -300,6 +387,7 @@ export async function runEdgeTakeover(
       onLog,
       warnings,
       ...(certPems ? { certPems } : {}),
+      ...(opts.staticRootOverrides ? { staticRootOverrides: opts.staticRootOverrides } : {}),
     });
 
     for (const route of opts.extraRoutes ?? []) {

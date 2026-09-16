@@ -15,34 +15,32 @@ import { generateIcon } from "@/utils/icons";
 import { deployApi, getApiErrorMessage, type RestorePlanUI } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { RollbackConfirmDialog } from "./RollbackConfirmDialog";
+import type { Deployment as DeploymentRow } from "../types";
+import { canConfirmRestore, canRequestRestorePlan, restoreModeCopy } from "./restore-ui";
 
-interface Deployment {
-  id: string;
-  status: string;
-  domain: string;
-  owner?: string;
-  repo?: string;
-  commit: {
-    hash: string;
-    /** Full SHA when known — required by "Redeploy this commit". */
-    fullHash?: string | null;
-  };
-  /** Rollback state — flows from the orchestrator-aware listing endpoint. */
-  artifactRetainedAt?: string | null;
-  pinned?: boolean;
-  isActive?: boolean;
-}
+/** Picked from the shared row type rather than re-declared with `status: string`:
+ *  a local structural copy let the status checks below drift onto the API's
+ *  vocabulary (`ready`) while the list mapper hands us the UI one (`success`),
+ *  which silently disabled rollback and hid Pin entirely. */
+type Deployment = Pick<
+  DeploymentRow,
+  "id" | "status" | "domain" | "owner" | "repo" | "artifactRetainedAt" | "pinned" | "isActive"
+>;
 
 interface DeploymentMenuProps {
   deployment: Deployment;
   triggerClassName?: string;
   onStatusChange?: () => void;
+  /** Lets the row lift its stacking context while the menu is open — the
+   *  dropdown's own z-index can't escape the row's. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
   deployment,
   triggerClassName,
   onStatusChange,
+  onOpenChange,
 }) => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -68,24 +66,21 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     };
   }, [isOpen]);
 
+  // Mirrored via effect, not wrapped around each setIsOpen call — there are six
+  // of them and a new one would otherwise forget to report.
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
+
   // `isInFlight` = status-wise busy (the cancel/delete affordances care
   // about this). Distinct from `deployment.isActive` which means
   // "currently the active version" — the chip / rollback gating cares
   // about that one.
   const isInFlight = ["pending", "queued", "building", "deploying"].includes(deployment.status);
-  const hasCommit = !!deployment.commit?.fullHash && deployment.commit.fullHash !== "N/A";
-  // ONE rollback action. The API resolves HOW at call time — instant from the
-  // retained artifact, or a rebuild from this deployment's commit — so the only
-  // question here is whether a restore is possible AT ALL. That's why a pruned
-  // artifact no longer disables the button (it used to, which left a project
-  // whose releases had aged out with no rollback affordance) and why the separate
-  // "Redeploy this commit" fallback is gone: it was the same operation behind a
-  // second label.
-  const canRollback =
-    (deployment.status === "ready" || deployment.status === "partial_failure") &&
-    !deployment.isActive &&
-    !isInFlight &&
-    (!!deployment.artifactRetainedAt || hasCommit);
+  // The row cannot know every restorable source (notably a frozen release-image
+  // reference after its local image was pruned). Let every settled successful,
+  // inactive release ask the authoritative restore planner.
+  const canRollback = canRequestRestorePlan(deployment) && !isInFlight;
 
   const handleCancel = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -113,6 +108,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
   };
 
   const confirmRollback = async () => {
+    if (!canConfirmRestore(confirmPlan?.plan ?? null)) return;
     setRollbackBusy(true);
     try {
       await deployApi.rollback(deployment.id);
@@ -126,17 +122,19 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     }
   };
 
-  const modeLine = !confirmPlan
-    ? ""
-    : confirmPlan.plan?.mode === "rebuild"
+  const mode = restoreModeCopy(confirmPlan?.plan ?? null);
+  const modeLine =
+    mode === "rebuild"
       ? t.deployments.menu.rollbackModeRebuild
-      : confirmPlan.plan?.mode === "redeploy-pinned" && confirmPlan.plan.rebuildServices.length > 0
-        ? interpolate(t.deployments.menu.rollbackModeMixed, {
-            count: String(confirmPlan.plan.rebuildServices.length),
-          })
-        : confirmPlan.plan
-          ? t.deployments.menu.rollbackModeInstant
-          : "";
+      : mode === "reacquire-image"
+        ? t.deployments.menu.rollbackModeReacquireImage
+        : mode === "mixed"
+          ? interpolate(t.deployments.menu.rollbackModeMixed, {
+              count: String(confirmPlan?.plan?.rebuildServices.length ?? 0),
+            })
+          : mode === "instant"
+            ? t.deployments.menu.rollbackModeInstant
+            : "";
 
   const handleTogglePin = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -172,7 +170,10 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
-        className={triggerClassName || "w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"}
+        className={
+          triggerClassName ||
+          "w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        }
       >
         <MoreVertical className="w-4 h-4" />
       </button>
@@ -200,7 +201,13 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
               }}
               className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
             >
-              {generateIcon('https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg', 16, 'currentColor', {}, true)}
+              {generateIcon(
+                "https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg",
+                16,
+                "currentColor",
+                {},
+                true,
+              )}
               {t.deployments.menu.viewRepository}
             </button>
           )}
@@ -255,14 +262,10 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
                 disabled={!canRollback}
                 title={
                   canRollback
-                    ? deployment.artifactRetainedAt
-                      ? t.deployments.menu.rollbackTitle.enabled
-                      : t.deployments.menu.rollbackTitle.rebuildOnly
+                    ? t.deployments.menu.rollbackTitle.enabled
                     : deployment.isActive
                       ? t.deployments.menu.rollbackTitle.active
-                      : !hasCommit
-                        ? t.deployments.menu.rollbackTitle.pruned
-                        : t.deployments.menu.rollbackTitle.notReady
+                      : t.deployments.menu.rollbackTitle.notReady
                 }
                 className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
@@ -272,9 +275,11 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
             </>
           )}
 
-          {/* Pin / Unpin — toggles the artifact's exemption from
-              retention prune. Available for any ready deployment. */}
-          {!isInFlight && deployment.status === "ready" && (
+          {/* Pin / Unpin — toggles the artifact's exemption from retention
+              prune. Successful deploys only: the API rejects a pin on anything
+              but `ready`, so `partial_failure` is excluded even though it can be
+              rolled back to. */}
+          {!isInFlight && deployment.status === "success" && (
             <button
               onClick={handleTogglePin}
               disabled={!deployment.pinned && !deployment.artifactRetainedAt}
@@ -318,4 +323,3 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     </div>
   );
 };
-

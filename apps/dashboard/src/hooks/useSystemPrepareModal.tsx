@@ -18,9 +18,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle, ShieldCheck, Copy, RefreshCw, Circle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, ShieldCheck, Copy, RefreshCw, X } from "lucide-react";
 import { useModal } from "@/context/ModalContext";
 import { PromptDetails } from "@/components/import-project/PromptDetails";
+import { InstallStepper } from "@/components/deploy/InstallStepper";
 import { getApiBaseUrl, domainsApi, projectsApi, systemApi } from "@/lib/api";
 import { canReportStreamEnd, reportLostStream } from "./prepare-stream-outcome";
 
@@ -40,7 +41,9 @@ interface StreamStep {
   status: "pending" | "running" | "done" | "error";
 }
 
-/** Percentage bar + per-step checklist, shown only when the stream emits steps. */
+/** Percentage bar + per-step checklist, shown only when the stream emits steps.
+ *  The checklist is the shared `InstallStepper` (StreamStep's status union is a
+ *  subset of its `StepStatus`); the progress bar is this flow's own chrome. */
 function StepProgress({ steps }: { steps: StreamStep[] }) {
   const done = steps.filter((s) => s.status === "done").length;
   const pct = steps.length ? Math.round((done / steps.length) * 100) : 0;
@@ -52,32 +55,7 @@ function StepProgress({ steps }: { steps: StreamStep[] }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="space-y-1">
-        {steps.map((s) => (
-          <div key={s.id} className="flex items-center gap-2 text-[13px]">
-            {s.status === "done" ? (
-              <CheckCircle2 className="size-3.5 shrink-0 text-success" />
-            ) : s.status === "error" ? (
-              <AlertCircle className="size-3.5 shrink-0 text-danger" />
-            ) : s.status === "running" ? (
-              <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
-            ) : (
-              <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
-            )}
-            <span
-              className={
-                s.status === "pending"
-                  ? "text-muted-foreground/60"
-                  : s.status === "error"
-                    ? "text-danger"
-                    : "text-foreground"
-              }
-            >
-              {s.label}
-            </span>
-          </div>
-        ))}
-      </div>
+      <InstallStepper steps={steps} />
     </div>
   );
 }
@@ -108,15 +86,50 @@ export interface SystemPrepareOptions {
    * means "still couldn't tell", which keeps the honest unknown message.
    */
   resolveOutcome?: () => Promise<{ ok: boolean; message: string } | null>;
+  /**
+   * Read-only GET SSE endpoint for an ALREADY-running session, built from its
+   * id. Presence enables two re-attach paths: (1) mount re-attach, when the
+   * caller passes `initialAttachSessionId`; (2) a POST that 409s with a
+   * `sessionId` (a run is already in flight) re-attaches instead of surfacing
+   * the raw code. A mount re-attach NEVER POSTs — a POST could start a fresh run
+   * if the session finished in the detect→open window.
+   */
+  attachUrl?: (sessionId: string) => string;
+  /** Open straight into GET re-attach for this session (browser-refresh path). */
+  initialAttachSessionId?: string;
+  /** A log viewer reconnects to its session; it must not start another operation. */
+  retryMode?: "restart" | "reattach";
 }
 
-/** Modal body — rendered as the global modal's `customContent`. */
-function PrepareStreamContent({
+export type SystemPreparePresenter = (opts: SystemPrepareOptions) => string;
+
+/**
+ * Humanize the machine error codes the prepare endpoints return so a raw
+ * `install_in_progress` never lands in the modal. Unmapped codes fall back to
+ * the server's own message (or statusText).
+ */
+const FRIENDLY_ERRORS: Record<string, string> = {
+  // Defensive only: the effect re-attaches on a 409 rather than surfacing this,
+  // but if the re-attach can't resolve a session id we still want readable copy.
+  install_in_progress: "An install is already running — reattaching to it…",
+  auth_failed: "The server rejected the connection — check its SSH credentials and try again.",
+  no_server: "That server no longer exists.",
+  "No active session": "That run has already finished.",
+};
+
+function friendlyError(code: string | undefined, fallback: string): string {
+  return (code && FRIENDLY_ERRORS[code]) || fallback;
+}
+
+/** Shared operation log, prompts and outcome for modal and inline surfaces. */
+export function PrepareStreamContent({
   opts,
   onClose,
+  inline = false,
 }: {
   opts: SystemPrepareOptions;
   onClose: () => void;
+  inline?: boolean;
 }) {
   const [logs, setLogs] = useState<Array<{ message: string; level: string }>>([]);
   const [steps, setSteps] = useState<StreamStep[]>([]);
@@ -126,6 +139,13 @@ function PrepareStreamContent({
   /** Bumped by Retry — re-runs the stream effect in place. */
   const [attempt, setAttempt] = useState(0);
   const sessionIdRef = useRef<string | null>(null);
+  /**
+   * When set (mount re-attach via `initialAttachSessionId`, or a 409 handing
+   * back the running session's id), the effect GETs the read-only attach stream
+   * instead of POSTing a fresh run. Explicit operation retries may clear it;
+   * read-only log viewers keep it and only reconnect.
+   */
+  const attachSessionIdRef = useRef<string | null>(opts.initialAttachSessionId ?? null);
   /**
    * A terminal `complete` was received, so the outcome is KNOWN. Everything
    * after it — the reader ending, a late socket error — is teardown noise and
@@ -158,16 +178,20 @@ function PrepareStreamContent({
    * happened; only fall back to "unknown" when even that can't answer. Either
    * way the log stays on screen — it's the only record of the run.
    */
-  const reportUnknownOutcome = useCallback(async () => {
-    const outcome = (await opts.resolveOutcome?.().catch(() => null)) ?? null;
-    terminalRef.current = true;
-    const report = reportLostStream(outcome);
-    setPhase(report.phase);
-    if (report.logLine) setLogs((p) => [...p, { message: report.logLine!, level: "info" }]);
-    if (report.error) setError(report.error);
-    if (report.phase === "completed") opts.onDone?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.resolveOutcome, opts.onDone]);
+  const reportUnknownOutcome = useCallback(
+    async (signal: AbortSignal) => {
+      const outcome = (await opts.resolveOutcome?.().catch(() => null)) ?? null;
+      if (signal.aborted) return;
+      terminalRef.current = true;
+      const report = reportLostStream(outcome);
+      setPhase(report.phase);
+      if (report.logLine) setLogs((p) => [...p, { message: report.logLine!, level: "info" }]);
+      if (report.error) setError(report.error);
+      if (report.phase === "completed") opts.onDone?.();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [opts.resolveOutcome, opts.onDone],
+  );
 
   const retry = useCallback(() => {
     setLogs([]);
@@ -175,8 +199,10 @@ function PrepareStreamContent({
     setError(null);
     setPrompt(null);
     setPhase("running");
+    // Only an explicit re-run can POST; reconnecting a log remains read-only.
+    if (opts.retryMode !== "reattach") attachSessionIdRef.current = null;
     setAttempt((n) => n + 1);
-  }, []);
+  }, [opts.retryMode]);
 
   useEffect(() => {
     // NO "started" ref-guard here: combined with the abort-on-cleanup below it
@@ -187,33 +213,22 @@ function PrepareStreamContent({
     // run aborts, the second run fetches fresh.
     const controller = new AbortController();
     terminalRef.current = false;
-    (async () => {
+
+    // Read + dispatch the SSE frames off a streaming Response. Shared verbatim by
+    // the POST (fresh run) and GET (re-attach) paths so both parse identically
+    // (session / steps / log / prompt / complete + the terminal guard).
+    const consume = async (res: Response) => {
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
       let buffer = "";
+      const cancel = () => {
+        void reader.cancel().catch(() => {});
+      };
+      controller.signal.addEventListener("abort", cancel, { once: true });
       try {
-        const res = await fetch(`${getApiBaseUrl()}${opts.streamUrl}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-          body: JSON.stringify(opts.body ?? {}),
-          signal: controller.signal,
-        });
-        if (!res.ok || !res.body) {
-          let msg = res.statusText;
-          try {
-            const j = await res.json();
-            msg = j.error || msg;
-          } catch {
-            /* keep statusText */
-          }
-          setError(msg);
-          setPhase("error");
-          return;
-        }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
         for (;;) {
           const { value, done } = await reader.read();
-          if (done) break;
+          if (done || controller.signal.aborted) break;
           buffer += decoder.decode(value, { stream: true });
           let nl: number;
           while ((nl = buffer.indexOf("\n\n")) !== -1) {
@@ -248,21 +263,99 @@ function PrepareStreamContent({
             }
           }
         }
+      } finally {
+        controller.signal.removeEventListener("abort", cancel);
+        reader.releaseLock();
+      }
+    };
+
+    const attachStream = (sid: string) =>
+      fetch(`${getApiBaseUrl()}${opts.attachUrl!(sid)}`, {
+        method: "GET",
+        credentials: "include",
+        headers: { Accept: "text/event-stream" },
+        signal: controller.signal,
+      });
+
+    (async () => {
+      try {
+        const attachSid = attachSessionIdRef.current;
+        let res: Response;
+        if (attachSid && opts.attachUrl) {
+          // Mount / browser-refresh re-attach: read-only GET, NEVER a POST — a
+          // POST here could start a brand-new run if the session finished in the
+          // detect→open window.
+          sessionIdRef.current = attachSid;
+          res = await attachStream(attachSid);
+        } else {
+          res = await fetch(`${getApiBaseUrl()}${opts.streamUrl}`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+            body: JSON.stringify(opts.body ?? {}),
+            signal: controller.signal,
+          });
+          // An install POST 409s when one is already running, handing back its
+          // session id — re-attach to that live run instead of showing the raw
+          // `install_in_progress`. (Only install 409s; container-apply re-POST is
+          // idempotent, so this branch is simply never taken there.)
+          if (res.status === 409 && opts.attachUrl) {
+            let sid: string | undefined;
+            try {
+              sid = (await res.json())?.sessionId;
+            } catch {
+              /* fall through to the generic !res.ok handling below */
+            }
+            if (sid) {
+              attachSessionIdRef.current = sid;
+              sessionIdRef.current = sid;
+              res = await attachStream(sid);
+            }
+          }
+        }
+
+        if (controller.signal.aborted) {
+          await res.body?.cancel().catch(() => {});
+          return;
+        }
+        if (!res.ok || !res.body) {
+          let code: string | undefined;
+          let msg = res.statusText;
+          try {
+            const j = await res.json();
+            code = j.error;
+            msg = j.error || j.message || msg;
+          } catch {
+            /* keep statusText */
+          }
+          if (controller.signal.aborted) return;
+          setError(friendlyError(code, msg));
+          setPhase("error");
+          return;
+        }
+
+        await consume(res);
         // Stream ended WITHOUT a terminal `complete` (server closed early /
         // crashed / the connection dropped mid-op). The operation's outcome is
         // usually still recorded server-side, so read it back rather than
         // telling the user to go and check for themselves.
-        if (canReportStreamEnd(terminalRef.current)) await reportUnknownOutcome();
+        if (!controller.signal.aborted && canReportStreamEnd(terminalRef.current)) {
+          await reportUnknownOutcome(controller.signal);
+        }
       } catch (e) {
         // A late failure AFTER the outcome is known is teardown noise — the
         // server already told us how it went, and overwriting that with a
         // network message would replace a real result with a lie.
-        if ((e as { name?: string })?.name !== "AbortError" && canReportStreamEnd(terminalRef.current)) {
+        if (
+          !controller.signal.aborted &&
+          (e as { name?: string })?.name !== "AbortError" &&
+          canReportStreamEnd(terminalRef.current)
+        ) {
           setLogs((p) => [
             ...p,
             { message: e instanceof Error ? e.message : String(e), level: "error" },
           ]);
-          await reportUnknownOutcome();
+          await reportUnknownOutcome(controller.signal);
         }
       }
     })();
@@ -314,7 +407,9 @@ function PrepareStreamContent({
             </div>
           ))
         ) : (
-          <div className="italic opacity-70">{phase === "running" ? "Connecting…" : "No output."}</div>
+          <div className="italic opacity-70">
+            {phase === "running" ? "Connecting…" : "No output."}
+          </div>
         )}
       </div>
       {logs.length > 0 && (
@@ -341,7 +436,19 @@ function PrepareStreamContent({
         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20">
           <ShieldCheck className="size-[18px] text-primary" />
         </div>
-        <h2 className="text-base font-semibold text-foreground">{opts.title ?? "Prepare"}</h2>
+        <h2 className="flex-1 text-base font-semibold text-foreground">
+          {opts.title ?? "Prepare"}
+        </h2>
+        {inline && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close operation log"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        )}
       </div>
 
       {prompt ? (
@@ -377,7 +484,11 @@ function PrepareStreamContent({
           {stepBar}
           {logConsole}
           <div className="flex justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+            >
               {l.close ?? "Done"}
             </button>
           </div>
@@ -399,9 +510,13 @@ function PrepareStreamContent({
               className="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
               <RefreshCw className="size-3.5" />
-              Try again
+              {opts.retryMode === "reattach" ? "Reconnect" : "Try again"}
             </button>
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
               {l.close ?? "Close"}
             </button>
           </div>
@@ -420,11 +535,11 @@ function PrepareStreamContent({
   );
 }
 
-/** Generic: returns `prepare(opts)` — opens the consent/prepare flow in the
- *  global modal and returns the modal id. */
-export function useSystemPrepareModal() {
+/** Present the shared flow in a modal by default. A page can supply its own
+ *  presenter while retaining the same endpoints, prompts and outcome handling. */
+export function useSystemPrepareModal(present?: SystemPreparePresenter) {
   const { showModal, hideModal } = useModal();
-  return useCallback(
+  const openModal = useCallback(
     (opts: SystemPrepareOptions): string => {
       let id = "";
       id = showModal({
@@ -437,6 +552,7 @@ export function useSystemPrepareModal() {
     },
     [showModal, hideModal],
   );
+  return present ?? openModal;
 }
 
 /** Self-hosted domain verify with LIVE certbot logs — streams the standalone
@@ -487,13 +603,19 @@ export function useVerifyModal() {
  *  `intent: "repair"` starts a STOPPED container instead of swapping its image —
  *  the recovery path for a mail engine, whose update is swap-only by design.
  *  `openContainerModal(serverId, "edge", { label, intent, onDone })`. */
-export function useContainerApplyModal() {
-  const prepare = useSystemPrepareModal();
+export function useContainerApplyModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
   return useCallback(
     (
       serverId: string,
       component: "edge" | "mail",
-      opts?: { label?: string; intent?: "update" | "repair"; onDone?: () => void },
+      opts?: {
+        label?: string;
+        intent?: "update" | "repair";
+        onDone?: () => void;
+        /** Open straight into GET re-attach for this running swap (refresh path). */
+        attachSessionId?: string;
+      },
     ): string => {
       const noun = opts?.label ?? (component === "edge" ? "edge" : "mail engine");
       const repair = opts?.intent === "repair";
@@ -535,6 +657,11 @@ export function useContainerApplyModal() {
 
       return prepare({
         streamUrl: `system/servers/${serverId}/containers/${component}/apply/stream${repair ? "?intent=repair" : ""}`,
+        // The read-only GET sibling of the apply stream re-attaches to the one
+        // running swap for this (server, component); it ignores the id (there's
+        // only ever one), which is why re-POST is idempotent and never 409s.
+        attachUrl: () => `system/servers/${serverId}/containers/${component}/apply/stream`,
+        initialAttachSessionId: opts?.attachSessionId,
         title: repair ? `Start ${noun}` : `Update ${noun}`,
         labels: repair
           ? {
@@ -562,13 +689,25 @@ export function useContainerApplyModal() {
  *  -f` first, so a stopped leftover is replaced cleanly). Body carries the
  *  target `{ serverId, components:["edge"] }` — the endpoint is shared, unlike
  *  the URL-scoped takeover/apply flows. `openEdgeInstallModal(serverId, { onDone })`. */
-export function useServerEdgeInstallModal() {
-  const prepare = useSystemPrepareModal();
+export function useServerEdgeInstallModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
   return useCallback(
-    (serverId: string, opts?: { onDone?: () => void }): string =>
+    (
+      serverId: string,
+      opts?: {
+        onDone?: () => void;
+        /** Open straight into GET re-attach for this running install (refresh path). */
+        attachSessionId?: string;
+      },
+    ): string =>
       prepare({
         streamUrl: "system/install/stream",
         respondUrl: "system/install/respond",
+        // GET re-attach to a running install by id: replays logs + progress AND
+        // any parked 80/443-takeover prompt (answered via respondUrl above). Also
+        // the target of the 409→attach path when a second install POST is made.
+        attachUrl: (sid) => `system/install/stream?id=${encodeURIComponent(sid)}`,
+        initialAttachSessionId: opts?.attachSessionId,
         body: { serverId, components: ["edge"] },
         title: "Install edge",
         labels: {
@@ -619,7 +758,8 @@ export function useEdgeModal() {
         labels: {
           working: "Preparing the server's edge…",
           done: "Edge ready — your routes are live.",
-          failed: "Edge setup didn't finish — the app stays on its port; routing is flagged on this tab.",
+          failed:
+            "Edge setup didn't finish — the app stays on its port; routing is flagged on this tab.",
         },
         onDone: opts?.onDone,
         // Edge setup installs OpenResty and can take a takeover path, so it's the
@@ -631,7 +771,8 @@ export function useEdgeModal() {
           if (status.ready) {
             return {
               ok: true,
-              message: "The server's edge is set up and owns ports 80/443 — the connection dropped after the run finished.",
+              message:
+                "The server's edge is set up and owns ports 80/443 — the connection dropped after the run finished.",
             };
           }
           return {

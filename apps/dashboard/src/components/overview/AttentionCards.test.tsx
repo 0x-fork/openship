@@ -15,7 +15,7 @@ import { IssuesCard, UpdatesCard } from "./AttentionCards";
  * diagnosis must be clamped rather than truncated — because a single truncated line
  * of an nginx error is what made these rows useless in a 320px column.
  *
- * They now render rows from the `/issues` feed, so this file also guards the swap:
+ * They now render rows from the Monitoring feed, so this file also guards the swap:
  * every behaviour the card used to compute from container state must still hold when
  * the severity and the fix arrive on the row instead.
  *
@@ -61,11 +61,17 @@ describe("IssuesCard", () => {
     expect(html).toContain(`title="${EDGE_ERROR}"`);
   });
 
-  it("carries severity on the card border, not by tinting every row", () => {
+  it("carries severity in the header, not on the card edge or by tinting every row", () => {
     const html = issues();
-    expect(html).toContain("border-danger-border");
+    expect(html).toContain("bg-danger-bg"); // icon tile
+    expect(html).toContain("text-danger"); // title
     expect(html).toContain("bg-card");
     expect(html).not.toContain("bg-danger/");
+    // The edge stays the same hairline every other card on the page draws: a tinted
+    // border turns the whole card into a status object, and a column of two of them
+    // reads as colored boxes instead of a ranked list.
+    expect(html).toContain("border-border/50");
+    expect(html).not.toContain("border-danger-border");
   });
 
   it("offers a solid Fix for a stopped component", () => {
@@ -76,8 +82,9 @@ describe("IssuesCard", () => {
 
   it("stays at warning when nothing is actually down", () => {
     const html = issues(broken("action"));
-    expect(html).toContain("border-warning-border");
-    expect(html).not.toContain("border-danger-border");
+    expect(html).toContain("bg-warning-bg");
+    expect(html).not.toContain("bg-danger-bg");
+    expect(html).not.toContain("text-danger");
     // An edge that was never installed installs, it doesn't get repaired.
     expect(html).toContain("Install");
   });
@@ -96,11 +103,11 @@ describe("IssuesCard", () => {
 
   it("caps the list and hands the remainder to the tracker", () => {
     const html = issues();
-    // 4 issues, 3 rows → the 4th is only reachable via /issues.
+    // 4 issues, 3 rows → the 4th is only reachable via /monitoring.
     expect(html).toContain("web-01");
     expect(html).not.toContain("billing-api-worker");
     expect(html).toContain("1 more");
-    expect(html).toContain('href="/issues"');
+    expect(html).toContain('href="/monitoring"');
     // The header count still reports every issue, not just the visible ones.
     expect(html).toContain(">4<");
   });
@@ -116,7 +123,7 @@ describe("IssuesCard", () => {
   });
 
   it("renders no hide control where hiding means nothing", () => {
-    // The fixture preview and the /issues groups pass no handler; a dead X on the
+    // The fixture preview and Monitoring groups pass no handler; a dead X on the
     // tracker would suggest the feed itself can be filtered.
     expect(issues()).not.toContain("Hide until something changes");
   });
@@ -125,7 +132,7 @@ describe("IssuesCard", () => {
     // There is no Issues entry in the sidebar — this card IS the shortcut, so its
     // footer link cannot depend on a fourth row existing to appear.
     const html = issues(ISSUE_FIXTURES.outage!.slice(0, 1));
-    expect(html).toContain('href="/issues"');
+    expect(html).toContain('href="/monitoring"');
     expect(html).not.toMatch(/\d+ more/);
     expect(html).toContain("View all");
   });
@@ -139,11 +146,12 @@ describe("UpdatesCard", () => {
   });
 
   it("wears the update accent without becoming an alarm", () => {
-    // Amber card, but nothing that competes with "your site is down": no red anywhere,
+    // Amber header, but nothing that competes with "your site is down": no red anywhere,
     // and its rows keep the ghost control rather than a solid button.
     const html = updates(ISSUE_FIXTURES.advisory!);
-    expect(html).toContain("border-warning-border");
-    expect(html).not.toContain("border-danger-border");
+    expect(html).toContain("bg-warning-bg");
+    expect(html).toContain("text-warning");
+    expect(html).not.toContain("bg-danger-bg");
     expect(html).not.toContain("bg-warning-solid");
     expect(html).not.toContain("bg-danger-solid");
   });

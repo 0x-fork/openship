@@ -11,11 +11,14 @@ import {
   Globe,
   Lock,
   AlertTriangle,
+  Cpu,
 } from "lucide-react";
 import {
   getAppTemplate,
   getAppSettings,
   getAppEndpoints,
+  getAppPrepareSteps,
+  getAppFirstLogin,
   flattenSettingFields,
   envToSettingValue,
   settingToEnvValue,
@@ -27,11 +30,16 @@ import {
   normalizeCustomHostname,
   normalizeServiceLabel,
   slugify,
+  formatCpuCores,
+  formatMemoryMb,
+  hasMinResources,
   type AppSettingField,
   type AppEndpoint,
+  type InstallPhaseId,
+  type InstallPhaseStatus,
 } from "@repo/core";
 import { appsApi, deployApi, servicesApi, projectsApi } from "@/lib/api";
-import type { InstallAppRoute } from "@/lib/api/apps";
+import type { AppHostFitView, InstallAppRoute } from "@/lib/api/apps";
 import { type Service } from "@/lib/api/services";
 import { connectionsApi } from "@/lib/api/connections";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -50,17 +58,27 @@ import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/
 import { resolvePublicEndpointHostname } from "@/lib/public-endpoint-payload";
 import {
   CleanDeployProgressCard,
-  labelForStatus,
   firstPublicHost,
+  type DeploySummaryRow,
 } from "@/components/deploy/CleanDeployProgress";
+import { useBuildStream } from "@/hooks/useSSEConnection";
+import type { ServiceStatusEvent } from "@/lib/sseMessageProcessors";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
+import { useModal } from "@/context/ModalContext";
+import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
+import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import { defaultDomainType } from "@/lib/default-domain-type";
+import { installSettledMessage } from "@/lib/install-settled-message";
+import { appInstallDnsTargets, attachDeploymentDomainIds } from "@/lib/deployment-dns";
 import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import { AppLogo } from "@/components/AppLogo";
 import { VerifiedBadge } from "@/components/apps/VerifiedBadge";
+import { HostingBadge } from "@/components/apps/HostingBadge";
+import { UnverifiedBadge } from "@/components/apps/UnverifiedBadge";
+import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { encodeProjectSlug } from "@/utils/repoSlug";
 import { parseContainerPort } from "@/utils/compose-ports";
@@ -71,8 +89,10 @@ import { parseContainerPort } from "@/utils/compose-ports";
  * what to ask (install-step business fields + whether it needs a public URL);
  * the template's known ports drive routing. It's a pure client orchestration of
  * existing endpoints — install → apply settings + domain → buildAccess — with a
- * clean progress view (polling build status, no raw logs). "Advanced" hands off
- * to the technical /deploy wizard.
+ * JSON-mapped progress view: it ATTACHES to the running build over SSE and maps
+ * the real backend phase/service boundaries onto an authored stepper, with logs
+ * demoted to a foldable detail. "Advanced" hands off to the technical /deploy
+ * wizard.
  */
 
 type Phase = "form" | "installing" | "done" | "error";
@@ -233,7 +253,7 @@ export default function AppInstallPage() {
   const { t, locale } = useI18n();
   const w = t.projectSettings.appInstall;
   const { showToast } = useToast();
-  const { baseDomain, deployMode } = usePlatform();
+  const { baseDomain, deployMode, selfHosted } = usePlatform();
   // Desktop mode → the "open on localhost / forward the port" hints are relevant
   // (a VPS is already public; a local app is already localhost).
   const isDesktop = deployMode === "desktop";
@@ -241,15 +261,28 @@ export default function AppInstallPage() {
   // default the install to a port-only (no-domain) deploy instead of letting
   // preflight hard-fail. Forced true on SaaS/native (CloudContext).
   const { connected: cloudConnected, requireCloud } = useCloud();
+  const { showModal, hideModal } = useModal();
+  // Desktop mode: apps can't run on this machine yet — see useLocalDeployGate.
+  const localDeployGate = useLocalDeployGate();
 
   const appId = String(params?.appId ?? "");
+  const searchParams = useSearchParams();
   // Reopening a draft app passes its existing project id — adopt it instead of
   // creating a duplicate (the backend also get-or-creates, this avoids the call).
-  const adoptedProjectId = useSearchParams().get("projectId");
+  const adoptedProjectId = searchParams.get("projectId");
+  // A deploy already in flight, carried in the URL (written the moment we enter
+  // `installing`) so a hard refresh mid-install RESUMES the progress view —
+  // re-attaching to the same SSE stream — instead of dropping back to the form.
+  const resumeDeploymentId = searchParams.get("deployment");
   // Bundled template is the instant fallback; the runtime catalog (overlay-fresh
   // from the API) is fetched so a repo-fresh app opens + installs without a redeploy.
   const bundledTemplate = useMemo(() => getAppTemplate(appId), [appId]);
   const [template, setTemplate] = useState(bundledTemplate);
+  // A repo-fresh template is absent from the dashboard bundle by definition.
+  // Do not treat that initial `undefined` as a 404: wait for the runtime-catalog
+  // request before redirecting. Without this guard, a newly published catalog
+  // app flashes the route and immediately returns to the catalog.
+  const [templateResolved, setTemplateResolved] = useState(Boolean(bundledTemplate));
   // The org's existing not-yet-deployed draft of this app, if any. The catalog
   // tiles link here WITHOUT ?projectId, so without this the wizard had no idea a
   // draft existed — it showed template defaults while Install landed on the draft.
@@ -260,6 +293,7 @@ export default function AppInstallPage() {
   } | null>(null);
   useEffect(() => {
     setTemplate(bundledTemplate);
+    setTemplateResolved(Boolean(bundledTemplate));
     let cancelled = false;
     appsApi
       .template(appId)
@@ -269,7 +303,10 @@ export default function AppInstallPage() {
         setOpenDraft(r?.draft ?? null);
       })
       .catch(() => {
-        /* keep the bundled template */
+        /* Keep a bundled fallback if the runtime catalog is temporarily unavailable. */
+      })
+      .finally(() => {
+        if (!cancelled) setTemplateResolved(true);
       });
     return () => {
       cancelled = true;
@@ -363,30 +400,99 @@ export default function AppInstallPage() {
       return cur?.kind === "http" ? { ...p, [key]: { ...cur, ep } } : p;
     });
   const [destination, setDestination] = useState<AppDestination | null>(null);
+
+  // Header description: clamped to two lines with a More/Less toggle, because a
+  // heavy app's blurb runs long enough to push the form below the fold.
+  //
+  // Whether the toggle appears is MEASURED (scrollHeight vs clientHeight), not
+  // guessed from a character count — a count that's right at this width offers
+  // "More" on a description that isn't clamped, or worse, hides truncated text on
+  // a narrow viewport. Re-measured on resize for the same reason. The measurement
+  // is skipped while expanded (where the two heights are equal by definition, so
+  // measuring would clear the flag and remove the way back).
+  const descRef = useRef<HTMLParagraphElement | null>(null);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [descClamped, setDescClamped] = useState(false);
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el || descExpanded) return;
+    const measure = () => setDescClamped(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [descExpanded, template?.description]);
+
+  // Does the chosen destination meet what the app declares it needs? Only asked
+  // for an app that declares something (almost none do) — the answer is the
+  // machine's measured capacity, and the fit verdict is computed server-side by
+  // the same function deploy preflight uses, so the notice below and the refusal
+  // can't disagree. Advisory: Install stays enabled and preflight is the gate.
+  const declaresResources = hasMinResources(template?.minResources);
+  const [hostFit, setHostFit] = useState<AppHostFitView | null>(null);
+  useEffect(() => {
+    const appId = template?.id;
+    if (!declaresResources || !appId || !destination) {
+      setHostFit(null);
+      return;
+    }
+    let live = true;
+    void appsApi
+      .hostFit(appId, {
+        deployTarget: destination.deployTarget,
+        serverId: destination.deployTarget === "server" ? destination.serverId : undefined,
+      })
+      .then((res) => {
+        if (live) setHostFit(res.data);
+      })
+      .catch(() => {
+        // An advisory read — a failure means no notice, never a blocked install.
+        if (live) setHostFit(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [declaresResources, template?.id, destination]);
+
   // Project name shown in Openship. Editable for a fresh install (a second
   // install of the same app auto-suffixes server-side, e.g. "Convex 2"); hidden
   // when reopening an existing draft, which already has its name.
   const [appName, setAppName] = useState(() => template?.name ?? "");
 
-  const [phase, setPhase] = useState<Phase>("form");
+  const [phase, setPhase] = useState<Phase>(resumeDeploymentId ? "installing" : "form");
   const [busy, setBusy] = useState(false);
-  const [deploymentId, setDeploymentId] = useState<string | null>(null);
+  // A Stop request is in flight (the cancel POST + teardown). Disables the Stop
+  // button. `cancelled` records that the terminal `error` phase was a user Stop,
+  // not a failure — the progress view swaps to neutral "cancelled" copy.
+  const [isStopping, setIsStopping] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
+  const [deploymentId, setDeploymentId] = useState<string | null>(resumeDeploymentId);
   const [projectId, setProjectId] = useState<string | null>(adoptedProjectId);
   const [progress, setProgress] = useState(0);
+  // Epoch ms this install started, for the progress panel's elapsed clock. Set
+  // when we enter `installing`, and on a mid-install refresh from the build's own
+  // `buildStartedAt` so the resumed view doesn't restart the clock at zero.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [phaseLabel, setPhaseLabel] = useState("");
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [logs, setLogs] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  // The JSON-mapped install stepper's live state: real backend phase boundaries
+  // (images → services → app-setup → ready) and per-service statuses, both fed by
+  // SSE and replayed on reconnect. Empty object = all-pending preview.
+  const [phases, setPhases] = useState<Partial<Record<InstallPhaseId, InstallPhaseStatus>>>({});
+  const [services, setServices] = useState<ServiceStatusEvent[]>([]);
   // Validity of the install-step business fields (required + per-field rules),
   // reported by AppSettingsForm. Null when there are no install fields.
   const [formValidity, setFormValidity] = useState<FormValidity | null>(null);
 
   // Unknown / non-installable / flow apps don't belong here.
   useEffect(() => {
+    if (!templateResolved) return;
     if (!template || template.kind === "flow" || !template.available) {
       router.replace("/apps/new");
     }
-  }, [template, appId, router]);
+  }, [templateResolved, template, appId, router]);
 
   // ── Draft re-entry: show what's persisted, not the template defaults ───────
   /** The project label the installer will build free hostnames from — its slug,
@@ -453,69 +559,203 @@ export default function AppInstallPage() {
     return host ? `https://${host}` : null;
   };
 
-  // ── Clean progress poll (status only, never raw logs) ──────────────────────
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ── Live install progress over SSE (attach to the running build) ───────────
+  // The install phase labels for the stepper header line.
+  const phaseHeaderLabel: Record<InstallPhaseId, string> = {
+    images: w.phaseImages,
+    services: w.phaseServices,
+    "app-setup": w.phaseAppSetup,
+    ready: w.phaseReady,
+  };
+
+  /** Headline URL for the done screen = the primary web endpoint. Port-only →
+   *  `serverHost:port` (cloud has no host binding → no link); domain → the
+   *  persisted public host. Reads the SAME derivation the poll used.
+   *
+   *  A server row is the only destination that yields a host, and that's why the
+   *  picker no longer offers a "this machine" card: it carried no `sshHost`, so a
+   *  port-only install on a VPS advertised `http://localhost:<port>`. */
+  const deriveLiveUrl = async (config?: {
+    publicEndpoints?: Array<{ domain?: string; customDomain?: string; domainType?: string }>;
+  }) => {
+    const primaryState = primaryHttp ? expo[endpointKey(primaryHttp)] : undefined;
+    if (primaryState?.kind === "http" && primaryState.mode === "port") {
+      const host = destination?.deployTarget === "server" ? destination.serverHost : null;
+      // Port-only reachability is the PUBLISHED host port, not the container port
+      // (they differ when the template remaps, e.g. 8203:80).
+      const reachablePort = primaryHttp ? hostPortForEndpoint(template?.services, primaryHttp) : 0;
+      setLiveUrl(host && primaryHttp ? `http://${host}:${reachablePort}` : null);
+    } else if (primaryState?.kind === "http" && primaryHttp && projectId) {
+      setLiveUrl(
+        (await persistedRouteUrl(projectId, primaryHttp)) ??
+          firstPublicHost(config?.publicEndpoints, baseDomain),
+      );
+    } else {
+      setLiveUrl(null);
+    }
+  };
+
+  // Terminal detection is resolved ONCE per install with a single authoritative
+  // `getBuildStatus` read — the SSE `complete` collapses `partial_failure` /
+  // `action_required` / `reconciling` into a plain success/failure, so the true
+  // DB status (and the precise liveUrl) comes from the read, not the stream.
+  const settledRef = useRef(false);
+  const resolveTerminal = async (fallback: {
+    ok: boolean;
+    message?: string;
+    /** This resolution is a CANCEL (the user's Stop, or an SSE `cancelled`), even
+     *  if the DB row hasn't caught up yet. Load-bearing: a cancel must never
+     *  inherit the generic failure message — see `settledMessage`. */
+    cancelled?: boolean;
+  }) => {
+    if (settledRef.current || !deploymentId) return;
+    settledRef.current = true;
+    let status = "";
+    let s: any = {};
+    try {
+      const res = await deployApi.getBuildStatus(deploymentId);
+      s = res?.data ?? res ?? {};
+      status = s.deploymentStatus ?? s.status ?? "";
+      // Prefer the server's full accumulated log over the streamed fragments.
+      if (typeof s.logs === "string" && s.logs.length >= logs.length) setLogs(s.logs);
+    } catch {
+      /* fall back to the SSE outcome below */
+    }
+    // A cancelled deploy (user Stop, or resuming one) is a neutral outcome, not a
+    // failure — flag it so the error screen reads as "cancelled".
+    const isCancel = status === "cancelled" || fallback.cancelled === true;
+    if (isCancel) setCancelled(true);
+    // The reason under the verdict — or nothing. A cancel never inherits the
+    // failure fallback; see `installSettledMessage` for why.
+    const settledMessage = () =>
+      installSettledMessage({
+        isCancel,
+        serverMessage: s.failureMessage,
+        streamMessage: fallback.message,
+        failedFallback: w.installFailed,
+      });
+    const failed = ["failed", "cancelled", "partial_failure", "action_required", "rejected"];
+    // `no_changes` is a SUCCESS: every service was already up to date and the live
+    // stack is the one this install wanted. Treating it as terminal-but-unhandled
+    // would show "Install failed" over a working app.
+    if (status === "ready" || status === "no_changes" || (status === "" && fallback.ok)) {
+      await deriveLiveUrl(s?.config);
+      setPhase("done");
+    } else if (failed.includes(status) || (status === "" && !fallback.ok)) {
+      setErrorMsg(settledMessage());
+      setPhase("error");
+    } else {
+      // Still not settled in the DB but SSE said it's over — trust the stream.
+      if (fallback.ok) {
+        await deriveLiveUrl(s?.config);
+        setPhase("done");
+      } else {
+        setErrorMsg(settledMessage());
+        setPhase("error");
+      }
+    }
+  };
+
+  const build = useBuildStream({
+    callbacks: {
+      onInstallPhase: (p) => {
+        setPhases((prev) => ({ ...prev, [p.id]: p.status }));
+        if (p.status === "active") setPhaseLabel(p.label || phaseHeaderLabel[p.id]);
+      },
+      onServiceStatus: (svc) => {
+        setServices((prev) => {
+          const key = svc.serviceId || svc.serviceName;
+          const idx = prev.findIndex((x) => (x.serviceId || x.serviceName) === key);
+          if (idx === -1) return [...prev, svc];
+          const next = [...prev];
+          next[idx] = svc;
+          return next;
+        });
+      },
+      onLog: (_message, rawText) => {
+        if (rawText) setLogs((prev) => prev + rawText);
+      },
+      onProgress: (_step, pct) => {
+        if (typeof pct === "number") setProgress(pct);
+      },
+      onSuccess: () => void resolveTerminal({ ok: true }),
+      onFailure: (message) => void resolveTerminal({ ok: false, message }),
+      onCanceled: () => {
+        setCancelled(true);
+        // The stream's cancel message is a fixed "Build cancelled" — the verdict
+        // again, not a reason — so it is dropped rather than echoed under the
+        // heading. A real reason, when one exists, comes off the row.
+        void resolveTerminal({ ok: false, cancelled: true });
+      },
+    },
+  });
+
+  // Attach to the running build whenever we're on the installing screen. A single
+  // upfront `getBuildStatus` read catches an ALREADY-settled deploy (e.g. resuming
+  // via `?deployment=` after it finished) without waiting for a stream that may be
+  // gone; otherwise we attach (startBuild=false — the build was kicked by
+  // `buildAccess`, POSTing again would start a second one) and let the SSE replay
+  // rebuild the stepper + service list + logs.
+  const connect = build.connect;
+  const disconnect = build.disconnect;
   useEffect(() => {
     if (phase !== "installing" || !deploymentId) return;
-    let stopped = false;
-    const tick = async () => {
+    settledRef.current = false;
+    let cancelled = false;
+    void (async () => {
       try {
         const res = await deployApi.getBuildStatus(deploymentId);
         const s = res?.data ?? res ?? {};
-        const status: string = s.deploymentStatus ?? s.status ?? "queued";
-        setProgress(typeof s.progress === "number" ? s.progress : 0);
-        setPhaseLabel(labelForStatus(status, w));
-        if (typeof s.logs === "string") setLogs(s.logs);
-        if (status === "ready") {
-          // Headline URL = the primary web endpoint. Port-only → host:port
-          // (server host / localhost; cloud has no host binding → no link);
-          // domain → the assigned public host.
-          const primaryState = primaryHttp ? expo[endpointKey(primaryHttp)] : undefined;
-          if (primaryState?.kind === "http" && primaryState.mode === "port") {
-            const host =
-              destination?.deployTarget === "server"
-                ? destination.serverHost
-                : destination?.deployTarget === "local"
-                  ? "localhost"
-                  : null;
-            // Port-only reachability is the PUBLISHED host port, not the
-            // container port (they differ when the template remaps, e.g. 8203:80).
-            const reachablePort = primaryHttp
-              ? hostPortForEndpoint(template?.services, primaryHttp)
-              : 0;
-            setLiveUrl(host && primaryHttp ? `http://${host}:${reachablePort}` : null);
-          } else if (primaryState?.kind === "http" && primaryHttp && projectId) {
-            setLiveUrl(
-              (await persistedRouteUrl(projectId, primaryHttp)) ??
-                firstPublicHost(s?.config?.publicEndpoints, baseDomain),
-            );
-          } else {
-            setLiveUrl(null);
-          }
-          setPhase("done");
-        } else if (
-          // Every SETTLED status. `action_required` is a failure we can name
-          // (e.g. the port was taken) — still an error for this wizard, and
-          // omitting it would leave the install polling at 2s forever.
-          ["failed", "cancelled", "partial_failure", "action_required", "rejected"].includes(status)
+        const status: string = s.deploymentStatus ?? s.status ?? "";
+        if (typeof s.progress === "number") setProgress(s.progress);
+        // Resuming: keep the clock on the real start when the build reports one.
+        const startedIso = Date.parse(String(s.buildStartedAt ?? ""));
+        setStartedAt((prev) => prev ?? (Number.isFinite(startedIso) ? startedIso : Date.now()));
+        if (
+          ["ready", "failed", "cancelled", "partial_failure", "action_required", "rejected", "no_changes"].includes(
+            status,
+          )
         ) {
-          setErrorMsg(s.failureMessage || w.installFailed);
-          setPhase("error");
+          await resolveTerminal({
+            ok: status === "ready" || status === "no_changes",
+            message: s.failureMessage,
+            cancelled: status === "cancelled",
+          });
+          return;
         }
       } catch {
-        /* transient — keep polling */
+        /* live deploy — attach below */
       }
-    };
-    void tick();
-    pollRef.current = setInterval(() => {
-      if (!stopped) void tick();
-    }, 2000);
+      if (!cancelled) void connect(deploymentId, false);
+    })();
     return () => {
-      stopped = true;
-      if (pollRef.current) clearInterval(pollRef.current);
+      cancelled = true;
+      disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, deploymentId, baseDomain]);
+  }, [phase, deploymentId]);
+
+  /** Stop an in-flight install. Aborts the build server-side (containers/images
+   *  torn down, volumes kept so a retry works), then resolves the progress view
+   *  to the neutral "cancelled" terminal. The SSE `cancelled`/`end` also fires —
+   *  `settledRef` makes whichever lands first the single resolution. */
+  const stopInstall = async () => {
+    if (!deploymentId || isStopping || settledRef.current) return;
+    setIsStopping(true);
+    setCancelled(true);
+    try {
+      await deployApi.cancel(deploymentId);
+      disconnect();
+      await resolveTerminal({ ok: false, cancelled: true });
+    } catch (err) {
+      // The build likely already finished in the race — let the stream/terminal
+      // read settle it, and undo the optimistic cancel flag.
+      setCancelled(false);
+      showToast(getApiErrorMessage(err, w.stopFailed), "error");
+    } finally {
+      setIsStopping(false);
+    }
+  };
 
   if (!template) return null;
 
@@ -684,11 +924,53 @@ export default function AppInstallPage() {
       );
       return;
     }
+    // Installing TO Openship Cloud needs a cloud connection — the same hard gate
+    // the deploy wizard applies at Continue. Without it the pick was a dead end:
+    // the install failed deep in preflight with no way to act on it.
+    if (destination?.deployTarget === "cloud" && !cloudConnected) {
+      if (!(await requireCloud("cloud-deploy-target"))) return;
+    }
+    // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
+    // remote servers; an app can't run on this machine yet. Every install here is
+    // a new one (a draft isn't deployed), so there's nothing to strand.
+    if (
+      localDeployGate.blocks({
+        deployTarget: destination?.deployTarget,
+        serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+      })
+    ) {
+      let modalId = "";
+      modalId = showModal({
+        customContent: (
+          <LocalDeployComingSoonModal
+            action="install"
+            onClose={() => hideModal(modalId)}
+            onServerAdded={(server) =>
+              setDestination({
+                deployTarget: "server",
+                serverId: server.id,
+                serverHost: server.sshHost,
+                serverName: server.name ?? undefined,
+              })
+            }
+          />
+        ),
+        maxWidth: "460px",
+      });
+      return;
+    }
     const routes = await validatedRouteChoices();
     if (!routes) return;
     setBusy(true);
     setDeploymentId(null);
     setLogs("");
+    // Reset the live stepper so a re-install starts from a clean slate.
+    setPhases({});
+    setServices([]);
+    setProgress(0);
+    setLiveUrl(null);
+    setCancelled(false);
+    settledRef.current = false;
     // Flips true the moment a deployment is actually created. A preflight
     // failure rejects buildAccess BEFORE that, so `started` stays false and the
     // catch surfaces a toast instead of the full-screen error card.
@@ -739,20 +1021,89 @@ export default function AppInstallPage() {
         }
       }
 
-      const dep = await deployApi.buildAccess({
-        projectId: pid,
-        serviceDeploymentMode: "services",
-        // Where to install — reuses the deploy wizard's target selection.
-        // Undefined falls back to the project/meta default server-side.
-        deployTarget: destination?.deployTarget,
-        serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
-      });
-      const depId =
-        dep?.data?.deployment_id ?? dep?.data?.deploymentId ?? dep?.deployment_id ?? null;
-      setDeploymentId(depId);
-      started = true;
-      setPhaseLabel(w.progressPreparing);
-      setPhase("installing");
+      const startDeploy = async (targetPid: string) => {
+        setBusy(true);
+        try {
+          const dep = await deployApi.buildAccess({
+            projectId: targetPid,
+            serviceDeploymentMode: "services",
+            // Where to install — reuses the deploy wizard's target selection.
+            // Undefined falls back to the project/meta default server-side.
+            deployTarget: destination?.deployTarget,
+            serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+          });
+          const depId =
+            dep?.data?.deployment_id ?? dep?.data?.deploymentId ?? dep?.deployment_id ?? null;
+          setDeploymentId(depId);
+          started = true;
+          // Persist the deployment id in the URL so a hard refresh mid-install
+          // resumes the progress view (re-attaches to the same SSE stream) instead
+          // of dropping back to the form. Client-only; best-effort.
+          if (depId) {
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.set("deployment", depId);
+              url.searchParams.set("projectId", targetPid);
+              window.history.replaceState(null, "", url.toString());
+            } catch {
+              /* resume just won't survive a reload */
+            }
+          }
+          setPhaseLabel(w.phaseQueued);
+          setStartedAt(Date.now());
+          setPhase("installing");
+        } catch (err) {
+          const msg = getApiErrorMessage(err, w.installFailed).replace(
+            /^Pre-deploy checks failed:\s*/i,
+            "",
+          );
+          if (started) {
+            setErrorMsg(msg);
+            setPhase("error");
+          } else {
+            showToast(msg, "error");
+          }
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      // Pre-deploy DNS gate (self-hosted custom domain): surface the records to add
+      // or auto-configure BEFORE the deploy so DNS is pointed when the first-deploy
+      // SSL attempt runs.
+      const pendingDnsTargets = appInstallDnsTargets(routes ?? []);
+      if (selfHosted && pendingDnsTargets.length > 0) {
+        const projectInfo = await projectsApi.getInfo(pid).catch(() => null);
+        const domainRows = Array.isArray(projectInfo?.data?.project?.domains)
+          ? projectInfo.data.project.domains
+          : [];
+        const dnsTargets = attachDeploymentDomainIds(pendingDnsTargets, domainRows);
+        if (dnsTargets.length > 0) {
+          setBusy(false);
+          let modalId = "";
+          modalId = showModal({
+            customContent: (
+              <DnsRecordsModal
+                targets={dnsTargets}
+                serverId={destination?.deployTarget === "server" ? destination.serverId : undefined}
+                confirmLabel={w.install}
+                onConfirm={() => {
+                  hideModal(modalId);
+                  void startDeploy(pid);
+                }}
+                onCancel={() => {
+                  hideModal(modalId);
+                  setBusy(false);
+                }}
+              />
+            ),
+            maxWidth: "560px",
+          });
+          return;
+        }
+      }
+
+      await startDeploy(pid);
     } catch (err) {
       // Strip the server's "Pre-deploy checks failed:" prefix for a cleaner
       // message. Nothing deployed yet → toast + stay on the form; a deploy that
@@ -800,6 +1151,132 @@ export default function AppInstallPage() {
 
   // ── Progress / done / error states (shared clean progress view) ────────────
   if (phase === "installing" || phase === "done" || phase === "error") {
+    // Authored install-setup step copy for the stepper sub-list, and the app's
+    // default first-login creds for the done screen — both from the app JSON.
+    const appSetupSteps = getAppPrepareSteps(template).map((s) => ({
+      id: s.capture,
+      label: resolveLocalized(s.title, locale) || s.capture,
+    }));
+    const fl = getAppFirstLogin(template);
+    const firstLogin = fl
+      ? {
+          username: resolveLocalized(fl.username, locale) || undefined,
+          password: resolveLocalized(fl.password, locale) || undefined,
+          note: resolveLocalized(fl.note, locale) || undefined,
+        }
+      : undefined;
+    // Leaving the progress view (Retry / Back to form): drop the persisted
+    // deployment id so a subsequent refresh doesn't resume a finished/failed run.
+    const resetToForm = () => {
+      settledRef.current = false;
+      setPhases({});
+      setServices([]);
+      setLogs("");
+      setProgress(0);
+      setLiveUrl(null);
+      setErrorMsg("");
+      setDeploymentId(null);
+      setCancelled(false);
+      setStartedAt(null);
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("deployment");
+        window.history.replaceState(null, "", url.toString());
+      } catch {
+        /* non-fatal */
+      }
+      setPhase("form");
+    };
+
+    // What this install was configured WITH — the aside's read-out, and the thing
+    // an operator can't get from the stepper or the logs. Every row is read from
+    // the pickers' own state, so it shows the configuration that was sent, never
+    // one re-derived from the template. A value this view can't know (the
+    // destination after a mid-install refresh — only the routing pickers
+    // rehydrate) is left out rather than guessed.
+    const summary: DeploySummaryRow[] = [];
+    const destinationValue =
+      destination?.deployTarget === "cloud"
+        ? t.deploy.targetStep.options.cloud
+        : (destination?.serverName || destination?.serverHost || "");
+    if (destinationValue) {
+      summary.push({
+        id: "destination",
+        label: w.summaryDestination,
+        value: destinationValue,
+        mono: destination?.deployTarget === "server" && !destination.serverName,
+      });
+    }
+    for (const e of appEndpoints) {
+      const st = expo[endpointKey(e)];
+      if (!st) continue;
+      const id = `ep-${endpointKey(e)}`;
+      const hostPort = hostPortForEndpoint(template.services, e);
+      if (st.kind === "http" && st.mode === "domain") {
+        // The hostname the install will actually write — same resolver the
+        // routing payload uses, seeded with the same default label.
+        const host = resolvePublicEndpointHostname(
+          {
+            domainType: st.ep.domainType,
+            domain: st.ep.domain.trim() ? normalizeServiceLabel(st.ep.domain) : defaultFreeLabel(e),
+            customDomain: normalizeCustomHostname(st.ep.customDomain),
+          },
+          baseDomain,
+        );
+        if (host) summary.push({ id, label: e.label, value: host, mono: true });
+      } else if (st.kind === "tcp" && st.mode === "internal") {
+        summary.push({ id, label: e.label, value: w.tcpInternalLabel });
+      } else {
+        // Port-only web, or a published database port: the reachable HOST port.
+        summary.push({
+          id,
+          label: e.label,
+          value: destination?.serverHost ? `${destination.serverHost}:${hostPort}` : `:${hostPort}`,
+          mono: true,
+        });
+      }
+    }
+    const serviceCount = template.services?.length ?? 0;
+    if (serviceCount > 0) {
+      summary.push({ id: "services", label: w.summaryServices, value: String(serviceCount) });
+    }
+    for (const req of requires) {
+      const sourceName = candidates.find((p) => p.id === connChoices[req.id])?.name;
+      if (sourceName) {
+        summary.push({
+          id: `req-${req.id}`,
+          label: resolveLocalized(req.label, locale),
+          value: sourceName,
+        });
+      }
+    }
+    // The business fields the operator filled in. Secrets are never shown, and a
+    // boolean is skipped rather than rendered as a bare "true"; capped so a
+    // settings-heavy app doesn't push the actions off a short viewport.
+    const fieldValueOf = (service: string, key: string) => values[fk(service, key)];
+    for (const f of installFields) {
+      if (summary.length >= 10) break;
+      if (f.secret || f.type === "boolean" || !isFieldVisible(f, fieldValueOf)) continue;
+      const raw = values[fk(f.service, f.key)];
+      if (typeof raw !== "string" || raw.trim() === "") continue;
+      summary.push({
+        id: `set-${f.service}-${f.key}`,
+        label: f.label,
+        value: f.options?.find((o) => o.value === raw)?.label ?? raw.trim(),
+      });
+    }
+    if (declaresResources) {
+      const needs = [
+        template.minResources?.memoryMb
+          ? interpolate(w.needsMemory, { value: formatMemoryMb(template.minResources.memoryMb) })
+          : null,
+        template.minResources?.cpuCores ? formatCpuCores(template.minResources.cpuCores) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (needs) summary.push({ id: "resources", label: w.needsTitle, value: needs });
+    }
+
     return (
       <CleanDeployProgressCard
         appId={appId}
@@ -812,9 +1289,28 @@ export default function AppInstallPage() {
         logs={logs}
         errorMsg={errorMsg}
         deploymentId={deploymentId}
+        phases={phases}
+        services={services}
+        appSetupSteps={appSetupSteps}
+        firstLogin={firstLogin}
+        summary={summary}
+        startedAt={startedAt}
+        connect={
+          projectId
+            ? {
+                projectId,
+                appTemplateId: appId,
+                serverId: destination?.deployTarget === "server" ? destination.serverId : null,
+                deployTarget: destination?.deployTarget ?? null,
+              }
+            : undefined
+        }
         onGoToProject={() => projectId && router.push(`/projects/${projectId}`)}
         onViewBuild={() => deploymentId && router.push(`/build/${deploymentId}`)}
-        onRetry={() => setPhase("form")}
+        onRetry={resetToForm}
+        onStop={stopInstall}
+        isStopping={isStopping}
+        cancelled={cancelled}
       />
     );
   }
@@ -833,30 +1329,42 @@ export default function AppInstallPage() {
           {w.back}
         </button>
 
-        {/* Header */}
+        {/* Header. The caveats that used to sit under this as two full-width
+            yellow banners now hang off the chips beside the name — see
+            HostingBadge / UnverifiedBadge. `shrink-0` on the logo tile is
+            load-bearing: it's a flex child next to a multi-line description, so
+            without it the 48px tile gets squeezed narrower than it is tall, and the
+            image inside — itself a row flex item, so also shrinkable — narrows with
+            it and the mark reads as stretched. (`AppLogo` already applies
+            `object-contain`; the fix is the box, not the fit.) */}
         <div className="flex items-center gap-4">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-muted/60">
-            <AppLogo appId={appId} className="size-7 object-contain" />
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-muted/60">
+            <AppLogo appId={appId} className="size-7" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-semibold text-foreground">{template.name}</h1>
               {template.verified && <VerifiedBadge iconClassName="size-[18px]" />}
+              <HostingBadge hosting={template.hosting} />
+              {template.custom && <UnverifiedBadge />}
             </div>
-            <p className="text-sm text-muted-foreground">{template.description}</p>
+            <p
+              ref={descRef}
+              className={`text-sm text-muted-foreground ${descExpanded ? "" : "line-clamp-2"}`}
+            >
+              {template.description}
+            </p>
+            {(descClamped || descExpanded) && (
+              <button
+                type="button"
+                onClick={() => setDescExpanded((v) => !v)}
+                className="mt-0.5 text-xs font-medium text-muted-foreground/80 transition-colors hover:text-foreground"
+              >
+                {descExpanded ? w.descLess : w.descMore}
+              </button>
+            )}
           </div>
         </div>
-
-        {/* Unverified (custom) apps: a plain-language trust warning before the form. */}
-        {!template.verified && (
-          <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/[0.05] px-4 py-3 text-sm text-warning">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <span>
-              <span className="font-semibold">Custom app — not verified.</span> It deploys images you
-              provided, not an official reviewed app. Review the definition and only install apps you trust.
-            </span>
-          </div>
-        )}
 
         {/* Two columns: what the app needs (left) + where it goes & the deploy
             action (right, sticky). Mirrors the deploy wizard's config/sidebar
@@ -1083,9 +1591,64 @@ export default function AppInstallPage() {
             <div className="rounded-2xl border border-border/50 bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
+
+              {/* State the app's own floor before the picker, so the choice is
+                  informed rather than corrected afterwards. */}
+              {declaresResources && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Cpu className="size-3.5 shrink-0" />
+                  <span className="font-medium text-foreground">{w.needsTitle}:</span>
+                  {[
+                    template.minResources?.memoryMb
+                      ? interpolate(w.needsMemory, {
+                          value: formatMemoryMb(template.minResources.memoryMb),
+                        })
+                      : null,
+                    template.minResources?.cpuCores
+                      ? interpolate(w.needsCpu, {
+                          value: formatCpuCores(template.minResources.cpuCores),
+                        })
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+
               <div className="mt-4">
                 <AppDestinationPicker value={destination} onChange={setDestination} />
               </div>
+
+              {/* Declared minimum vs. the destination's measured capacity. Shown
+                  only on a real shortfall — an unmeasurable box reports "unknown",
+                  which is never one. */}
+              {hostFit && !hostFit.fit.ok && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/[0.05] px-3.5 py-3 text-xs text-warning">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                  <div className="space-y-1">
+                    <p className="font-semibold">
+                      {interpolate(w.hostFitTitle, { app: template.name })}
+                    </p>
+                    {hostFit.fit.memory && (
+                      <p>
+                        {interpolate(w.hostFitMemory, {
+                          needed: formatMemoryMb(hostFit.fit.memory.needed),
+                          available: formatMemoryMb(hostFit.fit.memory.available),
+                        })}
+                      </p>
+                    )}
+                    {hostFit.fit.cpu && (
+                      <p>
+                        {interpolate(w.hostFitCpu, {
+                          needed: formatCpuCores(hostFit.fit.cpu.needed),
+                          available: formatCpuCores(hostFit.fit.cpu.available),
+                        })}
+                      </p>
+                    )}
+                    <p className="text-warning/80">{w.hostFitHint}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions */}

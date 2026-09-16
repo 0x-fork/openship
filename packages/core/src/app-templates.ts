@@ -27,6 +27,7 @@
 
 import type { ComposeHealthcheck } from "./types";
 import type { AppManagement, AppSettingGroup } from "./app-settings";
+import type { AppMinResources } from "./resources";
 import { resolveServiceHostnameLabel } from "./service-routing";
 import catalog from "./apps/catalog.json";
 
@@ -39,11 +40,40 @@ export type AppCategory =
   | "automation"
   | "other";
 
+/**
+ * An inline Docker build context shipped in a template — for a service that must
+ * be BUILT, not pulled (a base image needing extra packages + a provisioning
+ * ENTRYPOINT). Materialized to a temp context on the orchestrator at deploy time,
+ * then built via the normal compose build pipeline. See `TemplateServiceSpec.build`.
+ */
+export interface TemplateServiceBuild {
+  /**
+   * Full Dockerfile contents (inline).
+   *
+   * COPY/ADD sources are relative to the BUILD CONTEXT ROOT, which is the shared
+   * materialized root — NOT the per-service subdir. Every `files[]` entry lands
+   * under a directory named after this service, so reference it as
+   * `<service-name>/<path>` (e.g. a `files` entry `compute.sh` on service
+   * `compute` is copied with `COPY compute/compute.sh …`). Build args come from
+   * the project's env (each becomes a Docker `--build-arg`), so a Dockerfile
+   * `ARG FOO` reads the service's `FOO` env value.
+   */
+  dockerfile: string;
+  /**
+   * Extra build-context files (COPY targets / scripts). `path` is relative to
+   * this service's context subdir; in the Dockerfile, COPY it as
+   * `<service-name>/<path>` (see `dockerfile`).
+   */
+  files?: readonly { path: string; content: string }[];
+}
+
 export interface TemplateServiceSpec {
   /** Service name — also its hostname/alias on the project network. */
   name: string;
-  /** Upstream image (image-only services skip build/clone). */
-  image: string;
+  /** Upstream image to pull. Exactly one of `image`/`build` per service. */
+  image?: string;
+  /** Inline build context — build instead of pull. Mutually exclusive with `image`. */
+  build?: TemplateServiceBuild;
   /** Port mappings, compose syntax (e.g. "8080:80"). */
   ports?: readonly string[];
   /** Container port to publish publicly (routing target / primary route). */
@@ -74,8 +104,19 @@ export interface TemplateServiceSpec {
   healthcheck?: ComposeHealthcheck;
   /** Restart policy (compose syntax). */
   restart?: "no" | "always" | "on-failure" | "unless-stopped";
-  /** Override the container command. */
+  /** Override the container command (shell string; becomes ["sh","-c",cmd]). */
   command?: string;
+  /**
+   * Exact container argv, with no `sh -c` wrap. Wins over `command`. Required for
+   * images whose entrypoint rewrites argv instead of `exec "$@"` (e.g. MinIO).
+   */
+  commandArgv?: readonly string[];
+  /**
+   * Seconds/duration Docker waits after SIGTERM before SIGKILL (maps to
+   * `service.advanced.stopGracePeriod`). Needed by apps whose clean shutdown
+   * does real work — Docker's 10s default kills them mid-checkpoint.
+   */
+  stopGracePeriod?: string;
 }
 
 export interface AppConfigField {
@@ -142,6 +183,12 @@ export interface AppPrepareStep {
   /** For phase:"post-ready" — gate the command on this in-container check
    *  passing: poll `test` (via `sh -c`) every `interval` ms up to `retries`. */
   readiness?: { test: string; interval?: number; retries?: number };
+  /** Authored copy for this step in the install stepper's "app-setup" section.
+   *  Purely presentational; absent → a generic label. */
+  title?: LocalizedString;
+  description?: LocalizedString;
+  /** Optional icon hint (lucide name) for the step row. */
+  icon?: string;
 }
 
 /** An alternative labeled form of an AppOutput's value (e.g. an internal-network
@@ -186,6 +233,10 @@ export interface AppOutput {
   /** Layout hint on the Connection card: two consecutive `half` outputs pair on
    *  one line; `full` (default) spans the row. */
   width?: "full" | "half";
+  /** Presentation kind. "url" → the Connection card renders an Open (new tab)
+   *  action beside the value. Acted on only for a resolved http(s) URL; default
+   *  "text". Additive/optional — does not bump the schema version. */
+  kind?: "text" | "url";
 }
 
 /**
@@ -231,6 +282,14 @@ export interface AppConnectionGuide {
   defaultMode?: "internal" | "public";
 }
 
+/** Static default credentials an app ships with (Grafana admin/admin). FIXED
+ *  values, not resolved from a service — so they're their own field, not outputs. */
+export interface AppFirstLogin {
+  username?: LocalizedString;
+  password?: LocalizedString;
+  note?: LocalizedString;
+}
+
 /** Post-install connection details (URLs, generated keys) shown to the user. */
 export interface AppConnection {
   title?: string;
@@ -238,6 +297,8 @@ export interface AppConnection {
   outputs: readonly AppOutput[];
   /** Opinionated handover guidance for the "Use in a project" flow. */
   guide?: AppConnectionGuide;
+  /** Default credentials to show on the install-done screen. */
+  firstLogin?: AppFirstLogin;
 }
 
 /**
@@ -311,6 +372,27 @@ export interface AppTemplate {
    *  version-pinned, with a reviewed deployment pipeline. Data-driven so a future
    *  community/unverified app can omit it. */
   verified?: boolean;
+  /** A per-org app the operator uploaded as JSON, rather than a curated catalog
+   *  entry — its images and pipeline are their own. SERVER-SET: `catalog-source`
+   *  stamps it on the org's stored rows and it is deliberately absent from
+   *  `appTemplateSchema`, so an upload can neither claim nor disclaim it.
+   *
+   *  Distinct from `!verified`, and the distinction is load-bearing: a curated
+   *  entry that hasn't been boot-verified yet still ships an official upstream
+   *  image from our own repo. Trust copy keys on THIS, never on `verified`. */
+  custom?: boolean;
+  /** What the app needs from its host, checked against the machine's probed
+   *  capacity at install (`fitsCapacity`). Omit unless the app genuinely won't
+   *  run on a small box — this is a refusal, not a hint. */
+  minResources?: AppMinResources;
+  /** Hidden from the browsable catalog, still installable by id — for an app whose
+   *  entry point is another app's wizard (webmail, reached through Openship Mail).
+   *  Distinct from `available: false`, which is a server-side refusal. */
+  unlisted?: boolean;
+  /** How the app is hosted — an honest catalog badge + wizard notice. Absent ⇒
+   *  "self-hosted" (runs on the user's server). "experimental" = self-host that
+   *  runs but isn't production-grade. Presentational only. */
+  hosting?: "self-hosted" | "experimental";
   /**
    * Catalog-schema revision this entry was authored against (absent ⇒ 1). A
    * consumer DROPS (keeps last-good) any overlay entry whose `schemaVersion`
@@ -443,6 +525,11 @@ export function getAppConnection(template: AppTemplate): AppConnection | null {
   return template.connection ?? null;
 }
 
+/** Static default credentials for the install-done screen (null when none). */
+export function getAppFirstLogin(template: AppTemplate): AppFirstLogin | null {
+  return template.connection?.firstLogin ?? null;
+}
+
 /**
  * Every route a template service DECLARES, primary first — ONE entry per port
  * that can carry a hostname.
@@ -521,6 +608,19 @@ export function getOutputService(output: Pick<AppOutput, "service" | "source">):
   if (output.service) return output.service;
   const m = /^(?:env|publicUrl):([^:]+)/.exec(output.source ?? "");
   return m?.[1] ?? null;
+}
+
+/**
+ * The CONTAINER port an output's source names (`publicUrl:<service>:<port>`), or
+ * null when it names none. Authoritative for internal-mode rewriting alongside
+ * `getOutputService`: the port that survives into the RESOLVED value is either
+ * absent (a routed `https://<host>`) or the host side of a published mapping, so
+ * only this declaration says which of a multi-endpoint service's ports the output
+ * actually means.
+ */
+export function getOutputPort(output: Pick<AppOutput, "source">): number | null {
+  const m = /^publicUrl:[^:]+:(\d+)$/.exec(output.source ?? "");
+  return m ? Number(m[1]) : null;
 }
 
 /**

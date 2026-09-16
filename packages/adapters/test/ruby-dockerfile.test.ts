@@ -34,6 +34,13 @@ function builderStage(dockerfile: string): string {
 }
 
 describe("generateDockerfile — Ruby recipe", () => {
+  it.each(["ruby", "docker.io/library/ruby:3.3-slim", "ruby@sha256:" + "a".repeat(64)])(
+    "recognizes the official image reference %s",
+    (runtimeImage) => {
+      expect(generateDockerfile(railsConfig({ runtimeImage }))).toContain("BUNDLE_DEPLOYMENT=1");
+    },
+  );
+
   it("fires even though buildImage === runtimeImage", () => {
     // needsMultiStage() is false for Ruby, so gating on it would skip this
     // recipe entirely the way the PHP branch is gated.
@@ -99,6 +106,37 @@ describe("generateDockerfile — Ruby recipe", () => {
   it("puts the apt layer before the source copy so it caches", () => {
     const builder = builderStage(generateDockerfile(railsConfig()));
     expect(builder.indexOf("build-essential")).toBeLessThan(builder.indexOf("COPY . /workspace"));
+  });
+
+  it("supports the SQLite gems used by the default Rails skeleton", () => {
+    const df = generateDockerfile(railsConfig());
+    expect(builderStage(df)).toContain("libsqlite3-dev");
+    expect(runtimeStage(df)).toContain("libsqlite3-0");
+    expect(runtimeStage(df)).not.toContain("libsqlite3-dev");
+  });
+
+  it("handles official Alpine images with apk and the Alpine user tools", () => {
+    const df = generateDockerfile(railsConfig({
+      buildImage: "ruby:3.3-alpine",
+      runtimeImage: "ruby:3.3-alpine",
+    }));
+    expect(builderStage(df)).toContain("apk add --no-cache build-base");
+    expect(runtimeStage(df)).toContain("apk add --no-cache libpq");
+    expect(runtimeStage(df)).toContain("addgroup -S -g 1000 rails");
+    expect(runtimeStage(df)).toContain("adduser -S -u 1000 -G rails");
+  });
+
+  it("uses the shared monorepo context and copies only the selected app", () => {
+    const df = generateDockerfile(railsConfig({
+      rootDirectory: "apps/store",
+      workspacePrepareCommand: "ruby prepare.rb",
+      envVars: { APP_BUILD_FLAG: "enabled" },
+    }));
+    const builder = builderStage(df);
+    expect(builder.indexOf("ruby prepare.rb")).toBeLessThan(builder.indexOf("WORKDIR /workspace/apps/store"));
+    expect(builder).toContain("APP_BUILD_FLAG='enabled'");
+    expect(runtimeStage(df)).toContain("COPY --from=builder /workspace/apps/store /app");
+    expect(runtimeStage(df)).not.toContain("APP_BUILD_FLAG");
   });
 
   it("leaves a non-Ruby stack on the generic template", () => {
