@@ -188,7 +188,9 @@ describe("runtime log stream ownership (#668)", () => {
     const live = liveResponse();
     fetcher.mockResolvedValueOnce(live.response);
     let done!: Promise<void>;
-    await act(async () => { done = build.connect("deployment", false); });
+    await act(async () => {
+      done = build.connect("deployment", false);
+    });
     expect(build.isConnected).toBe(true);
     expect(fetcher.mock.calls[0][1].signal.aborted).toBe(false);
     await act(async () => {
