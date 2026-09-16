@@ -50,24 +50,24 @@ const mockRuntime = vi.hoisted(() => ({
 // Spread the original: mocking this module by NAME with a single export makes
 // every OTHER symbol service.service.ts imports from it undefined.
 const resolveDeploymentRuntimeForRead = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../src/lib/deployment-runtime")>();
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>();
   return { ...actual, resolveDeploymentRuntimeForRead };
 });
 
 const liveContainerIdWithRuntime = vi.hoisted(() => vi.fn());
-vi.mock("../../../src/modules/services/service-container", async (importOriginal) => {
+vi.mock("@repo/platform/engine/modules/services/service-container", async (importOriginal) => {
   const actual = await importOriginal<
-    typeof import("../../../src/modules/services/service-container")
+    typeof import("@repo/platform/engine/modules/services/service-container")
   >();
   return { ...actual, liveContainerIdWithRuntime };
 });
 
-import { restartServiceContainer } from "../../../src/modules/services/service.service";
+import { restartServiceContainer } from "@repo/platform/engine/modules/services/service.service";
 import {
   ServiceConfigStaleError,
   resolveStaleEnvKeysForService,
-} from "../../../src/modules/deployments/env-drift";
+} from "@repo/platform/engine/modules/deployments/env-drift";
 
 const ctx = { organizationId: "org_1" } as never;
 

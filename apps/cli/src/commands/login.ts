@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
+import { OpenshipClient } from "@repo/sdk/client";
 import { addContext, DEFAULT_CONTEXT, setActiveContext } from "../lib/config";
 import { fetchCaps } from "../lib/caps";
 
@@ -59,15 +60,14 @@ export const loginCommand = new Command("login")
     let valid = false;
     let scoped = false;
     try {
-      const res = await fetch(`${apiUrl}/api/tokens`, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(8000),
-      });
+      const client = new OpenshipClient({ baseUrl: apiUrl, token, timeoutMs: 8000 });
+      const res = await client.http.raw("/tokens");
       if (res.ok) valid = true;
       else if (res.status === 403) {
         valid = true;
         scoped = true;
       }
+      await res.body?.cancel();
     } catch {
       console.error(
         chalk.red(`\n  Couldn't reach the API at ${apiUrl}. `) +

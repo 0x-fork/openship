@@ -1,3 +1,5 @@
+import { createConfigurationSecrets } from "../configuration-secrets";
+import { createEncryption } from "../encryption";
 import { describe, expect, it } from "vitest";
 import type { Database } from "../client";
 import {
@@ -6,6 +8,9 @@ import {
   toComposeSpec,
   type ParsedComposeService,
 } from "./service.repo";
+
+const testEncryption = createEncryption("repository-test-secret");
+const configuration = createConfigurationSecrets(testEncryption);
 
 const fullEnvironment = {
   NODE_ENV: "production",
@@ -56,16 +61,16 @@ function harness(initial = existingService()) {
     update: () => ({
       set: (data: Record<string, unknown>) => ({
         where: async () => {
-          writes.push(data);
+          writes.push(configuration.openService(data));
           stored = { ...stored, ...data };
         },
       }),
     }),
   } as unknown as Database;
   return {
-    repo: createServiceRepo(db),
+    repo: createServiceRepo(db, testEncryption),
     writes,
-    stored: () => stored,
+    stored: () => configuration.openService(stored),
   };
 }
 

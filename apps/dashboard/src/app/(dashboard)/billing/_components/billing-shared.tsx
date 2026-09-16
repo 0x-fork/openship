@@ -98,13 +98,12 @@ function BillingCtaLink({
  * per-request against a real `now`. If this line ever needs the discounted figure,
  * plumb it in from that payload — do not reach for the catalog.
  */
-function formatPlanPrice(tier: PlanTierId, bt: BillingStrings): string {
-  const monthly = PLANS[tier].price.monthly;
-  if (monthly === 0) return bt.sidebar.freeForever;
+function formatPlanPrice(price: number | null, bt: BillingStrings, interval: "monthly" | "annual" = "monthly"): string {
+  if (price === 0) return bt.sidebar.freeForever;
   // No published price = a negotiated one (enterprise), never "not priced yet".
-  if (monthly === null) return bt.sidebar.contactSales;
-  return interpolate(bt.sidebar.perMonth, {
-    price: (monthly / 100).toFixed(monthly % 100 === 0 ? 0 : 2),
+  if (price === null) return bt.sidebar.contactSales;
+  return interpolate(interval === "annual" ? bt.sidebar.perYear : bt.sidebar.perMonth, {
+    price: (price / 100).toFixed(price % 100 === 0 ? 0 : 2),
   });
 }
 
@@ -145,7 +144,8 @@ function nextPlan(tier: PlanTierId): PlanTierId | undefined {
 export function BillingSidebar({ state }: { state: BillingState }) {
   const { t } = useI18n();
   const bt = t.billing;
-  const plan = PLANS[state.tier];
+  const plan = state.plan === undefined ? PLANS[state.tier] : state.plan;
+  if (!plan) return null;
   const PlanIcon = PLAN_ICON[state.tier];
   const features = plan?.features ?? [];
 
@@ -161,7 +161,7 @@ export function BillingSidebar({ state }: { state: BillingState }) {
             <p className="text-xs text-muted-foreground">
               {interpolate(bt.sidebar.planSuffix, { name: plan.name })}
               {" · "}
-              {formatPlanPrice(state.tier, bt)}
+              {formatPlanPrice(plan.price[state.subscription?.interval ?? "monthly"], bt, state.subscription?.interval)}
             </p>
           </div>
         </div>
@@ -183,7 +183,7 @@ export function BillingSidebar({ state }: { state: BillingState }) {
   );
 }
 
-export function PaymentMethodPanel() {
+export function PaymentMethodPanel({ portalAvailable = false }: { portalAvailable?: boolean }) {
   const { t } = useI18n();
   return (
     <div className="rounded-2xl border border-border/50 bg-card">
@@ -192,13 +192,13 @@ export function PaymentMethodPanel() {
         <p className="mt-1 text-sm text-muted-foreground">{t.billing.paymentPanel.description}</p>
       </div>
       <div className="p-5">
-        <OpenStripePortalButton />
+        <OpenStripePortalButton enabled={portalAvailable} />
       </div>
     </div>
   );
 }
 
-export function InvoicesPanel() {
+export function InvoicesPanel({ portalAvailable = false }: { portalAvailable?: boolean }) {
   const { t } = useI18n();
   return (
     <div className="rounded-2xl border border-border/50 bg-card">
@@ -207,7 +207,7 @@ export function InvoicesPanel() {
         <p className="mt-1 text-sm text-muted-foreground">{t.billing.invoicesPanel.description}</p>
       </div>
       <div className="p-5">
-        <OpenStripePortalButton />
+        <OpenStripePortalButton enabled={portalAvailable} />
       </div>
     </div>
   );

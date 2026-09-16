@@ -1,121 +1,141 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment happy-dom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
-import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
+import { baseDictionary } from "@/i18n";
+import { DraftProjectView } from "./DraftProjectView";
 
-/**
- * Two paths exist to delete a project:
- *
- *   1. Deployed / live project: Advanced tab -> Danger Zone -> DeletionModal
- *      (requires confirmation typing the name, offers volume wipe / record-only).
- *   2. Draft / never-deployed project: DraftProjectView -> Danger card -> Delete.
- *
- * Previously, the draft deletion path called `onDeleteProject()` immediately
- * on a single click without any confirmation dialog, while `DeleteConfirmationDialog`
- * sat orphaned and unwired in the same component folder.
- *
- * These tests ensure:
- *   • DeleteConfirmationDialog renders the proper title, prompt, actions, and backdrop
- *   • DraftProjectView wires DeleteConfirmationDialog and gates deletion behind it
- */
+const h = vi.hoisted(() => ({
+  remove: vi.fn(),
+  deployments: vi.fn(),
+  navigate: vi.fn(),
+  project: {
+    id: "draft-a",
+    name: "Draft A",
+    gitOwner: "acme",
+    gitRepo: "demo",
+    activeDeploymentId: null,
+  },
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.navigate }) }));
+vi.mock("@/context/ProjectSettingsContext", () => ({
+  useProjectSettings: () => ({ id: h.project.id, projectData: h.project }),
+}));
+vi.mock("@/lib/api", () => ({ projectsApi: { getDeployments: h.deployments } }));
+vi.mock("@/app/(dashboard)/deployments/components", () => ({ DeploymentsContent: () => null }));
 
-function renderDialog(props: Partial<React.ComponentProps<typeof DeleteConfirmationDialog>> = {}) {
-  return renderToStaticMarkup(
-    <I18nProvider>
-      <DeleteConfirmationDialog
-        isOpen={props.isOpen ?? true}
-        onClose={props.onClose ?? (() => {})}
-        onConfirm={props.onConfirm ?? (() => {})}
-        projectName={props.projectName ?? "test-draft-project"}
-      />
-    </I18nProvider>,
+let host: HTMLDivElement;
+let root: Root;
+const copy = baseDictionary.projectSettings.deleteDialog;
+function button(label: string) {
+  const found = [...host.querySelectorAll("button")].find(
+    (node) => node.textContent?.trim() === label,
   );
+  expect(found, `button ${label}`).toBeDefined();
+  return found!;
 }
-
-function text(html: string) {
-  return html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&#x27;|&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ")
-    .trim();
+function dialog() {
+  return host.querySelector('[role="alertdialog"]');
 }
-
-describe("DeleteConfirmationDialog — render & confirmation model", () => {
-  it("renders nothing when closed", () => {
-    const html = renderDialog({ isOpen: false });
-    expect(html).toBe("");
-  });
-
-  it("renders the confirmation modal with project name and warning when open", () => {
-    const html = renderDialog({ isOpen: true, projectName: "my-draft-app" });
-    const out = text(html);
-
-    // Title from i18n (t.projectSettings.deleteDialog.title)
-    expect(out).toContain("Delete Project");
-    // Project name in bold
-    expect(html).toContain("<strong class=\"text-foreground\">my-draft-app</strong>");
-    // Confirmation body text
-    expect(out).toContain("Are you sure you want to delete");
-    expect(out).toContain("This action cannot be undone");
-    // Action buttons
-    expect(out).toContain("Cancel");
-    expect(out).toContain("Delete Project");
-  });
-
-  it("has appropriate styling and danger indicators", () => {
-    const html = renderDialog({ isOpen: true });
-    // Backdrop overlay
-    expect(html).toContain("fixed inset-0 bg-black/80 backdrop-blur-sm");
-    // Card container
-    expect(html).toContain("bg-card border border-border rounded-xl");
-    // Danger tone on delete button
-    expect(html).toContain("bg-destructive");
-  });
-
-  it("handles backdrop clicks to dismiss dialog", () => {
-    const src = readFileSync(new URL("./DeleteConfirmationDialog.tsx", import.meta.url), "utf8");
-    expect(src).toContain("if (e.target === e.currentTarget) onClose()");
-  });
+async function open() {
+  await act(async () =>
+    root.render(
+      <I18nProvider>
+        <DraftProjectView onDeleteProject={h.remove} />
+      </I18nProvider>,
+    ),
+  );
+  const trigger = button(baseDictionary.projects.draft.delete);
+  trigger.focus();
+  await act(async () => trigger.click());
+  return trigger;
+}
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  h.deployments.mockResolvedValue({ data: [] });
+  h.remove.mockResolvedValue(undefined);
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+  vi.unstubAllGlobals();
 });
 
-describe("DraftProjectView — confirmation dialog wiring", () => {
-  const src = readFileSync(new URL("./DraftProjectView.tsx", import.meta.url), "utf8");
-
-  it("imports DeleteConfirmationDialog", () => {
-    expect(src).toContain('import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog"');
+describe("draft project deletion", () => {
+  it("requires confirmation before calling the existing deletion handler", async () => {
+    await open();
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(dialog()?.textContent).toContain("Draft A");
+    await act(async () => button(copy.delete).click());
+    expect(h.remove).toHaveBeenCalledExactlyOnceWith();
+    expect(dialog()).toBeNull();
   });
-
-  it("manages dialog open/close state", () => {
-    expect(src).toMatch(/const\s+\[showDeleteDialog,\s*setShowDeleteDialog\]\s*=\s*useState\(false\)/);
+  it("cancels without deleting and returns focus to the trigger", async () => {
+    const trigger = await open();
+    await act(async () => button(copy.cancel).click());
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
-
-  it("opens DeleteConfirmationDialog on delete button click instead of immediate deletion", () => {
-    // The Delete button in the SectionCard must trigger opening the confirmation modal
-    expect(src).toContain("onClick={() => setShowDeleteDialog(true)}");
-    expect(src).not.toContain("onClick={confirmDelete}");
+  it("dismisses on the backdrop but does not dismiss a click inside the dialog", async () => {
+    await open();
+    const content = dialog()!;
+    await act(async () => content.querySelector("strong")!.click());
+    expect(dialog()).toBe(content);
+    await act(async () => (content.parentElement as HTMLElement).click());
+    expect(dialog()).toBeNull();
+    expect(h.remove).not.toHaveBeenCalled();
   });
-
-  it("renders DeleteConfirmationDialog with required props", () => {
-    expect(src).toContain("<DeleteConfirmationDialog");
-    expect(src).toContain("isOpen={showDeleteDialog}");
-    expect(src).toContain("onClose={() => setShowDeleteDialog(false)}");
-    expect(src).toContain("onConfirm={handleConfirmDelete}");
-    expect(src).toContain("projectName={projectData?.name || \"\"}");
+  it("starts on Cancel, keeps keyboard focus inside, and lets Escape cancel", async () => {
+    const trigger = await open();
+    const cancel = button(copy.cancel);
+    const confirm = button(copy.delete);
+    expect(document.activeElement).toBe(cancel);
+    await act(async () =>
+      cancel.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Tab",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(document.activeElement).toBe(confirm);
+    await act(async () =>
+      confirm.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(document.activeElement).toBe(cancel);
+    await act(async () =>
+      cancel.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
-
-  it("triggers onDeleteProject only upon confirmation inside the dialog", () => {
-    // The confirm handler must close dialog, set deleting state, and call onDeleteProject
-    expect(src).toContain("await onDeleteProject()");
-    expect(src).toContain("setShowDeleteDialog(false)");
-    expect(src).toContain("setDeleting(true)");
-    expect(src).toContain("setDeleting(false)");
-  });
-
-  it("disables delete and deploy buttons while deletion is in progress", () => {
-    expect(src).toContain("disabled={deleting}");
-    expect(src).toContain("Loader2 className=\"size-4 animate-spin\"");
+  it("does not start another deletion while the confirmed request is pending", async () => {
+    let finish!: () => void;
+    h.remove.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const trigger = await open();
+    await act(async () => button(copy.delete).click());
+    expect(trigger.disabled).toBe(true);
+    await act(async () => trigger.click());
+    expect(h.remove).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    expect(trigger.disabled).toBe(false);
   });
 });

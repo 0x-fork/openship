@@ -481,6 +481,23 @@ http {
     expect(final.body.trim()).toBe("ROOT-INDEX");
   });
 
+  it.each([
+    ["enforce.test", "/ui", "/ui/"],
+    ["strip.test", "/ui/", "/ui"],
+    ["clean.test", "/about.html", "/about"],
+  ])(
+    "preserves raw query parameters through URL normalization on %s (#845)",
+    async (host, path, target) => {
+      const query = "?token=abc%2B123%2F%3D&next=%2Fui%3Ftab%3D1&tag=a&tag=b";
+      const answer = await ask(port, path + query, host);
+      expect(answer.status).toBe(308);
+      expect(answer.location).toBe(`http://${host}${target}${query}`);
+      const result = await follow(port, path + query, host);
+      expect(result.hops).toEqual([answer.location]);
+      expect(result.final.status).toBe(200);
+    },
+  );
+
   // ── The silent one ───────────────────────────────────────────────────────────
 
   it("gives every path-scoped header rule its own value", async () => {

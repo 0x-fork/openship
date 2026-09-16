@@ -862,6 +862,48 @@
       "when": 1789510907325,
       "tag": "0122_data_transfer_staging",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1789597307325,
+      "tag": "0123_embedding_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1789683707325,
+      "tag": "0124_job_run_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1789770107325,
+      "tag": "0125_execution_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1789770107326,
+      "tag": "0126_invitation_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1789770107327,
+      "tag": "0127_organization_oblien_namespace",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1789770107328,
+      "tag": "0128_shared_service_connections",
+      "breakpoints": true
     }
   ]
 }

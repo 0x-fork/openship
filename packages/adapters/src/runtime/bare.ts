@@ -944,7 +944,7 @@ export class BareRuntime implements RuntimeAdapter {
     // reporting a failure, so a teardown blocked by a root-owned tree looked
     // identical to a clean one.
     if (isArtifactPathRef(containerId)) {
-      await removeManagedArtifact(this.executor, containerId);
+      await removeManagedArtifact(this.executor, containerId, this.workDir);
       return;
     }
 
@@ -1024,7 +1024,7 @@ export class BareRuntime implements RuntimeAdapter {
     // failure.
     const releaseDir = this.releaseDir(deployment.id);
     if (releaseDir !== deployment.containerId) {
-      await removeManagedArtifact(this.executor, releaseDir).catch((err: unknown) =>
+      await removeManagedArtifact(this.executor, releaseDir, this.workDir).catch((err: unknown) =>
         failures.push(err),
       );
     }

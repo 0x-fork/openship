@@ -12,7 +12,7 @@ import {
   maskServicesEnv,
   mergeServiceEnv,
   unmaskEnv,
-} from "../../src/lib/secret-env";
+} from "@repo/platform/engine/lib/secret-env";
 
 describe("maskEnv", () => {
   test("blanks every value regardless of key", () => {

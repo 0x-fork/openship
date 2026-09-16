@@ -14,12 +14,12 @@ const { listByProjectMock } = vi.hoisted(() => ({ listByProjectMock: vi.fn() }))
 vi.mock("@repo/db", () => ({
   repos: { service: { listByProject: listByProjectMock } },
 }));
-vi.mock("../session-manager", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
 }));
 
-import { buildComposeImages, resolveComposeBuildArgs, resolveComposeImage } from "./build.service";
+import { buildComposeImages, resolveComposeBuildArgs, resolveComposeImage } from "@repo/platform/engine/modules/deployments/compose/build.service";
 
 /**
  * These pin the AUTHOR-FACING contract of an inline catalog build (`advanced.build`):
@@ -173,6 +173,24 @@ async function run(
   });
   return { result, captured };
 }
+
+describe("prebuilt registry images (#878)", () => {
+  it("keeps an image-only GHCR reference without invoking a source build", async () => {
+    const image = "ghcr.io/acme/web:sha-abc123";
+    const { result, captured } = await run([{ ...repoService({ build: null }), image }]);
+    expect(captured).toEqual([]);
+    expect(result.imageRefs.get("svc-1")).toBe(image);
+    expect(result.builtImageRefs.size).toBe(0);
+    expect(result.externalCount).toBe(1);
+  });
+
+  it("honors an explicit source build even when the service also names an image", async () => {
+    const { result, captured } = await run([{ ...repoService(), image: "ghcr.io/acme/web:latest" }]);
+    expect(captured).toHaveLength(1);
+    expect(result.builtImageRefs.size).toBe(1);
+    expect(result.externalCount).toBe(0);
+  });
+});
 
 describe("buildComposeImages — static artifact provenance", () => {
   it("records an inherited static sub-app's exact host artifact", async () => {

@@ -6,6 +6,7 @@ import { deployApi, projectsApi, servicesApi, serviceKind } from "@/lib/api";
 import { folderApi } from "@/lib/api/folder";
 import type {
   PrepareProjectResponse,
+  PrepareProjectSource,
   PrepareComposeService,
   PrepareMonorepoApp,
 } from "@/lib/api/deploy";
@@ -53,6 +54,8 @@ interface PreparedConfigArgs {
   owner: string;
   branch: string;
   branches: string[];
+  branchPage?: number;
+  branchesHasMore?: boolean;
   projectId?: string;
   localPath?: string;
   uploadSessionId?: string;
@@ -470,7 +473,7 @@ function resolvePreparedProjectContext(
   // here when that runtime lands. Single apps stay "single".
   const serviceDeploymentMode =
     projectType === "services" || projectType === "monorepo" ? "services" : "single";
-  const detectedStack = (response.stack || "nextjs") as FrameworkId;
+  const detectedStack = (response.stack || "unknown") as FrameworkId;
   const stackDef = STACKS[detectedStack as keyof typeof STACKS] as StackDefinition | undefined;
   const singleAppCandidate = response.singleAppCandidate;
   const singleStackDef = singleAppCandidate
@@ -653,6 +656,8 @@ function resolvePreparedSingleModeDefaults(
  */
 export function useDeploymentConfig() {
   const [config, setConfig] = useState<DeploymentConfig>(DEFAULT_CONFIG);
+  const [isRescanning, setIsRescanning] = useState(false);
+  const rescanInProgress = useRef(false);
   const userBuildPref = useRef<BuildMode>("auto");
   // Free subdomains need Cloud, so a Cloud-less self-hosted instance seeds new
   // endpoints as custom instead of offering a `.opsh.io` name preflight rejects.
@@ -807,6 +812,8 @@ export function useDeploymentConfig() {
         owner,
         branch,
         branches,
+        branchPage,
+        branchesHasMore,
         projectId,
         localPath,
         uploadSessionId,
@@ -876,7 +883,8 @@ export function useDeploymentConfig() {
           // the fresh detection for informational/UI purposes.
           framework:
             projectId && project?.framework ? project.framework : preparedContext.detectedStack,
-          detectedFramework: preparedContext.detectedStack,
+          detectedFramework:
+            preparedContext.detectedStack === "unknown" ? null : preparedContext.detectedStack,
           buildStrategy: normalizeBuildStrategy(
             preparedContext.projectType,
             preparedContext.stackDef,
@@ -908,6 +916,8 @@ export function useDeploymentConfig() {
           buildImage: runtimeConfig.buildImage,
           branch,
           branches,
+          branchPage: branchPage ?? 0,
+          branchesHasMore: branchesHasMore ?? false,
           services: response.services || [],
           publicEndpoints: routingState.publicEndpoints,
           // openship.json is an explicit deploy contract, so its env is already
@@ -971,16 +981,18 @@ export function useDeploymentConfig() {
         const sourceOwner = project?.gitOwner || owner;
         const sourceRepo = project?.gitRepo || repo;
         const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
-        const requestedBranch = (projectBranch || context?.branch || "").trim() || undefined;
+        const requestedBranch = context?.branch?.trim() || projectBranch.trim() || undefined;
+        const changesSavedBranch = !!project && requestedBranch !== projectBranch;
 
-        const response = await deployApi.prepare({
+        const preparedSource: PrepareProjectSource = {
           owner: sourceOwner,
           repo: sourceRepo,
           branch: requestedBranch,
           force,
-          ...scanComposePath(context?.composePath, project),
-          ...(context?.env ? { env: context.env } : {}),
-        });
+          ...scanComposePath(context?.composePath, changesSavedBranch ? null : project),
+          ...(context?.env ? { env: { ...context.env } } : {}),
+        };
+        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1011,11 +1023,22 @@ export function useDeploymentConfig() {
             ),
             {
               response,
-              project,
+              // Saved build defaults and compose pins describe the saved ref.
+              // Keep project-owned settings when an explicit ref overrides it.
+              project: changesSavedBranch
+                ? {
+                    name: project?.name,
+                    runtimeMode: project?.runtimeMode,
+                    readiness: project?.readiness,
+                    routingConfig: project?.routingConfig,
+                  }
+                : project,
               repoName,
               owner: response.repository.owner?.login || sourceOwner,
               branch: selectedBranch,
               branches: branchOptions,
+              branchPage: 1,
+              branchesHasMore: Boolean(response.repository.branches_has_more),
               projectId: context?.projectId,
             },
           ),
@@ -1032,6 +1055,99 @@ export function useDeploymentConfig() {
       }
     },
     [buildPreparedConfig],
+  );
+
+  // A branch is a different source tree. Commit its name and detection together,
+  // leaving the last valid config intact if the scan fails. Do not carry a
+  // compose pin or saved build defaults from the previous branch into this scan.
+  const rescanWithBranch = useCallback(
+    async (branch: string): Promise<{ success: boolean; error?: string }> => {
+      const requestedBranch = branch.trim();
+      if (rescanInProgress.current) return { success: false };
+      if (!requestedBranch || requestedBranch === config.branch) return { success: true };
+      if (
+        !config.owner ||
+        !config.repo ||
+        config.localPath ||
+        config.uploadSessionId ||
+        config.isApp
+      ) {
+        return { success: false, error: "This project has no git source to re-scan" };
+      }
+
+      rescanInProgress.current = true;
+      setIsRescanning(true);
+      try {
+        const response = await deployApi.prepare({
+          owner: config.owner,
+          repo: config.repo,
+          branch: requestedBranch,
+          ...scanEnv(config.envVars),
+          includeEnv: true,
+        });
+        if (response.error) return { success: false, error: response.error };
+
+        setConfig((prev) => {
+          // The provider can survive navigation to another project's build page.
+          if (
+            prev.projectId !== config.projectId ||
+            prev.owner !== config.owner ||
+            prev.repo !== config.repo ||
+            prev.branch !== config.branch
+          )
+            return prev;
+
+          const prepared = buildPreparedConfig(prev, {
+            response,
+            project: null,
+            repoName: config.repo,
+            owner: config.owner,
+            branch: requestedBranch,
+            branches: Array.from(
+              new Set([
+                requestedBranch,
+                ...config.branches,
+                ...(response.repository.branches?.map((entry) => entry.name) ?? []),
+              ]),
+            ),
+            branchPage: 1,
+            branchesHasMore: Boolean(response.repository.branches_has_more),
+            projectId: config.projectId,
+          });
+          const requiresDocker =
+            prepared.projectType === "services" || prepared.projectType === "docker";
+          // Source defaults are fresh; operator-owned project settings and env
+          // edits remain staged. In particular, never rehydrate masked env here.
+          return normalizePreparedConfig({
+            ...prepared,
+            projectName: prev.projectName,
+            // Keep single-app domains and redirects; normalization updates the
+            // primary endpoint to the freshly detected port or static path.
+            publicEndpoints:
+              (prev.projectType === "app" || prev.projectType === "docker") &&
+              (prepared.projectType === "app" || prepared.projectType === "docker")
+                ? prev.publicEndpoints
+                : prepared.publicEndpoints,
+            runtimeMode: requiresDocker ? "docker" : prev.runtimeMode,
+            buildStrategy: requiresDocker ? "server" : prev.buildStrategy,
+            readiness: prev.readiness,
+            routingConfig: prev.routingConfig,
+            cloudResourceTier: prev.cloudResourceTier,
+            cloudResourceCustom: prev.cloudResourceCustom,
+          });
+        });
+        return { success: true };
+      } catch (err) {
+        return {
+          success: false,
+          error: getApiErrorMessage(err, "Failed to scan the selected branch"),
+        };
+      } finally {
+        rescanInProgress.current = false;
+        setIsRescanning(false);
+      }
+    },
+    [config, buildPreparedConfig, normalizePreparedConfig],
   );
 
   // ── Prepare from local path ────────────────────────────────────────────────
@@ -1059,12 +1175,13 @@ export function useDeploymentConfig() {
           }
         }
 
-        const response = await deployApi.prepare({
+        const preparedSource: PrepareProjectSource = {
           source: "local",
           path,
           ...scanComposePath(context?.composePath, project),
-          ...(context?.env ? { env: context.env } : {}),
-        });
+          ...(context?.env ? { env: { ...context.env } } : {}),
+        };
+        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1115,36 +1232,44 @@ export function useDeploymentConfig() {
     async (
       composePath: string,
     ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
-      // "" clears the pin: the initialize* paths drop a blank value, so the scan
-      // falls back to ordinary root detection.
-      const trimmed = composePath.trim();
-      // Carry the env the user has already entered so a compose file with
-      // required variables re-scans instead of erroring as unparseable (#383).
-      const env = scanEnv(config.envVars);
+      if (rescanInProgress.current) return { success: false };
+      rescanInProgress.current = true;
+      setIsRescanning(true);
+      try {
+        // "" clears the pin: the initialize* paths drop a blank value, so the scan
+        // falls back to ordinary root detection.
+        const trimmed = composePath.trim();
+        // Carry the env the user has already entered so a compose file with
+        // required variables re-scans instead of erroring as unparseable (#383).
+        const env = scanEnv(config.envVars);
 
-      if (config.localPath) {
-        return initializeFromLocal(config.localPath, {
+        if (config.localPath) {
+          return await initializeFromLocal(config.localPath, {
+            projectId: config.projectId,
+            composePath: trimmed,
+            preserveEnvState: true,
+            ...env,
+          });
+        }
+        if (!config.owner || !config.repo) {
+          return {
+            success: false,
+            error: "This project has no git or local source to re-scan",
+            errorType: "api_error",
+          };
+        }
+        const result = await initializeFromRepo(config.owner, config.repo, undefined, {
+          branch: config.branch,
           projectId: config.projectId,
           composePath: trimmed,
           preserveEnvState: true,
           ...env,
         });
+        return { success: result.success, error: result.error, errorType: result.errorType };
+      } finally {
+        rescanInProgress.current = false;
+        setIsRescanning(false);
       }
-      if (!config.owner || !config.repo) {
-        return {
-          success: false,
-          error: "This project has no git or local source to re-scan",
-          errorType: "api_error",
-        };
-      }
-      const result = await initializeFromRepo(config.owner, config.repo, undefined, {
-        branch: config.branch,
-        projectId: config.projectId,
-        composePath: trimmed,
-        preserveEnvState: true,
-        ...env,
-      });
-      return { success: result.success, error: result.error, errorType: result.errorType };
     },
     [
       config.localPath,
@@ -1216,7 +1341,7 @@ export function useDeploymentConfig() {
             services: undefined,
           } as unknown as PrepareProjectResponse;
         } else {
-          const scan = await folderApi.scan(sessionId);
+          const scan = await folderApi.scan(sessionId, { includeEnv: true });
           if ((scan as { error?: string })?.error) {
             return {
               success: false,
@@ -1384,6 +1509,8 @@ export function useDeploymentConfig() {
               owner: project.gitOwner || (project.localPath ? "local" : repoName),
               branch,
               branches: branch ? [branch] : [],
+              branchPage: 0,
+              branchesHasMore: Boolean(project.gitOwner && project.gitRepo),
               projectId,
               localPath: project.localPath || undefined,
             }),
@@ -1425,6 +1552,7 @@ export function useDeploymentConfig() {
 
   return {
     config,
+    isRescanning,
     setConfig,
     updateConfig,
     updateOptions,
@@ -1433,5 +1561,6 @@ export function useDeploymentConfig() {
     initializeFromUpload,
     initializeFromProject,
     rescanWithComposePath,
+    rescanWithBranch,
   };
 }

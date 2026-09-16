@@ -29,7 +29,7 @@ import {
   type OpenshipService,
   type ParseResult,
 } from "./schema";
-import { isValidEnvKey } from "../utils";
+import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
 
 const TOP_LEVEL_KEYS = new Set([
   "$schema",
@@ -407,6 +407,7 @@ function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | u
     if (!Array.isArray(v.apps)) ctx.err(`${path}.apps`, "must be an array");
     else {
       const apps: OpenshipMonorepoApp[] = [];
+      const roots = new Map<string, number>();
       v.apps.forEach((a, i) => {
         const p = `${path}.apps[${i}]`;
         if (!ctx.isObj(a)) {
@@ -419,6 +420,15 @@ function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | u
           ctx.err(p, "requires `name` and `rootDirectory`");
           return;
         }
+        const root = normalizeProjectRootDirectory(rootDirectory);
+        if (roots.has(root)) {
+          ctx.err(
+            `${p}.rootDirectory`,
+            `duplicates ${path}.apps[${roots.get(root)}]; each override must target a different detected app`,
+          );
+          return;
+        }
+        roots.set(root, i);
         apps.push({
           name,
           rootDirectory,

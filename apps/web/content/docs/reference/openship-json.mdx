@@ -120,7 +120,7 @@ share one. On a bare (non-container) deploy the same paths are kept outside the 
 directory and symlinked in. Openship Cloud has no volume primitive: a declared mount is
 reported and skipped there, so use object storage for uploads instead.
 
-Compose services declare their own mounts under [`services[].volumes`](#services).
+Compose services declare their own mounts under [`services[].volumes`](#services-compose).
 
 ## Environment variables
 
@@ -286,6 +286,10 @@ re-read on every deploy, and `build:` contexts resolve relative to it, exactly a
   }}
 />
 
+`dependsOn` takes service names such as `["db"]`, without a port. It controls container startup
+order, not database availability during an image build. For `ENOTFOUND db` during `next build`,
+see [Database access during a Next.js build](/docs/guides/compose-multi-service#database-access-during-a-nextjs-build).
+
 Top-level `env` is available to Dockerfile builds as well as running containers. Use
 `buildArgs` when a service needs an explicit override or when you want the config to document
 which Dockerfile arguments it consumes. A service's own `env` is runtime-only and is never shared
@@ -301,6 +305,18 @@ setting.
 `monorepo` overrides Openship's detected sub-apps. Entries in `apps[]` are matched to detected
 sub-apps by `rootDirectory` and override their build settings — they don't declare apps from
 scratch (the detector finds the apps).
+
+Each override must have a different normalized `rootDirectory`. Declaring a web
+process and a worker at the same root is not a supported multi-app declaration.
+`openship config validate` rejects duplicate roots; source scans report unmatched
+apps and workspace overrides in the configuration diagnostics.
+
+Create a monorepo through the repository import flow, which supplies the detected
+app metadata. The API/SDK also accepts that metadata as `monorepoApps`. Setting
+`projectType: "monorepo"` (or CLI `project create --type monorepo`) without it now
+fails before creating a project. A local CLI import scans the workspace first.
+For independent processes without containers, use separate projects pointed at
+the required roots and start commands.
 
 ```json
 {

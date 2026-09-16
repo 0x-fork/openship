@@ -14,7 +14,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-import { attachLinkedNetworks, linkedNetworkName } from "./attach-linked-networks";
+import { attachLinkedNetworks, linkedNetworkName } from "@repo/platform/engine/modules/deployments/attach-linked-networks";
 
 describe("attachLinkedNetworks", () => {
   beforeEach(() => {

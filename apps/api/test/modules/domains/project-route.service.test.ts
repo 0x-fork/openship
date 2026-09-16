@@ -38,8 +38,8 @@ vi.mock("@repo/db", () => ({
 // drift silently, which is the thing sharing it prevents.
 // Adapts the flat `resolveRuntime` stub to the platform shape the re-apply now
 // resolves (and releases): `{ platform: { routing, runtime }, effectiveTarget, serverId }`.
-vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/lib/deployment-runtime")>()),
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/deployment-runtime")>()),
   disposePlatform: () => {},
   resolveDeploymentPlatform: async (...args: unknown[]) => {
     const flat = (await resolveRuntime(...args)) as Record<string, unknown>;
@@ -47,17 +47,17 @@ vi.mock("../../../src/lib/deployment-runtime", async (importOriginal) => ({
   },
 }));
 
-vi.mock("../../../src/lib/route-apply.service", () => ({
+vi.mock("@repo/platform/engine/lib/route-apply.service", () => ({
   reconcileProjectRoutes: reconcile,
 }));
 
-vi.mock("../../../src/modules/route-rules/route-rule.service", () => ({
+vi.mock("@repo/platform/engine/modules/route-rules/route-rule.service", () => ({
   pushProjectRules: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The managed-edge sync is awaited inside the re-apply; mocked so no test reaches
 // the network and so the "which domains got synced" half is assertable.
-vi.mock("../../../src/lib/managed-edge-proxy", () => ({
+vi.mock("@repo/platform/engine/lib/managed-edge-proxy", () => ({
   syncManagedEdgeRoutes: syncManagedEdge,
   deregisterManagedEdgeRoutes: deregisterManagedEdge,
 }));
@@ -68,7 +68,7 @@ import {
   deriveProjectRouteState,
   reapplyProjectLiveRoutes,
   shouldRefuseLoopbackRoute,
-} from "../../../src/modules/domains/project-route.service";
+} from "@repo/platform/engine/modules/domains/project-route.service";
 
 const domainRow = (over: Partial<Domain> & Pick<Domain, "id" | "hostname">): Domain => ({
   id: over.id,
@@ -122,6 +122,11 @@ describe("shouldRefuseLoopbackRoute", () => {
 
   it("allows the self-app's own public route to the dashboard port on loopback", () => {
     expect(shouldRefuseLoopbackRoute("127.0.0.1", 3001, { isSelfApp: true })).toBe(false);
+  });
+
+  it("does not exempt the API or edge management port even for the self-app", () => {
+    expect(shouldRefuseLoopbackRoute("127.0.0.1", 4000, { isSelfApp: true })).toBe(true);
+    expect(shouldRefuseLoopbackRoute("127.0.0.1", 9145, { isSelfApp: true })).toBe(true);
   });
 
   it("allows a non-reserved port on loopback regardless of self-app status", () => {
@@ -450,6 +455,18 @@ describe("reapplyProjectLiveRoutes static (path-targeted) routes", () => {
     );
   });
 
+  it.each(["e2fd2ba984b56e", "compose", "ghcr.io/example/web:latest"])(
+    "does not publish a non-directory reference %s as a static root (#879)",
+    async (containerId) => {
+      listByProject.mockResolvedValue([domain("/")]);
+      findDeployment.mockResolvedValue({ ...deployment({}), containerId });
+      const onWarning = vi.fn();
+      await reapplyProjectLiveRoutes(staticProject, [], { onWarning });
+      expect(reconcile.mock.calls[0][1].registers ?? []).toEqual([]);
+      expect(onWarning).toHaveBeenCalledWith(expect.stringMatching(/no (static root|containerId)/));
+    },
+  );
+
   it("syncs the free domain of a static project on Openship Cloud's edge", async () => {
     // The other half of the same bug: the edge route is `<slug>.opsh.io` → this
     // server's :80. What the vhost then does with the request is a local matter,
@@ -738,6 +755,77 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
         observedLoopbackPublishes: [{ serviceId: "svc-web", containerPort: 3000, hostPort: 3000 }],
       },
     ]);
+  });
+
+  it("reports an unmapped domain without using a stale project port, while applying mapped siblings (#879)", async () => {
+    listByProject.mockResolvedValue([
+      projectDomain(null),
+      { ...projectDomain(3000), id: "dom-2", hostname: "mapped.example.com" },
+    ]);
+    const onWarning = vi.fn();
+    await reapplyProjectLiveRoutes({ ...project, port: 5432 }, [], { onWarning });
+    expect(reconcile.mock.calls.at(-1)?.[1].registers).toEqual([
+      expect.objectContaining({
+        hostname: "mapped.example.com",
+        targetUrl: "http://127.0.0.1:3000",
+      }),
+    ]);
+    expect(onWarning).toHaveBeenCalledWith(
+      expect.stringMatching(/select a target port for app\.example\.com.*services offer/),
+    );
+  });
+
+  it("does not fall back to the project port when service deployment records are missing (#879)", async () => {
+    listServicesByDeployment.mockResolvedValue([]);
+    findDeployment.mockResolvedValue({
+      id: "dep-1",
+      containerId: "c-web",
+      meta: { runtimeMode: "docker" },
+      organizationId: "org-1",
+    });
+    listByProject.mockResolvedValue([projectDomain(null)]);
+    const onWarning = vi.fn();
+    await reapplyProjectLiveRoutes({ ...project, port: 5432 }, [], { onWarning });
+    expect(reconcile.mock.calls.at(-1)?.[1].registers).toEqual([]);
+    expect(onWarning).toHaveBeenCalledWith(expect.stringContaining("select a target port"));
+  });
+
+  it.each([null, "svc-dashboard"])(
+    "retains dashboard ownership for self-app domains bound to %s (#879)",
+    async (serviceId) => {
+      listServicesByProject.mockResolvedValue([
+        { id: "svc-dashboard", name: "dashboard", enabled: true, ports: ["3001:3001"] },
+      ]);
+      listServicesByDeployment.mockResolvedValue([
+        { serviceId: "svc-dashboard", containerId: "c-dashboard", ip: "10.0.0.9", hostPort: 3001 },
+      ]);
+      listByProject.mockResolvedValue([{ ...projectDomain(3001), serviceId }]);
+      const onWarning = vi.fn();
+      await reapplyProjectLiveRoutes({ ...project, port: 3001 }, [], {
+        isSelfApp: true,
+        onWarning,
+      });
+      expect(reconcile.mock.calls.at(-1)?.[1].registers).toEqual([
+        expect.objectContaining({
+          hostname: "app.example.com",
+          targetUrl: "http://127.0.0.1:3001",
+          observedLoopbackPublishes: [
+            { serviceId: "svc-dashboard", containerPort: 3001, hostPort: 3001 },
+          ],
+        }),
+      ]);
+      expect(onWarning).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses a self-app domain mapped to another service's port (#879)", async () => {
+    listByProject.mockResolvedValue([{ ...projectDomain(3000), serviceId: "svc-postgres" }]);
+    const onWarning = vi.fn();
+    await reapplyProjectLiveRoutes(project, [], { isSelfApp: true, onWarning });
+    expect(reconcile.mock.calls.at(-1)?.[1].registers).toEqual([]);
+    expect(onWarning).toHaveBeenCalledWith(
+      expect.stringContaining("does not map to its owning service"),
+    );
   });
 
   it("picks the port's owner, not the dependency-ordered first service", async () => {

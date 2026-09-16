@@ -51,9 +51,7 @@ import type { Dictionary } from "@/i18n";
 import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
 
 interface DraftProjectViewProps {
-  /** Deletes this environment. Page passes its handleDeleteProject (defaults:
-   *  wipeVolumes=false, force=false — correct for a draft
-   *  with nothing provisioned). */
+  /** Deletes this environment using the page's normal cleanup policy. */
   onDeleteProject: () => void | Promise<void>;
 }
 
@@ -342,14 +340,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
           )}
         </SectionCard>
 
-        {/* Delete — always in its final state, no reveal step. A draft has no
-            workload to lose, and hiding Delete behind a quiet trigger only made
-            it take two clicks to bin an abandoned draft (which is most of what
-            this view is for).
-            Its counterpart is the constructive half of the same decision —
-            finish this draft, or drop it — so the pair reads as one fork rather
-            than a lone red button. That slot used to hold "Cancel", which had
-            nothing left to cancel once the confirm is permanent. */}
+        {/* Deletion requires confirmation, including drafts with failed attempts. */}
         <SectionCard
           icon={Trash2}
           title={t.projects.draft.deleteTitle}

@@ -299,7 +299,7 @@ export function HealthTab({ serverId }: { serverId: string }) {
   );
 }
 
-function ReachabilitySection({
+export function ReachabilitySection({
   reachability,
   error,
   refreshing,
@@ -312,7 +312,9 @@ function ReachabilitySection({
 }) {
   const { t } = useI18n();
   const h = t.emailsAdmin.health;
-  const providerBlocked = reachability?.ports.some((port) => port.status === "blocked") ?? false;
+  const providerBlocked =
+    reachability?.status === "fail" &&
+    reachability.ports.some((port) => port.status === "blocked");
   return (
     <SectionCard
       title={h.reachability.title}
@@ -360,7 +362,11 @@ function ReachabilitySection({
           )}
           <div className="divide-y divide-border/40">
             {reachability.ports.map((port) => (
-              <ReachabilityRow key={port.key} port={port} />
+              <ReachabilityRow
+                key={port.key}
+                port={port}
+                unverified={reachability.status === "unknown" && port.status === "blocked"}
+              />
             ))}
           </div>
         </>
@@ -369,20 +375,29 @@ function ReachabilitySection({
   );
 }
 
-function ReachabilityRow({ port }: { port: MailPortReachabilityCheck }) {
+function ReachabilityRow({
+  port,
+  unverified,
+}: {
+  port: MailPortReachabilityCheck;
+  unverified: boolean;
+}) {
   const { t } = useI18n();
   const copy = t.emailsAdmin.health.reachability;
-  const status = reachabilityPresentation(port.status);
+  // Keep the raw failed probe in the API response, but do not present an
+  // ambiguous SMTP timeout as a confirmed inbound firewall failure.
+  const displayStatus = unverified ? "unknown" : port.status;
+  const status = reachabilityPresentation(displayStatus);
   const detail =
-    port.status === "reachable"
+    displayStatus === "reachable"
       ? copy.reachableHint
-      : port.status === "blocked"
+      : displayStatus === "blocked"
         ? port.failure === "timeout"
           ? copy.blockedTimeoutHint
           : copy.blockedHint
-        : port.status === "not_listening"
+        : displayStatus === "not_listening"
           ? copy.notListeningHint
-          : port.status === "not_exposed"
+          : displayStatus === "not_exposed"
             ? copy.notExposedHint
             : port.detail || copy.unknownHint;
 
@@ -398,7 +413,7 @@ function ReachabilityRow({ port }: { port: MailPortReachabilityCheck }) {
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{detail}</p>
       </div>
-      <StatusPill tone={status.tone}>{copy.status[port.status]}</StatusPill>
+      <StatusPill tone={status.tone}>{copy.status[displayStatus]}</StatusPill>
     </div>
   );
 }

@@ -21,6 +21,7 @@ import {
   ChevronRight,
   ArrowLeft,
   Plus,
+  Waypoints,
 } from "lucide-react";
 
 import { ServiceDetailPanel } from "./services/ServiceDetailPanel";
@@ -376,6 +377,7 @@ export const ServicesTab = () => {
             the empty state. */}
         {hasProjectId && <LinkedAppsCard projectId={id} />}
         <AddServiceModal
+          projectId={id}
           open={createOpen}
           projectName={projectSlugBase}
           isCloudProject={projectData?.deployTarget === "cloud"}
@@ -451,6 +453,13 @@ export const ServicesTab = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => router.push(`/projects/${id}/topology`)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+            >
+              <Waypoints className="size-3.5" />
+              {t.projects.sidebar.tabs.topology}
+            </button>
             <button
               onClick={fetchData}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
@@ -667,6 +676,7 @@ export const ServicesTab = () => {
       <ResourceSettings />
 
       <AddServiceModal
+        projectId={id}
         open={createOpen}
         projectName={projectSlugBase}
         isCloudProject={projectData?.deployTarget === "cloud"}

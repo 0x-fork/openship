@@ -33,8 +33,8 @@ import { join } from "node:path";
 import { createServer } from "node:net";
 import { DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
 import { repos } from "@repo/db";
-import { encrypt } from "../../src/lib/encryption";
-import { LOCAL_HOST_PORT_TARGET } from "../../src/lib/host-port-target";
+import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { LOCAL_HOST_PORT_TARGET } from "@repo/platform/engine/lib/host-port-target";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
 
@@ -212,7 +212,7 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
       // the physical bind namespace, not by a nullable server-row id.
       hostPortTarget: LOCAL_HOST_PORT_TARGET,
     };
-    vi.doMock("../../src/lib/deployment-runtime", async (importOriginal) => {
+    vi.doMock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
@@ -249,7 +249,7 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     });
     // 3. GitHub check runs: there's no installation in a test org.
     // Keep everything real except the GitHub calls (no installation in a test org).
-    vi.doMock("../../src/modules/deployments/service-checks", async (importOriginal) => {
+    vi.doMock("@repo/platform/engine/modules/deployments/service-checks", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
@@ -260,7 +260,7 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
       };
     });
 
-    rollbackMod = await import("../../src/modules/deployments/rollback");
+    rollbackMod = await import("@repo/platform/engine/modules/deployments/rollback/index");
     ready = true;
   }, 300_000);
 
@@ -445,3 +445,20 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     expect(rollbackMod.planNeedsRepository(plan)).toBe(true);
   }, 120_000);
 });
+
+// The application seams moved with the shared engine.
+vi.doMock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
+      const actual = (await importOriginal()) as Record<string, unknown>;
+      return {
+        ...actual,
+        platform: () => localPlatform.platform,
+      };
+    });
+
+vi.doMock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
+      const actual = (await importOriginal()) as Record<string, unknown>;
+      return {
+        ...actual,
+        platform: () => localPlatform.platform,
+      };
+    });

@@ -67,6 +67,8 @@ const SYNCED_PKGS = [
   join(ROOT, "apps/web/package.json"),
   join(ROOT, "apps/email/package.json"),
   join(ROOT, "apps/cli/package.json"),
+  join(ROOT, "packages/openship/package.json"),
+  join(ROOT, "packages/platform/package.json"),
 ];
 
 /* ─── CLI parsing ──────────────────────────────────────────────────── */

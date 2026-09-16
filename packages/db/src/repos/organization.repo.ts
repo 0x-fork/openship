@@ -12,7 +12,7 @@
  * plugin's invariants and audit hooks stay correct.
  */
 
-import { eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../client";
 import { organization } from "../schema/organization";
 
@@ -73,6 +73,19 @@ export function createOrganizationRepo(db: Database) {
         .where(eq(organization.id, id));
     },
 
+    /** Mirror an authoritative Oblien entitlement without changing its quota. */
+    async setBillingEntitlement(id: string, namespace: string, input: {
+      planTierId: string;
+      subscriptionStatus: string;
+      currentPeriodStart: Date | null;
+      currentPeriodEnd: Date | null;
+    }): Promise<void> {
+      const rows = await db.update(organization).set(input)
+        .where(and(eq(organization.id, id), eq(organization.oblienNamespace, namespace)))
+        .returning();
+      if (rows.length !== 1) throw new Error("Organization namespace changed during billing synchronization");
+    },
+
     /**
      * Record the org's Oblien namespace slug.
      *
@@ -85,10 +98,17 @@ export function createOrganizationRepo(db: Database) {
      * was visible: each function returned successfully.
      */
     async setOblienNamespace(id: string, namespace: string): Promise<void> {
-      await db
+      const rows = await db
         .update(organization)
         .set({ oblienNamespace: namespace })
-        .where(eq(organization.id, id));
+        .where(and(eq(organization.id, id), isNull(organization.oblienNamespace)))
+        .returning();
+      if (rows.length === 0) {
+        const existing = await this.findById(id);
+        if (existing?.oblienNamespace !== namespace) {
+          throw new Error("Organization namespace cannot be reassigned");
+        }
+      }
     },
 
     /**

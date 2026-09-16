@@ -342,6 +342,7 @@ export interface RuntimeAdapter {
     /** Containers to include BEYOND the `openship.project` label match — an adopted
      *  container keeps its original labels, so the filter cannot see it. */
     extraContainerIds?: string[],
+    options?: { prunePrefix?: string; retain?: string[]; strict?: boolean },
   ): Promise<void>;
 
   /**
@@ -353,7 +354,11 @@ export interface RuntimeAdapter {
   joinServiceGroupContainers?(
     slug: string,
     members: Array<{ containerId: string; aliases: string[] }>,
+    options?: { strict?: boolean },
   ): Promise<void>;
+
+  /** Disconnect exact containers from a shared-service network; remove it when empty. */
+  leaveServiceGroupContainers?(slug: string, containerIds: string[]): Promise<void>;
 
   // ── Rollback primitives ──────────────────────────────────────────────
   //

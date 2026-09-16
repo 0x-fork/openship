@@ -69,3 +69,8 @@ export * from "./host-firewall";
 export * from "./host-channel";
 export * from "./network";
 export * from "./sse-terminal";
+export * from "./data-transfer";
+export * from "./deployment-events";
+export * from "./operation-limits";
+export type { ExecutionAuthority } from "./execution-authority";
+export * from "./sse";
