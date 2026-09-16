@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseRubyVersion, rubyLanguageDetector } from "../src/languages/ruby";
+import { rubyLanguageDetector } from "../src/languages/ruby";
 
 /** A stock Rails 8 lockfile, trimmed to the sections that matter here. */
 const LOCKFILE = `GEM
@@ -86,37 +86,5 @@ PLATFORMS
 
   it("returns {} for a filename it does not handle", () => {
     expect(rubyLanguageDetector.parseManifest("Rakefile", "task :default")).toEqual({});
-  });
-});
-
-describe("parseRubyVersion", () => {
-  it("reads the RUBY VERSION stanza from a lockfile, dropping the patch suffix", () => {
-    expect(parseRubyVersion("Gemfile.lock", LOCKFILE)).toBe("3.3.6");
-  });
-
-  it("reads a bare .ruby-version file", () => {
-    expect(parseRubyVersion(".ruby-version", "3.4.1\n")).toBe("3.4.1");
-  });
-
-  it("strips the `ruby-` prefix some version managers write", () => {
-    expect(parseRubyVersion(".ruby-version", "ruby-3.2.2\n")).toBe("3.2.2");
-  });
-
-  it("reads the ruby directive from a Gemfile", () => {
-    expect(parseRubyVersion("Gemfile", `source "x"\nruby "3.3.0"\ngem "rails"\n`)).toBe("3.3.0");
-  });
-
-  it("ignores `ruby file:` — that names a file, not a version", () => {
-    expect(parseRubyVersion("Gemfile", `ruby file: ".ruby-version"\ngem "rails"\n`)).toBeNull();
-  });
-
-  it("ignores a constraint like `ruby \"~> 3.3\"` — not a pin", () => {
-    expect(parseRubyVersion("Gemfile", `ruby "~> 3.3"\n`)).toBeNull();
-  });
-
-  it("returns null when there is no version to find", () => {
-    expect(parseRubyVersion("Gemfile", `gem "rails"\n`)).toBeNull();
-    expect(parseRubyVersion(".ruby-version", "  \n")).toBeNull();
-    expect(parseRubyVersion("Gemfile.lock", "GEM\n  specs:\n    pg (1.5.9)\n")).toBeNull();
   });
 });

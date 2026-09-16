@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildEdgeRunCommand, ensureContainerEdge, resolveEdgeImage } from "./ensure-container-edge";
+import {
+  buildEdgeRunCommand,
+  ensureContainerEdge,
+  resolveEdgeContainerMounts,
+  resolveEdgeImage,
+} from "./ensure-container-edge";
+import { EDGE_CONTAINER_MOUNTS } from "../../infra/openresty-lua";
+import { setManagedImagesFromSource } from "../managed-image";
 import { JOURNAL_PATH } from "./takeover-journal";
 import type { CommandExecutor } from "../../types";
 import type { InstallerConfig } from "../types";
@@ -40,6 +47,16 @@ interface BoxOpts {
   configInvalid?: boolean;
   /** Container starts and validates, but nothing ever binds :80. */
   notListening?: boolean;
+  /**
+   * The target image ref is ALREADY in the executor's local store — the delivered
+   * dev tag (`deliverManagedImage` built it on the control plane and shipped it here).
+   * Flips the pull gate: present ⇒ no pull, absent (prod) ⇒ pull.
+   */
+  imagePresent?: boolean;
+  /** Physical path returned by the batched mount-resolve exec, keyed by logical host path. */
+  canonicalMounts?: Record<string, string>;
+  /** Bind sources reported by Docker for an existing edge, keyed by container path. */
+  mountedSources?: Record<string, string>;
 }
 
 /** procfs socket table rows: state 0A = LISTEN, hex 0050 = 80, 01BB = 443. */
@@ -72,6 +89,10 @@ function box(opts: BoxOpts = {}) {
   const files = new Map<string, string>();
   let edgeState = opts.edgeStatus ?? (opts.edgeContainer ? "running" : "");
   let unitUp = Boolean(opts.hostOpenResty);
+  // The local image ID the target ref resolves to — non-empty iff the image is
+  // already on the box (a delivered dev tag). `imageExistsLocally` reads this: empty
+  // (prod) ⇒ pull, present (dev, shipped by deliverManagedImage) ⇒ skip the pull.
+  const localImageId = opts.imagePresent ? "sha-present" : "";
 
   /** Is anything holding the edge ports right now? */
   const served = () =>
@@ -90,7 +111,24 @@ function box(opts: BoxOpts = {}) {
     if (cmd.includes("{{.State.Running}}")) {
       return opts.edgeContainerImage ? `true\t${opts.edgeContainerImage}` : "";
     }
+    // `imageExistsLocally` — `docker image inspect -f '{{.Id}}' <ref>`. Non-empty
+    // means the ref is on the box. Must precede the generic inspect catch.
+    if (cmd.includes("{{.Id}}")) return localImageId;
+    if (cmd.includes("range .HostConfig.Binds")) {
+      return EDGE_CONTAINER_MOUNTS.map((mount) => {
+        const source = opts.mountedSources?.[mount.container] ??
+          opts.canonicalMounts?.[mount.host] ??
+          mount.host;
+        return `${source}:${mount.container}:z`;
+      }).join("\n");
+    }
     if (cmd.startsWith("docker inspect")) return "";
+    // The batched mount resolve — one exec answers all four `pwd -P`s (#774).
+    if (cmd.includes("pwd -P")) {
+      return EDGE_CONTAINER_MOUNTS.map(
+        (mount) => `__OPENSHIP_MOUNT__\n${opts.canonicalMounts?.[mount.host] ?? mount.host}\n`,
+      ).join("");
+    }
     if (cmd.startsWith("docker logs")) return opts.crashLog ?? "";
     if (cmd.startsWith("docker rm -f") || cmd.startsWith("docker stop")) {
       edgeState = "";
@@ -161,6 +199,8 @@ function box(opts: BoxOpts = {}) {
       }
       return { code: 0, output: "" };
     }),
+    // Every existence check (mount dirs, journal) is true so the takeover path is
+    // unaffected — the retired build path was the only conditional probe.
     exists: vi.fn(async () => true),
     readFile: vi.fn(async () => ""),
     // Journal writes go through the executor, not a shell — recorded in `commands`
@@ -211,6 +251,97 @@ describe("buildEdgeRunCommand", () => {
     expect(cmd).toContain("'/var/lib/openship/edge/acme:/var/www/acme:z'");
     expect(cmd).toContain("'/opt/openship/static:/opt/openship/static:z'");
   });
+
+  it("uses target-resolved sources without changing container paths (#692)", () => {
+    const cmd = buildEdgeRunCommand("openship-edge", IMAGE, [
+      {
+        host: "/private/var/lib/openship/edge/sites-enabled",
+        container: "/usr/local/openresty/nginx/conf/sites-enabled",
+      },
+      { host: "/private/etc/letsencrypt", container: "/etc/letsencrypt" },
+    ]);
+
+    expect(cmd).toContain(
+      "'/private/var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z'",
+    );
+    expect(cmd).toContain("'/private/etc/letsencrypt:/etc/letsencrypt:z'");
+  });
+});
+
+describe("resolveEdgeContainerMounts", () => {
+  /** Output of the batched resolve script: one marker line, then that mount's segment. */
+  const batchOutput = (segments: string[]) =>
+    segments.map((s) => `__OPENSHIP_MOUNT__\n${s}\n`).join("");
+
+  const canonical = [
+    "/private/var/lib/openship/edge/sites-enabled",
+    "/private/etc/letsencrypt",
+    "/private/var/lib/openship/edge/acme",
+    "/opt/openship/static",
+  ];
+
+  it("canonicalizes on the executor's host, not in the API process (#692)", async () => {
+    const exec = vi.fn(async (command: string) => {
+      if (!command.includes("pwd -P")) throw new Error(`unexpected command: ${command}`);
+      return batchOutput(canonical);
+    });
+
+    await expect(resolveEdgeContainerMounts({ exec })).resolves.toEqual([
+      {
+        host: "/private/var/lib/openship/edge/sites-enabled",
+        container: "/usr/local/openresty/nginx/conf/sites-enabled",
+      },
+      { host: "/private/etc/letsencrypt", container: "/etc/letsencrypt" },
+      { host: "/private/var/lib/openship/edge/acme", container: "/var/www/acme" },
+      { host: "/opt/openship/static", container: "/opt/openship/static" },
+    ]);
+  });
+
+  // 4 concurrent execs are 4 concurrent channels on ONE multiplexed SSH
+  // connection, and sshd hardened to `MaxSessions 3` rejects the fourth —
+  // failing edge recovery on any CIS-baseline host.
+  it("resolves every mount through a single exec (#774)", async () => {
+    const exec = vi.fn(async (_command: string) => batchOutput(canonical));
+
+    await resolveEdgeContainerMounts({ exec });
+
+    expect(exec).toHaveBeenCalledTimes(1);
+    const command = exec.mock.calls[0][0];
+    for (const mount of EDGE_CONTAINER_MOUNTS) {
+      expect(command).toContain(`(cd '${mount.host}' && pwd -P) 2>&1`);
+    }
+  });
+
+  it("names the failing mount and carries the shell's own words", async () => {
+    const exec = vi.fn(async () =>
+      batchOutput([
+        canonical[0],
+        canonical[1],
+        "sh: 1: cd: can't cd to /var/lib/openship/edge/acme",
+        canonical[3],
+      ]),
+    );
+
+    await expect(resolveEdgeContainerMounts({ exec })).rejects.toThrow(
+      /source \/var\/lib\/openship\/edge\/acme .*can't cd/,
+    );
+  });
+
+  it("reports a transport failure without inventing a per-mount cause", async () => {
+    const exec = vi.fn(async () => {
+      throw new Error("(SSH) Channel open failure: open failed");
+    });
+
+    await expect(resolveEdgeContainerMounts({ exec })).rejects.toThrow(
+      /bind-mount sources on the target host: .*Channel open failure/,
+    );
+  });
+
+  it("rejects a garbled batch instead of mismapping paths to mounts", async () => {
+    const exec = vi.fn(async () => batchOutput(canonical.slice(0, 2)));
+
+    await expect(resolveEdgeContainerMounts({ exec })).rejects.toThrow(/expected 4 paths/);
+  });
 });
 
 describe("ensureContainerEdge", () => {
@@ -223,6 +354,34 @@ describe("ensureContainerEdge", () => {
 
     expect(result).toEqual({ container: "openship-edge", image: IMAGE, converted: false });
     expect(commands.some((c) => c.startsWith("docker pull"))).toBe(false);
+  });
+
+  it("recreates a healthy-looking edge whose macOS bind sources are stale (#692)", async () => {
+    const canonicalMounts = {
+      "/var/lib/openship/edge/sites-enabled": "/private/var/lib/openship/edge/sites-enabled",
+      "/etc/letsencrypt": "/private/etc/letsencrypt",
+      "/var/lib/openship/edge/acme": "/private/var/lib/openship/edge/acme",
+      "/opt/openship/static": "/opt/openship/static",
+    };
+    const mountedSources = Object.fromEntries(
+      EDGE_CONTAINER_MOUNTS.map((mount) => [mount.container, mount.host]),
+    );
+    const { executor, commands, onLog } = box({
+      edgeContainer: "openship-edge",
+      edgeContainerImage: IMAGE,
+      canonicalMounts,
+      mountedSources,
+      imagePresent: true,
+    });
+
+    const result = await ensureContainerEdge(executor, { onLog, image: IMAGE });
+
+    expect(result.container).toBe("openship-edge");
+    const run = commands.find((command) => command.startsWith("docker run -d"));
+    expect(run).toContain(
+      "'/private/var/lib/openship/edge/sites-enabled:/usr/local/openresty/nginx/conf/sites-enabled:z'",
+    );
+    expect(run).toContain("'/private/etc/letsencrypt:/etc/letsencrypt:z'");
   });
 
   // Docker calls a crash loop "running": `.State.Running == true`, and it shows up in
@@ -487,5 +646,60 @@ describe("ensureContainerEdge", () => {
     await expect(ensureContainerEdge(executor, { onLog, image: IMAGE })).rejects.toThrow(
       /Docker isn't available/,
     );
+  });
+});
+
+// Create-path image acquisition: pull only when the image ISN'T already on the box.
+// In dev, `deliverManagedImage` builds the content-derived `…-dev.<hash>` tag on the
+// control plane and ships it here first, so bring-up finds it present and skips the
+// pull (the tag is unpublished — a pull would 404). In prod the tag is absent, so it
+// pulls `:APP_VERSION` exactly as the pull-path tests above assert.
+describe("ensureContainerEdge — image acquisition gate", () => {
+  it("pulls on create when the image isn't already on the box (prod)", async () => {
+    const { executor, commands, onLog } = box({ imagePresent: false });
+    await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
+
+    expect(commands.some((c) => c === `docker pull '${IMAGE}'`)).toBe(true);
+    expect(commands.some((c) => c.startsWith("docker run -d"))).toBe(true);
+  });
+
+  it("does NOT pull on create when the image is already present (delivered dev tag)", async () => {
+    const { executor, commands, onLog } = box({ imagePresent: true });
+    const result = await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
+
+    expect(result.converted).toBe(false);
+    expect(commands.some((c) => c.startsWith("docker pull"))).toBe(false);
+    expect(commands.some((c) => c.startsWith("docker run -d"))).toBe(true);
+  });
+
+  // From-source (dev) backstop: the tag is unpublished, so an absent image means the
+  // control-plane build/ship didn't complete. Pulling can only 404 and blame the
+  // registry, so bring-up throws a clear "build didn't complete" error and never pulls.
+  it("throws instead of pulling an absent image when managed images are from source", async () => {
+    setManagedImagesFromSource("edge", true);
+    try {
+      const { executor, commands, onLog } = box({ imagePresent: false });
+      await expect(
+        ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 }),
+      ).rejects.toThrow(/from-source edge image .* isn't on this server/);
+      expect(commands.some((c) => c.startsWith("docker pull"))).toBe(false);
+    } finally {
+      setManagedImagesFromSource("edge", false);
+    }
+  });
+
+  it("swaps a serving edge onto a new tag with no pull when that tag is already present", async () => {
+    // The delivered dev tag differs from the running container's tag (the source hash
+    // moved), so it's stale — but it's already on the box, so the swap runs no pull.
+    const { executor, commands, onLog } = box({
+      edgeContainer: "openship-edge",
+      edgeContainerImage: "ghcr.io/oblien/openship-edge:1.0.0",
+      imagePresent: true,
+    });
+    const result = await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
+
+    expect(result.updated).toBe(true);
+    expect(commands.some((c) => c.startsWith("docker pull"))).toBe(false);
+    expect(commands.some((c) => c.includes(`docker run -d --name 'openship-edge'`))).toBe(true);
   });
 });

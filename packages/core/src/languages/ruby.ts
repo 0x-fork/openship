@@ -51,37 +51,6 @@ function parseGemfileLock(content: string): Record<string, string> {
   return deps;
 }
 
-/**
- * The Ruby version pinned in `.ruby-version`, a lockfile, or a Gemfile. Returns
- * a bare `X.Y[.Z]` or null. Precedence between the three is the caller's call.
- *
- * A range is not a pin: `ruby "~> 3.3"` returns null rather than guessing.
- */
-export function parseRubyVersion(filename: string, content: string): string | null {
-  const version = String.raw`(\d+\.\d+(?:\.\d+)?)`;
-
-  switch (filename.toLowerCase()) {
-    case ".ruby-version": {
-      // `3.3.6`, or `ruby-3.3.6` from the managers that prefix it.
-      const m = content.trim().match(new RegExp(`^(?:ruby-)?${version}`));
-      return m ? m[1] : null;
-    }
-    case "gemfile.lock": {
-      // "RUBY VERSION\n   ruby 3.3.6p108"
-      const m = content.match(new RegExp(String.raw`^RUBY VERSION\s*\n\s*ruby\s+${version}`, "m"));
-      return m ? m[1] : null;
-    }
-    case "gemfile": {
-      // The quote right after `ruby` rejects `ruby file:`; anchoring the digits
-      // to it rejects `~> 3.3`.
-      const m = content.match(new RegExp(String.raw`^\s*ruby\s+['"](?:ruby-)?${version}`, "m"));
-      return m ? m[1] : null;
-    }
-    default:
-      return null;
-  }
-}
-
 export const rubyLanguageDetector: LanguageDetector = {
   id: "ruby",
   label: "Ruby",

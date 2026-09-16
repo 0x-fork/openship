@@ -14,6 +14,7 @@ describe("#336 env reveal is write-gated; masked reads need only read", () => {
       import("../../src/modules/services/service.routes"),
       import("../../src/modules/projects/project.routes"),
       import("../../src/modules/deployments/deployment.routes"),
+      import("../../src/modules/migration/migration.routes"),
     ]);
 
     const reg = getRouteRegistry();
@@ -24,20 +25,38 @@ describe("#336 env reveal is write-gated; masked reads need only read", () => {
       return isPublicSpec(spec) ? "PUBLIC" : spec.tag;
     };
 
-    // Reveal endpoints — write-gated.
+    // Reveal endpoints — write-gated. All POST: the requested key names travel in
+    // the body (not a URL that lands in proxy logs and browser history).
     expect(
       tagOf(
-        (r) => r.method === "GET" && r.path.endsWith("/env-reveal") && r.path.includes("/services/"),
+        (r) =>
+          r.method === "POST" && r.path.endsWith("/env-reveal") && r.path.includes("/services/"),
         "service env-reveal",
       ),
     ).toBe("project:service:write");
 
     expect(
       tagOf(
-        (r) => r.method === "GET" && r.path.endsWith("/env-reveal") && r.path.includes("/folder/scan/"),
+        (r) =>
+          r.method === "POST" && r.path.endsWith("/env-reveal") && r.path.includes("/folder/scan/"),
         "folder-scan env-reveal",
       ),
     ).toBe("project:write");
+
+    expect(
+      tagOf(
+        (r) => r.method === "POST" && r.path === "/api/deployments/prepare",
+        "editable source preparation",
+      ),
+    ).toBe("deployment:write");
+
+    // Migration container reveal — write-gated, same bar as the service reveal.
+    expect(
+      tagOf(
+        (r) => r.method === "POST" && r.path.endsWith("/migration/reveal-env"),
+        "migration reveal-env",
+      ),
+    ).toBe("server:write");
 
     // Masked reads — only `:read` (proving reveal is the higher bar).
     expect(
