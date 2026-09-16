@@ -212,10 +212,10 @@ export const OverviewTab = () => {
             value={modeLabel}
             loading={showProjectInfoSkeleton}
           />
-          {/* Port row shown when loading (we don't know the workload yet) or
-              when it's a web app. A worker runs a process but listens on no
-              port, and a static site has none either — both hide the row. */}
-          {(showProjectInfoSkeleton || workload === "web") && (
+          {/* project.port belongs to the single-app runtime. Service projects
+              own their ports per service; showing this fallback for an adopted
+              stack contradicts its actual routing (#506). */}
+          {serviceCount === 0 && (showProjectInfoSkeleton || workload === "web") && (
             <Item
               label={t.projects.overview.port}
               value={String(projectData.port || 3000)}
