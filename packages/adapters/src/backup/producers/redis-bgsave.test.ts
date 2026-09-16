@@ -254,7 +254,9 @@ describe("RDB restore verifies persistence before writing", () => {
   ])(
     "refuses to write if disabling snapshots is unconfirmed (%j, exit %i)",
     async (output, code) => {
-      const restore = restoreWith(probe("appendonly\nno\n"), probe(output, code));
+      const restore = restoreWith(
+        probe("appendonly\nno\n"), probe("save\n3600 1\n"), probe(output, code), probe("OK\n"),
+      );
       await expect(restore.run()).rejects.toThrow(/Could not disable/);
       expect(restore.open).not.toHaveBeenCalled();
       expect(restore.pipeIntoCommand).not.toHaveBeenCalled();
@@ -262,11 +264,74 @@ describe("RDB restore verifies persistence before writing", () => {
   );
 
   it("writes the snapshot only after both persistence checks succeed", async () => {
-    const restore = restoreWith(probe("appendonly\r\nno\r\n"), probe("OK\n"));
+    const restore = restoreWith(probe("appendonly\r\nno\r\n"), probe("save\r\n3600 1\r\n"), probe("OK\n"));
     await restore.run();
-    expect(restore.execStream).toHaveBeenCalledTimes(2);
+    expect(restore.execStream).toHaveBeenCalledTimes(3);
     expect(restore.open).toHaveBeenCalledTimes(1);
     expect(restore.pipeIntoCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["", "NOPERM\n", "save\ninvalid\n", "save\n3600 1\nextra\n"])(
+    "refuses unverified snapshot settings (%j) before disabling them",
+    async (output) => {
+      const restore = restoreWith(probe("appendonly\nno\n"), probe(output));
+      await expect(restore.run()).rejects.toThrow(/Could not read/);
+      expect(restore.execStream).toHaveBeenCalledTimes(2);
+      expect(restore.open).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts an empty automatic snapshot schedule", async () => {
+    const restore = restoreWith(probe("appendonly\nno\n"), probe("save\n\n"), probe("OK\n"));
+    await restore.run();
+    expect(restore.pipeIntoCommand).toHaveBeenCalledOnce();
+  });
+
+  it("reports when a failed artifact open also cannot restore snapshot settings", async () => {
+    const restore = restoreWith(
+      probe("appendonly\nno\n"), probe("save\n3600 1\n"), probe("OK\n"), probe("NOPERM\n"),
+    );
+    restore.open.mockRejectedValueOnce(new Error("backup is unavailable"));
+    await expect(restore.run()).rejects.toThrow(/Reapply the service's save configuration/);
+    expect(restore.pipeIntoCommand).not.toHaveBeenCalled();
+  });
+
+  it("keeps snapshots disabled after a possible partial write until the service restarts", async () => {
+    const restore = restoreWith(probe("appendonly\nno\n"), probe("save\n3600 1\n"), probe("OK\n"));
+    restore.pipeIntoCommand.mockRejectedValueOnce(new Error("write interrupted"));
+    await expect(restore.run()).rejects.toThrow("write interrupted");
+    expect(restore.execStream).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["artifact-open", "save-reply", "save-transport"])(
+    "preserves automatic snapshots after a pre-write failure (%s)", async (failure) => {
+      let save = "3600 1 300 100 60 10000";
+      const initialSave = save;
+      const transportError = new Error("Redis connection lost after applying CONFIG SET");
+      const executor = {
+        execStream: vi.fn(async (_service, command: string[]) => {
+          const script = command[2]!;
+          if (script.includes("CONFIG GET appendonly")) return probe("appendonly\nno\n");
+          if (script.includes("CONFIG GET save")) return probe(`save\n${save}\n`);
+          if (script.includes("CONFIG SET save")) {
+            save = script.includes(initialSave) ? initialSave : "";
+            if (!save && failure === "save-reply") return probe("");
+            if (!save && failure === "save-transport") throw transportError;
+            return probe("OK\n");
+          }
+          throw new Error("Unexpected Redis command");
+        }),
+        pipeIntoCommand: vi.fn(),
+      };
+      const openError = new Error("backup is unavailable");
+      await expect(RedisRdbProducer.restore(service, executor as unknown as BackupExecutor, {
+        metadata: { compression: "none" },
+        open: async () => { throw openError; },
+      } as unknown as ArtifactRef, {})).rejects.toThrow(
+        failure === "artifact-open" ? openError : failure === "save-transport" ? transportError : /Could not disable/,
+      );
+      expect(save).toBe(initialSave);
+      expect(executor.pipeIntoCommand).not.toHaveBeenCalled();
   });
 });
 

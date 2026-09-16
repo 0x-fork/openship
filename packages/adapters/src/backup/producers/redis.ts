@@ -27,7 +27,7 @@
  */
 
 import type { Readable } from "node:stream";
-import { isDbImage, payloadSpec, shellQuote, withTimeout } from "@repo/core";
+import { isDbImage, payloadSpec, safeErrorMessage, shellQuote, withTimeout } from "@repo/core";
 import { registerProducer } from "../registry";
 import {
   codecSuffix,
@@ -288,28 +288,60 @@ class RedisRdbProducerImpl implements BackupProducer {
       );
     }
 
-    // The server must acknowledge this: otherwise shutdown can overwrite the
-    // restored file with the current dataset and report a successful no-op.
-    const saveReply = await probeOutput(
+    // A failed or cancelled artifact open must not leave snapshots disabled.
+    const saveConfig = await probeOutput(
       await executor.execStream(service, [
-        "sh",
-        "-c",
-        `${this.cli(service)} --raw CONFIG SET save '' 2>/dev/null`,
+        "sh", "-c", `${this.cli(service)} --raw CONFIG GET save 2>/dev/null`,
       ]),
     );
-    if (saveReply.trim() !== "OK") {
+    const previousSave = saveConfig.match(/^save\r?\n([^\r\n]*)\r?\n?$/)?.[1];
+    if (previousSave === undefined || !/^(?:\d+ \d+(?: \d+ \d+)*)?$/.test(previousSave)) {
       throw new Error(
-        "Could not disable Redis/Valkey automatic snapshots before restore. " +
+        "Could not read Redis/Valkey snapshot settings before restore. " +
           "Check CONFIG permissions; no snapshot was written.",
       );
     }
+    const codec = recordedCodec(artifact.metadata.compression);
+    const setSave = async (value: string) => probeOutput(
+      await executor.execStream(service, [
+        "sh", "-c", `${this.cli(service)} --raw CONFIG SET save ${shellQuote(value)} 2>/dev/null`,
+      ]),
+    );
 
     // Pipe artifact bytes into /data/dump.rdb, decompressing only if the capture
     // recorded a codec. Redis is RUNNING for this write (the file is not read again
     // until startup), which is why redis_rdb is in NEEDS_LIVE_CONTAINER.
-    const codec = recordedCodec(artifact.metadata.compression);
     const cmd = safeRestoreCommand(codec, "cat > /data/dump.rdb && chmod 644 /data/dump.rdb");
-    const body = await artifact.open();
+    let body: Readable;
+    try {
+      // The server must acknowledge this: otherwise shutdown can overwrite the
+      // restored file with the current dataset and report a successful no-op.
+      const saveReply = await setSave("");
+      if (saveReply.trim() !== "OK") {
+        throw new Error(
+          "Could not disable Redis/Valkey automatic snapshots before restore. " +
+            "Check CONFIG permissions; no snapshot was written.",
+        );
+      }
+      body = await artifact.open();
+    } catch (error) {
+      // A lost CONFIG SET reply can still mean the setting changed. Until the
+      // writer starts, any failure must restore the previous persistence policy.
+      if (previousSave) {
+        try {
+          if ((await setSave(previousSave)).trim() !== "OK") {
+            throw new Error("Redis/Valkey did not acknowledge restoring its save configuration");
+          }
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            `${safeErrorMessage(error)} Redis/Valkey snapshot settings could not be restored. ` +
+              "Reapply the service's save configuration before continuing; no snapshot was written.",
+          );
+        }
+      }
+      throw error;
+    }
     const exit = await executor.pipeIntoCommand(service, cmd, body, {
       // Ceiling from the catalog, so the number is not a per-producer literal.
       timeoutMs: payloadSpec("redis_rdb").restoreTimeoutMs,

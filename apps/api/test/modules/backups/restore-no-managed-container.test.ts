@@ -62,6 +62,9 @@ const h = vi.hoisted(() => ({
   /** Force receiveStream to fail with a PLAIN Error, the way a tar failure,
    *  an ENOSPC or the idle watchdog does — after the target was cleared. */
   receiveError: null as string | null,
+  receiveOpenError: null as string | null,
+  applyReadError: null as string | null,
+  applyBody: null as Readable | null,
   /** What `redis-cli CONFIG GET appendonly` reports. "yes" means the RDB would
    *  be ignored at startup, so the restore must refuse rather than no-op. */
   appendonly: "no",
@@ -178,6 +181,7 @@ class TestExecutor extends DockerBackupExecutor {
       throw new Error(`Restore target "${targetSourceId}" not found on service ${service.name}`);
     }
     h.calls.push(`receive:${source.source}`);
+    if (h.receiveOpenError) throw new Error(h.receiveOpenError);
     // Drain, so the apply-time hasher sees the whole archive as a real extract
     // would. A stub that ignored the body would silently disable that check.
     for await (const chunk of body) void chunk;
@@ -218,7 +222,8 @@ class TestExecutor extends DockerBackupExecutor {
   ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
     const joined = cmd.join(" ");
     h.calls.push(`probe:${joined.includes("appendonly") ? "appendonly" : "config"}`);
-    const out = joined.includes("appendonly") ? `appendonly\n${h.appendonly}\n` : "OK\n";
+    const out = joined.includes("appendonly") ? `appendonly\n${h.appendonly}\n`
+      : joined.includes("CONFIG GET save") ? "save\n3600 1\n" : "OK\n";
     return {
       stdout: Readable.from([Buffer.from(out)]),
       awaitExit: Promise.resolve({ code: 0, stderr: "" }),
@@ -256,7 +261,15 @@ vi.mock("@repo/adapters", async (importOriginal) => {
     ...actual,
     resolveDestination: () => ({
       head: async () => ({ sizeBytes: ARCHIVE.byteLength, uploadedAt: new Date(0) }),
-      get: async () => Readable.from([ARCHIVE]),
+      get: async () => {
+        if (h.row?.status !== "applying") return Readable.from([ARCHIVE]);
+        h.applyBody = h.applyReadError
+          ? new Readable({ read() { this.destroy(new Error(h.applyReadError!)); } })
+          : h.receiveOpenError
+            ? new Readable({ read() { this.push(ARCHIVE); } })
+            : Readable.from([ARCHIVE]);
+        return h.applyBody;
+      },
     }),
     resolveExecutor: () => new TestExecutor({ docker: fakeDaemon } as never),
   };
@@ -356,6 +369,9 @@ beforeEach(() => {
   h.liveContainerId = null;
   h.probeError = null;
   h.receiveError = null;
+  h.receiveOpenError = null;
+  h.applyReadError = null;
+  h.applyBody = null;
   h.appendonly = "no";
   h.artifacts = [];
   h.calls.length = 0;
@@ -665,6 +681,37 @@ describe("a payload restored THROUGH the container must not have it stopped firs
     expect(meta.serviceLeftStopped).toBe(true);
     expect(String(terminal.patch?.errorMessage)).toContain("tar: unexpected end of file");
     expect(String(terminal.patch?.errorMessage)).toContain("partial data");
+  });
+
+  it("fails cleanly when the backup download breaks during apply", async () => {
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [volumeArtifact("vol_a")];
+    h.applyReadError = "backup download connection reset";
+
+    const terminal = await restore();
+
+    expect(terminal.status).toBe("failed");
+    expect(terminal.patch?.errorMessage).toContain(h.applyReadError);
+    expect(terminal.patch?.meta).toMatchObject({ partialWrite: true, serviceLeftStopped: true });
+    expect(h.calls).not.toContain("start");
+    expect(h.applyBody?.destroyed).toBe(true);
+  }, 2_000);
+
+  it("closes the backup download if the target refuses its input", async () => {
+    h.containers.set("ctr_app", { Running: true, Mounts: [{ Type: "volume", Name: "vol_a" }] });
+    h.liveContainerId = "ctr_app";
+    h.activeDeploymentId = "dep_1";
+    h.artifacts = [volumeArtifact("vol_a")];
+    h.receiveOpenError = "restore helper unavailable";
+
+    const terminal = await restore();
+
+    expect(terminal.status).toBe("failed");
+    expect(terminal.patch?.errorMessage).toContain(h.receiveOpenError);
+    expect(h.applyBody?.destroyed).toBe(true);
+    expect(h.calls).not.toContain("start");
   });
 
   it("BOUNCES a running redis after writing dump.rdb, so the write takes effect", async () => {

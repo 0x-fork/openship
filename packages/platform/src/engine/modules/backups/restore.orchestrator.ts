@@ -1082,6 +1082,7 @@ export class RestoreOrchestrator {
           // target was cleared, so a mismatch here is reported as partial data
           // rather than as "not safe to restore".
           const hasher = new HashingPassthrough();
+          let download: Promise<void> | undefined;
           const targetLabel = this.artifactTargetLabel(recorded, serviceHandle);
           try {
             await producer.restore(
@@ -1098,17 +1099,18 @@ export class RestoreOrchestrator {
                   // An AOF/credential refusal must not claim it damaged Redis data.
                   await this.throwIfCancelRequested(restoreId, wroteInto);
                   const body = await destination.get(recorded.key);
-                  try {
-                    await this.markDestructive(restoreId, targetLabel);
-                    wroteInto = targetLabel;
-                    // Mark before handing bytes to the producer: a volume helper
-                    // may clear its target before it reads the first byte.
-                    if (!failureLeavesTargetIntact(recorded.payloadKind)) unfinishedTarget = targetLabel;
-                    return body.pipe(hasher);
-                  } catch (error) {
-                    body.destroy();
-                    throw error;
-                  }
+                  // Forward download errors to the producer and close both streams
+                  // together. pipe() alone leaves source errors unhandled.
+                  download = pipelineP(body, hasher);
+                  // The producer observes the error through hasher; attach a handler
+                  // immediately because it may fail before open() returns.
+                  void download.catch(() => {});
+                  await this.markDestructive(restoreId, targetLabel);
+                  wroteInto = targetLabel;
+                  // Mark before handing bytes to the producer: a volume helper
+                  // may clear its target before it reads the first byte.
+                  if (!failureLeavesTargetIntact(recorded.payloadKind)) unfinishedTarget = targetLabel;
+                  return hasher;
                 },
               },
               {
@@ -1126,6 +1128,11 @@ export class RestoreOrchestrator {
             // fact requested owns the failure.
             if (await this.cancelRequested(restoreId)) throw new RestoreCancelled(wroteInto);
             throw err;
+          } finally {
+            // A producer can reject before consuming its input. Release the
+            // download before reporting completion or releasing the runtime.
+            hasher.destroy();
+            await download?.catch(() => {});
           }
           // Null when the producer didn't drain the stream (a pg_restore that
           // stops early, say) — unverifiable, not a mismatch.
