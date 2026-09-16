@@ -576,3 +576,4 @@ export type {
 
 // ─── Backup adapters (importing the index seeds all three registries) ───────
 export * from "./backup";
+export { privateNetworkTools, PrivateNetworkError, type PrivateNetworkProbe } from "./network/private-network";
