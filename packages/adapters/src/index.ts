@@ -500,6 +500,7 @@ export {
   checkAll as checkAllComponents,
   checkComponents,
   checkDocker,
+  needsDockerGroupRefresh,
   checkGit,
   checkEdge,
   COMPONENT_CHECKS,
