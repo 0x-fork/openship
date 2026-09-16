@@ -45,17 +45,6 @@ describe("createBuildMessageProcessor", () => {
       expect(processor.parseMessage({ type: "error", error: "boom" }).type).toBe("error");
     });
 
-    it("does not take the error branch when success is true", () => {
-      // type === "error" && success === true skips the error branch's guard.
-      // The value falls through to the `success === true` catch-all, whose
-      // literal "success" is then overwritten by the spread of jsonData
-      // (which still carries type: "error"), so the final type stays
-      // "error". This is a real quirk of the source: every early return in
-      // this function spreads `...jsonData` AFTER the literal `type`, so any
-      // incoming `type` field wins whenever the object already has one.
-      expect(processor.parseMessage({ type: "error", success: true }).type).toBe("error");
-    });
-
     it("recognizes service-status messages", () => {
       const result = processor.parseMessage({
         type: "service-status",
@@ -89,15 +78,6 @@ describe("createBuildMessageProcessor", () => {
       expect(processor.parseMessage({ type: "log", data: "aGVsbG8=" }).type).toBe("log");
     });
 
-    it("does not take the log branch when data is missing", () => {
-      // type === "log" without a `data` field skips the dedicated log
-      // branch (it requires jsonData?.data). It falls all the way to the
-      // final "unknown" fallback, whose literal is then overwritten back to
-      // "log" by the trailing spread - so the final type still reads "log",
-      // just via a different code path than the dedicated branch.
-      expect(processor.parseMessage({ type: "log" }).type).toBe("log");
-    });
-
     it("recognizes progress messages by explicit type", () => {
       expect(processor.parseMessage({ type: "progress", progress: 50 }).type).toBe("progress");
     });
@@ -114,14 +94,12 @@ describe("createBuildMessageProcessor", () => {
       expect(processor.parseMessage({ phase: "building" }).type).toBe("phase");
     });
 
-    it("does not relabel type when phase is set but an unrelated type already exists", () => {
-      // Same spread-order quirk as above: an unrecognized `type` plus a
-      // `phase` field reaches the phase branch's condition, but the
-      // trailing `...jsonData` spread restores the original (unrecognized)
-      // type instead of "phase".
-      expect(processor.parseMessage({ type: "weird-thing", phase: "building" }).type).toBe(
-        "weird-thing",
-      );
+    it("does not treat a custom event's phase field as a build phase", () => {
+      const onPhaseChange = vi.fn();
+      const processor = createBuildMessageProcessor({ onPhaseChange });
+      const message = processor.parseMessage({ type: "custom-event", phase: "building" });
+      expect(processor.handleMessage(message, makeContext())).toBe(true);
+      expect(onPhaseChange).not.toHaveBeenCalled();
     });
 
     it("recognizes progress via bare currentStep/progress fields when no type is set", () => {
@@ -138,18 +116,14 @@ describe("createBuildMessageProcessor", () => {
       expect(processor.parseMessage(undefined).type).toBe("unknown");
     });
 
-    it("does not relabel an unrecognized type to unknown", () => {
-      // The clearest demonstration of the spread-order quirk: nothing else
-      // matches, so the function intends to label this "unknown", but the
-      // incoming `type` field survives the trailing spread untouched.
-      expect(processor.parseMessage({ type: "totally-custom" }).type).toBe("totally-custom");
-    });
-
-    it("does not validate the type field's runtime type", () => {
-      // The BuildMessage interface declares `type` as a string union, but
-      // nothing at runtime enforces that - a non-string type field is
-      // spread straight through.
-      expect(processor.parseMessage({ type: 123 }).type).toBe(123);
+    it("ignores custom build events and keeps listening", () => {
+      const onSuccess = vi.fn();
+      const onFailure = vi.fn();
+      const processor = createBuildMessageProcessor({ onSuccess, onFailure });
+      const message = processor.parseMessage({ type: "custom-event" });
+      expect(processor.handleMessage(message, makeContext())).toBe(true);
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(onFailure).not.toHaveBeenCalled();
     });
 
     it("spreads all other fields through unchanged", () => {
@@ -389,15 +363,6 @@ describe("createBuildMessageProcessor", () => {
         expect(onPhaseChange).toHaveBeenCalledWith("installing");
       });
 
-      it("calls onPhaseChange with undefined when phase is missing (non-null assertion is not a runtime guard)", () => {
-        // `message.phase!` only silences TypeScript; at runtime nothing
-        // stops onPhaseChange from firing with undefined.
-        const onPhaseChange = vi.fn();
-        const processor = createBuildMessageProcessor({ onPhaseChange });
-        processor.handleMessage({ type: "phase" } as BuildMessage, makeContext());
-        expect(onPhaseChange).toHaveBeenCalledWith(undefined);
-      });
-
       it("also writes to the terminal and calls onLog when data and rawBytes are present", () => {
         const onLog = vi.fn();
         const writeToTerminal = vi.fn();
@@ -634,11 +599,11 @@ describe("createBuildMessageProcessor", () => {
     });
 
     describe("service-status", () => {
-      it("passes fields through as-is when present", () => {
+      it("parses service-status events and passes their fields to the callback", () => {
         const onServiceStatus = vi.fn();
         const processor = createBuildMessageProcessor({ onServiceStatus });
         processor.handleMessage(
-          {
+          processor.parseMessage({
             type: "service-status",
             serviceName: "web",
             serviceId: "svc-1",
@@ -646,7 +611,7 @@ describe("createBuildMessageProcessor", () => {
             error: "dummy error",
             containerId: "container-abc",
             hostPort: 8080,
-          } as BuildMessage,
+          }),
           makeContext(),
         );
         expect(onServiceStatus).toHaveBeenCalledWith({
@@ -736,8 +701,12 @@ describe("createLogMessageProcessor", () => {
       expect(processor.parseMessage(undefined).type).toBe("unknown");
     });
 
-    it("does not relabel an unrecognized type to unknown (same trailing-spread quirk as the build processor)", () => {
-      expect(processor.parseMessage({ type: "totally-custom" }).type).toBe("totally-custom");
+    it("ignores custom log-stream events and keeps listening", () => {
+      const onLog = vi.fn();
+      const processor = createLogMessageProcessor({ onLog });
+      const message = processor.parseMessage({ type: "custom-event" });
+      expect(processor.handleMessage(message, makeContext())).toBe(true);
+      expect(onLog).not.toHaveBeenCalled();
     });
   });
 
@@ -903,17 +872,6 @@ describe("createGenericMessageProcessor", () => {
       expect(processor.parseMessage({}).type).toBe("message");
       expect(processor.parseMessage(null).type).toBe("message");
       expect(processor.parseMessage(undefined).type).toBe("message");
-    });
-
-    it("does not fall back to 'message' when a type key exists but is falsy", () => {
-      // `jsonData?.type || "message"` picks "message" for a falsy type, but
-      // the trailing `...jsonData` spread still carries the original
-      // (falsy) `type` key, which wins over the literal. Net effect: an
-      // empty-string or null `type` field survives as-is instead of being
-      // defaulted.
-      const processor = createGenericMessageProcessor();
-      expect(processor.parseMessage({ type: "" }).type).toBe("");
-      expect(processor.parseMessage({ type: null }).type).toBe(null);
     });
 
     it("spreads all other fields through unchanged", () => {

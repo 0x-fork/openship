@@ -45,7 +45,6 @@ confirmed the move. (Free `.opsh.io` domains are routed for you — no `A` recor
 Open the migration wizard and choose the **source server** (server A). Openship scans it read-only and lists
 what's running — each project/service with its ports and volumes.
 
-<Callout title="Screenshot">The migration wizard's source-server scan, listing the running projects and their volumes. *(screenshot pending)*</Callout>
 </Step>
 
 <Step>
@@ -76,7 +75,6 @@ Openship stops the originals on A for a consistent copy, streams the volumes to 
 there on the same image, and polls it to **ready** (up to ~20 minutes for a large first move). Watch the
 progress live.
 
-<Callout title="Screenshot">Volume transfer A → B with per-service progress, ending in a healthy deploy on the target. *(screenshot pending)*</Callout>
 </Step>
 
 <Step>
@@ -87,6 +85,15 @@ The workload is now live on server B and Openship has re-registered its routing 
 pays off — it goes live in about a minute). Confirm the app serves through B, then run **cutover** to stop and
 remove the leftover containers on A. Your **source volumes are never touched** by cutover, so you keep a fallback
 until you're sure; raise the DNS TTL back up afterward.
+
+<Callout title="Verify the new server before you cut over" type="warn">
+Cutover **stops and removes the old workload** — don't run it until you've confirmed server B is fully healthy:
+the app loads and serves traffic, your **data is intact** (log in, open a record, check volumes/uploads and any
+database), and every service is `RUNNING`. Because cutover leaves your **source volumes on A untouched**, you can
+keep the old server as a fallback until you're certain. If something doesn't look right — missing data, a service
+that won't start, routing/TLS off — **don't cut over**; leave A running and
+[open an issue on GitHub](https://github.com/oblien/openship/issues) so we can help.
+</Callout>
 </Step>
 
 </Steps>

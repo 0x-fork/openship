@@ -21,6 +21,8 @@ import {
   X,
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { isMaskedValue } from "@repo/core";
+import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -30,6 +32,7 @@ import {
 } from "@/context/deployment/types";
 import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
+import { parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -40,22 +43,16 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const getExposedPort = (svc: ComposeServiceInfo) =>
-  svc.ports[0]?.split(":").pop()?.split("/")[0];
-
 type EnvVarRow = { key: string; value: string; visible: boolean };
 
 /** Convert Record<string,string> ↔ Array<{key,value,visible}> */
 const envToArray = (
   env: Record<string, string>,
   visibleByKey: Record<string, boolean> = {},
-  meta?: ComposeServiceInfo["environmentMeta"],
 ) =>
-  Object.entries(env).map(([key, value]) => {
-    const parsed = meta?.[key];
-    const fallbackVisible = parsed?.source === "default" && value === parsed.resolvedValue;
-    return { key, value, visible: visibleByKey[key] ?? fallbackVisible };
-  });
+  Object.entries(env).map(([key, value]) => ({
+    key, value, visible: visibleByKey[key] ?? !isMaskedValue(value),
+  }));
 
 const arrayToEnv = (arr: Array<{ key: string; value: string }>) => {
   const env: Record<string, string> = {};
@@ -81,10 +78,11 @@ const envRecordsEqual = (a: Record<string, string>, b: Record<string, string>) =
 
 const missingEnvCount = (service: ComposeServiceInfo) =>
   Object.entries(service.environmentMeta ?? {}).filter(
-    ([key, meta]) => meta.source === "missing" && !service.environment[key],
+    ([key, meta]) =>
+      meta.required || (meta.source === "missing" && !service.environment[key]),
   ).length;
 
-const portDisplay = (port: string) => port.split(":").pop()?.split("/")[0] || port;
+const portDisplay = (port: string) => parseContainerPort(port) || port;
 
 // ─── Port / volume rows (compose string[] ↔ editable rows) ───────────────────
 // Round-trips are LOSSLESS for the fields the UI doesn't edit: a port keeps its
@@ -193,7 +191,7 @@ const ServiceDomainSection: React.FC<{
     );
   }
 
-  const primaryPort = service.exposedPort || getExposedPort(service) || "";
+  const primaryPort = service.exposedPort || serviceExposedPort(service) || "";
   const defaultSubdomain =
     service.name === "web" || service.name === "app" || service.name === "frontend"
       ? normalizeSubdomain(projectName)
@@ -252,7 +250,7 @@ const ServiceDomainSection: React.FC<{
             className={`absolute left-[3px] top-[3px] h-4 w-4 rounded-full shadow-sm transition-all ${
               service.exposed
                 ? "translate-x-[18px] bg-white"
-                : "translate-x-0 bg-background dark:bg-muted-foreground/70"
+                : "translate-x-0 bg-background dark:bg-muted-foreground/70 dim:bg-muted-foreground/70"
             }`}
           />
         </button>
@@ -489,7 +487,7 @@ const ServiceConfigSection: React.FC<{
     [onChange],
   );
 
-  const routedPort = service.exposedPort || getExposedPort(service) || "";
+  const routedPort = service.exposedPort || serviceExposedPort(service) || "";
   const statefulOnCloud = isCloud && (isStatefulImage(service.image) || service.volumes.length > 0);
   const portsStr = interpolate(service.ports.length === 1 ? cnt.portOne : cnt.portOther, { count: String(service.ports.length) });
   const volumesStr = interpolate(service.volumes.length === 1 ? cnt.volumeOne : cnt.volumeOther, { count: String(service.volumes.length) });
@@ -600,6 +598,9 @@ const ServiceConfigSection: React.FC<{
               {cfg.volumeHint}
               {isCloud && ` ${cfg.volumeCloudNote}`}
             </p>
+            {isCloud && service.volumes.length > 0 && (
+              <p role="alert" className="text-xs text-destructive">{cfg.volumeCloudNote}</p>
+            )}
             <div className="space-y-2">
               {volumeRows.map((row, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -703,13 +704,17 @@ const ServiceCard: React.FC<{
   onDelete: () => void;
 }> = ({ service, projectName, onUpdate, onEnvChange, onDelete }) => {
   const { t } = useI18n();
+  const { config } = useDeployment();
   const cs = t.importProject.composeServices;
   const cnt = t.importProject.counts;
   const missingCount = missingEnvCount(service);
   const envCount = Object.keys(service.environment).length;
   const [envModalOpen, setEnvModalOpen] = useState(false);
+  // Fresh scans already supply editable values. Only saved, masked rows fetch
+  // on demand, using the same lookup as the project's service detail panel.
+  const onReveal = useServiceEnvReveal(config.projectId, service.serviceId);
   const [envRows, setEnvRows] = useState<EnvVarRow[]>(() =>
-    envToArray(service.environment, {}, service.environmentMeta),
+    envToArray(service.environment),
   );
 
   const statusLabel = service.exposed
@@ -723,7 +728,7 @@ const ServiceCard: React.FC<{
   useEffect(() => {
     setEnvRows((current) => {
       if (envRecordsEqual(arrayToEnv(current), service.environment)) return current;
-      return envToArray(service.environment, visibilityByKey(current), service.environmentMeta);
+      return envToArray(service.environment, visibilityByKey(current));
     });
   }, [service.environment, service.environmentMeta]);
 
@@ -897,9 +902,11 @@ const ServiceCard: React.FC<{
             isEditingMode={true}
             showSettingsActions={false}
             borderless
+            hideTitle
             envVars={envRows}
             envMeta={service.environmentMeta}
             onEnvVarsChange={handleEnvChange}
+            onReveal={onReveal}
           />
         </div>
       </Modal>
@@ -968,7 +975,7 @@ const ComposeServices: React.FC = () => {
           ? normalizeSubdomain(projectNameForHost)
           : normalizeSubdomain(`${projectNameForHost}-${svc.name}`);
       const eps = ensurePublicEndpoints(svc.publicEndpoints, {
-        port: svc.exposedPort || getExposedPort(svc) || "",
+        port: svc.exposedPort || serviceExposedPort(svc) || "",
         domain: svc.domain || defaultSub,
         customDomain: svc.customDomain || "",
         domainType: svc.domainType || "free",

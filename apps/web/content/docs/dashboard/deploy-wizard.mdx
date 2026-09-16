@@ -23,8 +23,6 @@ self-hosted or cloud dashboard opened in a browser, the wizard skips straight to
 This is the "where do you want this to run?" screen. Its heading reads **"Where do you
 want to deploy?"** and it shows one card per place you can deploy to.
 
-<Callout title="Screenshot">The Deploy target screen: the "Where do you want to deploy?" heading with the server card(s) and the **Openship Cloud** card, plus the **Add your own server** button underneath. *(screenshot pending)*</Callout>
-
 ### The target cards
 
 | Card | What it means |
@@ -63,8 +61,6 @@ If the project is just static files (no long-running server), there's no machine
 the summary shows a **Static** chip instead of a power tier.
 </Callout>
 
-<Callout title="Screenshot">Openship Cloud selected, with the **Power** panel on the right showing the Micro / Low / Medium / High / Custom tier cards. *(screenshot pending)*</Callout>
-
 ### Advanced (server targets)
 
 Pick a server and an **Advanced** section appears (collapsed by default — most people
@@ -82,9 +78,13 @@ never open it). Its summary line shows the current build location; expand it for
 - **Clone location** — for sandboxed/compose server deploys: **On your device** /
   **On Openship** (clone then upload; works everywhere) or **On the server** (clone on the
   server, no upload; best for big repos).
-- **Forward my git credentials** — desktop-only, Direct deploys: clone on the server using
-  your local `gh` identity instead of building and uploading. Nothing is stored on the
-  server.
+
+<Callout title="Forwarding your git identity is now a setting, not a per-deploy checkbox" type="info">
+The old per-deploy "Forward my git credentials" toggle has moved to a single per-operator switch —
+**Settings → Clone credentials → "Forward my git identity to build servers."** Turn it on once and every
+server clone uses your local `gh` over SSH (nothing stored on the server). See
+[Git authentication for private repos](/docs/guides/git-authentication) for the full clone-credential chain.
+</Callout>
 
 ### Save as default & Continue
 
@@ -104,8 +104,6 @@ This screen is where you confirm what Openship detected and set anything it can'
 The main column holds the settings; a sticky sidebar on the right holds your repo info,
 the domain, the **Deploy** button, and a build summary. For most apps the detected
 defaults are correct and you can go straight to **Deploy**.
-
-<Callout title="Screenshot">The Config screen: detected framework + build settings in the main column, and the sidebar with repository/branch, the Domain card, the **Deploy** button, and the **Deploy Summary**. *(screenshot pending)*</Callout>
 
 ### The main column
 
@@ -175,8 +173,6 @@ project. See [Redeploy & rollback](/docs/guides/rollback-redeploy).
 Pressing **Deploy** takes you to `/build/<id>` — the screen that watches your deployment
 happen. It has three parts.
 
-<Callout title="Screenshot">The live build screen: the step progress tracker across the top, the streaming **Build Terminal** below it, and the **Deployment Details** sidebar on the right. *(screenshot pending)*</Callout>
-
 ### Title and progress
 
 The heading reflects the live status: **Deploying...**, then **Deployment Successful**,
@@ -212,7 +208,7 @@ on the wrong port. Fix it, then press **Redeploy**. See
 [Troubleshooting → Deployments](/docs/troubleshooting/deployments).
 </Callout>
 
-## What next?
+## Related guides
 
 <Cards>
   <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="The click-by-click path into this wizard from a repository." />

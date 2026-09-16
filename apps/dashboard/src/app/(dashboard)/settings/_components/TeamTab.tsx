@@ -14,7 +14,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Mail, Plus, Trash2, UserPlus, Building2, LogOut, Settings2 } from "lucide-react";
+import { Loader2, Mail, Trash2, UserPlus, Building2, LogOut, Settings2, MoreVertical, Copy } from "lucide-react";
+import { grantableTypesForMode } from "@repo/core";
 import { authClient, useSession } from "@/lib/auth-client";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -28,8 +29,9 @@ import {
   type ResourceType,
 } from "@/lib/api";
 import { useModal } from "@/context/ModalContext";
-import { GrantPickerModal } from "./GrantPickerModal";
-import { InviteMemberModal } from "./InviteMemberModal";
+import { AccessEditorModal } from "./AccessEditorModal";
+import { InviteMemberInline } from "./InviteMemberInline";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { serversNewlyGranted, hasNewServerGrant, confirmServerAccess } from "@/components/permissions/confirm-server-access";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
@@ -37,6 +39,7 @@ import { TeamWorkspaceCard } from "./TeamWorkspaceCard";
 import { TeamReachabilityCard, type TeamReachability } from "./TeamReachabilityCard";
 import { WorkspaceManageModal } from "./WorkspaceManageModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { invitationClaimPath } from "@/lib/invitation-flow";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
 
@@ -109,12 +112,9 @@ export function TeamTab() {
   // rendered by the root-level modal host outside the dashboard providers.
   const { connected: cloudConnected, startConnect: connectCloud } = useCloud();
 
-  // Mode-aware grantable types: servers + mail servers are self-hosted-only;
-  // billing exists only in cloud (SaaS). The picker collapses the two GitHub
-  // types into one tab.
-  const availableTypes: ResourceType[] = selfHosted
-    ? ["project", "server", "mail_server", "backup_destination", "audit", "github_installation", "github_repository"]
-    : ["project", "backup_destination", "billing", "audit", "github_installation", "github_repository"];
+  // Mode-aware grantable types: servers + mail servers are self-hosted-only,
+  // billing is cloud-only. The picker collapses the two GitHub types into one tab.
+  const availableTypes: ResourceType[] = grantableTypesForMode(selfHosted);
 
   // Org-meta: drives personal-vs-team UX. Personal workspaces (auto-
   // created on signup) hide the invite UI; clicking "Create team org"
@@ -228,27 +228,10 @@ export function TeamTab() {
     void refresh();
   }, [refresh]);
 
-  // Open the invite flow via the centralized modal hook (blurred, centered).
-  const openInvite = () => {
-    let id = "";
-    id = showModal({
-      // The content owns its own width (narrow single-column, or wide two-pane
-      // when "Restricted" is picked); cap the shell so it never clips.
-      maxWidth: "95vw",
-      showCloseButton: false,
-      customContent: (
-        <InviteMemberModal
-          availableTypes={availableTypes}
-          selfHosted={selfHosted}
-          initialMailSource={invitationMailSource}
-          cloudConnected={cloudConnected}
-          onConnectCloud={connectCloud}
-          onInvited={() => void refresh()}
-          onClose={() => hideModal(id)}
-        />
-      ),
-    });
-  };
+  // The invite composer is INLINE (expanded from the header button), not a
+  // modal: the Restricted role needs a resource picker, and on the page it gets
+  // the full width instead of a modal growing to ~1040px to fit one.
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const handleRoleChange = async (memberId: string, role: MemberRole) => {
     const res = await orgClient.updateMemberRole({ memberId, role });
@@ -276,6 +259,24 @@ export function TeamTab() {
       return;
     }
     await refresh();
+  };
+
+  const handleCopyInvite = async (invitationId: string) => {
+    try {
+      const url = `${window.location.origin}${invitationClaimPath(invitationId)}`;
+      await navigator.clipboard.writeText(url);
+      showToast(
+        t.settings.common.copied,
+        "success",
+        t.settings.common.toast.invitations,
+      );
+    } catch {
+      showToast(
+        t.settings.team.toast.copyInviteFailed,
+        "error",
+        t.settings.common.toast.invitations,
+      );
+    }
   };
 
   // Delete/leave switch back to the personal workspace first — you can't sit on
@@ -316,6 +317,11 @@ export function TeamTab() {
           resourceType: g.resourceType,
           resourceId: g.resourceId,
           permissions: g.permissions,
+          // `scope` MUST survive the round trip. It used to be dropped here, and
+          // because `replaceGrants` treats scope as part of its change detection,
+          // simply reopening a member's panel and saving stripped every repo path
+          // restriction they had — a silent widening from a no-op action.
+          ...(g.scope ? { scope: g.scope } : {}),
         }));
       } catch (err) {
         showToast(getApiErrorMessage(err, t.settings.team.toast.loadGrantsFailed), "error", t.settings.common.toast.permissions);
@@ -323,15 +329,24 @@ export function TeamTab() {
       }
       let id = "";
       id = showModal({
-        maxWidth: "640px",
+        // Wide: resource rows carry their read/write/admin chips inline at the
+        // trailing edge, so the list reads like a table instead of stacking two
+        // lines per resource in a narrow column.
+        maxWidth: "min(94vw, 900px)",
         showCloseButton: false,
         customContent: (
-          <GrantPickerModal
+          <AccessEditorModal
             title={m.user.name || m.user.email}
             subtitle={t.settings.team.memberPanel.subtitle}
             initial={initial}
             availableTypes={availableTypes}
             saveLabel={t.settings.team.memberPanel.saveLabel}
+            // A MEMBER, not a token: "unscoped" is meaningless, `readOnly` is a token
+            // property, and the grants API's permission whitelist has no `create`.
+            show={{ templates: false, readOnlySwitch: false, createCapability: false }}
+            // "All projects" is a legitimate member grant — only the token mint
+            // refuses a non-create project wildcard.
+            suppressWildcardTypes={[]}
             onSave={async (grants) => {
               // Warn before newly granting server access — it exposes all data,
               // apps, and connected integrations on that server. Throwing keeps
@@ -401,6 +416,44 @@ export function TeamTab() {
   const canManageWorkspace = isOwner && isTeamOrg && !!orgMeta?.organizationId;
   const canLeaveWorkspace = !isOwner && isTeamOrg && !!orgMeta?.organizationId;
 
+  // Workspace-level (advanced) actions, collected into the header's ⋮ so the
+  // members list stays the page's subject. Empty → no ⋮ is rendered at all.
+  const workspaceActions: MenuAction[] = [
+    ...(isPersonalOrg && isOwner
+      ? [
+          {
+            id: "create-team",
+            // The full "Create a team organization" reads better as a menu item
+            // than the card's short "Create team" button label.
+            label: t.settings.team.createTeamCard.title,
+            icon: <Building2 className="size-4" />,
+            onClick: () => setCreateTeamOpen(true),
+          },
+        ]
+      : []),
+    ...(canManageWorkspace
+      ? [
+          {
+            id: "manage-workspace",
+            label: t.settings.team.workspace.manage.title,
+            icon: <Settings2 className="size-4" />,
+            onClick: () => setManageOpen(true),
+          },
+        ]
+      : []),
+    ...(canLeaveWorkspace
+      ? [
+          {
+            id: "leave-workspace",
+            label: t.settings.team.workspace.leaveWorkspace,
+            icon: <LogOut className="size-4" />,
+            variant: "danger" as const,
+            onClick: () => void handleLeaveWorkspace(),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -417,42 +470,43 @@ export function TeamTab() {
               : t.settings.team.descTeam}
           </p>
         </div>
-        {canInvite && (
-          <button
-            type="button"
-            onClick={openInvite}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <UserPlus className="size-4" />
-            {t.settings.team.inviteMember}
-          </button>
-        )}
+        {/* Primary action + an overflow for the WORKSPACE-level actions. Creating
+            a separate team org used to be a full card here, competing with the
+            members list for attention while being the rarer, more advanced move —
+            it (and manage/leave, previously their own card) live in the ⋮ now. */}
+        <div className="flex items-center gap-2 shrink-0">
+          {canInvite && (
+            <button
+              type="button"
+              onClick={() => setInviteOpen((v) => !v)}
+              aria-expanded={inviteOpen}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <UserPlus className="size-4" />
+              {t.settings.team.inviteMember}
+            </button>
+          )}
+          {workspaceActions.length > 0 && (
+            <DropdownMenu
+              actions={workspaceActions}
+              align="right"
+              trigger={<MoreVertical className="size-4" />}
+              triggerClassName="inline-flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            />
+          )}
+        </div>
       </div>
 
-      {/* Personal workspaces can't invite directly (the invite button is hidden
-          for them — the server rejects personal-org invites). Spinning up a
-          separate team org is the path to collaborating, so this card carries
-          it — owner only. */}
-      {isPersonalOrg && isOwner && (
-        <div className="rounded-xl border border-border/50 bg-transparent p-4 flex items-center gap-3">
-          <div className="size-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-            <Building2 className="size-[18px] text-muted-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground">{t.settings.team.createTeamCard.title}</p>
-            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-              {t.settings.team.createTeamCard.body}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCreateTeamOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors shrink-0"
-          >
-            <Plus className="size-3.5" />
-            {t.settings.team.createTeamCard.button}
-          </button>
-        </div>
+      {inviteOpen && canInvite && (
+        <InviteMemberInline
+          availableTypes={availableTypes}
+          selfHosted={selfHosted}
+          initialMailSource={invitationMailSource}
+          cloudConnected={cloudConnected}
+          onConnectCloud={connectCloud}
+          onInvited={() => void refresh()}
+          onClose={() => setInviteOpen(false)}
+        />
       )}
 
       {loading ? (
@@ -462,7 +516,7 @@ export function TeamTab() {
       ) : (
         <>
           {/* Active members */}
-          <div className="rounded-2xl border border-border/50 bg-card sadwq">
+          <div className="rounded-2xl border border-border/50 bg-card">
             <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">
                 {interpolate(t.settings.team.activeMembers, { count: String(members.length) })}
@@ -541,7 +595,7 @@ export function TeamTab() {
 
           {/* Pending invitations */}
           {invitations.length > 0 && (
-            <div className="rounded-2xl border border-border/50 bg-card sadwq">
+            <div className="rounded-2xl border border-border/50 bg-card">
               <div className="px-5 py-3 border-b border-border/50">
                 <h2 className="text-sm font-semibold text-foreground">
                   {interpolate(t.settings.team.pendingInvitations, { count: String(invitations.filter((i) => i.status === "pending").length) })}
@@ -562,13 +616,24 @@ export function TeamTab() {
                         </p>
                       </div>
                       {isAdminOrOwner && (
-                        <button
-                          type="button"
-                          onClick={() => handleCancelInvite(inv.id)}
-                          className="text-xs font-medium text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          {t.settings.common.cancel}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyInvite(inv.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                            title={t.settings.team.copyInviteLink}
+                          >
+                            <Copy className="size-3.5" />
+                            {t.settings.common.copy}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleCancelInvite(inv.id)}
+                            className="text-xs font-medium text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            {t.settings.common.cancel}
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -576,44 +641,6 @@ export function TeamTab() {
             </div>
           )}
 
-          {/* Workspace actions on a TEAM workspace — the owner opens the
-              manage modal (rename / pause / delete); a member can leave.
-              Hidden for the personal workspace (the account base). */}
-          {(canManageWorkspace || canLeaveWorkspace) && (
-            <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/50 bg-card p-5">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">
-                  {canManageWorkspace
-                    ? t.settings.team.workspace.manage.title
-                    : t.settings.team.workspace.leaveWorkspace}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {canManageWorkspace
-                    ? t.settings.team.workspace.manage.sectionBody
-                    : t.settings.team.workspace.leaveBody}
-                </p>
-              </div>
-              {canManageWorkspace ? (
-                <button
-                  type="button"
-                  onClick={() => setManageOpen(true)}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-border/60 bg-transparent px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
-                >
-                  <Settings2 className="size-4" />
-                  {t.settings.team.workspace.manage.title}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleLeaveWorkspace()}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
-                >
-                  <LogOut className="size-4" />
-                  {t.settings.team.workspace.leaveWorkspace}
-                </button>
-              )}
-            </div>
-          )}
         </>
       )}
 
@@ -710,4 +737,3 @@ export function TeamTab() {
     </div>
   );
 }
-
