@@ -529,7 +529,7 @@ describe("triggerDeployment", () => {
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
     repos.project.listEnvVarChangeMeta.mockResolvedValue([]);
-    // Only read by the best-effort compose-drift reconcile (git projects).
+    // Read by the required Compose source reconcile (git projects).
     repos.service.listByProject.mockResolvedValue([]);
     repos.service.reconcileFromCompose.mockResolvedValue({ driftedNames: [] });
     repos.serviceDeployment.latestByProject.mockResolvedValue(new Map());
@@ -1114,6 +1114,48 @@ describe("triggerDeployment", () => {
     });
 
     expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
+  });
+
+  it.each(["ECONNRESET", "GitHub API unavailable"])(
+    "stops before queuing when a required Compose source refresh fails: %s (#893)", async (message) => {
+      repos.project.findById.mockResolvedValue(baseProject({
+        composePath: "compose.yml", localPath: null,
+        gitOwner: "acme", gitRepo: "app", gitProvider: "github", gitUrl: "https://github.com/acme/app.git",
+      }));
+      repos.service.listByProject.mockResolvedValue(composeServices);
+      resolveProjectInfo.mockRejectedValueOnce(new Error(message));
+      await expect(triggerDeployment(ctx, { projectId: "project-1", branch: "main" }))
+        .rejects.toMatchObject({ statusCode: 502, message: expect.stringContaining(message) });
+      expect(repos.deployment.create).not.toHaveBeenCalled();
+      expect(kickoffBuild).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([null, "poisoned"])("requires review for a %s cached Compose value even on code-only webhooks (#893)", async (baseline) => {
+    const parsed = {
+      ...composeServices[0], environment: { MY_VAR: "B" },
+      environmentTemplates: { MY_VAR: "${MY_VAR}" },
+      advanced: { ...composeServices[0].advanced, environmentTemplateKeys: ["MY_VAR"] },
+    };
+    const state = installStatefulComposeRepo({
+      ...parsed, environmentTemplates: undefined, projectId: "project-1",
+      environment: { MY_VAR: "cached-private-value" },
+      importedSpec: baseline ? toComposeSpec(parsed) : null, driftSpec: null,
+    });
+    repos.project.findById.mockResolvedValue(baseProject({
+      composePath: "compose.yml", localPath: null,
+      gitOwner: "acme", gitRepo: "app", gitProvider: "github", gitUrl: "https://github.com/acme/app.git",
+    }));
+    resolveProjectInfo.mockResolvedValueOnce({ services: [parsed] });
+    const error = await triggerDeployment(ctx, {
+      projectId: "project-1", branch: "main", trigger: "webhook", changedPaths: ["src/index.ts"],
+    }).catch((error: unknown) => error);
+    expect(error).toMatchObject({ statusCode: 409, message: expect.stringContaining("MY_VAR") });
+    expect((error as Error).message).not.toContain("cached-private-value");
+    expect(state.stored().environment).toEqual({ MY_VAR: "cached-private-value" });
+    expect(state.stored().driftSpec).toEqual(toComposeSpec(parsed));
     expect(repos.deployment.create).not.toHaveBeenCalled();
     expect(kickoffBuild).not.toHaveBeenCalled();
   });
