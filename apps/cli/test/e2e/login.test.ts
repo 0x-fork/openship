@@ -16,6 +16,7 @@ vi.mock("../../src/lib/config", () => ({
 vi.mock("../../src/lib/caps", () => ({ fetchCaps: async () => ({}) }));
 
 import { loginCommand } from "../../src/commands/login";
+import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
 
 let fetchStub: FetchStub;
@@ -51,7 +52,7 @@ describe("openship login endpoint preservation", () => {
   });
 
   it("an explicit --api-url still overrides the saved endpoint", async () => {
-    h.contexts.prod = { apiUrl: "https://api.prod.example.com", token: "old" };
+    h.contexts.prod = { apiUrl: "https://api.prod.example.com", dashboardUrl: "https://dash.prod.example.com", token: "old" };
 
     await runCommand(loginCommand, [
       "--token", "opsh_pat_test",
@@ -60,5 +61,32 @@ describe("openship login endpoint preservation", () => {
     ]);
 
     expect(h.added.at(-1)?.opts.apiUrl).toBe("https://api.staging.example.com");
+    expect(h.added.at(-1)?.opts.dashboardUrl).toBe("https://dash.prod.example.com");
+  });
+
+  it("uses local defaults for a new context", async () => {
+    await runCommand(loginCommand, ["--token", "opsh_pat_test", "--context", "new"]);
+
+    expect(fetchStub.calls[0].url).toBe(`${LOCAL_API_URL}/api/tokens`);
+    expect(h.added.at(-1)?.opts).toMatchObject({ apiUrl: LOCAL_API_URL, dashboardUrl: LOCAL_DASHBOARD_URL });
+  });
+
+  it("keeps the saved API when only the dashboard is overridden", async () => {
+    h.contexts.prod = { apiUrl: "https://api.prod.example.com", dashboardUrl: "https://dash.old.example.com" };
+    await runCommand(loginCommand, ["--token", "opsh_pat_test", "--context", "prod", "--dashboard-url", "https://dash.new.example.com"]);
+
+    expect(fetchStub.calls[0].url).toBe("https://api.prod.example.com/api/tokens");
+    expect(h.added.at(-1)?.opts.dashboardUrl).toBe("https://dash.new.example.com");
+  });
+
+  it("does not overwrite a context when the replacement token is rejected", async () => {
+    h.contexts.prod = { apiUrl: "https://api.prod.example.com", token: "old" };
+    fetchStub.restore();
+    fetchStub = stubFetch(() => ({ status: 401, json: { error: "Unauthorized" } }));
+
+    const { code } = await runCommand(loginCommand, ["--token", "opsh_pat_invalid", "--context", "prod"]);
+
+    expect(code).toBe(1);
+    expect(h.added).toEqual([]);
   });
 });

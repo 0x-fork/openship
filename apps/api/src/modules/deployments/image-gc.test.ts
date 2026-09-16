@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Deployment } from "@repo/db";
-import { computeKeepSet, selectImageRemovalRefs } from "./image-gc";
+import { computeKeepSet, selectImageRemovalRefs } from "@repo/platform/engine/modules/deployments/image-gc";
 
 // Minimal deployment shape for the pure keep-set logic (loaders are injected, so
 // no DB). Casts keep the fixtures terse — computeKeepSet only reads id/imageRef/pinned.

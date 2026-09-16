@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -21,7 +21,7 @@ async function freshRepo() {
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
   await client.exec("SET session_replication_role = replica;"); // skip FK seeding
-  return { db, repo: createDomainRepo(db) };
+  return { client, db, repo: createDomainRepo(db) };
 }
 
 /** now + `days` (days may be negative for an already-expired cert). */
@@ -47,8 +47,10 @@ describe("domain.repo findExpiringSsl (PGlite)", () => {
       { id: "d5", projectId: "p1", hostname: "external-expiring.test", sslStatus: "external", sslExpiresAt: inDays(5) },
       // mid-issuance — no cert to renew yet, must stay excluded.
       { id: "d6", projectId: "p1", hostname: "provisioning-expiring.test", sslStatus: "provisioning", sslExpiresAt: inDays(5) },
+      { id: "d7", projectId: "p1", hostname: "error-unissued.test", sslStatus: "error", sslExpiresAt: null },
     ]);
   }, 30_000);
+  afterEach(async () => { await ctx?.client.close(); });
 
   it("selects active AND errored certs within the cutoff, excludes external/provisioning/fresh", async () => {
     const cutoff = inDays(14);
