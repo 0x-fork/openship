@@ -179,12 +179,10 @@ export const OverviewTab = () => {
 
   return (
     <div className="space-y-5">
-      {/* Only a catalog app's curated connection (URLs + generated keys) belongs on
-          the overview. A plain project's synthesized internal address is edited in
-          Settings → Advanced (single-app alias) and shown per service in the service
-          detail panel — surfacing it here too just clutters a plain project. Card
-          self-hides when the app declares no connection outputs. */}
-      {projectData.isApp && (
+      {/* The API resolves reachable outputs, including services attached to a
+          static project. The card hides itself when none exist. Synthesized
+          internal addresses are only useful on self-hosted targets. */}
+      {projectData.id && (projectData.isApp || deployTarget !== "cloud") && (
         <ConnectionCard
           projectId={projectData.id}
           appTemplateId={projectData.appTemplateId}
