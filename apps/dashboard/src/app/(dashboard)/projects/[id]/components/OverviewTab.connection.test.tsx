@@ -34,31 +34,58 @@ vi.mock("@/hooks/useLocalhostForward", () => ({
 vi.mock("./ConnectedServicesCard", () => ({ ConnectedServicesCard: () => null }));
 vi.mock("./UsedByCard", () => ({ UsedByCard: () => null }));
 vi.mock("./UseInProjectModal", () => ({
-  UseInProjectModal: ({ sourceProjectId, outputs }: { sourceProjectId: string; outputs: AppConnectionOutput[] }) => (
-    <div role="dialog">{sourceProjectId}: {outputs.map((o) => o.value).join(", ")}</div>
+  UseInProjectModal: ({
+    sourceProjectId,
+    outputs,
+  }: {
+    sourceProjectId: string;
+    outputs: AppConnectionOutput[];
+  }) => (
+    <div role="dialog">
+      {sourceProjectId}: {outputs.map((o) => o.value).join(", ")}
+    </div>
   ),
 }));
 
 let root: Root;
 let container: HTMLDivElement;
 const output: AppConnectionOutput = {
-  id: "internal", label: "Internal address", value: "http://api:3000",
-  secret: false, service: null, internal: true,
+  id: "internal",
+  label: "Internal address",
+  value: "http://api:3000",
+  secret: false,
+  service: null,
+  internal: true,
 };
 async function render() {
-  await act(async () => root.render(<I18nProvider><OverviewTab /></I18nProvider>));
+  await act(async () =>
+    root.render(
+      <I18nProvider>
+        <OverviewTab />
+      </I18nProvider>,
+    ),
+  );
 }
 function useButton() {
-  return [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Use in a project"));
+  return [...container.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Use in a project"),
+  );
 }
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   h.project = {
-    id: "project-one", name: "API", slug: "api", isApp: false,
-    hasServer: true, workloadType: "web", productionMode: "server", port: 3000,
-    deployTarget: "server", serverId: "server-one",
+    id: "project-one",
+    name: "API",
+    slug: "api",
+    isApp: false,
+    hasServer: true,
+    workloadType: "web",
+    productionMode: "server",
+    port: 3000,
+    deployTarget: "server",
+    serverId: "server-one",
   };
   h.services = [];
   h.connection.mockReset().mockResolvedValue({ data: { outputs: [output] } });
@@ -78,7 +105,9 @@ describe("project connection discovery (#504)", () => {
     expect(h.connection).toHaveBeenCalledWith("project-one");
     expect(useButton()).toBeDefined();
     await act(async () => useButton()!.click());
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("project-one: http://api:3000");
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      "project-one: http://api:3000",
+    );
   });
 
   it("keeps catalog connection details available", async () => {
@@ -102,7 +131,9 @@ describe("project connection discovery (#504)", () => {
     h.project.hasServer = false;
     h.project.productionMode = "static";
     h.services = [{ id: "redis", name: "redis", ports: ["6379"], enabled: true }];
-    h.connection.mockResolvedValue({ data: { outputs: [{ ...output, value: "redis://redis:6379" }] } });
+    h.connection.mockResolvedValue({
+      data: { outputs: [{ ...output, value: "redis://redis:6379" }] },
+    });
     await render();
     expect(useButton()).toBeDefined();
   });
