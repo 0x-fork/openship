@@ -147,7 +147,7 @@ beforeEach(() => {
   domainRepo.findById.mockResolvedValue({ ...domainRow });
   domainRepo.listByProject.mockResolvedValue([]);
   projectRepo.findById.mockResolvedValue({ ...project });
-  deploymentRepo.findById.mockResolvedValue({ id: "dep_1", meta: { serverId: "srv_1" } });
+  deploymentRepo.findById.mockResolvedValue({ id: "dep_1", projectId: "proj_1", organizationId: "org_1", meta: { serverId: "srv_1" } });
   serverRepo.getInOrganization.mockResolvedValue({ id: "srv_1", isLocal: true });
   serverRepo.get.mockResolvedValue({ id: "srv_1", isLocal: true, organizationId: "org_1" });
   createExecutor.mockImplementation(() => hostExec.current);

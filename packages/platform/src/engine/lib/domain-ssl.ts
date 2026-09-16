@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { Domain, Project } from "@repo/db";
 import type { ManualCert, SslProvider, SslResult, ProvisionCertOptions } from "@repo/adapters";
 import {
@@ -433,7 +434,7 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
   const project = owner.project;
   const depId = project.activeDeploymentId;
   if (depId) {
-    const dep = await repos.deployment.findById(depId);
+    const dep = await findActiveDeployment(project);
     if (dep) {
       const meta = (dep.meta ?? {}) as DeploymentMeta;
       try {

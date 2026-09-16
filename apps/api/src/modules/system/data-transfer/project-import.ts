@@ -4,6 +4,7 @@ import {
   linkedProjectIds,
   schema,
   selectProjectTransfer,
+  assertActiveDeploymentOwnership,
   snapshotTransferReader,
   topoOrderedTables,
   transferProject,
@@ -386,6 +387,7 @@ export async function planProjectImport(
           excludedTables,
         )
       : { tables: {}, serverIds: [], warnings: [] };
+    assertActiveDeploymentOwnership(graph.tables);
   } catch (error) {
     throw new ProjectImportError(
       error instanceof Error ? error.message : "The selected project snapshot is incomplete.",

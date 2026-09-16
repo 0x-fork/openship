@@ -14,6 +14,7 @@
  * separate step so the user reviews before anything on the server changes.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, restoreSubgraph, PkCollisionError, type Service } from "@repo/db";
 import { slugify, safeErrorMessage, mergeAdvanced } from "@repo/core";
 import { buildNetworkAliases, type ContainerInfo, type ContainerStatus } from "@repo/adapters";
@@ -1085,7 +1086,7 @@ async function restoreFromSnapshot(opts: {
   }
 
   const project = await repos.project.findById(projectId);
-  const deploymentId = project?.activeDeploymentId ?? null;
+  const deploymentId = project ? (await findActiveDeployment(project))?.id ?? null : null;
   if (deploymentId) {
     await refreshRestoredRuntime(serverId, organizationId, deploymentId).catch(() => {});
   }

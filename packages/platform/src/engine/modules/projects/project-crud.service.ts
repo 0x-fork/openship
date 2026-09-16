@@ -2,6 +2,7 @@
  * Project CRUD service - create, read, update, list, ensure.
  */
 
+import { activeDeploymentForProject, findActiveDeployment, listActiveServiceDeployments } from "@repo/platform/engine/lib/active-deployment";
 import {
   repos,
   type Deployment,
@@ -261,7 +262,7 @@ export async function enrichProject(p: Project) {
 
   let activeDep: Deployment | null = null;
   if (p.activeDeploymentId) {
-    activeDep = (await repos.deployment.findById(p.activeDeploymentId)) ?? null;
+    activeDep = (await findActiveDeployment(p)) ?? null;
   }
   const { deployTarget, serverId } = readDeployMeta(p, activeDep);
   let serverName: string | null = null;
@@ -318,7 +319,9 @@ export async function enrichProjectsBatch(
     .catch(() => new Map<string, Deployment>());
 
   const serverIds = new Set<string>();
-  for (const d of deployments.values()) {
+  for (const project of projects) {
+    const d = project.activeDeploymentId ? activeDeploymentForProject(project, deployments.get(project.activeDeploymentId)) : undefined;
+    if (!d) continue;
     const meta = d.meta as { serverId?: string } | null;
     if (meta?.serverId) serverIds.add(meta.serverId);
   }
@@ -342,7 +345,7 @@ export async function enrichProjectsBatch(
 
     let activeDep: Deployment | null = null;
     if (p.activeDeploymentId) {
-      activeDep = deployments.get(p.activeDeploymentId) ?? null;
+      activeDep = activeDeploymentForProject(p, deployments.get(p.activeDeploymentId)) ?? null;
     }
     const { deployTarget, serverId } = readDeployMeta(p, activeDep);
     let serverName: string | null = null;
@@ -2320,7 +2323,7 @@ export async function resolveDeployedDrift(
   if (mode === "commit") {
     let deployedSha: string | null = null;
     if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+      const dep = await findActiveDeployment(p).catch(() => null);
       deployedSha = dep?.commitSha ?? null;
     }
     return { mode: "commit", deployedSha };
@@ -2334,7 +2337,7 @@ export async function resolveDeployedDrift(
     }
     let currentVersion: string | null = null;
     if (p.activeDeploymentId) {
-      const dep = await repos.deployment.findById(p.activeDeploymentId).catch(() => null);
+      const dep = await findActiveDeployment(p).catch(() => null);
       currentVersion = dep?.releaseVersion ?? null;
     }
     if (!currentVersion && p.appTemplateId === "openship") currentVersion = readApiVersion();
@@ -2343,7 +2346,7 @@ export async function resolveDeployedDrift(
 
   const deployedByService = new Map<string, { ref?: string; digest?: string }>();
   if (p.activeDeploymentId) {
-    const sds = await repos.service.listByDeployment(p.activeDeploymentId).catch(() => []);
+    const sds = await listActiveServiceDeployments(p).catch(() => []);
     for (const sd of sds) {
       deployedByService.set(sd.serviceId, {
         digest: sd.imageDigest ?? undefined,
@@ -2682,11 +2685,12 @@ export async function getLatestDeploymentSession(projectId: string, organization
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  if (!p.activeDeploymentId) {
+  const active = await findActiveDeployment(p);
+  if (!active) {
     return { session: null };
   }
 
-  const session = await repos.deployment.findBuildSessionByDeploymentId(p.activeDeploymentId);
+  const session = await repos.deployment.findBuildSessionByDeploymentId(active.id);
   return {
     session: session
       ? {

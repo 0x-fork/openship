@@ -39,6 +39,7 @@
  * `usageStream` was doing exactly it on a 5s loop.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import { NotFoundError, safeErrorMessage } from "@repo/core";
 import type { ResourceUsage, RuntimeAdapter } from "@repo/adapters";
@@ -276,7 +277,7 @@ export async function collectProjectUsage(
   }
   if (!project.activeDeploymentId) return emptyUsage("No active deployment");
 
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  const dep = await findActiveDeployment(project);
   if (!dep) return emptyUsage("No active deployment");
 
   const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep);
@@ -345,7 +346,7 @@ export async function openProjectUsageSampler(
   }
   if (!project.activeDeploymentId) return { error: "No active deployment" };
 
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  const dep = await findActiveDeployment(project);
   if (!dep) return { error: "No active deployment" };
 
   const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep);

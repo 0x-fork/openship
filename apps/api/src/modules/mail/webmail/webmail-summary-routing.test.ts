@@ -56,7 +56,7 @@ vi.mock("@repo/db", () => ({
     },
     mailServer: { setWebmailProject: vi.fn(async () => {}) },
     service: { listByProject: vi.fn(async () => h.services) },
-    deployment: { findById: vi.fn(async () => ({ status: "ready" })) },
+    deployment: { findById: vi.fn(async () => ({ id: h.project?.activeDeploymentId, projectId: h.project?.id, organizationId: "org1", status: "ready" })) },
   },
 }));
 

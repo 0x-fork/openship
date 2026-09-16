@@ -30,6 +30,7 @@ export {
   countInstanceSubgraphTables,
   restoreSubgraph,
   restoreSubgraphInTransaction,
+  assertActiveDeploymentOwnership,
   deleteProjectSubgraph,
   dumpDatabase,
   restoreDatabase,

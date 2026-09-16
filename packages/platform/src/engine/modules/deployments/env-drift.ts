@@ -18,6 +18,7 @@
  * decryption is involved and a key is safe to name in an API response.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Project } from "@repo/db";
 import { OperationError } from "@repo/contracts";
 
@@ -45,7 +46,7 @@ export class ServiceConfigStaleError extends OperationError {
  *  nothing deployed to compare with (first deploy → forceAll handles it). */
 async function envDriftAnchor(project: Project): Promise<Date | null> {
   if (!project.activeDeploymentId) return null;
-  const active = await repos.deployment.findById(project.activeDeploymentId).catch(() => null);
+  const active = await findActiveDeployment(project).catch(() => null);
   return active?.createdAt ?? null;
 }
 

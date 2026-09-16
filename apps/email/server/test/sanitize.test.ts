@@ -62,6 +62,9 @@ describe('sanitizeMailHtml', () => {
       '<img src=x onerror=alert(1)>',
       '<svg onload=alert(1)>',
       '<a href="javascript:alert(1)">x</a>',
+      '<a href="java&#x73;cript:alert(1)">x</a>',
+      '<a href="jav&#x09;ascript:alert(1)">x</a>',
+      '<ScRiPt>alert(1)</ScRiPt><P oNcLiCk="alert(1)">readable',
       '<iframe src="javascript:alert(1)"></iframe>',
       '<body onload=alert(1)>',
       '<base href="https://evil.tld/">',
@@ -91,10 +94,11 @@ describe('sanitizeMailHtml', () => {
     });
 
     it('forces target/rel on links', () => {
-      const out = sanitizeMailHtml('<a href="https://example.com">x</a>');
-
-      expect(out).toContain('target="_blank"');
-      expect(out).toContain('rel="noopener noreferrer"');
+      for (const attributes of ['', 'target="_top" rel="opener"']) {
+        const out = sanitizeMailHtml(`<a href="https://example.com" ${attributes}>x</a>`);
+        expect(out).toContain('target="_blank"');
+        expect(out).toContain('rel="noopener noreferrer"');
+      }
     });
 
     it('keeps inline (cid: and data:) attachment images', () => {

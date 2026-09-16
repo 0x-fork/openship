@@ -12,6 +12,7 @@
  *   - analytics-scraper.ts  (periodic scrape via SSH)
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { safeErrorMessage } from "@repo/core";
 import { repos, type Project } from "@repo/db";
 import {
@@ -66,7 +67,7 @@ async function resolveTrafficRuntime(project: Project) {
   let serverId: string | null = null;
 
   if (project.activeDeploymentId) {
-    const dep = await repos.deployment.findById(project.activeDeploymentId);
+    const dep = await findActiveDeployment(project);
     const meta = dep?.meta as { deployTarget?: string; serverId?: string } | null;
     deployTarget = meta?.deployTarget ?? null;
     if (meta?.serverId) serverId = meta.serverId;

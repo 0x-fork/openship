@@ -1,3 +1,4 @@
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import type { BuildLogger } from "@repo/adapters";
 import {
@@ -39,7 +40,7 @@ export async function checkProjectPorts(
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!project.activeDeploymentId) return [];
 
-  const deployment = await repos.deployment.findById(project.activeDeploymentId);
+  const deployment = await findActiveDeployment(project);
   if (!deployment) return [];
 
   // Bound the whole probe: a slow/unreachable remote box must degrade to "no

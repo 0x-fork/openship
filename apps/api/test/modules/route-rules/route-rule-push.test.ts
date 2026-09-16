@@ -267,16 +267,16 @@ describe("resolveProjectPushTarget", () => {
   });
 
   it("returns nothing for a project deployed to cloud", async () => {
-    findProject.mockResolvedValue({ id: "p1", activeDeploymentId: "dep1" });
-    findDeployment.mockResolvedValue({ id: "dep1", meta: {}, organizationId: "org1" });
+    findProject.mockResolvedValue({ id: "p1", organizationId: "org1", activeDeploymentId: "dep1" });
+    findDeployment.mockResolvedValue({ id: "dep1", projectId: "p1", meta: {}, organizationId: "org1" });
     resolveDeploymentPlatform.mockResolvedValue({ effectiveTarget: "cloud", serverId: null });
 
     expect(await resolveProjectPushTarget("p1")).toBeNull();
   });
 
   it("targets the server the deployment actually runs on", async () => {
-    findProject.mockResolvedValue({ id: "p1", activeDeploymentId: "dep1" });
-    findDeployment.mockResolvedValue({ id: "dep1", meta: {}, organizationId: "org1" });
+    findProject.mockResolvedValue({ id: "p1", organizationId: "org1", activeDeploymentId: "dep1" });
+    findDeployment.mockResolvedValue({ id: "dep1", projectId: "p1", meta: {}, organizationId: "org1" });
     resolveDeploymentPlatform.mockResolvedValue({ effectiveTarget: "server", serverId: "srv9" });
 
     expect(await resolveProjectPushTarget("p1")).toEqual({ serverId: "srv9" });
@@ -284,7 +284,7 @@ describe("resolveProjectPushTarget", () => {
 
   it("falls back to the local edge for a project that has never deployed", async () => {
     // Rules can be authored before the first deploy; the local edge is the default.
-    findProject.mockResolvedValue({ id: "p1", activeDeploymentId: null });
+    findProject.mockResolvedValue({ id: "p1", organizationId: "org1", activeDeploymentId: null });
     expect(await resolveProjectPushTarget("p1")).toEqual({ serverId: null });
   });
 

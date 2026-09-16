@@ -29,6 +29,7 @@
  * nothing for it.
  */
 
+import { activeDeploymentForProject, findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import type { Deployment } from "@repo/db";
 import { compileVercelRouting, type PortStopTarget } from "@repo/adapters";
@@ -517,7 +518,7 @@ export async function getProjectPendingActions(
   const [latest, active, domains] = await Promise.all([
     repos.deployment.findLatestByProject(projectId).catch(() => null),
     project.activeDeploymentId
-      ? repos.deployment.findById(project.activeDeploymentId).catch(() => null)
+      ? findActiveDeployment(project).catch(() => null)
       : Promise.resolve(null),
     repos.domain.listByProject(projectId).catch(() => []),
   ]);
@@ -560,7 +561,7 @@ export async function getOrgPendingActions(
       project,
       latest: latestByProject.get(project.id) ?? null,
       active: project.activeDeploymentId
-        ? (activeById.get(project.activeDeploymentId) ?? null)
+        ? (activeDeploymentForProject(project, activeById.get(project.activeDeploymentId)) ?? null)
         : null,
       domains: domainsByProject.get(project.id) ?? [],
     });

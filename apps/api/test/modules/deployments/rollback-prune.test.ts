@@ -91,6 +91,7 @@ const { prune } = await import("@repo/platform/engine/modules/deployments/rollba
 
 const dep = (over: Record<string, unknown>) => ({
   id: "d",
+  organizationId: "org1",
   projectId: "p1",
   imageRef: null,
   containerId: "c",

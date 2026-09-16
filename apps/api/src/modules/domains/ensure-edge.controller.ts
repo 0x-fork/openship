@@ -12,6 +12,7 @@
  * must not be recreated.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
@@ -267,7 +268,7 @@ export async function ensureEdgeStream(c: Context) {
         // and DELETE may have claimed it while the operator was answering the prompt.
         const liveTarget = await resolveProjectServer(id, ctx.organizationId);
         if ("error" in liveTarget) throw new Error(liveTarget.error);
-        const dep = await repos.deployment.findById(liveProject.activeDeploymentId!);
+        const dep = await findActiveDeployment(liveProject);
         if (!dep) throw new Error("The active deployment no longer exists");
 
         // Prepare the serving box to answer the managed-edge target check and

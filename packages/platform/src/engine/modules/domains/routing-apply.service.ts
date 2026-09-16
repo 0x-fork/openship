@@ -13,6 +13,7 @@
  * by the caller, so a live-apply failure logs and defers to the next deploy.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import {
@@ -67,7 +68,7 @@ export async function applyProjectRouting(
   // transport, while routing drives the box through the pooled SSH executor.
   let resolved: ResolvedDeploymentPlatform | null = null;
   try {
-    const deployment = await repos.deployment.findById(project.activeDeploymentId);
+    const deployment = await findActiveDeployment(project);
     if (!deployment) return;
 
     resolved = await resolveDeploymentPlatform((deployment.meta ?? {}) as DeploymentMeta, {
@@ -76,7 +77,7 @@ export async function applyProjectRouting(
     const { routing, runtime } = resolved.platform;
     const managed = usesManagedRouting(platform().target, resolved.effectiveTarget);
     const defs = await repos.service.listByProject(project.id);
-    const liveRows = await repos.service.listByDeployment(project.activeDeploymentId);
+    const liveRows = await repos.service.listByDeployment(deployment.id);
 
     // Cloud: apply the vercel routing at the Oblien edge (no OpenResty).
     if (runtime instanceof CloudRuntime) {

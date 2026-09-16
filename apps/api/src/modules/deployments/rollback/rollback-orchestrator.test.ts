@@ -111,6 +111,7 @@ beforeEach(() => {
   };
   h.active = {
     id: "dep-active",
+    projectId: "project-1", organizationId: "org-1",
     commitSha: "newer-commit",
   };
   h.project = {

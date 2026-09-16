@@ -2,6 +2,7 @@
  * Project runtime service - logs, enable/disable (start/stop).
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import { AppError, NotFoundError, ValidationError, safeErrorMessage } from "@repo/core";
 import { checkEdge, edgeProxy } from "@repo/adapters";
@@ -35,7 +36,7 @@ export async function getRuntimeLogs(projectId: string, organizationId: string, 
     throw new NotFoundError("No active deployment for project", projectId);
   }
 
-  const dep = await repos.deployment.findById(p.activeDeploymentId);
+  const dep = await findActiveDeployment(p);
   if (!dep) {
     throw new NotFoundError("No running container for project", projectId);
   }
@@ -65,7 +66,7 @@ export async function streamRuntimeLogs(
     throw new NotFoundError("No active deployment for project", projectId);
   }
 
-  const dep = await repos.deployment.findById(p.activeDeploymentId);
+  const dep = await findActiveDeployment(p);
   if (!dep) {
     throw new NotFoundError("No running container for project", projectId);
   }
@@ -180,7 +181,7 @@ async function enableLiveProject(p: ProjectRow, organizationId: string) {
     throw new ValidationError("No deployment to enable - deploy first");
   }
 
-  const dep = await repos.deployment.findById(p.activeDeploymentId);
+  const dep = await findActiveDeployment(p);
   if (!dep) {
     throw new ValidationError("No container found for active deployment");
   }
@@ -257,7 +258,7 @@ async function disableLiveProject(p: ProjectRow) {
     return { success: true, message: "No active deployment" };
   }
 
-  const dep = await repos.deployment.findById(p.activeDeploymentId);
+  const dep = await findActiveDeployment(p);
   if (!dep) {
     return { success: true, message: "No container to stop" };
   }
@@ -378,7 +379,7 @@ async function retryLiveProjectRouting(
   // Cloud manages its own ingress — there is no server edge to repair here.
   if (p.cloudWorkspaceId) return { ok: true };
 
-  const dep = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+  const dep = p.activeDeploymentId ? await findActiveDeployment(p) : null;
 
   await repairDeploymentServerBinding(p, dep).catch(() => {});
 
@@ -390,7 +391,7 @@ async function retryLiveProjectRouting(
   const edgeRecoveryWarning = await recoverProjectEdge(p, dep);
   if (edgeRecoveryWarning) {
     const fresh = p.activeDeploymentId
-      ? await repos.deployment.findById(p.activeDeploymentId)
+      ? await findActiveDeployment(p)
       : null;
     await markRoutingWarning(fresh, edgeRecoveryWarning).catch(() => {});
     return { ok: false, warning: edgeRecoveryWarning };
@@ -442,7 +443,7 @@ async function retryLiveProjectRouting(
       ? [...new Set(routeWarnings)].join("\n")
       : "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
     const fresh = p.activeDeploymentId
-      ? await repos.deployment.findById(p.activeDeploymentId)
+      ? await findActiveDeployment(p)
       : null;
     await markRoutingWarning(fresh, warning).catch(() => {});
     return { ok: false, warning };
@@ -456,7 +457,7 @@ async function retryLiveProjectRouting(
   const edgeWarning = await edgeServingWarning(p, serverId);
   if (edgeWarning) {
     const fresh = p.activeDeploymentId
-      ? await repos.deployment.findById(p.activeDeploymentId)
+      ? await findActiveDeployment(p)
       : null;
     await markRoutingWarning(fresh, edgeWarning).catch(() => {});
     return { ok: false, warning: edgeWarning };
@@ -617,7 +618,7 @@ export async function syncProjectManagedEdge(
   opts: { markOnFailure?: boolean } = {},
 ): Promise<{ ok: boolean; failures: string[] }> {
   const dep = project.activeDeploymentId
-    ? await repos.deployment.findById(project.activeDeploymentId)
+    ? await findActiveDeployment(project)
     : null;
   const serverId = (dep?.meta as { serverId?: string } | null)?.serverId ?? undefined;
 

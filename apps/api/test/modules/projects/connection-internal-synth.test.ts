@@ -267,6 +267,7 @@ describe("createConnection — synthesized internal source", () => {
     );
     h.deploymentFindById.mockResolvedValue({
       id: "dep-c",
+      projectId: "db-c", organizationId: "org1",
       meta: { deployTarget: "cloud", buildStrategy: "local" },
     });
 

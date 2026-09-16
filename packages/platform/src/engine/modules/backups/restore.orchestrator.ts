@@ -29,6 +29,7 @@
  * Same shape as backups — dashboard refresh-safe.
  */
 
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import crypto from "node:crypto";
 import { Writable, pipeline as streamPipeline } from "node:stream";
 import { promisify } from "node:util";
@@ -1529,7 +1530,7 @@ export class RestoreOrchestrator {
   private async activeDeploymentMeta(projectId: string): Promise<Record<string, unknown>> {
     const project = await repos.project.findById(projectId);
     if (!project?.activeDeploymentId) return {};
-    const dep = await repos.deployment.findById(project.activeDeploymentId);
+    const dep = await findActiveDeployment(project);
     return (dep?.meta ?? {}) as Record<string, unknown>;
   }
 
@@ -1576,7 +1577,7 @@ export class RestoreOrchestrator {
     // taken as `$POSTGRES_USER` has to be replayed as the same one.
     let environment: string | undefined;
     if (project.activeDeploymentId) {
-      const dep = await repos.deployment.findById(project.activeDeploymentId);
+      const dep = await findActiveDeployment(project);
       // Verified against the host — a restore into a container a redeploy has
       // since replaced would write into nothing (or the wrong thing).
       if (dep) {

@@ -50,6 +50,11 @@ vi.mock("./controller-helpers", () => ({
   platform: () => ({ target: h.baseTarget, runtime: { name: "docker" } }),
 }));
 
+vi.mock("@repo/platform/engine/lib/box-org", async (original) => ({
+  ...await original<Record<string, unknown>>(),
+  boxOwningOrgId: async () => "org1",
+}));
+
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
     acquire: async () => ({

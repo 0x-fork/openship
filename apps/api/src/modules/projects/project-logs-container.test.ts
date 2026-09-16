@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   containerId: "cid-db" as string | null,
   activeDeploymentId: "dep_1" as string,
+  deploymentOwner: { projectId: "proj_1", organizationId: "org_1" },
   services: [] as Array<{ id: string; name: string; enabled: boolean; exposed: boolean }>,
   serviceRows: [] as Array<{ id: string; serviceId: string; containerId: string | null }>,
   live: [] as Array<{ id: string; names: string[]; state: string; labels: Record<string, string> }>,
@@ -29,7 +30,8 @@ const h = vi.hoisted(() => ({
   stream: vi.fn(), dispose: vi.fn(), stop: vi.fn(),
 }));
 
-vi.mock("@repo/db", () => ({
+vi.mock("@repo/db", async (original) => ({
+  ...await original<Record<string, unknown>>(),
   repos: {
     project: {
       findById: async () => ({
@@ -42,12 +44,12 @@ vi.mock("@repo/db", () => ({
     deployment: {
       findById: async () => ({
         id: "dep_1",
-        projectId: "proj_1",
-        organizationId: "org_1",
+        ...h.deploymentOwner,
         containerId: h.containerId,
         status: "ready",
         meta: { deployTarget: "server", serverId: "srv_1" },
       }),
+      findBuildSessionByDeploymentId: async () => null,
     },
     service: {
       listByProject: async () => {
@@ -93,13 +95,15 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   },
 }));
 
-vi.mock("@repo/adapters", () => ({
+vi.mock("@repo/adapters", async (original) => ({
+  ...await original<Record<string, unknown>>(),
   checkEdge: async () => ({ healthy: true, message: "" }),
   edgeProxy: async () => null,
   isRuntimeNotFoundError: () => false,
 }));
 
 const { getRuntimeLogs, streamRuntimeLogs } = await import("@repo/platform/engine/modules/projects/project-runtime.service");
+const { getDeploymentLogs } = await import("@repo/platform/engine/modules/deployments/deployment.service");
 
 /** `openship.service` carries the service NAME, not its id — see live-state's
  *  label tier. */
@@ -113,6 +117,7 @@ const container = (serviceName: string, id: string) => ({
 beforeEach(() => {
   h.containerId = "cid-db";
   h.activeDeploymentId = "dep_1";
+  h.deploymentOwner = { projectId: "proj_1", organizationId: "org_1" };
   h.services = [];
   h.serviceRows = [];
   h.live = [];
@@ -126,6 +131,19 @@ beforeEach(() => {
 });
 
 describe("project logs target the primary service, not the recorded database", () => {
+  it.each([
+    { projectId: "other-project", organizationId: "org_1" },
+    { projectId: "proj_1", organizationId: "other-org" },
+  ])("refuses a mismatched active deployment before reading logs: %j", async (owner) => {
+    h.deploymentOwner = owner;
+    h.live = [container("app", "cid-app")];
+    await expect(getRuntimeLogs("proj_1", "org_1")).rejects.toThrow(/No running container/);
+    await expect(streamRuntimeLogs("proj_1", "org_1", () => {})).rejects.toThrow(/No running container/);
+    expect(h.logTargets).toEqual([]);
+    expect(h.stream).not.toHaveBeenCalled();
+    expect(h.listByDeploymentCalls).toBe(0);
+  });
+
   it("disposes a runtime when establishing its log stream fails", async () => {
     h.stream.mockRejectedValueOnce(new Error("stream setup failed"));
     await expect(streamRuntimeLogs("proj_1", "org_1", () => {})).rejects.toThrow("stream setup failed");
@@ -189,7 +207,7 @@ describe("project logs target the primary service, not the recorded database", (
     h.serviceRows = [{ id: "row_app", serviceId: "svc_app", containerId: "cid-v3" }];
     h.live = [container("app", "cid-v7")];
 
-    await getRuntimeLogs("proj_1", "org_1");
+    await getDeploymentLogs("dep_1", "org_1");
 
     expect(h.logTargets).toEqual(["cid-v3"]);
     expect(h.healed).toEqual([]);

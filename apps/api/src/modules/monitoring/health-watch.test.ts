@@ -613,6 +613,18 @@ beforeEach(() => {
 // ─── Current-state checks ───────────────────────────────────────────────────
 
 describe("current-state check", () => {
+  it.each([
+    { projectId: "another-project" },
+    { organizationId: "another-org" },
+  ])("does not observe a workload selected by a mismatched active pointer: %j", async (owner) => {
+    seedApp();
+    Object.assign(h.deployments[0]!, owner);
+    const result = await checkCurrent();
+    expect(result.summary).toMatchObject({ servers: 0, workloads: 0 });
+    expect(h.inspects).toBe(0);
+    expect(h.incidents).toEqual([]);
+  });
+
   it("checks a desktop-managed remote Docker deployment without a watcher job", async () => {
     h.platformTarget = "desktop";
     const { projectId, containerId } = seedApp({ serverId: "desktop-remote" });

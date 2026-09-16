@@ -99,6 +99,7 @@ function storeRow(row: {
 
 const project = (routeStrategy = "auto") => ({
   id: "proj_1",
+  organizationId: "org_1",
   activeDeploymentId: "dep_1",
   routeStrategy,
   routingConfig: null,
@@ -118,6 +119,7 @@ describe("applyProjectRouting — upstream resolution", () => {
 
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1",
+      projectId: "proj_1",
       organizationId: "org_1",
       meta: { deployTarget: "local", runtimeMode: "docker" },
     });
@@ -422,6 +424,7 @@ describe("applyProjectRouting — static frontend composite", () => {
     projectRepo.findById.mockResolvedValue({ ...project(), compositeRoutes: [] });
     deploymentRepo.findById.mockResolvedValue({
       id: "dep_1",
+      projectId: "proj_1",
       organizationId: "org_1",
       meta: { deployTarget: "local", runtimeMode: "docker" },
     });

@@ -55,7 +55,9 @@ vi.mock("@repo/db", () => ({
         activeDeploymentId: "d1",
       })),
     },
-    deployment: { findById: vi.fn(async () => ({ id: "d1", organizationId: "org_1" })) },
+    deployment: {
+      findById: vi.fn(async () => ({ id: "d1", projectId: "p1", organizationId: "org_1" })),
+    },
   },
 }));
 vi.mock("../../../src/lib/ws", () => ({ upgradeWebSocket: (fn: unknown) => fn }));
