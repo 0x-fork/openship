@@ -14,7 +14,7 @@ Usable contributor PRs target this integration branch. Maintainer edits are made
 
 Initial unchanged-main baseline: **13,075 tests passed, 3 skipped, all 10 tasks passed** (4m34s); `npx --yes bun@1.3.10 run test --force --log-order=stream`.
 
-Final combined local suite after hardening: **13,331 tests passed, 0 skipped, 1,003 files, all 10 tasks passed** (4m10s; 5 cached tasks); `npx --yes bun@1.3.10 run test`. The **688 SDK/CLI tests** also passed in a separate uncached run (58 files, 2 tasks), validating shared dependencies without relying on Turbo test caching.
+Combined local suite at `7b1c66cb`, before the logic follow-up below: **13,331 tests passed, 0 skipped, 1,003 files, all 10 tasks passed** (4m10s; 5 cached tasks); `npx --yes bun@1.3.10 run test`. The **688 SDK/CLI tests** also passed in a separate uncached run (58 files, 2 tasks), validating shared dependencies without relying on Turbo test caching.
 
 All 22 build/typecheck tasks passed with `npx --yes bun@1.3.10 run lint`. The web documentation source was generated first. Documentation checks passed: 160 pages; 367 SDK methods; 559 HTTP routes; 204 CLI paths; 224 CLI examples; 107 SDK examples.
 
@@ -34,9 +34,9 @@ Local and simulated checks do not establish behavior for an unprovided host or p
 
 ## Production review of PR #891 — 2026-09-16
 
-The full production diff was reviewed against unchanged main `c6cd723f`, including the shared platform, API/native SDK/CLI boundaries, encrypted storage and transfer, deployment routing, backups, mail and dashboard behavior. All 50 issue outcomes match GitHub. All 42 distinct resolution commits are retained, and all 15 integrated contributor PRs remain GitHub merges with their source history intact.
+The initial full production diff was reviewed against unchanged main `c6cd723f`, including the shared platform, API/native SDK/CLI boundaries, encrypted storage and transfer, deployment routing, backups, mail and dashboard behavior. All 50 issue outcomes matched GitHub. All 42 initial resolution commits are retained, and all 15 integrated contributor PRs remain GitHub merges with their source history intact.
 
-Three reproducible regressions were corrected during this review:
+The initial review corrected three reproducible regressions:
 
 | Issue | Failure found | Correction | Commit |
 | --- | --- | --- | --- |
@@ -47,6 +47,20 @@ Three reproducible regressions were corrected during this review:
 Each regression failed before its fix and passed afterward. The fixes extend existing receipts, timeout handling and selection state; they add no parallel business-logic implementation. Documentation was aligned with the actual retry and DNS/TLS behavior in `3bb3fa3a`, including removal of contradictory self-hosted public-IP/TXT instructions.
 
 Feature requests and incomplete reports retain their existing open status. GitHub redelivery remains manual; the automatic whole-instance server migration remains unavailable, with Data Transfer documented as the supported existing path. Issue-specific limits remain in the ledger below.
+
+## Logic and consistency follow-up — 2026-09-16
+
+Following the environment data through its readers, writers and consumers found three inconsistencies missed by the initial review. These paths also existed in main; the integration's restored project editor and shared environment diagnostics made it necessary to reconcile them with the current deployment rules.
+
+| Area | Inconsistency | Correction | Commit |
+| --- | --- | --- | --- |
+| Project environment, #881 and #844 | Project reads included service rows without identifying their scope, while project writes affected only project rows. Reused names appeared twice and service-only keys looked like project overrides. | Restrict the shared project read to project rows; HTTP, native SDK, CLI and dashboard inherit the same scope. | `69e47292` |
+| Backup and restore credentials, #844 | A copied map spread applied raw Compose expressions and legacy empty values differently from deployment. Producers could receive `${POSTGRES_USER}` as a literal username. | Use `mergeServiceDeployEnv`, including template provenance and service precedence. Missing required variables stop preparation with names-only errors. | `9c61d7d9` |
+| Rollback preview, #844 | A separate inline merge reported unchanged passthroughs as changes and ignored authored empty literals. | Use the same resolver and its service-override ownership to build the comparison. | `9c61d7d9` |
+
+Deployments, project override diagnostics, app connection values, backup/restore preparation and rollback previews now consume the shared Compose environment resolver. Storage still has one explicit-key cipher and repository codec; API and native operations continue to delegate to the platform. The two follow-up commits bring the issue-to-commit ledger to 44 distinct resolution commits without changing issue dispositions or contributor merge history.
+
+The scope regression, three backup cases and two rollback-preview cases failed before their fixes. Rollback coverage now calls the real preview service with real repository rows instead of reconstructing the implementation inside a test. After the corrections, 289 affected tests across 26 files passed, along with API and platform TypeScript checks. The broader suite and packaged-runtime results above are from `7b1c66cb`; the latest PR revision has its own CI run.
 
 ## Issue ledger
 
@@ -137,9 +151,11 @@ Reuses the existing project diff editor and service runtime store. Same-named pr
 
 Project scope and restart-versus-rebuild guidance are translated in all nine locales. Build arguments remain edited in source configuration, without adding a new build-argument editor.
 
+Logic follow-up: project reads now explicitly exclude service-scoped rows, matching project writes. Reused service keys cannot appear as duplicate project variables or cause false project-override labels in the service editor.
+
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/881#issuecomment-5686850764).
 
-Integration commits: `1cf2a605`.
+Integration commits: `1cf2a605`, `69e47292`.
 
 Verification:
 
@@ -147,6 +163,7 @@ Verification:
 - Seven real DOM interaction tests cover Configuration navigation, project env writes with preserved secrets, monorepo and installed-app access, service precedence, lookup errors, and cross-project navigation.
 - Compose navigation, monorepo editor access and installed-app editor access each fail against the previous implementation.
 - Locale parity checks passed; the existing missing-translation allowance decreased by four keys.
+- Native and HTTP project reads exclude service-only rows, preserve environment filtering and mask secrets. The regression failed before the shared scope fix.
 
 ### #880
 
@@ -567,9 +584,11 @@ Wrong keys and damaged ciphertext fail closed. Empty/default values and literal 
 
 The build-argument masking and safe edit behavior came from contributor PR #864, preserved as a GitHub merge into this branch. The suggested effective-environment CLI is an additional feature, outside this bug-only integration.
 
+Logic follow-up: project reads now use the same scope as project writes. Backup/restore credentials and rollback previews use the deployment environment resolver, replacing two copies that skipped raw Compose templates or empty-value provenance. Missing required backup variables fail before a producer runs; errors and rollback changes expose names only.
+
 GitHub: closed with [verification and integration status](https://github.com/oblien/openship/issues/844#issuecomment-5688737834).
 
-Integration commits: `d43b3f5001eb64ad907efd712d64a399d98fd6d6`, `8c20a9b3`, `2763b0cdff1e34316f4d46465e3ebccd8ebf5484`.
+Integration commits: `d43b3f5001eb64ad907efd712d64a399d98fd6d6`, `8c20a9b3`, `2763b0cdff1e34316f4d46465e3ebccd8ebf5484`, `69e47292`, `9c61d7d9`.
 
 Verification:
 
@@ -579,6 +598,7 @@ Verification:
 - Three real Docker Compose rollback cases and the real project-store → Docker-build → running-container case passed. The rollback restored the original secret while its database snapshot remained encrypted.
 - All 22 build/typecheck tasks, explicit E2E TypeScript checks, documentation validation, and external npm-tarball ESM/CommonJS/native/CLI checks passed.
 - Combined-branch CI passed at 2763b0cd: https://github.com/oblien/openship/actions/runs/35028598928.
+- Logic follow-up: 289 affected tests across 26 files and API/platform TypeScript checks passed. Regressions cover project/service scope, resolved database credentials, required variables, unchanged passthroughs and explicit empty literals.
 
 ### #842
 
