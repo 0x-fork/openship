@@ -225,30 +225,13 @@ The rest of this section covers `apps/dashboard`, which is Vitest with colocated
 
 ### Dashboard test environments
 
-Dashboard tests use Node by default. Component tests opt into jsdom with a
-`@vitest-environment jsdom` file comment, import the jest-dom matchers, and register
-Testing Library cleanup locally. Follow the existing component tests; no global
-setup file is required. The `@/*` alias and automatic JSX runtime already match
-those used by the app.
+Dashboard tests use Node by default. Tests that need browser events opt into the
+existing Happy DOM environment with `// @vitest-environment happy-dom`. Follow
+`apps/dashboard/src/components/ui/button.test.tsx`: create a React root for each
+test, wrap rendering and interactions in `act()`, and unmount the root and restore
+globals during cleanup. Pure rendering tests can use `react-dom/server` in Node.
 
-```tsx
-// @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-
-import { MyComponent } from "./my-component";
-
-afterEach(cleanup);
-
-describe("MyComponent", () => {
-  it("renders its title", () => {
-    render(<MyComponent title="Projects" />);
-    expect(screen.getByText("Projects")).toBeInTheDocument();
-  });
-});
-```
-
+The `@/*` alias and automatic JSX runtime already match those used by the app.
 Keep parser and other pure-logic tests on Node. Run a focused dashboard suite with
 `bun run --cwd apps/dashboard test src/lib/dotenv.test.ts`, or omit the path for
 all dashboard tests.
