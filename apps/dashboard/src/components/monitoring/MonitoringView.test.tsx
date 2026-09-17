@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18nProvider } from "@/components/i18n-provider";
 import { MonitoringView } from "./MonitoringView";
+import { ResponseMix } from "./ResponseMix";
 import { TopPathsEmptyState } from "./TopPathsEmptyState";
 import { resolveHues } from "./VisitorMap";
 import countryHues from "./country-hues.json";
@@ -785,8 +786,8 @@ describe("map hover does not track the pointer", () => {
   });
 });
 
-describe("responses are reported per exact code", () => {
-  it("lists the individual codes under each class", () => {
+describe("response codes within each class", () => {
+  it("lists all codes when each class has three or fewer", () => {
     const html = render();
     const card = html.slice(html.indexOf("Responses"));
     // The class is the first read; the exact code is the actionable half. Both are in the
@@ -794,7 +795,40 @@ describe("responses are reported per exact code", () => {
     for (const code of ["200", "204", "301", "304", "404", "429", "500", "502", "503"]) {
       expect(card).toContain(`>${code}<`);
     }
+    expect(card).not.toContain(">Others<");
   });
+
+  it.each([200, 300, 400, 500])(
+    "shows the three busiest %s-class codes and combines the rest without losing traffic",
+    (base) => {
+      const html = renderToStaticMarkup(
+        <I18nProvider>
+          <ResponseMix statuses={{
+            [base]: 10,
+            [base + 1]: 40,
+            [base + 2]: 20,
+            [base + 3]: 5,
+            [base + 4]: 25,
+            "0": 100,
+          }} />
+        </I18nProvider>,
+      );
+      const topCodes = [base + 1, base + 4, base + 2];
+      for (const code of topCodes) expect(html).toContain(`>${code}<`);
+      expect(html.indexOf(`>${topCodes[0]}<`)).toBeLessThan(html.indexOf(`>${topCodes[1]}<`));
+      expect(html.indexOf(`>${topCodes[1]}<`)).toBeLessThan(html.indexOf(`>${topCodes[2]}<`));
+      for (const code of [base, base + 3]) expect(html).not.toContain(`>${code}<`);
+
+      const others = html.match(/<li[^>]*><span[^>]*>Others<\/span>(.*?)<\/li>/)?.[1];
+      expect(others).toBeDefined();
+      expect(others).toContain(">15<");
+      // Shares still use ALL responses, including the unclassified 100.
+      expect(others).toContain(">7.5%<");
+      expect(html).toContain(`title="${base / 100}xx: 100"`);
+      expect(html).toContain(">50.0%<");
+      expect(html).toContain("100 with no status class");
+    },
+  );
 
   it("still shows the class summary, so the glance still works", () => {
     const card = render().slice(render().indexOf("Responses"));

@@ -54,7 +54,7 @@ export interface ClonePlanInput {
    *  when that transport also carries a command executor (SSH). Socket/TCP
    *  builds receive a context prepared on the API host. Omitted for non-Docker
    *  runtimes and retained as SSH-compatible for legacy callers. */
-  dockerTransport?: "socket" | "ssh" | "tcp";
+  dockerTransport?: "socket" | "ssh" | "tcp" | "cloud";
 }
 
 export interface ClonePlan {

@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   inspect: vi.fn(),
   listen: vi.fn(),
   check: vi.fn(),
+  throughput: vi.fn(),
   stop: vi.fn(),
   withExecutor: vi.fn(),
   recordIdentity: vi.fn(),
@@ -64,7 +65,13 @@ vi.mock("@repo/platform/engine/lib/background-work", () => ({
 }));
 vi.mock("@repo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/adapters")>()),
-  privateNetworkTools: { inspect: h.inspect, listen: h.listen, check: h.check, stop: h.stop },
+  privateNetworkTools: {
+    inspect: h.inspect,
+    listen: h.listen,
+    check: h.check,
+    throughput: h.throughput,
+    stop: h.stop,
+  },
 }));
 
 import {
@@ -118,7 +125,13 @@ beforeEach(() => {
   );
   h.get.mockResolvedValue(storedCluster());
   h.create.mockResolvedValue(storedCluster());
-  h.start.mockResolvedValue({ created: true, run: run() });
+  h.start.mockImplementation(async (_org, _id, _revision, _user, speedTest) => ({
+    created: true,
+    run: {
+      ...run(),
+      report: { ...run().report, ...(speedTest ? { speedTest, throughput: [] } : {}) },
+    },
+  }));
   h.active.mockResolvedValue(true);
   h.progress.mockResolvedValue(true);
   h.finish.mockResolvedValue(undefined);
@@ -138,6 +151,14 @@ beforeEach(() => {
   ]);
   h.listen.mockResolvedValue(undefined);
   h.stop.mockResolvedValue(undefined);
+  h.throughput.mockImplementation(async (_executor, source, target) => ({
+    sourceServerId: source.serverId,
+    targetServerId: target.serverId,
+    megabitsPerSecond: 25,
+    bytes: 1_000_000,
+    durationMs: 320,
+    message: null,
+  }));
   h.check.mockImplementation(async (_executor, source, peers) =>
     peers.map((target: { serverId: string }) => ({
       sourceServerId: source.serverId,
@@ -152,6 +173,92 @@ beforeEach(() => {
 });
 
 describe("infrastructure ownership and network verification", () => {
+  it("measures only an explicitly selected pair after reachability, sequentially in both directions", async () => {
+    let active = 0;
+    const measure = h.throughput.getMockImplementation()!;
+    h.throughput.mockImplementation(async (...args) => {
+      expect(h.check).toHaveBeenCalledTimes(2);
+      expect(active++).toBe(0);
+      await Promise.resolve();
+      const result = await measure(...args);
+      active--;
+      return result;
+    });
+    const speedTest = { sourceServerId: "server-a", targetServerId: "server-b" };
+    const started = await operations.verifyCluster(ctx, {
+      clusterId: "cluster-a",
+      revision: 1,
+      speedTest,
+    });
+    expect(started.report.speedTest).toEqual(speedTest);
+    expect(h.throughput).not.toHaveBeenCalled();
+    await h.work[0]!();
+    expect(
+      h.throughput.mock.calls.map(([, source, target]) => [source.serverId, target.serverId]),
+    ).toEqual([
+      ["server-a", "server-b"],
+      ["server-b", "server-a"],
+    ]);
+    expect(
+      h.listen.mock.calls.map(([, source, , allowedPeer]) => [source.serverId, allowedPeer]),
+    ).toEqual([
+      ["server-a", "10.20.0.3"],
+      ["server-b", "10.20.0.2"],
+    ]);
+    expect(h.finish).toHaveBeenCalledWith(
+      "run-a",
+      expect.objectContaining({
+        throughput: expect.arrayContaining([expect.objectContaining({ megabitsPerSecond: 25 })]),
+      }),
+      true,
+      null,
+    );
+    expect(h.stop).toHaveBeenCalledTimes(2);
+  });
+  it("never starts a speed sample during ordinary network verification", async () => {
+    await operations.verifyCluster(ctx, { clusterId: "cluster-a", revision: 1 });
+    await h.work[0]!();
+    expect(h.throughput).not.toHaveBeenCalled();
+    expect(h.listen.mock.calls.every((call) => call[3] === undefined)).toBe(true);
+  });
+  it.each(["server-a", "foreign"])(
+    "rejects an invalid speed target before scheduling work: %s",
+    async (targetServerId) => {
+      await expect(
+        operations.verifyCluster(ctx, {
+          clusterId: "cluster-a",
+          revision: 1,
+          speedTest: { sourceServerId: "server-a", targetServerId },
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_NETWORK_TEST" });
+      expect(h.start).not.toHaveBeenCalled();
+      expect(h.work).toHaveLength(0);
+      expect(h.withExecutor).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps a failed speed sample separate from its successful reachability measurements and stops listeners", async () => {
+    h.throughput.mockResolvedValueOnce({
+      sourceServerId: "server-a",
+      targetServerId: "server-b",
+      megabitsPerSecond: null,
+      bytes: 0,
+      durationMs: 0,
+      message: "Sample interrupted",
+    });
+    await operations.verifyCluster(ctx, {
+      clusterId: "cluster-a",
+      revision: 1,
+      speedTest: { sourceServerId: "server-a", targetServerId: "server-b" },
+    });
+    await h.work[0]!();
+    const [, report, success] = h.finish.mock.calls.at(-1)!;
+    expect(report.peers.every((peer: { tcp: boolean; udp: boolean }) => peer.tcp && peer.udp)).toBe(
+      true,
+    );
+    expect(report.throughput[0].message).toBe("Sample interrupted");
+    expect(success).toBe(false);
+    expect(h.stop).toHaveBeenCalledTimes(2);
+  });
   it.each(["cloud-mode", "cloud"])(
     "rejects %s before inventory, credentials, or SSH access",
     async (mode) => {

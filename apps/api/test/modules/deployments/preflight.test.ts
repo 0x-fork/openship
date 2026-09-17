@@ -66,6 +66,14 @@ describe("runPreflightChecks", () => {
     );
   });
 
+  it.each(["services", "single"] as const)("checks Cloud volume support for %s projects before deployment", async mode => {
+    const result = await runPreflightChecks({ deployTarget: "cloud", organizationId: "org-1", serviceDeploymentMode: mode,
+      buildStrategy: "server", framework: "docker", buildImage: "node:22", hasServer: true, port: 8080 } as any,
+    { multiService: true, composeServices: [{ name: "db", image: "postgres:17", ports: ["5432"], exposed: false,
+      enabled: true, volumes: ["data:/var/lib/postgresql/data"], dependsOn: [] }] as any });
+    expect(result.checks.find(check => check.id === "cloud-storage")).toMatchObject({ status: mode === "services" ? "pass" : "fail" });
+  });
+
   it("checks free-domain availability for every public endpoint", async () => {
     const result = await runPreflightChecks(
       {

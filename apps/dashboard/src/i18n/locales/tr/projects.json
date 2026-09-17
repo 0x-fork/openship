@@ -133,8 +133,10 @@
       "health": "Sağlık",
       "monitoring": "İzleme",
       "source": "Kaynak",
+      "sourceAndTriggers": "Kaynak ve Tetikleyiciler",
       "webhooks": "Webhook'lar",
       "runtime": "Yapılandırma",
+      "settings": "Ayarlar",
       "logs": "Günlükler",
       "backup": "Yedekleme",
       "advanced": "Gelişmiş"
@@ -268,6 +270,7 @@
     "geoUnavailableBody": "Edge proxy ziyaretçi ülkelerini çözümleyemiyor, bu yüzden harita boş kalıyor. Trafik toplamları etkilenmez.",
     "noCountries": "Bu dönem için henüz ülke verisi yok.",
     "statusesTitle": "Yanıtlar",
+    "statusesOthers": "Diğerleri",
     "share": "%{pct}",
     "visitorDays": "Ziyaretçi-gün",
     "peakDayTooltip": "En yoğun gün: {peak}. Geri dönen ziyaretçi günde bir sayılır, bu nedenle toplam bir üst sınırdır.",
@@ -531,5 +534,5 @@
       "server_unreachable": "Sunucuya erişilemiyor"
     }
   },
-  "migrationAwaitingHint": "Taşıma sizi bekliyor — projenin Gelişmiş sekmesinden geçişi tamamlayın ya da geri alın"
+  "migrationAwaitingHint": "Taşıma sizi bekliyor — projenin Ayarlar → Gelişmiş bölümünden geçişi tamamlayın ya da geri alın"
 }

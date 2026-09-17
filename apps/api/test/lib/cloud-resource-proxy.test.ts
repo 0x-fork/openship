@@ -3,14 +3,14 @@ import { Hono } from "hono";
 
 const h = vi.hoisted(() => ({
   request: vi.fn(), pageGet: vi.fn(), pageCreate: vi.fn(), pageDeploy: vi.fn(), pageDelete: vi.fn(),
-  workspaceGet: vi.fn(), routes: vi.fn(), setRoutes: vi.fn(), spend: vi.fn(),
+  workspaceGet: vi.fn(), routes: vi.fn(), setRoutes: vi.fn(), spend: vi.fn(), pageList: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: () => ({ request: h.request }) }));
 vi.mock("../../src/lib/request-context", () => ({ getRequestContext: () => ({ organizationId: "org-a" }) }));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ ensureNamespace: async () => "ns-a" }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient: () => ({
   workspaces: { get: h.workspaceGet },
-  pages: { get: h.pageGet, create: h.pageCreate, deploy: h.pageDeploy, delete: h.pageDelete },
+  pages: { list: h.pageList, get: h.pageGet, create: h.pageCreate, deploy: h.pageDeploy, delete: h.pageDelete },
   domain: { routes: h.routes }, routes: { set: h.setRoutes },
 }) }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ assertCloudCanSpend: h.spend }));
@@ -33,6 +33,13 @@ beforeEach(() => {
 });
 
 describe("desktop-to-SaaS Cloud resource delegation", () => {
+  it("returns only the authenticated organization's Page inventory", async () => {
+    h.pageList.mockResolvedValue({ success: true, pages: [{ slug: "site-a", namespace: "ns-a" }, { slug: "site-b", namespace: "ns-b" }] });
+    expect(await createRemoteCloudAdmin("org-a").pages!.list()).toEqual({ success: true, pages: [{ slug: "site-a", namespace: "ns-a" }] });
+    const response = await app.request("/api/cloud/resource-proxy", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operation: "list", namespace: "ns-b" }) });
+    expect(response.status).toBe(400);
+  });
   it("round-trips page reads and redeploys through the SaaS ownership checks", async () => {
     const proxy = createRemoteCloudAdmin("org-a");
     expect(await proxy.pages!.get("site-a")).toMatchObject({ page: { namespace: "ns-a" } });

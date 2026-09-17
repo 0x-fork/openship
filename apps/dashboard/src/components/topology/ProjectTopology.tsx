@@ -9,7 +9,6 @@ import {
   Boxes,
   Check,
   ChevronRight,
-  GitBranch,
   List,
   Loader2,
   Plus,
@@ -21,7 +20,9 @@ import { resolveWorkload, type ProjectResources } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
+import { useI18n } from "@/components/i18n-provider";
 import { ScaleDetailsPanel } from "@/components/scale/ScaleDetailsPanel";
 import { AddServiceModal } from "@/app/(dashboard)/projects/[id]/components/services/AddServiceModal";
 import { environmentWizardHref } from "@/app/(dashboard)/projects/[id]/components/environment-next";
@@ -79,6 +80,7 @@ export default function ProjectTopology({
   onPendingChange: (pending: boolean) => void;
 }) {
   const { id, projectData, servicesData, refreshServices } = useProjectSettings();
+  const { t } = useI18n();
   const project: TopologyProject = projectData;
   const router = useRouter();
   const { showToast } = useToast();
@@ -554,300 +556,299 @@ export default function ProjectTopology({
           : undefined
         : `${changes.length} services`
       : undefined);
+  const topologyActions: MenuAction[] = [
+    {
+      id: "services",
+      label: t.projects.sidebar.tabs.services,
+      icon: <List className="size-4" />,
+      onClick: () => navigate(`/projects/${id}/services`),
+    },
+    {
+      id: "deployments",
+      label: t.projects.sidebar.tabs.deployments,
+      icon: <Rocket className="size-4" />,
+      onClick: () => navigate(`/projects/${id}/deployments`),
+    },
+  ];
+  if (
+    !instanceServiceId &&
+    project.deployTarget === "server" &&
+    project.serverId &&
+    project.activeDeploymentId &&
+    project.appTemplateId !== "openship"
+  ) {
+    topologyActions.push({
+      id: "placement",
+      label: "Clone or move environment",
+      icon: <ArrowRightLeft className="size-4" />,
+      disabled: busy || changes.length > 0,
+      onClick: () => openPlacement("copy"),
+    });
+  }
 
   return (
-    <div className="topology-page flex h-full min-h-[540px] w-full flex-col gap-3 p-3">
-      <header className="topology-page-header flex shrink-0 flex-wrap items-center justify-between gap-3 px-1 py-1">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Back to project"
-            aria-label="Back to project"
-            onClick={() => navigate(`/projects/${id}/overview`)}
-          >
-            <ArrowLeft />
-          </Button>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{project.name}</p>
-            <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              Project
-              <ChevronRight className="size-3" />
-              Topology
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {environmentControl}
-          <Button
-            className="topology-services-link gap-1.5"
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/projects/${id}/services`)}
-          >
-            <List />
-            Services
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/projects/${id}/deployments`)}
-          >
-            <Rocket />
-            <span className="hidden sm:inline">Deployments</span>
-          </Button>
-        </div>
-      </header>
+    <div className="topology-page flex h-full min-h-[540px] w-full flex-col p-3 text-foreground sm:p-4">
       <section
-        className="scale-workspace topology-workspace relative isolate min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/50 bg-background"
+        className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border/50 bg-background"
         aria-label="Project topology workspace"
-        data-inspector={hasSelection ? (expanded ? "expanded" : "minimized") : undefined}
       >
-        <div className="absolute inset-0">
-          {runtime.ready ? (
-            <TopologyCanvas
-              key={instanceServiceId ?? "overview"}
-              layoutKey={`openship:topology-layout:v1:${id}:${instanceServiceId ?? "overview"}`}
-              graph={graph}
-              selection={selection}
-              inert={inspectorExpanded}
-              onSelect={select}
-              onOpen={openNode}
-              onConnect={connect}
-            />
-          ) : (
-            <div
-              role="status"
-              className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
+        <header className="topology-page-header relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-t-2xl border-b border-border/50 px-3 py-3 sm:px-4">
+          <div className="flex min-w-0 flex-1 basis-60 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              title={instanceServiceId ? "Back to overview" : "Back to project"}
+              aria-label={instanceServiceId ? "Back to overview" : "Back to project"}
+              onClick={instanceServiceId ? back : () => navigate(`/projects/${id}/overview`)}
+              disabled={!!instanceServiceId && inspectorExpanded}
             >
-              <Loader2 className="size-4 animate-spin" />
-              Loading services & connections…
-            </div>
-          )}
-        </div>
-        <div
-          className="scale-toolbar topology-toolbar absolute start-4 top-4 z-20 flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-2"
-          inert={inspectorExpanded}
-        >
-          <div className="flex min-w-0 items-center gap-2.5 px-2">
-            {instanceServiceId ? (
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={back}>
-                <ArrowLeft />
-                <span className="scale-back-prefix">Back to </span>overview
-              </Button>
-            ) : (
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <GitBranch className="size-4" />
-              </span>
-            )}
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold">
-                {instanceService?.name || "Topology"}
-              </h1>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
+              <ArrowLeft className="rtl:rotate-180" />
+            </Button>
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="min-w-0 truncate text-sm text-muted-foreground">
+                  {instanceServiceId
+                    ? t.projects.sidebar.tabs.topology
+                    : projectData.name || t.projects.detail.projectFallback}
+                </span>
+                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60 rtl:rotate-180" />
+                <h1 className="max-w-[60%] shrink-0 truncate text-base font-semibold text-foreground">
+                  {instanceService?.name || t.projects.sidebar.tabs.topology}
+                </h1>
+              </div>
+              <p className="topology-summary truncate text-[13px] leading-5 text-muted-foreground">
                 {instanceServiceId
                   ? "Runtime instances"
                   : `${serviceCount} service${serviceCount === 1 ? "" : "s"} · ${runtime.connections.length} shared connection${runtime.connections.length === 1 ? "" : "s"}`}
               </p>
             </div>
           </div>
-          <span className="hidden h-7 w-px bg-border/60 sm:block" />
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Refresh topology"
-              aria-label="Refresh topology"
-              disabled={runtime.loading}
-              onClick={() => {
-                invalidateProjectCaches(id);
-                void runtime.refresh();
-              }}
-            >
-              <RefreshCw className={runtime.loading ? "animate-spin" : ""} />
-            </Button>
-            {!instanceServiceId && (
+          <div
+            className={`topology-toolbar flex min-w-0 flex-wrap items-center gap-2 transition-opacity ${inspectorExpanded ? "opacity-50" : ""}`}
+            inert={inspectorExpanded}
+          >
+            <div className="topology-environment min-w-0">{environmentControl}</div>
+            <div className="topology-actions flex shrink-0 items-center gap-1.5">
               <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                disabled={busy || hasSavedChanges || !!servicesData.error}
-                onClick={() => setAdding(true)}
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                title="Refresh topology"
+                aria-label="Refresh topology"
+                disabled={runtime.loading}
+                onClick={() => {
+                  invalidateProjectCaches(id);
+                  void runtime.refresh();
+                }}
               >
-                <Plus />
-                Add service
+                <RefreshCw className={runtime.loading ? "animate-spin" : ""} />
               </Button>
-            )}
-            {!instanceServiceId &&
-              project.deployTarget === "server" &&
-              project.serverId &&
-              project.activeDeploymentId &&
-              project.appTemplateId !== "openship" && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Clone or move environment"
-                  title="Clone or move environment"
-                  disabled={busy || changes.length > 0}
-                  onClick={() => openPlacement("copy")}
-                >
-                  <ArrowRightLeft />
-                </Button>
-              )}
-          </div>
-        </div>
-        {issues.length > 0 && (
-          <div
-            className="topology-notice absolute start-4 z-20 max-w-[min(500px,calc(100%-32px))] rounded-xl border border-warning/25 bg-card px-3 py-2 text-xs text-warning"
-            role="alert"
-            inert={inspectorExpanded}
-          >
-            {issues.join(" ")}
-            <button className="ms-2 underline" onClick={() => void runtime.refresh()}>
-              Retry
-            </button>
-          </div>
-        )}
-        {activeMigration && (
-          <div
-            className="absolute bottom-20 start-4 z-20 rounded-xl border border-border/60 bg-card p-3 text-xs"
-            inert={inspectorExpanded}
-          >
-            A migration is active.
-            <Button
-              variant="link"
-              size="sm"
-              onClick={() => setPlacement({ intent: "move", runId: activeMigration.id })}
-            >
-              Open migration
-            </Button>
-          </div>
-        )}
-        {runtime.ready && !graph.nodes.length && !servicesData.isLoading && !servicesData.error && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-            <div className="pointer-events-auto max-w-sm rounded-2xl border border-border/50 bg-card p-6 text-center">
-              <Boxes className="mx-auto mb-3 size-8 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">
-                {instanceServiceId ? "No runtime instance found" : "Build this environment"}
-              </h2>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {instanceServiceId
-                  ? "Refresh to check the host, or return to the overview to manage this service."
-                  : "Add a service or link an existing database. Review the configuration before deploying."}
-              </p>
               {!instanceServiceId && (
-                <Button className="mt-4" size="sm" disabled={busy} onClick={() => setAdding(true)}>
+                <Button
+                  className="topology-add-service h-9 px-3"
+                  disabled={busy || hasSavedChanges || !!servicesData.error}
+                  onClick={() => setAdding(true)}
+                >
                   <Plus />
                   Add service
                 </Button>
               )}
+              <DropdownMenu
+                actions={topologyActions}
+                triggerLabel="Topology actions"
+                triggerClassName={buttonVariants({ variant: "ghost", size: "icon" })}
+              />
             </div>
           </div>
-        )}
-        {changes.length > 0 ? (
-          <div
-            className="topology-pending absolute bottom-4 end-4 z-30 flex items-center gap-3 rounded-2xl border border-primary/25 bg-card p-2.5"
-            inert={inspectorExpanded}
-          >
-            <span className="ms-1 flex items-center gap-2 text-xs">
-              <span className="size-2 rounded-full bg-warning" />
-              {changes.length} pending change{changes.length === 1 ? "" : "s"}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={applying || hasSavedChanges}
-              onClick={() => {
-                setChanges([]);
-                select(null);
-              }}
+        </header>
+        <div
+          className="scale-workspace topology-workspace relative isolate flex-1 overflow-hidden rounded-b-2xl"
+          data-inspector={hasSelection ? (expanded ? "expanded" : "minimized") : undefined}
+        >
+          <div className="absolute inset-0">
+            {runtime.ready ? (
+              <TopologyCanvas
+                key={instanceServiceId ?? "overview"}
+                layoutKey={`openship:topology-layout:v1:${id}:${instanceServiceId ?? "overview"}`}
+                graph={graph}
+                selection={selection}
+                inert={inspectorExpanded}
+                onSelect={select}
+                onOpen={openNode}
+                onConnect={connect}
+              />
+            ) : (
+              <div
+                role="status"
+                className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
+              >
+                <Loader2 className="size-4 animate-spin" />
+                Loading services & connections…
+              </div>
+            )}
+          </div>
+          {issues.length > 0 && (
+            <div
+              className="topology-notice absolute start-4 z-20 max-w-[min(500px,calc(100%-32px))] rounded-xl border border-warning/25 bg-card px-3 py-2 text-xs text-warning"
+              role="alert"
+              inert={inspectorExpanded}
             >
-              Discard
-            </Button>
-            <Button size="sm" disabled={busy || issues.length > 0} onClick={() => review()}>
-              <Check />
-              Review & apply
-            </Button>
-          </div>
-        ) : (
-          <div
-            className="topology-hint absolute bottom-5 end-5 z-10 text-[11px] text-muted-foreground"
-            inert={inspectorExpanded}
-          >
-            {deploymentBusy
-              ? "Deployment in progress"
-              : "Drag between services to set startup order"}
-          </div>
-        )}
-        <button
-          className="scale-inspector-backdrop"
-          data-open={inspectorExpanded}
-          tabIndex={inspectorExpanded ? 0 : -1}
-          aria-label="Minimize settings to return to topology"
-          aria-hidden={!inspectorExpanded}
-          onClick={() => setExpanded(false)}
-        />
-        {hasSelection && (
-          <ScaleDetailsPanel
-            key={`${selection!.kind}:${selection!.id}`}
-            title={resource?.name || "Connection"}
-            summary={panelSummary}
-            kind={resource?.tone ?? "service"}
-            icon={
-              resource ? (
-                <TopologyResourceIcon resource={resource} />
-              ) : (
-                <Unplug className="size-4" />
-              )
-            }
-            open={expanded}
-            onOpen={() => setExpanded(true)}
-            onMinimize={() => setExpanded(false)}
-            onClose={() => select(null)}
-            onBack={instanceServiceId ? back : undefined}
-            connectionPreview={
-              relation
-                ? {
-                    content: <RelationPreview relation={relation} graph={graph} />,
-                    description:
-                      relation.kind === "binding"
-                        ? "Environment binding"
-                        : relation.kind === "dependency"
-                          ? "Startup dependency"
-                          : "Public route",
-                    onRemove:
-                      relation.kind !== "route" && !busy && !hasSavedChanges && !relation.pending
-                        ? () => removeRelation(relation)
-                        : undefined,
-                  }
-                : undefined
-            }
-          >
-            <TopologyInspector
-              project={project}
-              graph={fullGraph}
-              resource={resource}
-              relation={relation}
-              initialTab={initialTab}
-              disabled={busy || hasSavedChanges}
-              busy={lifecycleBusy}
-              hasPendingChanges={changes.length > 0}
+              {issues.join(" ")}
+              <button className="ms-2 underline" onClick={() => void runtime.refresh()}>
+                Retry
+              </button>
+            </div>
+          )}
+          {activeMigration && (
+            <div
+              className="absolute bottom-20 start-4 z-20 rounded-xl border border-border/60 bg-card p-3 text-xs"
+              inert={inspectorExpanded}
+            >
+              A migration is active.
+              <Button
+                variant="link"
+                size="sm"
+                onClick={() => setPlacement({ intent: "move", runId: activeMigration.id })}
+              >
+                Open migration
+              </Button>
+            </div>
+          )}
+          {runtime.ready &&
+            !graph.nodes.length &&
+            !servicesData.isLoading &&
+            !servicesData.error && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+                <div className="pointer-events-auto max-w-sm rounded-2xl border border-border/50 bg-card p-6 text-center">
+                  <Boxes className="mx-auto mb-3 size-8 text-muted-foreground" />
+                  <h2 className="text-sm font-semibold">
+                    {instanceServiceId ? "No runtime instance found" : "Build this environment"}
+                  </h2>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    {instanceServiceId
+                      ? "Refresh to check the host, or return to the overview to manage this service."
+                      : "Add a service or link an existing database. Review the configuration before deploying."}
+                  </p>
+                  {!instanceServiceId && (
+                    <Button
+                      className="mt-4"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => setAdding(true)}
+                    >
+                      <Plus />
+                      Add service
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          {changes.length > 0 ? (
+            <div
+              className="topology-pending absolute bottom-4 end-4 z-30 flex items-center gap-3 rounded-2xl border border-primary/25 bg-card p-2.5"
+              inert={inspectorExpanded}
+            >
+              <span className="ms-1 flex items-center gap-2 text-xs">
+                <span className="size-2 rounded-full bg-warning" />
+                {changes.length} pending change{changes.length === 1 ? "" : "s"}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={applying || hasSavedChanges}
+                onClick={() => {
+                  setChanges([]);
+                  select(null);
+                }}
+              >
+                Discard
+              </Button>
+              <Button size="sm" disabled={busy || issues.length > 0} onClick={() => review()}>
+                <Check />
+                Review & apply
+              </Button>
+            </div>
+          ) : (
+            <div
+              className="topology-hint absolute bottom-5 end-5 z-10 text-[11px] text-muted-foreground"
+              inert={inspectorExpanded}
+            >
+              {deploymentBusy
+                ? "Deployment in progress"
+                : "Drag between services to set startup order"}
+            </div>
+          )}
+          <button
+            className="scale-inspector-backdrop"
+            data-open={inspectorExpanded}
+            tabIndex={inspectorExpanded ? 0 : -1}
+            aria-label="Minimize settings to return to topology"
+            aria-hidden={!inspectorExpanded}
+            onClick={() => setExpanded(false)}
+          />
+          {hasSelection && (
+            <ScaleDetailsPanel
+              key={`${selection!.kind}:${selection!.id}`}
+              title={resource?.name || "Connection"}
+              summary={panelSummary}
+              kind={resource?.tone ?? "service"}
+              icon={
+                resource ? (
+                  <TopologyResourceIcon resource={resource} />
+                ) : (
+                  <Unplug className="size-4" />
+                )
+              }
+              open={expanded}
+              onOpen={() => setExpanded(true)}
               onMinimize={() => setExpanded(false)}
               onClose={() => select(null)}
-              onNavigate={navigate}
-              onSave={stagePatch}
-              onResources={stageResources}
-              onPlacement={openPlacement}
-              onLifecycle={(service, action) => void lifecycle(service, action)}
-              onDeploy={review}
-              onRemoveRelation={removeRelation}
-              onSelectRelation={(edgeId) => {
-                setSelection({ kind: "edge", id: edgeId });
-                setExpanded(false);
-              }}
-            />
-          </ScaleDetailsPanel>
-        )}
+              onBack={instanceServiceId ? back : undefined}
+              connectionPreview={
+                relation
+                  ? {
+                      content: <RelationPreview relation={relation} graph={graph} />,
+                      description:
+                        relation.kind === "binding"
+                          ? "Environment binding"
+                          : relation.kind === "dependency"
+                            ? "Startup dependency"
+                            : "Public route",
+                      onRemove:
+                        relation.kind !== "route" && !busy && !hasSavedChanges && !relation.pending
+                          ? () => removeRelation(relation)
+                          : undefined,
+                    }
+                  : undefined
+              }
+            >
+              <TopologyInspector
+                project={project}
+                graph={fullGraph}
+                resource={resource}
+                relation={relation}
+                initialTab={initialTab}
+                disabled={busy || hasSavedChanges}
+                busy={lifecycleBusy}
+                hasPendingChanges={changes.length > 0}
+                onMinimize={() => setExpanded(false)}
+                onClose={() => select(null)}
+                onNavigate={navigate}
+                onSave={stagePatch}
+                onResources={stageResources}
+                onPlacement={openPlacement}
+                onLifecycle={(service, action) => void lifecycle(service, action)}
+                onDeploy={review}
+                onRemoveRelation={removeRelation}
+                onSelectRelation={(edgeId) => {
+                  setSelection({ kind: "edge", id: edgeId });
+                  setExpanded(false);
+                }}
+              />
+            </ScaleDetailsPanel>
+          )}
+        </div>
       </section>
       <AddServiceModal
         open={adding}

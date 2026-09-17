@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   org: {} as Record<string, unknown>,
-  entitlement: vi.fn(), balance: vi.fn(), defaults: vi.fn(), mirror: vi.fn(),
+  entitlement: vi.fn(), subscription: vi.fn(), balance: vi.fn(), defaults: vi.fn(), mirror: vi.fn(), limits: vi.fn(),
   setQuota: vi.fn(), resetQuota: vi.fn(), setDefaultQuota: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: true } }));
@@ -14,9 +14,10 @@ vi.mock("@repo/db", () => ({
   withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
-  getOblienBillingApi: () => ({ getEntitlement: h.entitlement, getBalance: h.balance, getDefaults: h.defaults }),
+  getOblienBillingApi: () => ({ getEntitlement: h.entitlement, getSubscription: h.subscription, getBalance: h.balance, getDefaults: h.defaults }),
   getOblienClient: () => ({ namespaces: { setQuota: h.setQuota, resetQuota: h.resetQuota, setDefaultQuota: h.setDefaultQuota } }),
 }));
+vi.mock("@repo/platform/engine/lib/cloud-resource-limits", () => ({ syncCloudResourceLimits: h.limits }));
 import {
   syncOblienEntitlement, reconcileOblienEntitlement, entitlementQuota,
   assertCloudCanSpend, assertNamespaceHasQuota, ensureOblienDefaultQuota, resetAndRegrant,
@@ -31,6 +32,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.org = { id: "org_1", oblienNamespace: "os-customer", planTierId: "free", subscriptionStatus: "credit_exhausted", currentPeriodStart: null, currentPeriodEnd: null };
   h.entitlement.mockResolvedValue(entitlement());
+  h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: {
+    tierId: "pro", status: "active", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+    billingInterval: "monthly", cancelAtPeriodEnd: false, canceledAt: null,
+  } });
   h.balance.mockResolvedValue({ namespace: "os-customer", balance: 2580, blocking: false });
   h.defaults.mockResolvedValue({ autoApply: true, quotaLimit: 1000, onOverdraftAction: "stop_workspaces" });
 });
@@ -80,5 +85,48 @@ describe("Oblien-managed entitlements", () => {
   it("cannot run a legacy free-credit anniversary reset", async () => {
     await expect(resetAndRegrant("org_1", "pro")).rejects.toMatchObject({ code: "OBLIEN_MANAGED_BILLING" });
     expect(h.resetQuota).not.toHaveBeenCalled();
+  });
+  it("rejects an owner's paid entitlement echoed under an unsubscribed namespace", async () => {
+    h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: null });
+    await expect(syncOblienEntitlement("org_1")).rejects.toMatchObject({ code: "OBLIEN_ENTITLEMENT_MISMATCH" });
+    expect(h.mirror).not.toHaveBeenCalled();
+    expect(h.limits).not.toHaveBeenCalled();
+  });
+  it("rejects a paid entitlement for a different subscription tier or period", async () => {
+    h.entitlement.mockResolvedValue({ ...entitlement(), tierId: "scale" });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "OBLIEN_ENTITLEMENT_MISMATCH" });
+    h.entitlement.mockResolvedValue({ ...entitlement(), periodEnd: "2026-11-01T00:00:00Z" });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "OBLIEN_ENTITLEMENT_MISMATCH" });
+    expect(h.mirror).not.toHaveBeenCalled();
+  });
+  it("applies provider resource caps before mirroring paid access", async () => {
+    h.limits.mockRejectedValue(new Error("resource policy unavailable"));
+    await expect(assertCloudCanSpend("org_1")).rejects.toThrow("resource policy unavailable");
+    expect(h.limits).toHaveBeenCalledWith("os-customer", "pro");
+    expect(h.mirror).not.toHaveBeenCalled();
+  });
+  it("does not require resource writes to inspect an exhausted account", async () => {
+    h.entitlement.mockResolvedValue({ ...entitlement(), status: "credit_exhausted" });
+    await assertNamespaceHasQuota("org_1");
+    expect(h.limits).not.toHaveBeenCalled();
+  });
+  it("keeps a cancel-at-period-end subscription usable until its period ends", async () => {
+    const state = await h.subscription();
+    h.subscription.mockResolvedValue({ ...state, subscription: { ...state.subscription, cancelAtPeriodEnd: true, canceledAt: "2026-09-17T00:00:00Z" } });
+    await expect(assertCloudCanSpend("org_1")).resolves.toBeUndefined();
+  });
+  it.each(["canceled", "past_due"])("retains %s inspection access without allowing spending", async status => {
+    const state = await h.subscription();
+    h.subscription.mockResolvedValue({ ...state, subscription: { ...state.subscription, status } });
+    h.entitlement.mockResolvedValue({ ...entitlement(), status });
+    await expect(assertNamespaceHasQuota("org_1")).resolves.toBeUndefined();
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
+    expect(h.limits).not.toHaveBeenCalled();
+  });
+  it("accepts a free namespace without a subscription or borrowed paid period", async () => {
+    h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: null });
+    h.entitlement.mockResolvedValue({ ...entitlement(), tierId: null, periodStart: null, periodEnd: null, status: "credit_exhausted", quota: { limit: 0, used: 0, balance: 0 } });
+    await expect(assertNamespaceHasQuota("org_1")).resolves.toBeUndefined();
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
   });
 });

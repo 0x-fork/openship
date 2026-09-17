@@ -313,4 +313,34 @@ describe("retryProjectRouting — safe self-heal", () => {
     expect(applyProjectRouting).not.toHaveBeenCalled();
     expect(withExecutor).not.toHaveBeenCalled();
   });
+
+  it("repairs Cloud Docker routes and clears the warning only after a successful apply", async () => {
+    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", cloudWorkspaceId: "ws_1", activeDeploymentId: "dep_1" });
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_1", projectId: "proj_1", organizationId: "org_1", status: "ready",
+      meta: { deployTarget: "cloud", cloudDockerWorkspace: { projectId: "proj_1", workspaceId: "ws_1" }, edgeUnsynced: true, deployWarning: "Previous route failure" },
+    });
+
+    expect(await retryProjectRouting("proj_1", "org_1")).toEqual({ ok: true });
+    expect(applyProjectRouting).toHaveBeenCalledWith("proj_1", expect.objectContaining({ onWarning: expect.any(Function) }));
+    expect(deploymentRepo.updateStatus).toHaveBeenCalledWith("dep_1", "ready", {
+      meta: { deployTarget: "cloud", cloudDockerWorkspace: { projectId: "proj_1", workspaceId: "ws_1" } },
+    });
+    expect(withExecutor).not.toHaveBeenCalled();
+  });
+
+  it("keeps Cloud Docker routing failures visible for another retry", async () => {
+    projectRepo.findById.mockResolvedValue({ id: "proj_1", organizationId: "org_1", cloudWorkspaceId: "ws_1", activeDeploymentId: "dep_1" });
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_1", projectId: "proj_1", organizationId: "org_1", status: "ready",
+      meta: { deployTarget: "cloud", cloudDockerWorkspace: { projectId: "proj_1", workspaceId: "ws_1" } },
+    });
+    applyProjectRouting.mockImplementationOnce(async (_id, options) => options.onWarning("Cloud route could not be applied"));
+
+    expect(await retryProjectRouting("proj_1", "org_1")).toEqual({ ok: false, warning: "Cloud route could not be applied" });
+    expect(deploymentRepo.updateStatus).toHaveBeenCalledWith("dep_1", "ready", expect.objectContaining({
+      meta: expect.objectContaining({ edgeUnsynced: true, deployWarning: "Cloud route could not be applied" }),
+    }));
+    expect(withExecutor).not.toHaveBeenCalled();
+  });
 });

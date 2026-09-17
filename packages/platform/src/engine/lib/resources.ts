@@ -158,6 +158,16 @@ export function resolveRuntimeResources(
   };
 }
 
+/** Compose overrides inherit each omitted dimension from the project. Cloud
+ * never passes a zero/unlimited container limit through to the shared VM. */
+export function resolveCloudServiceResources(
+  own: ResourceConfig | Record<string, unknown> | null | undefined,
+  project: ResourceConfig | Record<string, unknown> | null | undefined,
+): ResourceConfig {
+  const base = resolveRuntimeResources(project, { isCloud: true });
+  return resolveRuntimeResources(withDefaults(own, base), { isCloud: true });
+}
+
 /** Same split for build-time resources. Only cloud sizes a build workspace;
  *  a self-hosted build container should use the whole machine. */
 export function resolveBuildResources(

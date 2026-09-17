@@ -8,6 +8,8 @@
  */
 
 import { Oblien } from "oblien";
+import { cloudWorkspaceStatus } from "./cloud/workspace-ready";
+import { deleteCloudWorkspace } from "./cloud/workspace-delete";
 import type { WorkspaceHandle } from "oblien";
 import type { ExecStreamEvent } from "oblien";
 import type { RoutesInput, RoutesResult } from "oblien";
@@ -158,7 +160,7 @@ type DeployPrimaryEndpoint = NonNullable<DeployConfig["publicEndpoints"]>[number
  */
 export interface CloudAdminProxy {
   /** SaaS delegates only after verifying each resource belongs to its namespace. */
-  pages?: Pick<Oblien["pages"], "get" | "create" | "deploy" | "delete" | "enable" | "disable" | "getDomain" | "connectDomain" | "disconnectDomain" | "checkDNS" | "renewSSL">;
+  pages?: Pick<Oblien["pages"], "list" | "get" | "create" | "deploy" | "delete" | "enable" | "disable" | "getDomain" | "connectDomain" | "disconnectDomain" | "checkDNS" | "renewSSL">;
   setRoutes?: Oblien["routes"]["set"];
   domainRoutes?: () => ReturnType<Oblien["domain"]["routes"]>;
   domainSsls?: () => ReturnType<Oblien["domain"]["ssls"]>;
@@ -2310,7 +2312,7 @@ fi`;
           await this.pages.delete(slug);
         }
       } else {
-        await this.ws(containerId).delete();
+        await deleteCloudWorkspace(this.ws(containerId));
         this.builtArtifacts.delete(containerId);
       }
     } catch (err) {
@@ -2475,7 +2477,7 @@ fi`;
       creating: "building",
       error: "failed",
     };
-    let status: ContainerStatus = statusMap[data.status] ?? "stopped";
+    let status: ContainerStatus = statusMap[cloudWorkspaceStatus(data)] ?? "stopped";
 
     // A workspace being "running" is only its LIFECYCLE — it says nothing about
     // whether the service's PROCESS is actually up. When managed workloads exist
@@ -2489,7 +2491,8 @@ fi`;
         if (workloads && workloads.length > 0) {
           const states = workloads.map((w) =>
             String(
-              (w as { status?: string; states?: string }).status ??
+              (w as { state?: string }).state ??
+                (w as { status?: string; states?: string }).status ??
                 (w as { states?: string }).states ??
                 "",
             ).toLowerCase(),
@@ -2905,6 +2908,10 @@ fi`;
   async setDomainRoutes(hostname: string, input: RoutesInput): Promise<RoutesResult> {
     this.assertNamespaceAccess();
     return this.adminProxy?.setRoutes ? this.adminProxy.setRoutes(hostname, input) : this.client.routes.set(hostname, input);
+  }
+
+  async resolveRoutingTarget(containerId: string, port: number): Promise<{ workspace: string; port: number }> {
+    return { workspace: containerId, port };
   }
 
   // ── Private helpers ────────────────────────────────────────────────────

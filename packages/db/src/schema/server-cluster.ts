@@ -1,8 +1,45 @@
 import { pgTable, text, integer, timestamp, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { ClusterNetworkReport, InfrastructureProviderId } from "@repo/core";
+import type {
+  ClusterNetworkReport,
+  InfrastructureProviderId,
+  ManagedNetworkPlan,
+  ManagedNetworkHostProgress,
+  ManagedNetworkOperationStatus,
+  ManagedNetworkPreparation,
+  ManagedNetworkPreparationInput,
+  ManagedNetworkPreparationHost,
+} from "@repo/core";
 import { organization } from "./organization";
 import { servers } from "./servers";
+
+/** Prerequisite work is durable before a valid network plan can exist. */
+export const managedNetworkPreparation = pgTable(
+  "managed_network_preparation",
+  {
+    id: text("id").primaryKey(),
+    sequence: integer("sequence").notNull().default(1),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    inputHash: text("input_hash").notNull(),
+    input: jsonb("input").$type<ManagedNetworkPreparationInput>().notNull(),
+    status: text("status").$type<ManagedNetworkPreparation["status"]>().notNull(),
+    hosts: jsonb("hosts").$type<ManagedNetworkPreparationHost[]>().notNull(),
+    operationId: text("operation_id"),
+    replacementPreparationId: text("replacement_preparation_id"),
+    cleanupOperationId: text("cleanup_operation_id"),
+    error: text("error"),
+    createdBy: text("created_by").notNull(),
+    generation: integer("generation").notNull().default(1),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("managed_network_preparation_org_idx").on(table.organizationId, table.createdAt),
+  ],
+);
 
 export const serverCluster = pgTable(
   "server_cluster",
@@ -33,11 +70,13 @@ export const clusterNetwork = pgTable(
     clusterId: text("cluster_id")
       .notNull()
       .references(() => serverCluster.id, { onDelete: "cascade" }),
-    mode: text("mode").$type<"native">().notNull(),
+    mode: text("mode").$type<"native" | "wireguard">().notNull(),
     cidrs: jsonb("cidrs").$type<string[]>().notNull(),
     mtu: integer("mtu").notNull(),
     probePort: integer("probe_port").notNull(),
-    ownership: text("ownership").$type<"external">().notNull().default("external"),
+    ownership: text("ownership").$type<"external" | "openship">().notNull().default("external"),
+    managedId: text("managed_id"),
+    interfaceName: text("interface_name"),
   },
   (table) => [uniqueIndex("cluster_network_cluster_idx").on(table.clusterId)],
 );
@@ -84,11 +123,71 @@ export const serverNetworkAttachment = pgTable(
     privateIp: text("private_ip").notNull(),
     interfaceName: text("interface_name"),
     networkRef: text("network_ref"),
+    endpoint: text("endpoint"),
+    listenPort: integer("listen_port"),
+    publicKey: text("public_key"),
   },
   (table) => [
     uniqueIndex("server_network_attachment_server_idx").on(table.networkId, table.serverId),
     uniqueIndex("server_network_attachment_address_idx").on(table.networkId, table.privateIp),
   ],
+);
+
+/** Durable, secret-free approval and recovery journal. Plans precede cluster creation. */
+export const managedNetworkOperation = pgTable(
+  "managed_network_operation",
+  {
+    id: text("id").primaryKey(),
+    sequence: integer("sequence").notNull().default(1),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clusterId: text("cluster_id").notNull(),
+    inputHash: text("input_hash").notNull(),
+    planHash: text("plan_hash").notNull(),
+    plan: jsonb("plan").$type<ManagedNetworkPlan>().notNull(),
+    replacementPreparationId: text("replacement_preparation_id"),
+    status: text("status").$type<ManagedNetworkOperationStatus>().notNull(),
+    hosts: jsonb("hosts").$type<ManagedNetworkHostProgress[]>().notNull(),
+    report: jsonb("report").$type<ClusterNetworkReport | null>(),
+    error: text("error"),
+    createdBy: text("created_by").notNull(),
+    generation: integer("generation").notNull().default(0),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("managed_network_operation_cluster_idx").on(
+      table.organizationId,
+      table.clusterId,
+      table.createdAt,
+    ),
+    uniqueIndex("managed_network_operation_active_idx")
+      .on(table.clusterId)
+      .where(
+        sql`${table.status} in ('applying', 'verifying', 'committing', 'rolling_back', 'interrupted', 'needs_attention')`,
+      ),
+  ],
+);
+
+/** Reserves joining/leaving servers until every host confirms commit or rollback. */
+export const managedNetworkClaim = pgTable(
+  "managed_network_claim",
+  {
+    serverId: text("server_id")
+      .primaryKey()
+      .references(() => servers.id, { onDelete: "no action" }),
+    hostIdentity: text("host_identity").notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clusterId: text("cluster_id").notNull(),
+    operationId: text("operation_id")
+      .notNull()
+      .references(() => managedNetworkOperation.id, { onDelete: "cascade" }),
+  },
+  (table) => [uniqueIndex("managed_network_claim_host_idx").on(table.hostIdentity)],
 );
 
 export const clusterVerification = pgTable(

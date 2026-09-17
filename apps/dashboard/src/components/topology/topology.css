@@ -1,11 +1,30 @@
-.topology-toolbar {
-  background: var(--th-card-on-page);
+.topology-page {
+  container: project-topology / inline-size;
+}
+@container project-topology (max-width: 760px) {
+  .topology-toolbar {
+    width: 100%;
+  }
+  .topology-environment {
+    flex: 1;
+  }
+}
+@container project-topology (max-width: 450px) {
+  .topology-environment {
+    flex-basis: 100%;
+  }
+  .topology-actions {
+    width: 100%;
+  }
+  .topology-add-service {
+    flex: 1;
+  }
 }
 .topology-workspace {
   min-height: 380px;
 }
 .topology-notice {
-  top: 100px;
+  top: 16px;
 }
 .topology-node {
   box-shadow: none;
@@ -59,7 +78,7 @@
 }
 @container scale-workspace (max-width: 720px) {
   .topology-workspace[data-inspector] .topology-notice {
-    top: calc(126px + var(--scale-preview-height, 82px));
+    top: calc(30px + var(--scale-preview-height, 82px));
   }
   .topology-pending {
     bottom: 68px;
@@ -71,12 +90,6 @@
   }
 }
 @container scale-workspace (max-width: 560px) {
-  .topology-toolbar {
-    gap: 6px;
-  }
-  .topology-toolbar > div:first-child {
-    flex: 1;
-  }
   .topology-pending {
     gap: 4px;
   }
@@ -85,18 +98,6 @@
   }
   .topology-pending button {
     padding-inline: 8px;
-  }
-  .topology-notice {
-    top: 150px;
-  }
-}
-@media (max-width: 480px) {
-  .topology-page-header {
-    gap: 8px;
-  }
-  .topology-page-header > div:last-child {
-    width: 100%;
-    justify-content: flex-end;
   }
 }
 @media (prefers-reduced-motion: reduce) {

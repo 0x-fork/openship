@@ -99,8 +99,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe("project connection discovery (#504)", () => {
-  it("lets a plain single app open the existing connection flow with its resolved outputs", async () => {
+describe("overview connection discovery", () => {
+  it("keeps a regular project's connection panel out of Overview", async () => {
+    await render();
+    expect(h.connection).not.toHaveBeenCalled();
+    expect(useButton()).toBeUndefined();
+    expect(container.textContent).not.toContain("Internal address");
+  });
+
+  it("lets catalog apps open the existing connection flow from Overview", async () => {
+    h.project.isApp = true;
+    h.project.appTemplateId = "database";
     await render();
     expect(h.connection).toHaveBeenCalledWith("project-one");
     expect(useButton()).toBeDefined();
@@ -110,23 +119,16 @@ describe("project connection discovery (#504)", () => {
     );
   });
 
-  it("keeps catalog connection details available", async () => {
-    h.project.isApp = true;
-    h.project.appTemplateId = "database";
-    await render();
-    expect(useButton()).toBeDefined();
-  });
-
-  it("does not offer a static or worker project with no connection outputs", async () => {
+  it("does not load connection outputs for a static project", async () => {
     h.project.workloadType = "static";
     h.project.hasServer = false;
     h.connection.mockResolvedValue({ data: { outputs: [] } });
     await render();
-    expect(h.connection).toHaveBeenCalledOnce();
+    expect(h.connection).not.toHaveBeenCalled();
     expect(useButton()).toBeUndefined();
   });
 
-  it("shows reachable service outputs even when the parent project is static", async () => {
+  it("keeps a static project's attached service sharing out of Overview", async () => {
     h.project.workloadType = "static";
     h.project.hasServer = false;
     h.project.productionMode = "static";
@@ -135,7 +137,8 @@ describe("project connection discovery (#504)", () => {
       data: { outputs: [{ ...output, value: "redis://redis:6379" }] },
     });
     await render();
-    expect(useButton()).toBeDefined();
+    expect(h.connection).not.toHaveBeenCalled();
+    expect(useButton()).toBeUndefined();
   });
 
   it("does not offer a synthesized Docker-network address for a cloud project", async () => {

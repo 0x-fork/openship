@@ -135,8 +135,10 @@
       "health": "Zustand",
       "monitoring": "Überwachung",
       "source": "Quelle",
+      "sourceAndTriggers": "Quelle & Auslöser",
       "webhooks": "Webhooks",
       "runtime": "Konfiguration",
+      "settings": "Einstellungen",
       "logs": "Protokolle",
       "backup": "Backup",
       "advanced": "Erweitert"
@@ -268,6 +270,7 @@
     "geoUnavailableBody": "Der Edge-Proxy kann die Länder der Besucher nicht auflösen, daher bleibt die Karte leer. Die Traffic-Summen sind davon nicht betroffen.",
     "noCountries": "Noch keine Länderdaten für diesen Zeitraum.",
     "statusesTitle": "Antworten",
+    "statusesOthers": "Weitere",
     "share": "{pct} %",
     "visitorDays": "Besuchertage",
     "peakDayTooltip": "Stärkster Einzeltag: {peak}. Wiederkehrende Besucher zählen pro Tag einmal, der Gesamtwert ist daher eine Obergrenze.",
@@ -531,5 +534,5 @@
       "server_unreachable": "Server nicht erreichbar"
     }
   },
-  "migrationAwaitingHint": "Migration wartet auf dich — Umschaltung im Reiter „Erweitert“ des Projekts abschließen oder zurücknehmen"
+  "migrationAwaitingHint": "Migration wartet auf dich — Umschaltung unter „Einstellungen → Erweitert“ im Projekt abschließen oder zurücknehmen"
 }

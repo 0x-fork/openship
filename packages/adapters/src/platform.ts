@@ -82,6 +82,9 @@ export interface PlatformConfig {
   cloudApiUrl?: string;
   /** Fresh provider entitlement check before starting billable work. */
   cloudBeforeProvision?: () => Promise<void>;
+  /** Persisted, organization-validated Docker host for one project environment. */
+  cloudDocker?: Pick<import("./runtime/cloud/docker").CloudDockerOptions,
+    "workspaceId" | "projectId" | "provisionLock" | "bridgeLock" | "resolveRegistryAuth">;
   /**
    * Admin-scoped Oblien operations that namespace tokens can't perform.
    * Local/desktop instances inject these so CloudRuntime can hand them
@@ -244,7 +247,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 }
 
 async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
-  const { Oblien } = await import("oblien");
+  const { Oblien } = await import("./oblien");
   const { CloudRuntime } = await import("./runtime/cloud");
   const { CloudInfraProvider } = await import("./infra/cloud");
 
@@ -257,21 +260,33 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
         baseUrl: config.cloudApiUrl,
       });
 
-  const infra = new CloudInfraProvider(client, { namespace: config.cloudNamespace, adminProxy: config.cloudAdminProxy });
+  if (config.cloudDocker && (!config.cloudToken || !config.cloudNamespace)) {
+    throw new Error("Cloud Docker requires organization-scoped credentials");
+  }
+  const runtime = config.cloudDocker
+    ? await (await import("./runtime/cloud/docker")).CloudDockerRuntime.forWorkspace(client, {
+        ...config.cloudDocker, namespace: config.cloudNamespace!,
+        adminProxy: config.cloudAdminProxy, beforeProvision: config.cloudBeforeProvision,
+        allowHostSource: config.allowHostBuild,
+      })
+    : new CloudRuntime(client, {
+        adminProxy: config.cloudAdminProxy, allowHostBuild: config.allowHostBuild,
+        namespace: config.cloudNamespace,
+        allowProvisioning: Boolean(config.cloudToken && config.cloudNamespace),
+        beforeProvision: config.cloudBeforeProvision,
+      });
+  const infra = new CloudInfraProvider(client, {
+    namespace: config.cloudNamespace, adminProxy: config.cloudAdminProxy,
+    dockerWorkspaceId: config.cloudDocker?.workspaceId,
+  });
 
   return {
     target: "cloud",
-    runtime: new CloudRuntime(client, {
-      adminProxy: config.cloudAdminProxy,
-      allowHostBuild: config.allowHostBuild,
-      namespace: config.cloudNamespace,
-      allowProvisioning: Boolean(config.cloudToken && config.cloudNamespace),
-      beforeProvision: config.cloudBeforeProvision,
-    }),
+    runtime,
     routing: infra,
     ssl: infra,
     system: null,
-    executor: null,
+    executor: "executor" in runtime ? runtime.executor : null,
     // The workload runs in Oblien's infrastructure, never on this box.
     localHost: false,
   };

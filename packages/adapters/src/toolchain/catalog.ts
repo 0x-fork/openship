@@ -20,12 +20,7 @@ import { answered, refused, shellQuote, type Answer } from "@repo/core";
 
 import type { EnvironmentProfile } from "../system/environment";
 import { envOps, hostRefusal, opScript, type EnvOps, type Op } from "../system/environment-ops";
-import type {
-  ToolchainCheckEntry,
-  ToolchainInstallPlan,
-  ToolStep,
-  ToolStepUser,
-} from "./types";
+import type { ToolchainCheckEntry, ToolchainInstallPlan, ToolStep, ToolStepUser } from "./types";
 
 // ─── Check recipes ───────────────────────────────────────────────────────────
 
@@ -79,6 +74,21 @@ const CHECKS = {
     versionCommand: "python3 --version",
     parseVersion: (output: string) => output.match(/Python (\S+)/)?.[1] ?? output.trim(),
     missingMessage: "Python 3 is not installed",
+    installable: true,
+  },
+  iproute2: {
+    label: "iproute2",
+    versionCommand: "ip -Version",
+    parseVersion: (output: string) => output.match(/iproute2[,-]([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "iproute2 is not installed",
+    installable: true,
+  },
+  "wireguard-tools": {
+    label: "WireGuard tools",
+    versionCommand: "wg --version",
+    parseVersion: (output: string) =>
+      output.match(/wireguard-tools v([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "WireGuard tools are not installed",
     installable: true,
   },
   pip: {
@@ -450,6 +460,39 @@ const RECIPES: Record<InstallableTool, ToolRecipe> = {
           apk: answered(["python3", "py3-pip"]),
           brew: answered(["python3"]),
         }),
+      ),
+  },
+
+  iproute2: {
+    verify: "ip -Version",
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["iproute2"]),
+            dnf: answered(["iproute"]),
+            yum: answered(["iproute"]),
+            apk: answered(["iproute2"]),
+            brew: refused("iproute2 requires Linux. Choose a Linux server for managed networking."),
+          },
+          { installRecommends: false },
+        ),
+      ),
+  },
+  "wireguard-tools": {
+    verify: "wg --version",
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["wireguard-tools"]),
+            dnf: answered(["wireguard-tools"]),
+            yum: answered(["wireguard-tools"]),
+            apk: answered(["wireguard-tools"]),
+            brew: refused("Managed WireGuard networking requires Linux. Choose a Linux server."),
+          },
+          { installRecommends: false },
+        ),
       ),
   },
 

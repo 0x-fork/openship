@@ -1477,9 +1477,18 @@ export async function runPreflightChecks(
       : checkStack(snapshot),
   ];
   if (effectiveTarget === "cloud" && (snapshot.volumes?.length || opts?.composeServices?.some((service) => service.volumes?.length))) {
-    checks.push({
+    const project = opts?.projectId && snapshot.organizationId
+      ? await repos.project.findByIdInOrganization(opts.projectId, snapshot.organizationId) : null;
+    const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
+    const docker = opts?.multiService && (project
+      ? await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode)
+      : snapshot.serviceDeploymentMode !== "single");
+    checks.push(docker ? {
+      id: "cloud-storage", label: "Persistent storage", status: "pass",
+      message: "Compose volumes stay on the project's shared Docker workspace across deployments.",
+    } : {
       id: "cloud-storage", label: "Persistent storage", status: "fail", code: "CLOUD_VOLUMES_UNSUPPORTED",
-      message: "Persistent volume mounts are not supported on Openship Cloud. Choose a server for workloads that require volumes.",
+      message: "Persistent Compose volumes require a Docker workspace. Existing native cloud projects need a data migration before switching.",
     });
   }
 

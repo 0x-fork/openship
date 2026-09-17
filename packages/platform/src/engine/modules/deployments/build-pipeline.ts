@@ -28,6 +28,7 @@ import {
   BareRuntime,
   BuildLogger,
   CloudRuntime,
+  CloudDockerRuntime,
   DockerRuntime,
   STATIC_RELEASE_BASE,
   sharedMountExecutor,
@@ -40,6 +41,8 @@ import {
   edgeProxyFor,
 } from "@repo/adapters";
 import { platform } from "../../lib/platform-config";
+import { cloudDockerResources, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
+import { assertCloudDeploymentLimits } from "../../lib/plan-guard";
 import {
   resolveUpstreamUrl,
   resolveRouteStrategy,
@@ -639,8 +642,37 @@ async function executeBuildAndDeploy(
     // but keep a BARE serve/lifecycle identity (files served by the edge — a
     // persisted "docker" would make rollback/purge 404-no-op on the release dir and
     // leak it). Cloud static + Docker-less desktop-local static keep their own mode.
-    const willRunServices = (await resolveServicePipelineMode(project, snapshot))
-      .useServicePipeline;
+    const serviceMode = await resolveServicePipelineMode(project, snapshot);
+    const willRunServices = serviceMode.useServicePipeline;
+    await assertCloudDeploymentLimits(dep.organizationId, {
+      projectId: project.id,
+      resources: snapshot.resources, buildResources: snapshot.buildResources,
+      runsApplication: snapshotToClass(snapshot).workload !== "static",
+      services: willRunServices ? serviceMode.servicePreflightServices : undefined,
+    });
+    if (willRunServices && resolveEffectiveTarget(plat.target, snapshot) === "cloud" &&
+        await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode)) {
+      logger.log("→ Preparing the project's shared Docker workspace on Openship Cloud.\n");
+      snapshot.cloudDockerWorkspace = await ensureCloudDockerWorkspace({
+        projectId: project.id, organizationId: dep.organizationId,
+        resources: cloudDockerResources({
+          resources: snapshot.resources, buildResources: snapshot.buildResources,
+          services: serviceMode.servicePreflightServices.map(service => ({
+            enabled: service.enabled,
+            resources: service.advanced?.resources,
+          })),
+        }),
+        signal: cancellationSignal,
+        onProgress: message => logger.log(message),
+      });
+      snapshot.workspaceId = snapshot.cloudDockerWorkspace.workspaceId;
+      snapshot.runtimeMode = "docker";
+      snapshot.buildStrategy = "server";
+      // Every subsequent service action/recovery uses the frozen host identity.
+      if (!await repos.deployment.updateStatus(dep.id, "building", { meta: snapshot })) {
+        throw new Error("Deployment was cancelled while preparing its Docker workspace");
+      }
+    }
     // The runtime/workload axis, resolved from the frozen snapshot triple
     // (issue #538). `web` | `worker` | `static` replaces the old `hasServer`
     // boolean, which couldn't tell a portless worker from a static site.
@@ -987,6 +1019,15 @@ async function executeBuildAndDeploy(
     // actually running there: on the api-host path this names an identity that
     // isn't ours to use, and the adapter would find no credential at all.
     if (gitCred.ambient && effectiveCloneOnTarget) buildConfig.gitAmbient = gitCred.ambient;
+    if (runtime instanceof CloudDockerRuntime) {
+      const cloudDocker = runtime;
+      if (cancellationSignal) {
+        await cloudDocker.executor.runWithAbortSignal(cancellationSignal, () => cloudDocker.prepareComposeSource(buildConfig, logger));
+      } else {
+        await cloudDocker.prepareComposeSource(buildConfig, logger);
+      }
+      throwIfDeploymentCancelled(cancellationSignal);
+    }
 
     // Desktop git-credential relay opener, shared by the single-app and compose
     // paths. Opens the reverse tunnel + remote helper (nothing persisted on the

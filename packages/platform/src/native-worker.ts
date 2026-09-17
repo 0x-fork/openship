@@ -228,6 +228,16 @@ try {
         streams.set(streamId, { iterator: result.data[Symbol.asyncIterator](), abort });
         return { streamId, context: result.context };
       }
+      if (kind === "servers.managedNetworkPreparationEvents" || kind === "servers.managedNetworkOperationEvents" || kind === "servers.clusterEvents") {
+        const result = kind === "servers.clusterEvents"
+          ? await kernel.servers.openClusterEvents(context as ExecutionContext, { signal: abort.signal })
+          : kind === "servers.managedNetworkPreparationEvents"
+            ? await kernel.servers.openManagedNetworkPreparationEvents(context as ExecutionContext, input[0] as string, { signal: abort.signal })
+            : await kernel.servers.openManagedNetworkOperationEvents(context as ExecutionContext, input[0] as string, { signal: abort.signal });
+        const streamId = String(++streamSequence);
+        streams.set(streamId, { iterator: result.data[Symbol.asyncIterator](), abort });
+        return { streamId, context: result.context };
+      }
       if (kind === "servers.installComponents" || kind === "servers.installEvents" || kind === "servers.monitor") {
         const result = kind === "servers.installComponents"
           ? await kernel.servers.openInstallStream(context as ExecutionContext, input[0] as string, input[1] as InstallServerComponentsInput, { signal: abort.signal })

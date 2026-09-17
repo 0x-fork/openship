@@ -15,6 +15,7 @@ export type TransferRowReader = (
 export const PROJECT_TRANSFER_TABLES = new Set([
   "project_app",
   "project",
+  "cloud_docker_workspace",
   "env_var",
   "deployment",
   "domain",

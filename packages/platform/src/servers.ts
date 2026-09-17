@@ -13,6 +13,9 @@ import { createScopedOperations, createResourceOperations, type ScopedServices, 
 export interface ServerDependencies {
   collection: ScopedServices<typeof ServerCollectionSchemas>;
   resources: ResourceServices<typeof ServerResourceSchemas>;
+  networks?: {
+    events(ctx: ExecutionContext, kind: "preparation" | "operation" | "overview", id?: string, signal?: AbortSignal): Promise<AsyncIterable<DeploymentEvent>>;
+  };
   containers?: {
     start(ctx: ExecutionContext, serverId: string, input: ApplyServerContainerInput, signal?: AbortSignal): Promise<AsyncIterable<DeploymentEvent>>;
     events(ctx: ExecutionContext, serverId: string, input: ServerContainerInput, signal?: AbortSignal): Promise<AsyncIterable<DeploymentEvent>>;
@@ -26,6 +29,9 @@ export interface ServerDependencies {
   };
 }
 export type PlatformServerOperations = PlatformScopedOperations<typeof ServerCollectionSchemas> & PlatformResourceOperations<typeof ServerResourceSchemas> & {
+  openManagedNetworkPreparationEvents(ctx: ExecutionContext, id: string, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<DeploymentEvent>>>;
+  openManagedNetworkOperationEvents(ctx: ExecutionContext, id: string, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<DeploymentEvent>>>;
+  openClusterEvents(ctx: ExecutionContext, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<DeploymentEvent>>>;
   openContainerApplyStream(ctx: ExecutionContext, id: string, input: ApplyServerContainerInput, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<DeploymentEvent>>>;
   openContainerApplyEvents(ctx: ExecutionContext, id: string, input: ServerContainerInput, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<DeploymentEvent>>>;
   getInstallSession(ctx: ExecutionContext, input?: ServerInstallSessionInput): Promise<OperationResult<ServerInstallSession>>;
@@ -50,7 +56,7 @@ export function createServerOperations(authorization: Authorization, deps?: Serv
   }
   async function* authorizedEvents(ctx: ExecutionContext, id: string, action: "read" | "write" | "admin", source: AsyncIterable<DeploymentEvent>) {
     for await (const event of source) {
-      await authorization.authorize(ctx, { resourceType: "server", resourceId: id, action });
+      await authorization.authorize(ctx, { resourceType: "server", resourceId: id, action, ...(id === "*" ? { scope: "all" as const } : {}) });
       yield event;
     }
   }
@@ -64,9 +70,20 @@ export function createServerOperations(authorization: Authorization, deps?: Serv
     const source = await (apply ? deps.containers.start : deps.containers.events)(context, id, input, options.signal);
     return { context, data: authorizedEvents(context, id, action, source) };
   }
+  async function networkStream(ctx: ExecutionContext, kind: "preparation" | "operation" | "overview", value: string | undefined, options: { signal?: AbortSignal }) {
+    const id = kind === "overview" ? undefined : parseInput(ResourceIdSchema, value);
+    options.signal?.throwIfAborted();
+    const context = await authorization.authorize(ctx, { resourceType: "server", resourceId: "*", action: "read", scope: "all" });
+    if (!deps?.networks) throw new AppError("Network progress is not configured", 501, "CAPABILITY_UNAVAILABLE");
+    const source = await deps.networks.events(context, kind, id, options.signal);
+    return { context, data: authorizedEvents(context, "*", "read", source) };
+  }
   return Object.freeze({
     ...createScopedOperations(ServerCollectionSchemas, authorization, "server", deps?.collection),
     ...createResourceOperations(ServerResourceSchemas, authorization, "server", deps?.resources),
+    openManagedNetworkPreparationEvents: (ctx, id, options = {}) => networkStream(ctx, "preparation", id, options),
+    openManagedNetworkOperationEvents: (ctx, id, options = {}) => networkStream(ctx, "operation", id, options),
+    openClusterEvents: (ctx, options = {}) => networkStream(ctx, "overview", undefined, options),
     openContainerApplyStream: (ctx, id, input, options = {}) => containerStream(ctx, id, input, options, true),
     openContainerApplyEvents: (ctx, id, input, options = {}) => containerStream(ctx, id, input, options, false),
     getInstallSession: session,

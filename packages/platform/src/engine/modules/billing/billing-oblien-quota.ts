@@ -7,8 +7,9 @@ import { repos } from "@repo/db";
 import type { NamespaceUsageUnits } from "@repo/adapters";
 import { env } from "../../config/env";
 import { getOblienBillingApi, getOblienClient } from "../../lib/oblien-client";
-import type { OblienEntitlement } from "../../lib/oblien-billing-api";
+import { assertOblienEntitlementMatchesSubscription, type OblienEntitlement } from "../../lib/oblien-billing-api";
 import { createProvisionLock } from "../../lib/provision-lock";
+import { syncCloudResourceLimits } from "../../lib/cloud-resource-limits";
 import { openshipTier } from "./billing-catalog";
 import { fromOblienCredits } from "./billing-credit-units";
 
@@ -73,8 +74,19 @@ async function readAndMirrorEntitlement(organizationId: string): Promise<SyncedC
     if (!org?.oblienNamespace) {
       throw new AppError("Cloud namespace is not ready", 503, "CLOUD_NAMESPACE_REQUIRED");
     }
-    const entitlement = await getOblienBillingApi().getEntitlement(org.oblienNamespace);
+    const billing = getOblienBillingApi();
+    const [entitlement, state] = await Promise.all([
+      billing.getEntitlement(org.oblienNamespace), billing.getSubscription(org.oblienNamespace),
+    ]);
     const tier = openshipTier(entitlement.tierId);
+    // A provider may echo the requested namespace while falling back to the
+    // API-key owner's tier/period. Verify the namespace's subscription before
+    // mirroring paid access or issuing a customer token.
+    assertOblienEntitlementMatchesSubscription(entitlement, state.subscription);
+    // Positive entitlements must have provider-enforced resource ceilings before
+    // issuing a token or allowing another deployment. Exhausted/suspended
+    // customers can still obtain management access to stop/delete resources.
+    if (entitlement.status === "active") await syncCloudResourceLimits(org.oblienNamespace, tier);
     const currentPeriodStart = entitlement.periodStart ? new Date(entitlement.periodStart) : null;
     const currentPeriodEnd = entitlement.periodEnd ? new Date(entitlement.periodEnd) : null;
     const changed = org.planTierId !== tier || org.subscriptionStatus !== entitlement.status ||

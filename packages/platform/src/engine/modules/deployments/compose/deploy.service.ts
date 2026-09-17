@@ -11,6 +11,8 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
+import { assertCloudDeploymentLimits } from "../../../lib/plan-guard";
+import { resolveCloudServiceResources } from "../../../lib/resources";
 import { posix as pathPosix } from "node:path";
 import {
   SYSTEM,
@@ -44,6 +46,7 @@ import {
   BareRuntime,
   BuildLogger,
   DockerRuntime,
+  CloudDockerRuntime,
   containerInfoFromDockerSummary,
   ensureEdge,
   ownsBuiltImage,
@@ -600,8 +603,10 @@ function appRowVolumes(project: Project, service: Service): string[] {
 function resolveServiceResources(
   service: Service,
   projectResources: ResourceConfig | undefined,
+  isCloud = false,
 ): ResourceConfig | undefined {
   const own = (service.advanced as ComposeAdvanced | null)?.resources;
+  if (isCloud) return resolveCloudServiceResources(own, projectResources);
   if (!own || (own.cpuCores === undefined && own.memoryMb === undefined)) {
     return projectResources;
   }
@@ -820,7 +825,7 @@ async function prepareServiceRoutes(opts: {
     project,
     service,
     runtimeName,
-    usesManagedRouting: routeContext.usesManagedRouting,
+    usesManagedRouting: runtimeName === "cloud" || routeContext.usesManagedRouting,
     domainByHostname: routeContext.domainByHostname,
   });
 
@@ -1003,6 +1008,10 @@ async function deployComposeServicesUnlocked(
     assertExactServiceTargets(services, [...opts.targetServiceIds]);
   }
   const enabled = services.filter((s) => s.enabled);
+  await assertCloudDeploymentLimits(project.organizationId, {
+    projectId: project.id,
+    resources: opts?.resources, services: enabled,
+  });
 
   if (enabled.length === 0) {
     const hasServices = services.length > 0;
@@ -1528,14 +1537,14 @@ async function deployComposeServicesUnlocked(
   // are registered after the service loop, which is too late to add a publish or
   // reserve it safely; their ports must enter the same allocation path now.
   const hostLoopbackRoutePortDemands =
-    routeContext && usesHostLoopback
+    routeContext && (usesHostLoopback || (runtime.name === "cloud" && runtime.supports("dockerHost")))
       ? collectComposeRoutePortDemands({
           project,
           services: enabled,
           domainRows: [...domainByHostname.values()],
           previousRows: previousServiceDeps,
           runtimeName: runtime.name,
-          usesManagedRouting: routeContext.usesManagedRouting,
+          usesManagedRouting: runtime.name === "cloud" || routeContext.usesManagedRouting,
         })
       : new Map<string, Set<number>>();
 
@@ -1914,7 +1923,7 @@ async function deployComposeServicesUnlocked(
       {
         executor: opts?.executor,
         localHost: opts?.localHost,
-        isCloud: runtime.name === "cloud",
+        isCloud: runtime.name === "cloud" && !runtime.supports("dockerHost"),
       },
       async (host) => {
         const writer = await resolveHostConfigWriter(host);
@@ -2929,13 +2938,13 @@ async function deployComposeServicesUnlocked(
         service: svc,
         image,
         environment: mergedEnv,
-        resources: resolveServiceResources(svc, opts?.resources),
+        resources: resolveServiceResources(svc, opts?.resources, runtime.name === "cloud"),
         namespaces: resolvedNamespaces.namespaces,
         // Cloud stores the workspace id as the service's containerId. Reuse the
         // previous deployment's workspace so its disk (volume data) survives the
         // redeploy. Only meaningful on cloud; docker recreates containers.
         previousWorkspaceId:
-          runtime.name === "cloud"
+          runtime.name === "cloud" && !runtime.supports("dockerHost")
             ? (previousByServiceId.get(svc.id)?.containerId ?? undefined)
             : undefined,
         forcePullImages: opts?.forcePullImages,
@@ -2980,7 +2989,7 @@ async function deployComposeServicesUnlocked(
         service: svc,
         image,
         environment: mergedEnv,
-        resources: resolveServiceResources(svc, opts?.resources),
+        resources: resolveServiceResources(svc, opts?.resources, runtime.name === "cloud"),
         buildSessionId: opts?.buildSessionId,
       });
       // Route PREPARATION is skipped outright for a service with no address, not just
@@ -3031,6 +3040,13 @@ async function deployComposeServicesUnlocked(
       // the runtime config). The pipeline fans out one upstream per distinct port.
       const proxyRoutes =
         runtime.name !== "cloud" ? routes.filter((route) => route.targetPort !== undefined) : [];
+      if (runtime.name === "cloud" && runtime.supports("dockerHost")) {
+        serviceRuntimeConfig.cloudEndpoints = routes
+          .filter((route) => route.targetPort !== undefined)
+          .map((route) => ({ hostname: route.hostname, port: route.targetPort!, custom: !route.isCloud }));
+        serviceRuntimeConfig.cloudProxyPorts = hasNoRoutableAddress
+          ? [] : [...(hostLoopbackRoutePortDemands.get(svc.id) ?? [])];
+      }
       if (runtime.name !== "cloud" && routes.length > 0 && proxyRoutes.length === 0) {
         logger.log(
           `Skipping routes for service "${svc.name}" - no routable port configured.\n`,
@@ -3110,6 +3126,7 @@ async function deployComposeServicesUnlocked(
             );
             deployedContainerId = result.containerId;
             serviceResult = result;
+            if (result.routeWarnings?.length) composeRouteWarnings.push(...result.routeWarnings);
             return { containerId: result.containerId };
           },
           deactivate: (containerId) => runtime.destroy(containerId),
@@ -3973,6 +3990,15 @@ async function deployComposeServicesUnlocked(
   // at the prefix. It previously required the static frontend to be exposed on a
   // routable port, which meant containerizing an nginx image purely to satisfy the
   // "every target is a URL" assumption.
+  if (runtime instanceof CloudDockerRuntime) {
+    try {
+      const { applyCloudRouting } = await import("../../domains/routing-apply.service");
+      await applyCloudRouting({ project, runtime, defs: services,
+        liveRows: await repos.service.listByDeployment(dep.id), usesManaged: false });
+    } catch (error) {
+      composeRouteWarnings.push(`Cloud routing: ${safeErrorMessage(error)}`);
+    }
+  }
   if (routeContext?.routing && runtime.name !== "cloud") {
     // Its OWN try: the composite's catch below reports "Single-domain composition
     // skipped", which would be a wrong account of a project-level failure.

@@ -16,10 +16,17 @@ import {
   type NativeClusterConfig,
   type ClusterNetworkReport,
   type NetworkHostObservation,
+  type ManagedNetworkOperation,
 } from "@repo/core";
-import { repos, type ServerClusterRecord, type ClusterVerificationRecord } from "@repo/db";
+import {
+  repos,
+  type ServerClusterRecord,
+  type ClusterVerificationRecord,
+  type ManagedNetworkOperationRecord,
+} from "@repo/db";
 import {
   privateNetworkTools,
+  managedNetworkTools,
   PrivateNetworkError,
   type CommandExecutor,
   type PrivateNetworkProbe,
@@ -34,6 +41,7 @@ import { deferBackgroundWork } from "../../lib/background-work";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { assertSelfHosted, assertServerExecution, requireSelfHostedServer } from "./server-access";
+import { notifyNetworkSetup } from "./network-setup-bus";
 
 function infrastructureUnavailable(): string | null {
   if (isOblienConfigured())
@@ -48,7 +56,7 @@ export function assertClusterManagementAvailable() {
   if (reason) throw new AppError(reason, 404, "CAPABILITY_UNAVAILABLE");
 }
 
-async function authorizeMember(ctx: ExecutionContext, serverId: string) {
+export async function authorizeMember(ctx: ExecutionContext, serverId: string) {
   assertClusterManagementAvailable();
   await authorization.authorize(ctx, {
     resourceType: "server",
@@ -58,7 +66,7 @@ async function authorizeMember(ctx: ExecutionContext, serverId: string) {
   return requireSelfHostedServer(ctx, serverId);
 }
 
-async function onServer<T>(
+export async function onServer<T>(
   ctx: ExecutionContext,
   serverId: string,
   fn: (executor: CommandExecutor) => Promise<T>,
@@ -73,7 +81,7 @@ async function onServer<T>(
   });
 }
 
-async function inspect(executor: CommandExecutor): Promise<NetworkHostObservation> {
+export async function inspect(executor: CommandExecutor): Promise<NetworkHostObservation> {
   const hostIdentity = await inspectHostIssuedIdentity(executor);
   if (!hostIdentity)
     throw new PrivateNetworkError(
@@ -106,7 +114,7 @@ function normalizeConfig(input: NativeClusterConfig): NativeClusterConfig {
   return config;
 }
 
-function presentVerification(run: ClusterVerificationRecord): ClusterVerification {
+export function presentVerification(run: ClusterVerificationRecord): ClusterVerification {
   return {
     id: run.id,
     clusterId: run.clusterId,
@@ -119,7 +127,28 @@ function presentVerification(run: ClusterVerificationRecord): ClusterVerificatio
     expiresAt: run.expiresAt.toISOString(),
   };
 }
-function presentCluster(row: ServerClusterRecord): ServerCluster {
+export function presentManagedOperation(
+  operation: ManagedNetworkOperationRecord,
+): ManagedNetworkOperation {
+  return {
+    id: operation.id,
+    sequence: operation.sequence,
+    clusterId: operation.clusterId,
+    status: operation.status,
+    planHash: operation.planHash,
+    plan: operation.plan,
+    replacementPreparationId: operation.replacementPreparationId ?? null,
+    hosts: operation.hosts,
+    report: operation.report,
+    error: operation.error,
+    generation: operation.generation,
+    leaseExpiresAt: operation.leaseExpiresAt?.toISOString() ?? null,
+    createdAt: operation.createdAt.toISOString(),
+    updatedAt: operation.updatedAt.toISOString(),
+  };
+}
+
+export function presentCluster(row: ServerClusterRecord): ServerCluster {
   return {
     id: row.id,
     name: row.name,
@@ -127,12 +156,22 @@ function presentCluster(row: ServerClusterRecord): ServerCluster {
     revision: row.revision,
     network: {
       id: row.network.id,
-      mode: row.network.mode,
       cidrs: row.network.cidrs,
       mtu: row.network.mtu,
       probePort: row.network.probePort,
-      ownership: "external",
-      encryption: "external",
+      ...(row.network.mode === "wireguard"
+        ? {
+            mode: "wireguard" as const,
+            ownership: "openship" as const,
+            encryption: "wireguard" as const,
+            managedId: row.network.managedId!,
+            interfaceName: row.network.interfaceName!,
+          }
+        : {
+            mode: "native" as const,
+            ownership: "external" as const,
+            encryption: "external" as const,
+          }),
     },
     members: row.members.map((m) => ({
       serverId: m.serverId,
@@ -141,14 +180,19 @@ function presentCluster(row: ServerClusterRecord): ServerCluster {
       privateIp: m.privateIp,
       ...(m.interfaceName ? { interfaceName: m.interfaceName } : {}),
       ...(m.networkRef ? { networkRef: m.networkRef } : {}),
+      ...(m.endpoint ? { endpoint: m.endpoint } : {}),
+      ...(m.listenPort ? { listenPort: m.listenPort } : {}),
+      ...(m.publicKey ? { publicKey: m.publicKey } : {}),
     })),
     verification: row.verification ? presentVerification(row.verification) : null,
+    operation: row.operation ? presentManagedOperation(row.operation) : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-function record(ctx: ExecutionContext, clusterId: string, action: string) {
+export function record(ctx: ExecutionContext, clusterId: string, action: string) {
+  notifyNetworkSetup(ctx.organizationId, "overview");
   audit.recordAsync(operationAuditContext(ctx), {
     eventType: "server:write",
     resourceType: "server",
@@ -158,7 +202,11 @@ function record(ctx: ExecutionContext, clusterId: string, action: string) {
 }
 
 /** Bound fan-out so a fleet check cannot exhaust the shared SSH pool. */
-async function eachMember<T>(items: readonly T[], fn: (item: T) => Promise<void>, concurrency = 4) {
+export async function eachMember<T>(
+  items: readonly T[],
+  fn: (item: T) => Promise<void>,
+  concurrency = 4,
+) {
   let next = 0;
   const results = await Promise.allSettled(
     Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -174,7 +222,7 @@ async function eachMember<T>(items: readonly T[], fn: (item: T) => Promise<void>
   if (failure) throw failure.reason;
 }
 
-function checkError(error: unknown): { code: string; message: string } {
+export function checkError(error: unknown): { code: string; message: string } {
   if (
     error instanceof PrivateNetworkError ||
     error instanceof ClusterConfigError ||
@@ -188,12 +236,32 @@ function checkError(error: unknown): { code: string; message: string } {
   };
 }
 
-async function verify(
+export async function verifyClusterNetwork(
   ctx: ExecutionContext,
-  cluster: ServerClusterRecord,
-  run: ClusterVerificationRecord,
+  cluster: {
+    id: string;
+    network: {
+      mode: "native" | "wireguard";
+      mtu: number;
+      probePort: number;
+      managedId?: string | null;
+    };
+    members: Array<NativeClusterConfig["members"][number]>;
+  },
+  run: ClusterVerificationRecord | null,
+  managed?: {
+    checkedServer<T>(serverId: string, fn: (executor: CommandExecutor) => Promise<T>): Promise<T>;
+    recordIdentity(serverId: string, identity: string): Promise<void>;
+    progress(report: ClusterNetworkReport): Promise<void>;
+  },
 ) {
-  const report: ClusterNetworkReport = { stage: "inspecting", hosts: [], peers: [] };
+  const speedTest = run?.report.speedTest;
+  const report: ClusterNetworkReport = {
+    stage: "inspecting",
+    hosts: [],
+    peers: [],
+    ...(speedTest ? { speedTest, throughput: [] } : {}),
+  };
   const probes: PrivateNetworkProbe[] = cluster.members.map((m) => ({
     serverId: m.serverId,
     privateIp: m.privateIp,
@@ -207,6 +275,8 @@ async function verify(
     serverId: string,
     fn: (executor: CommandExecutor) => Promise<T>,
   ) => {
+    if (managed) return managed.checkedServer(serverId, fn);
+    if (!run) throw new AppError("Missing verification run", 500);
     await authorization.authorize(ctx, {
       resourceType: "server",
       resourceId: "*",
@@ -225,6 +295,8 @@ async function verify(
   const persist = () => {
     const snapshot = structuredClone(report);
     progressWrites = progressWrites.then(async () => {
+      if (managed) return managed.progress(snapshot);
+      if (!run) throw new AppError("Missing verification run", 500);
       if (Date.now() > run.expiresAt.getTime())
         throw new AppError(
           "Network verification expired. Run it again.",
@@ -237,10 +309,23 @@ async function verify(
           409,
           "NETWORK_CHECK_INTERRUPTED",
         );
+      notifyNetworkSetup(ctx.organizationId, "overview");
     });
     return progressWrites;
   };
   try {
+    if (
+      speedTest &&
+      (speedTest.sourceServerId === speedTest.targetServerId ||
+        ![speedTest.sourceServerId, speedTest.targetServerId].every((id) =>
+          cluster.members.some((member) => member.serverId === id),
+        ))
+    )
+      throw new AppError(
+        "Choose two different members of this cluster for the speed test.",
+        400,
+        "INVALID_NETWORK_TEST",
+      );
     // No host access until every member has passed the current organization/permission boundary.
     for (const member of cluster.members) await authorizeMember(ctx, member.serverId);
     const identities = new Set<string>();
@@ -251,23 +336,31 @@ async function verify(
           observation,
           {
             ...member,
+            providerId: cluster.network.mode === "wireguard" ? "custom" : member.providerId,
             interfaceName: member.interfaceName ?? undefined,
             networkRef: member.networkRef ?? undefined,
           },
           cluster.network.mtu,
         );
+        if (cluster.network.mode === "wireguard" && nic.kind !== "wireguard")
+          throw new PrivateNetworkError(
+            "The managed interface is no longer a WireGuard interface. Restore its owned configuration before verifying it.",
+            "MANAGED_NETWORK_INTERFACE_CHANGED",
+          );
         if (identities.has(observation.hostIdentity))
           throw new PrivateNetworkError(
             "Two selected server entries point to the same physical host.",
             "NETWORK_DUPLICATE_HOST",
           );
         identities.add(observation.hostIdentity);
-        await repos.serverCluster.recordIdentity(
-          cluster.id,
-          member.serverId,
-          observation.hostIdentity,
-          run.id,
-        );
+        if (managed) await managed.recordIdentity(member.serverId, observation.hostIdentity);
+        else
+          await repos.serverCluster.recordIdentity(
+            cluster.id,
+            member.serverId,
+            observation.hostIdentity,
+            run!.id,
+          );
         report.hosts.push({
           serverId: member.serverId,
           ok: true,
@@ -303,6 +396,16 @@ async function verify(
             executor,
             probe,
             probes.map((p) => p.privateIp),
+            speedTest &&
+              [speedTest.sourceServerId, speedTest.targetServerId].includes(probe.serverId)
+              ? probes.find(
+                  (peer) =>
+                    peer.serverId ===
+                    (probe.serverId === speedTest.sourceServerId
+                      ? speedTest.targetServerId
+                      : speedTest.sourceServerId),
+                )!.privateIp
+              : undefined,
           ),
         );
       } catch (error) {
@@ -336,14 +439,95 @@ async function verify(
       }
       await persist();
     });
+    if (cluster.network.mode === "wireguard" && !managed) {
+      if (!cluster.network.managedId)
+        throw new PrivateNetworkError("This cluster is missing its managed network identity.");
+      report.stage = "handshakes";
+      report.handshakes = [];
+      await persist();
+      await eachMember(cluster.members, async (member) => {
+        try {
+          const result = await checkedServer(member.serverId, (executor) =>
+            managedNetworkTools.inspectPeers(
+              executor,
+              cluster.network.managedId!,
+              cluster.members
+                .filter((peer) => peer.serverId !== member.serverId)
+                .map((peer) => peer.serverId),
+            ),
+          );
+          report.handshakes!.push(
+            ...result.peers.map(({ serverId, ...peer }) => ({
+              ...peer,
+              sourceServerId: member.serverId,
+              targetServerId: serverId,
+            })),
+          );
+          if (!result.interfaceReady)
+            throw new PrivateNetworkError(
+              "The WireGuard interface no longer matches its saved configuration.",
+              "MANAGED_NETWORK_INTERFACE_CHANGED",
+            );
+        } catch (error) {
+          Object.assign(report.hosts.find((host) => host.serverId === member.serverId)!, {
+            ok: false,
+            ...checkError(error),
+          });
+        }
+        await persist();
+      });
+    }
+    if (speedTest) {
+      report.stage = "throughput";
+      await persist();
+      const selected = [speedTest.sourceServerId, speedTest.targetServerId];
+      // Sequential samples avoid competing with each other for the link being measured.
+      for (const sourceId of selected) {
+        const source = probes.find((probe) => probe.serverId === sourceId)!;
+        const peer = probes.find(
+          (probe) => probe.serverId === selected.find((id) => id !== sourceId),
+        )!;
+        const connected = report.peers.find(
+          (check) => check.sourceServerId === sourceId && check.targetServerId === peer.serverId,
+        );
+        try {
+          if (!connected?.tcp || !connected.udp || !connected.mtu)
+            throw new PrivateNetworkError(
+              "Resolve this connection's reachability checks before running a speed sample.",
+            );
+          report.throughput!.push(
+            await checkedServer(sourceId, (executor) =>
+              privateNetworkTools.throughput(executor, source, peer),
+            ),
+          );
+        } catch (error) {
+          report.throughput!.push({
+            sourceServerId: sourceId,
+            targetServerId: peer.serverId,
+            megabitsPerSecond: null,
+            bytes: 0,
+            durationMs: 0,
+            message: checkError(error).message,
+          });
+        }
+        await persist();
+      }
+    }
     report.stage = "complete";
-    success = networkReportSucceeded(
+    const connectivityPassed = networkReportSucceeded(
       report,
       cluster.members.map((m) => m.serverId),
     );
+    success =
+      connectivityPassed &&
+      (!speedTest ||
+        (report.throughput?.length === 2 &&
+          report.throughput.every((sample) => sample.megabitsPerSecond !== null)));
     failureMessage = success
       ? null
-      : "Some private connections failed. Check the connection results and run verification again.";
+      : connectivityPassed
+        ? "Connectivity checks passed, but a speed sample did not complete. Review the per-connection measurements and retry the speed test."
+        : "Some private connections failed. Check the connection results and run verification again.";
   } catch (error) {
     await progressWrites.catch(() => undefined);
     report.stage = "complete";
@@ -367,8 +551,12 @@ async function verify(
         }
       },
     );
-    await repos.serverCluster.finish(run.id, report, success, failureMessage);
+    if (run) {
+      await repos.serverCluster.finish(run.id, report, success, failureMessage);
+      notifyNetworkSetup(ctx.organizationId, "overview");
+    }
   }
+  return { report, success, error: failureMessage };
 }
 
 export const serverClusterCollection = {
@@ -386,7 +574,7 @@ export const serverClusterCollection = {
           action: "admin",
           scope: "all",
         })),
-      modes: reason ? [] : ["native"],
+      modes: reason ? [] : ["native", "wireguard"],
       providers: reason
         ? []
         : INFRASTRUCTURE_PROVIDERS.map((p) => ({
@@ -459,16 +647,42 @@ export const serverClusterCollection = {
         409,
         "CLUSTER_CONFLICT",
       );
+    if (
+      input.speedTest &&
+      (input.speedTest.sourceServerId === input.speedTest.targetServerId ||
+        ![input.speedTest.sourceServerId, input.speedTest.targetServerId].every((id) =>
+          cluster.members.some((member) => member.serverId === id),
+        ))
+    )
+      throw new AppError(
+        "Choose two different members of this cluster for the speed test.",
+        400,
+        "INVALID_NETWORK_TEST",
+      );
     for (const member of cluster.members) await authorizeMember(ctx, member.serverId);
     const { run, created } = await repos.serverCluster.startVerification(
       ctx.organizationId,
       cluster.id,
       input.revision,
       ctx.userId,
+      input.speedTest,
     );
     if (created) {
       record(ctx, cluster.id, "cluster.verification.started");
-      void deferBackgroundWork(() => verify(ctx, cluster, run)).catch(() => undefined);
+      void deferBackgroundWork(() =>
+        verifyClusterNetwork(
+          ctx,
+          {
+            ...cluster,
+            members: cluster.members.map((member) => ({
+              ...member,
+              interfaceName: member.interfaceName ?? undefined,
+              networkRef: member.networkRef ?? undefined,
+            })),
+          },
+          run,
+        ),
+      ).catch(() => undefined);
     }
     return presentVerification(run);
   },

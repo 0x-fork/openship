@@ -138,6 +138,20 @@ it("requires successful TCP, UDP, and MTU checks for every directed pair", () =>
   expect(networkReportSucceeded(report, ["one", "two"])).toBe(false);
   report.peers.push({ ...report.peers[0]!, sourceServerId: "two", targetServerId: "one" });
   expect(networkReportSucceeded(report, ["one", "two"])).toBe(true);
+  report.handshakes = report.peers.map((peer) => ({
+    sourceServerId: peer.sourceServerId,
+    targetServerId: peer.targetServerId,
+    endpoint: "192.0.2.2",
+    port: 51820,
+    ok: true,
+    lastHandshakeAt: new Date().toISOString(),
+  }));
+  expect(networkReportSucceeded(report, ["one", "two"])).toBe(true);
+  report.handshakes[0]!.ok = false;
+  expect(networkReportSucceeded(report, ["one", "two"])).toBe(false);
+  report.handshakes.pop();
+  expect(networkReportSucceeded(report, ["one", "two"])).toBe(false);
+  delete report.handshakes;
   report.peers[1]!.mtu = false;
   expect(networkReportSucceeded(report, ["one", "two"])).toBe(false);
   report.peers[1] = { ...report.peers[0]! };

@@ -67,6 +67,15 @@ export const NETWORK_CHECK_TTL_MS = 15 * 60_000;
 export const NETWORK_CHECK_DEADLINE_MS = 4 * 60_000;
 // A listener must outlive the whole bounded fleet check, including queued peers.
 export const NETWORK_PROBE_TTL_SECONDS = NETWORK_CHECK_DEADLINE_MS / 1000 + 30;
+export const NETWORK_LATENCY_SAMPLES = 3;
+export const NETWORK_SPEED_MAX_BYTES = 32 * 1024 * 1024;
+export const NETWORK_SPEED_DURATION_MS = 3_000;
+
+/** A speed sample is explicit and limited to one selected pair, in both directions. */
+export interface ClusterSpeedTest {
+  sourceServerId: string;
+  targetServerId: string;
+}
 
 export interface ClusterMemberConfig {
   serverId: string;
@@ -107,12 +116,35 @@ export interface ClusterPeerCheck {
   udp: boolean;
   mtu: boolean;
   latencyMs: number | null;
+  /** Older reports measured combined probe duration; only marked values are RTT. */
+  latencyKind?: "rtt";
+  packetLossPercent?: number | null;
+  jitterMs?: number | null;
+  message: string | null;
+}
+export interface ClusterPeerHandshake {
+  sourceServerId: string;
+  targetServerId: string;
+  endpoint: string;
+  port: number;
+  ok: boolean;
+  lastHandshakeAt: string | null;
+}
+export interface ClusterThroughputCheck {
+  sourceServerId: string;
+  targetServerId: string;
+  megabitsPerSecond: number | null;
+  bytes: number;
+  durationMs: number;
   message: string | null;
 }
 export interface ClusterNetworkReport {
   hosts: ClusterHostCheck[];
   peers: ClusterPeerCheck[];
-  stage: "inspecting" | "probing" | "complete";
+  stage: "inspecting" | "handshakes" | "probing" | "throughput" | "complete";
+  handshakes?: ClusterPeerHandshake[];
+  speedTest?: ClusterSpeedTest;
+  throughput?: ClusterThroughputCheck[];
 }
 
 /** Strict IPv4 only for the first driver. IPv6 needs its own MTU/route verification. */
@@ -153,6 +185,12 @@ export function isInfrastructurePrivateIp(value: string): boolean {
 
 export class ClusterConfigError extends Error {
   readonly code = "INVALID_CLUSTER_CONFIG";
+  constructor(
+    message: string,
+    readonly issue?: { kind: "address_outside_ranges"; serverId: string },
+  ) {
+    super(message);
+  }
 }
 
 /** Shared semantic validation for the API, SDK, and review wizard. */
@@ -206,7 +244,10 @@ export function validateNativeCluster(config: NativeClusterConfig): void {
       fail("Cluster members need private IPv4 addresses.");
     const ip = infrastructureIpv4(member.privateIp)!;
     if (!ranges.some((r) => ip > r.start && ip < r.end))
-      fail(`Address ${member.privateIp} is outside the usable network ranges.`);
+      throw new ClusterConfigError(
+        `Address ${member.privateIp} is outside the usable network ranges.`,
+        { kind: "address_outside_ranges", serverId: member.serverId },
+      );
     if (addresses.has(member.privateIp)) fail("Each member needs a unique private address.");
     addresses.add(member.privateIp);
     if (member.interfaceName && !/^[a-zA-Z0-9_.:-]{1,15}$/.test(member.interfaceName))
@@ -224,6 +265,136 @@ export function privateHostInterfaces(
       !/^(?:docker\d*|br-[0-9a-f]+|veth)/.test(nic.name) &&
       nic.addresses.some((address) => isInfrastructurePrivateIp(address.address)),
   );
+}
+
+export interface PrivateInterfaceChoice {
+  privateIp: string;
+  interfaceName: string;
+  prefixLength: number;
+  cidr: string | null;
+  mtu: number;
+}
+
+/** Derive subnets from observed masks. A /31 or /32 needs an explicitly supplied routed range. */
+export function privateInterfaceChoices(
+  interfaces: readonly NetworkInterfaceObservation[],
+): PrivateInterfaceChoice[] {
+  return privateHostInterfaces(interfaces).flatMap((nic) =>
+    nic.addresses
+      .filter((a) => isInfrastructurePrivateIp(a.address))
+      .map((a) => {
+        let cidr: string | null = null;
+        if (Number.isInteger(a.prefixLength) && a.prefixLength >= 1 && a.prefixLength <= 30) {
+          const ip = infrastructureIpv4(a.address)!;
+          const start = (ip & ipv4Mask(a.prefixLength)) >>> 0;
+          const end = start + 2 ** (32 - a.prefixLength) - 1;
+          const address = (value: number) =>
+            [24, 16, 8, 0].map((shift) => (value >>> shift) & 255).join(".");
+          if (
+            ip > start &&
+            ip < end &&
+            isInfrastructurePrivateIp(address(start)) &&
+            isInfrastructurePrivateIp(address(end))
+          )
+            cidr = `${address(start)}/${a.prefixLength}`;
+        }
+        return {
+          privateIp: a.address,
+          interfaceName: nic.name,
+          prefixLength: a.prefixLength,
+          cidr,
+          mtu: nic.mtu,
+        };
+      }),
+  );
+}
+
+/**
+ * Fill a draft from host observations, without provisioning addresses or asserting connectivity.
+ * Only requested members may change; ambiguous interfaces need an existing match or user choice.
+ * Preserve used, valid routed ranges and add exact observed subnets for uncovered addresses.
+ */
+export function suggestNativeClusterConfig(
+  config: NativeClusterConfig,
+  observations: Readonly<Record<string, NetworkHostObservation>>,
+  serverIds: readonly string[] = config.members.map((member) => member.serverId),
+): NativeClusterConfig {
+  const choices = new Map(
+    config.members.map((member) => [
+      member.serverId,
+      privateInterfaceChoices(observations[member.serverId]?.interfaces ?? []),
+    ]),
+  );
+  let applied = false;
+  const members = config.members.map((member) => {
+    if (!serverIds.includes(member.serverId)) return member;
+    const options = choices.get(member.serverId)!;
+    const matchingAddress = options.filter((choice) => choice.privateIp === member.privateIp);
+    const matchingInterface = matchingAddress.filter(
+      (choice) => choice.interfaceName === member.interfaceName,
+    );
+    const candidates = matchingInterface.length ? matchingInterface : matchingAddress;
+    const choice =
+      candidates.length === 1 ? candidates[0] : options.length === 1 ? options[0] : undefined;
+    if (!choice) return member;
+    applied = true;
+    return { ...member, privateIp: choice.privateIp, interfaceName: choice.interfaceName };
+  });
+  if (!applied) return config;
+
+  const contains = (cidr: string, address: string) => {
+    const range = infrastructureCidr(cidr);
+    const ip = infrastructureIpv4(address);
+    return range !== null && ip !== null && ip > range.start && ip < range.end;
+  };
+  const cidrs = config.network.cidrs.filter((cidr) => {
+    const range = infrastructureCidr(cidr);
+    const end = range && [24, 16, 8, 0].map((shift) => (range.end >>> shift) & 255).join(".");
+    return (
+      range &&
+      range.prefix <= 30 &&
+      isInfrastructurePrivateIp(cidr.split("/")[0]!) &&
+      end &&
+      isInfrastructurePrivateIp(end) &&
+      members.some((member) => contains(cidr, member.privateIp))
+    );
+  });
+  let mtu = config.network.mtu;
+  for (const member of members) {
+    const choice = choices
+      .get(member.serverId)!
+      .find(
+        (option) =>
+          option.privateIp === member.privateIp && option.interfaceName === member.interfaceName,
+      );
+    if (!choice) continue;
+    if (choice.cidr && !cidrs.some((cidr) => contains(cidr, member.privateIp)))
+      cidrs.push(choice.cidr);
+    if (Number.isInteger(choice.mtu) && choice.mtu >= 1280) mtu = Math.min(mtu, choice.mtu);
+    const provider = INFRASTRUCTURE_PROVIDERS.find((p) => p.id === member.providerId);
+    if (provider && "maxMtu" in provider) mtu = Math.min(mtu, provider.maxMtu);
+  }
+  // Canonical CIDRs can only be disjoint or contained. Keep observed covering ranges without
+  // synthesizing a broader subnet merely to make unrelated addresses pass validation.
+  const ranges = [...new Set(cidrs)].map((cidr) => ({ cidr, ...infrastructureCidr(cidr)! }));
+  const normalized = ranges
+    .filter(
+      (range) =>
+        !ranges.some(
+          (other) => other !== range && other.start <= range.start && other.end >= range.end,
+        ),
+    )
+    .sort((a, b) => a.start - b.start)
+    .map((range) => range.cidr);
+  return {
+    ...config,
+    members,
+    network: {
+      ...config.network,
+      cidrs: normalized.length ? normalized : config.network.cidrs,
+      mtu,
+    },
+  };
 }
 
 export function selectClusterInterface(
@@ -263,6 +434,20 @@ export function networkReportSucceeded(
   )
     return false;
   if (report.peers.length !== serverIds.length * (serverIds.length - 1)) return false;
+  if (
+    report.handshakes &&
+    (report.handshakes.length !== serverIds.length * (serverIds.length - 1) ||
+      !serverIds.every((source) =>
+        serverIds.every(
+          (target) =>
+            source === target ||
+            report.handshakes!.some(
+              (peer) => peer.sourceServerId === source && peer.targetServerId === target && peer.ok,
+            ),
+        ),
+      ))
+  )
+    return false;
   return serverIds.every((source) =>
     serverIds.every(
       (target) =>

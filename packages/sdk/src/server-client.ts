@@ -11,6 +11,51 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
   return Object.freeze({
     ...createRemoteScopedOperations(http, ServerCollectionSchemas, {
       clusterCapabilities: { method: "GET", path: () => "/system/clusters/capabilities" },
+      planManagedNetwork: { method: "POST", path: () => "/system/clusters/network-plans" },
+      prepareManagedNetwork: { method: "POST", path: () => "/system/clusters/network-preparations" },
+      listManagedNetworkPreparations: { method: "GET", path: () => "/system/clusters/network-preparations" },
+      getManagedNetworkPreparation: { method: "GET", path: (input) => `/system/clusters/network-preparations/${encodeURIComponent((input as { preparationId: string }).preparationId)}`, inputLocation: "path" },
+      discardManagedNetworkPreparation: {
+        method: "DELETE",
+        path: input => `/system/clusters/network-preparations/${encodeURIComponent((input as { preparationId: string }).preparationId)}`,
+        body: input => { const { preparationId: _id, ...body } = input as Record<string, unknown>; return body; },
+      },
+      discardManagedNetworkPlan: {
+        method: "DELETE",
+        path: input => `/system/clusters/network-operations/${encodeURIComponent((input as { operationId: string }).operationId)}`,
+        body: input => { const { operationId: _id, ...body } = input as Record<string, unknown>; return body; },
+      },
+      removeManagedNetworkPreparationMember: {
+        method: "DELETE",
+        path: input => {
+          const { preparationId, serverId } = input as { preparationId: string; serverId: string };
+          return `/system/clusters/network-preparations/${encodeURIComponent(preparationId)}/members/${encodeURIComponent(serverId)}`;
+        },
+        body: input => { const { preparationId: _id, serverId: _server, ...body } = input as Record<string, unknown>; return body; },
+      },
+      removeManagedNetworkOperationMember: {
+        method: "DELETE",
+        path: input => {
+          const { operationId, serverId } = input as { operationId: string; serverId: string };
+          return `/system/clusters/network-operations/${encodeURIComponent(operationId)}/members/${encodeURIComponent(serverId)}`;
+        },
+        body: input => { const { operationId: _id, serverId: _server, ...body } = input as Record<string, unknown>; return body; },
+      },
+      getManagedNetworkOperation: {
+        method: "GET",
+        path: (input) =>
+          `/system/clusters/network-operations/${encodeURIComponent((input as { operationId: string }).operationId)}`,
+        inputLocation: "path",
+      },
+      applyManagedNetwork: {
+        method: "POST",
+        path: (input) =>
+          `/system/clusters/network-operations/${encodeURIComponent((input as { operationId: string }).operationId)}/apply`,
+        body: (input) => {
+          const { operationId: _id, ...body } = input as Record<string, unknown>;
+          return body;
+        },
+      },
       listClusters: { method: "GET", path: () => "/system/clusters" },
       getCluster: { method: "GET", path: clusterPath, inputLocation: "path" },
       createCluster: { method: "POST", path: () => "/system/clusters" },
@@ -71,6 +116,17 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
       const id = parseInput(ResourceIdSchema, value);
       const input = parseInput(ApplyServerContainerInputSchema, command);
       yield* http.events(path(id) + `/containers/${input.component}/apply/stream?intent=${input.intent ?? "update"}`, { method: "POST", signal: options.signal });
+    },
+    async *managedNetworkPreparationEvents(value, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      yield* http.events(`/system/clusters/network-preparations/${encodeURIComponent(id)}/stream`, { signal: options.signal });
+    },
+    async *managedNetworkOperationEvents(value, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      yield* http.events(`/system/clusters/network-operations/${encodeURIComponent(id)}/stream`, { signal: options.signal });
+    },
+    async *clusterEvents(options = {}) {
+      yield* http.events("/system/clusters/stream", { signal: options.signal });
     },
     async *containerApplyEvents(value, command, options = {}) {
       const id = parseInput(ResourceIdSchema, value);

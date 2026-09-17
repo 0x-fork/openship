@@ -34,7 +34,7 @@ import { repos, type Project } from "@repo/db";
 
 import type { AdoptResult } from "../migration/migrate.service";
 import type { DiscoveredService } from "../migration/docker-reconcile";
-import { assertProjectQuota, uniqueProjectSlug } from "./project-crud.service";
+import { assertProjectQuota, uniqueProjectSlug, withProjectCreationLock } from "./project-crud.service";
 
 /**
  * Project columns the clone must NOT copy verbatim, each with the reason it is here. Anything
@@ -137,13 +137,7 @@ export async function cloneProjectToServer(input: {
   );
   if (!source) throw new NotFoundError("Project", input.sourceProjectId);
 
-  // Before anything is written: a duplicate is a new project and counts against the cap like
-  // any other. Checked here rather than inside the transaction so the operator gets the plan
-  // guard's own message instead of a rolled-back write.
-  await assertProjectQuota(input.organizationId);
-
   const desiredName = input.name?.trim() || `${source.name} copy`;
-  const slug = await uniqueProjectSlug(input.organizationId, slugify(desiredName));
 
   const sourceServices = await repos.service.listByProject(source.id);
   // Discovered services are keyed by name here (not container id) because they have already
@@ -165,52 +159,56 @@ export async function cloneProjectToServer(input: {
   const cloningIds = new Set(cloning.map((row) => row.id));
   const sourceEnv = await repos.project.listEnvVars(source.id);
 
-  const { project: created } = await repos.project.createProjectWithRecords({
-    group: {
-      organizationId: source.organizationId,
-      name: desiredName,
-      slug,
-      // Git identity follows the project: a duplicate of a repo-backed project is still backed
-      // by that repo, and its later redeploys should build from it.
-      gitProvider: source.gitProvider ?? undefined,
-      gitOwner: source.gitOwner ?? undefined,
-      gitRepo: source.gitRepo ?? undefined,
-      gitUrl: source.gitUrl ?? undefined,
-    },
-    project: {
-      ...omit(source, PROJECT_FIELDS_NOT_CLONED),
-      organizationId: source.organizationId,
-      name: desiredName,
-      slug,
-      serverId: input.targetServerId,
-      activeDeploymentId: null,
-    } as Parameters<typeof repos.project.createProjectWithRecords>[0]["project"],
-    services: cloning.map((row) => ({
-      sourceId: row.id,
-      row: {
-        ...omit(row, SERVICE_FIELDS_NOT_CLONED),
-        name: row.name,
-        // The hybrid — resolved mount names, namespacing off. See the module header.
-        volumes: (discoveredByName.get(row.name)?.volumes ?? [])
-          .map(mountToComposeString)
-          .filter((v): v is string => v !== null),
-        namespaceVolumes: false,
-      } as Parameters<typeof repos.project.createProjectWithRecords>[0]["services"][number]["row"],
-    })),
-    // Verbatim, ciphertext included. The instance's encryption key is unchanged, so a secret
-    // stays readable — and it MUST stay identical: the copy is handed a byte copy of the
-    // source's volume, so a re-generated database password would lock it out of its own data.
-    // Vars scoped to a service we are not cloning are dropped here (the repo refuses to
-    // silently promote them to project-level).
-    envVars: sourceEnv
-      .filter((v) => !v.serviceId || cloningIds.has(v.serviceId))
-      .map((v) => ({
-        sourceServiceId: v.serviceId ?? null,
-        key: v.key,
-        value: v.value,
-        environment: v.environment,
-        isSecret: v.isSecret ?? false,
+  const { project: created } = await withProjectCreationLock(input.organizationId, async () => {
+    await assertProjectQuota(input.organizationId);
+    const slug = await uniqueProjectSlug(input.organizationId, slugify(desiredName));
+    return repos.project.createProjectWithRecords({
+      group: {
+        organizationId: source.organizationId,
+        name: desiredName,
+        slug,
+        // Git identity follows the project: a duplicate of a repo-backed project is still backed
+        // by that repo, and its later redeploys should build from it.
+        gitProvider: source.gitProvider ?? undefined,
+        gitOwner: source.gitOwner ?? undefined,
+        gitRepo: source.gitRepo ?? undefined,
+        gitUrl: source.gitUrl ?? undefined,
+      },
+      project: {
+        ...omit(source, PROJECT_FIELDS_NOT_CLONED),
+        organizationId: source.organizationId,
+        name: desiredName,
+        slug,
+        serverId: input.targetServerId,
+        activeDeploymentId: null,
+      } as Parameters<typeof repos.project.createProjectWithRecords>[0]["project"],
+      services: cloning.map((row) => ({
+        sourceId: row.id,
+        row: {
+          ...omit(row, SERVICE_FIELDS_NOT_CLONED),
+          name: row.name,
+          // The hybrid — resolved mount names, namespacing off. See the module header.
+          volumes: (discoveredByName.get(row.name)?.volumes ?? [])
+            .map(mountToComposeString)
+            .filter((v): v is string => v !== null),
+          namespaceVolumes: false,
+        } as Parameters<typeof repos.project.createProjectWithRecords>[0]["services"][number]["row"],
       })),
+      // Verbatim, ciphertext included. The instance's encryption key is unchanged, so a secret
+      // stays readable — and it MUST stay identical: the copy is handed a byte copy of the
+      // source's volume, so a re-generated database password would lock it out of its own data.
+      // Vars scoped to a service we are not cloning are dropped here (the repo refuses to
+      // silently promote them to project-level).
+      envVars: sourceEnv
+        .filter((v) => !v.serviceId || cloningIds.has(v.serviceId))
+        .map((v) => ({
+          sourceServiceId: v.serviceId ?? null,
+          key: v.key,
+          value: v.value,
+          environment: v.environment,
+          isSecret: v.isSecret ?? false,
+        })),
+    });
   });
 
   return {

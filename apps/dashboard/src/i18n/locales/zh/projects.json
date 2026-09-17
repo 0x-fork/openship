@@ -135,8 +135,10 @@
       "health": "健康",
       "monitoring": "监控",
       "source": "源",
+      "sourceAndTriggers": "源与触发器",
       "webhooks": "Webhook",
       "runtime": "配置",
+      "settings": "设置",
       "logs": "日志",
       "backup": "备份",
       "advanced": "高级"
@@ -268,6 +270,7 @@
     "geoUnavailableBody": "边缘代理无法解析访客国家，因此地图为空。流量总计不受影响。",
     "noCountries": "该时间段暂无国家数据。",
     "statusesTitle": "响应",
+    "statusesOthers": "其他",
     "share": "{pct}%",
     "visitorDays": "访客人日",
     "peakDayTooltip": "最繁忙的单日：{peak}。回访访客每天计一次，因此总数为上限值。",
@@ -531,5 +534,5 @@
       "server_unreachable": "服务器不可达"
     }
   },
-  "migrationAwaitingHint": "迁移正在等待你处理 —— 在项目的「高级」标签页中完成切换或回滚"
+  "migrationAwaitingHint": "迁移正在等待你处理 —— 在项目的「设置 → 高级」中完成切换或回滚"
 }

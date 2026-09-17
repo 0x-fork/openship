@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   pageGet: vi.fn(), pageCreate: vi.fn(), pageDelete: vi.fn(), pageDisable: vi.fn(), pageDeploy: vi.fn(),
-  workspaceGet: vi.fn(), routes: vi.fn(), setRoutes: vi.fn(), spend: vi.fn(),
+  workspaceGet: vi.fn(), routes: vi.fn(), setRoutes: vi.fn(), spend: vi.fn(), pageList: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient: () => ({
   workspaces: { get: h.workspaceGet },
-  pages: { get: h.pageGet, create: h.pageCreate, delete: h.pageDelete, disable: h.pageDisable, deploy: h.pageDeploy },
+  pages: { list: h.pageList, get: h.pageGet, create: h.pageCreate, delete: h.pageDelete, disable: h.pageDisable, deploy: h.pageDeploy },
   domain: { routes: h.routes }, routes: { set: h.setRoutes },
 }) }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ assertCloudCanSpend: h.spend }));
@@ -21,6 +21,15 @@ beforeEach(() => {
   ] });
 });
 describe("admin-only cloud delegation", () => {
+  it("lists only this customer's Pages, resolving summaries before returning them", async () => {
+    h.pageList.mockResolvedValue({ success: true, pages: [{ slug: "own-page" },
+      { slug: "foreign-summary" }, { slug: "other-page", namespace: "ns-other" }] });
+    expect(await createTenantCloudAdmin("org-one", "ns-own").pages!.list()).toEqual({
+      success: true, pages: [{ slug: "own-page", namespace: "ns-own" }],
+    });
+    expect(h.pageGet).not.toHaveBeenCalledWith("other-page");
+    expect(h.spend).not.toHaveBeenCalled();
+  });
   it("rejects another customer's workspace before exporting a page", async () => {
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
     await expect(proxy.createPage({ workspace_id: "ws-other", path: "/app/dist", name: "test", slug: "test" })).rejects.toMatchObject({ statusCode: 404 });

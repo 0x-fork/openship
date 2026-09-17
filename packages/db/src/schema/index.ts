@@ -30,13 +30,23 @@ export { serverContainerStatus, type ServerContainerDetail } from "./server-cont
 export { edgeTargetVerification } from "./edge-target-verification";
 export { serviceIncident, INCIDENT_KINDS, type IncidentKind } from "./service-incident";
 export { cloudWebhookBinding } from "./cloud-webhook-binding";
+export { cloudDockerWorkspace } from "./cloud-docker-workspace";
 export { projectConnection } from "./project-connection";
 export { webhookDelivery } from "./webhook-delivery";
 export { service, serviceDeployment } from "./service";
 export { deploymentCheckRun } from "./deployment-check-run";
 export { userSettings, instanceSettings } from "./settings";
 export { servers } from "./servers";
-export { serverCluster, clusterNetwork, clusterMember, serverNetworkAttachment, clusterVerification } from "./server-cluster";
+export {
+  serverCluster,
+  clusterNetwork,
+  clusterMember,
+  serverNetworkAttachment,
+  clusterVerification,
+  managedNetworkOperation,
+  managedNetworkClaim,
+  managedNetworkPreparation,
+} from "./server-cluster";
 export { serverGithubAuth, githubDeployKey } from "./server-github";
 export { serverTunnels } from "./server-tunnel";
 export { mailServers, mailInboundRule } from "./mail";

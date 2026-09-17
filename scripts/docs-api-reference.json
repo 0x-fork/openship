@@ -960,6 +960,84 @@
       "description": "Read infrastructure availability, provider profiles, and supported network operations.",
       "route": "GET /api/system/clusters/capabilities"
     },
+    "servers.prepareManagedNetwork": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Prepare missing networking tools on selected servers, retain per-step logs, and produce a reviewable plan. Repeat the same request to retry a failed preparation.",
+      "route": "POST /api/system/clusters/network-preparations"
+    },
+    "servers.getManagedNetworkPreparation": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Read saved prerequisite checks, installation logs, failures, and the resulting network operation.",
+      "route": "GET /api/system/clusters/network-preparations/:preparationId"
+    },
+    "servers.discardManagedNetworkPreparation": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Discard stopped setup and its unapplied plan using the current progress sequence. Installed tools and servers are retained; completed network cleanup is required once apply has started.",
+      "route": "DELETE /api/system/clusters/network-preparations/:preparationId"
+    },
+    "servers.removeManagedNetworkPreparationMember": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Remove one server from stopped initial setup and save a paused replacement selection. Preparation starts only on explicit retry; diagnostics, services, data, and installed tools are retained.",
+      "route": "DELETE /api/system/clusters/network-preparations/:preparationId/members/:serverId"
+    },
+    "servers.removeManagedNetworkOperationMember": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Remove a server from an unfinished initial network operation. Restore its changes on the original hosts and save the remaining selection, paused until preparation is explicitly retried.",
+      "route": "DELETE /api/system/clusters/network-operations/:operationId/members/:serverId"
+    },
+    "servers.listManagedNetworkPreparations": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "List recent server preparations that still need attention or network review.",
+      "route": "GET /api/system/clusters/network-preparations"
+    },
+    "servers.managedNetworkPreparationEvents": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Subscribe to saved preparation snapshots and completion. Reconnecting only reads progress; it never restarts preparation.",
+      "route": "GET /api/system/clusters/network-preparations/:preparationId/stream"
+    },
+    "servers.managedNetworkOperationEvents": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Subscribe to durable network apply, verification, and recovery progress.",
+      "route": "GET /api/system/clusters/network-operations/:operationId/stream"
+    },
+    "servers.clusterEvents": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Subscribe to cluster overview and unfinished preparation snapshots.",
+      "route": "GET /api/system/clusters/stream"
+    },
+    "servers.planManagedNetwork": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Inspect servers and persist a reviewable WireGuard plan without changing host networking.",
+      "route": "POST /api/system/clusters/network-plans"
+    },
+    "servers.getManagedNetworkOperation": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Read a managed network plan, per-host progress, verification, and recovery state.",
+      "route": "GET /api/system/clusters/network-operations/:operationId"
+    },
+    "servers.applyManagedNetwork": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Apply an approved network plan, resume an interrupted operation, or restore its previous network.",
+      "route": "POST /api/system/clusters/network-operations/:operationId/apply"
+    },
+    "servers.discardManagedNetworkPlan": {
+      "page": "servers",
+      "section": "Server clusters and private networking",
+      "description": "Discard an unapplied plan and its stopped preparation atomically. Active or unresolved host changes must be recovered through the network operation.",
+      "route": "DELETE /api/system/clusters/network-operations/:operationId"
+    },
     "servers.listClusters": {
       "page": "servers",
       "section": "Server clusters and private networking",
@@ -981,19 +1059,19 @@
     "servers.updateCluster": {
       "page": "servers",
       "section": "Server clusters and private networking",
-      "description": "Update an idle cluster using its current revision; invalidate earlier verification.",
+      "description": "Update an idle native-network cluster using its current revision; invalidate earlier verification.",
       "route": "PATCH /api/system/clusters/:id"
     },
     "servers.verifyCluster": {
       "page": "servers",
       "section": "Server clusters and private networking",
-      "description": "Start or reuse a bounded private TCP, UDP, and MTU verification run.",
+      "description": "Verify private connectivity, latency, and loss; optionally measure bounded throughput for a selected pair.",
       "route": "POST /api/system/clusters/:id/verify"
     },
     "servers.removeCluster": {
       "page": "servers",
       "section": "Server clusters and private networking",
-      "description": "Remove cluster inventory at the current revision, preserving servers and external networks.",
+      "description": "Remove native-network cluster inventory at the current revision, preserving servers and external networks.",
       "route": "DELETE /api/system/clusters/:id"
     },
     "servers.inspectNetwork": {

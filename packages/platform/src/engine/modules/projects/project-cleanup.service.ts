@@ -14,6 +14,7 @@
 import { repos, type Project, type Deployment } from "@repo/db";
 import {
   DockerRuntime,
+  CloudDockerRuntime,
   edgeProxyFor,
   ownsBuiltImage,
   type EdgeProxyApi,
@@ -38,6 +39,7 @@ import { resolveLiveServiceState, type LiveMatchKind } from "../services/live-st
 import type { HostPortTargetIdentity } from "../../lib/host-port-target";
 import { connectionHostPortTargetKey } from "../../lib/host-port-target";
 import { convergeTargetHostPortClaims } from "../deployments/pinned-host-ports";
+import { cloudDockerWorkspaceForCleanup } from "../../lib/cloud-docker-workspace";
 
 /** Identity keys a DELETE may act on: each one proves the container is this
  *  project's. Deliberately excludes `compose` (see ResolveLiveStateInput.tiers). */
@@ -108,6 +110,8 @@ export interface CleanupManifest {
    * deletion while its database row disappears.
    */
   routeContexts?: CleanupRouteContext[];
+  /** Provider edge ownership can be cleaned while the workspace is stopped. */
+  cloudRouteContexts?: Array<Pick<CleanupRouteContext, "key" | "routing">>;
   /**
    * Historical targets that are known to exist but could not be reached while
    * collecting the manifest. They deliberately carry no live adapter. Teardown
@@ -184,6 +188,8 @@ export async function collectProjectManifest(
 ): Promise<CleanupManifest> {
   const wipeVolumes = options.wipeVolumes ?? false;
   const resources: CleanupResource[] = [];
+  const dockerBinding = await cloudDockerWorkspaceForCleanup(project.id, project.organizationId);
+  const cloudWorkspaceId = dockerBinding?.workspaceId ?? project.cloudWorkspaceId;
   const services = await repos.service.listByProject(project.id);
   const seenContainers = new Set<string>();
   const seenVolumes = new Set<string>();
@@ -199,6 +205,7 @@ export async function collectProjectManifest(
     }
   };
   const routeContexts = new Map<string, CleanupRouteContext>();
+  const cloudRouteContexts: Array<Pick<CleanupRouteContext, "key" | "routing">> = [];
   const unreachableRouteTargets = new Map<string, CleanupUnreachableRouteTarget>();
   const unreachableSweeps = new Map<
     string,
@@ -245,7 +252,7 @@ export async function collectProjectManifest(
         (resolved.serverId
           ? `server:${resolved.serverId}`
           : runtimeMode === "cloud"
-            ? `cloud:${dep.containerId ?? ((dep.meta ?? {}) as DeploymentMeta).workspaceId ?? dep.id}`
+            ? `cloud:${((dep.meta ?? {}) as DeploymentMeta).cloudDockerWorkspace?.workspaceId ?? dep.containerId ?? ((dep.meta ?? {}) as DeploymentMeta).workspaceId ?? dep.id}`
             : `local:${runtimeMode}`),
       serverId: resolved.serverId,
       runtimeMode,
@@ -400,6 +407,16 @@ export async function collectProjectManifest(
   };
 
   for (const dep of allDeps) {
+    const dockerHost = (dep.meta as DeploymentMeta | null)?.cloudDockerWorkspace;
+    if (dockerHost) {
+      if (dockerHost.projectId !== project.id || dockerHost.workspaceId !== dockerBinding?.workspaceId) {
+        throw new Error("Cloud Docker cleanup target does not match the project's owned workspace");
+      }
+      // Full project teardown removes the VM and its entire disk after its
+      // routes. Individual Docker deletes add no coverage, and would require
+      // starting a VM that billing or the customer deliberately stopped.
+      continue;
+    }
     // Fast-fail: if this deployment targets a server that's UNREACHABLE right
     // now, do NOT resolve/exec against it — that's the source of the ~81s
     // delete hang (each container destroy waits out a 15-20s SSH timeout).
@@ -698,39 +715,49 @@ export async function collectProjectManifest(
   // tears the workspace down on Oblien — fixes "deleted locally but still
   // live on Openship Cloud". De-duped against any deployment container that
   // already covers it.
-  const cloudWorkspaceTarget: CollectedTarget | null = project.cloudWorkspaceId
+  const cloudWorkspaceTarget: CollectedTarget | null = cloudWorkspaceId
     ? {
-        key: `cloud:${project.cloudWorkspaceId}`,
+        key: `cloud:${cloudWorkspaceId}`,
         serverId: null,
         runtimeMode: "cloud",
       }
     : null;
   if (
-    project.cloudWorkspaceId &&
+    cloudWorkspaceId &&
     cloudWorkspaceTarget &&
-    !seenContainers.has(resourceKey(cloudWorkspaceTarget, project.cloudWorkspaceId))
+    !seenContainers.has(resourceKey(cloudWorkspaceTarget, cloudWorkspaceId))
   ) {
     try {
+      if (dockerBinding) {
+        const resolved = await resolveDeploymentPlatform({ deployTarget: "cloud",
+          cloudDockerWorkspace: { projectId: project.id, workspaceId: cloudWorkspaceId },
+        }, { organizationId: project.organizationId });
+        const docker = resolved.platform.runtime;
+        resolvedRuntimes.add(docker);
+        if (!(docker instanceof CloudDockerRuntime)) throw new Error("Cloud Docker cleanup resolved to an unexpected runtime");
+        cloudRouteContexts.push({ key: `cloud:${cloudWorkspaceId}`, routing: resolved.platform.routing });
+        for (const hostname of await docker.listProjectRouteHostnames()) pushRoute(hostname, `cloud route ${hostname}`);
+      }
       // BOUNDED: this resolution mints a cloud token (cloudFetch, no native
       // timeout). Without withTimeout a cloud-side hang would stall manifest
       // collection while the teardown holds the deletion lock — the same hang
       // class the SSH paths above are bounded against.
       const { platform: cloudPlatform } = await withTimeout(
         resolveDeploymentPlatform(
-          { deployTarget: "cloud", workspaceId: project.cloudWorkspaceId },
+          { deployTarget: "cloud", workspaceId: cloudWorkspaceId },
           { organizationId: project.organizationId },
         ),
         INSPECT_TIMEOUT_MS,
-        `resolve cloud workspace ${project.cloudWorkspaceId}`,
+        `resolve cloud workspace ${cloudWorkspaceId}`,
       );
       // Guard against a non-cloud base resolving to local/server (a pure
       // self-hosted project never has a cloud workspace anyway).
       if (cloudPlatform.runtime.name === "cloud") {
-        seenContainers.add(resourceKey(cloudWorkspaceTarget, project.cloudWorkspaceId));
+        seenContainers.add(resourceKey(cloudWorkspaceTarget, cloudWorkspaceId));
         resources.push({
           type: "cloud_workspace",
-          ref: project.cloudWorkspaceId,
-          label: `cloud workspace ${project.cloudWorkspaceId}`,
+          ref: cloudWorkspaceId,
+          label: `cloud workspace ${cloudWorkspaceId}`,
           runtime: cloudPlatform.runtime,
           ...targetFields(cloudWorkspaceTarget),
         });
@@ -741,6 +768,10 @@ export async function collectProjectManifest(
         );
       }
     } catch (err) {
+      if (dockerBinding) {
+        for (const opened of resolvedRuntimes) disposeRuntime(opened);
+        throw new Error(`Cloud Docker cleanup could not confirm its workspace and route ownership: ${safeErrorMessage(err)}`);
+      }
       // Two very different failures land here — distinguish them like the
       // gone-server branch above:
       //   • PERMANENT (org has no Openship Cloud link → owner unlinked/never
@@ -761,8 +792,8 @@ export async function collectProjectManifest(
       } else {
         resources.push({
           type: "unreachable",
-          ref: project.cloudWorkspaceId,
-          label: `cloud workspace ${project.cloudWorkspaceId} (cloud unreachable)`,
+          ref: cloudWorkspaceId,
+          label: `cloud workspace ${cloudWorkspaceId} (cloud unreachable)`,
           runtime: null,
           runtimeMode: "cloud",
         });
@@ -815,7 +846,7 @@ export async function collectProjectManifest(
   const TYPE_ORDER: Record<CleanupResource["type"], number> = {
     container: 0,
     artifact: 0,
-    cloud_workspace: 0,
+    cloud_workspace: 5,
     unreachable: 0,
     image: 1,
     route: 2,
@@ -830,6 +861,7 @@ export async function collectProjectManifest(
     resources,
     runtimes: [...resolvedRuntimes],
     routeContexts: [...routeContexts.values()],
+    cloudRouteContexts,
     unreachableRouteTargets: [...unreachableRouteTargets.values()],
   };
 }
@@ -862,7 +894,8 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
     string,
     { containerId: string; runtime: RuntimeAdapter }
   >();
-
+  const openedRuntimes = new Set<RuntimeAdapter>();
+  try {
   for (const dep of allDeps) {
     let runtime: RuntimeAdapter;
     try {
@@ -870,11 +903,11 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
     } catch {
       continue;
     }
-    // Only the runtime's KIND is read here (nothing is executed against it), so
-    // release the transport immediately rather than at the end of the loop.
-    disposeRuntime(runtime);
+    // Later volume/container probes use this transport too. Keep it alive
+    // through the preview and release every opened runtime on all exit paths.
+    openedRuntimes.add(runtime);
     if (runtime instanceof DockerRuntime) {
-      selfHosted = true;
+      selfHosted = selfHosted || runtime.name !== "cloud";
       networkSlugs.add(project.slug);
     } else if (!(runtime instanceof DockerRuntime)) {
       // Bare runtime is also self-hosted; only the cloud adapter is "managed."
@@ -959,6 +992,9 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
     networks: Array.from(networkSlugs).map((slug) => `openship-${slug}`),
     totalVolumes,
   };
+  } finally {
+    for (const runtime of openedRuntimes) disposeRuntime(runtime);
+  }
 }
 
 export interface DeploymentCleanupOpts {
@@ -1097,11 +1133,12 @@ export async function collectDeploymentManifest(
 const DEFAULT_CONCURRENCY = 6;
 const RETRY_DELAY_MS = 2000;
 const CLEANUP_PHASES: ReadonlyArray<ReadonlySet<CleanupResource["type"]>> = [
-  new Set(["container", "cloud_workspace", "unreachable"]),
+  new Set(["container", "unreachable"]),
   new Set(["artifact", "image"]),
   new Set(["route"]),
   new Set(["volume"]),
   new Set(["network"]),
+  new Set(["cloud_workspace"]),
 ];
 
 /**
@@ -1147,8 +1184,8 @@ export async function executeCleanup(
   // migration. Remove its vhosts from each reachable target. Falling back to
   // the process edge preserves cleanup for old manifests with no target context.
   const routeContexts =
-    manifest.routeContexts && manifest.routeContexts.length > 0
-      ? manifest.routeContexts
+    (manifest.routeContexts?.length ?? 0) + (manifest.cloudRouteContexts?.length ?? 0) > 0
+      ? [...(manifest.routeContexts ?? []), ...(manifest.cloudRouteContexts ?? [])]
       : (manifest.unreachableRouteTargets?.length ?? 0) > 0
         ? []
         : [
@@ -1345,7 +1382,8 @@ async function destroyResourceOnce(
       // Do not deregister the public managed hostname while a physical target
       // still failed and the project row is therefore staying alive. The retry
       // will release it after every target has converged.
-      if (organizationId && failures.length === 0) {
+      const providerOwnsRelease = routeContexts.length > 0 && routeContexts.every(context => context.key.startsWith("cloud:"));
+      if (organizationId && failures.length === 0 && !providerOwnsRelease) {
         try {
           const released = await releaseManagedHostnames([resource.ref], { organizationId });
           if (released.failures.length > 0) {

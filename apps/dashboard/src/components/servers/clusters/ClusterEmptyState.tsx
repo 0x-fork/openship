@@ -20,18 +20,19 @@ export function ClusterEmptyState({
   const c = t.servers.clusters;
   const isNetworks = view === "networks";
   const Illustration = isNetworks ? PrivateNetworkIllustration : ServerClusterIllustration;
+  const Heading = isNetworks ? "h3" : "h2";
 
   return (
     <div className="px-4 py-12 text-center sm:py-16">
       <Illustration className="mb-8" />
-      <h3 className="text-2xl font-medium tracking-tight text-foreground/80">
-        {isNetworks ? c.networksEmptyTitle : c.emptyTitle}
-      </h3>
+      <Heading className="text-2xl font-medium tracking-tight text-foreground/80">
+        {isNetworks ? c.networksEmptyTitle : c.listTitle}
+      </Heading>
       <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground/70">
         {isNetworks
           ? c.networksEmptyDescription
           : canManage
-            ? c.emptyDescription
+            ? c.listDescription
             : c.managePermissionRequired}
       </p>
       {(isNetworks || canManage) && (

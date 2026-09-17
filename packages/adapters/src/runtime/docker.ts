@@ -1059,7 +1059,7 @@ export function parseContainerEventLine(line: string): ContainerLifecycleEvent |
 // ─── Docker runtime ──────────────────────────────────────────────────────────
 
 export class DockerRuntime implements RuntimeAdapter {
-  readonly name = "docker";
+  readonly name: string = "docker";
   readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
     "build",
     "prebuiltImage",
@@ -1089,6 +1089,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // A docker exec lands in the container's own namespaces, so a command run
     // through it cannot reach the host. Bare deliberately does NOT declare this.
     "isolatedExec",
+    "dockerHost",
   ]);
 
   /** Docker honors every extended compose key we currently support. */
@@ -1105,7 +1106,7 @@ export class DockerRuntime implements RuntimeAdapter {
   readonly transport: DockerTransport;
   private readonly systemManager: DockerSystemManager | null;
   private readonly provisionLock?: ProvisionLock;
-  private constructor(
+  protected constructor(
     opts?: DockerConnectionOptions,
     systemManager?: DockerSystemManager | null,
     provisionLock?: ProvisionLock,
@@ -1127,15 +1128,19 @@ export class DockerRuntime implements RuntimeAdapter {
     provisionLock?: ProvisionLock,
   ): Promise<DockerRuntime> {
     const runtime = new DockerRuntime(opts, systemManager, provisionLock);
-    runtime._docker = new Dockerode(await runtime.transport.establish());
+    await runtime.initializeDocker();
+    return runtime;
+  }
+
+  protected async initializeDocker(): Promise<void> {
+    this._docker = new Dockerode(await this.transport.establish());
     // dockerode opens BuildKit's reverse h2c session through `node:http`; Bun
     // rejects Docker's 101 response as UnrequestedUpgrade (#745). Keep
     // dockerode's gRPC session implementation, but carry that one upgrade over
     // the raw daemon connection just like service exec/attach already do.
     if ((process.versions as NodeJS.ProcessVersions & { bun?: string }).bun) {
-      installDockerodeBuildKitSessionWorkaround(runtime._docker);
+      installDockerodeBuildKitSessionWorkaround(this._docker);
     }
-    return runtime;
   }
 
   supports(cap: RuntimeCapability): boolean {
@@ -1716,7 +1721,7 @@ export class DockerRuntime implements RuntimeAdapter {
    * (`config.gitCredentialHelperPath` — plain URL, nothing persisted) when set,
    * else `injectGitToken(...)`. Strips `.git` so it never ships into the image.
    */
-  private async cloneSourceOnRemote(
+  protected async cloneSourceOnRemote(
     config: BuildConfig,
     remoteContextDir: string,
     log: BuildLogger,
@@ -2351,7 +2356,7 @@ export class DockerRuntime implements RuntimeAdapter {
    * and stays as the fallback.
    */
   private async verifyImageBuilt(tag: string): Promise<void> {
-    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
     try {
       if (executor) {
         await executor.exec(`docker image inspect ${sq(tag)} >/dev/null`);
@@ -2390,7 +2395,7 @@ export class DockerRuntime implements RuntimeAdapter {
         throw new Error(this.formatDockerConnectivityError(featureErr));
       }
 
-      const sshExecutor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+      const sshExecutor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
 
       // ── Clone-on-server path ───────────────────────────────────────────
       // Clone the repo ON the remote host and build there — no local clone and
@@ -2617,7 +2622,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // The builder's own output dir, resolved by the SAME helper the recipe used, so
     // the extractor can never read a different path than the build wrote.
     const docRoot = staticBuilderOutputPath(config);
-    const sshExecutor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    const sshExecutor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
     // Name the path: when extraction fails, "which directory was it reading" is the
     // first question, and it's the one thing the old failure never said.
     log.log(`Moving built files out of the build container (${docRoot})...\n`);
@@ -3061,7 +3066,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // Every service in a compose/monorepo build shares ONE repo+branch+commit,
     // so the first spec's source config drives the single clone.
     const source = specs[0]!.config;
-    const isSsh = this.transport.kind === "ssh" && !!this.connectionOptions?.executor;
+    const isSsh = (this.transport.kind === "ssh" || this.transport.kind === "cloud") && !!this.connectionOptions?.executor;
     const cloneOnServer = isSsh && !!source.cloneOnServer;
     const remoteContextDir = `/tmp/openship-build-${source.sessionId}`;
 
@@ -3432,7 +3437,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // working. Kill whatever is running in this session's private context dirs,
     // sharing BareRuntime's sweep. A no-op for local/TCP runtimes and when the
     // command has already exited.
-    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : undefined;
+    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : undefined;
     if (executor) {
       await killProcessesUnderDir(executor, `/tmp/openship-build-${sessionId}`, {
         includeSuffixed: true,
@@ -3669,7 +3674,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // most — the old `.catch(() => {})` made an artifact destroy incapable of
     // failing, so teardown reported success over a directory still on disk.
     if (isArtifactPathRef(containerId)) {
-      if (this.transport.kind === "ssh") {
+      if ((this.transport.kind === "ssh" || this.transport.kind === "cloud")) {
         const executor = this.connectionOptions?.executor;
         // Falling through to node:fs on an SSH transport removed the path on the
         // ORCHESTRATOR's filesystem — the wrong machine — and reported success.
@@ -4162,7 +4167,7 @@ export class DockerRuntime implements RuntimeAdapter {
    *  image (must be transferred cross-server) from a registry tag (the target
    *  just pulls it). */
   async imageExistsLocally(ref: string): Promise<boolean> {
-    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
     if (executor) {
       const out = await executor
         .exec(`docker image inspect ${sq(ref)} >/dev/null 2>&1 && echo yes || true`)
@@ -4190,7 +4195,7 @@ export class DockerRuntime implements RuntimeAdapter {
   async saveImage(
     ref: string,
   ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
-    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
     if (executor?.rawExec) {
       const { stdout, stderr, onClose } = await executor.rawExec(`docker save ${sq(ref)}`);
       let stderrBuf = "";
@@ -4219,7 +4224,7 @@ export class DockerRuntime implements RuntimeAdapter {
    * differs from the source ref — tagging by the source id would fail.
    */
   async loadImage(body: Readable): Promise<string | undefined> {
-    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
     if (executor?.execWithInput) {
       const { code, stderr, stdout } = await executor.execWithInput(`docker load`, body);
       if (code !== 0)
@@ -4248,7 +4253,7 @@ export class DockerRuntime implements RuntimeAdapter {
    */
   async tagImage(source: string, target: string): Promise<void> {
     if (source === target) return;
-    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
     if (executor) {
       await executor.exec(`docker tag ${sq(source)} ${sq(target)}`);
       return;

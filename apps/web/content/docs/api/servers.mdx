@@ -160,14 +160,14 @@ Start / stop / delete a saved tunnel with `POST .../tunnels/:tunnelId/start`, `.
 ## Server clusters and private networking
 
 On a self-hosted OpenShip instance, clusters group 2–16 registered Linux
-servers on an **already configured private IPv4 network**. Read
+servers on an existing private IPv4 network or a managed WireGuard mesh. Read
 `ship.servers.clusterCapabilities()` for the available provider profiles and your
 management permissions. Local and desktop self-hosted controllers support
 cluster inventory and manual network checks. Oblien-managed Cloud does not offer
 cluster management. Future continuous reconciliation requires an always-on
 self-hosted controller.
 
-Create saves configuration; verify starts a separate, persisted operation.
+For existing networks, create saves configuration; verify starts a separate, persisted operation.
 Reuse the same `requestId` when retrying an unchanged creation request. Update,
 verify, and remove require the cluster's current `revision`. Concurrent edits
 return a conflict, and active verification blocks configuration changes.
@@ -194,8 +194,12 @@ const verification = await ship.servers.verifyCluster({
 console.log(verification.id, verification.status);
 ```
 
-Poll `ship.servers.getCluster({ clusterId })` to read progress and per-direction
-TCP, UDP, and MTU results. Hosts need Linux, Python 3, iproute2, a persistent
+Subscribe to the read-only SSE endpoint `GET /api/system/clusters/stream` for
+verification progress, including after reconnecting. Use
+`ship.servers.getCluster({ clusterId })` to read a saved snapshot. Reports contain
+per-direction TCP, UDP, MTU, UDP round-trip latency, packet loss, and jitter
+results. Managed WireGuard reports also contain per-peer handshake observations.
+Hosts need Linux, Python 3, iproute2, a persistent
 machine identity, and working private interfaces and routes. The chosen probe
 port must permit TCP and UDP between members. The inspector
 `ship.servers.inspectNetwork(serverId)` reads interfaces without configuring them.
@@ -206,13 +210,162 @@ successful observations are considered stale after fifteen minutes. The probe
 tests its selected port and packet size. Encryption and application-port access
 are not verified.
 
+After a verification has finished, optionally measure a selected connection in
+both directions using the same endpoint:
+
+```ts
+const cluster = await ship.servers.getCluster({ clusterId: "cluster_id" });
+const speedTest = await ship.servers.verifyCluster({
+  clusterId: cluster.id,
+  revision: cluster.revision,
+  speedTest: { sourceServerId: "srv_a", targetServerId: "srv_b" },
+});
+```
+
+Speed tests first check connectivity, then transfer at most 32 MiB or for three
+seconds per direction. `report.throughput` records receiver-confirmed bytes,
+elapsed time, and Mbps, or a specific transfer error. Ordinary verification does
+not send bulk traffic. Both servers must belong to the cluster; a different test
+cannot start while a verification is active. Repeating an active request for the
+same pair reuses its run. Progress and final results use the same SSE stream.
+
 Cluster reads require fleet-wide server read access. Management requires
 fleet-wide server admin access, with each member also authorized. Removing a
-cluster removes its inventory records; servers and externally managed networks
-remain. A member must leave the cluster before its server entry can be removed.
-Clusters are not yet deployment targets. Provider provisioning, host network
-configuration, WireGuard, private service endpoints, and replicas are separate
-capabilities that this initial adoption workflow does not expose.
+native cluster removes its inventory records; servers and externally managed
+networks remain. Managed networks use the reviewed cleanup flow below. A member
+must leave its cluster and settle any operation before its server entry can be
+removed. Clusters are not yet deployment targets. Provider API/VLAN provisioning,
+private service endpoints, placement/replicas, and shared storage remain separate
+capabilities.
+
+### Managed private networks
+
+Managed networking creates an encrypted WireGuard mesh with automatically
+allocated private addresses. Start server preparation to check infrastructure,
+install missing tools, and create a reviewable plan:
+
+```ts
+const preparation = await ship.servers.prepareManagedNetwork({
+  requestId: crypto.randomUUID(),
+  name: "Production mesh",
+  members: [
+    { serverId: "srv_a", providerId: "hetzner-dedicated" },
+    { serverId: "srv_b", providerId: "custom" },
+  ],
+});
+console.log(preparation.id, preparation.status, preparation.hosts);
+
+for await (const event of ship.servers.managedNetworkPreparationEvents(preparation.id)) {
+  if (event.event === "snapshot") {
+    const { run } = JSON.parse(event.data);
+    console.log(run.sequence, run.status, run.hosts);
+  }
+}
+```
+
+The subscription sends a complete saved `snapshot` on connect and whenever progress
+changes, then `complete` before closing for a settled attempt. The dashboard reconnects
+with backoff after a dropped connection. SDK callers can reattach using the same
+method; a reconnect never starts work. Replace local state with each snapshot instead
+of appending its logs. The monotonic `sequence` also protects against late responses.
+
+`ship.servers.getManagedNetworkPreparation({ preparationId })` remains available for
+a single saved-state read. When its status is `ready`, use its `operationId` to
+read the network plan. Retry a failed or interrupted preparation by calling
+`prepareManagedNetwork` with the same input and request ID. Already healthy tools
+are checked and reused. `listManagedNetworkPreparations()` lists recent work that
+still needs attention or review. No tunnel changes start during preparation.
+
+To discard a stopped preparation, call
+`discardManagedNetworkPreparation({ preparationId, sequence })` with its latest
+progress sequence. An unapplied plan can be discarded with
+`discardManagedNetworkPlan({ operationId, planHash })`. Both require fleet
+administration. The preparation and any unapplied plan close in one transaction
+and disappear from pending setup; existing servers, services, and installed tools
+are retained. Cancelled records remain readable for diagnostics and prevent late
+retries from reviving discarded work. Active preparation must finish first.
+
+To remove one server from an unfinished **initial cluster setup**, call
+`removeManagedNetworkPreparationMember({ preparationId, serverId, sequence, requestId })`.
+For an initial network operation, use
+`removeManagedNetworkOperationMember({ operationId, serverId, sequence, planHash, requestId })`.
+At least two servers must remain. Use a new UUID for `requestId`, then reuse it if
+the response is lost. A different selection requires a different request.
+Both methods require fleet administration and return `{ preparation, operation }`.
+The original records link to the replacement through `replacementPreparationId`;
+settings and diagnostics remain available, and the original request cannot resume.
+
+Before network apply, removal cancels the old selection and saves the remaining
+servers in a paused (`pending`) preparation. After a partial apply, it also has a
+`cleanupOperationId`. OpenShip reuses rollback to restore this attempt's network
+changes on **all original hosts**, including peer entries for the removed server.
+The server, its workloads, disks, other networks, and shared installed tools remain.
+The pending preparation stream stays open while cleanup runs; subscribe to the
+cleanup operation for per-host progress. An unreachable or externally modified
+host keeps cleanup and reservations open. Retry that operation with
+`action: "rollback"` after resolving the problem. Once all hosts acknowledge
+rollback, preparation remains paused. Explicitly call `prepareManagedNetwork` with
+the replacement's saved input to retry; it rejects the request until cleanup is
+complete. Removal, cleanup retries, and stream reconnection do not start preparation.
+The resulting network plan always requires a fresh review and apply.
+Established clusters use their existing reviewed membership-change workflow.
+
+For hosts that already meet the prerequisites, `planManagedNetwork` accepts the
+same input and performs read-only inspection without installing packages.
+
+After review, pass that operation ID and hash to
+`ship.servers.applyManagedNetwork({ operationId, planHash, action: "apply" })`.
+Plans expire after fifteen minutes and reject changes to the cluster revision,
+host identities, or inspected networking. Subscribe with
+`ship.servers.managedNetworkOperationEvents(operationId)` for durable progress;
+`getManagedNetworkOperation({ operationId })` provides a single state read.
+The same operation supports `action: "resume"` or `action: "rollback"` after an
+interruption. Active work is idempotent and cannot be started twice.
+Once network changes have started, discard is blocked. Use `action: "rollback"`
+to clean up an unfinished new cluster or restore an existing cluster's previous
+network. Every host must acknowledge cleanup before inventory and reservations
+are released. An unreachable host keeps recovery open; retry rollback when access
+is restored. A restored existing cluster can then use the reviewed removal flow.
+
+`ship.servers.clusterEvents()` streams overview snapshots containing `clusters` and
+`preparations`. All three subscription methods accept `{ signal }` to disconnect a
+viewer without cancelling setup. Streams use saved database state, validate fleet
+read permission again during the subscription, and reconcile every fifteen seconds
+to detect another controller's updates and expired worker leases.
+
+Hosts require Linux with WireGuard kernel support, Python 3.8+, iproute2, systemd,
+and root or passwordless sudo. Preparation automatically installs missing
+Python 3.8+, iproute2 (4.15+), and WireGuard tools (1.0+) through the shared toolchain.
+It verifies installation before inspection. Kernel, init-system, and privilege
+problems stop at a named step; OpenShip does not replace kernels or reboot hosts.
+Installed tools remain installed if the later network operation rolls back. Supported
+firewalls are no active host firewall, raw iptables, or nftables with standard
+`inet filter input/output` chains and no additional filtering IPv4 input/output
+base chains. UFW, firewalld, and unsupported nftables layouts fail inspection.
+Provider firewalls must allow the reviewed transport ports (default 51820/UDP).
+Transport uses reachable IPv4 endpoints with no relay or automatic NAT traversal.
+IPv6 SSH management works when explicit IPv4 transport endpoints are supplied.
+Preparation checks local prerequisites and routes; it does not prove UDP access
+between hosts. After Apply, the `transport` step stages WireGuard endpoints and
+owned host firewall rules. The `handshake` step tests every peer before `configure`
+assigns private addresses and routes. Failures retain per-peer endpoints and ports
+and restore the previous configuration. Provider firewall or NAT changes require
+administrator action before an explicit retry.
+
+Private keys stay on their hosts. Each host has a persistent twenty-minute
+rollback timer, so incomplete setup can restore even if the controller disconnects
+or the host reboots. OpenShip changes only its own interface, peer routes, and
+firewall rules. The transport stage uses the same receipt and rollback timer;
+successful promotion preserves the verified interface and keys. Handshakes and
+every directed TCP/UDP/MTU check must succeed before
+commit. Committed networking restarts locally without the controller. Unreachable
+or externally edited hosts retain their claims until recovery is confirmed.
+
+For managed edits, include `clusterId` and `revision` in a new plan. Membership,
+transport endpoints/ports, MTU, and `rotateKeys` can change; existing addresses and
+the allocated subnet remain stable. To remove a managed cluster, plan with
+`intent: "remove"` and review its host cleanup before applying. These network
+operations do not drain workloads or migrate their data.
 
 ## Operations
 
@@ -270,12 +423,25 @@ capabilities that this initial adoption workflow does not expose.
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | Read infrastructure availability, provider profiles, and supported network operations. | `servers.clusterCapabilities()` | `GET /api/system/clusters/capabilities`<br />`Handler authentication` · Self-hosted |
+| Prepare missing networking tools on selected servers, retain per-step logs, and produce a reviewable plan. Repeat the same request to retry a failed preparation. | `servers.prepareManagedNetwork(input)` | `POST /api/system/clusters/network-preparations`<br />`Handler authentication` · Self-hosted |
+| Read saved prerequisite checks, installation logs, failures, and the resulting network operation. | `servers.getManagedNetworkPreparation(input)` | `GET /api/system/clusters/network-preparations/:preparationId`<br />`Handler authentication` · Self-hosted |
+| Discard stopped setup and its unapplied plan using the current progress sequence. Installed tools and servers are retained; completed network cleanup is required once apply has started. | `servers.discardManagedNetworkPreparation(input)` | `DELETE /api/system/clusters/network-preparations/:preparationId`<br />`Handler authentication` · Self-hosted |
+| Remove one server from stopped initial setup and save a paused replacement selection. Preparation starts only on explicit retry; diagnostics, services, data, and installed tools are retained. | `servers.removeManagedNetworkPreparationMember(input)` | `DELETE /api/system/clusters/network-preparations/:preparationId/members/:serverId`<br />`Handler authentication` · Self-hosted |
+| Remove a server from an unfinished initial network operation. Restore its changes on the original hosts and save the remaining selection, paused until preparation is explicitly retried. | `servers.removeManagedNetworkOperationMember(input)` | `DELETE /api/system/clusters/network-operations/:operationId/members/:serverId`<br />`Handler authentication` · Self-hosted |
+| List recent server preparations that still need attention or network review. | `servers.listManagedNetworkPreparations()` | `GET /api/system/clusters/network-preparations`<br />`Handler authentication` · Self-hosted |
+| Subscribe to saved preparation snapshots and completion. Reconnecting only reads progress; it never restarts preparation. | `servers.managedNetworkPreparationEvents(id, options?)` | `GET /api/system/clusters/network-preparations/:preparationId/stream`<br />`Handler authentication` · Self-hosted |
+| Subscribe to durable network apply, verification, and recovery progress. | `servers.managedNetworkOperationEvents(id, options?)` | `GET /api/system/clusters/network-operations/:operationId/stream`<br />`Handler authentication` · Self-hosted |
+| Subscribe to cluster overview and unfinished preparation snapshots. | `servers.clusterEvents(options?)` | `GET /api/system/clusters/stream`<br />`Handler authentication` · Self-hosted |
+| Inspect servers and persist a reviewable WireGuard plan without changing host networking. | `servers.planManagedNetwork(input)` | `POST /api/system/clusters/network-plans`<br />`Handler authentication` · Self-hosted |
+| Read a managed network plan, per-host progress, verification, and recovery state. | `servers.getManagedNetworkOperation(input)` | `GET /api/system/clusters/network-operations/:operationId`<br />`Handler authentication` · Self-hosted |
+| Apply an approved network plan, resume an interrupted operation, or restore its previous network. | `servers.applyManagedNetwork(input)` | `POST /api/system/clusters/network-operations/:operationId/apply`<br />`Handler authentication` · Self-hosted |
+| Discard an unapplied plan and its stopped preparation atomically. Active or unresolved host changes must be recovered through the network operation. | `servers.discardManagedNetworkPlan(input)` | `DELETE /api/system/clusters/network-operations/:operationId`<br />`Handler authentication` · Self-hosted |
 | List organization-owned server clusters and their latest verification. | `servers.listClusters()` | `GET /api/system/clusters`<br />`Handler authentication` · Self-hosted |
 | Read a cluster, its private network attachments, and verification report. | `servers.getCluster(input)` | `GET /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
 | Save a cluster on an existing private network using an idempotent request ID. | `servers.createCluster(input)` | `POST /api/system/clusters`<br />`Handler authentication` · Self-hosted |
-| Update an idle cluster using its current revision; invalidate earlier verification. | `servers.updateCluster(input)` | `PATCH /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
-| Start or reuse a bounded private TCP, UDP, and MTU verification run. | `servers.verifyCluster(input)` | `POST /api/system/clusters/:id/verify`<br />`Handler authentication` · Self-hosted |
-| Remove cluster inventory at the current revision, preserving servers and external networks. | `servers.removeCluster(input)` | `DELETE /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
+| Update an idle native-network cluster using its current revision; invalidate earlier verification. | `servers.updateCluster(input)` | `PATCH /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
+| Verify private connectivity, latency, and loss; optionally measure bounded throughput for a selected pair. | `servers.verifyCluster(input)` | `POST /api/system/clusters/:id/verify`<br />`Handler authentication` · Self-hosted |
+| Remove native-network cluster inventory at the current revision, preserving servers and external networks. | `servers.removeCluster(input)` | `DELETE /api/system/clusters/:id`<br />`Handler authentication` · Self-hosted |
 | Inspect a server’s machine identity and private interfaces without changing its network. | `servers.inspectNetwork(id)` | `POST /api/system/servers/:id/network/inspect`<br />`server:admin` · Self-hosted |
 
 ### Git credentials

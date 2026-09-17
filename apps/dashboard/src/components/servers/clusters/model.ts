@@ -1,6 +1,7 @@
 import type { ServerCluster } from "@repo/contracts";
 import {
   NETWORK_CHECK_TTL_MS,
+  managedNetworkInProgress,
   type NativeClusterConfig,
   type InfrastructureProviderId,
 } from "@repo/core";
@@ -13,6 +14,15 @@ export type ClusterStatus =
   | "stale"
   | "interrupted";
 export function clusterStatus(cluster: ServerCluster, now = Date.now()): ClusterStatus {
+  const operation = cluster.operation;
+  if (operation) {
+    if (managedNetworkInProgress(operation.status))
+      return operation.leaseExpiresAt && new Date(operation.leaseExpiresAt).getTime() <= now
+        ? "interrupted"
+        : "checking";
+    if (operation.status === "interrupted") return "interrupted";
+    if (operation.status === "needs_attention") return "attention";
+  }
   const run = cluster.verification;
   if (!run || run.revision !== cluster.revision) return "unchecked";
   if (run.status === "running")

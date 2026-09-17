@@ -1,4 +1,5 @@
 export { createUserRepo, type User, type NewUser } from "./user.repo";
+export { createCloudDockerWorkspaceRepo, type CloudDockerWorkspace } from "./cloud-docker-workspace.repo";
 export { createSessionRepo, type Session } from "./session.repo";
 export { createAccountRepo, type Account } from "./account.repo";
 export {
@@ -125,7 +126,8 @@ export {
   type NewInstanceSettings,
 } from "./instance-settings.repo";
 export { createServerRepo, type Server, type NewServer } from "./server.repo";
-export { createServerClusterRepo, type ServerClusterRecord, type ClusterVerificationRecord } from "./server-cluster.repo";
+export { createServerClusterRepo, type ServerClusterRecord, type ClusterVerificationRecord, type ManagedNetworkOperationRecord } from "./server-cluster.repo";
+export { createNetworkPreparationRepo, type NetworkPreparationRecord } from "./network-preparation.repo";
 export {
   createServerGithubAuthRepo,
   type ServerGithubAuth,
@@ -290,6 +292,7 @@ import { createServerContainerStatusRepo } from "./server-container-status.repo"
 import { createEdgeTargetVerificationRepo } from "./edge-target-verification.repo";
 import { createServiceIncidentRepo } from "./service-incident.repo";
 import { createCloudWebhookBindingRepo } from "./cloud-webhook-binding.repo";
+import { createCloudDockerWorkspaceRepo } from "./cloud-docker-workspace.repo";
 import { createProjectConnectionRepo } from "./project-connection.repo";
 import { createCustomAppTemplateRepo } from "./custom-app-template.repo";
 import { createWebhookDeliveryRepo } from "./webhook-delivery.repo";
@@ -299,6 +302,7 @@ import { createSettingsRepo } from "./settings.repo";
 import { createInstanceSettingsRepo } from "./instance-settings.repo";
 import { createServerRepo } from "./server.repo";
 import { createServerClusterRepo } from "./server-cluster.repo";
+import { createNetworkPreparationRepo } from "./network-preparation.repo";
 import { createServerGithubAuthRepo } from "./server-github-auth.repo";
 import { createGithubDeployKeyRepo } from "./github-deploy-key.repo";
 import { createServerTunnelRepo } from "./server-tunnel.repo";
@@ -370,6 +374,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   edgeTargetVerification: createEdgeTargetVerificationRepo(db),
   serviceIncident: createServiceIncidentRepo(db),
   cloudWebhookBinding: createCloudWebhookBindingRepo(db),
+  cloudDockerWorkspace: createCloudDockerWorkspaceRepo(db),
   projectConnection: createProjectConnectionRepo(db),
   customAppTemplate: createCustomAppTemplateRepo(db),
   webhookDelivery: createWebhookDeliveryRepo(db),
@@ -379,6 +384,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   instanceSettings: createInstanceSettingsRepo(db),
   server: createServerRepo(db),
   serverCluster: createServerClusterRepo(db),
+  networkPreparation: createNetworkPreparationRepo(db),
   serverGithubAuth: createServerGithubAuthRepo(db),
   githubDeployKey: createGithubDeployKeyRepo(db),
   serverTunnel: createServerTunnelRepo(db),

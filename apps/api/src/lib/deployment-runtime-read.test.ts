@@ -118,6 +118,18 @@ beforeEach(() => {
 });
 
 describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without the platform", () => {
+  it("never falls back to this host when a bound Cloud Docker project is disconnected", async () => {
+    await expect(read({ deployTarget: "cloud", buildStrategy: "server", cloudDockerWorkspace: { projectId: "p1", workspaceId: "vm1" } })).rejects.toThrow("linked Openship Cloud");
+    expect(socketCalls()).toBe(0);
+    expect(sshHosts()).toEqual([]);
+  });
+  it("rejects a deployment that names a different project's Cloud Docker host", async () => {
+    const dep = { projectId: "own-project", organizationId: "org1", meta: { deployTarget: "cloud",
+      cloudDockerWorkspace: { projectId: "other-project", workspaceId: "vm1" } } };
+    await expect(mod.resolveDeploymentRuntime(dep as never)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
+    await expect(mod.resolveDeploymentRuntimeForRead(dep as never)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
+    expect(socketCalls()).toBe(0);
+  });
   it("plans the concrete transport and server id for an implicit single-server target", async () => {
     await expect(mod.resolvePlannedTargetTopology("server", undefined, "org1")).resolves.toEqual({
       serverId: "only-server",

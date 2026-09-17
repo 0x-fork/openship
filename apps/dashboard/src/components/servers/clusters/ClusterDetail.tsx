@@ -16,7 +16,13 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ClusterCapabilities, ServerCluster } from "@repo/contracts";
+import {
+  managedNetworkInProgress,
+  managedNetworkUnsettled,
+  type ClusterSpeedTest,
+} from "@repo/core";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/Modal";
 import { Tabs } from "@/components/ui/Tabs";
 import { BlurIp } from "@/components/BlurIp";
@@ -24,8 +30,12 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { getApiErrorMessage } from "@/lib/api";
 import { serverClustersApi } from "@/lib/api/server-clusters";
+import { randomUUID } from "@/lib/random-uuid";
 import { ClusterStatus } from "./ClusterStatus";
 import { clusterStatus, PROVIDER_COLORS } from "./model";
+import { useRunEvents } from "@/hooks/useRunEvents";
+import { NetworkStreamNotice } from "./NetworkStreamNotice";
+import { ClusterNetworkDiagnostics } from "./ClusterNetworkDiagnostics";
 
 export function ClusterDetail({ id }: { id: string }) {
   const { t } = useI18n();
@@ -39,8 +49,10 @@ export function ClusterDetail({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const removalRequest = useRef<{ key: string; id: string } | null>(null);
+  const removalPending = useRef(false);
   const alive = useRef(true);
-  const tab = params.get("tab") === "network" ? "network" : "overview";
+  const tab = params.get("tab") === "members" ? "members" : "network";
   const refresh = useCallback(async () => {
     try {
       const [next, caps] = await Promise.all([
@@ -63,18 +75,26 @@ export function ClusterDetail({ id }: { id: string }) {
       alive.current = false;
     };
   }, [refresh, eligible]);
-  useEffect(() => {
-    if (!eligible || !cluster || cluster.verification?.status !== "running") return;
-    const timer = setTimeout(() => void refresh(), 2000);
-    return () => clearTimeout(timer);
-  }, [cluster, eligible, refresh]);
+  const watching =
+    eligible &&
+    cluster?.id === id &&
+    (cluster.verification?.status === "running" ||
+      (cluster.operation && managedNetworkInProgress(cluster.operation.status)));
+  const stream = useRunEvents<{ clusters: ServerCluster[] }>(
+    watching ? "system/clusters/stream" : null,
+    (snapshot) => {
+      const next = snapshot.clusters.find((item) => item.id === id);
+      if (next) setCluster(next);
+      else router.replace("/servers?tab=cluster");
+    },
+  );
 
-  const verify = async () => {
+  const verify = async (speedTest?: ClusterSpeedTest) => {
     if (!cluster || !capabilities?.canManage || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const verification = await serverClustersApi.verify(cluster);
+      const verification = await serverClustersApi.verify(cluster, speedTest);
       setCluster((old) => old && { ...old, verification });
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -83,15 +103,42 @@ export function ClusterDetail({ id }: { id: string }) {
     }
   };
   const remove = async () => {
-    if (!cluster || busy) return;
+    if (!cluster || busy || removalPending.current || !capabilities?.canManage) return;
+    if (cluster.operation && managedNetworkUnsettled(cluster.operation.status)) {
+      router.push(`/servers/clusters/operations/${cluster.operation.id}`);
+      return;
+    }
+    removalPending.current = true;
     setBusy(true);
+    setError(null);
     try {
+      if (cluster.network.mode === "wireguard") {
+        const key = `${cluster.id}:${cluster.revision}`;
+        if (removalRequest.current?.key !== key) removalRequest.current = { key, id: randomUUID() };
+        const operation = await serverClustersApi.planManaged({
+          requestId: removalRequest.current.id,
+          clusterId: cluster.id,
+          revision: cluster.revision,
+          intent: "remove",
+          name: cluster.name,
+          location: cluster.location ?? undefined,
+          members: cluster.members.map((member) => ({
+            serverId: member.serverId,
+            providerId: member.providerId,
+            endpoint: member.endpoint,
+            listenPort: member.listenPort,
+          })),
+        });
+        router.push(`/servers/clusters/operations/${operation.id}`);
+        return;
+      }
       await serverClustersApi.remove(cluster);
       router.push("/servers?tab=cluster");
     } catch (err) {
       setError(getApiErrorMessage(err));
       setRemoving(false);
     } finally {
+      removalPending.current = false;
       setBusy(false);
     }
   };
@@ -103,7 +150,8 @@ export function ClusterDetail({ id }: { id: string }) {
       </PageContainer>
     );
   const running = cluster ? clusterStatus(cluster) === "checking" : false;
-  const report = cluster?.verification?.report;
+  const unsettled = !!cluster?.operation && managedNetworkUnsettled(cluster.operation.status);
+  const report = unsettled ? cluster?.operation?.report : cluster?.verification?.report;
   const checks = report?.peers ?? [];
   return (
     <PageContainer>
@@ -114,6 +162,7 @@ export function ClusterDetail({ id }: { id: string }) {
         <ArrowLeft className="size-4" />
         {c.backToClusters}
       </Link>
+      <NetworkStreamNotice stream={stream} />
       {error && (
         <div
           role="alert"
@@ -144,28 +193,34 @@ export function ClusterDetail({ id }: { id: string }) {
               </div>
             </div>
             {capabilities?.canManage && (
-              <div className="flex items-center gap-2">
+              <div className="flex max-w-full flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  disabled={running || busy}
+                  disabled={running || busy || unsettled}
                   aria-label={c.editCluster}
                   onClick={() => router.push(`/servers/clusters/${id}/edit`)}
                   className="rounded-lg border border-border p-2.5 text-muted-foreground hover:bg-muted disabled:opacity-40"
                 >
                   <Settings2 className="size-4" />
                 </button>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   disabled={running || busy}
-                  aria-label={c.removeCluster}
-                  onClick={() => setRemoving(true)}
-                  className="rounded-lg border border-border p-2.5 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                  title={unsettled ? c.managed.cleanupBeforeRemove : undefined}
+                  onClick={() =>
+                    cluster.network.mode === "wireguard" ? void remove() : setRemoving(true)
+                  }
+                  className="h-auto min-h-10 whitespace-normal py-2.5 hover:bg-danger/10 hover:text-danger"
                 >
                   <Trash2 className="size-4" />
-                </button>
+                  {unsettled && cluster.operation?.plan.baseRevision === null
+                    ? c.managed.cleanupSetup
+                    : c.removeCluster}
+                </Button>
                 <button
                   type="button"
-                  disabled={running || busy}
+                  disabled={running || busy || unsettled}
                   onClick={() => void verify()}
                   className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
                 >
@@ -179,6 +234,20 @@ export function ClusterDetail({ id }: { id: string }) {
               </div>
             )}
           </div>
+          {cluster.operation && (
+            <Link
+              href={`/servers/clusters/operations/${cluster.operation.id}`}
+              className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-primary/5 p-4 text-sm text-primary"
+            >
+              <span>{c.managed.status[cluster.operation.status]}</span>
+              <span className="font-medium">{c.managed.viewOperation} →</span>
+            </Link>
+          )}
+          {unsettled && !running && (
+            <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
+              {c.managed.cleanupBeforeRemove}
+            </p>
+          )}
           <div className="mb-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="mb-2 text-xs text-muted-foreground">{c.networkStatus}</p>
@@ -191,8 +260,12 @@ export function ClusterDetail({ id }: { id: string }) {
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="mb-2 text-xs text-muted-foreground">{c.addressRanges}</p>
-              <p className="break-words font-mono text-sm">{cluster.network.cidrs.join(", ")}</p>
-              <p className="mt-2 text-xs text-muted-foreground">{c.nativeNetwork}</p>
+              <p className="break-words font-mono text-sm">
+                <BlurIp>{cluster.network.cidrs.join(", ")}</BlurIp>
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {cluster.network.mode === "wireguard" ? c.managed.title : c.nativeNetwork}
+              </p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="mb-2 text-xs text-muted-foreground">{c.privateConnections}</p>
@@ -206,11 +279,11 @@ export function ClusterDetail({ id }: { id: string }) {
           <Tabs
             value={tab}
             onChange={(next) =>
-              router.replace(`/servers/clusters/${id}${next === "network" ? "?tab=network" : ""}`)
+              router.replace(`/servers/clusters/${id}${next === "members" ? "?tab=members" : ""}`)
             }
             tabs={[
-              { key: "overview", label: c.members, icon: Server },
-              { key: "network", label: c.networkDetails, icon: Network },
+              { key: "network", label: c.diagnostics.topologyTab, icon: Network },
+              { key: "members", label: c.members, icon: Server },
             ]}
             className="mb-5"
           />
@@ -220,7 +293,15 @@ export function ClusterDetail({ id }: { id: string }) {
               className="mb-5 flex items-center gap-3 rounded-xl bg-primary/5 p-4 text-sm"
             >
               <Loader2 className="size-4 animate-spin text-primary" />
-              <span>{report?.stage === "inspecting" ? c.inspectingHosts : c.probingPeers}</span>
+              <span>
+                {report?.stage === "inspecting"
+                  ? c.inspectingHosts
+                  : report?.stage === "handshakes"
+                    ? c.diagnostics.checkingHandshakes
+                    : report?.stage === "throughput"
+                      ? c.diagnostics.speedRunning
+                      : c.probingPeers}
+              </span>
             </div>
           )}
           {cluster.verification?.error && (
@@ -228,7 +309,7 @@ export function ClusterDetail({ id }: { id: string }) {
               {cluster.verification.error}
             </p>
           )}
-          {tab === "overview" && (
+          {tab === "members" && (
             <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
               {cluster.members.map((member) => {
                 const hostCheck = report?.hosts.find((h) => h.serverId === member.serverId);
@@ -308,57 +389,26 @@ export function ClusterDetail({ id }: { id: string }) {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">{c.encryption}</p>
-                  <p className="mt-1 font-medium">{c.externalEncryption}</p>
+                  <p className="mt-1 font-medium">
+                    {cluster.network.mode === "wireguard" ? "WireGuard" : c.externalEncryption}
+                  </p>
                 </div>
                 <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-3">
                   {c.verificationScope}
                 </p>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/40 text-xs text-muted-foreground">
-                    <tr>
-                      {[c.source, c.destination, "TCP", "UDP", "MTU"].map((label) => (
-                        <th key={label} className="px-4 py-3 text-start font-medium">
-                          {label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {checks.map((peer) => (
-                      <tr key={`${peer.sourceServerId}:${peer.targetServerId}`}>
-                        <td className="px-4 py-3">
-                          {cluster.members.find((m) => m.serverId === peer.sourceServerId)?.name}
-                        </td>
-                        <td className="px-4 py-3">
-                          {cluster.members.find((m) => m.serverId === peer.targetServerId)?.name}
-                        </td>
-                        {[peer.tcp, peer.udp, peer.mtu].map((ok, index) => (
-                          <td key={index} className="px-4 py-3">
-                            <span
-                              className={`inline-flex items-center gap-1.5 text-xs ${ok ? "text-success" : "text-warning"}`}
-                              title={peer.message ?? undefined}
-                            >
-                              {ok ? (
-                                <Check className="size-3.5" />
-                              ) : (
-                                <CircleAlert className="size-3.5" />
-                              )}
-                              {ok ? c.passed : c.failed}
-                            </span>
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!checks.length && (
-                  <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    {c.noPeerChecks}
-                  </p>
-                )}
-              </div>
+              <ClusterNetworkDiagnostics
+                members={cluster.members}
+                report={report}
+                running={running}
+                observedAt={
+                  unsettled ? cluster.operation?.updatedAt : cluster.verification?.finishedAt
+                }
+                onSpeedTest={
+                  capabilities?.canManage && !unsettled ? (pair) => void verify(pair) : undefined
+                }
+                speedDisabled={busy || running}
+              />
             </div>
           )}
           <p className="mt-6 max-w-3xl text-xs leading-relaxed text-muted-foreground">

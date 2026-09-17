@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClusterCapabilities } from "@repo/contracts";
@@ -26,6 +26,14 @@ vi.mock("@/lib/api", () => ({
 }));
 vi.mock("@/lib/api/server-clusters", () => ({
   serverClustersApi: { capabilities: h.capabilities, list: h.clusters },
+}));
+vi.mock("@/hooks/useRunEvents", () => ({
+  useRunEvents: (path: string | null, onSnapshot: (snapshot: unknown) => void) => {
+    useEffect(() => {
+      if (path) onSnapshot({ clusters: [], preparations: [] });
+    }, [path]);
+    return { connected: !!path, reconnecting: false, error: null, reconnect: vi.fn() };
+  },
 }));
 // Keep the actual page, platform context, tabs, and cluster overview. Managed
 // containers and their mutation modal are unrelated to navigation.
@@ -93,7 +101,7 @@ describe("server cluster navigation", () => {
       await render(mode);
       expect(host.querySelector("h2")?.textContent).toBe(c.listTitle);
       expect(host.textContent).toContain(c.createCluster);
-      expect(host.textContent).toContain(c.emptyTitle);
+      expect(host.textContent).toContain(c.listDescription);
       await act(async () => tab("networking")!.click());
       expect(h.replace).toHaveBeenLastCalledWith("/servers?tab=networking");
       h.search = "tab=networking";

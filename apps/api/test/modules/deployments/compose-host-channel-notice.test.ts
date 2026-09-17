@@ -167,6 +167,69 @@ function startingRuntime() {
   } as unknown as MultiServiceRuntimeAdapter;
 }
 
+it("deploys Cloud Compose endpoints, internal paths, generated files and container identities through one workspace", async () => {
+  const { CloudDockerRuntime } = await import("@repo/adapters");
+  const configurations: Array<Record<string, any>> = [];
+  const publishRoute = vi.fn(async () => undefined);
+  const pullImage = vi.fn(async () => undefined);
+  const runtime = Object.assign(Object.create(CloudDockerRuntime.prototype), {
+    name: "cloud", workspaceId: "shared-vm", projectId: "p1", unsupportedComposeKeys: new Set(),
+    supports: (cap: string) => cap === "dockerHost",
+    ensureServiceGroup: vi.fn(async () => ({ id: "shared-network", kind: "docker-network" })),
+    deployServiceWorkload: vi.fn(async (_group: unknown, config: Record<string, any>) => {
+      configurations.push(config);
+      const hostPortByContainerPort = config.serviceName === "web" ? { 8080: 30001, 9090: 30002 } : { 8080: 30003 };
+      return { status: "running", containerId: `${config.serviceName}-container`, hostPortByContainerPort };
+    }),
+    resolveRoutingTarget: vi.fn(async (id: string, port: number) => ({ workspace: "shared-vm",
+      port: id === "web-container" ? (port === 8080 ? 30001 : 30002) : 30003 })),
+    getContainerIp: vi.fn(async () => "172.18.0.2"), listAllContainers: vi.fn(async () => []),
+    destroy: vi.fn(async () => undefined), publishRoute, pullImage,
+  }) as CloudDockerRuntime;
+  const executor = {
+    exec: vi.fn(async () => ""), mkdir: vi.fn(async () => undefined), rm: vi.fn(async () => undefined),
+    rename: vi.fn(async () => undefined), writeFile: vi.fn(async () => undefined),
+  } as unknown as CommandExecutor;
+  h.services = [{ id: "svc-web", name: "web", projectId: "p1", kind: "compose", enabled: true, exposed: true,
+    ports: ["8080", "9090"], image: "web:v1", dependsOn: [], environment: {}, volumes: ["data:/data"],
+    exposedPort: "8080", domainType: "free", domain: "app", advanced: null,
+    publicEndpoints: [{ port: 8080, domain: "app", domainType: "free" }, { port: 9090, domain: "console", domainType: "free" }] },
+  { id: "svc-api", name: "api", projectId: "p1", kind: "compose", enabled: true, exposed: false,
+    ports: ["8080"], image: "api:v1", dependsOn: [], environment: {}, volumes: [],
+    advanced: { files: [{ path: "/etc/app.yml", content: "enabled: true" }] } }];
+  h.previousServiceRows = [];
+  h.upsertServiceDeployment.mockImplementation(async row => {
+    h.previousServiceRows.push(row);
+    return row;
+  });
+  const { logger } = recordingLogger();
+  const result = await deployComposeServices({ ...project, cloudWorkspaceId: "shared-vm", routeStrategy: "auto",
+    compositeRoutes: [{ hostname: "app.opsh.io", isCustomDomain: false, rootServiceId: "svc-web",
+      locations: [{ pathPrefix: "/api/", serviceId: "svc-api" }] }] } as Project,
+  { ...dep, projectId: "p1", meta: { deployTarget: "cloud", runtimeMode: "docker", cloudDockerWorkspace: { projectId: "p1", workspaceId: "shared-vm" } } },
+  runtime, logger, { executor, localHost: false, usesManagedRouting: false, forcePullImages: true,
+    routing: { removeRoute: vi.fn(), registerRoute: vi.fn() } as never, ssl: { provisionCert: vi.fn(), verifyCert: vi.fn() } as never });
+  expect(result.status).toBe("ready");
+  expect(result.routeWarnings ?? []).toEqual([]);
+  expect(configurations.find(config => config.serviceName === "web")?.cloudEndpoints).toEqual([
+    { hostname: "app.opsh.io", port: 8080, custom: false }, { hostname: "console.opsh.io", port: 9090, custom: false },
+  ]);
+  const api = configurations.find(config => config.serviceName === "api")!;
+  expect(api.cloudEndpoints).toEqual([]);
+  expect(api.cloudProxyPorts).toEqual([8080]);
+  expect(api.volumes.some((volume: string) => volume.endsWith(":/etc/app.yml:ro"))).toBe(true);
+  expect(executor.writeFile).toHaveBeenCalledWith(expect.any(String), "enabled: true", expect.any(Object));
+  expect(pullImage).toHaveBeenCalledWith("web:v1", { force: true });
+  expect(pullImage).toHaveBeenCalledWith("api:v1", { force: true });
+  expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
+    serviceId: "svc-web", containerId: "web-container", hostPorts: { 8080: 30001, 9090: 30002 },
+  }));
+  expect(publishRoute).toHaveBeenCalledWith("app.opsh.io", 30001, false, expect.objectContaining({ routes: [
+    { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30003 } },
+    { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30001 } },
+  ] }));
+});
+
 const project = { id: "p1", slug: "app", organizationId: "org1" } as unknown as Project;
 const dep = {
   id: "d1",

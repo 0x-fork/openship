@@ -291,6 +291,11 @@ export async function transferProjectToSelfHosted(
     throw new TransferCloudCallFailedError(result.error);
   }
   const dump: DatabaseDump = result.dump;
+  if ((dump.tables.cloud_docker_workspace?.length ?? 0) > 0) {
+    throw new TransferCloudCallFailedError(
+      "This project stores container and volume data in its Cloud Docker workspace. Migrate that data to the destination before transferring the project.",
+    );
+  }
 
   // 3) Wipe the local rows for this project, then merge-insert the dump.
   //    Uses the shared subgraph-delete primitive (child→parent FK order,

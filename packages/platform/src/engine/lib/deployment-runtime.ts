@@ -86,6 +86,8 @@ export interface DeploymentMeta {
   buildStrategy?: "local" | "server";
   /** Cloud workspace this deployment provisioned (cloud target only). */
   workspaceId?: string;
+  /** Container IDs in this deployment belong to this shared Docker host. */
+  cloudDockerWorkspace?: { projectId: string; workspaceId: string };
   /**
    * Advisory post-deploy port probe — one entry per exposed port (single-app)
    * or exposed service (compose). Point-in-time; never gates the deploy. The
@@ -330,6 +332,15 @@ export function resolveEffectiveTarget(
   base: Platform["target"],
   snapshot: DeploymentMeta,
 ): DeployTarget {
+  if (snapshot.cloudDockerWorkspace) {
+    if (snapshot.serverId || (snapshot.deployTarget && snapshot.deployTarget !== "cloud")) {
+      throw new Error("Cloud Docker workspace metadata conflicts with the deployment target");
+    }
+    // Its builds run on the provider VM even when a self-hosted API initiated
+    // the deployment. A server build strategy must never select the API host.
+    return "cloud";
+  }
+  if (snapshot.deployTarget === "cloud" && snapshot.workspaceId) return "cloud";
   if (process.env.OPENSHIP_NATIVE === "true") {
     // The embedded host explicitly selects its default runtime. Desktop's
     // product default (cloud) must not reinterpret a native bare installation.
@@ -378,7 +389,7 @@ export function usesManagedRouting(
  * has linked their Openship Cloud account and use their token to mint
  * cloud requests on behalf of the org.
  */
-async function resolveCloudPlatformForOrg(organizationId?: string): Promise<Platform> {
+async function resolveCloudPlatformForOrg(organizationId?: string, docker?: DeploymentMeta["cloudDockerWorkspace"]): Promise<Platform> {
   if (!organizationId) {
     throw new Error("Cannot resolve cloud deployment platform without an organization ID");
   }
@@ -399,6 +410,12 @@ async function resolveCloudPlatformForOrg(organizationId?: string): Promise<Plat
     );
   }
 
+  if (docker) {
+    const binding = await repos.cloudDockerWorkspace.find(docker.projectId, organizationId);
+    if (!binding || binding.workspaceId !== docker.workspaceId || binding.namespace !== result.namespace) {
+      throw new AppError("Cloud Docker workspace does not belong to this project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+    }
+  }
   return createPlatform({
     target: "cloud",
     cloudToken: result.token,
@@ -407,6 +424,11 @@ async function resolveCloudPlatformForOrg(organizationId?: string): Promise<Plat
     cloudBeforeProvision: env.CLOUD_MODE ? () => assertCloudCanSpend(organizationId) : undefined,
     allowHostBuild: !env.CLOUD_MODE && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
     cloudAdminProxy: env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, result.namespace) : createRemoteCloudAdmin(organizationId),
+    cloudDocker: docker ? {
+      ...docker, provisionLock: createProvisionLock(`cloud:docker:${docker.workspaceId}`),
+      bridgeLock: createProvisionLock(`cloud:docker-bridge:${docker.workspaceId}`),
+      resolveRegistryAuth: registryAuthResolver(organizationId),
+    } : undefined,
   });
 }
 
@@ -477,17 +499,11 @@ export async function resolveDeploymentPlatform(
     };
   }
 
-  // Invariant (cloud-as-source): a multi-user self-hosted server never reaches
-  // a cloud target here — resolveEffectiveTarget() collapses cloud→local/server
-  // for the "selfhosted" base, and cloud projects are proxied to the SaaS by the
-  // gateway before the pipeline runs. So the cloud-platform resolution below is
-  // only ever reached by the SaaS itself (basePlatform.target === "cloud") or by
-  // desktop (single-user, owner-driven) — never by a self-hosted server. That is
-  // what keeps the local cloud-capability path (pages/managed edge) off a
-  // self-hosted box.
+  // A bound Cloud Docker project stays on the provider even when orchestrated
+  // by a linked self-hosted installation; admin operations still go to the SaaS.
   // SaaS deployments must use the org's token too. The process-wide platform
   // has reseller credentials and is never a customer workload authority.
-  const resolvedPlatform = await resolveCloudPlatformForOrg(opts?.organizationId);
+  const resolvedPlatform = await resolveCloudPlatformForOrg(opts?.organizationId, snapshot.cloudDockerWorkspace);
 
   return {
     platform: resolvedPlatform,
@@ -900,7 +916,7 @@ function toDockerSshTransport(ssh: SshConfig, executor: CommandExecutor): Docker
  * for long-lived operations (streaming).
  */
 export async function resolveDeploymentRuntime(
-  dep: Pick<Deployment, "meta" | "organizationId">,
+  dep: Pick<Deployment, "meta" | "organizationId"> & Partial<Pick<Deployment, "projectId">>,
 ): Promise<{
   runtime: RuntimeAdapter;
   /**
@@ -919,6 +935,9 @@ export async function resolveDeploymentRuntime(
   executor: Platform["executor"];
 }> {
   const snapshot = (dep.meta ?? {}) as DeploymentMeta;
+  if (snapshot.cloudDockerWorkspace && dep.projectId && snapshot.cloudDockerWorkspace.projectId !== dep.projectId) {
+    throw new AppError("Cloud Docker workspace does not belong to this deployment's project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+  }
   const resolved = await resolveDeploymentPlatform(snapshot, {
     organizationId: dep.organizationId,
   });
@@ -1187,7 +1206,7 @@ function asHostUnreachable(err: unknown): unknown {
 }
 
 export async function resolveDeploymentRuntimeForRead(
-  dep: Pick<Deployment, "meta" | "organizationId">,
+  dep: Pick<Deployment, "meta" | "organizationId"> & Partial<Pick<Deployment, "projectId">>,
 ): Promise<{
   runtime: RuntimeAdapter;
   serverId: string | null;
@@ -1197,6 +1216,9 @@ export async function resolveDeploymentRuntimeForRead(
   // so a bare project's sidecars still resolve a docker runtime (matches
   // resolveServicePlatform's long-standing behaviour).
   const snapshot = { ...((dep.meta ?? {}) as DeploymentMeta), runtimeMode: "docker" as const };
+  if (snapshot.cloudDockerWorkspace && dep.projectId && snapshot.cloudDockerWorkspace.projectId !== dep.projectId) {
+    throw new AppError("Cloud Docker workspace does not belong to this deployment's project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+  }
   const effectiveTarget = resolveEffectiveTarget(platform().target, snapshot);
 
   if (effectiveTarget === "server") {

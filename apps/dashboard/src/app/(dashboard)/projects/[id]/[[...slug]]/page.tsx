@@ -29,6 +29,7 @@ import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { ServicesTab } from "../components/ServicesTab";
 import { ProjectTopologyPage } from "@/components/topology/ProjectTopologyPage";
 import { ProjectSidebar, ProjectMobileTabs } from "../components/ProjectSidebar";
+import { ProjectTabSections } from "../components/ProjectTabSections";
 import { DraftProjectView } from "../components/DraftProjectView";
 import { environmentErrorMessage, environmentWizardHref } from "../components/environment-next";
 import { getProjectStatus } from "@/utils/project-status";
@@ -322,14 +323,14 @@ const EnvironmentSwitcher = ({ disabled = false }: { disabled?: boolean }) => {
       onOpenChange={(open) => {
         if (!open) closeMenus();
       }}
-      className="relative flex items-center"
+      className="relative flex min-w-0 items-center"
     >
       <button
         type="button"
         onClick={openSwitcher}
         disabled={disabled}
         title={disabled ? "Apply or discard pending topology changes before switching environments." : undefined}
-        className="inline-flex h-9 max-w-[260px] items-center gap-2 rounded-full border border-border/50 bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
+        className="inline-flex h-9 min-w-0 max-w-[260px] items-center gap-2 rounded-full border border-border/50 bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
         aria-label={t.projects.env.switchAria}
         aria-expanded={isOpen}
         aria-haspopup="menu"
@@ -556,6 +557,7 @@ const ProjectSettingsContent = () => {
     projectNotFound,
     errorType,
     activeTab,
+    activeTabGroup,
     tabs,
     id,
     // Read to tell the delete toast the truth: teardown drops THIS environment and
@@ -1013,7 +1015,7 @@ const ProjectSettingsContent = () => {
             <>
               <span>/</span>
               <span className="text-foreground font-medium">
-                {tabs.find((tab) => tab.id === activeTab)?.label}
+                {tabs.find((tab) => tab.id === activeTabGroup)?.label}
               </span>
             </>
           )}
@@ -1022,7 +1024,7 @@ const ProjectSettingsContent = () => {
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-foreground truncate">
-              {tabs.find((tab) => tab.id === activeTab)?.label || t.projects.detail.overviewFallback}
+              {tabs.find((tab) => tab.id === activeTabGroup)?.label || t.projects.detail.overviewFallback}
             </h1>
           </div>
 
@@ -1039,6 +1041,7 @@ const ProjectSettingsContent = () => {
         {/* ── LEFT COLUMN ── */}
         <div className="space-y-6 min-w-0">
           <ProjectMobileTabs />
+          <ProjectTabSections />
           {renderTabContent()}
         </div>
 

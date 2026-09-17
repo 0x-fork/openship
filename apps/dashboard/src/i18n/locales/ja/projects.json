@@ -135,8 +135,10 @@
       "health": "ヘルス",
       "monitoring": "モニタリング",
       "source": "ソース",
+      "sourceAndTriggers": "ソースとトリガー",
       "webhooks": "Webhook",
       "runtime": "設定",
+      "settings": "設定",
       "logs": "ログ",
       "backup": "バックアップ",
       "advanced": "詳細設定"
@@ -268,6 +270,7 @@
     "geoUnavailableBody": "エッジプロキシが訪問者の国を解決できないため、マップは空のままです。トラフィックの合計には影響しません。",
     "noCountries": "この期間の国データはまだありません。",
     "statusesTitle": "レスポンス",
+    "statusesOthers": "その他",
     "share": "{pct}%",
     "visitorDays": "訪問者日数",
     "peakDayTooltip": "最も多かった日: {peak}。再訪した訪問者は1日1回として数えるため、合計は上限値です。",
@@ -531,5 +534,5 @@
       "server_unreachable": "サーバー到達不可"
     }
   },
-  "migrationAwaitingHint": "移行が操作待ちです。プロジェクトの「詳細設定」タブで切り替えを完了するか、ロールバックしてください"
+  "migrationAwaitingHint": "移行が操作待ちです。プロジェクトの「設定 → 詳細設定」で切り替えを完了するか、ロールバックしてください"
 }

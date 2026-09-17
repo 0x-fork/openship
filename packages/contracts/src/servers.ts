@@ -243,6 +243,9 @@ export const ServerResourceSchemas = {
   scanPorts: { action: "read", output: ServerPortScanSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export interface ServerOperations extends ScopedOperations<typeof ServerCollectionSchemas>, ResourceOperations<typeof ServerResourceSchemas> {
+  managedNetworkPreparationEvents(id: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
+  managedNetworkOperationEvents(id: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
+  clusterEvents(options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   applyContainer(id: string, input: ApplyServerContainerInput, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   containerApplyEvents(id: string, input: ServerContainerInput, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   getInstallSession(input?: ServerInstallSessionInput): Promise<ServerInstallSession>;

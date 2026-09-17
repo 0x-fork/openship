@@ -192,8 +192,10 @@
       "health": "Health",
       "monitoring": "Monitoring",
       "source": "Source",
+      "sourceAndTriggers": "Source & Triggers",
       "webhooks": "Webhooks",
       "runtime": "Configuration",
+      "settings": "Settings",
       "logs": "Logs",
       "backup": "Backup",
       "advanced": "Advanced"
@@ -325,6 +327,7 @@
     "geoUnavailableBody": "The edge proxy can't resolve visitor countries, so the map stays empty. Traffic totals are unaffected.",
     "noCountries": "No country data for this period yet.",
     "statusesTitle": "Responses",
+    "statusesOthers": "Others",
     "share": "{pct}%",
     "visitorDays": "Visitor-days",
     "peakDayTooltip": "Busiest single day: {peak}. A returning visitor counts once per day, so the total is an upper bound.",
@@ -531,5 +534,5 @@
       "server_unreachable": "Server unreachable"
     }
   },
-  "migrationAwaitingHint": "Migration waiting on you — finish the cutover or roll it back on the project's Advanced tab"
+  "migrationAwaitingHint": "Migration waiting on you — finish the cutover or roll it back in the project's Settings → Advanced"
 }

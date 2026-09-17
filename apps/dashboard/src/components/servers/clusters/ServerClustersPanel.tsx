@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Boxes, Loader2, Network, Plus, RefreshCw, Server } from "lucide-react";
 import type { ClusterCapabilities, ServerCluster } from "@repo/contracts";
+import type { ManagedNetworkPreparationSummary } from "@repo/core";
+import { BlurIp } from "@/components/BlurIp";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { getApiErrorMessage } from "@/lib/api";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { useRunEvents } from "@/hooks/useRunEvents";
 import { ClusterStatus } from "./ClusterStatus";
 import { ClusterEmptyState } from "./ClusterEmptyState";
 import { PROVIDER_COLORS } from "./model";
+import { NetworkStreamNotice } from "./NetworkStreamNotice";
 
 export function ServerClustersPanel({
   capabilities,
@@ -23,86 +25,94 @@ export function ServerClustersPanel({
   const c = t.servers.clusters;
   const isNetworks = view === "networks";
   const [clusters, setClusters] = useState<ServerCluster[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [preparations, setPreparations] = useState<ManagedNetworkPreparationSummary[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const request = useRef(0);
-  const load = useCallback(async () => {
-    const current = ++request.current;
-    setRefreshing(true);
-    try {
-      const next = await serverClustersApi.list();
-      if (current === request.current) {
-        setClusters(next);
-        setError(null);
-      }
-    } catch (err) {
-      if (current === request.current) setError(getApiErrorMessage(err));
-    } finally {
-      if (current === request.current) setRefreshing(false);
+  const stream = useRunEvents<{
+    clusters: ServerCluster[];
+    preparations: ManagedNetworkPreparationSummary[];
+  }>(capabilities.available ? "system/clusters/stream" : null, (snapshot) => {
+    if (!Array.isArray(snapshot.clusters) || !Array.isArray(snapshot.preparations))
+      throw new Error("Invalid cluster overview snapshot");
+    setClusters(snapshot.clusters);
+    setPreparations(snapshot.preparations);
+    setRefreshing(false);
+  });
+  const error = stream.error;
+  useEffect(() => {
+    if (error) setRefreshing(false);
+    const status = (error as (Error & { status?: number }) | null)?.status;
+    if (status === 401 || status === 403) {
+      setClusters(null);
+      setPreparations([]);
     }
-  }, []);
-  useEffect(() => {
-    if (capabilities.available) void load();
-    return () => {
-      request.current++;
-    };
-  }, [load, capabilities.available]);
-  useEffect(() => {
-    if (!clusters?.some((cluster) => cluster.verification?.status === "running")) return;
-    const timer = setTimeout(() => void load(), 2500);
-    return () => clearTimeout(timer);
-  }, [clusters, load]);
+  }, [error]);
 
   if (!capabilities.available) return null;
   return (
     <section>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">{isNetworks ? c.networksTitle : c.listTitle}</h2>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            {isNetworks ? c.networksDescription : c.listDescription}
-          </p>
-        </div>
+      <div
+        className={`mb-6 flex flex-wrap items-start gap-4 ${isNetworks ? "justify-between" : "justify-end"}`}
+      >
+        {isNetworks && (
+          <div>
+            <h2 className="text-lg font-semibold">{c.networksTitle}</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {c.networksDescription}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => void load()}
+            onClick={() => {
+              setRefreshing(true);
+              stream.reconnect();
+            }}
             disabled={refreshing}
             aria-label={c.refresh}
           >
             <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
           </Button>
-          {!isNetworks && capabilities.canManage && !!clusters?.length && (
-            <Button asChild>
-              <Link href="/servers/clusters/new">
-                <Plus />
-                {c.createCluster}
-              </Link>
-            </Button>
-          )}
+          {!isNetworks &&
+            capabilities.canManage &&
+            (!!clusters?.length || !!preparations.length) && (
+              <Button asChild>
+                <Link href="/servers/clusters/new">
+                  <Plus />
+                  {c.createCluster}
+                </Link>
+              </Button>
+            )}
         </div>
       </div>
-      {error && (
-        <div
-          role="alert"
-          className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-danger/10 p-4 text-sm text-danger"
-        >
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="shrink-0 font-medium underline"
-          >
-            {c.retry}
-          </button>
-        </div>
-      )}
+      <NetworkStreamNotice stream={stream} />
       {!clusters && !error && (
         <Loader2 className="mx-auto my-16 size-5 animate-spin text-muted-foreground" />
       )}
-      {clusters?.length === 0 && !error && (
+      {!!preparations.length && (
+        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {preparations.map((setup) => (
+            <Link
+              key={setup.id}
+              href={`/servers/clusters/preparations/${setup.id}`}
+              className="rounded-2xl bg-card p-5 transition-colors hover:bg-muted/40"
+            >
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {setup.status === "preparing" && <Loader2 className="size-3.5 animate-spin" />}
+                {c.managed.preparationStatus[setup.status]}
+              </div>
+              <h3 className="mt-2 font-medium">{setup.name}</h3>
+              <span className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+                {c.managed.viewPreparation}
+                <ArrowRight className="size-3.5 rtl:rotate-180" />
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+      {clusters?.length === 0 && !preparations.length && !error && (
         <ClusterEmptyState view={view} canManage={capabilities.canManage} />
       )}
       {!isNetworks ? (
@@ -130,7 +140,7 @@ export function ServerClustersPanel({
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Network className="size-3.5" />
-                  {c.nativeNetwork}
+                  {cluster.network.mode === "wireguard" ? c.managed.title : c.nativeNetwork}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -146,7 +156,9 @@ export function ServerClustersPanel({
                 ))}
               </div>
               <div className="mt-5 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
-                <span className="truncate font-mono">{cluster.network.cidrs.join(", ")}</span>
+                <span className="truncate font-mono">
+                  <BlurIp>{cluster.network.cidrs.join(", ")}</BlurIp>
+                </span>
                 <ArrowRight className="ms-3 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
               </div>
             </Link>
@@ -176,7 +188,7 @@ export function ServerClustersPanel({
                         className="font-mono text-xs text-primary hover:underline"
                         href={`/servers/clusters/${cluster.id}?tab=network`}
                       >
-                        {cluster.network.cidrs.join(", ")}
+                        <BlurIp>{cluster.network.cidrs.join(", ")}</BlurIp>
                       </Link>
                     </td>
                     <td className="px-4 py-4">

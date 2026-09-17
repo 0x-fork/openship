@@ -911,6 +911,48 @@
       "when": 1789770107329,
       "tag": "0129_server_clusters",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1789770107330,
+      "tag": "0130_managed_networks",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1789770107331,
+      "tag": "0131_network_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1789770107332,
+      "tag": "0132_cloud_docker_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1789770107333,
+      "tag": "0133_network_progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1789770107334,
+      "tag": "0134_network_setup_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1789770107335,
+      "tag": "0135_shared_connection_network_flag",
+      "breakpoints": true
     }
   ]
 }

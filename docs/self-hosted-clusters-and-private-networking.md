@@ -1,10 +1,43 @@
 **Self-hosted clusters and private networking: proposed plan**
 
-Status: architecture agreed, September 16, 2026. The first implementation adds
-persisted server clusters and verification of already configured native private
-networks. Host configuration, WireGuard, and cluster workload placement remain
-subsequent stages. See the [implementation notes](../apps/dashboard/src/components/servers/clusters/README.md)
-for the current capabilities and verification scope.
+Status: architecture agreed September 16, 2026; implementation updated September
+17, 2026. Persisted clusters now support existing-network adoption and managed
+WireGuard with reviewed plans, per-host progress, durable claims, verification,
+and host-local rollback/reboot recovery. A durable prerequisite preparation now
+installs missing Python, iproute2 and WireGuard tools through the shared toolchain,
+with per-step status, logs, retries and saved settings before network review.
+Preparation, apply, and overview updates now use reconnecting SSE over durable,
+ordered snapshots. Viewing/reconnecting is read-only; retry and recovery remain
+explicit, idempotent actions that recheck actual server state.
+Stopped setup and unapplied plans can be discarded with durable cancellation;
+failed cluster setup exposes confirmed network cleanup through rollback. Cluster
+inventory and server reservations remain until every host acknowledges cleanup.
+Individual servers can now be removed from stopped initial setup while keeping at
+least two members. A linked replacement retains the remaining selection; partial
+network changes are rolled back through the existing recovery flow. Preparation
+stays paused until the user presses Retry preparation, including after cleanup or
+a reload. A fresh network plan still requires review and apply. Server
+services, disks, unrelated networks and shared installed tools remain in place.
+Cluster details now include a topology with per-direction TCP, UDP, MTU,
+round-trip latency, packet loss, and jitter results. Managed attempts retain
+per-peer handshake endpoints and ports after rollback. Explicit speed tests use
+the existing verification job and SSE stream, capped at 32 MiB or three seconds
+per direction for one selected pair. These are dated test results, not continuous
+network monitoring.
+The same topology now leads preparation and installation, showing live per-server
+steps with collapsed detail cards. Local preparation checks are distinguished from
+UDP connectivity: review explains provider firewall requirements, and Apply stages
+the real WireGuard transport under the host rollback timer. Every peer handshake
+must pass before private addresses and routes are assigned. Failed links retain
+their endpoint/port guidance after restoration; successful transport is promoted
+without resetting its verified interface and keys.
+Managed hosts use Linux/systemd with no
+active firewall, raw iptables, or the supported standard nftables layout.
+UFW/firewalld and provider API/VLAN provisioning remain separate work. Cluster
+placement, private service endpoints, and shared storage are subsequent stages.
+See the [implementation notes](../apps/dashboard/src/components/servers/clusters/README.md)
+for requirements, recovery behavior, and current limits. The remainder describes
+the wider architecture, including future capabilities.
 
 **Make server clusters a shared infrastructure resource, and keep project topology as the place to operate applications.** A cluster groups customer-managed servers, their private connectivity, and their available capacity. A project environment uses that infrastructure for its services. Adding a server increases capacity; scaling a service decides how that capacity is used.
 

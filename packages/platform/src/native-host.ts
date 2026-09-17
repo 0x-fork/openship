@@ -205,7 +205,7 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
   const serviceResources = Object.fromEntries([...Object.keys(ServiceCollectionSchemas), ...Object.keys(ServiceResourceSchemas)].map(name => [name, (...args: unknown[]) => call(`services.${name}`, ...args)])) as Omit<PlatformServiceOperations, "streamLogs">;
   const domainResources = Object.fromEntries(Object.keys({ ...DomainCollectionSchemas, ...DomainResourceSchemas, ...DomainScopedSchemas }).map(name => [name, (...args: unknown[]) => call(`domains.${name}`, ...args)])) as Omit<PlatformDomainOperations, "verifyStream">;
   const dns = Object.fromEntries(Object.keys(DnsOperationSchemas).map(name => [name, (...args: unknown[]) => call(`dns.${name}`, ...args)])) as PlatformDnsOperations;
-  const serverResources = Object.fromEntries([...Object.keys({ ...ServerCollectionSchemas, ...ServerResourceSchemas }), "getInstallSession", "respondToInstall"].map(name => [name, (...args: unknown[]) => call(`servers.${name}`, ...args)])) as Omit<PlatformServerOperations, "openInstallStream" | "openInstallEvents" | "openMonitor" | "openContainerApplyStream" | "openContainerApplyEvents">;
+  const serverResources = Object.fromEntries([...Object.keys({ ...ServerCollectionSchemas, ...ServerResourceSchemas }), "getInstallSession", "respondToInstall"].map(name => [name, (...args: unknown[]) => call(`servers.${name}`, ...args)])) as Omit<PlatformServerOperations, "openInstallStream" | "openInstallEvents" | "openMonitor" | "openContainerApplyStream" | "openContainerApplyEvents" | "openManagedNetworkPreparationEvents" | "openManagedNetworkOperationEvents" | "openClusterEvents">;
   const credentials = Object.fromEntries(Object.keys({ ...CredentialCollectionSchemas, ...CredentialResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`credentials.${name}`, ...args)])) as PlatformCredentialOperations;
   async function* streamValues<T>(streamId: string, signal?: AbortSignal): AsyncGenerator<T> {
     const abort = () => { void call("stream.close", streamId).catch(() => {}); };
@@ -255,6 +255,9 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
   };
   const servers: PlatformServerOperations = {
     ...serverResources,
+    openManagedNetworkPreparationEvents: (ctx, id, settings = {}) => openStreamValues<DeploymentEvent>("servers.managedNetworkPreparationEvents", ctx, [id], settings.signal),
+    openManagedNetworkOperationEvents: (ctx, id, settings = {}) => openStreamValues<DeploymentEvent>("servers.managedNetworkOperationEvents", ctx, [id], settings.signal),
+    openClusterEvents: (ctx, settings = {}) => openStreamValues<DeploymentEvent>("servers.clusterEvents", ctx, [], settings.signal),
     openContainerApplyStream: (ctx, id, input, settings = {}) => openStreamValues<DeploymentEvent>("servers.applyContainer", ctx, [id, input], settings.signal),
     openContainerApplyEvents: (ctx, id, input, settings = {}) => openStreamValues<DeploymentEvent>("servers.containerApplyEvents", ctx, [id, input], settings.signal),
     openInstallStream: (ctx, id, input, settings = {}) => openStreamValues<DeploymentEvent>("servers.installComponents", ctx, [id, input], settings.signal),

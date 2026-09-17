@@ -40,6 +40,8 @@ import type { ContainerStabilitySample } from "./stability";
  * it actually implements - callers never hit a silent stub.
  */
 export type RuntimeCapability =
+  /** Real Docker container semantics, including a Docker daemon in a cloud workspace. */
+  | "dockerHost"
   | "build"
   /** Acquire and deploy an already-built application container image verbatim. */
   | "prebuiltImage"
@@ -539,6 +541,10 @@ export interface MultiServiceDeployConfig {
   publicSlug?: string;
   customDomain?: string;
   expose?: boolean;
+  /** All approved Cloud hostnames for this service, including secondary ports. */
+  cloudEndpoints?: Array<{ hostname: string; port: number; custom: boolean }>;
+  /** Ports needed by project/composite edge routes, without a service hostname. */
+  cloudProxyPorts?: number[];
   /** Cloud only: the workspace id this service used in the PREVIOUS deployment.
    *  Reused so its permanent-workspace disk — the only persistence Oblien
    *  offers (no volume primitive) — survives a redeploy. A fresh workspace each
@@ -569,6 +575,8 @@ export interface MultiServiceDeployConfig {
 export interface MultiServiceDeployResult {
   containerId: string;
   status: string;
+  /** The container is running, but one or more edge routes need a retry. */
+  routeWarnings?: string[];
   ip?: string;
   /** The FIRST binding the daemon reports — arbitrary for a multi-port container.
    *  Anything picking a proxy target for a SPECIFIC container port must read

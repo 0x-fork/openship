@@ -28,6 +28,10 @@ import { serverInstallationDependencies } from "./server-install.operations";
 import { serverGitHubResources } from "../github/server-github.operations";
 import { serverTunnelResources } from "./tunnels.operations";
 import { serverClusterCollection, serverClusterResources } from "./server-cluster.operations";
+import { managedNetworkCollection } from "./managed-network.operations";
+import { networkPreparationCollection } from "./network-preparation.operations";
+import { networkSetupMemberCollection } from "./network-setup-member.operations";
+import { networkSetupStreams } from "./network-setup.events";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { authorization } from "../../lib/authorization";
 
@@ -685,7 +689,8 @@ function failServer(details: Record<string, unknown>, status: number): never {
 }
 
 export const serverDependencies: ServerDependencies = {
-  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection, ...serverClusterCollection },
+  networks: networkSetupStreams,
+  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection, ...serverClusterCollection, ...managedNetworkCollection, ...networkPreparationCollection, ...networkSetupMemberCollection },
   resources: {
     get: getServer, reachability: probeReachability, update: updateServer,
     deletionPreview: serverDeletionPreview, remove: deleteServer, exec: execOnServer,

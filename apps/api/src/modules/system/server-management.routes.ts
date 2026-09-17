@@ -21,6 +21,42 @@ const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system", 
 const clusterRead = { tag: "server:read", collection: true, authorizationHandledByOperation: true } as const;
 const clusterAdmin = { tag: "server:admin", collection: true, authorizationHandledByOperation: true, auditHandledByOperation: true } as const;
 r.get("/clusters/capabilities", clusterRead, clusters.capabilities);
+r.post(
+  "/clusters/network-plans",
+  { ...clusterAdmin, body: ServerClusterCollectionSchemas.planManagedNetwork.input },
+  clusters.planManaged,
+);
+r.get("/clusters/network-operations/:operationId", clusterRead, clusters.managedOperation);
+r.get("/clusters/network-operations/:operationId/stream", clusterRead, clusters.managedOperationEvents);
+r.delete("/clusters/network-operations/:operationId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPlan.input, ["operationId"]),
+}, clusters.discardPlan);
+r.delete("/clusters/network-operations/:operationId/members/:serverId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkOperationMember.input, ["operationId", "serverId"]),
+}, clusters.removeOperationMember);
+r.post(
+  "/clusters/network-operations/:operationId/apply",
+  {
+    ...clusterAdmin,
+    body: Type.Omit(ServerClusterCollectionSchemas.applyManagedNetwork.input, ["operationId"]),
+  },
+  clusters.applyManaged,
+);
+r.post("/clusters/network-preparations", { ...clusterAdmin, body: ServerClusterCollectionSchemas.prepareManagedNetwork.input }, clusters.prepareManaged);
+r.get("/clusters/network-preparations", clusterRead, clusters.managedPreparations);
+r.get("/clusters/network-preparations/:preparationId", clusterRead, clusters.managedPreparation);
+r.get("/clusters/network-preparations/:preparationId/stream", clusterRead, clusters.preparationEvents);
+r.delete("/clusters/network-preparations/:preparationId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPreparation.input, ["preparationId"]),
+}, clusters.discardPreparation);
+r.delete("/clusters/network-preparations/:preparationId/members/:serverId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkPreparationMember.input, ["preparationId", "serverId"]),
+}, clusters.removePreparationMember);
+r.get("/clusters/stream", clusterRead, clusters.clusterEvents);
 r.get("/clusters", clusterRead, clusters.list);
 r.get("/clusters/:id", clusterRead, clusters.get);
 r.post("/clusters", { ...clusterAdmin, body: CreateClusterInputSchema }, clusters.create);

@@ -18,6 +18,7 @@ import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import {
   CloudRuntime,
+  CloudDockerRuntime,
   edgeProxyFor,
   PAGE_CONTAINER_PREFIX,
   compileRoutingToOblien,
@@ -35,7 +36,8 @@ import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import { resolveServicePort } from "../../lib/deployable-service";
 import { isArtifactRef } from "../../lib/container-ref";
-import { buildServiceRouteDomain, buildServiceRouteDomains } from "../../lib/routing-domains";
+import { buildProjectRouteDomains, buildServiceRouteDomain, buildServiceRouteDomains } from "../../lib/routing-domains";
+import { pickProjectPortOwner } from "../../lib/project-service-upstream";
 import { resolveRouteRedirect } from "../../lib/domain-redirect";
 import {
   buildCompositeRegistration,
@@ -80,7 +82,7 @@ export async function applyProjectRouting(
     const liveRows = await repos.service.listByDeployment(deployment.id);
 
     // Cloud: apply the vercel routing at the Oblien edge (no OpenResty).
-    if (runtime instanceof CloudRuntime) {
+    if (runtime instanceof CloudRuntime || runtime instanceof CloudDockerRuntime) {
       await applyCloudRouting({ project, runtime, defs, liveRows, usesManaged: managed });
       return;
     }
@@ -335,20 +337,94 @@ export async function applyProjectRouting(
 }
 
 /**
- * Cloud edge routing: resolve the monorepo composite's frontend + backend to
- * their live Oblien workspaces (or a Page for a static frontend) and set ONE
- * hostname's edge table via `routes.set`. Same 1-static + 1-server shape the
- * self-hosted path handles; other shapes no-op (services keep their own
- * subdomains) until the cloud composite deploy topology lands.
+ * Cloud edge routing uses live workspace targets. Docker services publish
+ * distinct host ports on one VM; native services retain separate workspaces.
+ * Assemble each hostname's complete table before replacing its edge routes.
  */
-async function applyCloudRouting(opts: {
+export async function applyCloudRouting(opts: {
   project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>;
-  runtime: CloudRuntime;
+  runtime: CloudRuntime | CloudDockerRuntime;
   defs: Awaited<ReturnType<typeof repos.service.listByProject>>;
   liveRows: Awaited<ReturnType<typeof repos.service.listByDeployment>>;
   usesManaged: boolean;
 }): Promise<void> {
   const { project, runtime, defs, liveRows, usesManaged } = opts;
+  if (runtime instanceof CloudDockerRuntime) {
+    const domainRows = await repos.domain.listByProject(project.id);
+    const domainByHostname = new Map(domainRows.map(row => [row.hostname.toLowerCase(), row]));
+    const rowByService = new Map(liveRows.map(row => [row.serviceId, row]));
+    const plan = planCompositeRoute(defs, { rewrites: project.routingConfig?.rewrites });
+    const servicePlans = defs.filter(service => service.enabled).flatMap(service =>
+      buildServiceRouteDomains({ project, service, runtimeName: "cloud", usesManagedRouting: true, domainByHostname })
+        .map(route => ({ service, route })));
+    const projectPlans = buildProjectRouteDomains({ project, projectDomains: domainRows, runtimeName: "cloud", usesManagedRouting: true });
+    const hostnames = [...servicePlans.map(item => item.route.hostname), ...projectPlans.map(route => route.hostname),
+      ...(project.compositeRoutes ?? []).map(route => route.hostname)];
+    const errors = new Map<string, string>();
+    const targets = new Map<string, ReturnType<CloudDockerRuntime["resolveRoutingTarget"]>>();
+    const serviceTarget = async (serviceId: string, port?: number) => {
+      const service = defs.find(def => def.id === serviceId && def.enabled);
+      const live = rowByService.get(serviceId);
+      const containerPort = port ?? (service && resolveServicePort(service, project.port));
+      if (!service || !live?.containerId || !containerPort) throw new Error("Service has no live cloud routing target");
+      const key = `${serviceId}:${containerPort}`;
+      if (!targets.has(key)) targets.set(key, runtime.resolveRoutingTarget(live.containerId, containerPort));
+      return targets.get(key)!;
+    };
+    const rulesFor = async (serviceId: string, root: Awaited<ReturnType<typeof serviceTarget>>) => {
+      const backend = plan?.frontendServiceId === serviceId ? await serviceTarget(plan.backendServiceId) : undefined;
+      const input = compileRoutingToOblien(project.routingConfig ?? {}, { root, backend });
+      if (backend && !input.routes.some(rule => rule.action.kind === "proxy" && rule.action.workspace === backend.workspace && rule.action.port === backend.port)) {
+        const catchAll = input.routes.findIndex(rule => rule.action.kind === "proxy" && rule.match.path === "/");
+        input.routes.splice(catchAll < 0 ? 0 : catchAll, 0, { match: { path: plan!.backendPathPrefix, type: "prefix" },
+          action: { kind: "proxy", ...backend } });
+      }
+      return input;
+    };
+    const tables = new Map<string, {
+      hostname: string; custom: boolean; serviceId: string; port?: number;
+      domain?: (typeof projectPlans)[number];
+      locations?: NonNullable<typeof project.compositeRoutes>[number]["locations"];
+    }>();
+    for (const { service, route } of servicePlans) {
+      if (route.targetPort) tables.set(route.hostname.toLowerCase(), { hostname: route.hostname, custom: !route.isCloud,
+        serviceId: service.id, port: route.targetPort, domain: route });
+    }
+    for (const route of projectPlans) {
+      if (!route.targetPort || tables.has(route.hostname.toLowerCase())) continue;
+      const owner = pickProjectPortOwner({ port: route.targetPort, services: defs, rowByService, domainRows });
+      if (owner) tables.set(route.hostname.toLowerCase(), { hostname: route.hostname, custom: !route.isCloud,
+        serviceId: owner.serviceId, port: owner.containerPort, domain: route });
+      else errors.set(route.hostname.toLowerCase(), "No service owns the configured cloud route port");
+    }
+    for (const route of project.compositeRoutes ?? []) {
+      const key = route.hostname.toLowerCase();
+      tables.set(key, { hostname: route.hostname, custom: route.isCustomDomain, serviceId: route.rootServiceId,
+        domain: tables.get(key)?.domain, locations: route.locations });
+      errors.delete(key);
+    }
+    for (const [key, table] of tables) {
+      try {
+        const root = await serviceTarget(table.serviceId, table.port);
+        const input = await rulesFor(table.serviceId, root);
+        const locations = [...(table.locations ?? [])].sort((a, b) => b.pathPrefix.length - a.pathPrefix.length || Number(b.exact ?? false) - Number(a.exact ?? false));
+        const proxies = await Promise.all(locations.map(async location => ({
+          match: { path: location.pathPrefix, type: location.exact ? "exact" as const : "prefix" as const },
+          action: { kind: "proxy" as const, ...await serviceTarget(location.serviceId) },
+        })));
+        const firstProxy = input.routes.findIndex(rule => rule.action.kind === "proxy");
+        input.routes.splice(firstProxy < 0 ? 0 : firstProxy, 0, ...proxies);
+        const redirect = table.domain && resolveRouteRedirect(table.domain, hostnames);
+        if (redirect) input.routes.unshift({ match: { path: "/(.*)", type: "wildcard" },
+          action: { kind: "redirect", status: redirect.statusCode, to: `https://${redirect.target}/$1` } });
+        // A missing composite target leaves the existing full table untouched;
+        // never publish a root-only intermediate table during a live edit.
+        await runtime.publishRoute(table.hostname, root.port, table.custom, input);
+      } catch (error) { errors.set(key, safeErrorMessage(error)); }
+    }
+    if (errors.size) throw new Error([...errors].map(([hostname, message]) => `${hostname}: ${message}`).join("\n"));
+    return;
+  }
   if (!project.routingConfig) return;
 
   const plan = planCompositeRoute(defs, { rewrites: project.routingConfig.rewrites });
@@ -379,12 +455,12 @@ async function applyCloudRouting(opts: {
   if (front.containerId.startsWith(PAGE_CONTAINER_PREFIX)) {
     ctx = {
       staticPage: front.containerId.slice(PAGE_CONTAINER_PREFIX.length),
-      backend: { workspace: back.containerId, port: backPort },
+      backend: await runtime.resolveRoutingTarget(back.containerId, backPort),
     };
   } else if (frontPort) {
     ctx = {
-      root: { workspace: front.containerId, port: frontPort },
-      backend: { workspace: back.containerId, port: backPort },
+      root: await runtime.resolveRoutingTarget(front.containerId, frontPort),
+      backend: await runtime.resolveRoutingTarget(back.containerId, backPort),
     };
   } else {
     return;

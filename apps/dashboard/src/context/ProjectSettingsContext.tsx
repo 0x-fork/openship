@@ -219,6 +219,18 @@ interface ServicesData {
   error: string | null;
 }
 
+interface ProjectTab {
+  id: string;
+  label: string;
+  icon: string;
+  /** Sections keep their existing routes inside a shared navigation group. */
+  sections?: { id: string; label: string }[];
+}
+
+function findTabGroup(tabs: ProjectTab[], tabId: string) {
+  return tabs.find((tab) => tab.id === tabId || tab.sections?.some((section) => section.id === tabId));
+}
+
 interface ProjectSettingsContextType {
   // Project basic data
   projectData: BasicProjectData;
@@ -288,12 +300,13 @@ interface ProjectSettingsContextType {
   setSelectedDomain: (domain: string) => void;
   slug?: string[]; // Optional array for catch-all routes
   activeTab: string;
+  activeTabGroup: string;
   setActiveTab: (tab: string) => void;
   /** One-shot intent from the sidebar's "Add domain" affordance: the Domains
    *  tab opens its add-domain form on arrival, then clears it back to null. */
   pendingDomainAction: "add" | null;
   setPendingDomainAction: (action: "add" | null) => void;
-  tabs: { id: string; label: string; icon: string }[];
+  tabs: ProjectTab[];
 }
 
 const ProjectSettingsContext = createContext<ProjectSettingsContextType | undefined>(undefined);
@@ -944,7 +957,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     return tab || undefined; // let default be set by tab list below
   };
 
-  const tabs = useMemo(() => {
+  const tabs = useMemo<ProjectTab[]>(() => {
     const tl = t.projects.sidebar.tabs;
     const all = [
       { id: "overview", label: tl.overview, icon: "setting-100-1658432731.png" },
@@ -958,12 +971,26 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       // RuntimeAdapter.getUsage (dockerode | Oblien metrics) and visitor geography
       // via the traffic-source resolver (OpenResty mgmt API | Oblien analytics).
       { id: "monitoring", label: tl.monitoring, icon: "chart-1658432731.png" },
-      { id: "source", label: tl.source, icon: "git%20branch-159-1658431404.png" },
-      { id: "webhooks", label: tl.webhooks, icon: "git%20branch-159-1658431404.png" },
-      { id: "runtime", label: tl.runtime, icon: "setting-40-1662364403.png" },
+      {
+        id: "source",
+        label: tl.sourceAndTriggers,
+        icon: "git%20branch-159-1658431404.png",
+        sections: [
+          { id: "source", label: tl.source },
+          { id: "webhooks", label: tl.webhooks },
+        ],
+      },
       { id: "logs", label: tl.logs, icon: "terminal-184-1658431404.png" },
       { id: "backup", label: tl.backup, icon: "database.png" },
-      { id: "advanced", label: tl.advanced, icon: "error%20triangle-81-1658234612.png" },
+      {
+        id: "runtime",
+        label: tl.settings,
+        icon: "setting-40-1662364403.png",
+        sections: [
+          { id: "runtime", label: tl.runtime },
+          { id: "advanced", label: tl.advanced },
+        ],
+      },
     ];
     const isCloud = projectData.deployTarget === "cloud";
     return all.filter((tab) => {
@@ -973,16 +1000,15 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       // one that runs the watch job (not SaaS, not desktop), and the workload has
       // to be a container we can poll (Oblien exposes no stability probe).
       if (tab.id === "health" && (!isServerHost || isCloud)) return false;
-      // The Webhooks tab is shown on cloud too: the managed GitHub push→deploy
-      // entry, custom deploy hooks, and the delivery feed all apply on SaaS. Only
-      // the `job` action + the self-hosted webhook-domain picker are gated by mode
-      // inside the tab (job is refused server-side in CLOUD_MODE).
+      // Source & Triggers is available on cloud too. Webhook job actions and
+      // the self-hosted webhook-domain picker remain gated inside their section.
       return true;
     });
   }, [t, projectData.deployTarget, isServerHost]);
 
   const defaultTab = tabs[0].id;
   const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || defaultTab);
+  const activeTabGroup = findTabGroup(tabs, activeTab)?.id || defaultTab;
   const [pendingDomainAction, setPendingDomainAction] = useState<"add" | null>(null);
 
   useEffect(() => {
@@ -994,8 +1020,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   useEffect(() => {
     const resolved = resolveTab(slugTab) || defaultTab;
     // If the resolved tab isn't valid for this project type, fall back to default
-    const validIds = tabs.map((t) => t.id);
-    const target = validIds.includes(resolved) ? resolved : defaultTab;
+    const target = findTabGroup(tabs, resolved) ? resolved : defaultTab;
     if (target !== activeTab) {
       setActiveTab(target);
     }
@@ -1048,6 +1073,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       setSelectedDomain,
       slug,
       activeTab,
+      activeTabGroup,
       setActiveTab,
       pendingDomainAction,
       setPendingDomainAction,
@@ -1089,6 +1115,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       setSelectedDomain,
       slug,
       activeTab,
+      activeTabGroup,
       pendingDomainAction,
       tabs,
     ],
