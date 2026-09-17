@@ -2297,6 +2297,9 @@ async function deployComposeServicesUnlocked(
             serviceId: svc.id,
             serviceName: svc.name,
             containerId: carried.containerId,
+            allocatedResources: live?.resources
+              ? { containerId: carried.containerId, ...live.resources }
+              : carried.allocatedResources,
             status: "success",
             imageRef: carried.imageRef ?? null,
             hostPort: carriedHostPort,
@@ -2932,13 +2935,14 @@ async function deployComposeServicesUnlocked(
       // routable (see ownsNetworkEndpoint).
       const hasNoRoutableAddress = !ownsNetworkEndpoint(resolvedNamespaces.namespaces?.network);
 
+      const serviceResources = resolveServiceResources(svc, opts?.resources, runtime.name === "cloud");
       const serviceRuntimeConfig = createServiceRuntimeConfig({
         project,
         dep,
         service: svc,
         image,
         environment: mergedEnv,
-        resources: resolveServiceResources(svc, opts?.resources, runtime.name === "cloud"),
+        resources: serviceResources,
         namespaces: resolvedNamespaces.namespaces,
         // Cloud stores the workspace id as the service's containerId. Reuse the
         // previous deployment's workspace so its disk (volume data) survives the
@@ -2989,7 +2993,7 @@ async function deployComposeServicesUnlocked(
         service: svc,
         image,
         environment: mergedEnv,
-        resources: resolveServiceResources(svc, opts?.resources, runtime.name === "cloud"),
+        resources: serviceResources,
         buildSessionId: opts?.buildSessionId,
       });
       // Route PREPARATION is skipped outright for a service with no address, not just
@@ -3265,6 +3269,8 @@ async function deployComposeServicesUnlocked(
           serviceId: svc.id,
           serviceName: svc.name,
           containerId: result.containerId,
+          allocatedResources: serviceResources ? { containerId: result.containerId,
+            cpuCores: serviceResources.cpuCores, memoryMb: serviceResources.memoryMb } : null,
           status: "success",
           imageRef: image,
           imageDigest: result.imageDigest ?? null,
@@ -3482,6 +3488,8 @@ async function deployComposeServicesUnlocked(
             serviceId: svc.id,
             serviceName: svc.name,
             containerId: deployedContainerId,
+            allocatedResources: serviceResources ? { containerId: deployedContainerId,
+              cpuCores: serviceResources.cpuCores, memoryMb: serviceResources.memoryMb } : null,
             status: "indeterminate",
             imageRef: image,
             hostPort: indeterminateHostPort,

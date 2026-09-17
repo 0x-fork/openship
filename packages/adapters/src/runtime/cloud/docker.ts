@@ -13,6 +13,8 @@ import { cloudPageHostnames } from "./page-hostnames";
 import { dockerWebSocketStream } from "./docker-transport";
 import { CLOUD_DOCKER_BRIDGE_PORT, CLOUD_DOCKER_BRIDGE_SOURCE, CLOUD_DOCKER_BRIDGE_VERSION } from "./docker-bridge-source";
 import { assertDockerWorkspaceOwner, cloudWorkspaceStatus, isDockerWorkspaceRunning, waitForCloudDockerWorkspace } from "./workspace-ready";
+import { resolveEnvironment } from "../../system/environment";
+import { envOps, opScript } from "../../system/environment-ops";
 
 export const CLOUD_DOCKER_IMAGE = "oblien/docker:29";
 export const CLOUD_DOCKER_ROUTE_ROOT = "/opt/openship/cloud-docker/routes";
@@ -96,7 +98,12 @@ export class CloudDockerRuntime extends DockerRuntime {
       };
       if (await ready()) return;
       await this.executor.exec("docker info --format '{{.ServerVersion}}'", { timeout: 60_000 });
-      await this.executor.exec("command -v python3 >/dev/null || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-minimal)", { timeout: 300_000 });
+      const hasPython = await this.executor.exec("command -v python3").then(() => true, () => false);
+      if (!hasPython) {
+        const install = envOps(await resolveEnvironment(this.executor)).pkgInstall(["python3"], { installRecommends: false });
+        if (!install.supported) throw new Error(install.reason);
+        await this.executor.exec(opScript(install.value), { timeout: 300_000 });
+      }
       await this.executor.writeFile(BRIDGE_SCRIPT, CLOUD_DOCKER_BRIDGE_SOURCE, { mode: 0o700 });
       const workspace = this.client.workspace(this.workspaceId);
       const workload = (await workspace.workloads.list({ name: BRIDGE_WORKLOAD }))

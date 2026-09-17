@@ -170,7 +170,8 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   },
 }));
 
-vi.mock("@repo/adapters", () => ({
+vi.mock("@repo/adapters", async original => ({
+  ...await original<typeof import("@repo/adapters")>(),
   checkEdge: async () => ({ healthy: true, message: "" }),
   edgeProxy: async () => null,
   // Reached via lib/remote-state's `isAbsent`. Faithful to the real predicate's

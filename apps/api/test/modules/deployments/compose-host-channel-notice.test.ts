@@ -196,7 +196,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     publicEndpoints: [{ port: 8080, domain: "app", domainType: "free" }, { port: 9090, domain: "console", domainType: "free" }] },
   { id: "svc-api", name: "api", projectId: "p1", kind: "compose", enabled: true, exposed: false,
     ports: ["8080"], image: "api:v1", dependsOn: [], environment: {}, volumes: [],
-    advanced: { files: [{ path: "/etc/app.yml", content: "enabled: true" }] } }];
+    advanced: { resources: { cpuCores: 2, memoryMb: 2048 }, files: [{ path: "/etc/app.yml", content: "enabled: true" }] } }];
   h.previousServiceRows = [];
   h.upsertServiceDeployment.mockImplementation(async row => {
     h.previousServiceRows.push(row);
@@ -208,6 +208,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
       locations: [{ pathPrefix: "/api/", serviceId: "svc-api" }] }] } as Project,
   { ...dep, projectId: "p1", meta: { deployTarget: "cloud", runtimeMode: "docker", cloudDockerWorkspace: { projectId: "p1", workspaceId: "shared-vm" } } },
   runtime, logger, { executor, localHost: false, usesManagedRouting: false, forcePullImages: true,
+    resources: { cpuCores: 1, memoryMb: 1024, diskMb: 8192 },
     routing: { removeRoute: vi.fn(), registerRoute: vi.fn() } as never, ssl: { provisionCert: vi.fn(), verifyCert: vi.fn() } as never });
   expect(result.status).toBe("ready");
   expect(result.routeWarnings ?? []).toEqual([]);
@@ -223,6 +224,11 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
   expect(pullImage).toHaveBeenCalledWith("api:v1", { force: true });
   expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
     serviceId: "svc-web", containerId: "web-container", hostPorts: { 8080: 30001, 9090: 30002 },
+    allocatedResources: { containerId: "web-container", cpuCores: 1, memoryMb: 1024 },
+  }));
+  expect(api.resources).toMatchObject({ cpuCores: 2, memoryMb: 2048 });
+  expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
+    serviceId: "svc-api", allocatedResources: { containerId: "api-container", cpuCores: 2, memoryMb: 2048 },
   }));
   expect(publishRoute).toHaveBeenCalledWith("app.opsh.io", 30001, false, expect.objectContaining({ routes: [
     { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30003 } },
@@ -334,6 +340,23 @@ function addDisabledPreviousService() {
 }
 
 describe("compose deploy — host channel unavailable", () => {
+  it.each([false, true])("preserves a carried container's allocation rather than its unapplied settings (live inspect: %s)", async inspect => {
+    const runtime = carriedRuntime();
+    const allocatedResources = { containerId: "container-old", cpuCores: 2, memoryMb: 2048 };
+    h.previousServiceRows[0]!.allocatedResources = allocatedResources;
+    h.services[0]!.advanced = { resources: { cpuCores: 32, memoryMb: 32768 } };
+    if (inspect) vi.mocked(runtime.getContainerInfo).mockResolvedValue({ containerId: "container-old", status: "running",
+      resources: { cpuCores: 1, memoryMb: 1024 }, ip: "172.18.0.2" });
+    const { logger } = recordingLogger();
+    const result = await deployComposeServices({ ...project, activeDeploymentId: "d-old", routeStrategy: "container-ip" },
+      dep, runtime, logger, { targetServiceIds: new Set(), hostPortTarget: localHostPortTarget,
+        executor: { exec: vi.fn(async () => "") } as never });
+    expect(result.status).toBe("ready");
+    expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
+      serviceId: "svc-web", containerId: "container-old",
+      allocatedResources: inspect ? { containerId: "container-old", cpuCores: 1, memoryMb: 1024 } : allocatedResources,
+    }));
+  });
   it("aborts an exact cohort before activation when a later service is missing required env", async () => {
     const runtime = startingRuntime();
     const deployServiceWorkload = vi.mocked(runtime.deployServiceWorkload);

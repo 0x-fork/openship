@@ -960,6 +960,13 @@
       "when": 1789770107336,
       "tag": "0136_managed_network_org_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1789770107337,
+      "tag": "0137_service_allocated_resources",
+      "breakpoints": true
     }
   ]
 }

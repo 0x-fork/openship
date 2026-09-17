@@ -140,17 +140,30 @@ export async function ensureCloudDockerWorkspace(input: {
         const running = previous.trim().split(/\s+/).filter(Boolean);
         if (running.some(id => !/^[a-f0-9]{12,64}$/.test(id))) throw new Error("Invalid container identity during Cloud workspace resizing");
         input.signal?.throwIfAborted();
-        await ws.resources.update({
-          cpus: Math.max(input.resources.cpuCores, allocated.cpus ?? binding.resources.cpuCores),
-          memory_mb: Math.max(input.resources.memoryMb, allocated.memory_mb ?? binding.resources.memoryMb),
-          disk_size_mb: Math.max(input.resources.diskMb, allocated.disk_size_mb ?? binding.resources.diskMb),
-          apply: true,
-        });
+        let resizeFailure: { error: unknown } | undefined;
+        try {
+          await ws.resources.update({
+            cpus: Math.max(input.resources.cpuCores, allocated.cpus ?? binding.resources.cpuCores),
+            memory_mb: Math.max(input.resources.memoryMb, allocated.memory_mb ?? binding.resources.memoryMb),
+            disk_size_mb: Math.max(input.resources.diskMb, allocated.disk_size_mb ?? binding.resources.diskMb),
+            apply: true,
+          });
+        } catch (error) {
+          // The provider may have restarted the VM before its response was
+          // lost. Restore the captured running set even on an uncertain result.
+          resizeFailure = { error };
+        }
         // Once the resize has begun, restore running services even if this
         // deployment is cancelled. Cancelling a build must not strand siblings.
-        await waitForCloudDockerWorkspace(client, workspaceId, namespace);
-        ws.invalidateRuntime();
-        if (running.length) await executor.exec(`docker start ${running.map(sq).join(" ")}`);
+        try {
+          await waitForCloudDockerWorkspace(client, workspaceId, namespace);
+          ws.invalidateRuntime();
+          if (running.length) await executor.exec(`docker start ${running.map(sq).join(" ")}`);
+        } catch (error) {
+          throw new AggregateError(resizeFailure ? [resizeFailure.error, error] : [error],
+            "Could not restore running services after resizing the Cloud workspace. Check the workspace before retrying.", { cause: error });
+        }
+        if (resizeFailure) throw resizeFailure.error;
         input.signal?.throwIfAborted();
       } finally {
         await executor.dispose();

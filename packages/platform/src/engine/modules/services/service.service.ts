@@ -99,7 +99,7 @@ import {
 } from "../../lib/public-endpoints";
 import { resolveRuntimeResources } from "../../lib/resources";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
-import { assertCloudDeploymentLimits, assertPlanAllowsServices, assertRunningServiceQuota } from "../../lib/plan-guard";
+import { assertCloudDeploymentLimits, assertCloudRuntimeLimits, assertPlanAllowsServices, assertRunningServiceQuota } from "../../lib/plan-guard";
 import { env } from "../../config/env";
 import { createProvisionLock } from "../../lib/provision-lock";
 import {
@@ -2184,23 +2184,39 @@ async function provisionServiceContainer(
   }
 }
 
-/** Start/Restart bypass the build queue. Reserve an enabled slot under the same
- * lock as service creation, then validate the effective Cloud resource limits. */
-async function assertCloudServiceStartAllowed(ctx: RequestContext, projectId: string, serviceId: string): Promise<void> {
-  if (!env.CLOUD_MODE) return;
-  await createProvisionLock(`cloud:service-quota:${ctx.organizationId}`).run(async () => {
+/** Start/Restart bypass the build queue. Validate the existing allocation (or
+ * the new provisioning config) before reserving an enabled slot. */
+async function prepareServiceStart(ctx: RequestContext, projectId: string, serviceId: string, allowProvision: boolean) {
+  const resolve = () => allowProvision
+    ? resolveServiceContainer(ctx, projectId, serviceId).catch(() => null)
+    : resolveServiceContainer(ctx, projectId, serviceId);
+  if (!env.CLOUD_MODE) return resolve();
+  return createProvisionLock(`cloud:service-quota:${ctx.organizationId}`).run(async () => {
     const project = await repos.project.findById(projectId);
     assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
     const services = await repos.service.listByProject(projectId);
     const service = services.find(item => item.id === serviceId);
     if (!service) throw new Error("Service not found");
+    await assertPlanAllowsServices(ctx.organizationId);
     await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId]);
-    await assertCloudDeploymentLimits(ctx.organizationId, {
-      projectId,
-      resources: project.resources as Record<string, unknown> | null,
-      services: services.map(item => item.id === serviceId ? { ...item, enabled: true } : item),
-    });
-    if (!service.enabled) await repos.service.update(serviceId, { enabled: true });
+    const existing = await resolve();
+    try {
+      if (existing) {
+        await assertCloudRuntimeLimits(ctx.organizationId, existing.runtime, [{
+          containerId: existing.containerId, allocatedResources: existing.row?.allocatedResources,
+        }]);
+      } else {
+        await assertCloudDeploymentLimits(ctx.organizationId, {
+          projectId, resources: project.resources as Record<string, unknown> | null,
+          services: [{ ...service, enabled: true }],
+        });
+      }
+      if (!service.enabled) await repos.service.update(serviceId, { enabled: true });
+      return existing;
+    } catch (error) {
+      disposeRuntime(existing?.runtime);
+      throw error;
+    }
   });
 }
 
@@ -2210,10 +2226,9 @@ export async function startServiceContainer(
   serviceId: string,
 ) {
   await assertNotControlPlaneById(projectId);
-  await assertCloudServiceStartAllowed(ctx, projectId, serviceId);
   // Existing container → just start it. No container yet → provision it on its
   // own (image → container/workspace), decoupled from the project deploy.
-  const existing = await resolveServiceContainer(ctx, projectId, serviceId).catch(() => null);
+  const existing = await prepareServiceStart(ctx, projectId, serviceId, true);
   if (existing?.containerId) {
     try {
       await existing.runtime.start(existing.containerId);
@@ -2276,7 +2291,6 @@ export async function restartServiceContainer(
   opts?: { force?: boolean },
 ) {
   await assertNotControlPlaneById(projectId);
-  await assertCloudServiceStartAllowed(ctx, projectId, serviceId);
 
   // Checked BEFORE resolving a container: this is DB-only, so the honest answer
   // costs no transport — resolving first would allocate an SSH bridge only to
@@ -2308,7 +2322,9 @@ export async function restartServiceContainer(
     }
   }
 
-  const { runtime, containerId, row } = await resolveServiceContainer(ctx, projectId, serviceId);
+  const existing = await prepareServiceStart(ctx, projectId, serviceId, false);
+  if (!existing) throw new Error("Service has no running container");
+  const { runtime, containerId, row } = existing;
   try {
     await runtime.restart(containerId);
     if (row) {

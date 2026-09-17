@@ -38,6 +38,25 @@ describe("customer service quota accounting", () => {
     expect(await repo.countRunningForOrg("org-b")).toBe(1);
     expect(await repo.countRunningForOrg("org-a", ["one"])).toBe(1);
   });
+  it("reserves queued stack names once before and after service synchronization", async () => {
+    await service("saved");
+    await db.insert(schema.deployment).values({
+      id: "queued-stack", projectId: "project-a", organizationId: "org-a", branch: "main", status: "queued",
+      meta: { cloudApplicationSlot: false, cloudServiceSlots: ["saved", "new"] },
+    });
+    expect(await repo.countRunningForOrg("org-a")).toBe(2);
+    expect(await repo.countRunningForOrg("org-a", [], undefined, { projectId: "project-a", serviceNames: ["saved", "new"] })).toBe(2);
+    await service("new", { enabled: false });
+    expect(await repo.countRunningForOrg("org-a")).toBe(2);
+    expect(await repo.countRunningForOrg("org-a", ["new"])).toBe(1);
+    await db.update(schema.deployment).set({ status: "cancelled" }).where(eq(schema.deployment.id, "queued-stack"));
+    expect(await repo.countRunningForOrg("org-a")).toBe(1);
+  });
+  it("adds prospective services to the organization's existing slots by project and name", async () => {
+    await service("saved");
+    expect(await repo.countRunningForOrg("org-a", [], undefined, { projectId: "project-a", serviceNames: ["saved", "new"] })).toBe(2);
+    expect(await repo.countRunningForOrg("org-a", [], undefined, { projectId: "new-project", serviceNames: ["saved", "new"] })).toBe(3);
+  });
   it.each(["success", "skipped", "failed"])("keeps a disabled %s service charged while its active container remains", async status => {
     await service("disabled-live", { enabled: false, status });
     expect(await repo.countRunningForOrg("org-a")).toBe(1);

@@ -4326,6 +4326,7 @@ export class DockerRuntime implements RuntimeAdapter {
         : undefined;
 
     const { ip, hostPort, hostPortByContainerPort } = extractNetworkInfo(data);
+    const limits = inspectResourceLimits(data.HostConfig);
 
     let status: ContainerInfo["status"];
     if (data.State.Running) {
@@ -4344,6 +4345,7 @@ export class DockerRuntime implements RuntimeAdapter {
       hostPort,
       ...(hostPortByContainerPort ? { hostPortByContainerPort } : {}),
       uptimeSeconds: uptimeSeconds && uptimeSeconds > 0 ? uptimeSeconds : undefined,
+      resources: { cpuCores: limits?.cpuCores ?? 0, memoryMb: limits?.memoryMb ?? 0 },
     };
   }
 

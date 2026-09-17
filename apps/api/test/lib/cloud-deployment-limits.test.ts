@@ -19,6 +19,7 @@ describe("Cloud deploy and update resource gates", () => {
     await expect(assertCloudDeploymentLimits("org-a", { resources: base, services: services() })).resolves.toBeUndefined();
   });
   it("checks saved project sizes even when no resource picker value is sent", async () => {
+    h.count.mockResolvedValue(0);
     await expect(assertCloudDeploymentLimits("org-a", { runsApplication: true, resources: { ...base, cpuCores: 4 } }))
       .rejects.toMatchObject({ reason: "resource-tier" });
   });

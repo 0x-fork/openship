@@ -120,6 +120,16 @@ describe("Cloud Docker provisioning and retry", () => {
     expect(h.wait).toHaveBeenLastCalledWith(expect.anything(), "workspace-a", "namespace-a");
     expect(h.dispose).toHaveBeenCalledOnce();
   });
+  it("restores running services after a resize response is lost and still reports the failure", async () => {
+    await ensureCloudDockerWorkspace(input);
+    h.exec.mockResolvedValueOnce("abcdef123456");
+    h.resize.mockRejectedValue(new Error("response lost after resizing the VM"));
+    await expect(ensureCloudDockerWorkspace({ ...input, resources: { ...resources, memoryMb: 8192 } }))
+      .rejects.toThrow("response lost");
+    expect(h.exec).toHaveBeenLastCalledWith("docker start 'abcdef123456'");
+    expect(h.invalidate).toHaveBeenCalledOnce();
+    expect(h.dispose).toHaveBeenCalledOnce();
+  });
   it("recovers an interrupted create for deletion without starting or replacing it", async () => {
     h.create.mockRejectedValueOnce(new Error("response lost"));
     await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("response lost");

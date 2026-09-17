@@ -11,6 +11,11 @@ vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async orig
 vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
   ...await original<typeof import("@repo/platform/engine/lib/deployment-runtime")>(),
   resolveDeploymentRuntimeForRead: h.readRuntime,
+  withDeploymentRuntime: async (_dep: unknown, fn: (runtime: unknown, serverId: string | null) => Promise<unknown>) => {
+    const { runtime, serverId } = await h.readRuntime(_dep);
+    try { return await fn(runtime, serverId); }
+    finally { runtime.dispose?.(); }
+  },
 }));
 import { db, schema, repos, seedOwner } from "../jobs/_harness";
 import { eq } from "@repo/db";
@@ -42,9 +47,30 @@ async function definition(enabled = true, advanced: Record<string, unknown> = {}
   await db.insert(schema.service).values({ id: serviceId, projectId, name: serviceId, enabled, image: "alpine:3", advanced });
   return serviceId;
 }
+async function deployedService(serviceId: string) {
+  const deploymentId = id("deployment");
+  await db.insert(schema.deployment).values({ id: deploymentId, projectId, organizationId,
+    branch: "main", status: "ready", containerId: "deployed-container", meta: snapshot() });
+  await db.update(schema.project).set({ activeDeploymentId: deploymentId }).where(eq(schema.project.id, projectId));
+  await repos.service.upsertServiceDeployment({ deploymentId, serviceId, serviceName: serviceId,
+    containerId: "deployed-container", status: "stopped" });
+  return deploymentId;
+}
+function existingRuntime(appliedResources: { cpuCores: number; memoryMb: number }) {
+  const runtime = { name: "cloud", supports: () => false, start: vi.fn(), restart: vi.fn(), dispose: vi.fn(),
+    getContainerInfo: vi.fn().mockResolvedValue({ containerId: "deployed-container", status: "stopped", resources: appliedResources }) };
+  h.readRuntime.mockResolvedValue({ runtime, serverId: null });
+  return runtime;
+}
 function queue(target: string, meta = snapshot()) {
   return createQueuedDeployment({ projectId: target, organizationId, branch: "main", environment: "production", framework: "node", meta, envVars: {} });
 }
+const composeSnapshot = (): DeploymentConfigSnapshot => ({
+  ...snapshot(), serviceDeploymentMode: "services",
+  composeServices: ["api", "database"].map(name => ({
+    name, image: "alpine:3", ports: [], volumes: [], environment: {}, dependsOn: [],
+  })),
+});
 const context = () => ({ organizationId } as RequestContext);
 beforeEach(async () => {
   vi.clearAllMocks(); h.tier = "starter";
@@ -85,6 +111,22 @@ describe("Cloud quotas at real application mutation boundaries", () => {
     const winner = results.find(result => result.status === "fulfilled");
     if (winner?.status === "fulfilled") expect(winner.value.meta).toMatchObject({ cloudApplicationSlot: true });
   });
+  it("includes other projects before queueing a stack whose definitions are not yet saved", async () => {
+    await definition(); await definition();
+    const target = await project();
+    await expect(queue(target, composeSnapshot())).rejects.toMatchObject({ reason: "running-services" });
+    expect(await db.query.deployment.findMany({ where: eq(schema.deployment.projectId, target) })).toEqual([]);
+  });
+  it("reserves frozen stack slots before a concurrent deployment or service creation can claim them", async () => {
+    await definition();
+    const a = await project(), b = await project();
+    const results = await Promise.allSettled([queue(a, composeSnapshot()), queue(b, composeSnapshot())]);
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find(result => result.status === "rejected")).toMatchObject({ reason: { reason: "running-services" } });
+    expect(await repos.service.countRunningForOrg(organizationId)).toBe(3);
+    await expect(createService(context(), projectId, { name: "overflow", image: "alpine:3" }))
+      .rejects.toMatchObject({ reason: "running-services" });
+  });
   it("permits an existing native app to redeploy at the allowance without counting it twice", async () => {
     await definition(); await definition();
     const target = await project();
@@ -99,13 +141,75 @@ describe("Cloud quotas at real application mutation boundaries", () => {
       .rejects.toMatchObject({ reason: "resource-tier" });
     expect(await db.query.deployment.findMany({ where: eq(schema.deployment.projectId, projectId) })).toHaveLength(0);
   });
-  it.each(["start", "restart"])("checks actual resources before %s, including forced restarts", async action => {
+  it("checks the configured resources before provisioning a new service", async () => {
     const serviceId = await definition(true, { resources: { cpuCores: 32, memoryMb: 32768 } });
+    const operation = startServiceContainer(context(), projectId, serviceId);
+    await expect(operation).rejects.toMatchObject({ reason: "resource-tier" });
+    expect(h.readRuntime).not.toHaveBeenCalled();
+  });
+  it.each(["start", "restart"])("refuses %s of an oversized deployed container after its saved settings were reduced", async action => {
+    const serviceId = await definition(false, { resources });
+    await deployedService(serviceId);
+    const runtime = existingRuntime({ cpuCores: 32, memoryMb: 32768 });
     const operation = action === "start"
       ? startServiceContainer(context(), projectId, serviceId)
       : restartServiceContainer(context(), projectId, serviceId, { force: true });
     await expect(operation).rejects.toMatchObject({ reason: "resource-tier" });
+    expect(runtime.start).not.toHaveBeenCalled();
+    expect(runtime.restart).not.toHaveBeenCalled();
+    expect((await repos.service.findById(serviceId))?.enabled).toBe(false);
+    expect(runtime.dispose).toHaveBeenCalled();
+  });
+  it("restarts an allowed container even when an unapplied saved size is over the plan limit", async () => {
+    const serviceId = await definition(true, { resources: { cpuCores: 32, memoryMb: 32768 } });
+    await deployedService(serviceId);
+    const runtime = existingRuntime(resources);
+    await expect(restartServiceContainer(context(), projectId, serviceId, { force: true })).resolves.toMatchObject({ containerId: "deployed-container" });
+    expect(runtime.restart).toHaveBeenCalledWith("deployed-container");
+  });
+  it.each(["matching", "missing", "different-container"])("validates a %s allocation record when the Cloud Docker host is stopped", async record => {
+    const serviceId = await definition(false, { resources });
+    const deploymentId = await deployedService(serviceId);
+    const row = (await repos.service.listByDeployment(deploymentId))[0]!;
+    if (record !== "missing") await repos.service.updateServiceDeployment(row.id, {
+      allocatedResources: { containerId: record === "matching" ? "deployed-container" : "replaced-container", ...resources },
+    });
+    const runtime = existingRuntime(resources);
+    runtime.supports = (cap?: string) => cap === "dockerHost";
+    runtime.getContainerInfo.mockResolvedValue({ containerId: "deployed-container", status: "stopped" });
+    const operation = startServiceContainer(context(), projectId, serviceId);
+    if (record === "matching") {
+      await expect(operation).resolves.toMatchObject({ containerId: "deployed-container" });
+      expect(runtime.start).toHaveBeenCalledOnce();
+    } else {
+      await expect(operation).rejects.toMatchObject({ code: "RESOURCE_LIMITS_UNAVAILABLE" });
+      expect(runtime.start).not.toHaveBeenCalled();
+      expect((await repos.service.findById(serviceId))?.enabled).toBe(false);
+    }
+  });
+  it("checks all deployed allocations before resuming any container", async () => {
+    const first = await definition(false), second = await definition(false);
+    const deploymentId = await deployedService(first);
+    await db.update(schema.deployment).set({ meta: { ...snapshot(), serviceDeploymentMode: "services" } }).where(eq(schema.deployment.id, deploymentId));
+    await repos.service.upsertServiceDeployment({ deploymentId, serviceId: second, serviceName: second,
+      containerId: "oversized-container", status: "stopped" });
+    await repos.project.update(projectId, { disabledAt: new Date() });
+    const runtime = existingRuntime(resources);
+    runtime.getContainerInfo.mockImplementation(async (containerId: string) => ({ containerId, status: "stopped",
+      resources: containerId === "oversized-container" ? { cpuCores: 32, memoryMb: 32768 } : resources }));
+    await expect(enableProject(projectId, organizationId)).rejects.toMatchObject({ reason: "resource-tier" });
+    expect(runtime.start).not.toHaveBeenCalled();
+    expect((await repos.project.findById(projectId))?.disabledAt).not.toBeNull();
+  });
+  it("counts disabled definitions whose recorded containers would be resumed", async () => {
+    await definition(); await definition(); await definition();
+    const target = await definition(false);
+    const deploymentId = await deployedService(target);
+    await db.update(schema.deployment).set({ meta: { ...snapshot(), serviceDeploymentMode: "services" } }).where(eq(schema.deployment.id, deploymentId));
+    await repos.project.update(projectId, { disabledAt: new Date() });
+    await expect(enableProject(projectId, organizationId)).rejects.toMatchObject({ reason: "running-services" });
     expect(h.readRuntime).not.toHaveBeenCalled();
+    expect((await repos.project.findById(projectId))?.disabledAt).not.toBeNull();
   });
   it("does not enable a stopped definition when Start is over quota", async () => {
     await definition(); await definition(); await definition();
@@ -122,6 +226,19 @@ describe("Cloud quotas at real application mutation boundaries", () => {
     await expect(enableProject(target, organizationId)).rejects.toMatchObject({ reason: "running-services" });
     expect((await repos.project.findById(target))?.disabledAt).not.toBeNull();
     expect(h.readRuntime).not.toHaveBeenCalled();
+  });
+  it("resumes a Cloud static site on a static-only plan without reserving a compute slot", async () => {
+    h.tier = "free";
+    const activeId = id("deployment");
+    await db.insert(schema.deployment).values({ id: activeId, projectId, organizationId, branch: "main", status: "ready",
+      containerId: "page:static-site.opsh.io", meta: { ...snapshot(), hasServer: false, workload: "static" } });
+    await db.update(schema.project).set({ activeDeploymentId: activeId, disabledAt: new Date(),
+      hasServer: false, workloadType: "static", cloudWorkspaceId: "static-workspace" }).where(eq(schema.project.id, projectId));
+    const start = vi.fn();
+    h.readRuntime.mockResolvedValue({ runtime: { name: "cloud", start, dispose: vi.fn() }, serverId: null });
+    await expect(enableProject(projectId, organizationId)).resolves.toMatchObject({ success: true });
+    expect(start).toHaveBeenCalledWith("page:static-site.opsh.io");
+    expect(await repos.service.countRunningForOrg(organizationId)).toBe(0);
   });
   it("serializes project creation so two imports cannot claim the final project slot", async () => {
     h.tier = "free";

@@ -5,7 +5,7 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import { AppError, NotFoundError, ValidationError, safeErrorMessage } from "@repo/core";
-import { checkEdge, edgeProxy } from "@repo/adapters";
+import { checkEdge, edgeProxy, PAGE_CONTAINER_PREFIX } from "@repo/adapters";
 import type { LogEntry, ImportedSite, RuntimeAdapter } from "@repo/adapters";
 import {
   deploymentContainerIds,
@@ -23,9 +23,9 @@ import { sshManager } from "../../lib/ssh-manager";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
-import { deploymentWorkload } from "../deployments/deployment-class";
+import { deploymentWorkload, snapshotToClass } from "../deployments/deployment-class";
 import { livePrimaryContainerId } from "../services/service-container";
-import { assertCloudDeploymentLimits } from "../../lib/plan-guard";
+import { assertCloudRuntimeLimits, assertCloudServiceAllowance } from "../../lib/plan-guard";
 import { env } from "../../config/env";
 import { createProvisionLock } from "../../lib/provision-lock";
 
@@ -216,17 +216,27 @@ async function enableLiveProject(p: ProjectRow, organizationId: string) {
     throw new ValidationError("No container found for active deployment");
   }
 
+  const computeIds = containerIds.filter(id => !id.startsWith(PAGE_CONTAINER_PREFIX));
+  const serviceRows = env.CLOUD_MODE ? await repos.service.listByDeployment(dep.id) : [];
   if (env.CLOUD_MODE) {
     const services = await repos.service.listByProject(projectId);
-    const snapshot = (dep.meta ?? {}) as { resources?: Record<string, unknown>; cloudApplicationSlot?: boolean; serviceDeploymentMode?: string };
-    await assertCloudDeploymentLimits(organizationId, {
+    // Resume starts every recorded container, including a definition disabled
+    // after deployment. Count those actual services, not the next deploy's set.
+    const resumedServices = services.filter(service => serviceRows.some(row =>
+      row.serviceId === service.id && row.containerId && computeIds.includes(row.containerId)))
+      .map(service => ({ name: service.name, enabled: true }));
+    const snapshot = (dep.meta ?? {}) as { cloudApplicationSlot?: boolean; serviceDeploymentMode?: string };
+    const runsApplication = computeIds.length > 0 && snapshotToClass(dep.meta ?? {}).workload !== "static";
+    await assertCloudServiceAllowance(organizationId, {
       projectId,
-      resources: snapshot.resources ?? p.resources as Record<string, unknown> | null,
-      services: services.length ? services : undefined, runsApplication: true,
-      nativeApplication: services.length === 0 || snapshot.cloudApplicationSlot === true || snapshot.serviceDeploymentMode === "single",
+      services: resumedServices.length ? resumedServices : undefined, runsApplication,
+      nativeApplication: runsApplication && (resumedServices.length === 0 || snapshot.cloudApplicationSlot === true || snapshot.serviceDeploymentMode === "single"),
     });
   }
   await withDeploymentRuntime(dep, async (runtime) => {
+    await assertCloudRuntimeLimits(organizationId, runtime, computeIds.map(containerId => ({
+      containerId, allocatedResources: serviceRows.find(row => row.containerId === containerId)?.allocatedResources,
+    })));
     for (const containerId of containerIds) {
       await startOne(runtime, containerId);
     }

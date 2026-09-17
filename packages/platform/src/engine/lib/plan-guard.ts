@@ -35,7 +35,7 @@ import { repos } from "@repo/db";
 import { env } from "../config/env";
 import { isCloudManagedHostname } from "./public-endpoints";
 import { resolveBuildResources, resolveCloudServiceResources, resolveRuntimeResources } from "./resources";
-import type { ResourceConfig } from "@repo/adapters";
+import type { ResourceConfig, RuntimeAdapter } from "@repo/adapters";
 
 /**
  * A refusal the user can act on by upgrading. 402 Payment Required is the
@@ -248,31 +248,24 @@ function assertResourcesFitPlan(
   if (!Number.isFinite(cpu) || !Number.isFinite(mem) || cpu <= 0 || mem <= 0 || cpu > ceiling.cpuCores || mem > ceiling.memoryMb) refuse();
 }
 
-/** Validate the effective configuration on every deployment entry and again
- * immediately before provisioning. Saved config, Compose, updates and rollbacks
- * must obey the same limits as the dashboard's resource picker. */
-export async function assertCloudDeploymentLimits(organizationId: string, input: {
+type CloudDeploymentLimits = {
   projectId?: string;
   resources?: ResourceConfig | Record<string, unknown> | null;
   buildResources?: ResourceConfig | Record<string, unknown> | null;
   runsApplication?: boolean;
   /** A native main app may also have separately managed auxiliary services. */
   nativeApplication?: boolean;
-  services?: Array<{ enabled?: boolean; advanced?: { resources?: ResourceConfig | Record<string, unknown> | null } | null }>;
-}): Promise<void> {
-  if (!env.CLOUD_MODE) return;
-  const tier = await tierFor(organizationId);
+  services?: Array<{ name?: string; enabled?: boolean; advanced?: { resources?: ResourceConfig | Record<string, unknown> | null } | null }>;
+};
+
+type CloudServiceAllowance = Pick<CloudDeploymentLimits, "projectId" | "runsApplication" | "nativeApplication" | "services">;
+
+async function assertServiceAllowance(organizationId: string, tier: PlanTierId, input: CloudServiceAllowance): Promise<void> {
   const limits = planLimits(tier);
   const services = input.services?.filter(service => service.enabled !== false);
   const nativeApplication = input.nativeApplication ?? (!services && input.runsApplication);
   if (services?.length && !limits.services) {
     throw new PlanUpgradeRequiredError("Your plan can deploy static sites only. Service stacks need a paid plan.", "static-only", tier);
-  }
-  if (services) {
-    for (const service of services) assertResourcesFitPlan(tier, resolveCloudServiceResources(service.advanced?.resources, input.resources));
-  }
-  if (nativeApplication) {
-    assertResourcesFitPlan(tier, resolveRuntimeResources(input.resources, { isCloud: true }));
   }
   if (services?.length || input.runsApplication) {
     const limit = limits.runningServices;
@@ -280,13 +273,41 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
       // A failed count is unknown, never zero. Include a frozen/imported stack
       // even when its service definitions have not reached the database yet.
       const nativeProject = nativeApplication ? input.projectId : undefined;
-      const counted = await repos.service.countRunningForOrg(organizationId, [], nativeProject);
-      const used = nativeProject ? counted + 1 : Math.max(counted, services?.length ?? 1);
+      const prospective = input.projectId && services?.every(service => !!service.name)
+        ? { projectId: input.projectId, serviceNames: services.map(service => service.name!) }
+        : undefined;
+      const counted = prospective
+        ? await repos.service.countRunningForOrg(organizationId, [], nativeProject, prospective)
+        : await repos.service.countRunningForOrg(organizationId, [], nativeProject);
+      const used = nativeApplication ? counted + 1 : Math.max(counted, services?.length ?? 1);
       if (used > limit) throw new PlanUpgradeRequiredError(
         `Your plan includes ${limit} services. Stop and disable a service, remove it, or upgrade before deploying.`,
         "running-services", tier,
       );
     }
+  }
+}
+
+/** The same slot/plan gate for new deployments and existing-container resumes. */
+export async function assertCloudServiceAllowance(organizationId: string, input: CloudServiceAllowance): Promise<void> {
+  if (!env.CLOUD_MODE) return;
+  await assertServiceAllowance(organizationId, await tierFor(organizationId), input);
+}
+
+/** Validate the effective configuration on every deployment entry and again
+ * immediately before provisioning. Saved config, Compose, updates and rollbacks
+ * must obey the same limits as the dashboard's resource picker. */
+export async function assertCloudDeploymentLimits(organizationId: string, input: CloudDeploymentLimits): Promise<void> {
+  if (!env.CLOUD_MODE) return;
+  const tier = await tierFor(organizationId);
+  const limits = planLimits(tier);
+  await assertServiceAllowance(organizationId, tier, input);
+  const services = input.services?.filter(service => service.enabled !== false);
+  for (const service of services ?? []) {
+    assertResourcesFitPlan(tier, resolveCloudServiceResources(service.advanced?.resources, input.resources));
+  }
+  if (input.nativeApplication ?? (!services && input.runsApplication)) {
+    assertResourcesFitPlan(tier, resolveRuntimeResources(input.resources, { isCloud: true }));
   }
   const build = resolveBuildResources(input.buildResources, { isCloud: true });
   const maximum = PRICING.oblien.buildResources;
@@ -296,6 +317,30 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
       `Builds on this plan support up to ${maximum.cpuCores} vCPU and ${maximum.memoryMb / 1024} GB RAM. Reduce the build allocation.`,
       "resource-tier", tier,
     );
+  }
+}
+
+/** Starting an existing container applies its OLD limits, not editable settings.
+ * Inspect before any start. A stopped Docker workspace cannot be inspected, so
+ * only its allocation recorded for this exact container is an acceptable fallback. */
+export async function assertCloudRuntimeLimits(organizationId: string,
+  runtime: Pick<RuntimeAdapter, "getContainerInfo" | "supports">,
+  containers: ReadonlyArray<{ containerId: string;
+    allocatedResources?: { containerId: string; cpuCores: number; memoryMb: number } | null }>,
+): Promise<void> {
+  if (!env.CLOUD_MODE || containers.length === 0) return;
+  const tier = await tierFor(organizationId);
+  if (planLimits(tier).maxResourceTier === null) return;
+  for (const container of containers) {
+    const info = await runtime.getContainerInfo(container.containerId);
+    const recorded = container.allocatedResources;
+    const resources = info?.resources ?? (info?.status === "stopped" && runtime.supports("dockerHost") &&
+      recorded?.containerId === container.containerId ? recorded : undefined);
+    if (!resources) {
+      throw new AppError("Cannot verify this container's resource allocation. Retry when its host is reachable or redeploy it before starting.",
+        409, "RESOURCE_LIMITS_UNAVAILABLE");
+    }
+    assertResourcesFitPlan(tier, resources);
   }
 }
 

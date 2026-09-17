@@ -57,7 +57,12 @@ public purchases disabled until these checks pass.
 - New namespaces get explicit resource ceilings. Verified active entitlements
   synchronize those ceilings with the plan and the reseller account's capacity,
   without changing credits or usage. Builds, updates, rollbacks and direct
-  Start/Restart check the actual CPU/RAM allocation and service allowance.
+  Start/Restart and project resume check the actual CPU/RAM allocation and service
+  allowance before starting containers. Service deployments record the applied
+  limits for their exact container identity; a stopped Cloud Docker host can use
+  that record without booting for inspection. Missing legacy allocations require
+  inspection on a reachable host or redeployment. Editing future resource settings
+  does not change the allocation of an existing container.
 - Organization locks serialize project creation, service creation/enabling,
   and deployment reservations. Native apps and Compose containers share the
   service allowance; redeploying an existing app does not count it twice.

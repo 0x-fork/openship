@@ -486,6 +486,9 @@ export interface ContainerInfo {
   uptimeSeconds?: number;
   /** Current resource consumption */
   usage?: ResourceUsage;
+  /** Applied limits, independent of usage or the next deployment's settings.
+   * Zero means unlimited; undefined means the runtime could not report them. */
+  resources?: { cpuCores: number; memoryMb: number };
 }
 
 export interface ResourceUsage {

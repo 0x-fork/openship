@@ -2517,7 +2517,12 @@ fi`;
       // Keep the ws.get() ip fallback.
     }
 
-    return { containerId, status, ip };
+    return { containerId, status, ip,
+      ...(data.resources ? { resources: {
+        cpuCores: data.resources.cpus ?? 0,
+        memoryMb: data.resources.memory_mb ?? 0,
+      } } : {}),
+    };
   }
 
   async getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]> {

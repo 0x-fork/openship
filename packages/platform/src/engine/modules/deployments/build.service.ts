@@ -193,6 +193,8 @@ export async function runDeploymentPreflight(
 export interface DeploymentConfigSnapshot {
   /** Internal Cloud service-slot reservation, derived at queue creation. */
   cloudApplicationSlot?: boolean;
+  /** Frozen stack names reserve slots before their service rows are synchronized. */
+  cloudServiceSlots?: string[];
   /** Owning organization — required so server lookups can be org-scoped. */
   organizationId?: string;
   repoUrl: string;
@@ -1327,7 +1329,13 @@ export async function createQueuedDeployment(opts: {
       const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
-      meta = { ...meta, cloudApplicationSlot: !mode.useServicePipeline && snapshotToClass(meta).workload !== "static" };
+      meta = {
+        ...meta,
+        cloudApplicationSlot: !mode.useServicePipeline && snapshotToClass(meta).workload !== "static",
+        cloudServiceSlots: mode.useServicePipeline
+          ? mode.servicePreflightServices.filter(service => service.enabled !== false).map(service => service.name)
+          : [],
+      };
       await assertCloudDeploymentLimits(opts.organizationId, {
         projectId: opts.projectId,
         resources: meta.resources, buildResources: meta.buildResources,
