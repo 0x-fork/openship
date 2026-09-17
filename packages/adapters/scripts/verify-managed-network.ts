@@ -239,6 +239,15 @@ try {
       "absent",
     );
   passed("Read-only planning creates no keys, interfaces or host state");
+  await docker(["exec", names[0]!, "ip", "link", "add", interfaceName, "type", "wireguard"]);
+  try {
+    await assert.rejects(managedNetworkTools.inspect(executors[0]!, {
+      managedId, hostIdentity: names[0]!, endpoint: endpoints[0]!, listenPort: 51820,
+    }), /without an OpenShip ownership receipt/);
+  } finally {
+    await docker(["exec", names[0]!, "ip", "link", "delete", interfaceName]);
+  }
+  passed("Planning refuses an existing interface without a receipt even when it has no IPv4 address");
   const cidr = allocateManagedSubnet(observations);
   const addresses = allocateManagedAddresses(cidr, names);
   let config: WireGuardClusterConfig = {
@@ -301,7 +310,7 @@ try {
     const interfaces = await Promise.all(
       selected.map(async (i) => {
         const links = JSON.parse(
-          await docker(["exec", names[i]!, "ip", "-j", "-4", "addr", "show", "dev", interfaceName]),
+          await docker(["exec", names[i]!, "ip", "-j", "addr", "show", "dev", interfaceName]),
         );
         assert.deepEqual(
           links[0].addr_info,
@@ -473,6 +482,12 @@ try {
     ]);
   }
   passed("Blocked transport UDP fails private verification instead of reporting a healthy tunnel");
+  const source = config.members[0]!;
+  const peer = config.members[1]!;
+  await docker(["exec", names[0]!, "ip", "-4", "route", "del", `${peer.privateIp}/32`, "dev", interfaceName]);
+  await assert.rejects(managedNetworkTools.commit(executors[0]!, tx[0]!), /no longer matches the verified network/);
+  await docker(["exec", names[0]!, "ip", "-4", "route", "add", `${peer.privateIp}/32`, "dev", interfaceName, "src", source.privateIp]);
+  passed("A missing private route prevents commit even when WireGuard keys and handshakes remain healthy");
   await Promise.all(executors.map((executor, i) => managedNetworkTools.commit(executor, tx[i]!)));
   const originalKeys = config.members.map((member) => member.publicKey);
   await Promise.all(names.map((name) => docker(["restart", name])));

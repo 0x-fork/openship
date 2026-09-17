@@ -271,6 +271,8 @@ describe("cluster setup pages", () => {
     expect(h.verify).not.toHaveBeenCalled();
   });
   it("removes a selected failed server with confirmation and reuses its request after a lost response", async () => {
+    // Plain HTTP/LAN dashboards have crypto but no secure-context randomUUID.
+    vi.stubGlobal("crypto", {});
     const failed = {
       ...managedPreparationFixture(["server-a", "server-b", "server-c"]),
       status: "failed" as const,

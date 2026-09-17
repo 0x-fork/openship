@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { getApiErrorMessage } from "@/lib/api";
 import { serverClustersApi } from "@/lib/api/server-clusters";
+import { randomUUID } from "@/lib/random-uuid";
 import { NetworkDiagnosticText } from "./NetworkSetupProgress";
 import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
 
@@ -45,7 +46,7 @@ export function RemoveSetupServerButton({
     pending.current = true;
     setBusy(true);
     setError(null);
-    requestId.current ??= crypto.randomUUID();
+    requestId.current ??= randomUUID();
     try {
       const result =
         "operationId" in source

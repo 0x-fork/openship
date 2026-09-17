@@ -374,7 +374,7 @@ describe("removing a setup server through the existing recovery workflow", () =>
     });
     h.rollback.mockImplementation(async ({ id }) => {
       if (id === "server-c") throw new Error("SSH unavailable");
-      return { stage: "rolled_back" };
+      return { stage: "rolled_back", healthy: true };
     });
     const result = await networkSetupMemberCollection.removeManagedNetworkOperationMember(ctx, {
       operationId: operation.id,
@@ -393,7 +393,7 @@ describe("removing a setup server through the existing recovery workflow", () =>
     expect(h.finish).not.toHaveBeenCalled();
     expect(child.status).toBe("pending");
     expect(h.prepStart).not.toHaveBeenCalled();
-    h.rollback.mockResolvedValue({ stage: "rolled_back" });
+    h.rollback.mockResolvedValue({ stage: "rolled_back", healthy: true });
     await networkSetupMemberCollection.applyManagedNetwork(ctx, {
       operationId: operation.id,
       planHash: operation.planHash,
@@ -1176,7 +1176,7 @@ describe("managed network application and recovery", () => {
     );
     h.rollback.mockImplementation(async ({ id }) => {
       if (id === "server-a") throw new AppError("Server is offline", 503);
-      return { stage: "rolled_back" };
+      return { stage: "rolled_back", healthy: true };
     });
     await runManagedNetwork(ctx, applying());
     expect(h.apply).not.toHaveBeenCalled();
@@ -1196,7 +1196,7 @@ describe("managed network application and recovery", () => {
     h.apply.mockRejectedValueOnce(new AppError("SSH disconnected after apply", 503));
     h.rollback.mockImplementation(async ({ id }) => {
       if (id === "server-a") throw new AppError("Server is offline", 503);
-      return { stage: "rolled_back" };
+      return { stage: "rolled_back", healthy: true };
     });
     await runManagedNetwork(ctx, applying());
     expect(h.rollback).toHaveBeenCalledTimes(2);
@@ -1208,6 +1208,18 @@ describe("managed network application and recovery", () => {
       expect.arrayContaining([expect.objectContaining({ serverId: "server-a", stage: "failed" })]),
       expect.objectContaining({ stage: "handshakes", handshakes: expect.any(Array) }),
       "SSH disconnected after apply",
+    );
+  });
+  it("keeps recovery claims when an old rollback receipt no longer describes a healthy network", async () => {
+    h.apply.mockRejectedValueOnce(new AppError("SSH disconnected after apply", 503));
+    h.rollback.mockResolvedValue({ stage: "rolled_back", healthy: false });
+    await runManagedNetwork(ctx, applying());
+    expect(h.finish).not.toHaveBeenCalled();
+    expect(h.finalize).not.toHaveBeenCalled();
+    expect(h.progress).toHaveBeenLastCalledWith(
+      stored().id, 1, "needs_attention",
+      expect.arrayContaining([expect.objectContaining({ stage: "failed" })]),
+      expect.any(Object), expect.any(String),
     );
   });
   it("checks host fingerprints again before installation or preparation", async () => {

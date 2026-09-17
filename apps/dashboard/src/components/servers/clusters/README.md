@@ -228,6 +228,12 @@ and cluster removal also require a reviewed cleanup operation. Native inventory
 deletion cannot bypass managed cleanup. These operations do not drain or migrate
 workloads; that remains a separate milestone.
 
+Organization deletion also requires managed network cleanup. The shared engine
+and database both refuse deletion while an Openship-owned network or an unresolved
+host claim remains, so cascading inventory deletion cannot erase its recovery
+history. Finish recovery and remove the managed network first. Native, externally
+owned network inventory can still be removed with its organization.
+
 Host state is root-only at `/root/.openship/networks/<managedId>`, with atomic writes
 and generation-fenced receipts. Finalization removes obsolete staged keys and
 backups. If SSH fails after commit, obsolete backups may remain root-only; the
@@ -273,7 +279,8 @@ There is no continuous controller reconciliation or automatic workload failover.
 - `packages/db/src/schema/server-cluster.ts` and migrations `0129`/`0130`: cluster,
   primary network, compute membership, separate server network attachments, and
   verification records. Server foreign keys are deferred in SQL so organization
-  cascades can remove both parent trees in one transaction. Direct server removal
+  cascades can remove both parent trees in one transaction after managed cleanup.
+  Migration `0136` enforces that cleanup requirement at the database boundary. Direct server removal
   still fails while membership or managed claims exist. Durable managed journals,
   revision/lease fencing, claims, and commit barriers share the repository.
 - `packages/platform/src/engine/modules/system/server-cluster.operations.ts`:

@@ -252,7 +252,43 @@ describe("managed network journal and reservations", () => {
     expect(await repo.membership("s1")).toBeNull();
     expect((await repo.getOperation("org-a", remove.id)).status).toBe("succeeded");
   });
-  it("keeps claims during uncertain recovery and cascades only with its organization", async () => {
+  it("keeps joining physical hosts reserved against native enrollment through another organization", async () => {
+    const first = await plan();
+    await repo.claimOperation("org-a", first.id, first.planHash, "apply");
+    await repo.finishOperation(
+      "org-a", first.id, 1, "succeeded", committed(first), successfulManagedReport(first.plan), null,
+    );
+    const next = managedPlanFixture(["s1", "s3"]);
+    const update = await plan(["s1", "s3"], {
+      ...next,
+      baseRevision: 1,
+      previous: first.plan.config,
+      hosts: [...next.hosts, { ...first.plan.hosts[1]!, action: "remove" }],
+    });
+    await repo.claimOperation("org-a", update.id, update.planHash, "apply");
+    await db.insert(schema.servers).values({
+      id: "alias-s3", organizationId: "org-b", sshHost: "s3",
+    });
+    const native = await repo.create("org-b", {
+      ...config(),
+      members: config().members.map((member, index) => ({
+        ...member, serverId: index ? "foreign" : "alias-s3",
+      })),
+    }, "native", "native");
+    const { run } = await repo.startVerification("org-b", native.id, 1, "user");
+    await expect(repo.recordIdentity(native.id, "alias-s3", "host:s3", run.id)).rejects.toThrow(
+      "reserved by a managed network operation",
+    );
+    await repo.finishOperation(
+      "org-a", update.id, 1, "succeeded", committed(update), successfulManagedReport(update.plan), null,
+    );
+    await expect(repo.recordIdentity(native.id, "alias-s3", "host:s3", run.id)).rejects.toThrow(
+      "already enrolled",
+    );
+    expect((await repo.get("org-a", first.clusterId)).members.map((member) => member.serverId))
+      .toEqual(["s1", "s3"]);
+  });
+  it("prevents organization deletion from erasing uncertain recovery or host claims", async () => {
     const operation = await plan();
     await repo.claimOperation("org-a", operation.id, operation.planHash, "apply");
     await repo.progressOperation(
@@ -265,9 +301,36 @@ describe("managed network journal and reservations", () => {
     );
     expect(await repo.membership("s1")).toBeTruthy();
     expect((await repo.getOperation("org-a", operation.id)).leaseExpiresAt).toBeNull();
+    await expect(db.delete(schema.organization).where(eq(schema.organization.id, "org-a")))
+      .rejects.toThrow();
+    expect(await repo.membership("s1")).toBeTruthy();
+    expect((await repo.getOperation("org-a", operation.id)).status).toBe("needs_attention");
+    expect(await repo.hasManagedNetworkState("org-a")).toBe(true);
+    const recovery = await repo.claimOperation("org-a", operation.id, operation.planHash, "rollback");
+    await repo.finishOperation("org-a", operation.id, recovery.operation.generation, "rolled_back",
+      operation.hosts.map(host => ({ ...host, stage: "rolled_back" })), null, null);
+    expect(await repo.hasManagedNetworkState("org-a")).toBe(false);
     await db.delete(schema.organization).where(eq(schema.organization.id, "org-a"));
     expect(await db.select().from(schema.managedNetworkOperation)).toEqual([]);
     expect(await db.select().from(schema.managedNetworkClaim)).toEqual([]);
+  });
+  it("requires acknowledged network removal before deleting an organization with committed hosts", async () => {
+    const operation = await plan();
+    expect(await repo.hasManagedNetworkState("org-a")).toBe(false);
+    await repo.claimOperation("org-a", operation.id, operation.planHash, "apply");
+    await repo.finishOperation("org-a", operation.id, 1, "succeeded",
+      committed(operation), successfulManagedReport(operation.plan), null);
+    await expect(db.delete(schema.organization).where(eq(schema.organization.id, "org-a")))
+      .rejects.toThrow();
+    expect(await repo.hasManagedNetworkState("org-a")).toBe(true);
+    const removal = await plan(["s1", "s2"], {
+      baseRevision: 1, previous: operation.plan.config, intent: "remove",
+      hosts: operation.plan.hosts.map(host => ({ ...host, action: "remove" })),
+    });
+    await repo.claimOperation("org-a", removal.id, removal.planHash, "apply");
+    await repo.finishOperation("org-a", removal.id, 1, "succeeded", committed(removal), null, null);
+    await db.delete(schema.organization).where(eq(schema.organization.id, "org-a"));
+    expect(await db.select().from(schema.serverCluster)).toEqual([]);
   });
 });
 

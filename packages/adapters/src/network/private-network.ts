@@ -33,7 +33,7 @@ import json, subprocess, sys
 if sys.platform != 'linux':
     print(json.dumps({'error': 'Linux hosts are required.', 'code': 'NETWORK_HOST_UNSUPPORTED'})); sys.exit(0)
 try:
-    links = json.loads(subprocess.check_output(['ip', '-d', '-j', '-4', 'addr', 'show'], timeout=10))
+    links = json.loads(subprocess.check_output(['ip', '-d', '-j', 'addr', 'show'], timeout=10))
     print(json.dumps({'interfaces': [{
         'name': x['ifname'], 'mtu': x['mtu'], 'up': 'UP' in x.get('flags', []),
         'kind': x.get('linkinfo', {}).get('info_kind'),

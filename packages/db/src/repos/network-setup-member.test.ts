@@ -45,7 +45,9 @@ beforeAll(async () => {
 }, 30_000);
 afterAll(async () => client.close());
 beforeEach(async () => {
-  await db.delete(schema.organization);
+  // Reset the isolated fixture, including unresolved operations from the prior
+  // test. Production organization deletion correctly refuses that state.
+  await client.exec('TRUNCATE TABLE "organization" CASCADE');
   await db.insert(schema.organization).values([
     { id: "org-a", name: "A" },
     { id: "org-b", name: "B" },

@@ -16,6 +16,7 @@ import {
   type ManagedNetworkOperationStatus,
 } from "@repo/core";
 import type { Database, DatabaseTransaction } from "../client";
+import { hashStringToInt } from "../advisory-lock-factory";
 import {
   serverCluster,
   clusterNetwork,
@@ -25,6 +26,7 @@ import {
   managedNetworkOperation,
   managedNetworkPreparation,
   managedNetworkClaim,
+  organization,
   servers,
 } from "../schema";
 import { discardNetworkSetup } from "./network-setup-discard";
@@ -50,6 +52,15 @@ const unsettledStates: ManagedNetworkOperationStatus[] = [
 export function createServerClusterRepo(db: Database) {
   const owned = (org: string, id: string) =>
     and(eq(serverCluster.id, id), eq(serverCluster.organizationId, org));
+
+  async function lockHostIdentities(tx: DatabaseTransaction, identities: string[]) {
+    // Membership and pending claims have separate unique indexes. Serialize
+    // ownership changes across both tables (and organizations) on this same
+    // transaction connection, before taking any cluster row lock.
+    const keys = [...new Set(identities.map((id) => hashStringToInt(`cluster-host:${id}`)))];
+    for (const key of keys.sort((a, b) => a - b))
+      await tx.execute(sql`select pg_advisory_xact_lock(${key})`);
+  }
 
   async function expire(tx: Database | DatabaseTransaction, clusterId: string) {
     await tx
@@ -295,6 +306,14 @@ export function createServerClusterRepo(db: Database) {
         .orderBy(desc(serverCluster.createdAt));
       return Promise.all(rows.map((row) => get(org, row.id)));
     },
+    async hasManagedNetworkState(org: string): Promise<boolean> {
+      // The deletion trigger uses this same predicate, closing the race between
+      // the friendly auth preflight and Better Auth's subsequent DELETE.
+      const [row] = await db
+        .select({ active: sql<boolean>`openship_has_managed_network_state(${org})` })
+        .from(organization).where(eq(organization.id, org));
+      return row?.active ?? false;
+    },
     async membership(serverId: string) {
       const [row] = await db
         .select()
@@ -455,6 +474,7 @@ export function createServerClusterRepo(db: Database) {
     async recordIdentity(clusterId: string, serverId: string, identity: string, runId: string) {
       try {
         await db.transaction(async (tx) => {
+          await lockHostIdentities(tx, [identity]);
           const [cluster] = await tx
             .select()
             .from(serverCluster)
@@ -491,6 +511,12 @@ export function createServerClusterRepo(db: Database) {
             throw conflict(
               "This physical server is already enrolled through another server entry.",
             );
+          const [claim] = await tx
+            .select()
+            .from(managedNetworkClaim)
+            .where(eq(managedNetworkClaim.hostIdentity, identity));
+          if (claim && (claim.clusterId !== clusterId || claim.serverId !== serverId))
+            throw conflict("This physical server is reserved by a managed network operation.");
           await tx
             .update(clusterMember)
             .set({ hostIdentity: identity })
@@ -657,6 +683,7 @@ export function createServerClusterRepo(db: Database) {
           throw conflict("This operation needs an explicit resume or restore action.");
         if (new Set(plan.hosts.map((host) => host.hostIdentity)).size !== plan.hosts.length)
           throw conflict("Two server entries point to the same physical host.");
+        await lockHostIdentities(tx, plan.hosts.map((host) => host.hostIdentity));
         for (const host of plan.hosts) {
           const memberships = await tx
             .select()
@@ -842,6 +869,7 @@ export function createServerClusterRepo(db: Database) {
           .for("update");
         if (!operation) throw conflict("This network worker no longer owns the operation.");
         const plan = operation.plan;
+        await lockHostIdentities(tx, plan.hosts.map((host) => host.hostIdentity));
         const expected = outcome === "succeeded" ? "committed" : "rolled_back";
         if (
           hosts.length !== plan.hosts.length ||

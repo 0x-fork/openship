@@ -166,8 +166,8 @@ with tempfile.TemporaryDirectory() as directory:
 describe.skipIf(!pythonAvailable)("managed host command diagnostics", () => {
   it.each([
     {
-      command: ["ip", "-d", "-j", "-4", "addr", "show"],
-      label: "ip -d -j -4 addr show",
+      command: ["ip", "-d", "-j", "addr", "show"],
+      label: "ip -d -j addr show",
       stderr: "RTNETLINK answers: Operation not permitted",
     },
     {
@@ -231,7 +231,7 @@ describe.skipIf(!pythonAvailable)("managed host command diagnostics", () => {
         stderr: "kernel inspection stalled",
       });
       expect(result.code).toBe(code);
-      expect(result.error).toBe(`ip -d -j -4 addr show ${detail}`);
+      expect(result.error).toBe(`ip -d -j addr show ${detail}`);
     },
   );
   it("redacts key material and credentials while retaining the diagnostic", async () => {
@@ -256,7 +256,7 @@ describe.skipIf(!pythonAvailable)("managed host command diagnostics", () => {
       stdout: "private-command-output",
     });
     expect(result.code).toBe("MANAGED_NETWORK_REPORT_INVALID");
-    expect(result.error).toContain("ip -d -j -4 addr show returned invalid JSON");
+    expect(result.error).toContain("ip -d -j addr show returned invalid JSON");
     expect(result.error).not.toContain("private-command-output");
   });
   it("redacts stdin even when a malformed private key is echoed by its command", async () => {
@@ -278,9 +278,9 @@ input = json.loads(sys.argv[1])
 with tempfile.TemporaryDirectory() as directory:
  managed_id = 'a' * 32; iface = 'oswg' + managed_id[:10]
  base = pathlib.Path(directory) / 'networks' / managed_id; base.mkdir(parents=True)
- config = {'interfaceName': iface, 'peers': [
-  {'serverId': 'b', 'publicKey': 'peer-b', 'endpoint': '192.0.2.2', 'listenPort': 51820},
-  {'serverId': 'c', 'publicKey': 'peer-c', 'endpoint': '192.0.2.3', 'listenPort': 51822},
+ config = {'interfaceName': iface, 'mtu': 1400, 'privateIp': '10.244.0.1', 'listenPort': 51820, 'transportOnly': True, 'peers': [
+  {'serverId': 'b', 'publicKey': 'peer-b', 'privateIp': '10.244.0.2', 'endpoint': '192.0.2.2', 'listenPort': 51820},
+  {'serverId': 'c', 'publicKey': 'peer-c', 'privateIp': '10.244.0.3', 'endpoint': '192.0.2.3', 'listenPort': 51822},
  ]}
  (base / 'network.json').write_text(json.dumps(config)); (base / 'private.key').write_text('private-key-fixture')
  before = {p.name: p.read_text() for p in base.iterdir()}
@@ -289,6 +289,10 @@ with tempfile.TemporaryDirectory() as directory:
   elif args[-1] == 'peers': output = 'peer-b\npeer-c\n'
   elif args[-1] == 'public-key': output = 'different-key' if input.get('drift') else 'local-public'
   elif args[-1] == 'pubkey': output = 'local-public'
+  elif args[-1] == 'listen-port': output = '51820'
+  elif args[-1] == 'allowed-ips': output = 'peer-b\t10.244.0.2/32\npeer-c\t10.244.0.3/32\n'
+  elif args == ['ip', '-d', '-j', 'addr', 'show']:
+   output = json.dumps([{'ifname': iface, 'flags': ['UP'], 'mtu': 1400, 'linkinfo': {'info_kind': 'wireguard'}, 'addr_info': []}])
   else: raise AssertionError('Unexpected command')
   return types.SimpleNamespace(returncode=0, stdout=output, stderr='')
  subprocess.run = command

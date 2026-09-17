@@ -215,6 +215,7 @@ async function transact(
     generation: transaction.generation,
     expectedConfigHash: transaction.host.configHash,
     stateDir: access.ops.stateDir(),
+    firewallInspect: access.firewall.inspect,
     ...extra,
   });
   return receipt(result, transaction);
@@ -461,7 +462,6 @@ export const managedNetworkTools = {
       rotateKeys,
       rollbackSeconds: MANAGED_NETWORK_ROLLBACK_SECONDS,
       services: access.services,
-      firewallInspect: access.firewall.inspect,
       runner: MANAGED_NETWORK_HOST,
     });
     if (!result?.publicKey)

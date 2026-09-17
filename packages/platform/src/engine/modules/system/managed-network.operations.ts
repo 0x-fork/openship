@@ -489,7 +489,7 @@ export async function runManagedNetwork(
           const result = await checkedServer(host.serverId, (executor) =>
             managedNetworkTools.rollback(executor, transaction(host.serverId)),
           );
-          if (result && result.stage !== "rolled_back")
+          if (result && (result.stage !== "rolled_back" || !result.healthy))
             throw conflict("This server did not confirm restoration.");
           host.stage = "rolled_back";
           host.error = null;

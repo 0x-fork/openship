@@ -93,7 +93,9 @@ def check_kernel():
 def inspect(c, base):
     iface = c['interfaceName']; owned = read(base / 'network.json')
     check_kernel()
-    links = run_json(['ip', '-d', '-j', '-4', 'addr', 'show'])
+    # -4 hides links with no IPv4 address, including transport-only WireGuard
+    # and colliding interfaces without an ownership receipt. Filter addresses below.
+    links = run_json(['ip', '-d', '-j', 'addr', 'show'])
     own = next((link for link in links if link['ifname'] == iface), None)
     if own and (not owned or owned.get('managedId') != c['managedId'] or own.get('linkinfo', {}).get('info_kind') != 'wireguard'):
         raise RuntimeError('The proposed interface already exists without an OpenShip ownership receipt. Choose a new managed network.')
@@ -190,11 +192,32 @@ def up(base, config):
 
 def healthy(base, config):
     if config is None:
-        return not any(item['ifname'] == interface_name for item in run_json(['ip', '-j', 'link', 'show']))
+        if any(item['ifname'] == interface_name for item in run_json(['ip', '-j', 'link', 'show'])): return False
+        rules = run(['sh', '-c', c['firewallInspect']], label='Verify absence of owned firewall rules')
+        return 'OSWG_' + managed_id[:16] + '_' not in rules
     iface = config['interfaceName']
+    link = next((item for item in run_json(['ip', '-d', '-j', 'addr', 'show']) if item['ifname'] == iface), None)
+    if not link or 'UP' not in link.get('flags', []) or link.get('mtu') != config['mtu'] or link.get('linkinfo', {}).get('info_kind') != 'wireguard': return False
     if run(['wg', 'show', iface, 'public-key'], optional=True).strip() != public_key(base / 'private.key'): return False
-    peers = set(run(['wg', 'show', iface, 'peers'], optional=True).split())
-    return peers == set(peer['publicKey'] for peer in config['peers'])
+    if run(['wg', 'show', iface, 'listen-port'], optional=True).strip() != str(config['listenPort']): return False
+    peers = {}
+    for line in run(['wg', 'show', iface, 'allowed-ips'], optional=True).splitlines():
+        fields = line.split()
+        if len(fields) < 2 or fields[0] in peers: return False
+        peers[fields[0]] = set(fields[1:])
+    if peers != {peer['publicKey']: {peer['privateIp'] + '/32'} for peer in config['peers']}: return False
+    addresses = {(item.get('local'), item.get('prefixlen')) for item in link.get('addr_info', []) if item.get('family') == 'inet'}
+    if config.get('transportOnly'): return not addresses
+    if addresses != {(config['privateIp'], 32)}: return False
+    # A live key exchange does not prove that the configured private network still
+    # exists. Keep rollback armed if an address or route changes after its probes.
+    routes = run_json(['ip', '-j', '-4', 'route', 'show', 'table', 'main'])
+    return all(any(
+        route.get('dst') in (peer['privateIp'], peer['privateIp'] + '/32') and
+        route.get('dev') == iface and route.get('prefsrc') == config['privateIp'] and
+        route.get('type', 'unicast') == 'unicast'
+        for route in routes
+    ) for peer in config['peers'])
 
 def unit_path(suffix):
     return pathlib.Path('/etc/systemd/system') / ('openship-network-' + managed_id + suffix)
@@ -326,7 +349,9 @@ try:
         else:
             if action == 'rollback':
                 if not receipt or receipt['operationId'] != c['operationId']:
-                    if current_hash(base) == c['expectedConfigHash']:
+                    # Missing journal files are not proof of cleanup: an orphaned
+                    # interface/rule or a broken original network must keep its claim.
+                    if current_hash(base) == c['expectedConfigHash'] and healthy(base, read(base / 'network.json')):
                         print(json.dumps({'missing': True})); sys.exit(0)
                     raise RuntimeError('The server no longer matches this operation or its original configuration.')
                 if receipt['generation'] < c['generation']:
