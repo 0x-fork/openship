@@ -3,11 +3,11 @@
  * Raw HTTP is carried inside WebSocket binary frames so Docker's exec/attach
  * upgrades and streaming archives work without exposing a Docker TCP port. */
 export const CLOUD_DOCKER_BRIDGE_PORT = 23750;
-export const CLOUD_DOCKER_BRIDGE_VERSION = "openship-docker-bridge-v1";
+export const CLOUD_DOCKER_BRIDGE_VERSION = "openship-docker-bridge-v2";
 export const CLOUD_DOCKER_BRIDGE_SOURCE = String.raw`
 import base64, hashlib, http.server, os, queue, socket, struct, threading
 
-VERSION = "openship-docker-bridge-v1"
+VERSION = "${CLOUD_DOCKER_BRIDGE_VERSION}"
 MAX_FRAME = 8 * 1024 * 1024
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -58,7 +58,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 head += bytes([127]) + struct.pack("!Q", length)
             with write_lock:
+                if closed.is_set():
+                    return
                 self.connection.sendall(head + data)
+                if opcode == 8:
+                    closed.set()
+
+        def disconnect():
+            closed.set()
+            with window:
+                window.notify_all()
+            writes.put(None)
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
 
         def read_exact(length):
             data = self.rfile.read(length)
@@ -77,22 +91,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         limit = min(65536, credit[0])
                     data = upstream.recv(limit)
                     if not data:
-                        # Preserve half-close: Docker may finish its response while
-                        # the client is still shutting down its request side.
+                        # EOF only closes this direction. Keep receiving the
+                        # request and WebSocket close handshake: shutting down
+                        # TCP here can discard the buffered response on Linux.
                         send(1, b"eof")
-                        send(8, struct.pack("!H", 1000))
-                        break
+                        return
                     with window:
                         credit[0] -= len(data)
                     send(2, data)
             except (OSError, EOFError):
-                pass
-            finally:
-                closed.set()
-                try:
-                    self.connection.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
+                disconnect()
 
         def send_docker():
             try:
@@ -106,11 +114,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         input_credit[0] += len(data)
                     send(1, ("ack:" + str(len(data))).encode())
             except OSError:
-                closed.set()
-                try:
-                    self.connection.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
+                disconnect()
 
         threading.Thread(target=receive_docker, daemon=True).start()
         threading.Thread(target=send_docker, daemon=True).start()
@@ -131,6 +135,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 mask = read_exact(4)
                 data = bytes(value ^ mask[i % 4] for i, value in enumerate(read_exact(length)))
                 if opcode == 8:
+                    send(8, data)
                     break
                 if opcode == 9:
                     send(10, data)
@@ -164,10 +169,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (OSError, EOFError, ValueError):
             pass
         finally:
-            closed.set()
-            with window:
-                window.notify_all()
-            writes.put(None)
+            disconnect()
             try:
                 upstream.shutdown(socket.SHUT_RDWR)
             except OSError:

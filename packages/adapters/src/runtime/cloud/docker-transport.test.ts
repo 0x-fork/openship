@@ -19,6 +19,7 @@ describe("Oblien Docker byte transport", () => {
   let transport: ReturnType<typeof createCloudDockerTransport>;
   let socketPath: string;
   let bridgeUrl: string;
+  let receiveHalfClosedRequest: ((body: Buffer) => void) | undefined;
   const sockets = new Set<Socket>();
   const upstream = httpServer((req, res) => {
     if (req.url === "/_ping") return void res.end("OK");
@@ -31,8 +32,15 @@ describe("Oblien Docker byte transport", () => {
   upstream.on("connection", socket => {
     sockets.add(socket); socket.on("error", () => {}); socket.once("close", () => sockets.delete(socket));
   });
-  upstream.on("upgrade", (_req, socket, head) => {
+  upstream.on("upgrade", (req, socket, head) => {
     socket.write("HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n");
+    if (req.url === "/half-close") {
+      const chunks = head.length ? [head] : [];
+      socket.on("data", data => chunks.push(data));
+      socket.on("end", () => receiveHalfClosedRequest?.(Buffer.concat(chunks)));
+      socket.end("response complete");
+      return;
+    }
     if (head.length) socket.write(head);
     socket.on("data", data => socket.write(data));
     socket.on("end", () => socket.end());
@@ -95,9 +103,33 @@ describe("Oblien Docker byte transport", () => {
     const results = await Promise.all(Array.from({ length: 12 }, () => roundtrip("/_ping")));
     expect(results.map(result => result.toString())).toEqual(Array(12).fill("OK"));
   });
-  it("streams binary archives without corruption", async () => {
+  it("streams repeated binary archives without corruption", async () => {
     const payload = randomBytes(3 * 1024 * 1024 + 37);
-    expect(await roundtrip("/archive", payload)).toEqual(payload);
+    // Exercise independent close handshakes: an early bridge shutdown can
+    // discard the last TCP segment on Linux while passing a single transfer.
+    for (let attempt = 0; attempt < 10; attempt++) {
+      expect((await roundtrip("/archive", payload)).equals(payload)).toBe(true);
+    }
+  });
+  it("keeps the request writable after Docker finishes its response", async () => {
+    const requestBody = new Promise<Buffer>(resolve => { receiveHalfClosedRequest = resolve; });
+    const stream = await dockerWebSocketStream(new WebSocket(bridgeUrl));
+    const response: Buffer[] = [];
+    stream.on("data", chunk => response.push(chunk));
+    try {
+      const ended = once(stream, "end");
+      stream.write("POST /half-close HTTP/1.1\r\nHost: docker\r\nConnection: Upgrade\r\nUpgrade: tcp\r\nContent-Length: 0\r\n\r\n");
+      await ended;
+      expect(Buffer.concat(response).toString()).toContain("response complete");
+      const payload = randomBytes(3 * 1024 * 1024 + 17);
+      const finished = once(stream, "finish");
+      stream.end(payload);
+      await finished;
+      expect((await requestBody).equals(payload)).toBe(true);
+    } finally {
+      stream.destroy();
+      receiveHalfClosedRequest = undefined;
+    }
   });
   it("preserves the request and backpressure in Bun while the provider connection opens", async () => {
     // The production API runs in Bun. Node alone missed Bun's paused Unix

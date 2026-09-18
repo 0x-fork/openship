@@ -18,6 +18,8 @@ import { envOps, opScript } from "../../system/environment-ops";
 
 export const CLOUD_DOCKER_IMAGE = "oblien/docker:29";
 export const CLOUD_DOCKER_ROUTE_ROOT = "/opt/openship/cloud-docker/routes";
+// Keep these installation identities stable when the bridge version changes,
+// so an upgrade replaces its process instead of creating a second port owner.
 const BRIDGE_SCRIPT = "/opt/openship/cloud-docker/bridge-v1.py";
 const BRIDGE_WORKLOAD = "openship-docker-api-v1";
 
@@ -110,7 +112,14 @@ export class CloudDockerRuntime extends DockerRuntime {
         .find(item => item.name === BRIDGE_WORKLOAD);
       if (workload) {
         const state = String(workload.state ?? workload.status ?? "");
-        if (["stopped", "failed", "exited"].includes(state)) await workspace.workloads.start(workload.id);
+        if (["stopped", "failed", "exited"].includes(state)) {
+          await workspace.workloads.start(workload.id);
+        } else if (!(await ready())) {
+          // Replacing the script does not update an already-running Python
+          // process. Restart only the bridge, keeping Docker services running.
+          await workspace.workloads.stop(workload.id);
+          await workspace.workloads.start(workload.id);
+        }
       } else {
           await workspace.workloads.create({ name: BRIDGE_WORKLOAD,
             cmd: ["python3", BRIDGE_SCRIPT], restart_policy: "always", max_restarts: 0,

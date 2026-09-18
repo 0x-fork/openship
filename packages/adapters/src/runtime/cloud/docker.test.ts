@@ -72,6 +72,42 @@ beforeEach(async () => {
 });
 afterEach(async () => { await runtime?.dispose(); vi.restoreAllMocks(); });
 describe("containers on one Oblien Docker workspace", () => {
+  it.each(["running", "stopped"])("updates a %s bridge before accepting Docker connections", async initialState => {
+    vi.useFakeTimers();
+    let bridgeState = initialState;
+    let runningVersion = "openship-docker-bridge-v1";
+    let installedVersion: string | undefined;
+    vi.mocked(runtime.executor.writeFile).mockImplementation(async (_path, content) => {
+      installedVersion = String(content).match(/^VERSION = "([^"]+)"/m)?.[1];
+    });
+    ws.runtime.mockResolvedValue({ proxy: () => ({
+      fetch: async () => bridgeState === "running"
+        ? new Response(runningVersion)
+        : new Response("stopped", { status: 503 }),
+    }) });
+    ws.workloads = {
+      list: vi.fn(async () => [{ id: "bridge-a", name: "openship-docker-api-v1", state: bridgeState }]),
+      stop: vi.fn(async () => { bridgeState = "stopped"; }),
+      start: vi.fn(async () => {
+        if (bridgeState === "running") throw new Error("Bridge is already running");
+        if (!installedVersion) throw new Error("Bridge script is missing");
+        bridgeState = "running";
+        runningVersion = installedVersion;
+      }),
+      logs: vi.fn(async () => ({})),
+    };
+    try {
+      const outcome = runtime["ensureBridge"]().then(() => "ready", error => error);
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(await outcome).toBe("ready");
+      expect(runningVersion).toBe(CLOUD_DOCKER_BRIDGE_VERSION);
+      expect(ws.workloads.stop).toHaveBeenCalledTimes(initialState === "running" ? 1 : 0);
+      expect(ws.workloads.start).toHaveBeenCalledWith("bridge-a");
+      expect(ws.restart).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("allocates distinct edge ports for services sharing a container port, and reuses them on redeploy", async () => {
     const first = await runtime.deployServiceWorkload(group, { ...config, cloudEndpoints: [...config.cloudEndpoints!, { hostname: "console.opsh.io", port: 9090, custom: false }] });
     const peer = await runtime.deployServiceWorkload(group, { ...config, serviceName: "peer", cloudEndpoints: [{ hostname: "peer.opsh.io", port: 8080, custom: false }] });
