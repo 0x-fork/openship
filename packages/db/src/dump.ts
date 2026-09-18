@@ -304,6 +304,13 @@ const TABLES: ReadonlyArray<TableSpec> = [
   },
 
   // Infra — instance-only.
+  { sqlName: "server_cluster", table: schema.serverCluster, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "managed_network_operation", table: schema.managedNetworkOperation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "managed_network_preparation", table: schema.managedNetworkPreparation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "managed_network_claim", table: schema.managedNetworkClaim, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "cluster_network", table: schema.clusterNetwork, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "cluster_member", table: schema.clusterMember, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "server_network_attachment", table: schema.serverNetworkAttachment, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
   {
     sqlName: "servers",
     table: schema.servers,
@@ -392,6 +399,16 @@ const TABLES: ReadonlyArray<TableSpec> = [
   {
     sqlName: "env_var",
     table: schema.envVar,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "projectId" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+    hasOrganizationId: false,
+  },
+  {
+    sqlName: "cloud_docker_workspace",
+    table: schema.cloudDockerWorkspace,
     scopes: [
       { in: "instance", via: "all-rows" },
       { in: "organization", via: "fk", column: "projectId" },
@@ -761,6 +778,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   update_status: "cached upstream scan result; the next `updates:scan` refills it",
   server_container_status: "cached container drift; re-probed from the host",
   server_module_status: "cached module drift; re-probed from the host",
+  cluster_verification: "network observations and bounded probe runs; re-verify after instance restore",
 
   // History that is observability only — no config, no pending work, and prunable.
   job_run: "append-only tick log; job DEFINITIONS travel, executions do not",
@@ -1372,6 +1390,10 @@ export async function restoreSubgraphInTransaction(
   // Remap path (cloud ingest / project transfer) is the only place an untrusted
   // caller supplies a dump for a DIFFERENT org — reject cross-tenant FKs there.
   if (opts.remapOrgId) assertDumpSelfContained(dump);
+  if (opts.remapOrgId && (dump.tables.cloud_docker_workspace?.length ?? 0) > 0 &&
+      dump.tables.project?.some(row => row.organizationId !== opts.remapOrgId)) {
+    throw new Error("Cloud Docker workspaces are bound to their billing organization. Migrate the volume data to a new workspace before transferring ownership.");
+  }
 
   // Kept for the day the schema declares its FKs DEFERRABLE — but DO NOT rely on
   // it. Postgres applies this only to constraints declared DEFERRABLE, and none of

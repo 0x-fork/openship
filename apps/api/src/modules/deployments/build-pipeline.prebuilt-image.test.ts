@@ -85,6 +85,7 @@ vi.mock("@repo/adapters", () => {
     BareRuntime: class BareRuntime {},
     DockerRuntime: class DockerRuntime {},
     CloudRuntime: class CloudRuntime {},
+    CloudDockerRuntime: class CloudDockerRuntime {},
     STATIC_RELEASE_BASE: "/opt/openship/static/releases",
     sharedMountExecutor: vi.fn(async () => null),
     resolveStaticOutputPath: (id: string) => id,

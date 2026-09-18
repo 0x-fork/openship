@@ -5,7 +5,7 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
 import { AppError, NotFoundError, ValidationError, safeErrorMessage } from "@repo/core";
-import { checkEdge, edgeProxy } from "@repo/adapters";
+import { checkEdge, edgeProxy, PAGE_CONTAINER_PREFIX } from "@repo/adapters";
 import type { LogEntry, ImportedSite, RuntimeAdapter } from "@repo/adapters";
 import {
   deploymentContainerIds,
@@ -23,8 +23,11 @@ import { sshManager } from "../../lib/ssh-manager";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
-import { deploymentWorkload } from "../deployments/deployment-class";
+import { deploymentWorkload, snapshotToClass } from "../deployments/deployment-class";
 import { livePrimaryContainerId } from "../services/service-container";
+import { assertCloudRuntimeLimits, assertCloudServiceAllowance } from "../../lib/plan-guard";
+import { env } from "../../config/env";
+import { createProvisionLock } from "../../lib/provision-lock";
 
 // ─── Runtime logs ────────────────────────────────────────────────────────────
 
@@ -167,7 +170,9 @@ export async function enableProject(projectId: string, organizationId: string) {
   const result = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
     assertResourceInOrg(liveProject, "Project", organizationId, projectId);
     assertNotControlPlane(liveProject);
-    return enableLiveProject(liveProject, organizationId);
+    return env.CLOUD_MODE
+      ? createProvisionLock(`cloud:service-quota:${organizationId}`).run(() => enableLiveProject(liveProject, organizationId))
+      : enableLiveProject(liveProject, organizationId);
   });
   if (!result) throw new NotFoundError("Project", projectId);
   return result;
@@ -211,7 +216,27 @@ async function enableLiveProject(p: ProjectRow, organizationId: string) {
     throw new ValidationError("No container found for active deployment");
   }
 
+  const computeIds = containerIds.filter(id => !id.startsWith(PAGE_CONTAINER_PREFIX));
+  const serviceRows = env.CLOUD_MODE ? await repos.service.listByDeployment(dep.id) : [];
+  if (env.CLOUD_MODE) {
+    const services = await repos.service.listByProject(projectId);
+    // Resume starts every recorded container, including a definition disabled
+    // after deployment. Count those actual services, not the next deploy's set.
+    const resumedServices = services.filter(service => serviceRows.some(row =>
+      row.serviceId === service.id && row.containerId && computeIds.includes(row.containerId)))
+      .map(service => ({ name: service.name, enabled: true }));
+    const snapshot = (dep.meta ?? {}) as { cloudApplicationSlot?: boolean; serviceDeploymentMode?: string };
+    const runsApplication = computeIds.length > 0 && snapshotToClass(dep.meta ?? {}).workload !== "static";
+    await assertCloudServiceAllowance(organizationId, {
+      projectId,
+      services: resumedServices.length ? resumedServices : undefined, runsApplication,
+      nativeApplication: runsApplication && (resumedServices.length === 0 || snapshot.cloudApplicationSlot === true || snapshot.serviceDeploymentMode === "single"),
+    });
+  }
   await withDeploymentRuntime(dep, async (runtime) => {
+    await assertCloudRuntimeLimits(organizationId, runtime, computeIds.map(containerId => ({
+      containerId, allocatedResources: serviceRows.find(row => row.containerId === containerId)?.allocatedResources,
+    })));
     for (const containerId of containerIds) {
       await startOne(runtime, containerId);
     }
@@ -377,7 +402,24 @@ async function retryLiveProjectRouting(
   const projectId = p.id;
 
   // Cloud manages its own ingress — there is no server edge to repair here.
-  if (p.cloudWorkspaceId) return { ok: true };
+  if (p.cloudWorkspaceId) {
+    const dep = p.activeDeploymentId ? await findActiveDeployment(p) : null;
+    if (!(dep?.meta as { cloudDockerWorkspace?: unknown } | null)?.cloudDockerWorkspace) return { ok: true };
+    const warnings: string[] = [];
+    await applyProjectRouting(projectId, { onWarning: message => warnings.push(message) });
+    if (warnings.length) {
+      const warning = warnings.join("\n");
+      await markRoutingWarning(dep, warning);
+      return { ok: false, warning };
+    }
+    if (dep) {
+      const meta = { ...(dep.meta as Record<string, unknown> ?? {}) };
+      delete meta.edgeUnsynced;
+      delete meta.deployWarning;
+      await repos.deployment.updateStatus(dep.id, dep.status, { meta });
+    }
+    return { ok: true };
+  }
 
   const dep = p.activeDeploymentId ? await findActiveDeployment(p) : null;
 

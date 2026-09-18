@@ -1012,6 +1012,7 @@ async function stepRuntimeCleanup(
     resources: destroyable,
     runtimes: manifest.runtimes,
     routeContexts: manifest.routeContexts,
+    cloudRouteContexts: manifest.cloudRouteContexts,
     unreachableRouteTargets: manifest.unreachableRouteTargets,
   });
   const realFailures = result.failed;

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { useProjectTabNavigation } from "@/hooks/useProjectTabNavigation";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AppLogo } from "@/components/AppLogo";
@@ -17,11 +18,9 @@ import {
   GitBranch,
   Wrench,
   ScrollText,
-  AlertTriangle,
   Layers,
   ExternalLink,
   DatabaseBackup,
-  Webhook,
   Plus,
   HeartPulse,
   MonitorSmartphone,
@@ -40,12 +39,10 @@ const TAB_ICONS: Record<
   deployments: Rocket,
   health: HeartPulse,
   source: GitBranch,
-  webhooks: Webhook,
   runtime: Wrench,
   settings: Wrench,
   logs: ScrollText,
   backup: DatabaseBackup,
-  advanced: AlertTriangle,
 };
 
 /**
@@ -70,15 +67,15 @@ export const ProjectSidebar = () => {
   const {
     projectData,
     projectNotFound,
-    activeTab,
+    activeTabGroup,
     tabs,
-    setActiveTab,
     access,
     domainsData,
     selectedDomain,
     setSelectedDomain,
     setPendingDomainAction,
   } = useProjectSettings();
+  const handleTabChange = useProjectTabNavigation();
   const { t } = useI18n();
   const domainsAttention = domainsNeedAttention(projectData, domainsData);
 
@@ -120,13 +117,6 @@ export const ProjectSidebar = () => {
     } finally {
       setOpeningLocal(false);
     }
-  };
-
-  const handleTabChange = (tabId: string) => {
-    const scrollY = window.scrollY;
-    setActiveTab(tabId);
-    window.history.replaceState({}, "", `/projects/${projectData.id}/${tabId}`);
-    requestAnimationFrame(() => window.scrollTo(0, scrollY));
   };
 
   if (!projectData.id || projectNotFound) {
@@ -251,11 +241,12 @@ export const ProjectSidebar = () => {
         <div className="space-y-1">
           {tabs.map((tab) => {
             const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
-            const isActive = activeTab === tab.id;
+            const isActive = activeTabGroup === tab.id;
             return (
               <Link
                 key={tab.id}
                 href={`/projects/${projectData.id}/${tab.id}`}
+                aria-current={isActive ? "page" : undefined}
                 onClick={(e) => {
                   // Let modified/middle clicks open the tab in a new browser tab;
                   // a plain click switches client-side (snappy, keeps scroll).
@@ -288,15 +279,9 @@ export const ProjectSidebar = () => {
 
 /** Mobile horizontal scroll tabs - rendered above content in left column */
 export const ProjectMobileTabs = () => {
-  const { projectData, projectNotFound, activeTab, tabs, setActiveTab, domainsData } = useProjectSettings();
+  const { projectData, projectNotFound, activeTabGroup, tabs, domainsData } = useProjectSettings();
+  const handleTabChange = useProjectTabNavigation();
   const domainsAttention = domainsNeedAttention(projectData, domainsData);
-
-  const handleTabChange = (tabId: string) => {
-    const scrollY = window.scrollY;
-    setActiveTab(tabId);
-    window.history.replaceState({}, "", `/projects/${projectData.id}/${tabId}`);
-    requestAnimationFrame(() => window.scrollTo(0, scrollY));
-  };
 
   if (!projectData.id || projectNotFound) {
     return null;
@@ -307,11 +292,12 @@ export const ProjectMobileTabs = () => {
       <div className="flex items-center gap-1 overflow-x-auto py-2.5 scrollbar-hide">
         {tabs.map((tab) => {
           const Icon = TAB_ICONS[tab.id] || LayoutDashboard;
-          const isActive = activeTab === tab.id;
+          const isActive = activeTabGroup === tab.id;
           return (
             <Link
               key={tab.id}
               href={`/projects/${projectData.id}/${tab.id}`}
+              aria-current={isActive ? "page" : undefined}
               onClick={(e) => {
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                 e.preventDefault();

@@ -67,6 +67,7 @@ import {
   assertBuildMinutesAvailable,
   assertPlanAllowsDeployShape,
   assertPlanAllowsResourceTier,
+  assertCloudDeploymentLimits,
 } from "../../lib/plan-guard";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { type PortCheckResult } from "../../lib/deployment-runtime";
@@ -96,6 +97,7 @@ import {
   syncProjectRouteState,
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
+import { createProvisionLock } from "../../lib/provision-lock";
 import { assertExactServiceTargets } from "./exact-service-targets";
 import {
   resolveReleaseDist,
@@ -189,6 +191,10 @@ export async function runDeploymentPreflight(
 
 /** Config snapshot stored in deployment.meta - self-contained build+deploy config. */
 export interface DeploymentConfigSnapshot {
+  /** Internal Cloud service-slot reservation, derived at queue creation. */
+  cloudApplicationSlot?: boolean;
+  /** Frozen stack names reserve slots before their service rows are synchronized. */
+  cloudServiceSlots?: string[];
   /** Owning organization — required so server lookups can be org-scoped. */
   organizationId?: string;
   repoUrl: string;
@@ -259,6 +265,8 @@ export interface DeploymentConfigSnapshot {
   serverId?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode?: "bare" | "docker";
+  workspaceId?: string;
+  cloudDockerWorkspace?: { projectId: string; workspaceId: string };
   /**
    * Adopt an already-running process instead of building + starting one. Set
    * for the self-deployed control plane so it becomes a real deployment without
@@ -1296,7 +1304,11 @@ export async function createQueuedDeployment(opts: {
   // auto-redeploy). Both gates no-op unless CLOUD_MODE.
   if ((env.CLOUD_MODE || meta.deployTarget === "cloud") &&
       (meta.volumes?.length || meta.composeServices?.some((service) => service.volumes?.length))) {
-    throw new AppError("Persistent volume mounts are not supported on Openship Cloud. Choose a server for this workload.", 400, "CLOUD_VOLUMES_UNSUPPORTED");
+    const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
+    const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
+    const docker = project && await shouldUseProjectServicePipeline(project, meta.composeServices) &&
+      await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode);
+    if (!docker) throw new AppError("Persistent Compose volumes require a Docker workspace. Existing native cloud projects need a data migration before switching.", 400, "CLOUD_VOLUMES_UNSUPPORTED");
   }
   await assertPlanAllowsDeployShape(opts.organizationId, {
     workload: snapshotToClass(meta).workload,
@@ -1312,42 +1324,65 @@ export async function createQueuedDeployment(opts: {
     },
   });
   await assertBuildMinutesAvailable(opts.organizationId);
+  const insertDeployment = async () => {
+    if (env.CLOUD_MODE) {
+      const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
+      if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
+      const mode = await resolveServicePipelineMode(project, meta);
+      meta = {
+        ...meta,
+        cloudApplicationSlot: !mode.useServicePipeline && snapshotToClass(meta).workload !== "static",
+        cloudServiceSlots: mode.useServicePipeline
+          ? mode.servicePreflightServices.filter(service => service.enabled !== false).map(service => service.name)
+          : [],
+      };
+      await assertCloudDeploymentLimits(opts.organizationId, {
+        projectId: opts.projectId,
+        resources: meta.resources, buildResources: meta.buildResources,
+        runsApplication: snapshotToClass(meta).workload !== "static",
+        services: mode.useServicePipeline ? mode.servicePreflightServices : undefined,
+      });
+    }
 
-  // Version is NOT assigned here. A version number represents a shipped
-  // release (a successful deploy of a commit), so it's assigned in onSuccess —
-  // per-commit, reusing the number when the same commit is redeployed. Failed
-  // and in-flight deploys stay version=null and show no badge.
+    // Version is NOT assigned here. A version number represents a shipped
+    // release (a successful deploy of a commit), so it's assigned in onSuccess —
+    // per-commit, reusing the number when the same commit is redeployed. Failed
+    // and in-flight deploys stay version=null and show no badge.
 
-  // The insert is atomic against the one-active-per-project index: undefined
-  // means another deployment won/holds the slot (raced past checkNoActiveBuild,
-  // or a queued/building one already exists). Surface as a 403, same as the
-  // early-rejection path — no error-code/message inspection needed.
-  const dep = await repos.deployment.create({
-    projectId: opts.projectId,
-    organizationId: opts.organizationId,
-    branch: opts.branch,
-    commitSha: opts.commitSha,
-    commitMessage: opts.commitMessage,
-    trigger: opts.trigger ?? "manual",
-    environment: opts.environment,
-    framework: opts.framework,
-    status: "queued",
-    // Release/dist deploy identity, from the resolved snapshot. Like commit_sha
-    // (not the human `version` counter): set at CREATE so it's queryable while
-    // the build is in flight — drives new-version suppression + webhook dedupe.
-    releaseVersion: meta.releaseVersion ?? null,
-    meta,
-    envVars: opts.envVars,
-    // Default to git: most projects are GitHub-backed and re-cloning
-    // at the previous commit_sha is cheaper than archiving artifacts.
-    // Callers that need snapshot pass it explicitly (or set the
-    // per-project default via project.defaultRollbackStrategy).
-    rollbackStrategy: opts.rollbackStrategy ?? "git",
-    commitShaBefore: opts.commitShaBefore,
-    forceAll: opts.forceAll ?? false,
-    changedPaths: opts.changedPaths ?? null,
-    changedPathsTruncated: opts.changedPathsTruncated ?? false,
-  });
+    // The insert is atomic against the one-active-per-project index: undefined
+    // means another deployment won/holds the slot (raced past checkNoActiveBuild,
+    // or a queued/building one already exists). Surface as a 403, same as the
+    // early-rejection path — no error-code/message inspection needed.
+    return repos.deployment.create({
+      projectId: opts.projectId,
+      organizationId: opts.organizationId,
+      branch: opts.branch,
+      commitSha: opts.commitSha,
+      commitMessage: opts.commitMessage,
+      trigger: opts.trigger ?? "manual",
+      environment: opts.environment,
+      framework: opts.framework,
+      status: "queued",
+      // Release/dist deploy identity, from the resolved snapshot. Like commit_sha
+      // (not the human `version` counter): set at CREATE so it's queryable while
+      // the build is in flight — drives new-version suppression + webhook dedupe.
+      releaseVersion: meta.releaseVersion ?? null,
+      meta,
+      envVars: opts.envVars,
+      // Default to git: most projects are GitHub-backed and re-cloning
+      // at the previous commit_sha is cheaper than archiving artifacts.
+      // Callers that need snapshot pass it explicitly (or set the
+      // per-project default via project.defaultRollbackStrategy).
+      rollbackStrategy: opts.rollbackStrategy ?? "git",
+      commitShaBefore: opts.commitShaBefore,
+      forceAll: opts.forceAll ?? false,
+      changedPaths: opts.changedPaths ?? null,
+      changedPathsTruncated: opts.changedPathsTruncated ?? false,
+    });
+  };
+  const dep = env.CLOUD_MODE
+    ? await createProvisionLock(`cloud:service-quota:${opts.organizationId}`).run(insertDeployment)
+    : await insertDeployment();
   if (!dep) {
     throw new ForbiddenError(
       "Another deployment is already in progress for this project. Wait for it to finish or cancel it.",

@@ -107,7 +107,10 @@ async function run(
       activeDeploymentId: options.activeDeploymentId ?? null,
     } as never,
     dep: { id: "d1", branch: "main", commitSha: null, trigger: "deploy", meta: null } as never,
-    runtime: { name: options.runtimeName ?? "docker" } as never,
+    runtime: {
+      name: options.runtimeName ?? "docker",
+      supports: () => false,
+    } as never,
     routing: {} as never,
     ssl: {} as never,
     system: null,

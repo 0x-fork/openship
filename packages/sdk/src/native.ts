@@ -343,9 +343,21 @@ function createAttachedShip<Assertion>({
       } satisfies DomainOperations);
       const dns = bindGroup(platform.dns) satisfies DnsOperations;
       const credentials = bindGroup(platform.credentials) satisfies CredentialOperations;
-      const { openInstallStream, openInstallEvents, openMonitor, openContainerApplyStream, openContainerApplyEvents, ...serverResources } = platform.servers;
+      const { openInstallStream, openInstallEvents, openMonitor, openContainerApplyStream, openContainerApplyEvents, openManagedNetworkPreparationEvents, openManagedNetworkOperationEvents, openClusterEvents, ...serverResources } = platform.servers;
       const servers = Object.freeze({
         ...bindGroup(serverResources),
+        async *managedNetworkPreparationEvents(id, options = {}) {
+          const source = await openManagedNetworkPreparationEvents(await resolveContext(), id, { ...options });
+          for await (const event of source.data) { await resolveContext(); yield event; }
+        },
+        async *managedNetworkOperationEvents(id, options = {}) {
+          const source = await openManagedNetworkOperationEvents(await resolveContext(), id, { ...options });
+          for await (const event of source.data) { await resolveContext(); yield event; }
+        },
+        async *clusterEvents(options = {}) {
+          const source = await openClusterEvents(await resolveContext(), { ...options });
+          for await (const event of source.data) { await resolveContext(); yield event; }
+        },
         async *applyContainer(id, input, options = {}) {
           const command = structuredClone(input);
           const settings = { ...options };

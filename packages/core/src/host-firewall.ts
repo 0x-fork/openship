@@ -12,6 +12,8 @@
 
 import { type Answer, answered, refused } from "./answer";
 import type { SystemFirewall } from "./host-profile";
+import { infrastructureIpv4 } from "./infrastructure";
+import { shellQuote } from "./shell-split";
 
 /**
  * A firewall Openship can drive.
@@ -218,4 +220,139 @@ export function firewallRevokeSteps(
 ): Answer<readonly string[]> {
   const invalid = invalidScope(scope);
   return invalid ? refused(invalid) : REVOKE[manager](scope);
+}
+
+export interface ManagedFirewallRules {
+  up: string[];
+  down: string[];
+  inspect: string;
+}
+
+// Resolve nft rule handles on the host immediately before the atomic batch. Only
+// tagged jumps and our own chains are removed; no host table is flushed/restored.
+const MANAGED_NFT = String.raw`
+import json, subprocess, sys
+c = json.loads(sys.argv[1]); action = sys.argv[2]
+prefix = 'OSWG_' + c['identity'][:16] + '_'
+tag = 'openship-network-' + c['identity']
+def call(args, data=None):
+    result = subprocess.run(['nft'] + args, input=data, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+    if result.returncode: raise RuntimeError('Could not inspect or update the owned nftables rules.')
+    return result.stdout
+rows = json.loads(call(['-j', 'list', 'ruleset']))['nftables']
+chains = [row['chain'] for row in rows if 'chain' in row]
+rules = [row['rule'] for row in rows if 'rule' in row]
+owned = lambda rule: rule.get('comment') in (tag + '-I', tag + '-O') or rule.get('chain', '').startswith(prefix)
+if action != 'down':
+    for hook in ('input', 'output'):
+        if not any(chain.get('family') == 'inet' and chain.get('table') == 'filter' and chain.get('name') == hook and chain.get('hook') == hook for chain in chains):
+            raise RuntimeError('Managed nftables requires inet filter input/output base chains.')
+    for chain in chains:
+        if chain.get('family') not in ('ip', 'inet') or chain.get('hook') not in ('input', 'output'): continue
+        if chain.get('family') == 'inet' and chain.get('table') == 'filter' and chain.get('name') in ('input', 'output'): continue
+        has_rules = any(rule.get('family') == chain.get('family') and rule.get('table') == chain.get('table') and rule.get('chain') == chain.get('name') for rule in rules)
+        if chain.get('policy', 'accept') != 'accept' or has_rules:
+            raise RuntimeError('Additional nftables input/output base chains need a custom firewall adapter.')
+    for rule in rules:
+        if not owned(rule) and prefix in json.dumps(rule):
+            raise RuntimeError('A foreign nftables rule refers to an OpenShip-owned chain.')
+if action == 'inspect':
+    def clean(value):
+        if isinstance(value, list): return [clean(item) for item in value]
+        if isinstance(value, dict): return {key: clean(item) for key, item in value.items() if key not in ('handle', 'index', 'position', 'packets', 'bytes')}
+        return value
+    foreign = [row for row in rows if 'metainfo' not in row and not ('chain' in row and row['chain'].get('name', '').startswith(prefix)) and not ('rule' in row and owned(row['rule']))]
+    print(json.dumps(clean(foreign), sort_keys=True))
+    if any(chain.get('name', '').startswith(prefix) for chain in chains): print(prefix + 'owned')
+    sys.exit(0)
+batch = []
+for rule in rules:
+    if rule.get('comment') in (tag + '-I', tag + '-O'):
+        if rule.get('family') != 'inet' or rule.get('table') != 'filter' or rule.get('chain') not in ('input', 'output'):
+            raise RuntimeError('A managed nftables rule moved outside its owned scope.')
+        batch.append('delete rule inet filter ' + rule['chain'] + ' handle ' + str(int(rule['handle'])))
+for suffix in ('I', 'O'):
+    chain = prefix + suffix
+    if any(item.get('family') == 'inet' and item.get('table') == 'filter' and item.get('name') == chain for item in chains):
+        batch += ['flush chain inet filter ' + chain, 'delete chain inet filter ' + chain]
+if action == 'up':
+    for suffix, parent in (('I', 'input'), ('O', 'output')):
+        chain = prefix + suffix
+        batch += ['add chain inet filter ' + chain, 'insert rule inet filter ' + parent + ' jump ' + chain + ' comment "' + tag + '-' + suffix + '"']
+    for peer in c['peers']:
+        batch.append('add rule inet filter ' + prefix + 'I ip saddr ' + peer['endpoint'] + '/32 udp dport ' + str(c['listenPort']) + ' accept')
+        batch.append('add rule inet filter ' + prefix + 'O ip daddr ' + peer['endpoint'] + '/32 udp dport ' + str(peer['listenPort']) + ' accept')
+        batch.append('add rule inet filter ' + prefix + 'I iifname "' + c['interfaceName'] + '" ip saddr ' + peer['privateIp'] + '/32 accept')
+        batch.append('add rule inet filter ' + prefix + 'O oifname "' + c['interfaceName'] + '" ip daddr ' + peer['privateIp'] + '/32 accept')
+if batch: call(['-f', '-'], '\n'.join(batch) + '\n')
+`;
+
+/** Only dedicated chains are changed. Never flush or restore the host ruleset. */
+export function managedNetworkFirewall(
+  manager: SystemFirewall,
+  identity: string,
+  interfaceName: string,
+  listenPort: number,
+  peers: readonly { endpoint: string; listenPort: number; privateIp: string }[],
+): Answer<ManagedFirewallRules> {
+  if (
+    !/^[a-f0-9]{32}$/.test(identity) ||
+    !/^oswg[a-f0-9]{10}$/.test(interfaceName) ||
+    !Number.isInteger(listenPort) ||
+    listenPort < 1024 ||
+    listenPort > 65535 ||
+    peers.some(
+      (peer) =>
+        infrastructureIpv4(peer.endpoint) === null ||
+        infrastructureIpv4(peer.privateIp) === null ||
+        !Number.isInteger(peer.listenPort) ||
+        peer.listenPort < 1024 ||
+        peer.listenPort > 65535,
+    )
+  )
+    return refused("Invalid managed firewall scope.");
+  if (manager === "none") return answered({ up: [], down: [], inspect: "true" });
+  if (manager === "nftables") {
+    const input = shellQuote(JSON.stringify({ identity, interfaceName, listenPort, peers }));
+    const command = `python3 -c ${shellQuote(MANAGED_NFT)} ${input}`;
+    return answered({
+      up: [`${command} up`],
+      down: [`${command} down`],
+      inspect: `${command} inspect`,
+    });
+  }
+  if (manager !== "iptables")
+    return refused(
+      `Managed networking currently supports unfiltered hosts, iptables, and nftables with inet filter input/output chains. This host uses ${manager}; its firewall needs an owned-rule adapter before OpenShip can safely manage it.`,
+    );
+  const input = `OSWG_${identity.slice(0, 16)}_I`;
+  const output = `OSWG_${identity.slice(0, 16)}_O`;
+  const comment = `openship-network-${identity}`;
+  const up: string[] = [];
+  const down: string[] = [];
+  for (const [chain, parent] of [
+    [input, "INPUT"],
+    [output, "OUTPUT"],
+  ] as const) {
+    // The prepare step refuses an existing chain without our on-disk ownership receipt.
+    up.push(`iptables -w 5 -N ${chain} 2>/dev/null || iptables -w 5 -S ${chain} >/dev/null`);
+    up.push(`iptables -w 5 -F ${chain}`);
+    const jump = `${parent} -m comment --comment ${comment} -j ${chain}`;
+    up.push(`iptables -w 5 -C ${jump} 2>/dev/null || iptables -w 5 -I ${jump}`);
+    down.push(`if iptables -w 5 -C ${jump} 2>/dev/null; then iptables -w 5 -D ${jump}; fi`);
+    down.push(
+      `if iptables -w 5 -S ${chain} >/dev/null 2>&1; then iptables -w 5 -F ${chain} && iptables -w 5 -X ${chain}; fi`,
+    );
+  }
+  for (const peer of peers) {
+    up.push(
+      `iptables -w 5 -A ${input} -s ${peer.endpoint}/32 -p udp --dport ${listenPort} -j ACCEPT`,
+    );
+    up.push(
+      `iptables -w 5 -A ${output} -d ${peer.endpoint}/32 -p udp --dport ${peer.listenPort} -j ACCEPT`,
+    );
+    up.push(`iptables -w 5 -A ${input} -i ${interfaceName} -s ${peer.privateIp}/32 -j ACCEPT`);
+    up.push(`iptables -w 5 -A ${output} -o ${interfaceName} -d ${peer.privateIp}/32 -j ACCEPT`);
+  }
+  return answered({ up, down, inspect: "iptables-save" });
 }

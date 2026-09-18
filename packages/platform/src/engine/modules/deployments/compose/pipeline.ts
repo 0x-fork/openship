@@ -269,7 +269,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // one final fail-closed check in the worker before any image build, pull, or
   // container replacement begins.
   const checksCloudImageRefresh =
-    snapshot.forcePullImages && runtime.name === "cloud" && Boolean(project.activeDeploymentId);
+    snapshot.forcePullImages && runtime.name === "cloud" && !runtime.supports("dockerHost") && Boolean(project.activeDeploymentId);
   let currentServices: Awaited<ReturnType<typeof repos.service.listByProject>> | undefined;
   const getCurrentServices = async () => {
     currentServices ??= await repos.service.listByProject(project.id);

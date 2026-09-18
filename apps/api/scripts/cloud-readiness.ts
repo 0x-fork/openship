@@ -1,6 +1,6 @@
 /** Read-only release checks. Does not create tokens, checkouts, or resources. */
 import { runtimeTarget } from "@repo/core";
-import { OblienBillingApi } from "@repo/platform/engine/lib/oblien-billing-api";
+import { assertOblienEntitlementMatchesSubscription, OblienBillingApi } from "@repo/platform/engine/lib/oblien-billing-api";
 import { OBLIEN_WEBHOOK_EVENTS, oblienWebhookUrl } from "@repo/platform/engine/lib/oblien-webhook-config";
 
 const results: Array<{ check: string; ok: boolean; detail?: string }> = [];
@@ -51,15 +51,18 @@ const checks = await Promise.allSettled([
     const body = await response.json() as { success: boolean; data?: Array<{ slug: string }> };
     // The probe is read-only even on a new account with no namespace yet.
     const namespace = body.success && body.data?.[0]?.slug || "openship-billing-readiness";
-    await billing.getSubscription(namespace);
-    record("Namespace subscription API (SDK 2.3)", true, "Authenticated namespace-bound response verified");
+    const [state, entitlement] = await Promise.all([billing.getSubscription(namespace), billing.getEntitlement(namespace)]);
+    assertOblienEntitlementMatchesSubscription(entitlement, state.subscription);
+    record("Namespace entitlement and subscription", true, "The namespace's tier and billing period agree");
+    record("Finite namespace allowance", entitlement.quota.limit !== null || entitlement.tierId === "enterprise",
+      "Consumer namespaces must not inherit unlimited account-owner credit");
   })(),
 ]);
 checks.forEach((result, index) => {
   if (result.status === "rejected") {
     // Never serialize provider bodies, headers, credentials, or webhook secrets.
     const error = result.reason;
-    record(["Provider catalog", "Namespace default policy", "Webhook registration", "Namespace subscription API (SDK 2.3)"][index]!, false,
+    record(["Provider catalog", "Namespace default policy", "Webhook registration", "Namespace entitlement and subscription"][index]!, false,
       error instanceof Error ? error.message : "Read failed");
   }
 });

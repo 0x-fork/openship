@@ -180,6 +180,12 @@ export const organizationOptions = {
     },
 
     beforeDeleteOrganization: async ({ organization, user }) => {
+      if (await repos.serverCluster.hasManagedNetworkState(organization.id)) {
+        throw new APIError("CONFLICT", {
+          message: "Remove managed cluster networks and complete network recovery before deleting this organization.",
+          code: "ORG_DELETE_MANAGED_NETWORK_ACTIVE",
+        });
+      }
       // Pre-flight billing gate. Better Auth commits the org delete
       // immediately after this hook returns — afterDelete only gets
       // to fire forensic cleanup, not block. So the only place we

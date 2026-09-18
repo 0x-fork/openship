@@ -120,7 +120,7 @@ export function Sidebar() {
   const { t } = useI18n();
   const brand = useBrandName();
   const { collapsed, toggleCollapsed } = useSidebarCollapse(
-    pathname === "/scale" || pathname.startsWith("/scale/") || /^\/projects\/[^/]+\/topology(?:\/|$)/.test(pathname),
+    pathname === "/scale" || pathname.startsWith("/scale/"),
   );
   const [loggingOut, setLoggingOut] = useState(false);
   const [navCounts, setNavCounts] = useState<{ projects: number; apps: number } | null>(null);

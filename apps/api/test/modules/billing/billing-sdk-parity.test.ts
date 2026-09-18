@@ -6,6 +6,7 @@ const provider = vi.hoisted(() => ({
   checkout: vi.fn(), catalog: vi.fn(), entitlement: vi.fn(), namespaces: vi.fn(),
   portal: vi.fn(), subscription: vi.fn(), cancel: vi.fn(), resume: vi.fn(), subscriptions: new Map<string, OblienSubscription>(),
   cloudRequest: vi.fn(),
+  limits: new Map<string, Record<string, number | null>>(),
 }));
 vi.mock("@repo/platform/engine/config/env", async original => {
   const actual = await original<{ env: Record<string, unknown> }>();
@@ -18,7 +19,17 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
     createPortal: provider.portal, getSubscription: provider.subscription, cancelSubscription: provider.cancel, resumeSubscription: provider.resume,
     getDefaults: async () => ({ success: true, autoApply: true, service: "workspace_vm", quotaLimit: 100, overdraft: 0, onOverdraftAction: "stop_workspaces", suspendThreshold: 0 }),
   }),
-  getOblienClient: () => ({ namespaces: { ensure: provider.namespaces } }),
+  getOblienClient: () => ({
+    workspaces: { getQuota: async () => ({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 256000 }, maxSandboxes: 300 }) },
+    namespaces: {
+      ensure: provider.namespaces,
+      get: async (slug: string) => ({ data: { id: slug, slug, resource_limits: provider.limits.get(slug) } }),
+      update: async (slug: string, input: { resource_limits: Record<string, number | null> }) => {
+        provider.limits.set(slug, input.resource_limits);
+        return { data: { id: slug, slug, resource_limits: input.resource_limits } };
+      },
+    },
+  }),
 }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: () => ({ request: provider.cloudRequest }) }));
 import { db, schema, repos, seedOwner, type SeededOwner } from "../jobs/_harness";
@@ -48,7 +59,11 @@ async function clients(actor: SeededOwner, organizationId = actor.orgId, limits:
 beforeEach(() => {
   provider.cloudMode = provider.enabled = provider.topups = true;
   provider.subscriptions.clear();
-  provider.namespaces.mockImplementation(async ({ slug }) => ({ data: { slug } }));
+  provider.limits.clear();
+  provider.namespaces.mockImplementation(async ({ slug, resource_limits }) => {
+    provider.limits.set(slug, resource_limits);
+    return { data: { id: slug, slug, resource_limits } };
+  });
   provider.checkout.mockResolvedValue({ success: true, url: "https://checkout.stripe.com/private-session", checkoutId: "cs_test" });
   provider.entitlement.mockImplementation(async (namespace) => ({
     success: true, namespace, tierId: provider.subscriptions.get(namespace)?.tierId ?? null, status: "active",

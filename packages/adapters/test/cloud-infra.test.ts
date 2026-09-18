@@ -10,6 +10,8 @@ function setup(route = baseRoute) {
   const ws = { publicAccess: { list: vi.fn(async () => [{ port: 3000, url: "https://app.opsh.io" }, { port: 4000, url: "https://other.opsh.io" }]), revoke }, domains: { get: getDomain, disconnect, renewSSL: vi.fn(async () => ({})) } };
   const workspace = vi.fn(() => ws);
   const pages = { disable: vi.fn(async () => ({})), disconnectDomain: vi.fn(async () => ({})), getDomain: vi.fn(async () => ({ domain: { domain: "app.example.com", ssl: { status: "pending", expiresAt: null } } })), renewSSL: vi.fn(async () => ({})) };
+  const page = { slug: "site-a", namespace: "ns-a", domain: "opsh.io", url: "https://app.opsh.io", custom_domain: "app.example.com" };
+  Object.assign(pages, { list: vi.fn(async () => ({ pages: [page] })), get: vi.fn(async () => ({ page })) });
   const setRoutes = vi.fn(async () => ({}));
   const client = { domain: { routes: registry }, workspace, pages, routes: { set: setRoutes } };
   return { infra: new CloudInfraProvider(client as never, { namespace: "ns-a" }), client, registry, revoke, disconnect, getDomain, ws, workspace, pages, setRoutes };
@@ -45,10 +47,10 @@ describe("Oblien routing and certificates", () => {
     expect(h.revoke).not.toHaveBeenCalled();
   });
   it("disables a page's managed route and disconnects a page's custom domain", async () => {
-    const h = setup({ ...baseRoute, owner_type: "page", owner_id: "site-a" });
+    const h = setup({ ...baseRoute, owner_type: "page", owner_id: "220" });
     await h.infra.removeRoute("app.opsh.io");
     expect(h.pages.disable).toHaveBeenCalledWith("site-a");
-    h.registry.mockResolvedValue({ data: [{ ...baseRoute, hostname: "app.example.com", owner_type: "page", owner_id: "site-a", is_custom: true }] });
+    h.registry.mockResolvedValue({ data: [{ ...baseRoute, hostname: "app.example.com", owner_type: "page", owner_id: "220", is_custom: true }] });
     await h.infra.removeRoute("app.example.com");
     expect(h.pages.disconnectDomain).toHaveBeenCalledWith("site-a");
   });

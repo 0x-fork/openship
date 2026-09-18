@@ -31,6 +31,18 @@ export function createTenantCloudAdmin(organizationId: string, namespace: string
     return { ...result, data: result.data.filter((route) => route.namespace === namespace) };
   };
   const pages: NonNullable<CloudAdminProxy["pages"]> = {
+    list: async () => {
+      const result = await admin.pages.list();
+      const owned = [];
+      for (const summary of result.pages) {
+        if (summary.namespace != null && summary.namespace !== namespace) continue;
+        // Some provider endpoints return summaries. Resolve omitted namespace
+        // fields server-side before returning any metadata to the customer.
+        const page = summary.namespace == null ? (await admin.pages.get(summary.slug)).page : summary;
+        if (page.namespace === namespace) owned.push(page);
+      }
+      return { ...result, pages: owned };
+    },
     get: requirePage,
     create: async (input) => {
       if (input.slug) validateId(input.slug);

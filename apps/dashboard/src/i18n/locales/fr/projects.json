@@ -135,8 +135,10 @@
       "health": "Santé",
       "monitoring": "Surveillance",
       "source": "Source",
+      "sourceAndTriggers": "Source et déclencheurs",
       "webhooks": "Webhooks",
       "runtime": "Configuration",
+      "settings": "Paramètres",
       "logs": "Journaux",
       "backup": "Sauvegarde",
       "advanced": "Avancé"
@@ -268,6 +270,7 @@
     "geoUnavailableBody": "Le proxy edge ne peut pas résoudre les pays des visiteurs, la carte reste donc vide. Les totaux de trafic ne sont pas affectés.",
     "noCountries": "Aucune donnée de pays pour cette période.",
     "statusesTitle": "Réponses",
+    "statusesOthers": "Autres",
     "share": "{pct} %",
     "visitorDays": "Visiteurs-jours",
     "peakDayTooltip": "Journée la plus active : {peak}. Un visiteur qui revient compte une fois par jour, le total est donc une borne supérieure.",
@@ -531,5 +534,5 @@
       "server_unreachable": "Serveur inaccessible"
     }
   },
-  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans l'onglet Avancé du projet"
+  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans Paramètres → Avancé du projet"
 }

@@ -17,6 +17,7 @@ const action = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("headers"), set: z.array(z.object({ key: z.string().max(256), value: z.string().max(8192) }).strict()).max(64) }).strict(),
 ]);
 export const cloudResourceInput = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("list") }).strict(),
   z.object({ operation: z.literal("create"), input: source.extend({ name: z.string().min(1).max(256), slug: id.optional(), domain: domain.optional() }).strict() }).strict(),
   z.object({ operation: z.literal("deploy"), slug: id, input: source }).strict(),
   z.object({ operation: z.enum(["get", "enable", "disable", "delete", "getDomain", "disconnectDomain", "renewSSL"]), slug: id }).strict(),
@@ -43,6 +44,7 @@ export async function cloudResourceProxy(c: Context) {
     const body = parsed.data;
     const pages = proxy.pages!;
     switch (body.operation) {
+      case "list": return c.json(await pages.list());
       case "create": return c.json(await pages.create(body.input));
       case "deploy": return c.json(await pages.deploy(body.slug, body.input));
       case "connectDomain": return c.json(await pages.connectDomain(body.slug, body.input));

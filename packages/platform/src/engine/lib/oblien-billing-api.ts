@@ -61,6 +61,18 @@ export type OblienBillingCatalog = z.infer<typeof oblienCatalogSchema>;
 export type OblienEntitlement = z.infer<typeof oblienEntitlementSchema>;
 export type OblienBillingPolicy = z.infer<typeof policySchema>;
 export type OblienSubscription = z.infer<typeof oblienSubscriptionSchema>["subscription"];
+/** An echoed namespace alone cannot prove a paid entitlement belongs to it. */
+export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEntitlement, subscription: OblienSubscription): void {
+  const timestamp = (value: string | null) => value === null ? null : Date.parse(value);
+  if ((entitlement.tierId ?? "free") !== (subscription?.tierId ?? "free") ||
+      (!subscription && (entitlement.periodStart !== null || entitlement.periodEnd !== null)) ||
+      (subscription && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
+      (subscription && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
+      (entitlement.status === "active" && subscription && !["active", "trialing"].includes(subscription.status))) {
+    throw new AppError("Cloud billing returned an entitlement that does not match this organization's subscription", 502, "OBLIEN_ENTITLEMENT_MISMATCH");
+  }
+}
+
 export type OblienCheckout = {
   namespace: string;
   successUrl: string;

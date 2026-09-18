@@ -18,6 +18,7 @@ export function createRemoteCloudAdmin(organizationId: string): CloudAdminProxy 
     return request("/api/cloud/resource-proxy", { operation, ...input });
   }
   const pages: Pages = {
+    list: () => pageCall("list", {}),
     get: (slug) => pageCall("get", { slug }),
     create: ({ namespace: _namespace, ...input }) => pageCall("create", { input }),
     deploy: (slug, input) => pageCall("deploy", { slug, input }),

@@ -178,6 +178,7 @@ describe("upsertServiceDeployment over a pre-created skipped row", () => {
         serviceId: SVC,
         serviceName: "worker",
         containerId: "container_new",
+        allocatedResources: { containerId: "container_new", cpuCores: 1, memoryMb: 1024 },
         status: "success",
         imageRef: "openship/worker:v4",
         imageDigest: "sha256:cafebabe",
@@ -188,6 +189,7 @@ describe("upsertServiceDeployment over a pre-created skipped row", () => {
     ).resolves.not.toThrow();
 
     expect(await countRows()).toBe(1);
+    expect((await readRow())?.allocatedResources).toEqual({ containerId: "container_new", cpuCores: 1, memoryMb: 1024 });
     const row = await readRow();
     expect(row?.status).toBe("success");
     expect(row?.containerId).toBe("container_new");

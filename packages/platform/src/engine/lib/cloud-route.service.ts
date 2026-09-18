@@ -1,4 +1,4 @@
-import { Oblien, PAGE_CONTAINER_PREFIX, CloudInfraProvider } from "@repo/adapters";
+import { Oblien, PAGE_CONTAINER_PREFIX, CloudInfraProvider, CloudDockerRuntime } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { AppError, SYSTEM, deploymentBelongsToProject } from "@repo/core";
 import { env } from "../config/env";
@@ -6,6 +6,8 @@ import { getOrgCloudToken } from "./cloud/client";
 import { createRemoteCloudAdmin } from "./cloud/admin-proxy";
 import { issueNamespaceToken } from "./openship-cloud";
 import { createTenantCloudAdmin } from "./cloud-tenant-admin";
+import { disposePlatform, resolveDeploymentPlatform, type DeploymentMeta } from "./deployment-runtime";
+import { pickProjectPortOwner } from "./project-service-upstream";
 
 export interface CloudRouteProject {
   id: string;
@@ -34,6 +36,23 @@ export async function reapplyCloudProjectRoute(project: CloudRouteProject, input
   if (!deployment?.containerId) return;
   if (!deploymentBelongsToProject(project, deployment)) {
     throw new AppError("Cloud deployment does not belong to this project", 404, "DEPLOYMENT_NOT_FOUND");
+  }
+  if ((deployment.meta as DeploymentMeta | null)?.cloudDockerWorkspace) {
+    if (!input.port) throw new AppError("A target port is required for this cloud route", 400, "CLOUD_ROUTE_PORT_REQUIRED");
+    const resolved = await resolveDeploymentPlatform(deployment.meta as DeploymentMeta, { organizationId: project.organizationId });
+    try {
+      if (!(resolved.platform.runtime instanceof CloudDockerRuntime)) throw new Error("Invalid Docker workspace binding");
+      const [services, rows, domainRows] = await Promise.all([
+        repos.service.listByProject(project.id), repos.service.listByDeployment(deployment.id), repos.domain.listByProject(project.id),
+      ]);
+      const rowByService = new Map(rows.map(row => [row.serviceId, row]));
+      const owner = pickProjectPortOwner({ port: input.port, services, rowByService, domainRows });
+      const row = owner && rowByService.get(owner.serviceId);
+      if (!owner || !row?.containerId) throw new Error("No deployed service owns this port");
+      const target = await resolved.platform.runtime.resolveRoutingTarget(row.containerId, owner.containerPort);
+      await resolved.platform.runtime.publishRoute(input.hostname, target.port, input.isCustomDomain);
+    } finally { disposePlatform(resolved); }
+    return;
   }
   const { client, adminProxy } = await tenantClient(project.organizationId);
   const containerId = deployment.containerId;
@@ -69,5 +88,7 @@ export async function reapplyCloudProjectRoute(project: CloudRouteProject, input
 /** Resolve the actual route owner, including service workspaces in a compose deployment. */
 export async function removeCloudProjectRoute(project: CloudRouteProject, input: { hostname: string; isCustomDomain: boolean }): Promise<void> {
   const { client, namespace, adminProxy } = await tenantClient(project.organizationId);
-  await new CloudInfraProvider(client, { namespace, adminProxy }).removeRoute(input.hostname);
+  const binding = await repos.cloudDockerWorkspace.find(project.id, project.organizationId);
+  if (binding && binding.namespace !== namespace) throw new Error("Cloud workspace namespace changed");
+  await new CloudInfraProvider(client, { namespace, adminProxy, dockerWorkspaceId: binding?.workspaceId ?? undefined }).removeRoute(input.hostname);
 }

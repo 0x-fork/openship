@@ -10,6 +10,7 @@ import { env, runtimeTarget } from "../config/env";
 import { cacheStore } from "./cache-store/index";
 import { getOblienClient } from "./oblien-client";
 import { createProvisionLock } from "./provision-lock";
+import { initialCloudNamespaceLimits } from "./cloud-resource-limits";
 import { assertNamespaceHasQuota, ensureOblienDefaultQuota } from "../modules/billing/billing-oblien-quota";
 import { OBLIEN_WEBHOOK_EVENTS, oblienWebhookUrl } from "./oblien-webhook-config";
 
@@ -60,7 +61,10 @@ export async function ensureNamespace(organizationId: string): Promise<string> {
 
     await ensureOblienDefaultQuota();
     const slug = namespaceSlugForOrg(organizationId);
-    const ensured = await getOblienClient().namespaces.ensure({ name: `Openship ${organizationId}`, slug });
+    const ensured = await getOblienClient().namespaces.ensure({
+      name: `Openship ${organizationId}`, slug,
+      resource_limits: await initialCloudNamespaceLimits(),
+    });
     if (ensured.data.slug !== slug) {
       throw new AppError("Cloud returned an unexpected namespace", 502, "CLOUD_NAMESPACE_MISMATCH");
     }

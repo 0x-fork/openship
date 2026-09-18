@@ -11,8 +11,59 @@ import * as serverContainers from "./server-containers.controller";
 import * as serverModules from "./server-modules.controller";
 import * as tunnels from "./tunnels.controller";
 import { SaveServerTunnelInputSchema } from "@repo/contracts";
+import { CreateClusterInputSchema, UpdateClusterInputSchema, ServerClusterCollectionSchemas } from "@repo/contracts";
+import * as clusters from "./server-clusters.controller";
 
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system", localOnly: true });
+
+// Organization-owned infrastructure. Shared operations enforce fleet-wide access
+// and authorize every selected server, including calls made through the native SDK.
+const clusterRead = { tag: "server:read", collection: true, authorizationHandledByOperation: true } as const;
+const clusterAdmin = { tag: "server:admin", collection: true, authorizationHandledByOperation: true, auditHandledByOperation: true } as const;
+r.get("/clusters/capabilities", clusterRead, clusters.capabilities);
+r.post(
+  "/clusters/network-plans",
+  { ...clusterAdmin, body: ServerClusterCollectionSchemas.planManagedNetwork.input },
+  clusters.planManaged,
+);
+r.get("/clusters/network-operations/:operationId", clusterRead, clusters.managedOperation);
+r.get("/clusters/network-operations/:operationId/stream", clusterRead, clusters.managedOperationEvents);
+r.delete("/clusters/network-operations/:operationId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPlan.input, ["operationId"]),
+}, clusters.discardPlan);
+r.delete("/clusters/network-operations/:operationId/members/:serverId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkOperationMember.input, ["operationId", "serverId"]),
+}, clusters.removeOperationMember);
+r.post(
+  "/clusters/network-operations/:operationId/apply",
+  {
+    ...clusterAdmin,
+    body: Type.Omit(ServerClusterCollectionSchemas.applyManagedNetwork.input, ["operationId"]),
+  },
+  clusters.applyManaged,
+);
+r.post("/clusters/network-preparations", { ...clusterAdmin, body: ServerClusterCollectionSchemas.prepareManagedNetwork.input }, clusters.prepareManaged);
+r.get("/clusters/network-preparations", clusterRead, clusters.managedPreparations);
+r.get("/clusters/network-preparations/:preparationId", clusterRead, clusters.managedPreparation);
+r.get("/clusters/network-preparations/:preparationId/stream", clusterRead, clusters.preparationEvents);
+r.delete("/clusters/network-preparations/:preparationId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPreparation.input, ["preparationId"]),
+}, clusters.discardPreparation);
+r.delete("/clusters/network-preparations/:preparationId/members/:serverId", {
+  ...clusterAdmin,
+  body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkPreparationMember.input, ["preparationId", "serverId"]),
+}, clusters.removePreparationMember);
+r.get("/clusters/stream", clusterRead, clusters.clusterEvents);
+r.get("/clusters", clusterRead, clusters.list);
+r.get("/clusters/:id", clusterRead, clusters.get);
+r.post("/clusters", { ...clusterAdmin, body: CreateClusterInputSchema }, clusters.create);
+r.patch("/clusters/:id", { ...clusterAdmin, body: Type.Omit(UpdateClusterInputSchema, ["clusterId"]) }, clusters.update);
+r.post("/clusters/:id/verify", { ...clusterAdmin, body: Type.Omit(ServerClusterCollectionSchemas.verifyCluster.input, ["clusterId"]) }, clusters.verify);
+r.delete("/clusters/:id", { ...clusterAdmin, body: Type.Omit(ServerClusterCollectionSchemas.removeCluster.input, ["clusterId"]) }, clusters.remove);
+r.post("/servers/:id/network/inspect", { tag: "server:admin", readOnly: true, authorizationHandledByOperation: true }, clusters.inspect);
 
 r.get("/servers/:id/tunnels", { tag: "server:read", authorizationHandledByOperation: true }, tunnels.listTunnels);
 r.post("/servers/:id/tunnels", { tag: "server:write", body: SaveServerTunnelInputSchema, authorizationHandledByOperation: true, auditHandledByOperation: true }, tunnels.saveTunnel);

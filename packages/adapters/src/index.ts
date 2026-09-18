@@ -116,6 +116,9 @@ export {
   PAGE_CONTAINER_PREFIX,
   provisionCloudWorkspace,
 } from "./runtime/cloud";
+export { CloudDockerRuntime, CLOUD_DOCKER_IMAGE, type CloudDockerOptions } from "./runtime/cloud/docker";
+export { cloudWorkspaceStatus, waitForCloudDockerWorkspace } from "./runtime/cloud/workspace-ready";
+export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
@@ -567,7 +570,7 @@ export {
 } from "./platform";
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
-export { Oblien } from "oblien";
+export { Oblien } from "./oblien";
 export type {
   NamespaceUsageUnits,
   NamespaceUsageUnitBucket,
@@ -576,3 +579,13 @@ export type {
 
 // ─── Backup adapters (importing the index seeds all three registries) ───────
 export * from "./backup";
+export {
+  privateNetworkTools,
+  PrivateNetworkError,
+  type PrivateNetworkProbe,
+} from "./network/private-network";
+export {
+  managedNetworkTools,
+  type ManagedHostTransaction,
+  type ManagedHostReceipt,
+} from "./network/managed-network";

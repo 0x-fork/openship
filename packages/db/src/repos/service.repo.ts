@@ -5,11 +5,12 @@ import {
   mergeAdvanced,
   normalizeCustomHostname,
   resolveCommandArgv,
+  resolveWorkload,
   type ComposeAdvanced,
 } from "@repo/core";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
-import { project, service, serviceDeployment } from "../schema";
+import { deployment, project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
 
 /** A public route as it arrives on the wire (port may be a string) before
@@ -569,33 +570,97 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       })).map(codec.openService);
     },
 
-    /**
-     * How many services the org has that would each occupy one Oblien workspace.
-     *
-     * This is the count behind a tier's "N running services" allowance. Joined
-     * through `project` (service has no organizationId) and filtered to `enabled`,
-     * because a disabled service row holds no workspace. Soft-deleted projects are
-     * excluded — a slot that can't be used must not be charged for.
-     *
-     * Approximate BY DESIGN: Oblien's own workspace count is the hard ceiling
-     * (a build in flight, a crashed workspace, or a service someone started
-     * outside the API all shift the true number). This is the fast, friendly
-     * count that lets us refuse with "upgrade to add another database" instead of
-     * letting Oblien 409 mid-deploy.
-     */
-    async countRunningForOrg(organizationId: string): Promise<number> {
-      const [row] = await db
-        .select({ total: sql<number>`count(*)` })
+    /** Enabled definitions reserve a service slot. Disabling a definition cannot
+     * release that slot while its active deployment still runs the container.
+     * Compose containers share a VM, so provider workspace count cannot enforce
+     * this application allowance. Exclusions support atomic enable/re-enable. */
+    async countRunningForOrg(
+      organizationId: string,
+      excludingServiceIds: readonly string[] = [],
+      excludingNativeProjectId?: string,
+      prospective?: { projectId: string; serviceNames: readonly string[] },
+    ): Promise<number> {
+      const definitions = await db
+        .select({
+          id: service.id,
+          projectId: service.projectId,
+          name: service.name,
+          reserved: sql<boolean>`(${service.enabled} = true OR EXISTS (
+            SELECT 1 FROM ${serviceDeployment}
+            WHERE ${serviceDeployment.serviceId} = ${service.id}
+              AND ${serviceDeployment.deploymentId} = ${project.activeDeploymentId}
+              AND ${serviceDeployment.containerId} IS NOT NULL
+              AND ${serviceDeployment.status} <> 'stopped'
+          ))`,
+        })
         .from(service)
         .innerJoin(project, eq(service.projectId, project.id))
         .where(
           and(
             eq(project.organizationId, organizationId),
-            eq(service.enabled, true),
             sql`${project.deletedAt} IS NULL`,
           ),
         );
-      return Number(row?.total ?? 0);
+      const excluded = new Set(excludingServiceIds);
+      const slots = new Set(definitions.filter(row => row.reserved && !excluded.has(row.id)).map(row => row.id));
+      const byName = new Map<string, typeof definitions>();
+      const key = (projectId: string, name: string) => JSON.stringify([projectId, name]);
+      for (const row of definitions) {
+        const identity = key(row.projectId, row.name);
+        byName.set(identity, [...(byName.get(identity) ?? []), row]);
+      }
+      const reserve = (projectId: string, names: readonly string[]) => {
+        for (const name of names) {
+          const identity = key(projectId, name);
+          const saved = byName.get(identity);
+          if (saved) {
+            for (const row of saved) if (!excluded.has(row.id)) slots.add(row.id);
+          } else slots.add(`pending:${identity}`);
+        }
+      };
+      // A frozen/imported stack can be queued before sync creates its service
+      // rows. Reserve those names immediately and deduplicate them once saved.
+      const queued = await db.select({
+        projectId: deployment.projectId,
+        names: sql<unknown>`${deployment.meta}->'cloudServiceSlots'`,
+      }).from(deployment).innerJoin(project, eq(deployment.projectId, project.id)).where(and(
+        eq(project.organizationId, organizationId), sql`${project.deletedAt} IS NULL`,
+        inArray(deployment.status, ["queued", "building", "deploying", "reconciling"]),
+        sql`${deployment.meta}->'cloudServiceSlots' IS NOT NULL`,
+      ));
+      for (const row of queued) {
+        if (!Array.isArray(row.names) || row.names.some(name => typeof name !== "string" || !name))
+          throw new Error("The deployment's Cloud service reservation is invalid");
+        reserve(row.projectId, row.names);
+      }
+      if (prospective) reserve(prospective.projectId, prospective.serviceNames);
+      // A single-app deployment has no service row. Queued deployments reserve
+      // its slot under the same organization lock as service creation, while an
+      // active deployment keeps the slot until the project is paused/deleted.
+      // Count a project once during redeploy, even with two deployment records.
+      const native = await db.select({ projectId: project.id, meta: deployment.meta })
+        .from(deployment).innerJoin(project, eq(deployment.projectId, project.id))
+        .where(and(
+          eq(project.organizationId, organizationId),
+          sql`${project.deletedAt} IS NULL`,
+          excludingNativeProjectId ? sql`${project.id} <> ${excludingNativeProjectId}` : undefined,
+          sql`(
+            (${deployment.status} IN ('queued', 'building', 'deploying', 'reconciling')
+              AND ${deployment.meta}->>'cloudApplicationSlot' = 'true')
+            OR (${deployment.id} = ${project.activeDeploymentId}
+              AND ${project.disabledAt} IS NULL AND ${deployment.containerId} IS NOT NULL
+              AND (${deployment.meta}->>'cloudApplicationSlot' = 'true'
+                OR (${deployment.meta}->>'cloudApplicationSlot' IS NULL
+                  AND (${deployment.meta}->>'serviceDeploymentMode' = 'single' OR NOT EXISTS (
+                    SELECT 1 FROM ${serviceDeployment} WHERE ${serviceDeployment.deploymentId} = ${deployment.id}
+                  )))))
+          )`,
+        ));
+      const nativeProjects = new Set(native.filter(item => {
+        const snapshot = (item.meta ?? {}) as { workload?: string; hasServer?: boolean };
+        return resolveWorkload(snapshot.workload, snapshot.hasServer) !== "static";
+      }).map(item => item.projectId));
+      return slots.size + nativeProjects.size;
     },
 
     /**
@@ -1150,6 +1215,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
           set: {
             serviceName: data.serviceName,
             containerId: data.containerId ?? null,
+            allocatedResources: data.allocatedResources ?? null,
             status: data.status,
             imageRef: data.imageRef ?? null,
             imageDigest: data.imageDigest ?? null,

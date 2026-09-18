@@ -581,23 +581,26 @@ function environmentNameFromSlug(slug: string) {
 }
 
 async function ensureProjectApp(data: TCreateProjectBody, slug: string, organizationId: string) {
-  let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
-  if (app) return { app, created: false };
+  return withProjectCreationLock(organizationId, async () => {
+    let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
+    if (app) return { app, created: false };
+    await assertProjectQuota(organizationId);
 
-  const source = resolveProjectSource(data);
+    const source = resolveProjectSource(data);
 
-  app = await repos.projectGroup.create({
-    organizationId,
-    name: data.name,
-    slug,
-    gitProvider: source.gitProvider,
-    gitOwner: source.gitOwner,
-    gitRepo: source.gitRepo,
-    gitUrl: source.gitUrl,
-    installationId: data.installationId,
+    app = await repos.projectGroup.create({
+      organizationId,
+      name: data.name,
+      slug,
+      gitProvider: source.gitProvider,
+      gitOwner: source.gitOwner,
+      gitRepo: source.gitRepo,
+      gitUrl: source.gitUrl,
+      installationId: data.installationId,
+    });
+
+    return { app, created: true };
   });
-
-  return { app, created: true };
 }
 
 /**
@@ -987,17 +990,19 @@ export async function createServicesProjectWithId(opts: {
   gitBranch?: string | null;
   autoDeploy?: boolean;
 }): Promise<Project> {
-  await assertProjectQuota(opts.organizationId);
-  const slug = await uniqueProjectSlug(opts.organizationId, opts.slug);
-
-  const group = await repos.projectGroup.create({
-    organizationId: opts.organizationId,
-    name: opts.name,
-    slug,
-    gitProvider: opts.gitProvider ?? undefined,
-    gitOwner: opts.gitOwner ?? undefined,
-    gitRepo: opts.gitRepo ?? undefined,
-    gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+  const { group, slug } = await withProjectCreationLock(opts.organizationId, async () => {
+    await assertProjectQuota(opts.organizationId);
+    const slug = await uniqueProjectSlug(opts.organizationId, opts.slug);
+    const group = await repos.projectGroup.create({
+      organizationId: opts.organizationId,
+      name: opts.name,
+      slug,
+      gitProvider: opts.gitProvider ?? undefined,
+      gitOwner: opts.gitOwner ?? undefined,
+      gitRepo: opts.gitRepo ?? undefined,
+      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+    });
+    return { group, slug };
   });
 
   try {
@@ -1396,7 +1401,8 @@ export async function assertProjectQuota(organizationId: string): Promise<void> 
   }
 
   const planCap = await planProjectLimit(organizationId);
-  const cap = planCap ?? env.CLOUD_MAX_PROJECTS_PER_USER;
+  if (planCap === null) return; // Team/Enterprise publish an unlimited project allowance.
+  const cap = planCap;
   const { total } = await repos.projectGroup.listByOrganization(organizationId, {
     page: 1,
     perPage: 1,
@@ -1408,6 +1414,14 @@ export async function assertProjectQuota(organizationId: string): Promise<void> 
       await currentPlanTier(organizationId),
     );
   }
+}
+
+/** Reserve the project-group row under one organization lock. Every new group,
+ * including clones and imports, must count before another creator can proceed. */
+export async function withProjectCreationLock<T>(organizationId: string, create: () => Promise<T>): Promise<T> {
+  if (!env.CLOUD_MODE) return create();
+  const { createProvisionLock } = await import("../../lib/provision-lock");
+  return createProvisionLock(`cloud:project-quota:${organizationId}`).run(create);
 }
 
 export async function ensureProject(data: EnsureProjectBody, organizationId: string) {
@@ -1443,7 +1457,6 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (!project) {
     // No existing match → this ensure will create. Enforce the cap here too
     // (the folder-upload deploy flow reaches creation only through ensure).
-    await assertProjectQuota(organizationId);
     project = await createProductionProject(data, desiredSlug, organizationId);
     created = true;
   } else {
@@ -1611,8 +1624,6 @@ export async function getProject(projectId: string, organizationId: string) {
 /** @scope org — only reads organizationId as a DB key. */
 export async function createProject(data: EnsureProjectBody, organizationId: string, access?: { tokenId: string }) {
   const slug = slugify(data.name);
-
-  await assertProjectQuota(organizationId);
 
   const existing = await findProjectByAppSlug(organizationId, slug);
   if (existing) throw new ConflictError(`Project "${data.name}" already exists`);

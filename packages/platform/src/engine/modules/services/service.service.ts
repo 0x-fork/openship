@@ -99,7 +99,9 @@ import {
 } from "../../lib/public-endpoints";
 import { resolveRuntimeResources } from "../../lib/resources";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
-import { assertPlanAllowsServices, assertRunningServiceQuota } from "../../lib/plan-guard";
+import { assertCloudDeploymentLimits, assertCloudRuntimeLimits, assertPlanAllowsServices, assertRunningServiceQuota } from "../../lib/plan-guard";
+import { env } from "../../config/env";
+import { createProvisionLock } from "../../lib/provision-lock";
 import {
   ensurePendingServiceDomain,
   removeServiceDomain,
@@ -675,10 +677,6 @@ export async function createService(
   // this container, and persisting a service the org will be blocked from
   // starting is a worse experience than refusing it here.
   await assertPlanAllowsServices(ctx.organizationId);
-  // Each service is one Oblien workspace. Oblien would refuse the (N+1)th with a
-  // 409 mid-deploy that reads as a broken build; refuse it here as a plan
-  // decision instead, before the row exists.
-  await assertRunningServiceQuota(ctx.organizationId);
 
   // Through mergeAdvanced even on CREATE: there is nothing to preserve, but it
   // strips the `null`-means-remove sentinels the update path accepts, so a
@@ -703,41 +701,47 @@ export async function createService(
   // service counts as a sibling, which is exactly right for a new row.
   await validateServiceAlias(projectId, "", advanced, project.internalAlias);
 
-  const created = await repos.service.create({
-    projectId,
-    name,
-    kind,
-    image: trimOrNull(data.image),
-    build: trimOrNull(data.build),
-    dockerfile: trimOrNull(data.dockerfile),
-    buildArgs: unmaskBuildArgs(data.buildArgs, null),
-    ports: data.ports ?? [],
-    dependsOn: data.dependsOn ?? [],
-    environment: data.environment ?? {},
-    volumes: data.volumes ?? [],
-    command: trimOrNull(data.command),
-    // #332: derive argv from the text command when the client didn't send one, or
-    // the row falls back to the `sh -c` wrap that breaks entrypoint+CMD images.
-    commandArgv:
-      resolveCommandArgv({
-        incomingArgv: data.commandArgv,
-        incomingCommand: data.command,
-      }) ?? null,
-    restart: data.restart ?? "unless-stopped",
-    advanced,
-    ...routing,
-    enabled: data.enabled ?? true,
-    sortOrder: data.sortOrder ?? services.length,
-    // Monorepo sub-app fields - null for compose rows (the schema invariant).
-    rootDirectory: kind === "monorepo" ? trimOrNull(data.rootDirectory) : null,
-    installCommand: kind === "monorepo" ? trimOrNull(data.installCommand) : null,
-    buildCommand: kind === "monorepo" ? trimOrNull(data.buildCommand) : null,
-    startCommand: kind === "monorepo" ? trimOrNull(data.startCommand) : null,
-    outputDirectory: kind === "monorepo" ? trimOrNull(data.outputDirectory) : null,
-    framework: kind === "monorepo" ? trimOrNull(data.framework) : null,
-    packageManager: kind === "monorepo" ? trimOrNull(data.packageManager) : null,
-    buildImage: kind === "monorepo" ? trimOrNull(data.buildImage) : null,
-  });
+  const insert = async () => {
+    await assertRunningServiceQuota(ctx.organizationId, data.enabled === false ? 0 : 1);
+    return repos.service.create({
+      projectId,
+      name,
+      kind,
+      image: trimOrNull(data.image),
+      build: trimOrNull(data.build),
+      dockerfile: trimOrNull(data.dockerfile),
+      buildArgs: unmaskBuildArgs(data.buildArgs, null),
+      ports: data.ports ?? [],
+      dependsOn: data.dependsOn ?? [],
+      environment: data.environment ?? {},
+      volumes: data.volumes ?? [],
+      command: trimOrNull(data.command),
+      // #332: derive argv from the text command when the client didn't send one, or
+      // the row falls back to the `sh -c` wrap that breaks entrypoint+CMD images.
+      commandArgv:
+        resolveCommandArgv({
+          incomingArgv: data.commandArgv,
+          incomingCommand: data.command,
+        }) ?? null,
+      restart: data.restart ?? "unless-stopped",
+      advanced,
+      ...routing,
+      enabled: data.enabled ?? true,
+      sortOrder: data.sortOrder ?? services.length,
+      // Monorepo sub-app fields - null for compose rows (the schema invariant).
+      rootDirectory: kind === "monorepo" ? trimOrNull(data.rootDirectory) : null,
+      installCommand: kind === "monorepo" ? trimOrNull(data.installCommand) : null,
+      buildCommand: kind === "monorepo" ? trimOrNull(data.buildCommand) : null,
+      startCommand: kind === "monorepo" ? trimOrNull(data.startCommand) : null,
+      outputDirectory: kind === "monorepo" ? trimOrNull(data.outputDirectory) : null,
+      framework: kind === "monorepo" ? trimOrNull(data.framework) : null,
+      packageManager: kind === "monorepo" ? trimOrNull(data.packageManager) : null,
+      buildImage: kind === "monorepo" ? trimOrNull(data.buildImage) : null,
+    });
+  };
+  const created = env.CLOUD_MODE
+    ? await createProvisionLock(`cloud:service-quota:${ctx.organizationId}`).run(insert)
+    : await insert();
 
   // Mint verifiable PENDING rows for any custom domain configured at create
   // time, so the routing UI shows Verify/DNS/SSL immediately — parity with the
@@ -976,7 +980,15 @@ export async function updateService(
     );
   }
 
-  await repos.service.update(serviceId, patch);
+  if (env.CLOUD_MODE && patch.enabled === true) {
+    await createProvisionLock(`cloud:service-quota:${ctx.organizationId}`).run(async () => {
+      await assertPlanAllowsServices(ctx.organizationId);
+      await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId]);
+      await repos.service.update(serviceId, patch);
+    });
+  } else {
+    await repos.service.update(serviceId, patch);
+  }
   const updated = await repos.service.findById(serviceId);
 
   // ── Route management ─────────────────────────────────────────
@@ -2172,6 +2184,42 @@ async function provisionServiceContainer(
   }
 }
 
+/** Start/Restart bypass the build queue. Validate the existing allocation (or
+ * the new provisioning config) before reserving an enabled slot. */
+async function prepareServiceStart(ctx: RequestContext, projectId: string, serviceId: string, allowProvision: boolean) {
+  const resolve = () => allowProvision
+    ? resolveServiceContainer(ctx, projectId, serviceId).catch(() => null)
+    : resolveServiceContainer(ctx, projectId, serviceId);
+  if (!env.CLOUD_MODE) return resolve();
+  return createProvisionLock(`cloud:service-quota:${ctx.organizationId}`).run(async () => {
+    const project = await repos.project.findById(projectId);
+    assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+    const services = await repos.service.listByProject(projectId);
+    const service = services.find(item => item.id === serviceId);
+    if (!service) throw new Error("Service not found");
+    await assertPlanAllowsServices(ctx.organizationId);
+    await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId]);
+    const existing = await resolve();
+    try {
+      if (existing) {
+        await assertCloudRuntimeLimits(ctx.organizationId, existing.runtime, [{
+          containerId: existing.containerId, allocatedResources: existing.row?.allocatedResources,
+        }]);
+      } else {
+        await assertCloudDeploymentLimits(ctx.organizationId, {
+          projectId, resources: project.resources as Record<string, unknown> | null,
+          services: [{ ...service, enabled: true }],
+        });
+      }
+      if (!service.enabled) await repos.service.update(serviceId, { enabled: true });
+      return existing;
+    } catch (error) {
+      disposeRuntime(existing?.runtime);
+      throw error;
+    }
+  });
+}
+
 export async function startServiceContainer(
   ctx: RequestContext,
   projectId: string,
@@ -2180,7 +2228,7 @@ export async function startServiceContainer(
   await assertNotControlPlaneById(projectId);
   // Existing container → just start it. No container yet → provision it on its
   // own (image → container/workspace), decoupled from the project deploy.
-  const existing = await resolveServiceContainer(ctx, projectId, serviceId).catch(() => null);
+  const existing = await prepareServiceStart(ctx, projectId, serviceId, true);
   if (existing?.containerId) {
     try {
       await existing.runtime.start(existing.containerId);
@@ -2274,7 +2322,9 @@ export async function restartServiceContainer(
     }
   }
 
-  const { runtime, containerId, row } = await resolveServiceContainer(ctx, projectId, serviceId);
+  const existing = await prepareServiceStart(ctx, projectId, serviceId, false);
+  if (!existing) throw new Error("Service has no running container");
+  const { runtime, containerId, row } = existing;
   try {
     await runtime.restart(containerId);
     if (row) {

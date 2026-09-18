@@ -32,6 +32,9 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({
   assertNamespaceHasQuota: h.assertPolicy, ensureOblienDefaultQuota: h.defaults,
 }));
+vi.mock("@repo/platform/engine/lib/cloud-resource-limits", () => ({
+  initialCloudNamespaceLimits: async () => ({ max_workspaces: 2, max_vcpus: 4, max_ram_mb: 8192, max_disk_gb: 32 }),
+}));
 
 import { ensureNamespace, ensureNamespaceWithQuota, issueNamespaceToken, namespaceSlugForOrg } from "@repo/platform/engine/lib/openship-cloud";
 
@@ -76,6 +79,13 @@ describe("cloud namespace and billing boundary", () => {
     h.defaults.mockRejectedValue(new Error("uncapped default policy"));
     await expect(ensureNamespace("org_1")).rejects.toThrow("uncapped default policy");
     expect(h.ensure).not.toHaveBeenCalled();
+  });
+  it("creates new namespaces with finite provider resource ceilings", async () => {
+    h.org.oblienNamespace = null;
+    await ensureNamespace("org_1");
+    expect(h.ensure).toHaveBeenCalledWith(expect.objectContaining({
+      resource_limits: { max_workspaces: 2, max_vcpus: 4, max_ram_mb: 8192, max_disk_gb: 32 },
+    }));
   });
   it("never aliases organizations through prefix stripping or case folding", () => {
     expect(new Set(["org_A", "org_a", "A", "org.a", "org-a"].map(namespaceSlugForOrg)).size).toBe(5);
