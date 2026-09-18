@@ -11,7 +11,6 @@ import {
   Loader2,
   PauseCircle,
   RotateCcw,
-  Trash2,
 } from "lucide-react";
 import type { ClusterCapabilities } from "@repo/contracts";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -25,9 +24,10 @@ import { NetworkSetupTopology } from "./NetworkSetupTopology";
 import { MANAGED_NETWORK_PORT } from "@repo/core";
 import { useNetworkSetup } from "@/hooks/useNetworkSetup";
 import { NetworkStreamNotice } from "./NetworkStreamNotice";
-import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
+import { NetworkPreparationActions } from "./NetworkPreparationActions";
 import { RemoveSetupServerButton } from "./RemoveSetupServerButton";
 import { NetworkSetupCleanup } from "./NetworkSetupCleanup";
+import { ManagedNetworkTransportNotice } from "./ManagedNetworkTransportNotice";
 
 export function ManagedNetworkPreparationPage({ id }: { id: string }) {
   const { t } = useI18n();
@@ -45,12 +45,30 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const actionPending = useRef(false);
-  const [discarding, setDiscarding] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [openHost, setOpenHost] = useState<{ serverId: string } | null>(null);
   const running = preparation?.status === "preparing";
   const waiting = preparation?.status === "pending";
   const paused = waiting && !preparation?.cleanupOperationId;
+  const members =
+    preparation?.input.members.map((member) => {
+      const host = preparation.hosts.find((item) => item.serverId === member.serverId);
+      return {
+        ...member,
+        name: host?.name ?? member.serverId,
+        privateIp: "",
+        // Existing clusters may inherit a different endpoint/port from their saved config.
+        // Let the planner resolve those values instead of guessing from SSH/defaults.
+        endpoint:
+          host?.transport?.endpoint ??
+          member.endpoint ??
+          (!preparation.input.clusterId ? host?.address : undefined),
+        listenPort:
+          host?.transport?.listenPort ??
+          member.listenPort ??
+          (!preparation.input.clusterId ? MANAGED_NETWORK_PORT : undefined),
+      };
+    }) ?? [];
   const canRemoveMember =
     capabilities?.canManage &&
     preparation &&
@@ -90,30 +108,6 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
       setBusy(false);
     }
   }, [preparation, busy, capabilities, setPreparation, stream.reconnect]);
-  const discard = async () => {
-    if (!preparation || actionPending.current || !capabilities?.canManage) return;
-    actionPending.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await serverClustersApi.discardPreparation({
-        preparationId: id,
-        sequence: preparation.sequence,
-      });
-      setPreparation(next);
-      setDiscarding(false);
-      router.replace("/servers?tab=cluster");
-    } catch (err) {
-      setError(getApiErrorMessage(err));
-    } finally {
-      stream.reconnect();
-      actionPending.current = false;
-      setBusy(false);
-    }
-  };
-  useEffect(() => {
-    if (preparation?.status === "cancelled") setDiscarding(false);
-  }, [preparation?.status]);
   const edit = preparation?.input.clusterId
     ? `/servers/clusters/${encodeURIComponent(preparation.input.clusterId)}/edit`
     : "/servers/clusters/new";
@@ -130,12 +124,33 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
           <ArrowLeft className="size-4 rtl:rotate-180" />
           {c.backToClusters}
         </Link>
-        <h1 id="network-preparation-title" className="text-2xl font-semibold tracking-tight">
-          {m.preparationTitle}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {preparation?.input.name || m.preparationDescription}
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 id="network-preparation-title" className="text-2xl font-semibold tracking-tight">
+              {m.preparationTitle}
+            </h1>
+            <p className="mt-2 break-words text-sm text-muted-foreground">
+              {preparation?.input.name || m.preparationDescription}
+            </p>
+          </div>
+          {eligible && preparation && (
+            <NetworkPreparationActions
+              preparation={preparation}
+              name={preparation.input.name}
+              canManage={!!capabilities?.canManage}
+              disabled={busy}
+              onBusyChange={(pending) => {
+                actionPending.current = pending;
+                setBusy(pending);
+              }}
+              onDiscarded={(next) => {
+                setPreparation(next);
+                router.replace("/servers?tab=cluster");
+              }}
+              onRefresh={stream.reconnect}
+            />
+          )}
+        </div>
         {!eligible ? (
           <p className="mt-6 rounded-xl bg-muted/50 p-5 text-sm text-muted-foreground">
             {c.selfHostedOnly}
@@ -175,24 +190,14 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                   <div className="min-w-0 space-y-5">
                     <NetworkSetupTopology
                       preparation
-                      members={preparation.input.members.map((member) => ({
-                        ...member,
-                        name:
-                          preparation.hosts.find((host) => host.serverId === member.serverId)
-                            ?.name ?? member.serverId,
-                        privateIp: "",
-                        endpoint:
-                          member.endpoint ||
-                          preparation.hosts.find((host) => host.serverId === member.serverId)
-                            ?.address,
-                        listenPort: member.listenPort ?? MANAGED_NETWORK_PORT,
-                      }))}
+                      members={members}
                       hosts={preparation.hosts}
                       running={running}
                       statusLabel={m.preparationStatus[preparation.status]}
                       completeLabel={m.preparationStatus.ready}
                       onHostSelect={(serverId) => setOpenHost({ serverId })}
                     />
+                    <ManagedNetworkTransportNotice endpoints={members} />
                     <NetworkSetupProgress
                       initiallyCollapsed
                       openHost={openHost}
@@ -333,25 +338,6 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                         </Link>
                       </Button>
                     )}
-                  {capabilities?.canManage &&
-                    (paused ||
-                      preparation.status === "failed" ||
-                      preparation.status === "interrupted") && (
-                      <div className="border-t border-border/50 pt-4">
-                        <Button
-                          variant="ghost"
-                          disabled={busy}
-                          className="h-auto min-h-10 w-full whitespace-normal py-2 hover:bg-danger/10 hover:text-danger"
-                          onClick={() => {
-                            setError(null);
-                            setDiscarding(true);
-                          }}
-                        >
-                          <Trash2 className="size-4" />
-                          {m.discardSetup}
-                        </Button>
-                      </div>
-                    )}
                   {preparation.status === "cancelled" && (
                     <Button
                       asChild
@@ -367,17 +353,6 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
           </>
         )}
       </section>
-      {discarding && (
-        <NetworkSetupConfirmation
-          title={m.discardSetup}
-          description={m.discardDescription}
-          confirmLabel={m.discardSetup}
-          busy={busy}
-          error={error}
-          onClose={() => setDiscarding(false)}
-          onConfirm={() => void discard()}
-        />
-      )}
     </PageContainer>
   );
 }

@@ -29,6 +29,11 @@ import { NetworkStreamNotice } from "./NetworkStreamNotice";
 import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
 import { RemoveSetupServerButton } from "./RemoveSetupServerButton";
 import { NetworkSetupTopology } from "./NetworkSetupTopology";
+import {
+  NetworkFirewallConfirmation,
+  useNetworkFirewallConfirmation,
+} from "./NetworkFirewallConfirmation";
+import { ManagedNetworkTransportNotice } from "./ManagedNetworkTransportNotice";
 
 export function ManagedNetworkOperationPage({ id }: { id: string }) {
   const { t } = useI18n();
@@ -51,6 +56,9 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
   const [now, setNow] = useState(Date.now);
   const [openHost, setOpenHost] = useState<{ serverId: string } | null>(null);
   const running = !!operation && managedNetworkInProgress(operation.status);
+  const firewall = useNetworkFirewallConfirmation(
+    `${operation?.id}:${operation?.planHash}:${operation?.generation}:${operation?.status}`,
+  );
   useEffect(() => {
     if (!eligible) return;
     let active = true;
@@ -77,6 +85,10 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
   const apply = useCallback(
     async (action: "apply" | "resume" | "rollback") => {
       if (!operation || actionPending.current || !capabilities?.canManage) return;
+      if (action !== "rollback" && operation.plan.intent !== "remove" && !firewall.checked) {
+        setError(m.firewallRules.confirmRequired);
+        return;
+      }
       actionPending.current = true;
       setBusy(true);
       setError(null);
@@ -97,7 +109,16 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
         setBusy(false);
       }
     },
-    [operation, busy, capabilities, id, setOperation, stream.reconnect],
+    [
+      operation,
+      busy,
+      capabilities,
+      id,
+      setOperation,
+      stream.reconnect,
+      firewall.checked,
+      m.firewallRules.confirmRequired,
+    ],
   );
   const discard = async () => {
     if (!operation || actionPending.current || !capabilities?.canManage) return;
@@ -233,6 +254,19 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                         restored={operation.status === "rolled_back"}
                         onHostSelect={(serverId) => setOpenHost({ serverId })}
                       />
+                      {recoverable &&
+                        operation.plan.intent !== "remove" &&
+                        !operation.report?.handshakes?.some((peer) => !peer.ok) && (
+                          <ManagedNetworkTransportNotice
+                            endpoints={operation.plan.config.members.map((member) => ({
+                              ...member,
+                              name:
+                                operation.plan.hosts.find(
+                                  (host) => host.serverId === member.serverId,
+                                )?.name ?? member.serverId,
+                            }))}
+                          />
+                        )}
                       {operation.hosts.some((host) => host.steps?.length) ? (
                         <NetworkSetupProgress
                           running={running}
@@ -369,10 +403,24 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                       </Link>
                     </Button>
                   )}
+                  {capabilities?.canManage &&
+                    operation.plan.intent !== "remove" &&
+                    !operation.replacementPreparationId &&
+                    (operation.status === "planned" || recoverable) && (
+                      <NetworkFirewallConfirmation
+                        mode="wireguard"
+                        {...firewall}
+                        disabled={busy || !!expired}
+                      />
+                    )}
                   {capabilities?.canManage && operation.status === "planned" && (
                     <Button
                       className="h-auto min-h-10 w-full whitespace-normal py-2"
-                      disabled={busy || !!expired}
+                      disabled={
+                        busy ||
+                        !!expired ||
+                        (operation.plan.intent !== "remove" && !firewall.checked)
+                      }
                       onClick={() => void apply("apply")}
                     >
                       {busy && <Loader2 className="size-4 animate-spin" />}
@@ -384,7 +432,9 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                       {!operation.replacementPreparationId && (
                         <Button
                           className="h-auto min-h-10 w-full whitespace-normal py-2"
-                          disabled={busy}
+                          disabled={
+                            busy || (operation.plan.intent !== "remove" && !firewall.checked)
+                          }
                           onClick={() => void apply("resume")}
                         >
                           {busy && <Loader2 className="size-4 animate-spin" />}

@@ -40,7 +40,17 @@ export function ManagedNetworkReview({ plan }: { plan: ManagedNetworkPlan }) {
           </>
         )}
       </dl>
-      {plan.intent !== "remove" && <ManagedNetworkTransportNotice />}
+      {plan.intent !== "remove" && (
+        <ManagedNetworkTransportNotice
+          endpoints={plan.hosts
+            .filter((host) => host.action === "configure")
+            .map((host) => ({
+              ...host,
+              providerId: plan.config.members.find((member) => member.serverId === host.serverId)
+                ?.providerId,
+            }))}
+        />
+      )}
       <div className="divide-y divide-border/50 rounded-xl bg-muted/40">
         {plan.hosts.map((host) => (
           <div key={host.serverId} className="space-y-3 p-4">

@@ -14,6 +14,7 @@ import {
 
 const h = vi.hoisted(() => ({
   env: { CLOUD_MODE: false, DEPLOY_MODE: "docker" },
+  lookup: vi.fn(),
   authorize: vi.fn(),
   server: vi.fn(),
   executor: vi.fn(),
@@ -57,6 +58,10 @@ const h = vi.hoisted(() => ({
   work: [] as Array<() => Promise<unknown>>,
 }));
 vi.mock("@repo/platform/engine/config", () => ({ env: h.env }));
+vi.mock("node:dns/promises", async (original) => ({
+  ...(await original<typeof import("node:dns/promises")>()),
+  lookup: h.lookup,
+}));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env }));
 vi.mock("@repo/platform/engine/lib/authorization", () => ({
   authorization: { authorize: h.authorize, checkPermissionOnResource: vi.fn() },
@@ -171,6 +176,7 @@ beforeEach(() => {
   h.work.length = 0;
   h.env.CLOUD_MODE = false;
   h.env.DEPLOY_MODE = "docker";
+  h.lookup.mockRejectedValue(new Error("No DNS fixture"));
   h.authorize.mockImplementation(async (context) => context);
   h.server.mockImplementation(async (id, organizationId) =>
     id === "foreign"
@@ -630,6 +636,7 @@ describe("managed network prerequisite preparation", () => {
     expect(hosts[0].steps).toContainEqual(
       expect.objectContaining({ id: "inspect", status: "failed", message: detail }),
     );
+    expect(hosts[0].transport).toEqual({ endpoint: "192.0.2.10", listenPort: 51820 });
     expect(hosts[0].logs).toContainEqual(
       expect.objectContaining({ step: "inspect", level: "error", message: detail }),
     );
@@ -719,6 +726,75 @@ describe("managed network prerequisite preparation", () => {
     expect(h.apply).not.toHaveBeenCalled();
     expect(h.prepare).not.toHaveBeenCalled();
   });
+  it("streams resolved DNS endpoints and custom ports before inspection without changing the request", async () => {
+    const source = preparing();
+    delete source.input.members[0]!.endpoint;
+    delete source.input.members[0]!.listenPort;
+    source.input.members[1]!.listenPort = 53000;
+    const original = structuredClone(source.input);
+    const server = h.server.getMockImplementation()!;
+    h.server.mockImplementation(async (id, organizationId) => ({
+      ...(await server(id, organizationId)),
+      sshHost: id === "server-a" ? "alpha.example.test" : "192.0.2.11",
+    }));
+    h.lookup.mockResolvedValue([{ address: "203.0.113.31", family: 4 }]);
+    const inspect = h.inspect.getMockImplementation()!;
+    h.inspect.mockImplementation(async (...args) => {
+      expect(
+        h.prepProgress.mock.calls.at(-1)![2].map((host: { transport: unknown }) => host.transport),
+      ).toEqual([
+        { endpoint: "203.0.113.31", listenPort: 51820 },
+        { endpoint: "192.0.2.11", listenPort: 53000 },
+      ]);
+      return inspect(...args);
+    });
+    await runNetworkPreparation(ctx, source);
+    expect(h.prepFinish.mock.calls.at(-1)?.[4]).toBeNull();
+    expect(h.prepFinish.mock.calls.at(-1)![2][0].transport).toEqual({
+      endpoint: "203.0.113.31",
+      listenPort: 51820,
+    });
+    expect(h.lookup).toHaveBeenCalledWith("alpha.example.test", { family: 4, all: true });
+    expect(source.input).toEqual(original);
+  });
+
+  it("keeps existing cluster transport settings when preparation does not override them", async () => {
+    const source = preparing();
+    const config = stored().plan.config;
+    config.members[0]!.endpoint = "203.0.113.71";
+    config.members[0]!.listenPort = 53001;
+    h.get.mockResolvedValue({ ...config, id: "existing", revision: 3 });
+    source.input.clusterId = "existing";
+    source.input.revision = 3;
+    for (const member of source.input.members) {
+      delete member.endpoint;
+      delete member.listenPort;
+    }
+    await runNetworkPreparation(ctx, source);
+    expect(h.prepFinish.mock.calls.at(-1)?.[4]).toBeNull();
+    expect(h.prepFinish.mock.calls.at(-1)![2][0].transport).toEqual({
+      endpoint: "203.0.113.71",
+      listenPort: 53001,
+    });
+    expect(source.input.members[0]).not.toHaveProperty("endpoint");
+  });
+
+  it("restores resolved firewall endpoints when a preparation retry reuses its saved plan", async () => {
+    const source = preparing();
+    source.input.members[1]!.listenPort = 53111;
+    await operations.planManagedNetwork(ctx, source.input);
+    const [, id, , inputHash, planHash, plan] = h.save.mock.calls[0]!;
+    h.find.mockResolvedValue({ ...stored(), id, inputHash, planHash, plan });
+    h.inspect.mockClear();
+    await runNetworkPreparation(ctx, source);
+    expect(h.prepFinish.mock.calls.at(-1)?.[4]).toBeNull();
+    expect(h.prepFinish.mock.calls.at(-1)![2][1].transport).toEqual({
+      endpoint: "192.0.2.11",
+      listenPort: 53111,
+    });
+    expect(h.inspect).not.toHaveBeenCalled();
+  });
+
   it("persists each failed prerequisite and keeps preparing other servers", async () => {
     const healthy = h.prepareHost.getMockImplementation()!;
     h.prepareHost.mockImplementation(async (executor, managedId, observer) => {

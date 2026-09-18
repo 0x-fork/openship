@@ -18,6 +18,7 @@ import {
   NETWORK_SPEED_MAX_BYTES,
   type ClusterNetworkReport,
   type ClusterSpeedTest,
+  type NetworkFirewallScope,
 } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import { BlurIp } from "@/components/BlurIp";
 import { NetworkDiagnosticText } from "./NetworkSetupProgress";
 import { ClusterNetworkTopology } from "./ClusterNetworkTopology";
 import { ManagedNetworkTransportNotice } from "./ManagedNetworkTransportNotice";
+import { NetworkFirewallRules } from "./NetworkFirewallRules";
 import { networkLinks, type NetworkTopologyMember } from "./network-topology";
 
 function CheckResult({ value }: { value?: boolean }) {
@@ -56,6 +58,7 @@ export function ClusterNetworkDiagnostics({
   statusText,
   hint,
   onHostSelect,
+  network,
 }: {
   members: NetworkTopologyMember[];
   report?: ClusterNetworkReport | null;
@@ -68,6 +71,7 @@ export function ClusterNetworkDiagnostics({
   statusText?: string;
   hint?: string;
   onHostSelect?(serverId: string): void;
+  network?: NetworkFirewallScope;
 }) {
   const { t } = useI18n();
   const c = t.servers.clusters,
@@ -142,23 +146,29 @@ export function ClusterNetworkDiagnostics({
       {failedHandshakes.length > 0 && (
         <ManagedNetworkTransportNotice
           failed
-          endpoints={members.flatMap((member) => {
-            const failure = failedHandshakes.find(
+          initialServerId={failedHandshakes[0]?.targetServerId}
+          endpoints={members.map((member) => {
+            const connection = report?.handshakes?.find(
               (peer) => peer.targetServerId === member.serverId,
             );
-            return failure
-              ? [
-                  {
-                    serverId: member.serverId,
-                    name: member.name,
-                    endpoint: failure.endpoint,
-                    listenPort: failure.port,
-                  },
-                ]
-              : [];
+            return {
+              ...member,
+              endpoint: connection?.endpoint ?? member.endpoint,
+              listenPort: connection?.port ?? member.listenPort,
+            };
           })}
         />
       )}
+      {network?.mode === "native" &&
+        !failedHandshakes.length &&
+        links.some((link) => link.state === "failed") && (
+          <NetworkFirewallRules
+            failed
+            network={network}
+            servers={members}
+            initialServerId={links.find((link) => link.state === "failed")?.source.serverId}
+          />
+        )}
       {compact && selected && (
         <button
           type="button"

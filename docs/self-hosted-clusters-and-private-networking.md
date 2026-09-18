@@ -31,6 +31,14 @@ the real WireGuard transport under the host rollback timer. Every peer handshake
 must pass before private addresses and routes are assigned. Failed links retain
 their endpoint/port guidance after restoration; successful transport is promoted
 without resetting its verified interface and keys.
+Preparation, review, and failed connections share copyable per-server firewall
+templates. Managed networks show peer-scoped transport UDP rules; native networks
+show private TCP/UDP verification rules and replies for stateless firewalls.
+Resolved transport endpoints arrive through preparation SSE; unresolved hostnames
+or inherited settings cannot be copied as a complete template. Review requires
+explicit firewall confirmation for the current configuration before continuing;
+actual reachability still depends on verification. Native service ports need
+separate workload rules. Cluster creation is available in the Servers page header.
 Managed hosts use Linux/systemd with no
 active firewall, raw iptables, or the supported standard nftables layout.
 UFW/firewalld and provider API/VLAN provisioning remain separate work. Cluster

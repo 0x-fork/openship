@@ -268,6 +268,15 @@ export const ManagedNetworkPreparationSchema = Type.Object(
           name: text,
           address: Type.String(),
           hostIdentity: nullableText,
+          transport: Type.Optional(
+            Type.Object(
+              {
+                endpoint: Type.String({ minLength: 7, maxLength: 15 }),
+                listenPort: Type.Integer({ minimum: 1024, maximum: 65535 }),
+              },
+              { additionalProperties: false },
+            ),
+          ),
           steps: Type.Array(ManagedNetworkStepSchema),
           logs: setupLogs,
         },

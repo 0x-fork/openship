@@ -29,6 +29,11 @@ import type { ServerInfo } from "@/lib/api/system";
 import { serverClustersApi } from "@/lib/api/server-clusters";
 import { randomUUID } from "@/lib/random-uuid";
 import { clusterConfig } from "./model";
+import { NetworkFirewallRules } from "./NetworkFirewallRules";
+import {
+  NetworkFirewallConfirmation,
+  useNetworkFirewallConfirmation,
+} from "./NetworkFirewallConfirmation";
 
 export function ClusterWizard({
   capabilities,
@@ -125,6 +130,9 @@ export function ClusterWizard({
   const stepHeading = useRef<HTMLHeadingElement>(null);
   const errorMessage = useRef<HTMLDivElement>(null);
   const previousStep = useRef(step);
+  const firewall = useNetworkFirewallConfirmation(
+    JSON.stringify({ mode, network: draft.network, ranges, members: draft.members }),
+  );
 
   useEffect(
     () => () => {
@@ -380,6 +388,10 @@ export function ClusterWizard({
   const save = async () => {
     if (!capabilities.canManage || saving || managedBusy.current) return;
     if (mode === "wireguard") return;
+    if (!firewall.checked) {
+      setError(m.firewallRules.confirmRequired);
+      return;
+    }
     setSaving(true);
     setError(null);
     let saved: ServerCluster | null = null;
@@ -945,7 +957,7 @@ export function ClusterWizard({
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 <dt className="text-muted-foreground">{c.nativeNetwork}</dt>
                 <dd className="break-words font-mono text-xs">
-                  {config().network.cidrs.join(", ")}
+                  <BlurIp>{config().network.cidrs.join(", ")}</BlurIp>
                 </dd>
                 <dt className="text-muted-foreground">{c.mtu}</dt>
                 <dd>{draft.network.mtu}</dd>
@@ -960,7 +972,7 @@ export function ClusterWizard({
                   >
                     {memberLabel(m.serverId)}
                     <span className="font-mono text-xs text-muted-foreground">
-                      {m.privateIp} · {m.interfaceName || c.autoDetect}
+                      <BlurIp>{m.privateIp}</BlurIp> · {m.interfaceName || c.autoDetect}
                     </span>
                   </div>
                 ))}
@@ -968,6 +980,13 @@ export function ClusterWizard({
               <div className="rounded-xl bg-primary/5 p-4 text-sm leading-relaxed text-muted-foreground">
                 {c.reviewEffect}
               </div>
+              <NetworkFirewallRules
+                network={{ mode: "native", probePort: draft.network.probePort }}
+                servers={draft.members.map((member) => ({
+                  ...member,
+                  name: memberName(member.serverId),
+                }))}
+              />
             </div>
           )}
         </div>
@@ -1001,9 +1020,18 @@ export function ClusterWizard({
             ))}
           </ol>
           <div className="space-y-3 p-5">
+            {mode === "native" && step === 2 && (
+              <NetworkFirewallConfirmation mode="native" {...firewall} disabled={saving} />
+            )}
             <Button
               type="button"
-              disabled={saving || loading || inspecting !== null || !capabilities.canManage}
+              disabled={
+                saving ||
+                loading ||
+                inspecting !== null ||
+                !capabilities.canManage ||
+                (mode === "native" && step === 2 && !firewall.checked)
+              }
               onClick={() => (step < 2 ? void next() : void save())}
               className="w-full"
             >

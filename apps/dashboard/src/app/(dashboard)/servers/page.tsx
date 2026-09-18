@@ -22,10 +22,12 @@ import {
   Layers,
   MapPin,
   HardDrive,
+  RefreshCw,
 } from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ContainerApplyActive, ContainerApplyIntent } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Button } from "@/components/ui/button";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { usePlatform } from "@/context/PlatformContext";
@@ -38,6 +40,7 @@ import { InfraFilters } from "@/components/infra/InfraFilters";
 import type { ClusterCapabilities } from "@repo/contracts";
 import { serverClustersApi } from "@/lib/api/server-clusters";
 import { ServerClustersPanel } from "@/components/servers/clusters/ServerClustersPanel";
+import { useServerClustersOverview } from "@/hooks/useServerClustersOverview";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
 const FLAGS = CountryFlags as Record<
@@ -96,6 +99,9 @@ export default function ServersPage() {
     clustersEligible && (requestedTab === "cluster" || requestedTab === "networking")
       ? requestedTab
       : "servers";
+  const clusterOverview = useServerClustersOverview(
+    clustersEligible && activeTab !== "servers" && !!clusterCapabilities?.available,
+  );
   const setActiveTab = (tab: ServersTab) =>
     router.replace(tab === "servers" ? "/servers" : `/servers?tab=${tab}`);
   useEffect(() => {
@@ -344,7 +350,7 @@ export default function ServersPage() {
       {/* Header — mb-6 to match the server DETAIL page's header gap exactly, so
           the tab strip sits at the same y on both pages (this was mb-5, which put
           the list's tabs 4px higher than the detail's). */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
             {t.servers.list.title}
@@ -386,6 +392,31 @@ export default function ServersPage() {
               {t.servers.list.addServer}
             </button>
           ))}
+        {activeTab !== "servers" && clusterCapabilities?.available && (
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={clusterOverview.refresh}
+              disabled={clusterOverview.refreshing}
+              aria-label={t.servers.clusters.refresh}
+              title={t.servers.clusters.refresh}
+            >
+              <RefreshCw
+                className={`size-4 ${clusterOverview.refreshing ? "animate-spin" : ""}`}
+              />
+            </Button>
+            {activeTab === "cluster" && clusterCapabilities.canManage && (
+              <Button asChild>
+                <Link href="/servers/clusters/new">
+                  <Plus className="size-4" />
+                  {t.servers.clusters.createCluster}
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <Tabs tabs={tabs} value={activeTab} onChange={setActiveTab} className="mb-6" />
@@ -416,6 +447,7 @@ export default function ServersPage() {
         ) : clusterCapabilities.available ? (
           <ServerClustersPanel
             capabilities={clusterCapabilities}
+            overview={clusterOverview}
             view={activeTab === "networking" ? "networks" : "clusters"}
           />
         ) : (

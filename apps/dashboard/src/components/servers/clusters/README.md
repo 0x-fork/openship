@@ -10,6 +10,8 @@ to each network's details. Each cluster currently has one primary private networ
 registered during cluster setup. The views share inventory loading but have
 separate empty states, using the existing server-group and network illustrations.
 Cluster offers creation; Networking directs users to Cluster for initial setup.
+Create cluster and Refresh sit in the page header above the tabs. Header refresh
+reconnects the same overview subscription used by the cards and network table.
 
 ## Available workflow
 
@@ -54,6 +56,11 @@ private interfaces, and mutually reachable routes. Allow the selected verificati
 port (default 51821) for TCP and UDP between those private addresses. Verification
 checks the selected addresses and port; it does not prove that service ports are
 reachable or that traffic is encrypted.
+The native review uses the shared firewall panel with private peer `/32` addresses,
+TCP/UDP probe rules and explicit replies for stateless firewalls. It includes the
+selected private interface when known. No public SSH or WireGuard endpoint is
+substituted into native rules. Host/provider rules remain administrator-owned;
+workload service ports need their own rules.
 
 The controller inspects address ownership and MTU, detects duplicate physical
 hosts, then checks TCP, UDP, and unfragmented MTU-sized packets for every directed
@@ -116,10 +123,26 @@ start collapsed, retain manual choices through SSE updates, and open when their
 node is selected. Collapsed failures retain a short error summary. Connection
 details stay compact until selected or a connection fails.
 
-Local inspection does not establish UDP reachability. Review explicitly lists the
-required provider firewall access; OpenShip manages supported host firewall rules,
+Local inspection does not establish UDP reachability. Managed preparation, review and failed
+connections share the per-server firewall rule template: incoming UDP from each
+peer `/32` to the selected server's listen port, and outgoing UDP to each peer's
+actual port, with unrestricted source ports. Outgoing rules are needed when egress
+is restricted. Individual values and the complete server template can be copied;
+the template is provider-neutral TSV, not a provider API payload. Only transport
+endpoints are included, never private service or probe ports. Preparation publishes
+resolved DNS endpoints and inherited cluster ports through its existing SSE stream;
+incomplete values disable full-template copying. OpenShip manages supported host firewall rules,
 while provider firewalls, upstream routing and NAT forwarding remain administrator
 configuration. SSH access is never presented as proof of peer UDP access.
+The panel uses a restrained warning accent and required-before-setup cue instead
+of a separate repeated warning card. Both network modes require explicit firewall
+confirmation in review before creating/verifying or applying a network. Native
+confirmation is scoped to the draft's network settings and members; managed
+confirmation is scoped to the operation, plan hash, generation and status, so a
+failed attempt needs confirmation again before resume. Cleanup/removal stays
+available without firewall confirmation. This is a UI acknowledgment, not proof of
+connectivity or an authorization boundary; the existing server checks still decide
+whether the network is ready.
 
 Plans expire after fifteen minutes. Apply requires the reviewed plan hash and
 unchanged cluster revision, host identity, and network fingerprint. Allocation
@@ -159,8 +182,12 @@ The dashboard reconnects with bounded exponential backoff, stops on terminal res
 or denied access, and shows connection loss separately from setup failure.
 Reconnecting the progress stream never starts/resumes host work; Retry and Resume remain explicit actions.
 
-Failed or interrupted preparation offers **Discard setup**; the review page offers
-**Discard plan**. Both use a shared transactional discard helper, retain diagnostics,
+Ready, failed, and interrupted preparations expose **Discard setup** in the three-dot
+menu on their overview card and preparation page. Saved, paused selections also offer
+it on their preparation page; pending cleanup keeps its recovery flow. The same confirmation
+names the selected setup and uses its current sequence; failed requests leave it
+actionable and reconnect saved progress. The review page offers **Discard plan**.
+Both use a shared transactional discard helper, retain diagnostics,
 and leave servers, services, and installed tools in place. The `cancelled` preparation
 state is hidden from pending lists and cannot be restarted with its old request ID.
 Discard checks the current preparation sequence or reviewed plan hash, locks preparation
@@ -273,6 +300,8 @@ There is no continuous controller reconciliation or automatic workload failover.
 - `packages/core/src/managed-network.ts`: allocation, managed configuration and
   operation types. `host-firewall.ts` owns firewall rule generation; package/init
   commands remain in the shared environment operations adapter.
+- `packages/core/src/network-firewall.ts`: shared native/WireGuard guidance and
+  provider-neutral copy templates, separate from host firewall mutations.
 - `packages/contracts/src/server-clusters.ts`: schemas consumed by the engine,
   HTTP controllers, SDK, and dashboard. Cluster actions use the existing server
   operation surface and require fleet-wide read/admin access.

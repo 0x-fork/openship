@@ -208,6 +208,25 @@ async function click(label: string, scope: ParentNode = host) {
   expect(button, `button ${label}`).toBeDefined();
   await act(async () => button!.click());
 }
+async function openSetupActions(name: string) {
+  const label = c.managed.setupActions.replace("{name}", name);
+  const button = [...host.querySelectorAll("button")].find(
+    (node) => node.getAttribute("aria-label") === label,
+  );
+  expect(button, `setup actions for ${name}`).toBeDefined();
+  await act(async () => button!.click());
+}
+async function confirmFirewall(mode: "native" | "wireguard") {
+  const text =
+    mode === "native"
+      ? c.managed.firewallRules.confirmNative
+      : c.managed.firewallRules.confirmManaged;
+  const checkbox = [...host.querySelectorAll<HTMLButtonElement>('[role="checkbox"]')].find((item) =>
+    item.closest("label")?.textContent?.includes(text),
+  );
+  expect(checkbox).toBeDefined();
+  await act(async () => checkbox!.click());
+}
 async function renderSetup(page: ReactNode) {
   await act(async () =>
     root.render(
@@ -417,7 +436,9 @@ describe("cluster setup pages", () => {
     expect(host.textContent).toContain(c.managed.selectionSavedHint);
     expect(host.querySelector('[role="status"] .animate-spin')).toBeNull();
     expect(host.textContent).toContain(c.managed.removeFromSetup);
+    await openSetupActions(preparation.input.name);
     expect(host.textContent).toContain(c.managed.discardSetup);
+    await openSetupActions(preparation.input.name);
     await click(c.managed.retryPreparation);
     expect(h.prepareManaged).toHaveBeenCalledExactlyOnceWith(preparation.input);
   });
@@ -482,27 +503,37 @@ describe("cluster setup pages", () => {
     expect(h.applyManaged).toHaveBeenCalledTimes(1);
   });
 
-  it("confirms discarding a failed preparation, then closes it without running host work", async () => {
-    const failed = { ...managedPreparationFixture(), status: "failed" };
-    h.managedPreparation.mockResolvedValue(failed);
-    await renderSetup(<ManagedNetworkPreparationPage id={failed.id} />);
-    await click(c.managed.discardSetup);
-    expect(confirmation().textContent).toContain(c.managed.discardDescription);
-    expect(h.discardPreparation).not.toHaveBeenCalled();
-    await click(c.cancel, confirmation());
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    await click(c.managed.discardSetup);
-    await click(c.managed.discardSetup, confirmation());
-    expect(h.discardPreparation).toHaveBeenCalledExactlyOnceWith({
-      preparationId: failed.id,
-      sequence: failed.sequence,
-    });
-    expect(h.replace).toHaveBeenCalledWith("/servers?tab=cluster");
-    expect(h.prepareManaged).not.toHaveBeenCalled();
-    expect(h.applyManaged).not.toHaveBeenCalled();
-    expect(host.textContent).toContain(c.managed.setupDiscardedHint);
-    expect(host.textContent).not.toContain(c.managed.retryPreparation);
-  });
+  it.each(["ready", "failed", "interrupted", "pending"])(
+    "discards a %s preparation from its menu without running host work",
+    async (status) => {
+      const preparation = {
+        ...managedPreparationFixture(),
+        status,
+        operationId: status === "ready" ? managedOperationFixture().id : null,
+      };
+      h.managedPreparation.mockResolvedValue(preparation);
+      await renderSetup(<ManagedNetworkPreparationPage id={preparation.id} />);
+      await openSetupActions(preparation.input.name);
+      await click(c.managed.discardSetup);
+      expect(confirmation().textContent).toContain(c.managed.discardDescription);
+      expect(confirmation().textContent).toContain(preparation.input.name);
+      expect(h.discardPreparation).not.toHaveBeenCalled();
+      await click(c.cancel, confirmation());
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      await openSetupActions(preparation.input.name);
+      await click(c.managed.discardSetup);
+      await click(c.managed.discardSetup, confirmation());
+      expect(h.discardPreparation).toHaveBeenCalledExactlyOnceWith({
+        preparationId: preparation.id,
+        sequence: preparation.sequence,
+      });
+      expect(h.replace).toHaveBeenCalledWith("/servers?tab=cluster");
+      expect(h.prepareManaged).not.toHaveBeenCalled();
+      expect(h.applyManaged).not.toHaveBeenCalled();
+      expect(host.textContent).toContain(c.managed.setupDiscardedHint);
+      expect(host.textContent).not.toContain(c.managed.retryPreparation);
+    },
+  );
 
   it("keeps a failed discard actionable and reattaches to saved progress", async () => {
     const failed = { ...managedPreparationFixture(), status: "interrupted" };
@@ -511,6 +542,7 @@ describe("cluster setup pages", () => {
       new Error("Preparation changed. Reload its saved progress."),
     );
     await renderSetup(<ManagedNetworkPreparationPage id={failed.id} />);
+    await openSetupActions(failed.input.name);
     await click(c.managed.discardSetup);
     await click(c.managed.discardSetup, confirmation());
     expect(confirmation().querySelector('[role="alert"]')?.textContent).toContain(
@@ -523,12 +555,19 @@ describe("cluster setup pages", () => {
     expect(h.replace).toHaveBeenCalledWith("/servers?tab=cluster");
   });
 
-  it.each(["preparing", "cancelled", "read-only"])(
+  it.each(["preparing", "cancelled", "read-only", "pending cleanup", "replaced"])(
     "does not offer discard for %s preparation",
     async (state) => {
       const preparation = {
         ...managedPreparationFixture(),
-        status: state === "read-only" ? "failed" : state,
+        status:
+          state === "read-only" || state === "replaced"
+            ? "ready"
+            : state === "pending cleanup"
+              ? "pending"
+              : state,
+        cleanupOperationId: state === "pending cleanup" ? managedOperationFixture().id : null,
+        replacementPreparationId: state === "replaced" ? "replacement-setup" : null,
       };
       if (state === "read-only")
         h.capabilities.mockResolvedValue({ ...clusterCapabilitiesFixture(), canManage: false });
@@ -536,7 +575,9 @@ describe("cluster setup pages", () => {
       await renderSetup(<ManagedNetworkPreparationPage id={preparation.id} />);
       expect(
         [...host.querySelectorAll("button")].some(
-          (button) => button.textContent?.trim() === c.managed.discardSetup,
+          (button) =>
+            button.getAttribute("aria-label") ===
+            c.managed.setupActions.replace("{name}", preparation.input.name),
         ),
       ).toBe(false);
       expect(h.discardPreparation).not.toHaveBeenCalled();
@@ -557,6 +598,103 @@ describe("cluster setup pages", () => {
     expect(h.replace).toHaveBeenCalledWith("/servers?tab=cluster");
     expect(h.applyManaged).not.toHaveBeenCalled();
     expect(host.textContent).toContain(c.managed.status.cancelled);
+  });
+
+  it("fills firewall rules from resolved preparation events without guessing inherited endpoints or polling", async () => {
+    const preparation = managedPreparationFixture();
+    preparation.input.clusterId = "existing-cluster";
+    preparation.input.revision = 1;
+    for (const member of preparation.input.members) {
+      delete member.endpoint;
+      delete member.listenPort;
+    }
+    h.managedPreparation.mockResolvedValue(preparation);
+    await renderSetup(<ManagedNetworkPreparationPage id={preparation.id} />);
+    expect(host.textContent).toContain(c.managed.firewallRules.pending);
+    const next = structuredClone(preparation);
+    next.sequence++;
+    next.hosts[0]!.transport = { endpoint: "203.0.113.51", listenPort: 53051 };
+    next.hosts[1]!.transport = { endpoint: "203.0.113.52", listenPort: 53052 };
+    await act(async () => emitProgress("preparations", next));
+    expect(host.textContent).not.toContain(c.managed.firewallRules.pending);
+    expect(host.querySelector("table")?.textContent).toContain("203.0.113.52/32");
+    expect(host.querySelector("table")?.textContent).toContain("53051");
+    expect(host.querySelector("table")?.textContent).not.toContain("51820");
+    expect(h.managedPreparation).toHaveBeenCalledTimes(1);
+    expect(h.prepareManaged).not.toHaveBeenCalled();
+  });
+
+  it("includes every selected peer in firewall guidance for an asymmetric handshake failure", async () => {
+    const operation = managedOperationFixture(["server-a", "server-b", "server-c"]);
+    operation.status = "needs_attention";
+    operation.report = {
+      stage: "handshakes",
+      hosts: [],
+      peers: [],
+      handshakes: [
+        {
+          sourceServerId: "server-a",
+          targetServerId: "server-b",
+          endpoint: "192.0.2.11",
+          port: 51820,
+          ok: false,
+          lastHandshakeAt: null,
+        },
+      ],
+    };
+    h.managedOperation.mockResolvedValue(operation);
+    await renderSetup(<ManagedNetworkOperationPage id={operation.id} />);
+    expect(host.textContent).toContain(c.managed.transportFailedTitle);
+    const rules = host.querySelector("table")!;
+    expect(rules.textContent).toContain("192.0.2.10/32");
+    expect(rules.textContent).toContain("192.0.2.12/32");
+    expect(rules.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(h.applyManaged).not.toHaveBeenCalled();
+  });
+
+  it("requires firewall confirmation before apply and again after an interrupted attempt", async () => {
+    const operation = managedOperationFixture();
+    operation.status = "planned";
+    h.managedOperation.mockResolvedValue(operation);
+    await renderSetup(<ManagedNetworkOperationPage id={operation.id} />);
+    await click(c.managed.apply);
+    expect(h.applyManaged).not.toHaveBeenCalled();
+    await confirmFirewall("wireguard");
+    await click(c.managed.apply);
+    expect(h.applyManaged).toHaveBeenCalledExactlyOnceWith({
+      operationId: operation.id,
+      planHash: operation.planHash,
+      action: "apply",
+    });
+    await act(async () =>
+      emitProgress("operations", {
+        ...operation,
+        sequence: 4,
+        generation: 1,
+        status: "interrupted",
+      }),
+    );
+    expect(host.querySelector('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("false");
+    await click(c.managed.resume);
+    expect(h.applyManaged).toHaveBeenCalledTimes(1);
+    await confirmFirewall("wireguard");
+    await click(c.managed.resume);
+    expect(h.applyManaged).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not require firewall confirmation to remove an existing managed network", async () => {
+    const operation = managedOperationFixture();
+    operation.status = "planned";
+    operation.plan.intent = "remove";
+    h.managedOperation.mockResolvedValue(operation);
+    await renderSetup(<ManagedNetworkOperationPage id={operation.id} />);
+    expect(host.querySelector('[role="checkbox"]')).toBeNull();
+    await click(c.managed.removalApply);
+    expect(h.applyManaged).toHaveBeenCalledExactlyOnceWith({
+      operationId: operation.id,
+      planHash: operation.planHash,
+      action: "apply",
+    });
   });
 
   it("cleans a failed initial network through rollback and only offers Close after cleanup settles", async () => {
@@ -684,6 +822,7 @@ describe("cluster setup pages", () => {
     expect(host.textContent).toContain(c.managed.resume);
     expect(host.textContent).toContain(c.managed.cleanupSetup);
     expect(h.applyManaged).not.toHaveBeenCalled();
+    await confirmFirewall("wireguard");
     await click(c.managed.resume);
     expect(h.applyManaged).toHaveBeenCalledWith({
       operationId: managedOperationFixture().id,
@@ -948,6 +1087,12 @@ describe("cluster setup pages", () => {
     expect(host.querySelector("h2")?.textContent).toBe(c.stepReview);
     expect(h.create).not.toHaveBeenCalled();
     await click(c.createAndVerify);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(host.textContent).toContain(c.managed.firewallRules.nativeDescription);
+    expect(host.querySelector("table")?.textContent).toContain("10.20.0.3/32");
+    expect(host.querySelector("table")?.textContent).not.toContain("192.0.2.");
+    await confirmFirewall("native");
+    await click(c.createAndVerify);
     expect(h.create).toHaveBeenCalledTimes(1);
     expect(h.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -971,6 +1116,7 @@ describe("cluster setup pages", () => {
     await fill(host.querySelector(`input[placeholder="${c.namePlaceholder}"]`), "Changed fleet");
     await click(c.continue);
     await click(c.continue);
+    await confirmFirewall("native");
     await click(c.saveAndVerify);
     expect(h.update).toHaveBeenCalledWith(
       expect.objectContaining({ clusterId: "cluster-a", revision: 1, name: "Changed fleet" }),
@@ -984,6 +1130,24 @@ describe("cluster setup pages", () => {
     expect(host.textContent).toContain("Changed fleet");
     await click(c.cancel);
     expect(h.push).toHaveBeenCalledWith("/servers/clusters/cluster-a");
+  });
+
+  it("requires fresh firewall confirmation when a native verification port changes", async () => {
+    await render("cluster-a");
+    await click(c.continue);
+    await click(c.continue);
+    await confirmFirewall("native");
+    expect(host.querySelector('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("true");
+    await click(c.back);
+    await fill(
+      [...host.querySelectorAll<HTMLInputElement>('input[type="number"]')].at(-1)!,
+      "53001",
+    );
+    await click(c.continue);
+    expect(host.querySelector('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(host.querySelector("table")?.textContent).toContain("53001");
+    await click(c.saveAndVerify);
+    expect(h.update).not.toHaveBeenCalled();
   });
 
   it("repairs the mismatched ranges from actual server masks and saves through the existing flow", async () => {
@@ -1012,6 +1176,7 @@ describe("cluster setup pages", () => {
     expect(h.create).not.toHaveBeenCalled();
     expect(h.verify).not.toHaveBeenCalled();
     await click(c.continue);
+    await confirmFirewall("native");
     await click(c.createAndVerify);
     expect(h.create).toHaveBeenCalledWith(
       expect.objectContaining({
