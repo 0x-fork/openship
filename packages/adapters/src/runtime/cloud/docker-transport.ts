@@ -12,7 +12,8 @@ export async function dockerWebSocketStream(socket: WebSocket): Promise<Duplex> 
   let ended = false;
   let pendingWrite: ReturnType<typeof setTimeout> | undefined;
   let resumeWrite: (() => void) | undefined;
-  let writeCredit = 262144;
+  const writeWindow = 262144;
+  let writeCredit = writeWindow;
   let unacknowledged = 0;
   const acknowledge = () => {
     if (unacknowledged && socket.readyState === 1) {
@@ -49,8 +50,27 @@ export async function dockerWebSocketStream(socket: WebSocket): Promise<Duplex> 
       send();
     },
     final(callback) {
-      if (socket.readyState === 1) socket.send("eof");
-      callback();
+      // A completed WebSocket send can still be queued inside the bridge.
+      // Wait for Docker's write acknowledgements before EOF lets this Duplex
+      // auto-destroy and close the connection after a response half-close.
+      const finish = () => {
+        if (socket.readyState !== 1) {
+          resumeWrite = undefined;
+          callback(new Error("Cloud Docker connection closed"));
+          return;
+        }
+        if (writeCredit !== writeWindow) return;
+        resumeWrite = undefined;
+        try {
+          socket.send("eof");
+        } catch {
+          callback(new Error("Cloud Docker write failed"));
+          return;
+        }
+        callback();
+      };
+      resumeWrite = finish;
+      finish();
     },
     destroy(error, callback) {
       if (pendingWrite) clearTimeout(pendingWrite);
@@ -67,7 +87,7 @@ export async function dockerWebSocketStream(socket: WebSocket): Promise<Duplex> 
       stream.push(null);
     } else if (typeof data === "string" && data.startsWith("ack:")) {
       const amount = Number(data.slice(4));
-      if (!Number.isInteger(amount) || amount <= 0 || writeCredit + amount > 262144) {
+      if (!Number.isInteger(amount) || amount <= 0 || writeCredit + amount > writeWindow) {
         stream.destroy(new Error("Invalid cloud Docker flow-control frame"));
         return;
       }
