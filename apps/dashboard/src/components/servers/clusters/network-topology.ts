@@ -1,6 +1,7 @@
 import type { ClusterNetworkReport, InfrastructureProviderId } from "@repo/core";
 
 export interface NetworkTopologyMember {
+  interfaceName?: string;
   serverId: string;
   name: string;
   privateIp: string;

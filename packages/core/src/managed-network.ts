@@ -150,11 +150,17 @@ export function initialManagedNetworkInput(
     })),
   });
 }
+export interface ManagedNetworkTransport {
+  endpoint: string;
+  listenPort: number;
+}
 export interface ManagedNetworkPreparationHost {
   serverId: string;
   name: string;
   address: string;
   hostIdentity: string | null;
+  /** Resolved by the planner, including DNS and inherited cluster settings. */
+  transport?: ManagedNetworkTransport;
   steps: ManagedNetworkStepProgress[];
   logs: ManagedNetworkSetupLog[];
 }

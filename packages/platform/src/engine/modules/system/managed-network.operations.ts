@@ -124,6 +124,9 @@ export async function planNetwork(
     generation: number;
     assertActive(): Promise<void>;
     hostIdentity(serverId: string): string | null;
+    transports(
+      members: { serverId: string; endpoint: string; listenPort: number }[],
+    ): Promise<void>;
     inspection(
       serverId: string,
       status: "running" | "completed" | "failed",
@@ -198,6 +201,10 @@ export async function planNetwork(
       listenPort: member.listenPort ?? old?.listenPort ?? MANAGED_NETWORK_PORT,
     });
   }
+  await preparation?.assertActive();
+  await preparation?.transports(
+    [...endpoints].map(([serverId, transport]) => ({ serverId, ...transport })),
+  );
   const observations = new Map<string, ManagedNetworkObservation>();
   const identities = new Set<string>();
   await eachMember(

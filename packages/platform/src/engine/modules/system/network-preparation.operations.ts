@@ -64,7 +64,10 @@ export async function runNetworkPreparation(
   const { id, generation, input } = preparation;
   const hosts = structuredClone(preparation.hosts);
   // Retry probes everything again while retaining the earlier log for diagnosis.
-  for (const host of hosts) host.steps = managedNetworkSteps(MANAGED_NETWORK_PREPARATION_STEPS);
+  for (const host of hosts) {
+    host.steps = managedNetworkSteps(MANAGED_NETWORK_PREPARATION_STEPS);
+    delete host.transport;
+  }
   let queue = Promise.resolve();
   let heartbeat = Promise.resolve();
   let dirty = false;
@@ -249,13 +252,22 @@ export async function runNetworkPreparation(
       assertActive,
       hostIdentity: (serverId) =>
         hosts.find((host) => host.serverId === serverId)?.hostIdentity ?? null,
+      transports: async (members) => {
+        for (const { serverId, endpoint, listenPort } of members) {
+          const host = hosts.find((item) => item.serverId === serverId);
+          if (host) host.transport = { endpoint, listenPort };
+        }
+        await persist();
+      },
       inspection: async (serverId, status, message) => {
         const host = hosts.find((item) => item.serverId === serverId);
         if (host) await step(host, "inspect", status, message);
       },
     });
     // A crash after saving the plan may return it idempotently on retry.
-    for (const host of hosts)
+    for (const host of hosts) {
+      const planned = operation.plan.hosts.find((item) => item.serverId === host.serverId);
+      if (planned) host.transport = { endpoint: planned.endpoint, listenPort: planned.listenPort };
       if (host.steps.find((item) => item.id === "inspect")?.status === "pending")
         await step(
           host,
@@ -263,6 +275,7 @@ export async function runNetworkPreparation(
           "completed",
           "The saved inspection and network plan are ready for review.",
         );
+    }
     await persist();
     await repos.networkPreparation.finish(id, generation, hosts, operation.id, null);
     notifyNetworkSetup(ctx.organizationId, "preparation", id);

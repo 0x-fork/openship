@@ -398,6 +398,7 @@ export function ClusterDetail({ id }: { id: string }) {
                 </p>
               </div>
               <ClusterNetworkDiagnostics
+                network={cluster.network}
                 members={cluster.members}
                 report={report}
                 running={running}
