@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenshipClient } from "../src/client";
 import { projectFixture } from "../../contracts/test/fixtures";
-import type { ProjectControlOperations } from "@repo/contracts";
+import type { ProjectControlOperations, RollbackCapacity } from "@repo/contracts";
 import { OperationError } from "../src";
 
 const date = "2026-09-11T00:00:00.000Z";
@@ -186,7 +186,7 @@ const cases: Array<{
     envelope: "data",
     output: {
       window: 5,
-      source: "default",
+      source: "instance-default",
       explicit: null,
       snapshotSizeBytes: null,
       measuredAt: null,
@@ -195,7 +195,7 @@ const cases: Array<{
       maxWindow: 20,
       diskBudgetFraction: 0.5,
       strategy: "snapshot",
-    },
+    } satisfies RollbackCapacity,
   },
   {
     name: "checkPorts",

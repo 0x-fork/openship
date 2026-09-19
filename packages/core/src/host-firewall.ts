@@ -26,6 +26,12 @@ import { shellQuote } from "./shell-split";
  */
 export type FirewallManager = Exclude<SystemFirewall, "none" | "unknown">;
 
+/** Read-only prerequisite checks shared by tool installation and network setup. */
+export const IPTABLES_PROBES = {
+  version: "iptables --version",
+  conntrack: "iptables -m conntrack --help",
+} as const;
+
 export interface FirewallScope {
   /**
    * Source addresses/CIDRs the rule applies to. **Empty means from anywhere** — not

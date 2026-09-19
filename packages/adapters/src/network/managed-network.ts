@@ -2,6 +2,7 @@ import {
   classifyConnectivityError,
   managedInterfaceName,
   managedNetworkFirewall,
+  IPTABLES_PROBES,
   MANAGED_NETWORK_ROLLBACK_SECONDS,
   validateWireGuardCluster,
   validWireGuardEndpoint,
@@ -409,7 +410,7 @@ export const managedNetworkTools = {
             if (!status.healthy)
               throw new PrivateNetworkError(status.message, "MANAGED_NETWORK_INSTALL_FAILED");
           }
-          await access.root.exec("iptables -m conntrack --help", { timeout: 20_000 });
+          await access.root.exec(IPTABLES_PROBES.conntrack, { timeout: 20_000 });
         }
         await observer.step(
           current,
