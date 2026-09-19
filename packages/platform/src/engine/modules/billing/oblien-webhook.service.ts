@@ -1,7 +1,8 @@
 /**
  * Verify signed provider events, deduplicate stable delivery IDs, and refresh
  * the organization from Oblien's current entitlement. Events never grant credits
- * or suspend workspaces locally; failed synchronization returns a retryable 503.
+ * or suspend workspaces locally. Failed synchronization returns 503; provider
+ * delivery is best effort, so entitlement polling and the recurring sweep repair it.
  */
 export interface BillingWebhookResponse { status: number; payload: Record<string, unknown> }
 import { db, schema, repos, eq } from "@repo/db";
@@ -53,6 +54,7 @@ interface OblienWebhookData {
 }
 
 interface OblienWebhookPayload {
+  id?: string;
   event?: string;
   timestamp?: string | number;
   namespace?: string;
@@ -279,6 +281,11 @@ export async function handleOblienWebhook(
   const eventType = extractEventType(payload);
   if (!eventType) return { status: 400, payload: { error: "missing event" } };
   if (deliveryId && deliveryId.length > 256) return { status: 400, payload: { error: "invalid webhook id" } };
+  // The body id is signed; a caller cannot change the unsigned header to replay
+  // a current event under a new identity. Older usage events can lack a body id.
+  if (payload.id !== undefined && (typeof payload.id !== "string" || !payload.id || payload.id.length > 256 || payload.id !== deliveryId)) {
+    return { status: 400, payload: { error: "invalid webhook id" } };
+  }
   const eventId = deriveOblienEventId(payload, deliveryId);
   const namespace = extractNamespace(payload);
   if (!ROUTED_EVENT_TYPES.has(eventType)) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock3, Coins, Layers3 } from "lucide-react";
+import { Clock3, Cpu, Layers3 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 
 /** The same explanation on pricing and billing. Credits pay for resources;
@@ -11,7 +11,7 @@ export function CloudUsageGuide({ collapsible = false }: { collapsible?: boolean
   const explanation = <>
       <div className="mt-4 grid gap-5 md:grid-cols-3">
         {[
-          { Icon: Coins, title: copy.credits, text: copy.creditsHint },
+          { Icon: Cpu, title: copy.usageAllowance, text: copy.usageSummary },
           { Icon: Clock3, title: copy.buildTime, text: copy.buildHint },
           { Icon: Layers3, title: copy.apps, text: copy.appsHint },
         ].map(({ Icon, title, text }) => (

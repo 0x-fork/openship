@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AppError } from "@repo/core";
+import { OperationError } from "@repo/contracts";
 import { Oblien } from "@repo/adapters";
 
 // Oblien owns payments and credits. Validate its SDK responses at our tenant
@@ -90,6 +91,23 @@ function providerErrorCode(payload: unknown): string {
   return code;
 }
 
+/** Only the documented diagnostic fields may cross the provider boundary. */
+function providerDiagnostic(payload: unknown, credentials: (string | undefined)[]) {
+  const details = (payload as { details?: { reference?: unknown; retryable?: unknown } } | null)?.details;
+  const value = details?.reference;
+  const reference = typeof value === "string" && /^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(value)
+    && !/^(?:oblien|sk|pk|whsec|cus|sub|cs|pi|pm|acct)_/i.test(value) && !credentials.includes(value) ? value : undefined;
+  return {
+    ...(reference ? { reference } : {}),
+    ...(typeof details?.retryable === "boolean" ? { retryable: details.retryable } : {}),
+  };
+}
+
+const PROVIDER_FAILURES = new Set([
+  "billing_provider_configuration_error", "billing_provider_unavailable", "billing_provider_rejected",
+  "billing_storage_unavailable", "billing_database_collation_error",
+]);
+
 export class OblienBillingApi {
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
@@ -106,7 +124,7 @@ export class OblienBillingApi {
     }
     this.baseUrl = url.toString().replace(/\/+$/, "");
     this.fetcher = options.fetch ?? fetch;
-    // SDK 2.3 has no fetch/timeout option. Replace only this instance's transport
+    // SDK 2.4 has no client-wide fetch/timeout option. Replace this transport
     // so the official billing module owns endpoints and request formatting while
     // we retain timeouts, strict HTTP errors, and credential-safe redirects.
     const client = new Oblien({ token: "", baseUrl: this.baseUrl });
@@ -146,17 +164,16 @@ export class OblienBillingApi {
     if (!response.ok || (payload as { success?: unknown } | null)?.success !== true) {
       // Do not forward provider bodies: they can contain account or payment data.
       const code = providerErrorCode(payload);
+      const diagnostic = providerDiagnostic(payload, [this.options.clientId, this.options.clientSecret]);
       // Oblien can return SQL failures as HTTP 400. Those are provider faults,
       // not invalid customer input; preserving 400 also hid them from API logs.
-      const providerFailure = /^ER_[A-Z0-9_]+$/.test(code) || ![400, 404, 409, 422, 429].includes(response.status);
+      const providerFailure = PROVIDER_FAILURES.has(code) || /^ER_[A-Z0-9_]+$/.test(code) || ![400, 404, 409, 422, 429].includes(response.status);
       const status = providerFailure ? 503 : response.status;
       console.warn("[oblien:billing] Provider request failed", {
         method, operation: path.replace(/^\/billing\/policy\/[^/]+/, "/billing/policy/:namespace"),
         providerStatus: response.status, providerCode: code,
+        ...diagnostic,
       });
-      if (path === "/billing/checkout" && providerFailure) {
-        throw new AppError("Cloud checkout is temporarily unavailable. Please try again later.", 503, "OBLIEN_CHECKOUT_UNAVAILABLE");
-      }
       const known: Record<string, string> = {
         invalid_plan: "This plan is no longer available. Refresh the plans page.",
         invalid_pack: "This credit pack is no longer available. Refresh the billing page.",
@@ -165,8 +182,24 @@ export class OblienBillingApi {
         subscription_ended: "This subscription has ended. Start a new checkout to subscribe again.",
         billing_customer_conflict: "This organization's billing needs to be separated from a legacy account. Contact support.",
         billing_identity_conflict: "This organization's billing identity needs to be verified. Contact support.",
+        billing_redirect_not_allowed: "Cloud billing return links are not configured. Contact Openship support.",
+        billing_idempotency_conflict: "This checkout attempt no longer matches the original request. Contact Openship support before starting another payment.",
+        billing_checkout_reconciliation_required: "An earlier checkout needs to be reviewed. Contact Openship support before starting another payment.",
+        billing_provider_configuration_error: "Cloud payments are not configured correctly. Contact Openship support.",
+        billing_database_collation_error: "Cloud billing is unavailable. Contact Openship support.",
+        billing_storage_unavailable: "Cloud billing is temporarily unavailable. Please try again later.",
+        billing_provider_unavailable: "Cloud checkout is temporarily unavailable. Please try again later.",
+        billing_provider_rejected: "Cloud checkout could not be completed. Contact Openship support.",
       };
-      throw new AppError(Object.hasOwn(known, code) ? known[code] : "Cloud billing could not complete this request. Please retry.", status, "OBLIEN_BILLING_ERROR");
+      const checkoutUnavailable = path === "/billing/checkout" && providerFailure;
+      const message = Object.hasOwn(known, code) ? known[code]
+        : checkoutUnavailable ? "Cloud checkout is temporarily unavailable. Please try again later."
+          : "Cloud billing could not complete this request. Please retry.";
+      throw new OperationError(diagnostic.reference ? `${message} Reference: ${diagnostic.reference}.` : message,
+        status, checkoutUnavailable ? "OBLIEN_CHECKOUT_UNAVAILABLE" : "OBLIEN_BILLING_ERROR", {
+          ...(Object.hasOwn(known, code) ? { providerCode: code } : {}),
+          ...(Object.keys(diagnostic).length ? { details: diagnostic } : {}),
+        });
     }
     return payload as T;
   }

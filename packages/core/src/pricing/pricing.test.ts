@@ -105,13 +105,13 @@ describe("pricing catalog (pricing.json)", () => {
     expect(planAllowsServices("free")).toBe(false);
   });
 
-  it("gives the free tier 500 build minutes, 10 free subdomains and no app compute", () => {
-    expect(planLimits("free").buildMinutesPerMonth).toBe(500);
+  it("requires a subscription for Cloud projects and compute while retaining connected-server addresses", () => {
+    expect(planLimits("free").maxProjects).toBe(0);
+    expect(planLimits("free").buildMinutesPerMonth).toBe(0);
+    expect(planLimits("free").runningServices).toBe(0);
     expect(planLimits("free").freeSubdomains).toBe(10);
-    // 0 is the correct published figure, not a missing one: free is static-only
-    // (`runningServices` is 0), the edge serves static sites, so no app compute is
-    // consumed. The build allowance above is what free actually spends.
     expect(planLimits("free").computeMinutesPerMonth).toBe(0);
+    expect(planMonthlyCredits("free")).toBe(0);
   });
 
   it("never lets a count-bearing limit be 1", () => {
@@ -185,13 +185,9 @@ describe("pricing catalog (pricing.json)", () => {
     }
   });
 
-  it("grants every finite tier a POSITIVE quota, free included", () => {
-    // `toOblienCredits()` rejects a non-positive quota, and free publishes 0
-    // compute minutes — so deriving the grant from compute alone would make every
-    // free-tier quota push throw at provision time. Build minutes are in the sum
-    // for exactly this reason; this is the test that fails if someone "simplifies"
-    // them back out.
-    for (const id of PLAN_IDS) {
+  it("keeps paid allowances positive and gives an unsubscribed account zero", () => {
+    expect(planMonthlyCredits("free")).toBe(0);
+    for (const id of PLAN_IDS.filter(id => id !== "free")) {
       const milli = planMonthlyCredits(id);
       if (milli === null) continue; // enterprise: hand-granted
       expect(milli, `${id} would be refused by toOblienCredits()`).toBeGreaterThan(0);
@@ -555,7 +551,7 @@ describe("pricing copy (locales/*.json)", () => {
 describe("pricing resolution", () => {
   it("interpolates limits into localized feature copy", () => {
     const free = resolvePlan("free", "en");
-    expect(free.features).toContain("500 build minutes per month");
+    expect(free.features).toContain("0 build minutes per month");
     expect(free.features).toContain("10 free .opsh.io subdomains");
     expect(free.features.join(" ")).not.toMatch(/\{[a-z]/i);
   });

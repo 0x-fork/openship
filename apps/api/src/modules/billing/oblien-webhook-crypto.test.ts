@@ -83,6 +83,12 @@ describe("deriveOblienEventId", () => {
     expect(a).toBe(b);
   });
 
+  it("uses the signed event identity while keeping different namespaces isolated", () => {
+    const current = { ...base, id: "evt-signed" };
+    expect(deriveOblienEventId(current, "evt-signed")).toBe(deriveOblienEventId({ ...current, timestamp: "later" }, "evt-signed"));
+    expect(deriveOblienEventId(current)).not.toBe(deriveOblienEventId({ ...current, data: { namespace: "os-another" } }));
+  });
+
   it("keeps different usage updates within the same billing period", () => {
     const first = { ...base, data: { ...base.data, credits_used: 10 } };
     const second = { ...base, data: { ...base.data, credits_used: 20 } };

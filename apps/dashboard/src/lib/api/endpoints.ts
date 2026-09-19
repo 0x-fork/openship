@@ -593,6 +593,7 @@ export const endpoints = {
     plans: "billing/plans",
     state: "billing/state",
     usage: "billing/usage",
+    resources: "billing/resources",
     topupPacks: "billing/topup-packs",
     subscription: "billing/subscription",
     cancel: "billing/cancel",

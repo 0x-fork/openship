@@ -8,10 +8,9 @@
  * (body only — no timestamp, no `sha256=` prefix, though we tolerate the
  * prefix defensively). Compared in constant time.
  *
- * Idempotency: Oblien's envelope carries NO event id, so we derive a stable
- * one from `event : (workspace_id|namespace) : (period_end|timestamp)`. The
- * per-delivery timestamp keeps genuine periodic `credits.usage` refreshes
- * distinct while an exact re-delivery collapses onto the same id.
+ * Idempotency: current deliveries bind JSON `id` to X-Webhook-Id. Legacy usage
+ * deliveries can omit the body id; without either id, hash the complete signed
+ * payload so distinct updates in the same period are not lost.
  */
 
 import { createHmac, createHash, timingSafeEqual } from "node:crypto";
@@ -23,6 +22,7 @@ export interface SignatureCheck {
 
 /** Minimal envelope shape needed to derive the idempotency id. */
 export interface OblienEventEnvelope {
+  id?: string;
   event?: string;
   timestamp?: string | number;
   namespace?: string;
@@ -75,12 +75,11 @@ export function verifyOblienSignature(
   }
 }
 
-/** Derive a stable idempotency id from the (id-less) Oblien envelope. */
+/** Derive the internal deduplication key after the receiver validates the ids. */
 export function deriveOblienEventId(payload: OblienEventEnvelope, deliveryId?: string): string {
-  // X-Webhook-Id is stable across provider retries. Older deliveries without it
-  // use the whole payload, so separate usage updates in one period aren't lost.
-  const identity = deliveryId
-    ? JSON.stringify(["oblien", extractNamespace(payload), deliveryId])
+  const id = payload.id ?? deliveryId;
+  const identity = id
+    ? JSON.stringify(["oblien", extractNamespace(payload), id])
     : JSON.stringify(payload);
   return createHash("sha256").update(identity).digest("hex");
 }

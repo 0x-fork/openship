@@ -128,6 +128,14 @@ describe("oblienWebhook — signature gate", () => {
     const res = (await oblienWebhook(makeCtx(body, undefined))) as unknown as JsonResult;
     expect(res.status).toBe(401);
   });
+
+  it.each([undefined, "evt-other"])("rejects a signed body id that does not match header %s", async deliveryId => {
+    const body = JSON.stringify({ id: "evt-signed", event: "payment.succeeded", data: { namespace: "os-abc" } });
+    const res = (await oblienWebhook(makeCtx(body, sign(body), deliveryId))) as unknown as JsonResult;
+    expect(res.status).toBe(400);
+    expect(h.sync).not.toHaveBeenCalled();
+    expect(h.processed.size).toBe(0);
+  });
 });
 
 describe("oblienWebhook — dispatch", () => {
@@ -210,6 +218,15 @@ describe("oblienWebhook — dispatch", () => {
       await oblienWebhook(makeCtx(body, sign(body), "evt-stable"));
     }
     expect(h.sync).toHaveBeenCalledOnce();
+  });
+
+  it("deduplicates current signed body ids and rejects a replay with a changed header", async () => {
+    const body = JSON.stringify({ id: "evt-current", event: "payment.succeeded", data: { namespace: "os-abc" } });
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-current"))) as unknown as JsonResult).status).toBe(200);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-current"))) as unknown as JsonResult).status).toBe(200);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-replayed"))) as unknown as JsonResult).status).toBe(400);
+    expect(h.sync).toHaveBeenCalledOnce();
+    expect(h.processed.size).toBe(1);
   });
 
   it("returns 503 and does not acknowledge a failed synchronization", async () => {

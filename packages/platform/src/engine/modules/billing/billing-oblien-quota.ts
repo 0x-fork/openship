@@ -180,5 +180,8 @@ export async function getNamespaceUsage(input: UsageRangeInput): Promise<Namespa
   const result = await getOblienClient().namespaces.usageUnits(org.oblienNamespace, {
     from: input.from.toISOString(), to: input.to.toISOString(), groupBy: input.groupBy ?? "day",
   });
+  if (!result.success || result.data?.namespace !== org.oblienNamespace) {
+    throw new AppError("Cloud usage could not be verified for this organization", 502, "OBLIEN_USAGE_NAMESPACE_MISMATCH");
+  }
   return result.data;
 }

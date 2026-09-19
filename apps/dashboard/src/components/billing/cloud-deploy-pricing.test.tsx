@@ -235,7 +235,7 @@ describe("deployment plan selection", () => {
 describe("readable Cloud usage", () => {
   it("does not advertise the legacy free build limit as usable Cloud compute", async () => {
     await render(<BillingCapacity state={free} />);
-    expect(container.textContent).toContain(copy.onboarding.noFreeCompute);
+    expect(container.textContent).toContain(copy.onboarding.workspaceDescription);
     expect(container.textContent).toContain(copy.onboarding.planRequired);
     expect(container.textContent).not.toContain("500");
   });
@@ -245,13 +245,17 @@ describe("readable Cloud usage", () => {
       totals: { vcpu_hours: 2, gb_hours: 4, disk_io_gb: 0.25, network_gb: 1.5, credits: 125.5 },
     } } });
     await render(<BillingUsage state={paid} />);
-    expect(container.textContent).toContain("125.5");
+    expect(container.textContent).not.toContain("125.5");
     expect(container.textContent).toContain("2 vCPU-hours");
     expect(container.textContent).toContain("4 GB-hours");
     expect(container.textContent).toContain("0.25 GB");
     expect(container.textContent).toContain(copy.resourcesGuide.diskHint);
     expect(container.querySelector("table")?.textContent).not.toContain("Credits");
     expect(container.querySelector("table")?.textContent).not.toContain("%");
+    const accounting = container.querySelector("details")!;
+    expect(accounting.open).toBe(false);
+    await act(async () => { accounting.open = true; accounting.dispatchEvent(new Event("toggle")); });
+    expect(container.textContent).toContain("125.5");
     const requestedEnd = new Date(mocks.get.mock.calls[0]![1].params.to).getTime();
     expect(requestedEnd).toBeLessThanOrEqual(Date.now());
     expect(requestedEnd).toBeGreaterThan(Date.now() - 10_000);

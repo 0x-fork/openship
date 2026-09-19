@@ -24,6 +24,7 @@ describe("Cloud deployment recovery", () => {
   const blocked = { code: "CLOUD_BILLING_BLOCKED" } as const;
   it("offers a subscription to a free account, including one with zero-credit suspension", () => {
     expect(cloudDeployRecovery(state({ tier: "free", status: "credit_exhausted", overQuota: true }), blocked)).toBe("subscribe");
+    expect(cloudDeployRecovery(state({ tier: "free", status: "credit_exhausted", overQuota: true }), { code: "PLAN_UPGRADE_REQUIRED", reason: "project-limit" })).toBe("subscribe");
   });
   it("separates credit exhaustion, payment failure and manual suspension", () => {
     expect(cloudDeployRecovery(state({ status: "credit_exhausted", overQuota: true }), blocked)).toBe("credits");

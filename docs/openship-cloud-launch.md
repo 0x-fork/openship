@@ -18,15 +18,15 @@ The final two-customer isolation/lifecycle run passed all 52 checks at 04:31 UTC
 See [the current provider test report](./oblien-staging-cycle-report.md). Keep
 public purchases disabled until these checks pass.
 
-The September 19 live checkout probe is currently blocked by an Oblien SQL
-collation failure: `POST /billing/checkout` returns
-`ER_CANT_AGGREGATE_NCOLLATIONS`, including for the minimal documented request.
-See [the checkout verification report](openship-cloud-production-verification.md#release-status-live-hosted-checkout-is-blocked).
-Passing catalog, policy, and simulated-payment tests does not clear this gate.
+The September 19 hosted checkout probe now succeeds and reuses the same session
+for an identical idempotent retry. The earlier Oblien SQL collation failure no
+longer reproduces. A fresh namespace still has no paid subscription after merely
+opening checkout. A completed payment and signed public delivery remain to be
+verified; see [the checkout verification report](openship-cloud-production-verification.md).
 
 ## What is connected
 
-- `oblien@2.3.2` supplies the official billing module. Openship validates the
+- `oblien@2.4.0` supplies the official billing module. Openship validates the
   returned namespace, subscription shape, hosted URL, and agreement between the
   namespace subscription and its entitlement. Its JSON transport rejects
   credential redirects, bounds request time, checks both HTTP and body failures,
@@ -109,14 +109,14 @@ action through the existing server guards. Purchase feature flags still apply.
 Pricing uses Oblien’s monthly/yearly prices and separate credit grants, exposed
 as `monthlyCredits` and `annualCredits` in milli-credits. Build minutes remain a
 monthly Openship limit. Cards show build minutes, simultaneous services,
-per-service CPU/RAM and project limits with a shared usage explanation.
+per-service CPU/RAM, project limits and monthly edge traffic with a shared usage explanation.
 
-Billing displays real credits and resource units. Provider usage buckets are
-already whole credits; balance snapshots use milli-credits. The chart uses one
-credit series, and the resource table shows measured CPU-hours, memory GB-hours,
-disk activity and transfer without inventing a cost split. Selected end dates
-include that day up to the current time. Free accounts no longer advertise the
-legacy build-minute ceiling as an available Cloud allowance.
+Billing leads with measured resource usage. Provider usage buckets are already
+whole credits; balance snapshots use milli-credits. Credit totals and the chart
+are available under Usage details. The resource table shows measured CPU-hours,
+memory GB-hours, disk activity and transfer without inventing a cost split.
+Selected end dates include that day up to the current time. Free accounts have
+zero project, build-minute and running-service allowances.
 
 The new copy is present in all nine dashboard locales. Automated checks cover
 deployment gating, checkout/dismiss/retry, feature flags, billing permissions,
@@ -135,13 +135,46 @@ cannot start billable work even if a legacy policy reports a positive or null
 balance. Oblien applies the paid subscription and credits after payment; opening
 checkout or returning to the dashboard does not activate compute.
 
-Overview now explicitly shows **No Cloud plan** and **0 included Cloud credits**
-for new customers. An empty or null credit limit never becomes an Unlimited
-label. Existing purchased-credit history remains visible. The right column
-contains a live subscription offer with its price, credit allowance, build time,
-running services, per-service CPU/RAM, and project limit, plus Subscribe and
-Compare all plans. On phones the offer appears first, and navigation opens in a
-drawer so the page uses the full viewport width.
+Overview shows **No Cloud plan** and zero projects, running services and build
+time for new customers. These are enforced application limits, including on the
+first project creation; exceeding them returns `PLAN_UPGRADE_REQUIRED` without
+creating a project record. Existing saved projects and purchased-usage history
+are retained. Connected self-hosted project creation stays unmetered.
+
+The right column contains a live subscription offer with its price, project
+limit, simultaneous services, monthly build minutes and per-service CPU/RAM,
+plus Subscribe and Compare all plans. On phones the offer appears first, and
+navigation opens in a drawer so the page uses the full viewport width. Project
+configuration does not automatically open pricing; an explicit deployment
+action shows the plan choice if access is required. Saving a new Cloud project
+requires a paid plan.
+
+Paid overview cards show circular used/remaining meters against those limits and
+a Cloud usage percentage when the provider supplies a finite allowance. Exact credit amounts
+are inside Usage details. An empty or null credit limit never becomes an
+Unlimited label. Plan cards explain that builds and apps share an allowance,
+with no promised conversion into runtime hours. Top-up cards show their price
+and the extra usage as a percentage of the selected subscription interval's
+provider credit grant. Top-ups do not increase project, service or build-minute
+limits; their accounting amounts remain available in Usage details.
+
+`GET /api/billing/resources` supplies measured CPU-hours, memory GB-hours, disk
+activity, compute transfer, edge bandwidth and visitor request counts. It is an
+authenticated organization-scoped operation in both SDKs and the local Cloud
+proxy. It does not provision resources or change billing policies. Compute usage
+must echo the customer's namespace; edge reads use a server-held namespace token.
+Monthly traffic is summed from explicit time-range queries, never from the
+undated analytics home totals or billing transaction counts. Reads have a shared
+deadline and a bounded 30-second cache; an analytics outage only marks those
+metrics unavailable and cannot block checkout or subscription management.
+
+The cloud catalog exposes Oblien's documented namespace edge traffic allowances
+(50/500/2,000 GB per month for Hobby/Pro/Scale). Request counts have no invented
+per-plan cap. The overview keeps missing telemetry distinct from measured zero,
+and empty circles stay empty at zero use. Builds and runtime share the compute
+allowance, so physical CPU-hours are not presented as guaranteed remaining hours.
+Build-minute periods now clamp month-end anniversaries without gaps or overlaps,
+and uncapped plans still report their measured build time.
 
 Openship supplies application limits and localized product descriptions. Prices,
 billing intervals, currency, credit grants, and checkout tier IDs come from
@@ -150,6 +183,21 @@ provider tier or grant credits. Usage, invoices, payment methods, and top-ups
 have useful empty states until a customer has relevant history. Buying top-ups
 requires an active or trialing paid subscription; extra credits alone cannot
 activate Cloud compute.
+
+This is catalog-based Mode B. Oblien also documents custom reseller `offer`
+checkout, where the application sets price, allowance and product text; that
+optional path is not currently used. Its returned `reseller` tier and saved
+offer would need an explicit application-plan mapping before enabling it.
+Current catalog checkout uses the published SDK 2.4.0, installed and locked in
+the repository. Custom offers remain optional; catalog checkout continues to
+reconcile through namespace subscription, entitlement, balance and signed events.
+
+Checkout errors preserve a validated support reference and known provider code
+without exposing the provider's arbitrary error body. Top-up retries keep their
+original payment key. Webhooks verify HMAC and match a current signed body ID
+to `X-Webhook-Id`; older body-ID-less events retain their existing deduplication
+path. Oblien's outgoing webhooks are best effort without automatic retries, so
+the periodic entitlement sweep and fresh reads remain required.
 
 Paid customers retain their verified balance and subscription controls if the
 plan catalog is temporarily unavailable. Usage explanations are collapsed, and
@@ -165,7 +213,7 @@ label: Docker + Compose). The entry advertises Docker Engine 29 running at boot,
 Compose, Buildx/BuildKit, and persistent containers and volumes. Its current
 `vm_defaults` are 2 vCPUs, 4096 MiB RAM, 32768 MiB disk, a Docker-capable kernel,
 and a `docker-ready` readiness check. These are catalog defaults, not verified
-minimum resource requirements. Openship now uses the published SDK 2.3.2.
+minimum resource requirements. Openship now uses the published SDK 2.4.0.
 
 New Compose and multi-application projects now use this model:
 

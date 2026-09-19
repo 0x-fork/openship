@@ -6,6 +6,7 @@ const provider = vi.hoisted(() => ({
   checkout: vi.fn(), catalog: vi.fn(), entitlement: vi.fn(), namespaces: vi.fn(),
   portal: vi.fn(), subscription: vi.fn(), cancel: vi.fn(), resume: vi.fn(), subscriptions: new Map<string, OblienSubscription>(),
   cloudRequest: vi.fn(), quota: vi.fn(), resourceRead: vi.fn(), resourceUpdate: vi.fn(),
+  resources: vi.fn(),
   limits: new Map<string, Record<string, number | null>>(),
 }));
 vi.mock("@repo/platform/engine/config/env", async original => {
@@ -29,6 +30,7 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   }),
 }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: () => ({ request: provider.cloudRequest }) }));
+vi.mock("@repo/platform/engine/modules/billing/billing-resources.service", () => ({ getBillingResources: provider.resources }));
 import { db, schema, repos, seedOwner, type SeededOwner } from "../jobs/_harness";
 import { AppError, CREDIT_PACKS, FREE_DOMAIN_SUFFIX } from "@repo/core";
 import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
@@ -98,6 +100,28 @@ beforeEach(() => {
 afterEach(async () => { await flushAudit(); vi.clearAllMocks(); vi.unstubAllEnvs(); await db.delete(schema.creditPack); });
 
 describe("billing through the same SDK and HTTP application operations", () => {
+  it("keeps resource telemetry behind the same organization and billing-read grant in the SDK and HTTP API", async () => {
+    const owner = await seedOwner(), stranger = await seedOwner();
+    const c = await clients(owner);
+    const period = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
+    const resource = { measuredAt: "2026-09-19T00:00:00Z",
+      compute: { status: "available", period, cpuHours: 2, memoryGbHours: 4, diskIoGb: .25, networkGb: 1.5 },
+      edge: { status: "available", period, limits: { bandwidthGb: 50 }, requests: 130, bandwidthGb: 3.5, inboundGb: 1, outboundGb: 2.5 },
+    };
+    provider.resources.mockResolvedValue(resource);
+    expect(await c.native.getResources()).toEqual(resource);
+    expect(await c.remote.getResources()).toEqual(resource);
+    expect(provider.resources).toHaveBeenCalledTimes(2);
+    expect(provider.resources).toHaveBeenLastCalledWith(owner.orgId);
+    await expect(clients(stranger, owner.orgId)).rejects.toMatchObject({ statusCode: 404 });
+    const forbidden = new OpenshipClient({ baseUrl: "http://openship.test", token: stranger.token, organizationId: owner.orgId, fetch: fetcher });
+    // HTTP rejects the foreign organization at the PAT's organization binding;
+    // native scope resolution rejects it at the membership boundary above.
+    await expect(forbidden.billing.getResources()).rejects.toMatchObject({ statusCode: 403 });
+    const noSession = await app.request("/api/billing/resources");
+    expect(noSession.status).toBe(401);
+    expect(provider.resources).toHaveBeenCalledTimes(2);
+  });
   it("starts each customer with a distinct namespace, no subscription and zero included Cloud compute", async () => {
     const owners = [await seedOwner(), await seedOwner()];
     const namespaces = new Set<string>();
@@ -107,7 +131,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
         expect(await client.getState()).toMatchObject({
           tier: "free", plan: null, subscription: null, monthlyCreditLimit: 0,
           balance: { quotaLimit: 0, quotaUsed: 0, quotaRemaining: 0, unlimited: false },
-          capacity: { buildMinutes: { used: 0, max: 0 }, services: { max: 0 }, projects: { max: 3 } },
+          capacity: { buildMinutes: { used: 0, max: 0 }, services: { max: 0 }, projects: { max: 0 } },
           maxServiceMachine: null, topups: { available: false, status: "unavailable" },
         });
         await expect(client.createTopup({ packId: "starter" })).rejects.toMatchObject({ code: "CLOUD_PLAN_REQUIRED" });

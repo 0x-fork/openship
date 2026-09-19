@@ -9,6 +9,7 @@ import * as billingService from "@repo/platform/engine/modules/billing/billing.s
 import * as billingRepository from "@repo/platform/engine/modules/billing/billing.repository";
 import { getNamespaceUsage } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
 import { getCloudBillingCatalog, presentCloudPlans } from "./billing-catalog";
+import { getBillingResources } from "./billing-resources.service";
 
 /* ---------- Plans (public) ---------- */
 
@@ -23,6 +24,10 @@ export async function listPlans(input: NonNullable<Parameters<BillingOperations[
 export async function getState(ctx: ExecutionContext) {
   const state = await billingRepository.getBillingState(ctx.organizationId);
   return state;
+}
+
+export async function getResources(ctx: ExecutionContext) {
+  return getBillingResources(ctx.organizationId);
 }
 
 /* ---------- Subscriptions ---------- */

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ tier: "starter", readRuntime: vi.fn() }));
+const h = vi.hoisted(() => ({ tier: "starter", cloud: true, readRuntime: vi.fn() }));
 vi.mock("@repo/platform/engine/config/env", async original => {
   const actual = await original<{ env: Record<string, unknown> }>();
-  return { ...actual, env: { ...actual.env, CLOUD_MODE: true } };
+  return { ...actual, env: { ...actual.env, get CLOUD_MODE() { return h.cloud; } } };
 });
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async original => ({
   ...await original<typeof import("@repo/platform/engine/modules/billing/billing-oblien-quota")>(),
@@ -73,9 +73,9 @@ const composeSnapshot = (): DeploymentConfigSnapshot => ({
 });
 const context = () => ({ organizationId } as RequestContext);
 beforeEach(async () => {
-  vi.clearAllMocks(); h.tier = "starter";
+  vi.clearAllMocks(); h.tier = "starter"; h.cloud = true;
   const owner = await seedOwner(); organizationId = owner.orgId;
-  await db.update(schema.organization).set({ oblienNamespace: `namespace-${organizationId}` }).where(eq(schema.organization.id, organizationId));
+  await db.update(schema.organization).set({ oblienNamespace: `namespace-${organizationId}`, planTierId: "starter" }).where(eq(schema.organization.id, organizationId));
   projectId = await project();
   h.readRuntime.mockRejectedValue(new Error("Unexpected provider access"));
 });
@@ -241,13 +241,27 @@ describe("Cloud quotas at real application mutation boundaries", () => {
     expect(await repos.service.countRunningForOrg(organizationId)).toBe(0);
   });
   it("serializes project creation so two imports cannot claim the final project slot", async () => {
-    h.tier = "free";
-    await project();
+    for (let index = 0; index < 8; index++) await project();
     const create = () => { const name = id("import"); return createServicesProjectWithId({ id: name, name, slug: name, organizationId }); };
     const results = await Promise.allSettled([create(), create()]);
     expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
     expect(results.find(result => result.status === "rejected")).toMatchObject({ reason: { reason: "project-limit" } });
-    expect((await repos.projectGroup.listByOrganization(organizationId, { page: 1, perPage: 1 })).total).toBe(3);
+    expect((await repos.projectGroup.listByOrganization(organizationId, { page: 1, perPage: 1 })).total).toBe(10);
+  });
+  it("requires a plan before saving the first Cloud project and leaves no project records behind", async () => {
+    h.tier = "free";
+    const owner = await seedOwner();
+    const name = id("no-plan");
+    await expect(createServicesProjectWithId({ id: name, name, slug: name, organizationId: owner.orgId }))
+      .rejects.toMatchObject({ code: "PLAN_UPGRADE_REQUIRED", statusCode: 402, reason: "project-limit", message: "Choose a Cloud plan to create projects." });
+    expect((await repos.projectGroup.listByOrganization(owner.orgId, { page: 1, perPage: 1 })).total).toBe(0);
+    expect(await repos.project.findById(name)).toBeUndefined();
+    expect(h.readRuntime).not.toHaveBeenCalled();
+  });
+  it("keeps self-hosted project creation available without a Cloud subscription", async () => {
+    h.cloud = false; h.tier = "free";
+    const name = id("self-hosted");
+    await expect(createServicesProjectWithId({ id: name, name, slug: name, organizationId })).resolves.toMatchObject({ id: name });
   });
   it("honors a paid unlimited-project plan instead of falling back to the installation default", async () => {
     h.tier = "team";

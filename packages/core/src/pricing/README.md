@@ -25,11 +25,11 @@ Every numeric limit uses **`null` = unlimited**, everywhere, with no exceptions.
 "limits": {
   "workloads": ["static"],       // WorkloadType[] — "static" | "web" | "worker"
   "services": false,             // Compose stacks, catalog apps, managed databases
-  "runningServices": 0,          // concurrent services — ONE OBLIEN WORKSPACE EACH
-  "maxProjects": 3,
+  "runningServices": 0,          // concurrent services; Compose containers also count
+  "maxProjects": 0,
   "maxResourceTier": "low",      // largest per-service machine, in the wizard's own tier names
-  "computeMinutesPerMonth": 0,   // app runtime, in `low`-machine minutes (0 = static-only tier)
-  "buildMinutesPerMonth": 500,
+  "computeMinutesPerMonth": 0,   // app runtime, in `low`-machine minutes (0 = no Cloud runtime)
+  "buildMinutesPerMonth": 0,
   "freeSubdomains": 10,          // *.opsh.io routes
   "customDomains": null,
   "seats": null                  // null on every tier — we never charge per seat
@@ -39,8 +39,8 @@ Every numeric limit uses **`null` = unlimited**, everywhere, with no exceptions.
 ### What separates one tier from the next
 
 Five numbers and a support level: **compute minutes, build minutes, machine size, projects, running
-services.** Nothing else. A tier does not get a *capability* the tier below lacks — the single
-exception is free, which is static-only, and that boundary is enforced (`workloads` + `services`).
+services.** Nothing else. Paid tiers share capabilities. An account without a Cloud plan has
+zero project, build-minute and running-service allowances; self-hosted projects remain unmetered.
 
 This is a rule about honesty, not taste. The bullets used to be the differentiator and they were
 differentiating on nothing enforced: Pro sold a "Built-in mail server" while `mail.controller.ts`
@@ -57,11 +57,11 @@ One compute minute is **one minute of a `low` machine**. Larger machines burn a 
 `RESOURCE_TIER_SPECS` by `computeUnitsPerMinute()` — `medium` 2×, `high` 4×, `xlarge` 8× — so one
 published allowance covers every size.
 
-**Every tier's included compute covers its OWN app cap running 24/7** — a month is 43,200 minutes, so
+The legacy compute-minute helper covers its app cap over a 43,200-minute month, so
 Scale's 50 apps need 2,160,000 and it ships 2,200,000. A test enforces it
-(*"includes enough compute to run a tier's whole app cap around the clock"*). Quoting "50 apps" beside
-a budget that runs three of them is what the old credit numbers did; don't reintroduce it by raising an
-app cap without raising the minutes.
+(*"includes enough compute to run a tier's whole app cap around the clock"*). This is not a guarantee
+of Cloud runtime: Oblien's current catalog credit grant and measured resource costs determine how
+long customer workloads can run. Billing does not convert those credits into promised runtime hours.
 
 ### Why build minutes are generous
 
@@ -74,26 +74,29 @@ you tune anything, tune build minutes UP.
 
 This replaced an authored `credits` blob. Its numbers (500/2k/10k/60k) meant nothing measurable —
 Scale advertised 50 running services on a budget that could not run **one** app around the clock — and
-`billing-credit-units.ts` admitted as much in a comment. The Oblien grant is now DERIVED:
+`billing-credit-units.ts` admitted as much in a comment. The legacy helper derives an allowance:
 
 ```
 planMonthlyCredits() = (computeMinutesPerMonth + buildMinutesPerMonth × buildMultiplier) × 1000
 ```
 
-Build minutes are in that sum for a load-bearing reason, not tidiness: `toOblienCredits()` rejects a
-non-positive quota and free publishes 0 compute minutes, so a compute-only derivation would make every
-free-tier quota push throw. A test named *"grants every finite tier a POSITIVE quota, free included"*
-fails if anyone simplifies the build term out.
+Current Cloud billing uses the provider's credit grant, not this formula. Free Cloud accounts have
+zero projects, build minutes, runtime and provider credits. Positive-credit conversion helpers must
+not be used to grant a no-plan customer free usage.
 
-Top-up packs are still AUTHORED in credits (`creditsMilli`, with their live Stripe price ids
-untouched) and merely DISPLAYED in compute minutes — one compute minute is one credit, so the number
-is identical.
+Cloud top-up packs also come from the provider catalog. Billing shows each pack's price and its
+size relative to the customer's included usage; exact credits are available under Usage details.
+There is no assumed conversion of one credit to one compute minute.
 
 **The rule this file exists to enforce: never publish a number nothing enforces.** Every limit above
 is either enforced by Oblien (`resource_limits`, credit quota) or by a gate in
-`apps/api/src/lib/plan-guard.ts`. A `bandwidthGb` limit used to sit here and was enforced by neither —
-Oblien has no bandwidth ceiling — so it was deleted rather than left as decoration. A test asserts the
-limit key set against the list of things that can actually refuse.
+`packages/platform/src/engine/lib/plan-guard.ts`. The legacy `bandwidthGb` field is not part of these
+application limits. Edge traffic now has its own provider-enforced monthly allowance, documented at
+https://oblien.com/docs/concepts/limits and mapped by the Cloud billing catalog: Hobby 50 GB, Pro
+500 GB, Scale 2,000 GB and Enterprise uncapped. Openship's no-plan tier includes zero Cloud traffic.
+The billing resources endpoint measures namespace-scoped edge requests and bandwidth for the period.
+Compute transfer remains part of the compute credit allowance; it is not interchangeable with Edge
+traffic. No separate numeric request allowance is published by the provider.
 
 ### Why Oblien's ceilings are derived, not authored
 

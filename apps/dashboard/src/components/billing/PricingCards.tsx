@@ -53,6 +53,8 @@ export interface ApiPlan {
   monthlyCredits: number | null;
   /** Milli-credits granted for an annual cycle, reported separately by Oblien. */
   annualCredits?: number | null;
+  /** Namespace edge traffic allowance, supplied by the Cloud plan catalog. */
+  edge?: { bandwidthGb: number | null };
   /**
    * The tier's ceilings in CUSTOMER-FACING units, straight off the pricing
    * catalog — typed as the catalog's own `PlanLimits` so a limit added or

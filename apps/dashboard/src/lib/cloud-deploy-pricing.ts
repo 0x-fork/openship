@@ -26,7 +26,7 @@ export function cloudDeployRecovery(state: BillingState, restriction: CloudDeplo
   if (state.status === "credit_exhausted" && !state.overQuota) return "paused";
   // A free account can also hit a Cloud subdomain limit while deploying to its
   // own server. Preserve that reason instead of implying local compute is paid.
-  if (state.tier === "free") return restriction.code === "PLAN_UPGRADE_REQUIRED" ? "upgrade" : "subscribe";
+  if (state.tier === "free") return restriction.code === "PLAN_UPGRADE_REQUIRED" && restriction.reason !== "project-limit" ? "upgrade" : "subscribe";
   if (!["active", "trialing", "credit_exhausted"].includes(state.status)) return "payment";
   if (restriction.code === "PLAN_UPGRADE_REQUIRED") return "upgrade";
   if (state.overQuota) return "credits";

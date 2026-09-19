@@ -10,6 +10,14 @@ export const OBLIEN_PLAN_IDS: Readonly<Record<PlanTierId, string>> = {
   free: "free", starter: "hobby", pro: "pro", team: "scale", enterprise: "enterprise",
 };
 
+/** Oblien's published namespace traffic allowances (decimal GB/month).
+ * https://oblien.com/docs/concepts/limits — independent of compute credits.
+ * Openship has no free Cloud tier. Requests have no separate numeric allowance.
+ */
+export const CLOUD_EDGE_BANDWIDTH_GB: Readonly<Record<PlanTierId, number | null>> = {
+  free: 0, starter: 50, pro: 500, team: 2000, enterprise: null,
+};
+
 export function openshipTier(providerTier: string | null): PlanTierId {
   if (providerTier === null || providerTier === "free") return "free";
   const tier = (Object.keys(OBLIEN_PLAN_IDS) as PlanTierId[]).find((id) => OBLIEN_PLAN_IDS[id] === providerTier);
@@ -44,6 +52,7 @@ export function presentCloudPlans(catalog: OblienBillingCatalog, requestedLocale
       monthlyCredits: plan.creditsPerCycle === null ? null : fromOblienCredits(plan.creditsPerCycle),
       annualCredits: plan.yearlyCreditsPerCycle === null ? null : fromOblienCredits(plan.yearlyCreditsPerCycle),
       limits: { ...planLimits(id), computeMinutesPerMonth: null, workloads: [...planLimits(id).workloads] },
+      edge: { bandwidthGb: CLOUD_EDGE_BANDWIDTH_GB[id] },
       features: plan.features, inheritedFrom: null, support: "", contactSales: monthly === null ? "mailto:support@openship.io" : null,
     };
   });

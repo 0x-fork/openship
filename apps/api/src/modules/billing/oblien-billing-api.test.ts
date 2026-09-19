@@ -14,7 +14,17 @@ function setup(body: unknown, status = 200) {
   const api = new OblienBillingApi({ clientId: "test-id", clientSecret: "test-secret", fetch: fetcher as unknown as typeof fetch });
   return { api, fetcher };
 }
-describe("Oblien 2.3 billing SDK and transport contract", () => {
+describe("Oblien 2.4 billing SDK and transport contract", () => {
+  it("accepts the live catalog's custom Enterprise allowances without breaking paid checkout", async () => {
+    const catalog = { success: true, plans: [
+      { tierId: "hobby", name: "Hobby", priceMonthly: 10, priceYearly: 100, currency: "USD", creditsPerCycle: 1200, yearlyCreditsPerCycle: 14400, overdraftCredits: 100, features: [] },
+      { tierId: "enterprise", name: "Enterprise", priceMonthly: null, priceYearly: null, currency: "USD", creditsPerCycle: null, yearlyCreditsPerCycle: null, overdraftCredits: null, features: [] },
+    ], creditPacks: [] };
+    const { api } = setup(catalog);
+    expect(await api.getCatalog()).toEqual(catalog);
+    catalog.plans[0]!.overdraftCredits = -1;
+    await expect(api.getCatalog()).rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
+  });
   it("authenticates server requests and validates the returned customer namespace", async () => {
     const { api, fetcher } = setup(entitlement);
     expect((await api.getEntitlement("os-one")).quota.used).toBe(-50);
@@ -66,6 +76,42 @@ describe("Oblien 2.3 billing SDK and transport contract", () => {
       successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt" })).rejects.toMatchObject({
       statusCode: 400, code: "OBLIEN_BILLING_ERROR", message: "This plan is no longer available. Refresh the plans page.",
     });
+  });
+  it.each([400, 503])("preserves the documented billing diagnostic reference for an HTTP %s storage failure", async status => {
+    const { api, fetcher } = setup({ success: false, code: "billing_database_collation_error", message: "private provider detail",
+      details: { reference: "billing-support-123", retryable: false, cause: "ER_CANT_AGGREGATE_NCOLLATIONS", sql: "private query", clientSecret: "test-secret" } }, status);
+    const error = await api.createCheckout({ namespace: "private-customer", kind: "subscription", planTierId: "hobby", billingInterval: "monthly",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt" }).catch(error => error);
+    expect(error).toMatchObject({ statusCode: 503, code: "OBLIEN_CHECKOUT_UNAVAILABLE",
+      message: "Cloud billing is unavailable. Contact Openship support. Reference: billing-support-123.",
+      details: { providerCode: "billing_database_collation_error", details: { reference: "billing-support-123", retryable: false } },
+    });
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith("[oblien:billing] Provider request failed", {
+      method: "POST", operation: "/billing/checkout", providerStatus: status, providerCode: "billing_database_collation_error",
+      reference: "billing-support-123", retryable: false,
+    });
+    expect(JSON.stringify([error, vi.mocked(console.warn).mock.calls])).not.toMatch(/private|test-secret|ER_CANT/);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it.each([
+    [400, "billing_redirect_not_allowed", "return links are not configured"],
+    [409, "billing_idempotency_conflict", "no longer matches the original request"],
+    [409, "billing_checkout_reconciliation_required", "earlier checkout needs to be reviewed"],
+  ] as const)("explains %s/%s without starting another payment", async (status, code, message) => {
+    const { api, fetcher } = setup({ success: false, code, message: "private provider detail" }, status);
+    const error = await api.createCheckout({ namespace: "os-one", kind: "topup", packId: "starter",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt" }).catch(error => error);
+    expect(error).toMatchObject({ statusCode: status, details: { providerCode: code } });
+    expect(error.message).toContain(message);
+    expect(error.message).not.toContain("private");
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it.each(["sk_private", "test-secret", "user@private.test", "bad\nreference", "x".repeat(129)])("does not expose unsafe diagnostic reference %s", async reference => {
+    const error = await setup({ success: false, code: "billing_storage_unavailable", details: { reference } }, 503)
+      .api.getPolicy("private-customer").catch(error => error);
+    expect(error.message).not.toContain(reference);
+    expect(error.details).not.toHaveProperty("details.reference");
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain(reference);
   });
   it.each(["private account detail\nsecret", "cus_private", "sk_private", "x".repeat(81)])("does not log arbitrary provider error code %s", async code => {
     await setup({ success: false, code, message: "private account detail" }, 500).api.getPolicy("private-customer").catch(() => {});

@@ -3,9 +3,8 @@
  *
  * Every limit is read from the pricing catalog (`planLimits(tier)`), never
  * hardcoded, so the number a customer was shown on the pricing page is literally
- * the number that refuses them. The three gates here mirror the three free-tier
- * limits we publish: static-only workloads, build minutes per month, and free
- * `*.opsh.io` subdomains.
+ * the number that refuses them. Cloud project creation, builds, running services,
+ * and resource sizes require the corresponding plan allowances.
  *
  * SCOPE — cloud only, and deliberately `env.CLOUD_MODE`:
  *   Self-hosted Openship is free and unmetered; that's the product promise, so
@@ -388,7 +387,7 @@ export async function assertRunningServiceQuota(
 
   throw new PlanUpgradeRequiredError(
     limit === 0
-      ? "Your plan deploys static sites only, which run no services. Upgrade to run apps, databases and workers."
+      ? "Choose a Cloud plan to run apps, databases and workers."
       : `Your plan includes ${limit} running services and you're using ${used}. Upgrade to run more, or remove a service first.`,
     "running-services",
     tier,
@@ -415,19 +414,21 @@ export async function assertRunningServiceQuota(
  *
  * Pure and derived from a column that already exists — no migration, and a free
  * org needs no billing-period bookkeeping to be enforceable. Day-of-month
- * overflow clamps (created the 31st → the 28th/30th in shorter months) because
- * `Date.UTC` normalizes, which is the forgiving direction.
+ * overflow clamps (created the 31st → the 28th/30th in shorter months).
  */
 export function buildMinutePeriod(orgCreatedAt: Date, now: Date = new Date()): { from: Date; to: Date } {
   const anchorDay = orgCreatedAt.getUTCDate();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
 
-  let from = new Date(Date.UTC(y, m, anchorDay, 0, 0, 0, 0));
+  const anniversary = (month: number) => new Date(Date.UTC(y, month,
+    Math.min(anchorDay, new Date(Date.UTC(y, month + 1, 0)).getUTCDate())));
+  let month = m;
+  let from = anniversary(month);
   // Before this month's anniversary → we're still inside the period that opened
   // last month.
-  if (from.getTime() > now.getTime()) from = new Date(Date.UTC(y, m - 1, anchorDay, 0, 0, 0, 0));
-  const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, anchorDay, 0, 0, 0, 0));
+  if (from.getTime() > now.getTime()) from = anniversary(--month);
+  const to = anniversary(month + 1);
 
   // An org created after "now" (clock skew, seeded fixtures) would invert the
   // window and match nothing; fall back to the calendar month.
@@ -460,18 +461,6 @@ export async function getBuildMinuteUsage(organizationId: string): Promise<Build
   const limitMinutes = planLimits(tier).buildMinutesPerMonth;
   const { from, to } = buildMinutePeriod(org?.createdAt ?? new Date(), new Date());
 
-  if (limitMinutes === null) {
-    return {
-      planTierId: tier,
-      limitMinutes: null,
-      usedMinutes: 0,
-      remainingMinutes: null,
-      exhausted: false,
-      periodStart: from,
-      periodEnd: to,
-    };
-  }
-
   const millis = await repos.deployment
     .sumBuildMillisForOrg(organizationId, from, to);
   const usedMinutes = Math.floor(millis / 60_000);
@@ -480,8 +469,8 @@ export async function getBuildMinuteUsage(organizationId: string): Promise<Build
     planTierId: tier,
     limitMinutes,
     usedMinutes,
-    remainingMinutes: Math.max(0, limitMinutes - usedMinutes),
-    exhausted: usedMinutes >= limitMinutes,
+    remainingMinutes: limitMinutes === null ? null : Math.max(0, limitMinutes - usedMinutes),
+    exhausted: limitMinutes !== null && usedMinutes >= limitMinutes,
     periodStart: from,
     periodEnd: to,
   };
@@ -491,10 +480,8 @@ export async function getBuildMinuteUsage(organizationId: string): Promise<Build
  * Refuse a build when the org has spent its monthly build minutes.
  *
  * Checked BEFORE the deployment row exists, so an out-of-allowance user gets a
- * clean 402 instead of a `failed` deployment they have to clean up. Note a cloud
- * STATIC deploy also provisions a transient Oblien build workspace, so free-tier
- * static builds do consume minutes — this cap, not the static-only restriction,
- * is the real cost control on the free tier.
+ * clean 402 instead of a `failed` deployment they have to clean up. Cloud static
+ * builds also consume resources and require a paid build allowance.
  */
 export async function assertBuildMinutesAvailable(organizationId: string): Promise<void> {
   if (!env.CLOUD_MODE) return;
@@ -503,7 +490,8 @@ export async function assertBuildMinutesAvailable(organizationId: string): Promi
   if (!usage.exhausted) return;
 
   throw new PlanUpgradeRequiredError(
-    `You've used all ${usage.limitMinutes} build minutes included this month. They reset on ${usage.periodEnd.toISOString().slice(0, 10)} — upgrade for more.`,
+    usage.limitMinutes === 0 ? "Choose a Cloud plan to build and deploy projects."
+      : `You've used all ${usage.limitMinutes} build minutes included this month. They reset on ${usage.periodEnd.toISOString().slice(0, 10)} — upgrade for more.`,
     "build-minutes-exhausted",
     usage.planTierId,
   );

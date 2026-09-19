@@ -1386,9 +1386,8 @@ async function findProjectByAppSlug(
  * the pricing catalog). It used to be a single env value,
  * `CLOUD_MAX_PROJECTS_PER_USER` (default 2), applied to every cloud org
  * regardless of tier — so a customer paying $99 was capped at two projects
- * exactly like a free one, and no amount of upgrading changed it. The env var is
- * kept as the fallback for a tier that publishes no project limit and for an
- * unknown tier id, so a misconfigured catalog can't accidentally uncap.
+ * exactly like a free one, and no amount of upgrading changed it. A customer
+ * without a paid plan has zero project slots; an unlimited paid plan stays uncapped.
  *
  * Self-hosted is not metered — it uses the high SYSTEM.PROJECTS.MAX_PER_USER
  * safety cap. Called from BOTH createProject and ensureProject so the
@@ -1422,7 +1421,8 @@ export async function assertProjectQuota(organizationId: string): Promise<void> 
   });
   if (total >= cap) {
     throw new PlanUpgradeRequiredError(
-      `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
+      cap === 0 ? "Choose a Cloud plan to create projects."
+        : `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
       "project-limit",
       await currentPlanTier(organizationId),
     );

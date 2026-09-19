@@ -35,10 +35,10 @@
         ],
         "services": false,
         "runningServices": 0,
-        "maxProjects": 3,
+        "maxProjects": 0,
         "maxResourceTier": "low",
         "computeMinutesPerMonth": 0,
-        "buildMinutesPerMonth": 500,
+        "buildMinutesPerMonth": 0,
         "freeSubdomains": 10,
         "customDomains": null,
         "seats": null

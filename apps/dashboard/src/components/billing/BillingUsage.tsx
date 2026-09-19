@@ -35,6 +35,7 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [showAccounting, setShowAccounting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,30 +93,11 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/50 bg-card p-5 sm:p-6">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold">{t.billing.usage.chart.title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{interpolate(copy.creditsChart, { unit: t.billing.usage.granularity[granularity] })}</p>
-          </div>
-          <div className="xl:text-end">
-            <p className="text-xs text-muted-foreground">{copy.selectedRange}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums" aria-live="polite">
-              {loading || error ? "—" : formatBillingNumber(totals?.credits ?? 0, locale)}
-              <span className="ms-1.5 text-xs font-normal text-muted-foreground">{t.billing.usage.kpi.credits}</span>
-            </p>
-          </div>
-        </div>
-        <div className="min-h-[300px]">
-          {loading ? <div role="status" className="flex h-[300px] items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" aria-hidden="true" />{t.billing.usage.breakdown.loading}
-          </div> : error ? <div role="alert" className="flex h-[300px] flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-            <AlertCircle className="size-6" aria-hidden="true" /><p>{error}</p>
-            <button type="button" onClick={() => setRetry((value) => value + 1)} className="font-medium text-primary hover:underline">{t.billing.plansRoute.tryAgain}</button>
-          </div> : buckets.length === 0 ? <p className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">{t.billing.usage.empty}</p>
-            : <UsageChart buckets={buckets} granularity={granularity} />}
-        </div>
-      </div>
+      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/20 bg-danger/5 p-4 text-sm">
+        <p className="flex items-center gap-2 text-danger"><AlertCircle className="size-4 shrink-0" aria-hidden="true" />{error}</p>
+        <button type="button" onClick={() => setRetry(value => value + 1)} className="font-medium text-primary hover:underline">{t.billing.plansRoute.tryAgain}</button>
+      </div>}
+      {loading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" aria-hidden="true" />{t.billing.usage.breakdown.loading}</p>}
 
       <div className="rounded-2xl border border-border/50 bg-card p-5 sm:p-6">
         <h2 className="text-base font-semibold">{t.billing.usage.breakdown.title}</h2>
@@ -141,6 +123,36 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
           </table>
         </div>
       </div>
+      <details className="rounded-2xl border border-border/50 bg-card p-5 sm:p-6" onToggle={event => setShowAccounting(event.currentTarget.open)}>
+        <summary className="cursor-pointer text-sm font-medium text-foreground">{copy.usageDetails}</summary>
+        {showAccounting && <>
+      <div className="mt-5">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold">{t.billing.usage.chart.title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{interpolate(copy.creditsChart, { unit: t.billing.usage.granularity[granularity] })}</p>
+          </div>
+          <div className="xl:text-end">
+            <p className="text-xs text-muted-foreground">{copy.selectedRange}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums" aria-live="polite">
+              {loading || error ? "—" : formatBillingNumber(totals?.credits ?? 0, locale)}
+              <span className="ms-1.5 text-xs font-normal text-muted-foreground">{t.billing.usage.kpi.credits}</span>
+            </p>
+          </div>
+        </div>
+        <div className="min-h-[300px]">
+          {loading ? <div role="status" className="flex h-[300px] items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" aria-hidden="true" />{t.billing.usage.breakdown.loading}
+          </div> : error ? <div role="alert" className="flex h-[300px] flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+            <AlertCircle className="size-6" aria-hidden="true" /><p>{error}</p>
+            <button type="button" onClick={() => setRetry((value) => value + 1)} className="font-medium text-primary hover:underline">{t.billing.plansRoute.tryAgain}</button>
+          </div> : buckets.length === 0 ? <p className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">{t.billing.usage.empty}</p>
+            : <UsageChart buckets={buckets} granularity={granularity} />}
+        </div>
+      </div>
+
+        </>}
+      </details>
     </div>
   );
 }

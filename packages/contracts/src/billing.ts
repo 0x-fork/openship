@@ -8,6 +8,20 @@ const stringOrNull = Type.Union([Type.String(), Type.Null()]);
 const tier = Type.Union(PLAN_IDS.map(id => Type.Literal(id)));
 const meter = Type.Object({ used: numberOrNull, max: numberOrNull });
 const currentPeriod = Type.Object({ start: stringOrNull, end: stringOrNull });
+const resourcePeriod = Type.Object({ start: Type.String(), end: Type.String() });
+const resourceStatus = Type.Union([Type.Literal("available"), Type.Literal("unavailable")]);
+const edgeLimits = Type.Object({ bandwidthGb: numberOrNull });
+export const BillingResourcesSchema = Type.Object({
+  measuredAt: Type.String(),
+  compute: Type.Object({
+    status: resourceStatus, period: resourcePeriod,
+    cpuHours: numberOrNull, memoryGbHours: numberOrNull, diskIoGb: numberOrNull, networkGb: numberOrNull,
+  }),
+  edge: Type.Object({
+    status: resourceStatus, period: resourcePeriod, limits: edgeLimits,
+    requests: numberOrNull, bandwidthGb: numberOrNull, inboundGb: numberOrNull, outboundGb: numberOrNull,
+  }),
+});
 const planLimits = Type.Object({
   workloads: Type.Array(Type.Union(WORKLOAD_TYPES.map(value => Type.Literal(value)))),
   services: Type.Boolean(), runningServices: numberOrNull, maxProjects: numberOrNull,
@@ -24,7 +38,8 @@ export const BillingPlansSchema = Type.Object({
     price: Type.Object({ monthly: numberOrNull, annual: numberOrNull }),
     effectivePrice: Type.Object({ monthly: numberOrNull }), listPrice: Type.Object({ monthly: numberOrNull }),
     campaign: Type.Union([Type.Object({ id: Type.String(), percentOff: Type.Number(), durationMonths: numberOrNull, endsAt: Type.String() }), Type.Null()]),
-    monthlyCredits: numberOrNull, annualCredits: Type.Optional(numberOrNull), limits: planLimits, features: Type.Array(Type.String()),
+    monthlyCredits: numberOrNull, annualCredits: Type.Optional(numberOrNull), limits: planLimits,
+    edge: Type.Optional(edgeLimits), features: Type.Array(Type.String()),
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
 });
@@ -61,6 +76,7 @@ export const BillingPublicSchemas = {
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BillingOperationSchemas = {
   getState: { action: "read", output: BillingStateSchema },
+  getResources: { action: "read", output: BillingResourcesSchema },
   getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
   cancelSubscription: { action: "admin", output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },
@@ -80,6 +96,7 @@ export const BillingOperationSchemas = {
   }) }) },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export type BillingState = Static<typeof BillingStateSchema>;
+export type BillingResources = Static<typeof BillingResourcesSchema>;
 export type BillingSubscription = Static<typeof BillingSubscriptionSchema>;
 export type BillingCreditPack = Static<typeof BillingCreditPackSchema>;
 export type BillingPlans = Static<typeof BillingPlansSchema>;

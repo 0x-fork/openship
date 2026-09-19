@@ -7,6 +7,7 @@ export function createRemoteBillingOperations(http: HttpClient): BillingOperatio
     ...createRemoteScopedOperations(http, BillingPublicSchemas, { listPlans: { method: "GET", path: () => "/billing/plans", envelope: "data" } }),
     ...createRemoteScopedOperations(http, BillingOperationSchemas, {
       getState: { method: "GET", path: () => "/billing/state", envelope: "data" },
+      getResources: { method: "GET", path: () => "/billing/resources", envelope: "data" },
       getSubscription: { method: "GET", path: () => "/billing/subscription", envelope: "data" },
       createSubscription: { method: "POST", path: () => "/billing/subscription", envelope: "data" },
       cancelSubscription: { method: "POST", path: () => "/billing/cancel", envelope: "data" },

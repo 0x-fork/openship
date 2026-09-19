@@ -50,6 +50,7 @@ r.use("/portal", authMiddleware);
 r.use("/cancel", authMiddleware);
 r.use("/resume", authMiddleware);
 r.use("/usage", authMiddleware);
+r.use("/resources", authMiddleware);
 r.use("/allowances", authMiddleware);
 // The retired Stripe webhook always returns 410 and performs no mutation.
 
@@ -60,6 +61,7 @@ r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, 
 // Powers the dashboard usage chart. Reads only — no Stripe / Oblien
 // mutation, just a passthrough to namespaces.usageUnits.
 r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getUsage);
+r.get("/resources", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getResources);
 
 /* ---------- Allowance detail ---------- */
 // WHICH resources are consuming a quota, not just how many. The capacity meters

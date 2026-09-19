@@ -2,7 +2,8 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
-import type { BillingSubscription } from "@repo/contracts";
+import type { BillingSubscription, BillingResources } from "@repo/contracts";
+export type { BillingResources } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -96,9 +97,9 @@ export interface CapacityMeter {
  * purpose. Three of them were Oblien's PER-WORKSPACE ceilings, not a namespace
  * pool, so a used/max bar was the wrong shape for them at any value — and their
  * `used` was never populated, so the panel rendered four permanently-empty rows.
- * Bandwidth was enforced by nothing at all; it now draws from credits, which is
- * a meter that can actually fill. Per-service machine size is shown as a plain
- * value instead (see BillingCapacity.tsx).
+ * Compute traffic draws from the shared allowance. Edge requests and bandwidth
+ * are measured separately by `getResources`, with namespace traffic allowances
+ * from the Cloud catalog. Per-service machine size is shown as a plain value.
  */
 export interface BillingCapacity {
   /** Free *.opsh.io edge routes the org is using vs its allowed maximum. */
@@ -198,6 +199,11 @@ export const billingApi = {
   /** Dashboard overview snapshot — tier, status, period, credit balance. */
   getBillingState: async (): Promise<BillingState> => {
     const res = await api.get<Envelope<BillingState>>(endpoints.billing.state);
+    return res.data;
+  },
+
+  getResources: async (): Promise<BillingResources> => {
+    const res = await api.get<Envelope<BillingResources>>(endpoints.billing.resources);
     return res.data;
   },
 

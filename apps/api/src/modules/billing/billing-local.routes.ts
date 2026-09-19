@@ -41,6 +41,7 @@ r.use("/subscription", authMiddleware);
 r.use("/cancel", authMiddleware);
 r.use("/resume", authMiddleware);
 r.use("/usage", authMiddleware);
+r.use("/resources", authMiddleware);
 r.use("/allowances", authMiddleware);
 r.use("/topup", authMiddleware);
 r.use("/topup-packs", authMiddleware);
@@ -60,6 +61,7 @@ r.post("/resume", { tag: "billing:admin", authorizationHandledByOperation: true,
 
 /* ---------- Usage ---------- */
 r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getUsage);
+r.get("/resources", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getResources);
 r.get("/allowances", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.listAllowanceDetail);
 
 /* ---------- Top-ups ---------- */

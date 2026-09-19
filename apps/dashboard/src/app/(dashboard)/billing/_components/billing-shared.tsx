@@ -50,11 +50,14 @@ export function BillingSidebar({ state }: { state: BillingState }) {
       <p className="mt-5 text-sm font-medium text-foreground">{t.billing.sidebar.includedTitle}</p>
       <PlanResources plan={plan} interval={interval} />
       {plan.inheritedFrom && <p className="mb-3 text-xs text-muted-foreground">{plan.inheritedFrom}</p>}
-      {plan.features.length > 0 && <ul className="mb-5 space-y-2.5 border-t border-border/40 pt-4">
+      {plan.features.length > 0 && <details className="mb-4 border-t border-border/40 pt-3">
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{t.billing.resourcesGuide.moreFeatures}</summary>
+        <ul className="mt-3 space-y-2.5">
         {plan.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm leading-relaxed text-muted-foreground">
           <Check className="mt-1 size-3.5 shrink-0 text-primary" aria-hidden="true" /><span>{feature}</span>
         </li>)}
-      </ul>}
+        </ul>
+      </details>}
     </>}
     <Link href="/billing/plans" className="mt-4 flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/40">
       {t.billing.onboarding.compare}<ArrowRight className="size-3.5 rtl:rotate-180" aria-hidden="true" />
