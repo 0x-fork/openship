@@ -24,8 +24,8 @@ const checks = await Promise.allSettled([
   })(),
   (async () => {
     const defaults = await billing.getDefaults();
-    record("Finite automatic namespace policy", defaults.autoApply && defaults.quotaLimit !== null && defaults.onOverdraftAction === "stop_workspaces",
-      `autoApply=${defaults.autoApply}, quotaLimit=${defaults.quotaLimit}, action=${defaults.onOverdraftAction}`);
+    record("Zero-credit automatic namespace policy", defaults.autoApply && defaults.quotaLimit === 0 && defaults.overdraft === 0 && defaults.suspendThreshold === 0 && defaults.onOverdraftAction === "stop_workspaces",
+      `autoApply=${defaults.autoApply}, quotaLimit=${defaults.quotaLimit}, overdraft=${defaults.overdraft}, suspendThreshold=${defaults.suspendThreshold}, action=${defaults.onOverdraftAction}`);
   })(),
   (async () => {
     const callback = oblienWebhookUrl(process.env.OBLIEN_WEBHOOK_URL, runtimeTarget.api);

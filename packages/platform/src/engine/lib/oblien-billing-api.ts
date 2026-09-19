@@ -81,6 +81,15 @@ export type OblienCheckout = {
 } & ({ kind: "subscription"; planTierId: string; billingInterval: "monthly" | "yearly" }
   | { kind: "topup"; packId: string });
 
+/** Log only a bounded error identifier, never provider messages or payment data. */
+function providerErrorCode(payload: unknown): string {
+  const failure = payload as { code?: unknown; error?: unknown } | null;
+  const code = typeof failure?.code === "string" ? failure.code : failure?.error;
+  if (typeof code !== "string" || !/^[a-z][a-z0-9_]{0,79}$/i.test(code) ||
+      /^(?:oblien|sk|pk|whsec|cus|sub|cs|pi|pm|acct)_/i.test(code)) return "unknown";
+  return code;
+}
+
 export class OblienBillingApi {
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
@@ -136,9 +145,18 @@ export class OblienBillingApi {
     }
     if (!response.ok || (payload as { success?: unknown } | null)?.success !== true) {
       // Do not forward provider bodies: they can contain account or payment data.
-      const status = [400, 404, 409, 422, 429].includes(response.status) ? response.status : 503;
-      const code = typeof (payload as { code?: unknown })?.code === "string"
-        ? (payload as { code: string }).code : "";
+      const code = providerErrorCode(payload);
+      // Oblien can return SQL failures as HTTP 400. Those are provider faults,
+      // not invalid customer input; preserving 400 also hid them from API logs.
+      const providerFailure = /^ER_[A-Z0-9_]+$/.test(code) || ![400, 404, 409, 422, 429].includes(response.status);
+      const status = providerFailure ? 503 : response.status;
+      console.warn("[oblien:billing] Provider request failed", {
+        method, operation: path.replace(/^\/billing\/policy\/[^/]+/, "/billing/policy/:namespace"),
+        providerStatus: response.status, providerCode: code,
+      });
+      if (path === "/billing/checkout" && providerFailure) {
+        throw new AppError("Cloud checkout is temporarily unavailable. Please try again later.", 503, "OBLIEN_CHECKOUT_UNAVAILABLE");
+      }
       const known: Record<string, string> = {
         invalid_plan: "This plan is no longer available. Refresh the plans page.",
         invalid_pack: "This credit pack is no longer available. Refresh the billing page.",
@@ -148,7 +166,7 @@ export class OblienBillingApi {
         billing_customer_conflict: "This organization's billing needs to be separated from a legacy account. Contact support.",
         billing_identity_conflict: "This organization's billing identity needs to be verified. Contact support.",
       };
-      throw new AppError(known[code] ?? "Cloud billing could not complete this request. Please retry.", status, "OBLIEN_BILLING_ERROR");
+      throw new AppError(Object.hasOwn(known, code) ? known[code] : "Cloud billing could not complete this request. Please retry.", status, "OBLIEN_BILLING_ERROR");
     }
     return payload as T;
   }

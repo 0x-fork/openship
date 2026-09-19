@@ -37,7 +37,7 @@ export const BillingSubscriptionSchema = Type.Object({
 });
 export const BillingStateSchema = Type.Object({
   tier, status: Type.String(), currentPeriod,
-  balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull }),
+  balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull, unlimited: Type.Optional(Type.Boolean()) }),
   plan: Type.Optional(Type.Union([BillingPlansSchema.properties.plans.items, Type.Null()])),
   subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])),
   capabilities: Type.Optional(Type.Object({ portal: Type.Boolean(), cancellation: Type.Boolean(), resumption: Type.Optional(Type.Boolean()), subscriptionChange: Type.Boolean() })),

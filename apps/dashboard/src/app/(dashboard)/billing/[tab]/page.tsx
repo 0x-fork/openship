@@ -8,6 +8,7 @@ import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
 import { InvoicesPanel, PaymentMethodPanel } from "../_components/billing-shared";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { getBillingPageState } from "../_components/billing-state";
+import { isNewCloudCustomer } from "@/lib/billing-presentation";
 
 export default async function BillingTabPage({
   params,
@@ -42,9 +43,9 @@ export default async function BillingTabPage({
     case "topups":
       return <BillingTopups state={state} />;
     case "payment":
-      return <PaymentMethodPanel portalAvailable={state.capabilities?.portal === true} />;
+      return <PaymentMethodPanel portalAvailable={state.capabilities?.portal === true} hasHistory={!isNewCloudCustomer(state)} />;
     case "invoices":
-      return <InvoicesPanel portalAvailable={state.capabilities?.portal === true} />;
+      return <InvoicesPanel portalAvailable={state.capabilities?.portal === true} hasHistory={!isNewCloudCustomer(state)} />;
     default:
       notFound();
   } }

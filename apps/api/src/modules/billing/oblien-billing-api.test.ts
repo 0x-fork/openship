@@ -1,5 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { OblienBillingApi } from "@repo/platform/engine/lib/oblien-billing-api";
+
+beforeEach(() => vi.spyOn(console, "warn").mockImplementation(() => {}));
+afterEach(() => vi.restoreAllMocks());
 
 const entitlement = { success: true, namespace: "os-one", tierId: "pro", status: "active", periodStart: null, periodEnd: null, quota: { limit: 3000, used: -50, balance: 3050 } };
 const subscription = { success: true, namespace: "os-one", subscription: {
@@ -43,6 +46,39 @@ describe("Oblien 2.3 billing SDK and transport contract", () => {
     const { api, fetcher } = setup({ success: false, message: "private account detail" }, 500);
     await expect(api.getEntitlement("os-one")).rejects.toThrow("Cloud billing could not complete");
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("reports the live checkout collation failure as unavailable and keeps safe diagnostics in server logs", async () => {
+    const { api, fetcher } = setup({ success: false, error: "ER_CANT_AGGREGATE_NCOLLATIONS", code: "ER_CANT_AGGREGATE_NCOLLATIONS",
+      message: "Failed to create subscription checkout", details: { sql: "private query", customer: "cus_private" } }, 400);
+    const error = await api.createCheckout({ namespace: "private-customer", kind: "subscription", planTierId: "hobby", billingInterval: "monthly",
+      successUrl: "https://app.openship.io/billing/overview", cancelUrl: "https://app.openship.io/billing/plans", idempotencyKey: "private-attempt" }).catch(error => error);
+    expect(error).toMatchObject({ statusCode: 503, code: "OBLIEN_CHECKOUT_UNAVAILABLE", message: "Cloud checkout is temporarily unavailable. Please try again later." });
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith("[oblien:billing] Provider request failed", {
+      method: "POST", operation: "/billing/checkout", providerStatus: 400, providerCode: "ER_CANT_AGGREGATE_NCOLLATIONS",
+    });
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toMatch(/private|test-secret/);
+    expect(JSON.stringify(error)).not.toContain("ER_CANT_AGGREGATE_NCOLLATIONS");
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("retains actionable plan validation failures instead of treating them as checkout outages", async () => {
+    const { api } = setup({ success: false, code: "invalid_plan", message: "private provider detail" }, 400);
+    await expect(api.createCheckout({ namespace: "os-one", kind: "subscription", planTierId: "hobby", billingInterval: "monthly",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt" })).rejects.toMatchObject({
+      statusCode: 400, code: "OBLIEN_BILLING_ERROR", message: "This plan is no longer available. Refresh the plans page.",
+    });
+  });
+  it.each(["private account detail\nsecret", "cus_private", "sk_private", "x".repeat(81)])("does not log arbitrary provider error code %s", async code => {
+    await setup({ success: false, code, message: "private account detail" }, 500).api.getPolicy("private-customer").catch(() => {});
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith("[oblien:billing] Provider request failed", {
+      method: "GET", operation: "/billing/policy/:namespace", providerStatus: 500, providerCode: "unknown",
+    });
+  });
+  it("retains upstream authentication status in diagnostics without a namespace or credential", async () => {
+    await expect(setup({ success: false, code: "unauthorized" }, 401).api.getSubscription("private-customer"))
+      .rejects.toMatchObject({ statusCode: 503 });
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith("[oblien:billing] Provider request failed", {
+      method: "GET", operation: "/billing/subscription", providerStatus: 401, providerCode: "unauthorized",
+    });
   });
   it("opens only the supplied namespace's portal with a safe hosted URL", async () => {
     const { api, fetcher } = setup({ success: true, namespace: "os-one", url: "https://billing.stripe.com/p/session/test" });

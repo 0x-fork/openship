@@ -1,6 +1,6 @@
 /** Balances arrive in milli-credits; usage buckets already contain whole credits. */
-export function formatMilliCredits(value: number | null, locale: string): string {
-  return value === null ? "∞" : formatBillingNumber(value / 1000, locale);
+export function formatMilliCredits(value: number | null | undefined, locale: string): string {
+  return value == null ? "—" : formatBillingNumber(value / 1000, locale);
 }
 
 export function formatBillingNumber(value: number, locale: string): string {

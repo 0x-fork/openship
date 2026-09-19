@@ -17,7 +17,7 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienBillingApi: () => ({
     getCatalog: provider.catalog, getEntitlement: provider.entitlement, createCheckout: provider.checkout,
     createPortal: provider.portal, getSubscription: provider.subscription, cancelSubscription: provider.cancel, resumeSubscription: provider.resume,
-    getDefaults: async () => ({ success: true, autoApply: true, service: "workspace_vm", quotaLimit: 100, overdraft: 0, onOverdraftAction: "stop_workspaces", suspendThreshold: 0 }),
+    getDefaults: async () => ({ success: true, autoApply: true, service: "workspace_vm", quotaLimit: 0, overdraft: 0, onOverdraftAction: "stop_workspaces", suspendThreshold: 0 }),
   }),
   getOblienClient: () => ({
     workspaces: { getQuota: provider.quota },
@@ -40,6 +40,7 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 import * as repository from "@repo/platform/engine/modules/billing/billing.repository";
 import { flushAudit } from "@repo/platform/engine/lib/audit-emitter";
 import { eq } from "@repo/db";
+import { __resetCloudBillingCatalogForTests } from "@repo/platform/engine/modules/billing/billing-catalog";
 
 const app = new Hono().onError(handleApiError)
   .use("*", async (c, next) => { c.set("clientIp", "192.0.2.64"); await next(); })
@@ -54,6 +55,7 @@ async function clients(actor: SeededOwner, organizationId = actor.orgId, limits:
   };
 }
 beforeEach(() => {
+  __resetCloudBillingCatalogForTests();
   provider.cloudMode = provider.enabled = provider.topups = true;
   provider.subscriptions.clear();
   provider.limits.clear();
@@ -69,9 +71,9 @@ beforeEach(() => {
   });
   provider.checkout.mockResolvedValue({ success: true, url: "https://checkout.stripe.com/private-session", checkoutId: "cs_test" });
   provider.entitlement.mockImplementation(async (namespace) => ({
-    success: true, namespace, tierId: provider.subscriptions.get(namespace)?.tierId ?? null, status: "active",
+    success: true, namespace, tierId: provider.subscriptions.get(namespace)?.tierId ?? null, status: provider.subscriptions.has(namespace) ? "active" : "credit_exhausted",
     periodStart: provider.subscriptions.get(namespace)?.periodStart ?? null, periodEnd: provider.subscriptions.get(namespace)?.periodEnd ?? null,
-    quota: { limit: 100, used: 0, balance: 100 },
+    quota: { limit: provider.subscriptions.has(namespace) ? 1200 : 0, used: 0, balance: provider.subscriptions.has(namespace) ? 1200 : 0 },
   }));
   provider.portal.mockImplementation(async ({ namespace }) => ({ success: true, namespace, url: `https://billing.stripe.com/p/session/private-${namespace}` }));
   provider.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: provider.subscriptions.get(namespace) ?? null }));
@@ -96,6 +98,70 @@ beforeEach(() => {
 afterEach(async () => { await flushAudit(); vi.clearAllMocks(); vi.unstubAllEnvs(); await db.delete(schema.creditPack); });
 
 describe("billing through the same SDK and HTTP application operations", () => {
+  it("starts each customer with a distinct namespace, no subscription and zero included Cloud compute", async () => {
+    const owners = [await seedOwner(), await seedOwner()];
+    const namespaces = new Set<string>();
+    for (const owner of owners) {
+      const c = await clients(owner);
+      for (const client of [c.native, c.remote]) {
+        expect(await client.getState()).toMatchObject({
+          tier: "free", plan: null, subscription: null, monthlyCreditLimit: 0,
+          balance: { quotaLimit: 0, quotaUsed: 0, quotaRemaining: 0, unlimited: false },
+          capacity: { buildMinutes: { used: 0, max: 0 }, services: { max: 0 }, projects: { max: 3 } },
+          maxServiceMachine: null, topups: { available: false, status: "unavailable" },
+        });
+        await expect(client.createTopup({ packId: "starter" })).rejects.toMatchObject({ code: "CLOUD_PLAN_REQUIRED" });
+      }
+      namespaces.add((await repos.organization.findById(owner.orgId))!.oblienNamespace!);
+    }
+    expect(namespaces.size).toBe(2);
+    expect(provider.namespaces).toHaveBeenCalledTimes(2);
+    expect(provider.checkout).not.toHaveBeenCalled();
+    expect(provider.quota).not.toHaveBeenCalled();
+  });
+
+  it("never presents an unsubscribed namespace with a missing policy as unlimited", async () => {
+    provider.entitlement.mockImplementation(async namespace => ({
+      success: true, namespace, tierId: null, status: "active", periodStart: null, periodEnd: null,
+      quota: { limit: null, used: 0, balance: null },
+    }));
+    const c = await clients(await seedOwner());
+    for (const client of [c.native, c.remote]) {
+      const state = await client.getState();
+      expect(state.monthlyCreditLimit).toBe(0);
+      expect(state.balance).toMatchObject({ quotaLimit: null, quotaRemaining: null, unlimited: false });
+      expect(await client.createSubscription({ planTierId: "starter", interval: "monthly" })).toHaveProperty("checkoutUrl");
+    }
+  });
+
+  it("keeps account billing usable when plan discovery is unavailable", async () => {
+    provider.catalog.mockRejectedValue(new AppError("Catalog unavailable", 503, "OBLIEN_BILLING_UNAVAILABLE"));
+    const owner = await seedOwner(), c = await clients(owner);
+    expect(await c.native.getState()).toMatchObject({ tier: "free", plan: null, monthlyCreditLimit: 0 });
+    expect(provider.catalog).not.toHaveBeenCalled();
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    provider.subscriptions.set(namespace, {
+      tierId: "hobby", status: "active", billingInterval: "monthly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z", cancelAtPeriodEnd: false, canceledAt: null,
+    });
+    for (const client of [c.native, c.remote]) {
+      expect(await client.getState()).toMatchObject({ tier: "starter", plan: null, monthlyCreditLimit: null, balance: { quotaRemaining: 1_200_000, unlimited: false }, capabilities: { portal: true, cancellation: true } });
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
+    }
+    expect(provider.checkout).not.toHaveBeenCalled();
+  });
+
+  it.each(["active", "canceled"] as const)("identifies uncapped credits only for a verified active enterprise subscription (%s)", async status => {
+    const owner = await seedOwner(), c = await clients(owner);
+    await c.native.getState();
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    const subscription: NonNullable<OblienSubscription> = {
+      tierId: "enterprise", status, billingInterval: "monthly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z", cancelAtPeriodEnd: false, canceledAt: null,
+    };
+    provider.subscriptions.set(namespace, subscription);
+    provider.entitlement.mockResolvedValue({ success: true, namespace, tierId: subscription.tierId, status, periodStart: subscription.periodStart, periodEnd: subscription.periodEnd, quota: { limit: null, used: 10, balance: null } });
+    for (const client of [c.native, c.remote]) expect((await client.getState()).balance.unlimited).toBe(status === "active");
+  });
+
   it("loads new and paid customer billing and checkout without reseller capacity or resource-policy writes", async () => {
     provider.resourceRead.mockRejectedValue(new Error("Workspace resource operations unavailable"));
     provider.resourceUpdate.mockRejectedValue(new Error("Workspace resource operations unavailable"));
@@ -258,6 +324,11 @@ describe("billing through the same SDK and HTTP application operations", () => {
 
   it("uses provider credit packs instead of legacy prices and enforces the independent top-up switch", async () => {
     const owner = await seedOwner(), c = await clients(owner), legacyPack = CREDIT_PACKS[0]!;
+    await c.native.getState();
+    provider.subscriptions.set((await repos.organization.findById(owner.orgId))!.oblienNamespace!, {
+      tierId: "hobby", status: "active", billingInterval: "monthly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+      cancelAtPeriodEnd: false, canceledAt: null,
+    });
     await db.insert(schema.creditPack).values({ id: legacyPack.id, name: legacyPack.name, creditsMilli: 999, priceCents: 999, sortOrder: 0, stripeProductId: "product_retired", stripePriceId: "price_retired", active: true });
     for (const client of [c.native, c.remote]) {
       expect(await client.listTopupPacks()).toEqual([{ id: "starter", name: "Starter", credits_milli: 1_000_000, price_cents: 1000, sortOrder: 0, explains: null }]);

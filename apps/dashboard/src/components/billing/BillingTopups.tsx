@@ -1,5 +1,10 @@
 "use client";
 
+import { needsCloudPlan } from "@/lib/billing-presentation";
+import { randomUUID } from "@/lib/random-uuid";
+import { BillingEmptyState } from "./BillingEmptyState";
+import { BillingSubscriptionControls } from "./BillingSubscriptionControls";
+
 import React, { useEffect, useState } from "react";
 import { Loader2, Plus, ExternalLink, Receipt } from "lucide-react";
 import { api } from "@/lib/api/client";
@@ -62,7 +67,17 @@ function formatCredits(milliCredits: number): string {
 /*  Component                                                         */
 /* ------------------------------------------------------------------ */
 
-export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
+export function BillingTopups({ state }: BillingTopupsProps) {
+  const { t } = useI18n();
+  if (needsCloudPlan(state)) return <BillingEmptyState kind="topups" />;
+  if (state.topups?.status === "unavailable") return <div className="space-y-5">
+    <p className="rounded-2xl bg-card p-6 text-sm text-muted-foreground">{state.capabilities?.subscriptionChange ? t.billing.deployGate.paymentDescription : t.billing.plansRoute.changeViaSupport}</p>
+    <BillingSubscriptionControls state={state} />
+  </div>;
+  return <CreditPacks state={state} />;
+}
+
+const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
   const { t } = useI18n();
   // Availability is decided by Openship Cloud (billing state), NOT hardcoded —
   // so top-ups can launch by flipping the cloud flag with no dashboard release.
@@ -100,7 +115,7 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
     setBuyingPackId(packId);
     setError(null);
     try {
-      const res = await api.post<CheckoutResponse>("billing/topup", { packId, idempotencyKey: crypto.randomUUID() });
+      const res = await api.post<CheckoutResponse>("billing/topup", { packId, idempotencyKey: randomUUID() });
       window.location.href = res.data.checkoutUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.topups.checkoutError);

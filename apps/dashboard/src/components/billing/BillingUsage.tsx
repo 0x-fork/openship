@@ -7,6 +7,8 @@ import { UsageChart } from "./UsageChart";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
 import { billingUsageWindow, formatBillingNumber, weeklyCreditUsage, type CloudUsagePayload } from "@/lib/billing-usage";
+import { isNewCloudCustomer } from "@/lib/billing-presentation";
+import { BillingEmptyState } from "./BillingEmptyState";
 
 interface UsageResponse {
   data: { usage: CloudUsagePayload | null };
@@ -15,6 +17,10 @@ interface UsageResponse {
 /** Credits are an authoritative total. CPU, memory, disk activity and network
  * each have their own unit; the provider does not attribute credits among them. */
 export function BillingUsage({ state }: { state: BillingState }) {
+  return isNewCloudCustomer(state) ? <BillingEmptyState kind="usage" /> : <BillingUsageHistory state={state} />;
+}
+
+function BillingUsageHistory({ state }: { state: BillingState }) {
   const { t, locale } = useI18n();
   const copy = t.billing.resourcesGuide;
   const today = new Date().toISOString().slice(0, 10);

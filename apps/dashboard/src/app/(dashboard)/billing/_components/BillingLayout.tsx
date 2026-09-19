@@ -4,6 +4,7 @@ import { BillingSidebar } from "./billing-shared";
 import { BillingTabBar } from "./BillingTabBar";
 import { BillingContent } from "./BillingContent";
 import { BillingHeader } from "./BillingHeader";
+import { needsCloudPlan } from "@/lib/billing-presentation";
 
 export async function BillingLayout({ children }: { children: React.ReactNode }) {
   const result = await getBillingPageState();
@@ -20,11 +21,11 @@ export async function BillingLayout({ children }: { children: React.ReactNode })
 
   return (
     <PageContainer className="space-y-6">
-      <BillingHeader state={state} />
+      <BillingHeader />
 
       <BillingTabBar />
 
-      <BillingContent sidebar={<BillingSidebar state={state} />}>
+      <BillingContent sidebar={<BillingSidebar state={state} />} promotePlan={needsCloudPlan(state)}>
         {children}
       </BillingContent>
     </PageContainer>

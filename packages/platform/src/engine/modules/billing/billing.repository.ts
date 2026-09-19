@@ -14,7 +14,7 @@ import {
 } from "@repo/core";
 import { entitlementQuota, syncOblienEntitlement } from "./billing-oblien-quota";
 import { cloudPlan } from "./billing-catalog";
-import { presentCloudSubscription } from "./billing-subscription";
+import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
 import { env } from "@repo/platform/engine/config/env";
@@ -62,11 +62,20 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
   await ensureNamespace(orgId);
   const { entitlement, tier, subscription: providerSubscription } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
   const [plan, legacySubscriptions] = await Promise.all([
-    cloudPlan(tier), listLiveSubscriptions(orgId),
+    // A setup-only workspace has no product to look up. Catalog availability
+    // must not hide a customer's balance, invoices or subscription controls.
+    tier === "free" ? null : cloudPlan(tier).catch(error => {
+      console.warn(`[billing] Plan details are temporarily unavailable: ${safeErrorMessage(error)}`);
+      return null;
+    }),
+    listLiveSubscriptions(orgId),
   ]);
   const subscription = presentCloudSubscription(providerSubscription);
   const managed = legacySubscriptions.length === 0;
-  const monthlyCreditLimit = plan?.monthlyCredits ?? null;
+  const canTopUp = canTopUpCloudSubscription(providerSubscription);
+  // A missing free catalog product is intentional: project setup is not a
+  // subscription and includes no Cloud credits. Preserve any purchased balance.
+  const monthlyCreditLimit = tier === "free" ? 0 : plan?.monthlyCredits ?? null;
   const { quotaLimit, quotaUsed, quotaRemaining } = entitlementQuota(entitlement);
   const overQuota = quotaRemaining !== null && quotaRemaining <= 0;
 
@@ -108,12 +117,14 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
       quotaLimit,
       quotaUsed,
       quotaRemaining,
+      unlimited: tier === "enterprise" && entitlement.status === "active" && subscription !== null
+        && ["active", "trialing"].includes(subscription.status) && quotaLimit === null && quotaRemaining === null,
     },
     monthlyCreditLimit,
     overQuota,
     buildTimeMinutes,
     buildMinutesResetAt: buildMinutes.periodEnd,
-    maxServiceMachine: planLimitsForTier.maxResourceTier
+    maxServiceMachine: tier !== "free" && planLimitsForTier.maxResourceTier
       ? {
           tier: planLimitsForTier.maxResourceTier,
           cpuCores: RESOURCE_TIER_SPECS[planLimitsForTier.maxResourceTier].cpuCores,
@@ -128,7 +139,7 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
      */
     capacity: {
       routes: { used: freeSubdomains.used, max: freeSubdomains.limit },
-      buildMinutes: { used: buildMinutes.usedMinutes, max: buildMinutes.limitMinutes },
+      buildMinutes: { used: buildMinutes.usedMinutes, max: tier === "free" ? 0 : buildMinutes.limitMinutes },
       // Both of these have a REAL used count, unlike the vCPU/RAM/disk meters
       // that were declared here and never populated (four permanently empty rows
       // the dashboard rendered as "Syncing from cloud" forever). Per-service
@@ -143,8 +154,8 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
     },
     topups: {
       // Top-ups need the master switch AND the sub-switch.
-      available: env.BILLING_ENABLED && env.BILLING_TOPUPS_ENABLED,
-      status: env.BILLING_ENABLED && env.BILLING_TOPUPS_ENABLED ? "available" : "coming_soon",
+      available: canTopUp && managed && env.BILLING_ENABLED && env.BILLING_TOPUPS_ENABLED,
+      status: !canTopUp || !managed ? "unavailable" : env.BILLING_ENABLED && env.BILLING_TOPUPS_ENABLED ? "available" : "coming_soon",
     },
   };
 }

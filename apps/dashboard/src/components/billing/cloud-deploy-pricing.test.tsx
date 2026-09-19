@@ -235,8 +235,8 @@ describe("deployment plan selection", () => {
 describe("readable Cloud usage", () => {
   it("does not advertise the legacy free build limit as usable Cloud compute", async () => {
     await render(<BillingCapacity state={free} />);
-    expect(container.textContent).toContain(copy.resourcesGuide.setupHint);
-    expect(container.textContent).toContain(copy.resourcesGuide.notIncluded);
+    expect(container.textContent).toContain(copy.onboarding.noFreeCompute);
+    expect(container.textContent).toContain(copy.onboarding.planRequired);
     expect(container.textContent).not.toContain("500");
   });
   it("shows actual resource measurements and whole credit totals without fabricated resource costs", async () => {

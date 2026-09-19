@@ -37,7 +37,7 @@ beforeEach(() => {
     billingInterval: "monthly", cancelAtPeriodEnd: false, canceledAt: null,
   } });
   h.balance.mockResolvedValue({ namespace: "os-customer", balance: 2580, blocking: false });
-  h.defaults.mockResolvedValue({ autoApply: true, quotaLimit: 1000, onOverdraftAction: "stop_workspaces" });
+  h.defaults.mockResolvedValue({ autoApply: true, quotaLimit: 0, overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" });
 });
 describe("Oblien-managed entitlements", () => {
   it("mirrors the paid tier, billing status and exact provider period without writing quotas", async () => {
@@ -85,6 +85,21 @@ describe("Oblien-managed entitlements", () => {
   it("cannot run a legacy free-credit anniversary reset", async () => {
     await expect(resetAndRegrant("org_1", "pro")).rejects.toMatchObject({ code: "OBLIEN_MANAGED_BILLING" });
     expect(h.resetQuota).not.toHaveBeenCalled();
+  });
+  it.each([
+    { quotaLimit: null }, { quotaLimit: 1000 }, { overdraft: 1 }, { suspendThreshold: null }, { suspendThreshold: 1 }, { autoApply: false },
+  ])("requires zero-credit onboarding without altering paid policies: %j", async change => {
+    h.defaults.mockResolvedValue({ autoApply: true, quotaLimit: 0, overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces", ...change });
+    await expect(ensureOblienDefaultQuota()).rejects.toMatchObject({ code: "OBLIEN_DEFAULT_POLICY_REQUIRED" });
+    expect(h.setQuota).not.toHaveBeenCalled();
+    expect(h.setDefaultQuota).not.toHaveBeenCalled();
+  });
+  it.each([0, 500, null])("never grants Cloud deployment from unsubscribed credits (%s)", async limit => {
+    h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: null });
+    h.entitlement.mockResolvedValue({ ...entitlement(), tierId: null, status: "active", periodStart: null, periodEnd: null, quota: { limit, used: 0, balance: limit } });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ statusCode: 402, code: "CLOUD_BILLING_BLOCKED" });
+    expect(h.limits).not.toHaveBeenCalled();
+    expect(h.setQuota).not.toHaveBeenCalled();
   });
   it("rejects an owner's paid entitlement echoed under an unsubscribed namespace", async () => {
     h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: null });

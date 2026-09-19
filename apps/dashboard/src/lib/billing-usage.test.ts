@@ -6,6 +6,8 @@ describe("Cloud usage units and dates", () => {
     expect(formatMilliCredits(125_500, "en")).toBe("125.5");
     expect(formatBillingNumber(125.5, "en")).toBe("125.5");
     expect(formatMilliCredits(-1_500, "en")).toBe("-1.5");
+    expect(formatMilliCredits(null, "en")).toBe("—");
+    expect(formatMilliCredits(undefined, "en")).toBe("—");
   });
   const now = new Date("2026-09-18T12:30:00Z");
   it("includes today's usage up to now, without requesting the future subscription end", () => {

@@ -1,11 +1,11 @@
-import { AppError, planLimits, pricingUi, toPricingLocale, type PlanTierId } from "@repo/core";
+import { AppError, planLimits, pricingUi, resolvePlan, toPricingLocale, type PlanTierId } from "@repo/core";
 import type { BillingPlans } from "@repo/contracts";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import type { OblienBillingCatalog } from "../../lib/oblien-billing-api";
 import { fromOblienCredits } from "./billing-credit-units";
 
-// Existing organization IDs remain stable. Customer-facing names and all money
-// come from Oblien; these aliases only select Openship's application permissions.
+// Existing organization IDs remain stable. Names, money and credit grants come
+// from Oblien; Openship owns the application limits and localized product copy.
 export const OBLIEN_PLAN_IDS: Readonly<Record<PlanTierId, string>> = {
   free: "free", starter: "hobby", pro: "pro", team: "scale", enterprise: "enterprise",
 };
@@ -39,7 +39,7 @@ export function presentCloudPlans(catalog: OblienBillingCatalog, requestedLocale
     const monthly = plan.priceMonthly === null ? null : Math.round(plan.priceMonthly * 100);
     const annual = plan.priceYearly === null ? null : Math.round(plan.priceYearly * 100);
     return {
-      id, name: plan.name, description: plan.description ?? "", popular: plan.popular ?? false,
+      id, name: plan.name, description: id === "free" ? "" : resolvePlan(id, locale).description, popular: plan.popular ?? false,
       price: { monthly, annual }, effectivePrice: { monthly }, listPrice: { monthly }, campaign: null,
       monthlyCredits: plan.creditsPerCycle === null ? null : fromOblienCredits(plan.creditsPerCycle),
       annualCredits: plan.yearlyCreditsPerCycle === null ? null : fromOblienCredits(plan.yearlyCreditsPerCycle),

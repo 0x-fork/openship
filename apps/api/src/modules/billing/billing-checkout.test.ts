@@ -100,11 +100,17 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).not.toHaveBeenCalled();
   });
   it("purchases provider credit packs using the same public catalog", async () => {
+    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription }));
     expect(await listActiveCreditPacks()).toMatchObject([{ id: "starter", credits_milli: 1_000_000, price_cents: 1000 }]);
     await createTopupCheckoutSession(ctx(), "starter", "attempt-00000001");
     expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({ namespace: "ns-org-a", kind: "topup", packId: "starter" }));
     await expect(createTopupCheckoutSession(ctx(), "removed-pack")).rejects.toMatchObject({ code: "BILLING_PACK_NOT_FOUND" });
     expect(h.checkout).toHaveBeenCalledOnce();
+  });
+  it.each([null, "canceled", "past_due", "unpaid", "paused"])("does not sell unusable top-up credits to a customer with subscription %s", async status => {
+    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: status === null ? null : { ...subscription, status } }));
+    await expect(createTopupCheckoutSession(ctx(), "starter")).rejects.toMatchObject({ code: "CLOUD_PLAN_REQUIRED", statusCode: 402 });
+    expect(h.checkout).not.toHaveBeenCalled();
   });
   it("honors both purchase switches", async () => {
     h.env.BILLING_ENABLED = false;

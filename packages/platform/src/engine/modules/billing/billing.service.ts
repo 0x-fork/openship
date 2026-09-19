@@ -9,7 +9,7 @@ import { getCloudBillingCatalog, OBLIEN_PLAN_IDS } from "./billing-catalog";
 import { syncOblienEntitlement } from "./billing-oblien-quota";
 import { fromOblienCredits } from "./billing-credit-units";
 import { listLiveSubscriptions } from "./billing.repository";
-import { presentCloudSubscription } from "./billing-subscription";
+import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 
 export function assertBillingEnabled(): void {
   if (!env.BILLING_ENABLED) {
@@ -37,12 +37,15 @@ async function assertNoLegacySubscription(orgId: string): Promise<void> {
   }
 }
 
-async function checkoutNamespace(orgId: string): Promise<string> {
+async function topupNamespace(orgId: string): Promise<string> {
   const namespace = await ensureNamespace(orgId);
   // Do not sell through an older provider deployment whose checkout/portal
   // still shares the owner's Stripe customer. Require the namespace billing
   // contract before starting either kind of purchase.
-  await getOblienBillingApi().getSubscription(namespace);
+  const { subscription } = await getOblienBillingApi().getSubscription(namespace);
+  if (!canTopUpCloudSubscription(subscription)) {
+    throw new AppError("An active Cloud subscription is required before adding credits", 402, "CLOUD_PLAN_REQUIRED");
+  }
   return namespace;
 }
 
@@ -84,7 +87,7 @@ export async function createTopupCheckoutSession(ctx: RequestContext, packId: st
   if (!catalog.creditPacks.some((pack) => pack.packId === packId)) {
     throw new AppError("This credit pack is no longer available", 404, "BILLING_PACK_NOT_FOUND");
   }
-  const namespace = await checkoutNamespace(ctx.organizationId);
+  const namespace = await topupNamespace(ctx.organizationId);
   const result = await getOblienBillingApi().createCheckout({
     namespace, kind: "topup", packId,
     successUrl: `${runtimeTarget.dashboard}/billing/overview?topup=success`,

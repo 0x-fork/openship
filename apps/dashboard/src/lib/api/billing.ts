@@ -28,11 +28,13 @@ export interface BillingState {
     quotaLimit: number | null;
     quotaUsed: number;
     quotaRemaining: number | null;
+    /** Explicitly verified uncapped customer entitlement. A missing limit alone is not unlimited. */
+    unlimited?: boolean;
   };
   plan?: ApiPlan | null;
   subscription?: BillingSubscription | null;
   capabilities?: { portal: boolean; cancellation: boolean; resumption?: boolean; subscriptionChange: boolean };
-  /** Tier's monthly allowance in milli-credits, or `null` for enterprise. */
+  /** Included milli-credits: zero without a plan; null for unknown or custom allowances. */
   monthlyCreditLimit: number | null;
   /** Display-only: out of credits (Oblien is the real enforcer). */
   overQuota: boolean;

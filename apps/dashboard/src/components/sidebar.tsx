@@ -15,6 +15,7 @@ import {
   Building2,
   ChevronsUpDown,
   Check,
+  X,
 } from "lucide-react";
 import { authClient, signOut } from "@/lib/auth-client";
 import { useTheme } from "@/components/theme-provider";
@@ -73,7 +74,7 @@ const sidebarOrgClient = (
   }
 ).organization;
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: boolean; onCloseMobile?: () => void } = {}) {
   const { user } = useAuth();
   const { selfHosted, deployMode, authMode, machineName, productView } = usePlatform();
   const { connected: cloudConnected, cloudUser } = useCloud();
@@ -119,9 +120,10 @@ export function Sidebar() {
   const { resolvedTheme, toggle } = useTheme();
   const { t } = useI18n();
   const brand = useBrandName();
-  const { collapsed, toggleCollapsed } = useSidebarCollapse(
+  const { collapsed: desktopCollapsed, toggleCollapsed } = useSidebarCollapse(
     pathname === "/scale" || pathname.startsWith("/scale/"),
   );
+  const collapsed = !mobileOpen && desktopCollapsed;
   const [loggingOut, setLoggingOut] = useState(false);
   const [navCounts, setNavCounts] = useState<{ projects: number; apps: number } | null>(null);
   const [navCountsRevision, setNavCountsRevision] = useState(getSidebarNavCountsRevision);
@@ -337,14 +339,14 @@ export function Sidebar() {
           </button>
           <button
             type="button"
-            onClick={toggleCollapsed}
+            onClick={mobileOpen ? onCloseMobile : toggleCollapsed}
             aria-label={collapsed ? t.dashboard.sidebar.expand : t.dashboard.sidebar.collapse}
             aria-expanded={!collapsed}
             aria-controls="dashboard-sidebar"
             title={collapsed ? t.dashboard.sidebar.expand : t.dashboard.sidebar.collapse}
             className="flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
           >
-            {collapsed ? (
+            {mobileOpen ? <X className="size-4" /> : collapsed ? (
               <PanelLeftOpen className="size-4 rtl:rotate-180" />
             ) : (
               <PanelLeftClose className="size-4 rtl:rotate-180" />

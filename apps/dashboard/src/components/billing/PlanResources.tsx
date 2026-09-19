@@ -14,7 +14,7 @@ export function PlanResources({ plan, interval = "monthly" }: { plan: ApiPlan; i
   const spec = plan.limits.maxResourceTier ? RESOURCE_TIER_SPECS[plan.limits.maxResourceTier] : null;
   const credits = interval === "annual" ? plan.annualCredits : plan.monthlyCredits;
   const facts = [
-    { label: copy.credits, value: credits === undefined ? "—" : credits === null ? copy.unlimited : interpolate(copy.creditsPerCycle, { amount: formatMilliCredits(credits, locale) }) },
+    { label: copy.credits, value: credits == null ? plan.id === "enterprise" ? t.billing.pricing.custom : "—" : interpolate(copy.creditsPerCycle, { amount: formatMilliCredits(credits, locale) }) },
     { label: copy.buildTime, value: plan.limits.buildMinutesPerMonth === null ? copy.unlimited : interpolate(copy.buildMinutes, { amount: count(plan.limits.buildMinutesPerMonth) }) },
     { label: copy.apps, value: count(plan.limits.runningServices) },
     { label: copy.machine, value: spec ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}` : copy.unlimited },

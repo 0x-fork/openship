@@ -18,6 +18,12 @@ The final two-customer isolation/lifecycle run passed all 52 checks at 04:31 UTC
 See [the current provider test report](./oblien-staging-cycle-report.md). Keep
 public purchases disabled until these checks pass.
 
+The September 19 live checkout probe is currently blocked by an Oblien SQL
+collation failure: `POST /billing/checkout` returns
+`ER_CANT_AGGREGATE_NCOLLATIONS`, including for the minimal documented request.
+See [the checkout verification report](openship-cloud-production-verification.md#release-status-live-hosted-checkout-is-blocked).
+Passing catalog, policy, and simulated-payment tests does not clear this gate.
+
 ## What is connected
 
 - `oblien@2.3.2` supplies the official billing module. Openship validates the
@@ -119,6 +125,38 @@ and checkout on desktop, mobile and Arabic layouts; they do not replace the
 production payment/webhook acceptance tests above. The repository-wide locale
 checker still reports pre-existing gaps in other namespaces; billing has no
 missing, extra or untranslated entries.
+
+## Customer billing onboarding, 2026-09-19
+
+Each customer workspace has its own Oblien namespace. New namespaces start with
+zero credits, zero overdraft, and no paid subscription. Openship validates those
+automatic defaults without rewriting existing balances. A free-tier entitlement
+cannot start billable work even if a legacy policy reports a positive or null
+balance. Oblien applies the paid subscription and credits after payment; opening
+checkout or returning to the dashboard does not activate compute.
+
+Overview now explicitly shows **No Cloud plan** and **0 included Cloud credits**
+for new customers. An empty or null credit limit never becomes an Unlimited
+label. Existing purchased-credit history remains visible. The right column
+contains a live subscription offer with its price, credit allowance, build time,
+running services, per-service CPU/RAM, and project limit, plus Subscribe and
+Compare all plans. On phones the offer appears first, and navigation opens in a
+drawer so the page uses the full viewport width.
+
+Openship supplies application limits and localized product descriptions. Prices,
+billing intervals, currency, credit grants, and checkout tier IDs come from
+Oblien's catalog. Creating a local plan description does not create a purchasable
+provider tier or grant credits. Usage, invoices, payment methods, and top-ups
+have useful empty states until a customer has relevant history. Buying top-ups
+requires an active or trialing paid subscription; extra credits alone cannot
+activate Cloud compute.
+
+Paid customers retain their verified balance and subscription controls if the
+plan catalog is temporarily unavailable. Usage explanations are collapsed, and
+resource usage keeps the provider's actual units. The copy is available in all
+nine dashboard locales. Both API and dashboard must be rebuilt and deployed for
+these changes. See [production-path verification](openship-cloud-production-verification.md)
+for test coverage and the remaining live payment/webhook verification.
 
 ## Compose on Docker workspaces, 2026-09-17
 
@@ -275,12 +313,13 @@ assuming the `.env.saas` filename indicates production provider credentials.
    endpoints accept the earlier staging key and return the documented responses. Confirm Stripe
    checkout is in test mode before completing a test payment. Confirm the
    production account's identity and `max_namespaces` capacity before launch.
-2. Configure finite **new-namespace defaults** in the intended Oblien account.
+2. Configure zero-credit **new-namespace defaults** in the intended Oblien account.
    This was configured for both staging accounts. The September 17 key now
    passes actual create/ensure inheritance checks after the provider fix.
    Verify actual creation in the intended launch account, not only the template.
-   The initial policy is payment before compute: zero quota and zero overdraft. A capped
-   trial is a separate product decision. Example `PUT /billing/defaults` body:
+   The initial policy is payment before compute: zero quota and zero overdraft.
+   Openship rejects nonzero or unlimited automatic credit defaults. Example
+   `PUT /billing/defaults` body:
 
    ```json
    {
@@ -392,8 +431,9 @@ Use the deployed API logs for the underlying error:
 | Response/code | Action |
 | --- | --- |
 | `BILLING_NOT_CONFIGURED` | Supply the Oblien credentials to the API process. |
-| `OBLIEN_DEFAULT_POLICY_REQUIRED` | Configure the production account's automatic, finite namespace policy described above. |
+| `OBLIEN_DEFAULT_POLICY_REQUIRED` | Configure the production account's automatic zero-credit, zero-overdraft namespace policy described above. |
 | `OBLIEN_WEBHOOK_NOT_CONFIGURED` | Configure the signing secret and deployed callback. |
+| `OBLIEN_CHECKOUT_UNAVAILABLE` | Inspect `[oblien:billing] Provider request failed` in the API logs for the upstream operation, status, and error code. `ER_CANT_AGGREGATE_NCOLLATIONS` requires an Oblien database/query fix. |
 | HTTP 401 / 403 without `BILLING_NOT_ENABLED` | Check the session and the user's `billing:read` permission. |
 | HTTP 404, 5xx, or a connection failure | Check API routing, `INTERNAL_API_URL`, provider connectivity, and the API logs. |
 

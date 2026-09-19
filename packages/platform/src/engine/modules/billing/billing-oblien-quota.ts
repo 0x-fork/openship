@@ -34,9 +34,9 @@ export function entitlementQuota(entitlement: OblienEntitlement): QuotaState {
 export async function ensureOblienDefaultQuota(): Promise<void> {
   if (!env.CLOUD_MODE) return;
   const defaults = await getOblienBillingApi().getDefaults();
-  if (!defaults.autoApply || defaults.quotaLimit === null ||
+  if (!defaults.autoApply || defaults.quotaLimit !== 0 || defaults.overdraft !== 0 || defaults.suspendThreshold !== 0 ||
       defaults.onOverdraftAction !== "stop_workspaces") {
-    throw new AppError("Cloud onboarding needs a finite, automatically applied Oblien billing policy", 503, "OBLIEN_DEFAULT_POLICY_REQUIRED");
+    throw new AppError("Cloud onboarding requires an automatically applied zero-credit Oblien policy with no overdraft", 503, "OBLIEN_DEFAULT_POLICY_REQUIRED");
   }
 }
 
@@ -93,7 +93,7 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
     // issuing a token or allowing another deployment. Exhausted/suspended
     // customers can still obtain management access to stop/delete resources.
     // Reading billing or opening checkout requires no resource-policy write.
-    if (options.syncResourceLimits !== false && entitlement.status === "active") {
+    if (options.syncResourceLimits !== false && entitlement.status === "active" && tier !== "free") {
       await syncCloudResourceLimits(org.oblienNamespace, tier);
     }
     const currentPeriodStart = entitlement.periodStart ? new Date(entitlement.periodStart) : null;
@@ -143,7 +143,11 @@ export async function assertNamespaceHasQuota(orgId: string): Promise<void> {
 
 /** Applied immediately before starting new billable work, never before cleanup. */
 export async function assertCloudCanSpend(orgId: string): Promise<void> {
-  const { entitlement, drift } = await syncOblienEntitlement(orgId);
+  const { entitlement, drift, tier } = await syncOblienEntitlement(orgId);
+  // Credits alone (including old top-ups) never activate a Cloud subscription.
+  if (tier === "free") {
+    throw new AppError("Choose a Cloud plan before building or running workloads", 402, "CLOUD_BILLING_BLOCKED");
+  }
   if (drift.quotaMissing) {
     throw new AppError("Cloud namespace billing policy is not ready", 503, "OBLIEN_NAMESPACE_POLICY_REQUIRED");
   }

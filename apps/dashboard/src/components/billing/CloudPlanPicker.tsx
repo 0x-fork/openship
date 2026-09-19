@@ -1,33 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  PricingCards,
-  type ApiPlan,
-  type ApiPricingUi,
-} from "@/components/billing/PricingCards";
-import { api, getApiErrorMessage } from "@/lib/api/client";
-import { randomUUID } from "@/lib/random-uuid";
-import { endpoints } from "@/lib/api/endpoints";
+import { useState } from "react";
+import { PricingCards } from "@/components/billing/PricingCards";
 import type { PlanTierId } from "@repo/core";
 import { Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import type { BillingSubscription } from "@repo/contracts";
-
-interface PlansPayload {
-  locale: string;
-  annual: { enabled: boolean; monthsFree: number };
-  ui: ApiPricingUi;
-  plans: ApiPlan[];
-}
-
-interface PlansResponse {
-  data: PlansPayload;
-}
-
-interface CheckoutResponse {
-  data: { checkoutUrl: string };
-}
+import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
+import { CloudUsageGuide } from "./CloudUsageGuide";
 
 export function CloudPlanPicker({ currentPlan, subscription, billingEnabled = false, canChangeSubscription = false, preserveProject = false, onCheckoutStarted }: {
   currentPlan: PlanTierId; billingEnabled?: boolean; canChangeSubscription?: boolean;
@@ -35,81 +15,18 @@ export function CloudPlanPicker({ currentPlan, subscription, billingEnabled = fa
   preserveProject?: boolean;
   onCheckoutStarted?: () => void;
 }) {
-  const { t, locale } = useI18n();
-  const [payload, setPayload] = useState<PlansPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [subscribing, setSubscribing] = useState<string | null>(null);
+  const { t } = useI18n();
+  const { payload, loading, error, retry } = useCloudPlans();
   const [interval, setInterval] = useState<"monthly" | "annual">(subscription?.interval ?? "monthly");
-  const attempts = useRef(new Map<string, string>());
-  const checkoutBusy = useRef(false);
-  const [retry, setRetry] = useState(0);
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const canPurchase = billingEnabled && (currentPlan === "free" || canChangeSubscription);
+  const { startCheckout, subscribing, error: checkoutError, checkoutUrl } = useCloudCheckout({
+    enabled: canPurchase, preserveProject, onCheckoutStarted,
+  });
   const selectedCurrentPlan = subscription === null || subscription?.status === "canceled"
     || (subscription && subscription.interval !== interval) ? null : currentPlan;
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    async function fetchPlans() {
-      try {
-        // Plan copy is localized SERVER-side from the pricing catalog, so the
-        // reader's locale (a cookie the browser never sends as a language
-        // header) has to travel on the query string.
-        const res = await api.get<PlansResponse>(
-          `${endpoints.billing.plans}?locale=${encodeURIComponent(locale)}`,
-        );
-        if (!cancelled) setPayload(res.data);
-      } catch {
-        if (!cancelled) setError(t.billing.plansRoute.loadError);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    fetchPlans();
-    return () => {
-      cancelled = true;
-    };
-  }, [locale, retry, t.billing.plansRoute.loadError]);
-
-  const handleSelectPlan = async (planTierId: PlanTierId) => {
-    if (!canPurchase || checkoutBusy.current || planTierId === "free" || planTierId === "enterprise" || planTierId === selectedCurrentPlan) return;
-    checkoutBusy.current = true;
-    // Open synchronously from the click so popup blockers do not discard an
-    // otherwise valid checkout. Never navigate away from an unfinished project.
-    const checkoutTab = preserveProject ? window.open("about:blank", "_blank") : null;
-    if (checkoutTab) checkoutTab.opener = null;
-    setSubscribing(planTierId);
-    setCheckoutError(null);
-    setCheckoutUrl(null);
-    const attempt = `${planTierId}:${interval}`;
-    if (!attempts.current.has(attempt)) attempts.current.set(attempt, randomUUID());
-    try {
-      const res = await api.post<CheckoutResponse>(endpoints.billing.subscription, {
-        planTierId,
-        interval,
-        idempotencyKey: attempts.current.get(attempt),
-      });
-      const url = new URL(res.data.checkoutUrl);
-      if (url.protocol !== "https:") throw new Error(t.billing.plansRoute.checkoutError);
-      if (preserveProject) {
-        if (checkoutTab && !checkoutTab.closed) checkoutTab.location.href = url.href;
-        // Also offer a real link if the popup was blocked or closed.
-        setCheckoutUrl(url.href);
-        onCheckoutStarted?.();
-      } else {
-        window.location.href = url.href;
-      }
-    } catch (err) {
-      checkoutTab?.close();
-      setCheckoutError(getApiErrorMessage(err, t.billing.plansRoute.checkoutError));
-    } finally {
-      checkoutBusy.current = false;
-      setSubscribing(null);
-    }
+  const handleSelectPlan = (planTierId: PlanTierId) => {
+    if (planTierId !== selectedCurrentPlan) void startCheckout(planTierId, interval);
   };
 
   if (loading) {
@@ -125,7 +42,7 @@ export function CloudPlanPicker({ currentPlan, subscription, billingEnabled = fa
       <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
         <p className="text-sm text-muted-foreground">{error || t.billing.plansRoute.genericError}</p>
         <button
-          onClick={() => setRetry((value) => value + 1)}
+          onClick={retry}
           className="mt-4 text-sm font-medium text-primary hover:underline"
         >
           {t.billing.plansRoute.tryAgain}
@@ -144,6 +61,10 @@ export function CloudPlanPicker({ currentPlan, subscription, billingEnabled = fa
 
   return (
     <div className="space-y-5">
+      {!preserveProject && <div>
+        <h2 className="text-lg font-semibold text-foreground">{t.billing.onboarding.compareTitle}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t.billing.onboarding.compareDescription}</p>
+      </div>}
       {payload.annual.enabled && (
         <div className="flex gap-2" role="group" aria-label={t.billing.pricing.billingInterval}>
           {(["monthly", "annual"] as const).map((value) => (
@@ -183,6 +104,7 @@ export function CloudPlanPicker({ currentPlan, subscription, billingEnabled = fa
       purchasesDisabled={!canPurchase}
       interval={interval}
     />
+      {!preserveProject && <CloudUsageGuide collapsible />}
     </div>
   );
 }
