@@ -16,7 +16,7 @@
  * cannot serve both, and the old one installed nothing on whichever it guessed against.
  */
 
-import { answered, refused, shellQuote, type Answer } from "@repo/core";
+import { answered, refused, shellQuote, IPTABLES_PROBES, type Answer } from "@repo/core";
 
 import type { EnvironmentProfile } from "../system/environment";
 import { envOps, hostRefusal, opScript, type EnvOps, type Op } from "../system/environment-ops";
@@ -85,7 +85,7 @@ const CHECKS = {
   },
   iptables: {
     label: "iptables",
-    versionCommand: "iptables --version",
+    versionCommand: IPTABLES_PROBES.version,
     parseVersion: (output: string) => output.match(/iptables v([0-9.]+)/)?.[1] ?? output.trim(),
     missingMessage: "iptables is required to enforce private connection policies on this host",
     installable: true,
@@ -504,7 +504,7 @@ const RECIPES: Record<InstallableTool, ToolRecipe> = {
   },
 
   iptables: {
-    verify: "iptables --version",
+    verify: IPTABLES_PROBES.version,
     steps: (ops) =>
       asRoot(
         ops.pkgInstallVariants(

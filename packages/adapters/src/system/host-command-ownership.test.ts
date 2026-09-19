@@ -112,7 +112,9 @@ const RULES: readonly OwnershipRule[] = [
   },
   {
     what: "a firewall",
-    pattern: /\b(?:ufw|firewall-cmd|nft|iptables|ip6tables)[ \t]+[\w$-]/,
+    // Match command flags/subcommands, not version output or user-facing prose.
+    pattern:
+      /\b(?:ufw|firewall-cmd|nft|iptables|ip6tables)[ \t]+(?:[$-]|(?:allow|deny|reject|limit|delete|enable|disable|reset|reload|status|show|app|route|logging|default|insert|prepend|add|create|destroy|list|flush|replace|rename|monitor|export|import|describe)\b)/,
     owners: [
       // The rules themselves, so the CLI, the API and the dashboard render one syntax:
       // `envOps` runs these steps, nobody re-spells them.
@@ -261,6 +263,31 @@ describe("the comment stripper", () => {
 
   it("leaves a url alone", () => {
     expect(code('const u = "https://example.com/x"; // note\n')).toContain("https://example.com/x");
+  });
+});
+
+describe("the firewall command matcher", () => {
+  const pattern = rule("a firewall").pattern;
+
+  it.each([
+    "iptables --version",
+    "iptables -m conntrack --help",
+    "ip6tables -I INPUT -j ACCEPT",
+    "ufw allow 22/tcp",
+    "firewall-cmd --reload",
+    "nft list ruleset",
+    "nft flush ruleset",
+    "iptables ${flags}",
+  ])("keeps command ownership enforced for %s", (command) => {
+    expect(command).toMatch(pattern);
+  });
+
+  it.each([
+    "iptables v1.8.11 (nf_tables)",
+    "iptables is required to enforce private connection policies on this host",
+    "# Installing iptables may materialize empty ACCEPT tables.",
+  ])("does not mistake prose or version output for a command: %s", (text) => {
+    expect(text).not.toMatch(pattern);
   });
 });
 

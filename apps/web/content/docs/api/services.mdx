@@ -376,6 +376,7 @@ organization. List the project's services with `GET /api/projects/:id/services` 
 | Read service environment variables with masked secrets. | `services.listEnvVars(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/env`<br />`project:service:read` |
 | Apply service environment variable changes. | `services.setEnvVars(parentId, id, input)` | `PUT /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |
 | Reveal authorized service environment values. | `services.revealEnv(parentId, id, input)` | `POST /api/projects/:id/services/:serviceId/env-reveal`<br />`project:service:write` |
+| Apply saved runtime environment by replacing the service container using its current image, without a build. | `services.applyEnvironment(parentId, id)` | `POST /api/projects/:id/services/:serviceId/apply-env`<br />`project:service:write` |
 | Read persistent-volume sizes for the service. | `services.volumeSizes(parentId, id)` | `GET /api/projects/:id/services/:serviceId/volume-sizes`<br />`project:service:read` |
 | Start the service runtime. | `services.start(parentId, id)` | `POST /api/projects/:id/services/:serviceId/start`<br />`project:service:write` |
 | Stop the service runtime. | `services.stop(parentId, id)` | `POST /api/projects/:id/services/:serviceId/stop`<br />`project:service:write` |

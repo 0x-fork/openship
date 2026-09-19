@@ -106,7 +106,9 @@ describe("independent network migration", () => {
       ["verification", "native", "success", '{"hosts":[],"peers":[],"stage":"complete"}', "user"],
     );
 
-    await client.exec(readFileSync(`${directory}/0139_independent_networks.sql`, "utf8"));
+    // Exercise the upgrade through the current schema before using current repos.
+    for (const migration of journal.entries.filter((entry) => entry.idx >= 139))
+      await client.exec(readFileSync(`${directory}/${migration.tag}.sql`, "utf8"));
     const networks = createServerClusterRepo(db);
     const clusters = createComputeClusterRepo(db);
     expect((await clusters.list("org")).map((cluster) => cluster.id).sort()).toEqual([

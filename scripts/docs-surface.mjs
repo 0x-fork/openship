@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { moduleHttpSurface } from "./docs-http.mjs";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const docsDirectory = join(root, "apps/web/content/docs");
@@ -130,14 +131,6 @@ export async function cliSurface() {
 export function httpSurface() {
   const routes = [];
   const literal = (node) => (node && ts.isStringLiteralLike(node) ? node.text : undefined);
-  const property = (object, name) =>
-    object && ts.isObjectLiteralExpression(object)
-      ? object.properties.find(
-          (p) =>
-            ts.isPropertyAssignment(p) &&
-            (ts.isIdentifier(p.name) ? p.name.text : literal(p.name)) === name,
-        )?.initializer
-      : undefined;
   const visit = (node, fn) => {
     fn(node);
     ts.forEachChild(node, (child) => visit(child, fn));
@@ -217,77 +210,7 @@ export function httpSurface() {
   )) {
     const text = readFileSync(file, "utf8");
     if (!text.includes("secureRouter") && !text.includes("new Hono")) continue;
-    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-    const routers = new Map();
-    visit(source, (node) => {
-      if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || !node.initializer)
-        return;
-      if (
-        ts.isNewExpression(node.initializer) &&
-        node.initializer.expression.getText(source) === "Hono" &&
-        mounts.has(node.name.text)
-      ) {
-        const basePath = mounts.get(node.name.text);
-        routers.set(node.name.text, { basePath, module: basePath.split("/")[2], raw: true });
-        return;
-      }
-      if (!ts.isCallExpression(node.initializer)) return;
-      if (node.initializer.expression.getText(source) !== "secureRouter") return;
-      const options = node.initializer.arguments[1];
-      const basePath = literal(property(options, "basePath"));
-      const module = literal(property(options, "module"));
-      if (!basePath || !module)
-        throw new Error(`Missing literal route metadata in ${relative(root, file)}`);
-      routers.set(node.name.text, {
-        basePath,
-        module,
-        localOnly: property(options, "localOnly")?.kind === ts.SyntaxKind.TrueKeyword,
-      });
-    });
-    visit(source, (node) => {
-      if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return;
-      const router = routers.get(node.expression.expression.getText(source));
-      if (!router) return;
-      const operation = node.expression.name.text;
-      const isPublic = operation === "public";
-      const isOn = operation === "on";
-      const methods =
-        isOn && ts.isArrayLiteralExpression(node.arguments[0])
-          ? node.arguments[0].elements.map(literal)
-          : [isPublic || isOn ? literal(node.arguments[0]) : operation];
-      if (
-        !methods.every((method) =>
-          ["get", "post", "patch", "put", "delete", "head", "options", "all"].includes(
-            method?.toLowerCase(),
-          ),
-        )
-      )
-        return;
-      const path = literal(node.arguments[isPublic || isOn ? 1 : 0]);
-      if (path === undefined) throw new Error(`Unresolved route path in ${relative(root, file)}`);
-      const spec = node.arguments[isPublic ? 2 : 1];
-      const tag = literal(property(spec, "tag"));
-      const internal = node.arguments.some(
-        (argument) => argument.getText(source) === "internalAuth",
-      );
-      for (const method of methods)
-        routes.push({
-          method: method.toUpperCase(),
-          path: (router.basePath + (path === "/" ? "" : path)).replace(/\/$/, ""),
-          module: router.module,
-          access: internal
-            ? "Internal operator"
-            : (tag ??
-              (router.module === "health"
-                ? "Public"
-                : router.module === "images"
-                  ? "Authenticated"
-                  : "Handler authentication")),
-          localOnly:
-            router.localOnly || property(spec, "localOnly")?.kind === ts.SyntaxKind.TrueKeyword,
-          source: relative(root, file),
-        });
-    });
+    routes.push(...moduleHttpSurface(relative(root, file), text, mounts));
   }
   return routes.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
 }
