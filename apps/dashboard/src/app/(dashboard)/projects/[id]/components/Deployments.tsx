@@ -7,6 +7,7 @@ import { deployApi, projectsApi, isAbortError } from "@/lib/api";
 import type { PendingAction } from "@/lib/api/projects";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { useModal } from "@/context/ModalContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useRouter } from "next/navigation";
@@ -30,6 +31,7 @@ export const Deployments = () => {
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
 
@@ -147,6 +149,10 @@ export const Deployments = () => {
         const res = await deployApi.trigger(body);
         openTriggeredBuild(router, res, projectData.id);
       } catch (error) {
+        if (showCloudPricing(error)) {
+          setIsRedeploying(false);
+          return;
+        }
         // A timeout almost certainly means the server started the deploy but was
         // slow to return the id — show the deployments list so it's visible rather
         // than stranding the user on an error.
@@ -170,7 +176,7 @@ export const Deployments = () => {
         setIsRedeploying(false); // success navigates away; only clear on failure
       }
     },
-    [projectData?.id, router, showToast, t],
+    [projectData?.id, router, showToast, showCloudPricing, t],
   );
 
   const handleRedeploy = async () => {

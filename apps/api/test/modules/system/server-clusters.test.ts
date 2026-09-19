@@ -77,6 +77,7 @@ vi.mock("@repo/adapters", async (importOriginal) => ({
 import {
   serverClusterCollection as operations,
   serverClusterResources,
+  verifyClusterNetwork,
 } from "@repo/platform/engine/modules/system/server-cluster.operations";
 import { withServerInventoryLock } from "@repo/platform/engine/lib/server-inventory-lock";
 const ctx = { organizationId: "org-a", userId: "user-a", role: "owner" } as ExecutionContext;
@@ -173,6 +174,91 @@ beforeEach(() => {
 });
 
 describe("infrastructure ownership and network verification", () => {
+  it("stops verification before host work when shutdown happens while opening SSH", async () => {
+    const controller = new AbortController();
+    h.withExecutor.mockImplementation(async (id, fn) => {
+      controller.abort();
+      return fn({ id });
+    });
+    const cluster = storedCluster();
+    await verifyClusterNetwork(
+      ctx,
+      {
+        ...cluster,
+        members: cluster.members.map((member) => ({
+          ...member,
+          interfaceName: undefined,
+          networkRef: undefined,
+        })),
+      },
+      run() as Parameters<typeof verifyClusterNetwork>[2],
+      undefined,
+      controller.signal,
+    );
+    expect(h.inspect).not.toHaveBeenCalled();
+    expect(h.listen).not.toHaveBeenCalled();
+    expect(h.check).not.toHaveBeenCalled();
+  });
+  it("retains legacy request hashes while presenting a resolved native network source", async () => {
+    const result = await operations.createCluster(ctx, clusterInputFixture());
+    expect(h.create).toHaveBeenCalledWith(
+      "org-a",
+      expect.objectContaining({
+        network: { mode: "native", cidrs: ["10.20.0.0/24"], mtu: 1400, probePort: 51821 },
+      }),
+      "request-1234567890",
+      "a9d5df2036844b56d6bfd42dd946d55fd2e5908a432162f5b0a4c47806f06ee2",
+    );
+    expect(result.network).toMatchObject({ source: { providerId: "custom" } });
+  });
+  it("normalizes an explicit network source without rewriting its member metadata", async () => {
+    const input = clusterInputFixture();
+    input.network.source = { providerId: "hetzner-dedicated", networkRef: " vswitch-a " };
+    await operations.createCluster(ctx, input);
+    expect(h.create.mock.calls[0]![1]).toMatchObject({
+      network: { source: { providerId: "hetzner-dedicated", networkRef: "vswitch-a" } },
+      members: input.members,
+    });
+    input.network.source.providerId = "aws";
+    await expect(operations.createCluster(ctx, input)).rejects.toMatchObject({
+      code: "INVALID_CLUSTER_CONFIG",
+    });
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.withExecutor).not.toHaveBeenCalled();
+  });
+  it("verifies the native network provider's interface constraints when member metadata is unknown", async () => {
+    const cluster = storedCluster();
+    if (cluster.network.mode !== "native") throw new Error("Expected native fixture");
+    cluster.network = {
+      ...cluster.network,
+      mode: "native",
+      source: { providerId: "hetzner-dedicated" },
+    };
+    cluster.members.forEach((member) => {
+      member.providerId = "custom";
+    });
+    h.get.mockResolvedValue(cluster);
+    const inspect = h.inspect.getMockImplementation()!;
+    h.inspect.mockImplementation(async (...args) =>
+      (await inspect(...args)).map((nic: object) => ({ ...nic, mtu: 1500 })),
+    );
+    await operations.verifyCluster(ctx, { clusterId: "cluster-a", revision: 1 });
+    await h.work[0]!();
+    expect(h.listen).not.toHaveBeenCalled();
+    expect(h.finish).toHaveBeenCalledWith(
+      "run-a",
+      expect.objectContaining({
+        hosts: expect.arrayContaining([
+          expect.objectContaining({
+            ok: false,
+            message: expect.stringContaining("Robot vSwitch interface"),
+          }),
+        ]),
+      }),
+      false,
+      expect.any(String),
+    );
+  });
   it("measures only an explicitly selected pair after reachability, sequentially in both directions", async () => {
     let active = 0;
     const measure = h.throughput.getMockImplementation()!;

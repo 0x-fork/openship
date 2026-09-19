@@ -2,7 +2,7 @@
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClusterCapabilities, ServerCluster } from "@repo/contracts";
+import type { ClusterCapabilities, ServerCluster, ComputeCluster } from "@repo/contracts";
 import type { ManagedNetworkPreparation, ManagedNetworkPreparationSummary } from "@repo/core";
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
@@ -12,9 +12,11 @@ import {
   managedPreparationFixture,
   managedPreparationSummaryFixture,
 } from "../../../../../../packages/contracts/test/managed-network-fixtures";
+import { serverClusterFixture } from "../../../../../../packages/contracts/test/server-cluster-fixtures";
 
 type OverviewSnapshot = {
-  clusters: ServerCluster[];
+  networks: ServerCluster[];
+  computeClusters: ComputeCluster[];
   preparations: ManagedNetworkPreparationSummary[];
 };
 
@@ -28,7 +30,7 @@ const h = vi.hoisted(() => ({
   discardPreparation: vi.fn(),
   subscribe: vi.fn(),
   reconnect: vi.fn(),
-  overview: { clusters: [], preparations: [] } as OverviewSnapshot,
+  overview: { networks: [], preparations: [], computeClusters: [] } as OverviewSnapshot,
   receive: null as ((snapshot: OverviewSnapshot) => void) | null,
 }));
 vi.mock("next/navigation", () => ({
@@ -39,8 +41,8 @@ vi.mock("@/lib/api", () => ({
   systemApi: { listServers: h.servers },
   getApiErrorMessage: (error: Error) => error.message,
 }));
-vi.mock("@/lib/api/server-clusters", () => ({
-  serverClustersApi: {
+vi.mock("@/lib/api/private-networks", () => ({
+  privateNetworksApi: {
     capabilities: h.capabilities,
     list: h.clusters,
     discardPreparation: h.discardPreparation,
@@ -77,7 +79,8 @@ const capabilities: ClusterCapabilities = {
   modes: ["native"],
   providers: [],
 };
-const c = baseDictionary.servers.clusters;
+const c = baseDictionary.servers.networks;
+const pools = baseDictionary.servers.clusters;
 let root: Root;
 let host: HTMLDivElement;
 
@@ -88,7 +91,7 @@ beforeEach(() => {
   h.servers.mockResolvedValue([]);
   h.capabilities.mockResolvedValue(capabilities);
   h.clusters.mockResolvedValue([]);
-  h.overview = { clusters: [], preparations: [] };
+  h.overview = { networks: [], preparations: [], computeClusters: [] };
   h.receive = null;
   h.discardPreparation.mockResolvedValue({
     ...managedPreparationFixture(),
@@ -134,6 +137,51 @@ async function click(label: string, scope: ParentNode = host) {
 }
 
 describe("server cluster navigation", () => {
+  it("shows separate groups for networks at the same provider and updates them through the shared stream", async () => {
+    const first = serverClusterFixture();
+    if (first.network.mode !== "native") throw new Error("Expected native fixture");
+    first.network = {
+      ...first.network,
+      mode: "native",
+      source: { providerId: "aws", networkRef: "vpc-a" },
+    };
+    const second: ServerCluster = {
+      ...first,
+      id: "cluster-b",
+      name: "Analytics",
+      network: {
+        ...first.network,
+        id: "network-b",
+        source: { providerId: "aws", networkRef: "vpc-b" },
+      },
+    };
+    h.search = "tab=networking";
+    h.overview = { networks: [first, second], preparations: [], computeClusters: [] };
+    await render();
+    expect(
+      host.querySelector('a[href="/servers/networks/cluster-a?tab=network&from=networking"]'),
+    ).not.toBeNull();
+    expect(
+      host.querySelector('a[href="/servers/networks/cluster-b?tab=network&from=networking"]'),
+    ).not.toBeNull();
+    expect(host.textContent).toContain("vpc-a");
+    expect(host.textContent).toContain("vpc-b");
+    expect(host.querySelectorAll(".react-flow__edge")).toHaveLength(0);
+    await act(async () =>
+      h.receive?.({
+        networks: [{ ...second, name: "Analytics renamed" }],
+        preparations: [],
+        computeClusters: [],
+      }),
+    );
+    expect(
+      host.querySelector('a[href="/servers/networks/cluster-a?tab=network&from=networking"]'),
+    ).toBeNull();
+    expect(host.textContent).toContain("Analytics renamed");
+    expect(h.subscribe).toHaveBeenCalledTimes(1);
+    expect(h.clusters).not.toHaveBeenCalled();
+    expect(h.reconnect).not.toHaveBeenCalled();
+  });
   it.each(["desktop", "docker"])(
     "opens both infrastructure views from /servers on %s",
     async (mode) => {
@@ -144,14 +192,14 @@ describe("server cluster navigation", () => {
       expect(h.replace).toHaveBeenLastCalledWith("/servers?tab=cluster");
       h.search = "tab=cluster";
       await render(mode);
-      expect(host.querySelector("h2")?.textContent).toBe(c.listTitle);
-      expect(host.textContent).toContain(c.createCluster);
-      expect(host.textContent).toContain(c.listDescription);
+      expect(host.querySelector("h2")?.textContent).toBe(pools.listTitle);
+      expect(host.textContent).toContain(pools.createCluster);
+      expect(host.textContent).toContain(pools.listDescription);
       await act(async () => tab("networking")!.click());
       expect(h.replace).toHaveBeenLastCalledWith("/servers?tab=networking");
       h.search = "tab=networking";
       await render(mode);
-      expect(host.querySelector("h2")?.textContent).toBe(c.networksTitle);
+      expect(host.querySelector("h2")?.textContent).toBe(c.networksEmptyTitle);
     },
   );
 
@@ -167,7 +215,7 @@ describe("server cluster navigation", () => {
     await render();
     expect(tab("cluster")).not.toBeNull();
     expect(tab("networking")).not.toBeNull();
-    expect(host.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(c.listTitle);
+    expect(host.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(pools.listTitle);
     expect(h.clusters).not.toHaveBeenCalled();
     expect(h.subscribe).not.toHaveBeenCalled();
 
@@ -179,7 +227,7 @@ describe("server cluster navigation", () => {
     await act(async () => alert!.querySelector("button")!.click());
     expect(h.capabilities).toHaveBeenCalledTimes(2);
     expect(host.querySelector('[role="alert"]')).toBeNull();
-    expect(host.querySelector("h2")?.textContent).toBe(c.listTitle);
+    expect(host.querySelector("h2")?.textContent).toBe(pools.listTitle);
   });
 
   it("explains unavailable capabilities inside the selected tab", async () => {
@@ -193,7 +241,7 @@ describe("server cluster navigation", () => {
     await render();
     expect(tab("networking")).not.toBeNull();
     expect(host.querySelector('[role="status"]')?.textContent).toBe("Fleet access is required");
-    expect(host.textContent).not.toContain(c.createCluster);
+    expect(host.textContent).not.toContain(pools.createCluster);
     expect(h.clusters).not.toHaveBeenCalled();
     expect(h.subscribe).not.toHaveBeenCalled();
   });
@@ -211,7 +259,7 @@ describe("server cluster navigation", () => {
   it("refreshes the shared overview from the header across both tabs", async () => {
     h.search = "tab=cluster";
     await render();
-    expect(h.subscribe).toHaveBeenCalledExactlyOnceWith("system/clusters/stream");
+    expect(h.subscribe).toHaveBeenCalledExactlyOnceWith("system/networks/stream");
     const refresh = host.querySelector<HTMLButtonElement>(`button[aria-label="${c.refresh}"]`)!;
     expect(refresh).not.toBeNull();
     await act(async () => refresh.click());
@@ -235,7 +283,7 @@ describe("server cluster navigation", () => {
   it("confirms discarding a ready card once and keeps it removed through a stale snapshot", async () => {
     const setup = { ...managedPreparationSummaryFixture(), status: "ready" as const };
     h.overview.preparations = [setup];
-    h.search = "tab=cluster";
+    h.search = "tab=networking";
     let finish!: (preparation: ManagedNetworkPreparation) => void;
     h.discardPreparation.mockImplementationOnce(
       () =>
@@ -284,7 +332,7 @@ describe("server cluster navigation", () => {
   it("keeps a refused discard visible and retries with the refreshed preparation sequence", async () => {
     const setup = { ...managedPreparationSummaryFixture(), status: "ready" as const };
     h.overview.preparations = [setup];
-    h.search = "tab=cluster";
+    h.search = "tab=networking";
     h.discardPreparation.mockRejectedValueOnce(
       new Error("Preparation changed. Reload saved progress."),
     );
@@ -296,7 +344,9 @@ describe("server cluster navigation", () => {
     expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("Preparation changed");
     expect(host.querySelector("article")).not.toBeNull();
     expect(h.reconnect).toHaveBeenCalledTimes(1);
-    await act(async () => h.receive!({ clusters: [], preparations: [{ ...setup, sequence: 8 }] }));
+    await act(async () =>
+      h.receive!({ networks: [], preparations: [{ ...setup, sequence: 8 }], computeClusters: [] }),
+    );
     dialog = document.querySelector('[role="dialog"]')!;
     await click(c.managed.discardSetup, dialog);
     expect(h.discardPreparation).toHaveBeenLastCalledWith({ preparationId: setup.id, sequence: 8 });
@@ -311,7 +361,7 @@ describe("server cluster navigation", () => {
         status: state === "read-only" ? ("ready" as const) : ("preparing" as const),
       };
       h.overview.preparations = [setup];
-      h.search = "tab=cluster";
+      h.search = "tab=networking";
       if (state === "read-only")
         h.capabilities.mockResolvedValue({ ...capabilities, canManage: false });
       await render();

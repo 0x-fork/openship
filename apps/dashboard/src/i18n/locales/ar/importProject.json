@@ -124,6 +124,7 @@
     "noneSet": "لم يتم تعيين أي منها",
     "pasteEnv": "لصق .env",
     "uploadEnv": "رفع .env",
+    "downloadEnv": "تنزيل .env",
     "edit": "تعديل",
     "cancel": "إلغاء",
     "saving": "جارٍ الحفظ...",
@@ -145,6 +146,7 @@
       "interpolated": "مُستكمَل"
     },
     "toast": {
+      "downloadFailed": "تعذّر تنزيل متغيرات البيئة.",
       "title": "متغيرات البيئة",
       "added": "{count} مُضاف",
       "updated": "{count} مُحدَّث",

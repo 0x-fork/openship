@@ -60,8 +60,25 @@
       "reconnect": "Tekrar Bağlan"
     },
     "notEnabled": {
-      "title": "Bu organizasyon için faturalandırma etkin değil",
-      "description": "Faturalandırma yapılandırılmış ancak bu organizasyon için aktif değil. Etkinleştirmek için yöneticinizle iletişime geçin."
+      "title": "Cloud satın alımları henüz kullanılamıyor",
+      "description": "Openship abonelikleri ve kredi satın alımlarını henüz etkinleştirmedi. Lütfen daha sonra tekrar deneyin."
+    },
+    "notConfigured": {
+      "title": "Cloud faturalandırma kurulumu tamamlanmadı",
+      "description": "Openship’in faturalandırma kurulumunu tamamlaması gerekiyor. Lütfen Openship desteğiyle iletişime geçin."
+    },
+    "forbidden": {
+      "title": "Faturalandırmaya erişiminiz yok",
+      "description": "Kuruluş sahibinizden size faturalandırma erişimi vermesini isteyin."
+    },
+    "signInRequired": {
+      "title": "Faturalandırmayı görüntülemek için giriş yapın",
+      "description": "Oturumunuz doğrulanamadı. Devam etmek için tekrar giriş yapın.",
+      "signIn": "Giriş yap"
+    },
+    "loadFailed": {
+      "title": "Faturalandırma yüklenemedi",
+      "description": "Faturalandırma geçici olarak kullanılamıyor. Tekrar deneyin. Sorun devam ederse Openship desteğiyle iletişime geçin."
     }
   },
   "plansRoute": {
@@ -143,11 +160,11 @@
     },
     "chart": {
       "title": "Zaman içindeki kullanım",
-      "subtitle": "Her {unit} için ölçülen birimler yığılmış olarak gösterilir."
+      "subtitle": "{unit} başına Cloud kredisi."
     },
     "breakdown": {
       "title": "Kaynak dağılımı",
-      "subtitle": "Krediler, seçilen aralıktaki ölçülmüş kaynak kullanımına orantılı olarak dağıtılır.",
+      "subtitle": "Seçilen tarihlerdeki gerçek kaynak kullanımı. Toplam Cloud kredileri yukarıda gösterilir.",
       "resource": "Kaynak",
       "units": "Birimler",
       "credits": "Krediler",
@@ -165,11 +182,11 @@
         "units": "GB-saat"
       },
       "disk": {
-        "label": "Disk G/Ç",
+        "label": "Disk etkinliği",
         "units": "GB"
       },
       "network": {
-        "label": "Ağ",
+        "label": "Veri aktarımı",
         "units": "GB"
       }
     },
@@ -208,7 +225,8 @@
       "incomplete": "Tamamlanmamış",
       "incomplete_expired": "Süresi Doldu",
       "unpaid": "Ödenmemiş",
-      "paused": "Duraklatıldı"
+      "paused": "Duraklatıldı",
+      "credit_exhausted": "Cloud duraklatıldı"
     },
     "includedTitle": "Neler dahil",
     "perYear": "${price}/yıl"
@@ -241,5 +259,75 @@
     "active": "Cloud planınız etkin.",
     "pending": "Ödemeniz hâlâ işleniyor olabilir. Planınızı ve bakiyenizi kontrol etmek için bu sayfayı yenileyin. Tamamlanmış bir ödeme görünmüyorsa destekle iletişime geçin.",
     "support": "Destekle iletişime geç"
+  },
+  "deployGate": {
+    "title": "Dağıtım için bir plan seçin",
+    "description": "Projelerinizi ücretsiz yapılandırın. Derlemek ve çalıştırmak için ücretli bir Cloud planı gerekir.",
+    "preserved": "Proje ayarlarınız burada korunur. Ödeme yeni bir sekmede açılır; devam etmek için planınızı etkinleştirdikten sonra buraya dönün.",
+    "close": "Projeye dön",
+    "checkPlan": "Planı kontrol et",
+    "loading": "Cloud planınız yükleniyor…",
+    "loadError": "Cloud planınız yüklenemedi. Tekrar deneyin.",
+    "ownerRequired": "Cloud planını seçmesini veya yönetmesini çalışma alanınızın sahibinden isteyin.",
+    "readyTitle": "Projenize dönün",
+    "ready": "Cloud planınız güncellendi. Bu pencereyi kapatıp tekrar deneyin.",
+    "pending": "Planınız henüz değişmedi. Ödemeyi tamamlayıp tekrar kontrol edin.",
+    "blockedTitle": "Cloud planınız için işlem gerekiyor",
+    "creditsTitle": "Cloud kredileriniz tükendi",
+    "creditsDescription": "Devam etmek için kredi ekleyin veya daha fazla kredi içeren bir plan seçin. Kredi yüklemek derleme süresi ya da hizmet sınırlarını artırmaz.",
+    "paymentDescription": "Dağıtıma devam etmek için ödeme veya abonelik bilgilerinizi güncelleyin.",
+    "pausedDescription": "Bu çalışma alanında Cloud dağıtımı duraklatıldı. Erişimi yeniden açmak için destekle iletişime geçin.",
+    "upgradeTitle": "Bu proje daha fazla kapasite gerektiriyor",
+    "upgradeDescription": "Yeterli kapasitesi olan bir plan seçin veya projenizi düzenleyip tekrar deneyin.",
+    "manageBilling": "Faturalandırmayı yönet",
+    "topups": "Kredi ekle",
+    "checkoutOpened": "Ödeme ayrı bir sekmede hazır. Açılmadıysa aşağıdaki bağlantıyı kullanın.",
+    "continueCheckout": "Ödemeye devam et",
+    "reasons": {
+      "static-only": "Planınız bu uygulama türünü içermiyor. Dağıtmak için destekleyen bir plan seçin.",
+      "build-minutes-exhausted": "Aylık derleme süresi sınırına ulaştınız. Daha büyük bir plan seçin veya derleme kotanızın yenilenmesini bekleyin.",
+      "free-subdomain-limit": "Planınızdaki tüm Cloud alt alan adlarını kullandınız. Daha büyük bir plan seçin veya kullanılmayan bir alt alan adını kaldırın.",
+      "resource-tier": "Bu proje, planınızın izin verdiğinden daha fazla CPU veya bellek gerektiriyor. Daha büyük bir plan seçin veya proje ayarlarında kaynakları azaltın.",
+      "running-services": "Çalışan hizmet sınırına ulaştınız. Daha büyük bir plan seçin veya artık gerek duymadığınız bir hizmeti durdurun.",
+      "project-limit": "Proje sınırına ulaştınız. Daha büyük bir plan seçin veya artık gerek duymadığınız bir projeyi silin."
+    }
+  },
+  "resourcesGuide": {
+    "title": "Cloud kullanımı nasıl hesaplanır?",
+    "credits": "Cloud kredileri",
+    "creditsHint": "Derlemeler ve çalışan uygulamalar CPU, bellek, disk etkinliği ve veri aktarımı için kredi tüketir. Daha büyük iş yükleri kredileri daha hızlı tüketir.",
+    "creditsPerCycle": "Fatura dönemi başına {amount} kredi",
+    "buildTime": "Derleme süresi",
+    "buildMinutes": "Ayda {amount} dk",
+    "buildHint": "Kodunuzu derlemek için harcanan süredir. 5 dakikalık derleme, kotadan 5 derleme dakikası kullanır. Derleme kaynakları ayrıca Cloud kredisi tüketir.",
+    "apps": "Çalışan hizmetler",
+    "appsHint": "Aynı anda çalışan uygulamalar, veritabanları ve arka plan görevleri. Çalışan her Compose hizmeti bu sınıra dahil edilir.",
+    "machine": "Hizmet başına CPU ve bellek",
+    "machineHint": "Bir hizmet için seçilebilen en yüksek CPU ve bellek boyutudur. Bu bir sınırdır, ortak bakiye değildir.",
+    "projects": "Projeler",
+    "projectsHint": "Taslaklar dahil, çalışma alanınızda kayıtlı projeler.",
+    "routesHint": "Uygulamalarınızın herkese açık Cloud adresleri.",
+    "unlimited": "Belirlenmiş sınır yok",
+    "notIncluded": "Dahil değil",
+    "noPlan": "Cloud planı yok",
+    "setupOnly": "Proje yapılandırması ücretsizdir",
+    "setupHint": "Cloud derlemeleri ve çalışan uygulamalar ücretli plan gerektirir. Ücretsiz Cloud işlem kotası dahil değildir.",
+    "includedTitle": "Dahil olan kullanım ve sınırlar",
+    "limitsHint": "Plan sınırları ve krediler birbirinden ayrıdır. Dağıtım için hem boş kapasite hem de kredi gerekir.",
+    "balanceRule": "Krediler tükendiğinde Cloud iş yükleri duraklatılır. Kredi yüklemek bakiyenizi yeniler; daha büyük bir plan kaynak sınırlarını artırır.",
+    "reset": "Derleme kotası {date} tarihinde yenilenir",
+    "cpuHint": "Zaman içindeki işlem gücü kullanımıdır. 1 vCPU’nun 1 saat çalışması 1 vCPU-saat eder.",
+    "memoryHint": "Zaman içindeki bellek kullanımıdır. 1 GB belleğin 1 saat kullanılması 1 GB-saat eder.",
+    "diskHint": "Uygulamalarınızın okuduğu ve yazdığı verilerdir. Depolanan veri boyutunu değil, disk etkinliğini gösterir.",
+    "networkHint": "Uygulamalarınızın gönderdiği ve aldığı veriler.",
+    "usageMeaning": "Bu değer nasıl okunur?",
+    "selectedRange": "Bu tarih aralığında kullanılan krediler",
+    "usageHint": "Seçilen tarihlerdeki gerçek kaynak kullanımı. Toplam Cloud kredileri yukarıda gösterilir.",
+    "creditsChart": "{unit} başına Cloud kredisi.",
+    "allProjects": "Tüm projeler",
+    "from": "Başlangıç (UTC)",
+    "to": "Bitiş, gün dahil (UTC)",
+    "invalidRange": "Başlangıç tarihiyle aynı veya daha sonraki bir bitiş tarihi seçin.",
+    "moreFeatures": "Diğer özellikler"
   }
 }

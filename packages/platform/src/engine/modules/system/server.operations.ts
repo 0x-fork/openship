@@ -1,3 +1,4 @@
+import { networkCollection, computeClusterCollection, infrastructureResources } from "./infrastructure-resources.operations";
 /**
  * Shared server operations — retained CRUD, teardown, execution and audit.
  *
@@ -472,7 +473,7 @@ async function deleteServerUnderLock(ctx: ExecutionContext, id: string, input: N
   const destroyOnSource = input.destroyOnSource === true;
 
   if (await repos.serverCluster.membership(id)) {
-    return failServer({ error: "Remove this server from its cluster before deleting it.", code: "SERVER_IN_CLUSTER" }, 409);
+    return failServer({ error: "Detach this server in Networking before deleting it. Clear any cluster dependencies and finish pending network cleanup first.", code: "SERVER_IN_CLUSTER" }, 409);
   }
 
   // Same coalesce the fleet chip and the preview use, so the set torn down here is
@@ -690,8 +691,9 @@ function failServer(details: Record<string, unknown>, status: number): never {
 
 export const serverDependencies: ServerDependencies = {
   networks: networkSetupStreams,
-  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection, ...serverClusterCollection, ...managedNetworkCollection, ...networkPreparationCollection, ...networkSetupMemberCollection },
+  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection, ...serverClusterCollection, ...networkCollection, ...computeClusterCollection, ...managedNetworkCollection, ...networkPreparationCollection, ...networkSetupMemberCollection },
   resources: {
+    ...infrastructureResources,
     get: getServer, reachability: probeReachability, update: updateServer,
     deletionPreview: serverDeletionPreview, remove: deleteServer, exec: execOnServer,
     ...serverMaintenanceResources,

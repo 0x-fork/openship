@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ServerCluster } from "@repo/contracts";
+import type { PrivateNetwork, ComputeCluster } from "@repo/contracts";
 import type { ManagedNetworkPreparation, ManagedNetworkPreparationSummary } from "@repo/core";
 import { useRunEvents } from "./useRunEvents";
 
 interface ClusterOverviewSnapshot {
-  clusters: ServerCluster[];
+  networks: PrivateNetwork[];
+  computeClusters: ComputeCluster[];
   preparations: ManagedNetworkPreparationSummary[];
 }
 
@@ -17,12 +18,17 @@ export function useServerClustersOverview(enabled: boolean) {
   // Discard is terminal. A snapshot already in flight must not restore its card.
   const discarded = useRef(new Set<string>());
   const stream = useRunEvents<ClusterOverviewSnapshot>(
-    enabled ? "system/clusters/stream" : null,
+    enabled ? "system/networks/stream" : null,
     (next) => {
-      if (!Array.isArray(next.clusters) || !Array.isArray(next.preparations))
-        throw new Error("Invalid cluster overview snapshot");
+      if (
+        !Array.isArray(next.networks) ||
+        !Array.isArray(next.computeClusters) ||
+        !Array.isArray(next.preparations)
+      )
+        throw new Error("Invalid infrastructure overview snapshot");
       setSnapshot({
-        clusters: next.clusters,
+        networks: next.networks,
+        computeClusters: next.computeClusters,
         preparations: next.preparations.filter((setup) => !discarded.current.has(setup.id)),
       });
       setRefreshing(false);
@@ -58,7 +64,8 @@ export function useServerClustersOverview(enabled: boolean) {
   }, []);
 
   return {
-    clusters: enabled ? (snapshot?.clusters ?? null) : null,
+    networks: enabled ? (snapshot?.networks ?? null) : null,
+    clusters: enabled ? (snapshot?.computeClusters ?? null) : null,
     preparations: enabled ? (snapshot?.preparations ?? []) : [],
     stream,
     refreshing,

@@ -419,6 +419,13 @@ export class CloudDockerRuntime extends DockerRuntime {
     await this.resumeWorkspace();
     return super.restart(containerId);
   }
+  override async applyEnvironment(...args: Parameters<DockerRuntime["applyEnvironment"]>) {
+    this.assertProject(args[2].projectId);
+    if (args[0] === this.workspaceId) throw new Error("A Docker workspace is not a service container");
+    await this.resumeWorkspace();
+    await this.ensureBridge();
+    return super.applyEnvironment(...args);
+  }
   override async pullImage(...args: Parameters<DockerRuntime["pullImage"]>) { await this.canSpend(); return super.pullImage(...args); }
   override async destroy(containerId: string) {
     if (containerId === this.workspaceId) throw new Error("Use project teardown to delete a shared Docker workspace");

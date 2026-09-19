@@ -1,7 +1,10 @@
 import { validWireGuardEndpoint } from "./managed-network";
 import { isInfrastructurePrivateIp } from "./infrastructure";
+import { networkTransportPeers, type NetworkAccessPolicy } from "./network-access";
 
-export type NetworkFirewallScope = { mode: "wireguard" } | { mode: "native"; probePort: number };
+export type NetworkFirewallScope =
+  | { mode: "wireguard"; access?: NetworkAccessPolicy }
+  | { mode: "native"; probePort: number };
 
 export interface NetworkFirewallMember {
   serverId: string;
@@ -52,15 +55,26 @@ export function networkFirewallRules(
   scope: NetworkFirewallScope = { mode: "wireguard" },
 ): { rules: NetworkFirewallRule[]; pendingServerIds: string[] } {
   const server = members.find((member) => member.serverId === serverId);
+  const peers =
+    scope.mode === "wireguard"
+      ? networkTransportPeers(members, serverId, scope.access)
+      : members.filter((member) => member.serverId !== serverId);
   const addresses = new Map(members.map((member) => [member.serverId, endpoint(member, scope)]));
-  const pendingServerIds = members
+  const pendingServerIds = (
+    peers.length
+      ? members.filter(
+          (member) =>
+            member.serverId === serverId || peers.some((peer) => peer.serverId === member.serverId),
+        )
+      : []
+  )
     .filter((member) => !addresses.get(member.serverId))
     .map((member) => member.serverId);
   if (!server) pendingServerIds.push(serverId);
   const rules: NetworkFirewallRule[] = [];
   const local = addresses.get(serverId);
   if (server && local) {
-    for (const peer of members) {
+    for (const peer of peers) {
       const remote = addresses.get(peer.serverId);
       if (peer.serverId === serverId || !remote) continue;
       const common = {

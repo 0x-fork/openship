@@ -38,6 +38,9 @@ export interface BillingState {
   overQuota: boolean;
   /** Build time this period in minutes (openship-derived; Oblien has no build meter). */
   buildTimeMinutes: number;
+  /** Build allowance resets monthly, even for an annual subscription. */
+  buildMinutesResetAt?: string;
+  maxServiceMachine?: { tier: string; cpuCores: number; memoryMb: number } | null;
   /**
    * Live resource capacity + consumption, sourced from Openship Cloud. Optional
    * and additive: the self-hosted billing proxy forwards it verbatim when the
@@ -98,8 +101,7 @@ export interface CapacityMeter {
 export interface BillingCapacity {
   /** Free *.opsh.io edge routes the org is using vs its allowed maximum. */
   routes?: CapacityMeter;
-  /** Concurrently running services (one Oblien workspace each) vs
-   *  `limits.runningServices` — the ceiling a customer actually feels. */
+  /** Concurrently running services, including services sharing a Docker workspace. */
   services?: CapacityMeter;
   /** Projects vs `limits.maxProjects`. Openship-enforced; Oblien has no project
    *  concept, so this ceiling exists only on our side. */

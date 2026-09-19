@@ -8,11 +8,9 @@
  * restart path had no answer at all — a `docker restart` reported success having
  * applied nothing, which is GH-615.
  *
- * Anchor: the ACTIVE deployment's `createdAt`. Any env var touched after that
- * deployment started is treated as not-yet-applied. Biases safe, and it clears
- * itself — a refresh deploy creates a new active deployment whose `createdAt`
- * post-dates the change, so the same var stops reading dirty without anyone
- * having to record what was applied.
+ * Anchor: the ACTIVE deployment's `createdAt`, advanced for one service by a
+ * successful runtime-only environment apply. Applying one service must not
+ * clear another service's pending project-level changes.
  *
  * Values are never read here, only `updatedAt` and the key NAME, so no
  * decryption is involved and a key is safe to name in an API response.
@@ -44,10 +42,19 @@ export class ServiceConfigStaleError extends OperationError {
 
 /** The cutoff every drift question is asked against, or null when there is
  *  nothing deployed to compare with (first deploy → forceAll handles it). */
-async function envDriftAnchor(project: Project): Promise<Date | null> {
+async function envDriftAnchors(project: Project) {
   if (!project.activeDeploymentId) return null;
   const active = await findActiveDeployment(project).catch(() => null);
-  return active?.createdAt ?? null;
+  if (!active?.createdAt) return null;
+  const applied = (active.meta as {
+    serviceEnvironmentApplied?: Record<string, { appliedAt?: string }>;
+  } | null)?.serviceEnvironmentApplied;
+  return (serviceId: string): Date => {
+    const cutoff = Date.parse(applied?.[serviceId]?.appliedAt ?? "");
+    return Number.isFinite(cutoff) && cutoff > active.createdAt.getTime()
+      ? new Date(cutoff)
+      : active.createdAt;
+  };
 }
 
 /**
@@ -60,8 +67,8 @@ export async function resolveEnvDirtyServiceIds(
   project: Project,
   environment: string,
 ): Promise<Set<string> | null> {
-  const anchor = await envDriftAnchor(project);
-  if (!anchor) return null;
+  const anchorFor = await envDriftAnchors(project);
+  if (!anchorFor) return null;
 
   const [meta, services] = await Promise.all([
     repos.project.listEnvVarChangeMeta(project.id, environment).catch(() => []),
@@ -69,16 +76,10 @@ export async function resolveEnvDirtyServiceIds(
   ]);
   const enabledIds = services.filter((s) => s.enabled).map((s) => s.id);
 
-  // A project-level (unscoped) env change touches every service.
-  if (meta.some((m) => m.serviceId === null && m.updatedAt > anchor)) {
-    return new Set(enabledIds);
-  }
-  const perService = new Set(
-    meta
-      .filter((m) => m.serviceId !== null && m.updatedAt > anchor)
-      .map((m) => m.serviceId as string),
-  );
-  return new Set(enabledIds.filter((id) => perService.has(id)));
+  return new Set(enabledIds.filter(id => {
+    const anchor = anchorFor(id);
+    return meta.some(m => (m.serviceId === null || m.serviceId === id) && m.updatedAt > anchor);
+  }));
 }
 
 /**
@@ -96,8 +97,9 @@ export async function resolveStaleEnvKeysForService(
   environment: string,
   serviceId: string,
 ): Promise<string[]> {
-  const anchor = await envDriftAnchor(project);
-  if (!anchor) return [];
+  const anchorFor = await envDriftAnchors(project);
+  if (!anchorFor) return [];
+  const anchor = anchorFor(serviceId);
 
   const meta = await repos.project.listEnvVarChangeMeta(project.id, environment).catch(() => []);
   const keys = meta

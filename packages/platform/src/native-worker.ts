@@ -75,6 +75,8 @@ try {
     return startPromise ??= (async () => {
       if (options.recovery === "exclusive") {
         // An exclusive PGlite lock proves the previous engine owner is gone.
+        const { recoverNetworkSetups } = await import("./engine/modules/system/network-setup-lifecycle");
+        await recoverNetworkSetups(true);
         await database.repos.backupRun.sweepStaleRuns("Native owner restarted while backup was in flight");
         await database.repos.backupRestore.sweepStaleRestores("Native owner restarted while restore was in flight");
         await database.repos.jobRun.failStaleRunning("Native owner restarted while job was in flight");

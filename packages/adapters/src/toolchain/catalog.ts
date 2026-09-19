@@ -83,6 +83,13 @@ const CHECKS = {
     missingMessage: "iproute2 is not installed",
     installable: true,
   },
+  iptables: {
+    label: "iptables",
+    versionCommand: "iptables --version",
+    parseVersion: (output: string) => output.match(/iptables v([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "iptables is required to enforce private connection policies on this host",
+    installable: true,
+  },
   "wireguard-tools": {
     label: "WireGuard tools",
     versionCommand: "wg --version",
@@ -490,6 +497,23 @@ const RECIPES: Record<InstallableTool, ToolRecipe> = {
             yum: answered(["wireguard-tools"]),
             apk: answered(["wireguard-tools"]),
             brew: refused("Managed WireGuard networking requires Linux. Choose a Linux server."),
+          },
+          { installRecommends: false },
+        ),
+      ),
+  },
+
+  iptables: {
+    verify: "iptables --version",
+    steps: (ops) =>
+      asRoot(
+        ops.pkgInstallVariants(
+          {
+            apt: answered(["iptables"]),
+            dnf: answered(["iptables"]),
+            yum: answered(["iptables"]),
+            apk: answered(["iptables"]),
+            brew: refused("Private connection policies require Linux."),
           },
           { installRecommends: false },
         ),

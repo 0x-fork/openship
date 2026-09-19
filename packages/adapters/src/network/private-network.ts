@@ -115,11 +115,12 @@ export const CHECK_PRIVATE_NETWORK = String.raw`
 import concurrent.futures, json, socket, sys, time
 c = json.loads(sys.argv[1])
 def check(peer):
-    r = {'sourceServerId': c['serverId'], 'targetServerId': peer['serverId'], 'tcp': False, 'udp': False, 'mtu': False, 'latencyMs': None, 'latencyKind': 'rtt', 'packetLossPercent': None, 'jitterMs': None, 'message': None}
+    r = {'sourceServerId': c['serverId'], 'targetServerId': peer['serverId'], 'tcp': False, 'udp': False, 'mtu': False, 'reachable': False, 'latencyMs': None, 'latencyKind': 'rtt', 'packetLossPercent': None, 'jitterMs': None, 'message': None}
     prefix = (peer['token'] + '|').encode()
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(2); s.bind((c['privateIp'], 0)); s.connect((peer['privateIp'], peer['port']))
+            r['reachable'] = True
             s.sendall(prefix + b'tcp\n')
             expected = prefix + b'tcp\n'
             received = b''
@@ -137,7 +138,8 @@ def check(peer):
                 packet = prefix + ('udp:' + str(sample)).encode()
                 started = time.monotonic()
                 s.send(packet)
-                if s.recv(9000) == packet: samples.append((time.monotonic() - started) * 1000)
+                received = s.recv(9000); r['reachable'] = True
+                if received == packet: samples.append((time.monotonic() - started) * 1000)
         except OSError: pass
     r['udp'] = len(samples) == c['latencySamples']
     r['packetLossPercent'] = round((c['latencySamples'] - len(samples)) * 100 / c['latencySamples'], 1)
@@ -150,7 +152,7 @@ def check(peer):
                 # Linux IP_MTU_DISCOVER=10 / IP_PMTUDISC_DO=2: prohibit fragmentation.
                 s.setsockopt(socket.IPPROTO_IP, 10, 2)
                 packet = prefix + b'm' * (c['mtu'] - 28 - len(prefix))
-                s.send(packet); r['mtu'] = s.recv(9000) == packet
+                s.send(packet); received = s.recv(9000); r['reachable'] = True; r['mtu'] = received == packet
     except OSError: pass
     problems = []
     if not r['tcp']: problems.append('TCP connection failed; check private routes and the verification port firewall rules.')
@@ -315,6 +317,8 @@ export const privateNetworkTools = {
           typeof p.tcp === "boolean" &&
           typeof p.udp === "boolean" &&
           typeof p.mtu === "boolean" &&
+          (p.reachable === undefined || typeof p.reachable === "boolean") &&
+          !(p.reachable === false && (p.tcp || p.udp || p.mtu)) &&
           (p.latencyMs === null ||
             (typeof p.latencyMs === "number" &&
               Number.isFinite(p.latencyMs) &&
@@ -338,6 +342,7 @@ export const privateNetworkTools = {
         tcp,
         udp,
         mtu,
+        reachable,
         latencyMs,
         latencyKind,
         packetLossPercent,
@@ -349,6 +354,7 @@ export const privateNetworkTools = {
         tcp,
         udp,
         mtu,
+        ...(reachable !== undefined ? { reachable } : {}),
         latencyMs,
         latencyKind,
         packetLossPercent,

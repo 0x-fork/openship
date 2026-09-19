@@ -176,6 +176,13 @@ export const ServiceResourceSchemas = {
     optionalInput: true,
     output: Type.Object({ success: Type.Literal(true), containerId: Type.String() }),
   },
+  applyEnvironment: {
+    action: "write",
+    output: Type.Object({
+      success: Type.Literal(true), containerId: Type.String(),
+      ip: Type.Optional(Type.String()), warning: Type.Optional(Type.String()),
+    }),
+  },
   runtimeLogs: {
     action: "read",
     input: RuntimeLogsInputSchema,

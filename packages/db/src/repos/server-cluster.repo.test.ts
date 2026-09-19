@@ -2,7 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { NativeClusterConfig } from "@repo/core";
 import {
@@ -65,6 +66,52 @@ describe("managed network journal and reservations", () => {
       publicKey: Buffer.alloc(32, index + 1).toString("base64"),
     }));
   }
+  it("persists a directed policy only after its allowed and denied paths are verified", async () => {
+    const config = managedPlanFixture(["s1", "s2"]).config;
+    config.network.access = { version: 1, rules: [{ sourceServerId: "s1", targetServerId: "s2" }] };
+    const operation = await plan(["s1", "s2"], { config });
+    await repo.claimOperation("org-a", operation.id, operation.planHash, "apply");
+    const report = successfulManagedReport(operation.plan);
+    await expect(
+      repo.finishOperation(
+        "org-a",
+        operation.id,
+        1,
+        "succeeded",
+        committed(operation),
+        report,
+        null,
+      ),
+    ).rejects.toThrow("connectivity report");
+    Object.assign(report.peers[1]!, {
+      tcp: false,
+      udp: false,
+      mtu: false,
+      reachable: false,
+      expectedAccess: "deny",
+      policyPassed: true,
+    });
+    await repo.finishOperation(
+      "org-a",
+      operation.id,
+      1,
+      "succeeded",
+      committed(operation),
+      report,
+      null,
+    );
+    const stored = await repo.get("org-a", operation.clusterId);
+    expect(stored.network.access).toEqual(config.network.access);
+    expect(stored.members).toHaveLength(2);
+    expect(stored.verification).toMatchObject({
+      status: "succeeded",
+      report: {
+        peers: expect.arrayContaining([
+          expect.objectContaining({ expectedAccess: "deny", policyPassed: true }),
+        ]),
+      },
+    });
+  });
   it("planning changes no inventory and applying is idempotent and organization-bound", async () => {
     const operation = await plan();
     expect(await repo.list("org-a")).toEqual([]);
@@ -161,6 +208,115 @@ describe("managed network journal and reservations", () => {
     expect(await repo.list("org-a")).toEqual([]);
     expect((await repo.getOperation("org-a", operation.id)).status).toBe("rolled_back");
   });
+  it.each(["applying", "verifying", "committing", "rolling_back"] as const)(
+    "marks %s interrupted on exclusive restart without releasing recovery ownership",
+    async (status) => {
+      const operation = await plan();
+      await repo.claimOperation("org-a", operation.id, operation.planHash, "apply");
+      const report = successfulManagedReport(operation.plan);
+      const hosts = operation.hosts.map((host) => ({ ...host, stage: "applied" as const }));
+      await repo.progressOperation(operation.id, 1, status, hosts, report);
+      const previous = await repo.getOperation("org-a", operation.id);
+      expect(previous.leaseExpiresAt!.getTime()).toBeGreaterThan(Date.now());
+      const claims = await db.select().from(schema.managedNetworkClaim);
+
+      const restarted = createServerClusterRepo(db);
+      expect(await restarted.recoverInterrupted(true)).toMatchObject({
+        operations: [{ id: operation.id, organizationId: "org-a" }],
+        verifications: [],
+      });
+      expect(await restarted.getOperation("org-a", operation.id)).toMatchObject({
+        status: "interrupted",
+        leaseExpiresAt: null,
+        sequence: previous.sequence + 1,
+        planHash: previous.planHash,
+        plan: previous.plan,
+        hosts,
+        report,
+        generation: 1,
+      });
+      expect(await db.select().from(schema.managedNetworkClaim)).toEqual(claims);
+      expect(await restarted.recoverInterrupted(true)).toEqual({
+        operations: [],
+        verifications: [],
+      });
+      expect(await repo.heartbeatOperation(operation.id, 1)).toBe(false);
+      await expect(repo.progressOperation(operation.id, 1, status, hosts)).rejects.toThrow(
+        "no longer owns",
+      );
+      await expect(
+        repo.finishOperation(
+          "org-a",
+          operation.id,
+          1,
+          "succeeded",
+          committed(operation),
+          report,
+          null,
+        ),
+      ).rejects.toThrow("no longer owns");
+
+      const retry = await restarted.claimOperation(
+        "org-a",
+        operation.id,
+        operation.planHash,
+        "resume",
+      );
+      expect(retry.operation.generation).toBe(2);
+      expect(await repo.interruptOperation(operation.id, 1, "Old controller stopped")).toEqual([]);
+      expect(await repo.operationActive(operation.id, 2)).toBe(true);
+      await repo.interruptOperation(operation.id, 2, "OpenShip stopped");
+      expect(await repo.getOperation("org-a", operation.id)).toMatchObject({
+        status: "interrupted",
+        error: "OpenShip stopped",
+      });
+    },
+  );
+  it("leaves valid shared owners and unapplied plans alone, then recovers missing or expired leases", async () => {
+    const operation = await plan();
+    await repo.claimOperation("org-a", operation.id, operation.planHash, "apply");
+    const unapplied = await plan(["s3", "s4"], { clusterId: "unapplied" });
+    expect(await repo.recoverInterrupted(false)).toEqual({ operations: [], verifications: [] });
+    expect(await repo.heartbeatOperation(operation.id, 1)).toBe(true);
+    for (const leaseExpiresAt of [null, new Date(Date.now() - 1)]) {
+      await db
+        .update(schema.managedNetworkOperation)
+        .set({ leaseExpiresAt })
+        .where(eq(schema.managedNetworkOperation.id, operation.id));
+      expect((await repo.recoverInterrupted(false)).operations).toEqual([
+        { id: operation.id, organizationId: "org-a" },
+      ]);
+      expect((await repo.getOperation("org-a", unapplied.id)).status).toBe("planned");
+      await repo.claimOperation("org-a", operation.id, operation.planHash, "resume");
+    }
+    await repo.recoverInterrupted(true);
+    expect((await repo.getOperation("org-a", unapplied.id)).status).toBe("planned");
+  });
+  it("recovers active checks on restart and fences late verification writes", async () => {
+    const cluster = await repo.create("org-a", config(), "native", "native");
+    const { run } = await repo.startVerification("org-a", cluster.id, 1, "user");
+    expect(await repo.recoverInterrupted(false)).toEqual({ operations: [], verifications: [] });
+    expect((await repo.recoverInterrupted(true)).verifications).toEqual([
+      { organizationId: "org-a" },
+    ]);
+    expect(await repo.active(run.id)).toBe(false);
+    expect(await repo.progress(run.id, run.report)).toBe(false);
+    await repo.finish(run.id, run.report, true, null);
+    expect((await repo.get("org-a", cluster.id)).verification).toMatchObject({
+      status: "interrupted",
+      report: run.report,
+    });
+    const retry = await repo.startVerification("org-a", cluster.id, 1, "user");
+    expect(retry.created).toBe(true);
+    expect(retry.run.id).not.toBe(run.id);
+    expect(await repo.interruptVerification(run.id, "Old verification")).toEqual([]);
+    expect(await repo.active(retry.run.id)).toBe(true);
+    await repo.interruptVerification(retry.run.id, "OpenShip stopped");
+    expect((await repo.get("org-a", cluster.id)).verification).toMatchObject({
+      status: "interrupted",
+      error: "OpenShip stopped",
+    });
+  });
   it("requires every host receipt and all directed probes before committing inventory", async () => {
     const operation = await plan();
     await repo.claimOperation("org-a", operation.id, operation.planHash, "apply");
@@ -256,7 +412,13 @@ describe("managed network journal and reservations", () => {
     const first = await plan();
     await repo.claimOperation("org-a", first.id, first.planHash, "apply");
     await repo.finishOperation(
-      "org-a", first.id, 1, "succeeded", committed(first), successfulManagedReport(first.plan), null,
+      "org-a",
+      first.id,
+      1,
+      "succeeded",
+      committed(first),
+      successfulManagedReport(first.plan),
+      null,
     );
     const next = managedPlanFixture(["s1", "s3"]);
     const update = await plan(["s1", "s3"], {
@@ -267,26 +429,41 @@ describe("managed network journal and reservations", () => {
     });
     await repo.claimOperation("org-a", update.id, update.planHash, "apply");
     await db.insert(schema.servers).values({
-      id: "alias-s3", organizationId: "org-b", sshHost: "s3",
+      id: "alias-s3",
+      organizationId: "org-b",
+      sshHost: "s3",
     });
-    const native = await repo.create("org-b", {
-      ...config(),
-      members: config().members.map((member, index) => ({
-        ...member, serverId: index ? "foreign" : "alias-s3",
-      })),
-    }, "native", "native");
+    const native = await repo.create(
+      "org-b",
+      {
+        ...config(),
+        members: config().members.map((member, index) => ({
+          ...member,
+          serverId: index ? "foreign" : "alias-s3",
+        })),
+      },
+      "native",
+      "native",
+    );
     const { run } = await repo.startVerification("org-b", native.id, 1, "user");
     await expect(repo.recordIdentity(native.id, "alias-s3", "host:s3", run.id)).rejects.toThrow(
       "reserved by a managed network operation",
     );
     await repo.finishOperation(
-      "org-a", update.id, 1, "succeeded", committed(update), successfulManagedReport(update.plan), null,
+      "org-a",
+      update.id,
+      1,
+      "succeeded",
+      committed(update),
+      successfulManagedReport(update.plan),
+      null,
     );
     await expect(repo.recordIdentity(native.id, "alias-s3", "host:s3", run.id)).rejects.toThrow(
       "already enrolled",
     );
-    expect((await repo.get("org-a", first.clusterId)).members.map((member) => member.serverId))
-      .toEqual(["s1", "s3"]);
+    expect(
+      (await repo.get("org-a", first.clusterId)).members.map((member) => member.serverId),
+    ).toEqual(["s1", "s3"]);
   });
   it("prevents organization deletion from erasing uncertain recovery or host claims", async () => {
     const operation = await plan();
@@ -301,14 +478,27 @@ describe("managed network journal and reservations", () => {
     );
     expect(await repo.membership("s1")).toBeTruthy();
     expect((await repo.getOperation("org-a", operation.id)).leaseExpiresAt).toBeNull();
-    await expect(db.delete(schema.organization).where(eq(schema.organization.id, "org-a")))
-      .rejects.toThrow();
+    await expect(
+      db.delete(schema.organization).where(eq(schema.organization.id, "org-a")),
+    ).rejects.toThrow();
     expect(await repo.membership("s1")).toBeTruthy();
     expect((await repo.getOperation("org-a", operation.id)).status).toBe("needs_attention");
     expect(await repo.hasManagedNetworkState("org-a")).toBe(true);
-    const recovery = await repo.claimOperation("org-a", operation.id, operation.planHash, "rollback");
-    await repo.finishOperation("org-a", operation.id, recovery.operation.generation, "rolled_back",
-      operation.hosts.map(host => ({ ...host, stage: "rolled_back" })), null, null);
+    const recovery = await repo.claimOperation(
+      "org-a",
+      operation.id,
+      operation.planHash,
+      "rollback",
+    );
+    await repo.finishOperation(
+      "org-a",
+      operation.id,
+      recovery.operation.generation,
+      "rolled_back",
+      operation.hosts.map((host) => ({ ...host, stage: "rolled_back" })),
+      null,
+      null,
+    );
     expect(await repo.hasManagedNetworkState("org-a")).toBe(false);
     await db.delete(schema.organization).where(eq(schema.organization.id, "org-a"));
     expect(await db.select().from(schema.managedNetworkOperation)).toEqual([]);
@@ -318,14 +508,24 @@ describe("managed network journal and reservations", () => {
     const operation = await plan();
     expect(await repo.hasManagedNetworkState("org-a")).toBe(false);
     await repo.claimOperation("org-a", operation.id, operation.planHash, "apply");
-    await repo.finishOperation("org-a", operation.id, 1, "succeeded",
-      committed(operation), successfulManagedReport(operation.plan), null);
-    await expect(db.delete(schema.organization).where(eq(schema.organization.id, "org-a")))
-      .rejects.toThrow();
+    await repo.finishOperation(
+      "org-a",
+      operation.id,
+      1,
+      "succeeded",
+      committed(operation),
+      successfulManagedReport(operation.plan),
+      null,
+    );
+    await expect(
+      db.delete(schema.organization).where(eq(schema.organization.id, "org-a")),
+    ).rejects.toThrow();
     expect(await repo.hasManagedNetworkState("org-a")).toBe(true);
     const removal = await plan(["s1", "s2"], {
-      baseRevision: 1, previous: operation.plan.config, intent: "remove",
-      hosts: operation.plan.hosts.map(host => ({ ...host, action: "remove" })),
+      baseRevision: 1,
+      previous: operation.plan.config,
+      intent: "remove",
+      hosts: operation.plan.hosts.map((host) => ({ ...host, action: "remove" })),
     });
     await repo.claimOperation("org-a", removal.id, removal.planHash, "apply");
     await repo.finishOperation("org-a", removal.id, 1, "succeeded", committed(removal), null, null);
@@ -335,6 +535,66 @@ describe("managed network journal and reservations", () => {
 });
 
 describe("cluster persistence", () => {
+  it("persists network context independently of member metadata and resolves legacy edits afresh", async () => {
+    const value = config();
+    value.network.source = { providerId: "hetzner-cloud", networkRef: " network-a " };
+    const created = await repo.create("org-a", value, "source-request", "original-hash");
+    expect(created.network.source).toEqual({
+      providerId: "hetzner-cloud",
+      networkRef: "network-a",
+    });
+    expect(created.members.map((member) => member.providerId)).toEqual(["custom", "hetzner-cloud"]);
+    value.network.source.networkRef = "network-b";
+    const updated = await repo.update("org-a", created.id, 1, value);
+    expect(updated.network.id).toBe(created.network.id);
+    expect(updated.network.source).toEqual({
+      providerId: "hetzner-cloud",
+      networkRef: "network-b",
+    });
+    const legacyEdit = await repo.update("org-a", created.id, 2, config());
+    expect(legacyEdit.network.source).toEqual({ providerId: "custom" });
+    expect(legacyEdit.inputHash).toBe("original-hash");
+  });
+  it("backfills existing networks without merging different network references or changing old records", async () => {
+    const uniform = config();
+    uniform.members = uniform.members.map((member) => ({
+      ...member,
+      providerId: "aws",
+      networkRef: " vpc-a ",
+    }));
+    const first = await repo.create("org-a", uniform, "legacy-a", "hash-a");
+    const routed = config();
+    routed.members = routed.members.map((member, index) => ({
+      ...member,
+      serverId: `s${index + 3}`,
+      providerId: "aws",
+      networkRef: `vpc-${index}`,
+    }));
+    const second = await repo.create("org-a", routed, "legacy-b", "hash-b");
+    const attachments = await db.select().from(schema.serverNetworkAttachment);
+    const migration = readFileSync(
+      new URL("../../drizzle/0138_network_sources.sql", import.meta.url),
+      "utf8",
+    );
+    await db.transaction(async (tx) => {
+      await tx.execute(sql.raw('ALTER TABLE "private_network_config" DROP COLUMN "source"'));
+      for (const statement of migration.split("--> statement-breakpoint"))
+        await tx.execute(
+          sql.raw(
+            statement
+              .replaceAll('"cluster_network"', '"private_network_config"')
+              .replaceAll('"cluster_id"', '"network_id"'),
+          ),
+        );
+    });
+    expect((await repo.get("org-a", first.id)).network.source).toEqual({
+      providerId: "aws",
+      networkRef: "vpc-a",
+    });
+    expect((await repo.get("org-a", second.id)).network.source).toEqual({ providerId: "custom" });
+    expect((await repo.get("org-a", first.id)).inputHash).toBe("hash-a");
+    expect(await db.select().from(schema.serverNetworkAttachment)).toEqual(attachments);
+  });
   it("creates atomically and reuses a retried creation request", async () => {
     const first = await repo.create("org-a", config(), "request-a", "hash-a");
     const retry = await repo.create("org-a", config(), "request-a", "hash-a");
@@ -358,13 +618,11 @@ describe("cluster persistence", () => {
     await expect(repo.remove("org-b", cluster.id, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(await repo.list("org-b")).toHaveLength(0);
   });
-  it("allows only one active cluster per server and protects enrolled servers from deletion", async () => {
+  it("allows multiple network attachments and protects attached servers from deletion", async () => {
     await repo.create("org-a", config(), "request-a", "hash-a");
-    await expect(repo.create("org-a", config(), "request-b", "hash-b")).rejects.toMatchObject({
-      code: "CLUSTER_CONFLICT",
-    });
+    await repo.create("org-a", config(), "request-b", "hash-b");
     await expect(db.delete(schema.servers).where(eq(schema.servers.id, "s1"))).rejects.toThrow();
-    expect(await repo.list("org-a")).toHaveLength(1);
+    expect(await repo.list("org-a")).toHaveLength(2);
   });
   it("rejects stale edits and invalidates verification when membership changes", async () => {
     const cluster = await repo.create("org-a", config(), "request-a", "hash-a");

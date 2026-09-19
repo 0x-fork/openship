@@ -226,6 +226,14 @@ export interface ManagedFirewallRules {
   up: string[];
   down: string[];
   inspect: string;
+  /** Canonical owned rules, used to detect drift before commit and during recovery. */
+  snapshot?: string;
+}
+
+export interface ManagedFirewallAccess {
+  privateIp: string;
+  incoming: string[];
+  outgoing: string[];
 }
 
 // Resolve nft rule handles on the host immediately before the atomic batch. Only
@@ -256,11 +264,25 @@ if action != 'down':
     for rule in rules:
         if not owned(rule) and prefix in json.dumps(rule):
             raise RuntimeError('A foreign nftables rule refers to an OpenShip-owned chain.')
+def clean(value):
+    if isinstance(value, list): return [clean(item) for item in value]
+    if isinstance(value, dict): return {key: clean(item) for key, item in value.items() if key not in ('handle', 'index', 'position', 'packets', 'bytes')}
+    return value
+if action == 'snapshot':
+    for suffix in ('I', 'O', 'F'):
+        if not any(chain.get('family') == 'inet' and chain.get('table') == 'filter' and chain.get('name') == prefix + suffix for chain in chains):
+            raise RuntimeError('An owned access-policy chain is missing.')
+    for parent, suffix in (('input', 'I'), ('output', 'O')):
+        found = False
+        for rule in rules:
+            if rule.get('family') != 'inet' or rule.get('table') != 'filter' or rule.get('chain') != parent: continue
+            if rule.get('comment') == tag + '-' + suffix: found = True; break
+            if not str(rule.get('comment', '')).startswith('openship-network-'):
+                raise RuntimeError('A host firewall rule precedes the network access policy. Review the firewall before continuing.')
+        if not found: raise RuntimeError('The access-policy jump is missing.')
+    print(json.dumps(clean([row for row in rows if ('chain' in row and row['chain'].get('name', '').startswith(prefix)) or ('rule' in row and owned(row['rule']))]), sort_keys=True))
+    sys.exit(0)
 if action == 'inspect':
-    def clean(value):
-        if isinstance(value, list): return [clean(item) for item in value]
-        if isinstance(value, dict): return {key: clean(item) for key, item in value.items() if key not in ('handle', 'index', 'position', 'packets', 'bytes')}
-        return value
     foreign = [row for row in rows if 'metainfo' not in row and not ('chain' in row and row['chain'].get('name', '').startswith(prefix)) and not ('rule' in row and owned(row['rule']))]
     print(json.dumps(clean(foreign), sort_keys=True))
     if any(chain.get('name', '').startswith(prefix) for chain in chains): print(prefix + 'owned')
@@ -271,7 +293,7 @@ for rule in rules:
         if rule.get('family') != 'inet' or rule.get('table') != 'filter' or rule.get('chain') not in ('input', 'output'):
             raise RuntimeError('A managed nftables rule moved outside its owned scope.')
         batch.append('delete rule inet filter ' + rule['chain'] + ' handle ' + str(int(rule['handle'])))
-for suffix in ('I', 'O'):
+for suffix in ('I', 'O', 'F'):
     chain = prefix + suffix
     if any(item.get('family') == 'inet' and item.get('table') == 'filter' and item.get('name') == chain for item in chains):
         batch += ['flush chain inet filter ' + chain, 'delete chain inet filter ' + chain]
@@ -282,9 +304,51 @@ if action == 'up':
     for peer in c['peers']:
         batch.append('add rule inet filter ' + prefix + 'I ip saddr ' + peer['endpoint'] + '/32 udp dport ' + str(c['listenPort']) + ' accept')
         batch.append('add rule inet filter ' + prefix + 'O ip daddr ' + peer['endpoint'] + '/32 udp dport ' + str(peer['listenPort']) + ' accept')
-        batch.append('add rule inet filter ' + prefix + 'I iifname "' + c['interfaceName'] + '" ip saddr ' + peer['privateIp'] + '/32 accept')
-        batch.append('add rule inet filter ' + prefix + 'O oifname "' + c['interfaceName'] + '" ip daddr ' + peer['privateIp'] + '/32 accept')
+        if not c.get('access'):
+            batch.append('add rule inet filter ' + prefix + 'I iifname "' + c['interfaceName'] + '" ip saddr ' + peer['privateIp'] + '/32 accept')
+            batch.append('add rule inet filter ' + prefix + 'O oifname "' + c['interfaceName'] + '" ip daddr ' + peer['privateIp'] + '/32 accept')
+    if c.get('access'):
+        access = c['access']; iface = '"' + c['interfaceName'] + '"'; local = access['privateIp'] + '/32'
+        batch.append('add chain inet filter ' + prefix + 'F { type filter hook forward priority -10; policy accept; }')
+        def add(suffix, expression): batch.append('add rule inet filter ' + prefix + suffix + ' ' + expression)
+        add('F', 'iifname ' + iface + ' oifname ' + iface + ' drop')
+        for direction, peers in (('incoming', access['incoming']), ('outgoing', access['outgoing'])):
+            for peer in peers:
+                remote = peer + '/32'
+                if direction == 'incoming':
+                    add('I', 'iifname ' + iface + ' ip saddr ' + remote + ' ip daddr ' + local + ' ct direction original ct state { new, established } accept')
+                    add('O', 'oifname ' + iface + ' ip saddr ' + local + ' ip daddr ' + remote + ' ct direction reply ct state { established, related } accept')
+                    add('F', 'iifname ' + iface + ' ip saddr ' + remote + ' ct original ip daddr ' + local + ' ct direction original ct state { new, established } return')
+                    add('F', 'oifname ' + iface + ' ip daddr ' + remote + ' ct original ip daddr ' + local + ' ct direction reply ct state { established, related } return')
+                else:
+                    add('O', 'oifname ' + iface + ' ip saddr ' + local + ' ip daddr ' + remote + ' ct direction original ct state { new, established } accept')
+                    add('I', 'iifname ' + iface + ' ip saddr ' + remote + ' ip daddr ' + local + ' ct direction reply ct state { established, related } accept')
+                    add('F', 'oifname ' + iface + ' ip daddr ' + remote + ' ct direction original ct state { new, established } return')
+                    add('F', 'iifname ' + iface + ' ip saddr ' + remote + ' ct direction reply ct state { established, related } return')
+        add('I', 'iifname ' + iface + ' drop'); add('O', 'oifname ' + iface + ' drop')
+        add('F', 'iifname ' + iface + ' drop'); add('F', 'oifname ' + iface + ' drop')
 if batch: call(['-f', '-'], '\n'.join(batch) + '\n')
+`;
+
+const MANAGED_IPTABLES_SNAPSHOT = String.raw`
+import json, subprocess, sys
+c = json.loads(sys.argv[1]); prefix = 'OSWG_' + c['identity'][:16] + '_'
+def rules(chain):
+    result = subprocess.run(['iptables', '-w', '5', '-S', chain], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+    if result.returncode: raise RuntimeError('An owned access-policy chain is missing: ' + chain)
+    return result.stdout.splitlines()
+snapshot = {}
+for suffix, parent in (('I', 'INPUT'), ('O', 'OUTPUT'), ('F', 'FORWARD')):
+    jump = '-A ' + parent + ' -m comment --comment openship-network-' + c['identity'] + ' -j ' + prefix + suffix
+    found = False
+    for line in rules(parent):
+        if not line.startswith('-A '): continue
+        if line.replace('"', '') == jump: found = True; break
+        if '-m comment --comment openship-network-' not in line.replace('"', '') or ' -j OSWG_' not in line:
+            raise RuntimeError('A host firewall rule precedes the network access policy. Review the firewall before continuing.')
+    if not found: raise RuntimeError('The access-policy jump is missing: ' + parent)
+    snapshot[suffix] = rules(prefix + suffix)
+print(json.dumps(snapshot, sort_keys=True))
 `;
 
 /** Only dedicated chains are changed. Never flush or restore the host ruleset. */
@@ -294,6 +358,7 @@ export function managedNetworkFirewall(
   interfaceName: string,
   listenPort: number,
   peers: readonly { endpoint: string; listenPort: number; privateIp: string }[],
+  access?: ManagedFirewallAccess,
 ): Answer<ManagedFirewallRules> {
   if (
     !/^[a-f0-9]{32}$/.test(identity) ||
@@ -301,6 +366,11 @@ export function managedNetworkFirewall(
     !Number.isInteger(listenPort) ||
     listenPort < 1024 ||
     listenPort > 65535 ||
+    (access &&
+      (infrastructureIpv4(access.privateIp) === null ||
+        [...access.incoming, ...access.outgoing].some(
+          (ip) => !peers.some((peer) => peer.privateIp === ip),
+        ))) ||
     peers.some(
       (peer) =>
         infrastructureIpv4(peer.endpoint) === null ||
@@ -311,14 +381,19 @@ export function managedNetworkFirewall(
     )
   )
     return refused("Invalid managed firewall scope.");
-  if (manager === "none") return answered({ up: [], down: [], inspect: "true" });
+  if (manager === "none" && !access) return answered({ up: [], down: [], inspect: "true" });
+  // Preparation installs iptables through the shared toolchain for an unfiltered host.
+  if (manager === "none") manager = "iptables";
   if (manager === "nftables") {
-    const input = shellQuote(JSON.stringify({ identity, interfaceName, listenPort, peers }));
+    const input = shellQuote(
+      JSON.stringify({ identity, interfaceName, listenPort, peers, access }),
+    );
     const command = `python3 -c ${shellQuote(MANAGED_NFT)} ${input}`;
     return answered({
       up: [`${command} up`],
       down: [`${command} down`],
       inspect: `${command} inspect`,
+      ...(access ? { snapshot: `${command} snapshot` } : {}),
     });
   }
   if (manager !== "iptables")
@@ -327,12 +402,14 @@ export function managedNetworkFirewall(
     );
   const input = `OSWG_${identity.slice(0, 16)}_I`;
   const output = `OSWG_${identity.slice(0, 16)}_O`;
+  const forward = `OSWG_${identity.slice(0, 16)}_F`;
   const comment = `openship-network-${identity}`;
   const up: string[] = [];
   const down: string[] = [];
   for (const [chain, parent] of [
     [input, "INPUT"],
     [output, "OUTPUT"],
+    ...(access ? ([[forward, "FORWARD"]] as const) : []),
   ] as const) {
     // The prepare step refuses an existing chain without our on-disk ownership receipt.
     up.push(`iptables -w 5 -N ${chain} 2>/dev/null || iptables -w 5 -S ${chain} >/dev/null`);
@@ -351,8 +428,52 @@ export function managedNetworkFirewall(
     up.push(
       `iptables -w 5 -A ${output} -d ${peer.endpoint}/32 -p udp --dport ${peer.listenPort} -j ACCEPT`,
     );
-    up.push(`iptables -w 5 -A ${input} -i ${interfaceName} -s ${peer.privateIp}/32 -j ACCEPT`);
-    up.push(`iptables -w 5 -A ${output} -o ${interfaceName} -d ${peer.privateIp}/32 -j ACCEPT`);
+    if (!access) {
+      up.push(`iptables -w 5 -A ${input} -i ${interfaceName} -s ${peer.privateIp}/32 -j ACCEPT`);
+      up.push(`iptables -w 5 -A ${output} -o ${interfaceName} -d ${peer.privateIp}/32 -j ACCEPT`);
+    }
   }
-  return answered({ up, down, inspect: "iptables-save" });
+  if (access) {
+    const original = "-m conntrack --ctstate NEW,ESTABLISHED --ctdir ORIGINAL";
+    const reply = "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY";
+    const incoming = `-i ${interfaceName}`;
+    const outgoing = `-o ${interfaceName}`;
+    const add = (chain: string, match: string, verdict = "ACCEPT") =>
+      up.push(`iptables -w 5 -A ${chain} ${match} -j ${verdict}`);
+    add(forward, `${incoming} ${outgoing}`, "DROP");
+    for (const peer of access.incoming) {
+      add(input, `${incoming} -s ${peer}/32 -d ${access.privateIp}/32 ${original}`);
+      add(output, `${outgoing} -s ${access.privateIp}/32 -d ${peer}/32 ${reply}`);
+      add(
+        forward,
+        `${incoming} -s ${peer}/32 ${original} --ctorigdst ${access.privateIp}/32`,
+        "RETURN",
+      );
+      add(
+        forward,
+        `${outgoing} -d ${peer}/32 ${reply} --ctorigdst ${access.privateIp}/32`,
+        "RETURN",
+      );
+    }
+    for (const peer of access.outgoing) {
+      add(output, `${outgoing} -s ${access.privateIp}/32 -d ${peer}/32 ${original}`);
+      add(input, `${incoming} -s ${peer}/32 -d ${access.privateIp}/32 ${reply}`);
+      add(forward, `${outgoing} -d ${peer}/32 ${original}`, "RETURN");
+      add(forward, `${incoming} -s ${peer}/32 ${reply}`, "RETURN");
+    }
+    add(input, incoming, "DROP");
+    add(output, outgoing, "DROP");
+    add(forward, incoming, "DROP");
+    add(forward, outgoing, "DROP");
+  }
+  return answered({
+    up,
+    down,
+    inspect: "iptables-save",
+    ...(access
+      ? {
+          snapshot: `python3 -c ${shellQuote(MANAGED_IPTABLES_SNAPSHOT)} ${shellQuote(JSON.stringify({ identity }))}`,
+        }
+      : {}),
+  });
 }

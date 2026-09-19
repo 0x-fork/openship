@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDotenv } from "./dotenv";
+import { parseDotenv, serializeDotenv } from "./dotenv";
 
 describe("parseDotenv", () => {
   it("skips blank lines and # comment lines", () => {
@@ -54,10 +54,40 @@ describe("parseDotenv", () => {
     expect(parseDotenv("A=")).toEqual([{ key: "A", value: "" }]);
   });
 
-  it("handles CRLF line endings", () => {
-    expect(parseDotenv("A=fake-value\r\nB=dummy-value\r\n")).toEqual([
+  it("handles CRLF line endings and a UTF-8 BOM", () => {
+    expect(parseDotenv("\uFEFFA=fake-value\r\nB=dummy-value\r\n")).toEqual([
       { key: "A", value: "fake-value" },
       { key: "B", value: "dummy-value" },
     ]);
+  });
+});
+
+describe(".env export", () => {
+  it("preserves values when an exported file is imported again", () => {
+    const rows = [
+      { key: "PORT", value: "3000" },
+      { key: "EMPTY", value: "" },
+      { key: "SPACES", value: "  keep these  " },
+      { key: "COMMENT", value: "hello # world" },
+      { key: "QUOTES", value: `both 'single' and "double" quotes` },
+      { key: "MULTILINE", value: "first\nSECOND=still part of the value\nlast\r\n" },
+      { key: "BACKSLASH", value: "C:\\new\\file" },
+      { key: "ESCAPES", value: "it's a literal \\n and a real\nnewline" },
+      { key: "DOLLAR", value: "${KEEP_LITERAL}" },
+      { key: "UNICODE", value: "مرحبا 🌍" },
+    ];
+    const content = serializeDotenv(rows);
+    expect(content).toContain("PORT=3000\nEMPTY=\n");
+    expect(parseDotenv(content)).toEqual(rows);
+  });
+
+  it("rejects names that would be lost or become additional assignments on import", () => {
+    expect(() => serializeDotenv([{ key: "BAD\nINJECTED", value: "x" }])).toThrow();
+    expect(() =>
+      serializeDotenv([
+        { key: "PORT", value: "3000" },
+        { key: " PORT ", value: "4000" },
+      ]),
+    ).toThrow();
   });
 });

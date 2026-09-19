@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ManagedNetworkStepProgress } from "@repo/core";
+import { shellSplitWords, type ManagedNetworkStepProgress } from "@repo/core";
+import { managedOperationFixture } from "../../../contracts/test/managed-network-fixtures";
 import { managedNetworkTools, type ManagedHostTransaction } from "./managed-network";
 import { PrivateNetworkError } from "./private-network";
 import { isRetryableRemoteConnectionError, SshDisconnectedError } from "../system/errors";
@@ -7,7 +8,12 @@ import { OS_RELEASE, probeOutput, type ProbeSpec } from "../system/environment.f
 import type { CommandExecutor, LogEntry } from "../types";
 
 const managedId = "a".repeat(32);
-const tools = { python3: "3.12.3", iproute2: "6.1.0", "wireguard-tools": "1.0.20210914" };
+const tools = {
+  python3: "3.12.3",
+  iproute2: "6.1.0",
+  "wireguard-tools": "1.0.20210914",
+  iptables: "1.8.10",
+};
 function machine(
   options: {
     versions?: Partial<typeof tools>;
@@ -40,7 +46,9 @@ function machine(
             ? "python3 --version"
             : name === "iproute2"
               ? "ip -Version"
-              : "wg --version";
+              : name === "iptables"
+                ? "iptables --version"
+                : "wg --version";
         if (command.includes(check)) {
           const version = versions[name];
           if (!version) throw new Error(`${name}: command not found`);
@@ -48,9 +56,12 @@ function machine(
             ? `Python ${version}`
             : name === "iproute2"
               ? `ip utility, iproute2-${version}, libbpf 1.1.0`
-              : `wireguard-tools v${version}`;
+              : name === "iptables"
+                ? `iptables v${version} (nf_tables)`
+                : `wireguard-tools v${version}`;
         }
       }
+      if (command === "iptables -m conntrack --help") return "conntrack match options";
       if (command.includes("'prerequisites'")) {
         expect(versions.python3).toBeTruthy();
         expect(versions.iproute2).toBeTruthy();
@@ -100,6 +111,25 @@ function machine(
 }
 
 describe("managed network prerequisite bootstrap", () => {
+  it("installs the stateful firewall tool only when a connection policy needs it", async () => {
+    const { iptables: _missing, ...versions } = tools;
+    const host = machine({ versions });
+    await managedNetworkTools.prepareHost(host.executor, managedId, host.observer, undefined, true);
+    expect(host.installs).toHaveLength(1);
+    expect(host.installs[0]).toContain("--no-install-recommends iptables");
+    expect(host.commands).toContain("iptables -m conntrack --help");
+    expect(host.updates).toContainEqual(
+      expect.objectContaining({ id: "firewall", status: "completed" }),
+    );
+  });
+
+  it("reuses a healthy stateful firewall without reinstalling it", async () => {
+    const host = machine();
+    await managedNetworkTools.prepareHost(host.executor, managedId, host.observer, undefined, true);
+    expect(host.installs).toEqual([]);
+    expect(host.commands).toContain("iptables -m conntrack --help");
+  });
+
   it("installs absent tools before invoking the Python inspector and streams each step", async () => {
     const host = machine({ versions: {} });
     await managedNetworkTools.prepareHost(host.executor, managedId, host.observer);
@@ -172,6 +202,85 @@ describe("managed network prerequisite bootstrap", () => {
     ).rejects.toThrow("kernel does not provide");
     expect(host.updates.at(-1)).toMatchObject({ id: "kernel", status: "failed" });
     expect(host.installs).toEqual([]);
+  });
+});
+
+describe("managed connection-policy payloads", () => {
+  it("keeps selected WireGuard peers and protects the complete subnet from default-route fallback", async () => {
+    const operation = managedOperationFixture(["server-a", "server-b", "server-c"]);
+    const config = operation.plan.config;
+    config.network.access = {
+      version: 1,
+      rules: [{ sourceServerId: "server-a", targetServerId: "server-b" }],
+    };
+    config.members.forEach(
+      (member, index) => (member.publicKey = Buffer.alloc(32, index + 1).toString("base64")),
+    );
+    const host = machine();
+    const payloads: Array<{
+      config: {
+        peers: Array<{ serverId: string }>;
+        routeCidrs: string[];
+        firewall: { up: string[]; snapshot: string };
+      };
+    }> = [];
+    const executor = {
+      ...host.executor,
+      exec: async (command: string) => {
+        if (!command.includes("'apply'")) return host.executor.exec(command);
+        const payload = JSON.parse(shellSplitWords(command).at(-1)!);
+        payloads.push(payload);
+        return JSON.stringify({
+          operationId: operation.id,
+          generation: 1,
+          stage: "applied",
+          publicKey: null,
+          configHash: null,
+          deadline: Date.now() / 1000 + 60,
+          healthy: true,
+        });
+      },
+    };
+    for (const planned of operation.plan.hosts)
+      await managedNetworkTools.apply(
+        executor,
+        {
+          managedId: operation.plan.managedId,
+          operationId: operation.id,
+          generation: 1,
+          host: planned,
+          accessControlled: true,
+        },
+        config,
+      );
+    expect(payloads.map((payload) => payload.config.peers.map((peer) => peer.serverId))).toEqual([
+      ["server-b"],
+      ["server-a"],
+      [],
+    ]);
+    for (const payload of payloads) {
+      expect(payload.config.routeCidrs).toEqual(config.network.cidrs);
+      expect(payload.config.firewall.snapshot).toContain("python3");
+      expect(payload.config.firewall.up.join("\n")).toContain("-j DROP");
+      if (payload.config.peers.length)
+        expect(payload.config.firewall.up.join("\n")).toContain("--ctdir");
+    }
+  });
+  it("checks an isolated interface without requiring a nonexistent handshake", async () => {
+    const host = machine();
+    let reported = { ready: true, interfaceReady: true, peers: [] as unknown[] };
+    const executor = {
+      ...host.executor,
+      exec: async (command: string) =>
+        command.includes("'ready'") ? JSON.stringify(reported) : host.executor.exec(command),
+    };
+    await expect(managedNetworkTools.waitForPeers(executor, managedId, [])).resolves.toEqual(
+      reported,
+    );
+    reported = { ...reported, peers: [{ serverId: "unexpected" }] };
+    await expect(managedNetworkTools.inspectPeers(executor, managedId, [])).rejects.toMatchObject({
+      code: "MANAGED_NETWORK_REPORT_INVALID",
+    });
   });
 });
 

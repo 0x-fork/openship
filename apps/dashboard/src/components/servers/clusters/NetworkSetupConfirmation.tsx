@@ -60,7 +60,7 @@ export function NetworkSetupConfirmation({
         )}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <Button autoFocus variant="ghost" disabled={busy} onClick={onClose}>
-            {t.servers.clusters.cancel}
+            {t.servers.networks.cancel}
           </Button>
           <Button
             variant="destructive"

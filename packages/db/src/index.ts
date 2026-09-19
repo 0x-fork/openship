@@ -230,3 +230,5 @@ export {
   count,
 } from "drizzle-orm";
 export * from "./project-transfer";
+
+export { createComputeClusterRepo, type ComputeClusterRecord } from "./repos/compute-cluster.repo";

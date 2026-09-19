@@ -335,6 +335,12 @@ export const servicesApi = {
   restart: (projectId: string | number, serviceId: string) =>
     api.post<{ success: boolean }>(endpoints.services.restart(projectId, serviceId)),
 
+  /** Apply saved runtime env and wait for the service replacement to start. */
+  applyEnvironment: (projectId: string | number, serviceId: string) =>
+    api.post<{ success: boolean; containerId: string; warning?: string }>(
+      endpoints.services.applyEnvironment(projectId, serviceId), undefined, { timeout: 120_000 },
+    ),
+
   /** Accept the pending upstream compose change (apply repo values, clear drift) */
   acceptDrift: (projectId: string | number, serviceId: string) =>
     api.post<{ success: boolean; service: Service }>(

@@ -5,6 +5,7 @@ import {
   managedNetworkSteps,
   managedNetworkUnsettled,
   normalizeManagedNetworkInput,
+  retainNetworkAccess,
   allocateManagedSubnet,
   validWireGuardEndpoint,
   ClusterConfigError,
@@ -18,7 +19,6 @@ import type { ExecutionContext } from "../../../context";
 import type { ServerDependencies } from "../../../servers";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
-import { deferBackgroundWork } from "../../lib/background-work";
 import { inspectHostIssuedIdentity } from "../../lib/host-port-target";
 import {
   assertClusterManagementAvailable,
@@ -35,6 +35,7 @@ import {
   updateNetworkSetupStep,
 } from "./network-setup-progress";
 import { notifyNetworkSetup } from "./network-setup-bus";
+import { assertNetworkSetupAcceptingWork, deferNetworkSetupWork } from "./network-setup-lifecycle";
 
 export function presentNetworkPreparation(
   row: NetworkPreparationRecord,
@@ -60,6 +61,7 @@ export function presentNetworkPreparation(
 export async function runNetworkPreparation(
   ctx: ExecutionContext,
   preparation: NetworkPreparationRecord,
+  controllerSignal?: AbortSignal,
 ) {
   const { id, generation, input } = preparation;
   const hosts = structuredClone(preparation.hosts);
@@ -73,7 +75,11 @@ export async function runNetworkPreparation(
   let dirty = false;
   const cancellation = new AbortController();
   const deadline = AbortSignal.timeout(20 * 60_000);
-  const signal = AbortSignal.any([cancellation.signal, deadline]);
+  const signal = AbortSignal.any([
+    cancellation.signal,
+    deadline,
+    ...(controllerSignal ? [controllerSignal] : []),
+  ]);
   const persist = () => {
     const snapshot = structuredClone(hosts);
     dirty = false;
@@ -111,10 +117,10 @@ export async function runNetworkPreparation(
     if (status === "running") {
       await assertActive();
       await authorizeMember(ctx, host.serverId);
-      const membership = await repos.serverCluster.membership(host.serverId);
+      const membership = await repos.serverCluster.membership(host.serverId, true);
       if (membership && membership.clusterId !== input.clusterId)
         throw new AppError(
-          "This server joined another cluster while preparation was running. Review its membership before retrying.",
+          "Another network operation reserved this server while preparation was running. Finish it before retrying.",
           409,
           "CLUSTER_CONFLICT",
         );
@@ -128,6 +134,7 @@ export async function runNetworkPreparation(
   const lease = setInterval(() => {
     heartbeat = heartbeat
       .then(async () => {
+        if (signal.aborted) return;
         if (!(await repos.networkPreparation.heartbeat(id, generation))) cancellation.abort();
       })
       .catch(() => {
@@ -222,6 +229,7 @@ export async function runNetworkPreparation(
                     },
                   },
                   signal,
+                  !!input.access,
                 );
               });
             }, signal);
@@ -303,6 +311,7 @@ export async function runNetworkPreparation(
 export const networkPreparationCollection = {
   async prepareManagedNetwork(ctx, input: PlanManagedNetworkInput) {
     await fleetAdmin(ctx);
+    assertNetworkSetupAcceptingWork();
     if (!input.name.trim())
       throw new AppError(
         "Enter a cluster name before preparing servers.",
@@ -332,7 +341,6 @@ export const networkPreparationCollection = {
     if (new Set(input.members.map((member) => member.serverId)).size !== input.members.length)
       throw new AppError("Select each server once.", 400, "INVALID_CLUSTER_CONFIG");
     const normalized = normalizeManagedNetworkInput(input);
-    const hash = createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
     const result = await withServerInventoryLock(ctx.organizationId, async () => {
       await fleetAdmin(ctx);
       const current = input.clusterId
@@ -345,10 +353,29 @@ export const networkPreparationCollection = {
           (current.operation && managedNetworkUnsettled(current.operation.status)))
       )
         throw new AppError(
-          "Reload this cluster and finish its current operation before preparing another change.",
+          "Reload this network and finish its current operation before preparing another change.",
           409,
           "CLUSTER_CONFLICT",
         );
+      if (current)
+        await repos.serverCluster.assertDependencies(
+          ctx.organizationId,
+          current.id,
+          input.members.map((member) => member.serverId),
+        );
+      // Older callers may omit access. Persist the effective policy so the setup
+      // topology and prerequisite checks agree with the planner's inherited access.
+      const preparedInput =
+        current?.network.access && !normalized.access
+          ? normalizeManagedNetworkInput({
+              ...normalized,
+              access: retainNetworkAccess(
+                current.network.access,
+                normalized.members.map((member) => member.serverId),
+              ),
+            })
+          : normalized;
+      const hash = createHash("sha256").update(JSON.stringify(preparedInput)).digest("hex");
       const ids = [
         ...new Set(
           [...input.members, ...(current?.members ?? [])].map((member) => member.serverId),
@@ -357,10 +384,10 @@ export const networkPreparationCollection = {
       const hosts: ManagedNetworkPreparationHost[] = [];
       for (const serverId of ids) {
         const server = await authorizeMember(ctx, serverId);
-        const membership = await repos.serverCluster.membership(serverId);
+        const membership = await repos.serverCluster.membership(serverId, true);
         if (membership && membership.clusterId !== current?.id)
           throw new AppError(
-            "A selected server belongs to another cluster or pending operation.",
+            "Another network operation has reserved a selected server. Finish it before continuing.",
             409,
             "CLUSTER_CONFLICT",
           );
@@ -377,15 +404,21 @@ export const networkPreparationCollection = {
         ctx.organizationId,
         ctx.userId,
         hash,
-        normalized,
+        preparedInput,
         hosts,
       );
     });
     if (result.started) {
       notifyNetworkSetup(ctx.organizationId, "preparation", result.preparation.id);
       record(ctx, input.clusterId ?? result.preparation.id, "network.preparation.started");
-      void deferBackgroundWork(() => runNetworkPreparation(ctx, result.preparation)).catch(
-        () => undefined,
+      await deferNetworkSetupWork(
+        {
+          kind: "preparation",
+          organizationId: ctx.organizationId,
+          id: result.preparation.id,
+          generation: result.preparation.generation,
+        },
+        (signal) => runNetworkPreparation(ctx, result.preparation, signal),
       );
     }
     return presentNetworkPreparation(result.preparation);

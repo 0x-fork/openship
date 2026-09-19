@@ -858,9 +858,9 @@
   },
   "serviceEnvironment": {
     "title": "服务运行时环境",
-    "description": "仅适用于此服务的运行时。这些值会覆盖 Compose 环境和项目中的同名变量。通过重启或部署应用更改。",
+    "description": "这些变量仅用于此服务，并覆盖 Compose 或项目中的同名值。点击“应用环境更改”以启用已保存的值。",
     "overrides": "以下键在此服务中优先于项目值：{keys}。",
-    "buildArguments": "显式镜像构建参数在 Compose 文件或源配置中编辑。重新构建并部署以应用更改；此编辑器仅更改运行时变量。",
+    "buildArguments": "构建参数在 Compose 文件或源代码配置中设置，更改后需要重新构建。",
     "projectLink": "编辑共享项目环境",
     "loadFailed": "无法加载项目变量名称以检查覆盖关系。"
   }

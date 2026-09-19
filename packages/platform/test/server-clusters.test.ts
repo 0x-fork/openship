@@ -26,6 +26,7 @@ const prepareManaged = vi.fn(),
   getPreparation = vi.fn(),
   listPreparations = vi.fn();
 const networkEvents = vi.fn();
+const createPool = vi.fn(), listPools = vi.fn(), removePool = vi.fn(), infrastructure = vi.fn();
 const discardPreparation = vi.fn(),
   discardPlan = vi.fn();
 const removePreparationMember = vi.fn(),
@@ -42,6 +43,11 @@ beforeEach(async () => {
     collection: {
       createCluster: create,
       listClusters: list,
+      createNetwork: create,
+      listNetworks: list,
+      createComputeCluster: createPool,
+      listComputeClusters: listPools,
+      removeComputeCluster: removePool,
       planManagedNetwork: planManaged,
       applyManagedNetwork: applyManaged,
       getManagedNetworkOperation: getManaged,
@@ -53,10 +59,16 @@ beforeEach(async () => {
       removeManagedNetworkPreparationMember: removePreparationMember,
       removeManagedNetworkOperationMember: removeOperationMember,
     },
-    resources: { inspectNetwork: inspect },
+    resources: { inspectNetwork: inspect, infrastructure },
   } as unknown as ServerDependencies);
   create.mockResolvedValue(serverClusterFixture());
   list.mockResolvedValue([serverClusterFixture()]);
+  const network = serverClusterFixture();
+  const pool = { id: "pool", name: "Apps", location: null, revision: 1, networkId: network.id, serverIds: ["server-a"], network, createdAt: network.createdAt, updatedAt: network.updatedAt };
+  createPool.mockResolvedValue(pool);
+  listPools.mockResolvedValue([pool]);
+  removePool.mockResolvedValue({ removed: true });
+  infrastructure.mockResolvedValue({ networks: [], cluster: null, canBrowse: false });
   inspect.mockResolvedValue({ hostIdentity: "host:a", interfaces: [] });
   planManaged.mockResolvedValue(managedOperationFixture());
   applyManaged.mockResolvedValue(managedOperationFixture());
@@ -83,6 +95,25 @@ beforeEach(async () => {
 });
 
 describe("shared cluster operation policy", () => {
+  it("applies fleet permissions and read-only tokens to independent networks and compute pools", async () => {
+    const pool = { name: "Apps", networkId: "network-a", serverIds: ["server-a"], requestId: "request-1234567890" };
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.grants.set("org-a:alice:server:server-a", { permissions: ["admin"] });
+    for (const action of [() => operations.createNetwork(ctx, clusterInputFixture()), () => operations.createComputeCluster(ctx, pool), () => operations.listComputeClusters(ctx), () => operations.listNetworks(ctx)])
+      await expect(action()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    // Server details can expose their own references without reading the entire fleet.
+    await expect(operations.infrastructure(ctx, "server-a")).resolves.toMatchObject({ data: { canBrowse: false } });
+    expect(createPool).not.toHaveBeenCalled();
+    state.grants.set("org-a:alice:server:*", { permissions: ["admin"] });
+    const readonly = { ...ctx, credential: { organizationId: "org-a", readOnly: true } };
+    for (const action of [() => operations.createComputeCluster(readonly, pool), () => operations.removeComputeCluster(readonly, { clusterId: "pool", revision: 1 }), () => operations.createNetwork(readonly, clusterInputFixture())])
+      await expect(action()).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
+    await expect(operations.listComputeClusters(readonly)).resolves.toMatchObject({ data: [{ id: "pool" }] });
+    await expect(operations.createComputeCluster(ctx, pool)).resolves.toMatchObject({ data: { id: "pool" } });
+    expect(createPool).toHaveBeenCalledOnce();
+    expect(prepareManaged).not.toHaveBeenCalled();
+    expect(applyManaged).not.toHaveBeenCalled();
+  });
   it("requires writable fleet administration to remove a server from either setup stage", async () => {
     const shared = {
       serverId: "server-c",
@@ -312,6 +343,24 @@ describe("shared cluster operation policy", () => {
       } as never),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(create).not.toHaveBeenCalled();
+  });
+  it("accepts a typed native network source and rejects unsupported provider fields", async () => {
+    const input = clusterInputFixture();
+    input.network.source = { providerId: "hetzner-dedicated", networkRef: "vswitch-a" };
+    await expect(operations.createCluster(ctx, input)).resolves.toMatchObject({
+      data: { id: "cluster-a" },
+    });
+    expect(create).toHaveBeenCalledOnce();
+    for (const source of [
+      { providerId: "unknown" },
+      { providerId: "aws", command: "configure" },
+      { providerId: "aws", networkRef: "x".repeat(201) },
+    ]) {
+      await expect(
+        operations.createCluster(ctx, { ...input, network: { ...input.network, source } } as never),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    }
+    expect(create).toHaveBeenCalledOnce();
   });
   it("validates persisted output before presenting a cluster", async () => {
     list.mockResolvedValue([{ ...serverClusterFixture(), revision: "invalid" }]);

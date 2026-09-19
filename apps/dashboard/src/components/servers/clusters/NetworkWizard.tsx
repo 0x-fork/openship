@@ -9,6 +9,10 @@ import {
   selectClusterInterface,
   suggestNativeClusterConfig,
   validateNativeCluster,
+  nativeNetworkSource,
+  networkMemberProvider,
+  retainNetworkAccess,
+  type NetworkAccessPolicy,
   type ClusterMemberConfig,
   type NetworkHostObservation,
   type PrivateInterfaceChoice,
@@ -26,17 +30,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ServerInfo } from "@/lib/api/system";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { privateNetworksApi } from "@/lib/api/private-networks";
 import { randomUUID } from "@/lib/random-uuid";
 import { clusterConfig } from "./model";
 import { NetworkFirewallRules } from "./NetworkFirewallRules";
+import { NetworkSource } from "./NetworkSource";
+import { ClusterNetworkDiagnostics } from "./ClusterNetworkDiagnostics";
 import {
   NetworkFirewallConfirmation,
   useNetworkFirewallConfirmation,
 } from "./NetworkFirewallConfirmation";
 
-export function ClusterWizard({
+export function NetworkWizard({
   capabilities,
+  protectedServerIds = [],
   initial,
   initialRequest,
   onCancel,
@@ -44,6 +51,7 @@ export function ClusterWizard({
   onManagedPreparation,
 }: {
   capabilities: ClusterCapabilities;
+  protectedServerIds?: string[];
   initial?: ServerCluster;
   initialRequest?: ManagedNetworkPreparationInput;
   onCancel(): void;
@@ -51,7 +59,7 @@ export function ClusterWizard({
   onManagedPreparation(preparation: ManagedNetworkPreparation): void;
 }) {
   const { t } = useI18n();
-  const c = t.servers.clusters;
+  const c = t.servers.networks;
   const m = c.managed;
   const { toast } = useToast();
   const addServer = useAddServerModal();
@@ -102,6 +110,14 @@ export function ClusterWizard({
       (initial?.network.mode === "wireguard" ? initial.network.probePort : 45876),
   );
   const [rotateKeys, setRotateKeys] = useState(initialRequest?.rotateKeys ?? false);
+  const [managedAccess, setManagedAccess] = useState<NetworkAccessPolicy | undefined>(
+    initialRequest?.access ??
+      (initial?.network.mode === "wireguard" ? initial.network.access : undefined),
+  );
+  const connectionAccess = retainNetworkAccess(
+    managedAccess,
+    draft.members.map((member) => member.serverId),
+  );
   const managedBusy = useRef(false);
   const preparationRequest = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const [ranges, setRanges] = useState(
@@ -125,8 +141,12 @@ export function ClusterWizard({
   const requestId = useRef(randomUUID());
   const steps =
     mode === "wireguard"
-      ? [c.stepCluster, c.stepNetwork, m.preparationTitle, c.stepReview]
-      : [c.stepCluster, c.stepNetwork, c.stepReview];
+      ? [c.stepNetwork, c.members, m.preparationTitle, c.stepReview]
+      : [c.stepNetwork, c.members, c.stepReview];
+  const source = nativeNetworkSource(draft);
+  const sourceProvider = capabilities.providers.find(
+    (provider) => provider.id === source.providerId,
+  );
   const stepHeading = useRef<HTMLHeadingElement>(null);
   const errorMessage = useRef<HTMLDivElement>(null);
   const previousStep = useRef(step);
@@ -156,15 +176,27 @@ export function ClusterWizard({
 
   useEffect(() => {
     let active = true;
-    void Promise.all([systemApi.listServers(), serverClustersApi.list()])
+    void Promise.all([systemApi.listServers(), privateNetworksApi.list()])
       .then(([rows, clusters]) => {
         if (!active) return;
         setServers(rows);
         setOccupied(
           new Set(
             clusters
-              .filter((cluster) => cluster.id !== baseline?.id)
-              .flatMap((cluster) => cluster.members.map((m) => m.serverId)),
+              .filter(
+                (cluster) =>
+                  cluster.id !== baseline?.id &&
+                  cluster.operation &&
+                  [
+                    "applying",
+                    "verifying",
+                    "committing",
+                    "rolling_back",
+                    "interrupted",
+                    "needs_attention",
+                  ].includes(cluster.operation.status),
+              )
+              .flatMap((cluster) => cluster.operation!.plan.hosts.map((host) => host.serverId)),
           ),
         );
       })
@@ -225,6 +257,7 @@ export function ClusterWizard({
     setDetectionSummary(null);
     setInspections(({ [id]: _, ...remaining }) => remaining);
     setInspectionErrors(({ [id]: _, ...remaining }) => remaining);
+    setError(null);
   };
   const config = () => ({
     ...draft,
@@ -256,7 +289,7 @@ export function ClusterWizard({
       // Reuse the existing read-only inspection endpoint, with bounded SSH fan-out.
       for (let start = 0; start < ids.length; start += 3) {
         const batch = ids.slice(start, start + 3);
-        const results = await Promise.allSettled(batch.map((id) => serverClustersApi.inspect(id)));
+        const results = await Promise.allSettled(batch.map((id) => privateNetworksApi.inspect(id)));
         if (inspectionRun.current !== run) return;
         results.forEach((result, index) => {
           const id = batch[index]!;
@@ -315,11 +348,13 @@ export function ClusterWizard({
   const next = async () => {
     if (managedBusy.current || saving) return;
     setError(null);
+    if (step === 0 && !draft.name.trim()) {
+      setError(c.networkSetup.nameRequired);
+      return;
+    }
     if (
-      step === 0 &&
-      (!draft.name.trim() ||
-        draft.members.length < 2 ||
-        draft.members.length > capabilities.maxMembers)
+      step === 1 &&
+      (draft.members.length < 2 || draft.members.length > capabilities.maxMembers)
     ) {
       setError(interpolate(c.chooseMembers, { max: String(capabilities.maxMembers) }));
       return;
@@ -328,6 +363,7 @@ export function ClusterWizard({
       if (mode === "wireguard") {
         managedBusy.current = true;
         setSaving(true);
+        let navigating = false;
         try {
           const input = {
             name: draft.name.trim(),
@@ -337,6 +373,7 @@ export function ClusterWizard({
             mtu: managedMtu ? Number(managedMtu) : undefined,
             probePort: managedProbePort,
             rotateKeys,
+            ...(connectionAccess ? { access: connectionAccess } : {}),
             members: draft.members.map((member) => ({
               serverId: member.serverId,
               providerId: member.providerId,
@@ -347,26 +384,32 @@ export function ClusterWizard({
           const fingerprint = JSON.stringify(input);
           if (preparationRequest.current?.fingerprint !== fingerprint)
             preparationRequest.current = { fingerprint, requestId: randomUUID() };
-          const preparation = await serverClustersApi.prepareManaged({
+          const preparation = await privateNetworksApi.prepareManaged({
             ...input,
             requestId: preparationRequest.current.requestId,
           });
           onManagedPreparation(preparation);
+          navigating = true;
         } catch (err) {
           // The server may have accepted the request before its response was
           // lost. Reattach to that saved attempt without submitting more work.
           const pendingId = preparationRequest.current?.requestId;
           if (pendingId) {
-            const saved = await serverClustersApi.managedPreparation(pendingId).catch(() => null);
+            const saved = await privateNetworksApi.managedPreparation(pendingId).catch(() => null);
             if (saved?.id === pendingId) {
               onManagedPreparation(saved);
+              navigating = true;
               return;
             }
           }
           setError(getApiErrorMessage(err));
         } finally {
-          managedBusy.current = false;
-          setSaving(false);
+          // App Router starts navigation before the destination is ready.
+          // Keep the draft locked until this wizard unmounts after the handoff.
+          if (!navigating) {
+            managedBusy.current = false;
+            setSaving(false);
+          }
         }
         return;
       }
@@ -375,7 +418,15 @@ export function ClusterWizard({
         validateNativeCluster(value);
         for (const member of value.members) {
           const observed = inspections[member.serverId];
-          if (observed) selectClusterInterface(observed, member, value.network.mtu);
+          if (observed)
+            selectClusterInterface(
+              observed,
+              {
+                ...member,
+                providerId: networkMemberProvider(value.network, member),
+              },
+              value.network.mtu,
+            );
         }
       } catch (err) {
         setError(validationMessage(err));
@@ -399,13 +450,13 @@ export function ClusterWizard({
       const value = config();
       validateNativeCluster(value);
       saved = baseline
-        ? await serverClustersApi.update({
+        ? await privateNetworksApi.update({
             ...value,
             clusterId: baseline.id,
             revision: baseline.revision,
           })
-        : await serverClustersApi.create({ ...value, requestId: requestId.current });
-      const verification = await serverClustersApi.verify(saved);
+        : await privateNetworksApi.create({ ...value, requestId: requestId.current });
+      const verification = await privateNetworksApi.verify(saved);
       onSaved({ ...saved, verification });
     } catch (err) {
       if (saved) {
@@ -483,72 +534,11 @@ export function ClusterWizard({
                   />
                 </Label>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-medium">
-                  {c.selectServers}{" "}
-                  <span className="ms-1 text-muted-foreground">
-                    {draft.members.length}/{capabilities.maxMembers}
-                  </span>
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    addServer((server) => {
-                      setServers((old) => [...old.filter((s) => s.id !== server.id), server]);
-                      if (draft.members.length < capabilities.maxMembers) selectServer(server.id);
-                    })
-                  }
-                >
-                  <Plus className="size-3.5" />
-                  {t.servers.list.addServer}
-                </Button>
-              </div>
-              {loading ? (
-                <Loader2 className="mx-auto my-8 size-5 animate-spin" />
-              ) : (
-                <div className="grid gap-3 @md/cluster-form:grid-cols-2">
-                  {servers.map((server) => {
-                    const selected = draft.members.some((m) => m.serverId === server.id);
-                    const unavailable =
-                      occupied.has(server.id) ||
-                      (!selected && draft.members.length >= capabilities.maxMembers);
-                    return (
-                      <label
-                        key={server.id}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl p-3 transition-colors ${selected ? "bg-primary/10" : "bg-muted/40 hover:bg-muted/60"} ${unavailable ? "cursor-not-allowed opacity-50" : ""}`}
-                      >
-                        <Checkbox
-                          checked={selected}
-                          disabled={unavailable}
-                          onCheckedChange={() => selectServer(server.id)}
-                          aria-label={server.name || server.sshHost}
-                        />
-                        <Server className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 text-sm">
-                          {memberLabel(server.id)}
-                          {occupied.has(server.id) && (
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {c.alreadyMember}
-                            </span>
-                          )}
-                        </span>
-                      </label>
-                    );
-                  })}
-                  {!servers.length && (
-                    <p className="col-span-full py-4 text-sm text-muted-foreground">
-                      {c.addServersFirst}
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
-          {step === 1 && !baseline && capabilities.modes.includes("wireguard") && (
-            <fieldset disabled={saving || inspecting !== null} className="mb-6 min-w-0">
+          {step === 0 && !baseline && capabilities.modes.includes("wireguard") && (
+            <fieldset disabled={saving || inspecting !== null} className="mt-6 min-w-0">
               <legend className="mb-3 text-sm font-medium">{m.mode}</legend>
               <div className="grid gap-3 @md/cluster-form:grid-cols-2">
                 {(["wireguard", "native"] as const).map((choice) => (
@@ -581,6 +571,152 @@ export function ClusterWizard({
             </fieldset>
           )}
 
+          {step === 0 && mode === "native" && (
+            <div className="mt-6 space-y-4">
+              <div className="grid gap-4 @md/cluster-form:grid-cols-2">
+                <InfrastructureProviderSelect
+                  providers={capabilities.providers}
+                  value={source.providerId}
+                  onChange={(providerId) => {
+                    setDraft((old) => ({
+                      ...old,
+                      network: { ...old.network, source: { providerId } },
+                    }));
+                    setError(null);
+                  }}
+                />
+                <Label className="min-w-0 text-muted-foreground">
+                  {c.networkReference}
+                  <Input
+                    variant="filled"
+                    className="mt-1.5"
+                    value={source.networkRef ?? ""}
+                    placeholder={sourceProvider?.network}
+                    maxLength={200}
+                    onChange={(e) =>
+                      setDraft((old) => ({
+                        ...old,
+                        network: {
+                          ...old.network,
+                          source: { ...source, networkRef: e.target.value },
+                        },
+                      }))
+                    }
+                  />
+                </Label>
+              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {source.providerId === "custom"
+                  ? c.networkSetup.customHint
+                  : c.networkSetup.providerHint}
+              </p>
+              {sourceProvider?.docs && (
+                <a
+                  className="inline-flex text-xs text-primary hover:underline"
+                  href={sourceProvider.docs}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {c.providerGuide} ↗
+                </a>
+              )}
+            </div>
+          )}
+
+          {step === 1 && (
+            <fieldset disabled={saving || inspecting !== null} className="mb-6 min-w-0 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-medium">
+                  {c.selectServers}{" "}
+                  <span className="ms-1 text-muted-foreground">
+                    {draft.members.length}/{capabilities.maxMembers}
+                  </span>
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    addServer((server) => {
+                      setServers((old) => [...old.filter((s) => s.id !== server.id), server]);
+                      if (draft.members.length < capabilities.maxMembers) selectServer(server.id);
+                    })
+                  }
+                >
+                  <Plus className="size-3.5" />
+                  {t.servers.list.addServer}
+                </Button>
+              </div>
+              {loading ? (
+                <Loader2 className="mx-auto my-8 size-5 animate-spin" />
+              ) : (
+                <div className="grid gap-3 @md/cluster-form:grid-cols-2">
+                  {servers.map((server) => {
+                    const selected = draft.members.some((m) => m.serverId === server.id);
+                    const unavailable =
+                      protectedServerIds.includes(server.id) ||
+                      occupied.has(server.id) ||
+                      (!selected && draft.members.length >= capabilities.maxMembers);
+                    return (
+                      <label
+                        key={server.id}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl p-3 transition-colors ${selected ? "bg-primary/10" : "bg-muted/40 hover:bg-muted/60"} ${unavailable ? "cursor-not-allowed opacity-50" : ""}`}
+                      >
+                        <Checkbox
+                          checked={selected}
+                          disabled={unavailable}
+                          onCheckedChange={() => selectServer(server.id)}
+                          aria-label={server.name || server.sshHost}
+                        />
+                        <Server className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 text-sm">
+                          {memberLabel(server.id)}
+                          {protectedServerIds.includes(server.id) && (
+                            <span className="block text-xs text-muted-foreground">{c.inUseBy}</span>
+                          )}
+                          {occupied.has(server.id) && (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {c.alreadyMember}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {!servers.length && (
+                    <p className="col-span-full py-4 text-sm text-muted-foreground">
+                      {c.addServersFirst}
+                    </p>
+                  )}
+                </div>
+              )}
+            </fieldset>
+          )}
+
+          {step === 1 && mode === "wireguard" && draft.members.length >= 2 && (
+            <div className="mb-6">
+              <ClusterNetworkDiagnostics
+                compact
+                showFirewallRules={false}
+                network={{ mode: "wireguard", access: connectionAccess }}
+                onAccessChange={setManagedAccess}
+                accessDisabled={saving}
+                members={draft.members.map((member) => ({
+                  ...member,
+                  name: memberName(member.serverId),
+                  providerId: "custom",
+                  privateIp:
+                    baseline?.members.find((old) => old.serverId === member.serverId)?.privateIp ??
+                    "",
+                  endpoint:
+                    managedPeers[member.serverId]?.endpoint ||
+                    servers.find((server) => server.id === member.serverId)?.sshHost,
+                  listenPort: managedPeers[member.serverId]?.listenPort ?? 51820,
+                }))}
+              />
+            </div>
+          )}
+
           {step === 1 && mode === "wireguard" && (
             <fieldset disabled={saving} className="min-w-0 space-y-5">
               <div className="space-y-2 rounded-xl bg-muted/40 p-4 text-sm leading-relaxed text-muted-foreground">
@@ -590,12 +726,6 @@ export function ClusterWizard({
               {draft.members.map((member) => (
                 <div key={member.serverId} className="space-y-4 rounded-xl bg-muted/30 p-4">
                   <div className="text-sm">{memberLabel(member.serverId)}</div>
-                  <InfrastructureProviderSelect
-                    providers={capabilities.providers}
-                    value={member.providerId}
-                    onChange={(providerId) => updateMember(member.serverId, { providerId })}
-                    disabled={saving}
-                  />
                   <div className="grid grid-cols-1 gap-3 @md/cluster-form:grid-cols-[minmax(0,1fr)_150px]">
                     <Label className="min-w-0">
                       {m.endpoint}
@@ -706,7 +836,7 @@ export function ClusterWizard({
               <div className="flex items-start gap-3 rounded-xl bg-muted/50 p-4">
                 <Network className="mt-0.5 size-5 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{c.nativeNetwork}</p>
+                  <NetworkSource cluster={draft} />
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                     {c.prepareNetwork}
                   </p>
@@ -716,7 +846,7 @@ export function ClusterWizard({
                     size="sm"
                     className="mt-3 h-auto max-w-full whitespace-normal py-2 text-start"
                     onClick={() => void inspect(draft.members.map((member) => member.serverId))}
-                    disabled={saving || inspecting !== null}
+                    disabled={saving || inspecting !== null || !draft.members.length}
                   >
                     {inspecting ? (
                       <Loader2 className="size-3.5 animate-spin" />
@@ -740,11 +870,6 @@ export function ClusterWizard({
                   )}
                 </div>
               </div>
-              {new Set(draft.members.map((member) => member.providerId)).size > 1 && (
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {c.crossProviderNetworkHint}
-                </p>
-              )}
               <Label className="block">
                 {c.addressRanges}
                 <Input
@@ -764,7 +889,6 @@ export function ClusterWizard({
               </Label>
               <div className="space-y-3">
                 {draft.members.map((member) => {
-                  const provider = capabilities.providers.find((p) => p.id === member.providerId);
                   const observed = inspections[member.serverId];
                   const choices = privateInterfaceChoices(observed?.interfaces ?? []);
                   const selectedChoice = choices.find(
@@ -805,25 +929,6 @@ export function ClusterWizard({
                         </p>
                       )}
                       <div className="grid gap-3 @lg/cluster-form:grid-cols-2">
-                        <InfrastructureProviderSelect
-                          providers={capabilities.providers}
-                          value={member.providerId}
-                          onChange={(providerId) => updateMember(member.serverId, { providerId })}
-                          disabled={saving || inspecting !== null}
-                        />
-                        <Label className="text-muted-foreground">
-                          {c.networkReference}
-                          <Input
-                            variant="filled"
-                            className="mt-1.5"
-                            value={member.networkRef ?? ""}
-                            placeholder={provider?.network}
-                            maxLength={200}
-                            onChange={(e) =>
-                              updateMember(member.serverId, { networkRef: e.target.value })
-                            }
-                          />
-                        </Label>
                         <Label className="text-muted-foreground">
                           {c.privateAddress}
                           <Input
@@ -888,16 +993,6 @@ export function ClusterWizard({
                           )}
                         </div>
                       )}
-                      {provider?.docs && (
-                        <a
-                          className="mt-3 inline-flex text-xs text-primary hover:underline"
-                          href={provider.docs}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {c.providerGuide} ↗
-                        </a>
-                      )}
                     </div>
                   );
                 })}
@@ -947,6 +1042,17 @@ export function ClusterWizard({
 
           {step === 2 && mode === "native" && (
             <div className="space-y-4">
+              <NetworkFirewallRules
+                embedded
+                network={{ mode: "native", probePort: draft.network.probePort }}
+                servers={draft.members.map((member) => ({
+                  ...member,
+                  providerId: networkMemberProvider(draft.network, member),
+                  name: memberName(member.serverId),
+                }))}
+              >
+                <NetworkFirewallConfirmation mode="native" {...firewall} disabled={saving} />
+              </NetworkFirewallRules>
               <div className="rounded-xl bg-muted/40 p-4">
                 <p className="font-semibold">{draft.name}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -955,6 +1061,14 @@ export function ClusterWizard({
                 </p>
               </div>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <dt className="text-muted-foreground">{c.provider}</dt>
+                <dd>{source.providerId === "custom" ? c.customProvider : sourceProvider?.name}</dd>
+                {source.networkRef && (
+                  <>
+                    <dt className="text-muted-foreground">{c.stepNetwork}</dt>
+                    <dd className="break-words">{source.networkRef}</dd>
+                  </>
+                )}
                 <dt className="text-muted-foreground">{c.nativeNetwork}</dt>
                 <dd className="break-words font-mono text-xs">
                   <BlurIp>{config().network.cidrs.join(", ")}</BlurIp>
@@ -980,13 +1094,6 @@ export function ClusterWizard({
               <div className="rounded-xl bg-primary/5 p-4 text-sm leading-relaxed text-muted-foreground">
                 {c.reviewEffect}
               </div>
-              <NetworkFirewallRules
-                network={{ mode: "native", probePort: draft.network.probePort }}
-                servers={draft.members.map((member) => ({
-                  ...member,
-                  name: memberName(member.serverId),
-                }))}
-              />
             </div>
           )}
         </div>
@@ -1020,9 +1127,6 @@ export function ClusterWizard({
             ))}
           </ol>
           <div className="space-y-3 p-5">
-            {mode === "native" && step === 2 && (
-              <NetworkFirewallConfirmation mode="native" {...firewall} disabled={saving} />
-            )}
             <Button
               type="button"
               disabled={
@@ -1033,6 +1137,7 @@ export function ClusterWizard({
                 (mode === "native" && step === 2 && !firewall.checked)
               }
               onClick={() => (step < 2 ? void next() : void save())}
+              aria-busy={saving}
               className="w-full"
             >
               {saving && <Loader2 className="size-4 shrink-0 animate-spin" />}

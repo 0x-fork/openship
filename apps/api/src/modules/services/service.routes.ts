@@ -178,7 +178,11 @@ r.post("/:serviceId/stop", { tag: "project:service:write", auditHandledByOperati
  * wrong twice over: `RouteSpec` has no `query` field, and a `body` schema makes
  * secureRouter mount tbValidator("json"), which 400s the CLI's bodyless POST
  * (its api-client always sets Content-Type: application/json). */
-r.post("/:serviceId/restart", { tag: "project:service:write", auditHandledByOperation: true, mcp: { description: "Restart (bounce) this service's container. Does NOT apply changed env/config — it answers 409 SERVICE_CONFIG_STALE when env changed since the running container was created. To APPLY config, trigger a refresh deploy: POST /api/deployments {refresh:true, serviceIds:[serviceId]}. Pass ?force=true to bounce despite pending changes." } }, cloudProjectProxy, ctrl.restartContainer);
+r.post("/:serviceId/restart", { tag: "project:service:write", auditHandledByOperation: true, mcp: { description: "Restart (bounce) this service's container. Answers 409 SERVICE_CONFIG_STALE when saved env is pending. Use POST /api/projects/:id/services/:serviceId/apply-env to apply it, or ?force=true to bounce with the old env." } }, cloudProjectProxy, ctrl.restartContainer);
+r.post("/:serviceId/apply-env", {
+  tag: "project:service:write", auditHandledByOperation: true, rateLimit: "write-authed",
+  mcp: { description: "Apply saved runtime environment to this service using its current image and runtime configuration. Gracefully replaces its container without a build or deployment session. Returns after the replacement starts; preserves the previous configuration on failure." },
+}, cloudProjectProxy, ctrl.applyEnvironment);
 
 /* ─── Service environment variables ─────────────────────────────────────── */
 r.get(

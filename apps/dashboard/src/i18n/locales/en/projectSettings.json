@@ -1072,9 +1072,9 @@
   },
   "serviceEnvironment": {
     "title": "Service runtime environment",
-    "description": "Applies only to this service at runtime. These values override Compose environment and same-named project variables. Apply them with a restart or deployment.",
+    "description": "These variables apply only to this service and override matching Compose or shared project values. Use Apply environment changes to activate saved values.",
     "overrides": "These keys take precedence over project values for this service: {keys}.",
-    "buildArguments": "Explicit image build arguments are edited in the Compose file or source configuration. Rebuild and redeploy to apply them; this editor changes runtime variables only.",
+    "buildArguments": "Build arguments are configured in the Compose file or source configuration and require a rebuild.",
     "projectLink": "Edit shared project environment",
     "loadFailed": "Could not load project variable names to check overrides."
   }

@@ -66,6 +66,7 @@ const cases: Array<{
     response: { success: true, service },
   },
   { name: "remove", child: true, method: "DELETE", path: "", result: { success: true } },
+  { name: "applyEnvironment", child: true, method: "POST", path: "/apply-env", result: { success: true, containerId: "new-container" } },
   {
     name: "acceptDrift",
     child: true,

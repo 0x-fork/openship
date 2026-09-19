@@ -18,6 +18,9 @@ import {
   managedNetworkSteps,
   MANAGED_NETWORK_APPLY_STEPS,
   normalizeManagedNetworkInput,
+  retainNetworkAccess,
+  networkAccessAllowed,
+  networkTransportPeers,
   type ManagedNetworkPlan,
   type ManagedNetworkObservation,
   type ManagedNetworkHostProgress,
@@ -38,7 +41,6 @@ import { authorization } from "../../lib/authorization";
 import { inspectHostIssuedIdentity } from "../../lib/host-port-target";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { createProvisionLock } from "../../lib/provision-lock";
-import { deferBackgroundWork } from "../../lib/background-work";
 import {
   assertClusterManagementAvailable,
   authorizeMember,
@@ -51,6 +53,7 @@ import {
 } from "./server-cluster.operations";
 import { appendNetworkSetupLog, updateNetworkSetupStep } from "./network-setup-progress";
 import { notifyNetworkSetup } from "./network-setup-bus";
+import { assertNetworkSetupAcceptingWork, deferNetworkSetupWork } from "./network-setup-lifecycle";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const conflict = (message: string) => new AppError(message, 409, "MANAGED_NETWORK_CONFLICT");
@@ -72,13 +75,14 @@ function configuration(cluster: ServerClusterRecord): WireGuardClusterConfig {
     !cluster.network.interfaceName
   )
     throw conflict(
-      "This cluster uses an existing provider network. Create a managed network cluster to use WireGuard.",
+      "This is an externally managed network. Create a separate managed network to use WireGuard.",
     );
   const config: WireGuardClusterConfig = {
     name: cluster.name,
     location: cluster.location ?? undefined,
     network: {
       ...cluster.network,
+      access: cluster.network.access ?? undefined,
       mode: "wireguard",
       managedId: cluster.network.managedId,
       interfaceName: cluster.network.interfaceName,
@@ -101,6 +105,7 @@ function configuration(cluster: ServerClusterRecord): WireGuardClusterConfig {
     cidrs: config.network.cidrs,
     mtu: config.network.mtu,
     probePort: config.network.probePort,
+    ...(cluster.network.access ? { access: cluster.network.access } : {}),
   };
   validateWireGuardCluster(config);
   return config;
@@ -155,7 +160,7 @@ export async function planNetwork(
     ? await repos.serverCluster.get(ctx.organizationId, input.clusterId)
     : null;
   if (current && current.revision !== input.revision)
-    throw conflict("The cluster changed. Reload before planning.");
+    throw conflict("The network changed. Reload before planning.");
   if (current?.operation && managedNetworkUnsettled(current.operation.status))
     throw conflict("Resume or restore the current operation before planning another change.");
   const previous = current ? configuration(current) : null;
@@ -164,11 +169,25 @@ export async function planNetwork(
     throw conflict("Only an existing managed network can be removed.");
   if (previous && input.cidr && input.cidr !== previous.network.cidrs[0])
     throw conflict(
-      "The cluster keeps its allocated subnet. Create a separate network to change its address range.",
+      "The network keeps its allocated subnet. Create a separate network to change its address range.",
     );
   const managedId = previous?.network.managedId ?? randomBytes(16).toString("hex");
   const interfaceName = managedInterfaceName(managedId);
   const selected = intent === "remove" ? previous!.members : normalized.members;
+  const access =
+    intent === "remove"
+      ? previous?.network.access
+      : (normalized.access ??
+        retainNetworkAccess(
+          previous?.network.access,
+          selected.map((member) => member.serverId),
+        ));
+  if (current)
+    await repos.serverCluster.assertDependencies(
+      ctx.organizationId,
+      current.id,
+      intent === "remove" ? undefined : selected.map((member) => member.serverId),
+    );
   const ids = [
     ...new Set([...selected, ...(previous?.members ?? [])].map((member) => member.serverId)),
   ].sort();
@@ -176,9 +195,9 @@ export async function planNetwork(
   const servers = new Map<string, Awaited<ReturnType<typeof authorizeMember>>>();
   for (const id of ids) {
     servers.set(id, await authorizeMember(ctx, id));
-    const membership = await repos.serverCluster.membership(id);
+    const membership = await repos.serverCluster.membership(id, true);
     if (membership && membership.clusterId !== current?.id)
-      throw conflict("A selected server already belongs to another cluster or pending operation.");
+      throw conflict("A selected server is reserved by another network operation.");
   }
   const endpoints = new Map<string, { endpoint: string; listenPort: number }>();
   const managementIps: string[] = [];
@@ -227,8 +246,13 @@ export async function planNetwork(
               managedId,
               hostIdentity,
               ...endpoints.get(id)!,
+              accessControlled: !!access,
               transportEndpoints: [...endpoints]
-                .filter(([other]) => other !== id)
+                .filter(([other]) =>
+                  networkTransportPeers(selected, id, access).some(
+                    (peer) => peer.serverId === other,
+                  ),
+                )
                 .map(([, endpoint]) => endpoint.endpoint),
             });
           } catch (error) {
@@ -316,6 +340,7 @@ export async function planNetwork(
             probePort: input.probePort ?? previous?.network.probePort ?? 45876,
             managedId,
             interfaceName,
+            ...(access ? { access } : {}),
           },
           members: selected.map((member) => ({
             serverId: member.serverId,
@@ -375,6 +400,7 @@ export async function planNetwork(
 export async function runManagedNetwork(
   ctx: ExecutionContext,
   operation: ManagedNetworkOperationRecord,
+  controllerSignal?: AbortSignal,
 ) {
   const { plan, id, generation } = operation;
   const hosts = structuredClone(operation.hosts);
@@ -390,10 +416,14 @@ export async function runManagedNetwork(
   let lostLease = false;
   let dirtyLogs = false;
   const deadline = Date.now() + 15 * 60_000;
-  const waitSignal = AbortSignal.timeout(15 * 60_000);
+  const waitSignal = AbortSignal.any([
+    AbortSignal.timeout(15 * 60_000),
+    ...(controllerSignal ? [controllerSignal] : []),
+  ]);
   const interval = setInterval(() => {
     heartbeat = heartbeat
       .then(async () => {
+        if (controllerSignal?.aborted) return;
         if (!(await repos.serverCluster.heartbeatOperation(id, generation))) lostLease = true;
       })
       .catch(() => {
@@ -441,6 +471,7 @@ export async function runManagedNetwork(
     operationId: id,
     generation,
     host: plan.hosts.find((host) => host.serverId === serverId)!,
+    accessControlled: !!plan.config.network.access,
   });
   const checkedServer = async <T>(
     serverId: string,
@@ -451,7 +482,11 @@ export async function runManagedNetwork(
       throw conflict(
         "Network setup exceeded its deadline. Resume after reviewing the server results.",
       );
-    if (lostLease || !(await repos.serverCluster.operationActive(id, generation)))
+    if (
+      controllerSignal?.aborted ||
+      lostLease ||
+      !(await repos.serverCluster.operationActive(id, generation))
+    )
       throw conflict("This worker no longer owns the network operation.");
     return onServer(ctx, serverId, async (executor) => {
       await fleetAdmin(ctx);
@@ -459,6 +494,7 @@ export async function runManagedNetwork(
         throw conflict("This network generation expired.");
       if ((await inspectHostIssuedIdentity(executor)) !== transaction(serverId).host.hostIdentity)
         throw conflict("The SSH target's physical identity changed. Host changes were stopped.");
+      controllerSignal?.throwIfAborted();
       return fn(executor);
     });
   };
@@ -566,8 +602,15 @@ export async function runManagedNetwork(
                 hostIdentity: transaction(host.serverId).host.hostIdentity,
                 endpoint: transaction(host.serverId).host.endpoint,
                 listenPort: transaction(host.serverId).host.listenPort,
+                accessControlled: !!plan.config.network.access,
                 transportEndpoints: plan.hosts
-                  .filter((peer) => peer.serverId !== host.serverId)
+                  .filter((peer) =>
+                    networkTransportPeers(
+                      plan.config.members,
+                      host.serverId,
+                      plan.config.network.access,
+                    ).some((member) => member.serverId === peer.serverId),
+                  )
                   .map((peer) => peer.endpoint),
               });
               if (observed.fingerprint !== transaction(host.serverId).host.fingerprint)
@@ -697,9 +740,9 @@ export async function runManagedNetwork(
             managedNetworkTools.waitForPeers(
               executor,
               plan.managedId,
-              config.members
-                .filter((peer) => peer.serverId !== member.serverId)
-                .map((peer) => peer.serverId),
+              networkTransportPeers(config.members, member.serverId, config.network.access).map(
+                (peer) => peer.serverId,
+              ),
             ),
           );
           report!.handshakes!.push(
@@ -836,15 +879,25 @@ export async function runManagedNetwork(
         const success =
           own?.ok &&
           peers.length === config.members.length - 1 &&
-          peers.every((peer) => peer.tcp && peer.udp && peer.mtu);
+          peers.every((peer) =>
+            networkAccessAllowed(config.network.access, member.serverId, peer.targetServerId)
+              ? peer.tcp && peer.udp && peer.mtu
+              : peer.expectedAccess === "deny" && peer.policyPassed === true,
+          );
         await step(
           host,
           "verify",
           success ? "completed" : "failed",
           success
-            ? "TCP, UDP, and MTU checks passed to every peer."
+            ? config.network.access
+              ? "Allowed connections passed TCP, UDP, and MTU checks; blocked directions rejected new connections."
+              : "TCP, UDP, and MTU checks passed to every peer."
             : own?.message ||
-                peers.find((peer) => !peer.tcp || !peer.udp || !peer.mtu)?.message ||
+                peers.find((peer) =>
+                  peer.expectedAccess === "deny"
+                    ? !peer.policyPassed
+                    : !peer.tcp || !peer.udp || !peer.mtu,
+                )?.message ||
                 "Private connectivity checks failed. Check peer endpoints and provider UDP firewall rules.",
         );
       }
@@ -953,6 +1006,7 @@ export const managedNetworkCollection = {
   },
   async applyManagedNetwork(ctx, input: ApplyManagedNetworkInput) {
     await fleetAdmin(ctx);
+    assertNetworkSetupAcceptingWork();
     const current = await repos.serverCluster.getOperation(ctx.organizationId, input.operationId);
     for (const host of current.plan.hosts) await authorizeMember(ctx, host.serverId);
     const { operation, started } = await withServerInventoryLock(ctx.organizationId, async () => {
@@ -968,7 +1022,15 @@ export const managedNetworkCollection = {
     if (started) {
       notifyNetworkSetup(ctx.organizationId, "operation", operation.id);
       record(ctx, operation.clusterId, `network.${input.action}.started`);
-      void deferBackgroundWork(() => runManagedNetwork(ctx, operation)).catch(() => undefined);
+      await deferNetworkSetupWork(
+        {
+          kind: "operation",
+          organizationId: ctx.organizationId,
+          id: operation.id,
+          generation: operation.generation,
+        },
+        (signal) => runManagedNetwork(ctx, operation, signal),
+      );
     }
     return presentManagedOperation(operation);
   },

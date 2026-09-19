@@ -60,8 +60,25 @@
       "reconnect": "Volver a conectar"
     },
     "notEnabled": {
-      "title": "La facturación no está habilitada para esta organización",
-      "description": "La facturación está configurada, pero no activa para esta organización. Contacta a tu administrador para habilitarla."
+      "title": "Las compras de Cloud aún no están disponibles",
+      "description": "Openship aún no ha habilitado las suscripciones ni la compra de créditos. Inténtalo de nuevo más tarde."
+    },
+    "notConfigured": {
+      "title": "La configuración de facturación de Cloud está incompleta",
+      "description": "Openship debe completar la configuración de facturación. Contacta con el soporte de Openship."
+    },
+    "forbidden": {
+      "title": "No tienes acceso a la facturación",
+      "description": "Pide al propietario de tu organización que te conceda acceso a la facturación."
+    },
+    "signInRequired": {
+      "title": "Inicia sesión para ver la facturación",
+      "description": "No se pudo verificar tu sesión. Inicia sesión de nuevo para continuar.",
+      "signIn": "Iniciar sesión"
+    },
+    "loadFailed": {
+      "title": "No se pudo cargar la facturación",
+      "description": "La facturación no está disponible temporalmente. Inténtalo de nuevo. Si el problema persiste, contacta con el soporte de Openship."
     }
   },
   "plansRoute": {
@@ -143,11 +160,11 @@
     },
     "chart": {
       "title": "Uso a lo largo del tiempo",
-      "subtitle": "Unidades medidas apiladas por {unit}."
+      "subtitle": "Créditos Cloud por {unit}."
     },
     "breakdown": {
       "title": "Desglose de recursos",
-      "subtitle": "Créditos atribuidos proporcionalmente al uso medido de recursos en el rango seleccionado.",
+      "subtitle": "Uso real de recursos en las fechas seleccionadas. El total de créditos Cloud se muestra arriba.",
       "resource": "Recurso",
       "units": "Unidades",
       "credits": "Créditos",
@@ -165,11 +182,11 @@
         "units": "GB-horas"
       },
       "disk": {
-        "label": "E/S de disco",
+        "label": "Actividad de disco",
         "units": "GB"
       },
       "network": {
-        "label": "Red",
+        "label": "Transferencia de datos",
         "units": "GB"
       }
     },
@@ -208,7 +225,8 @@
       "incomplete": "Incompleto",
       "incomplete_expired": "Expirado",
       "unpaid": "Sin pagar",
-      "paused": "Pausado"
+      "paused": "Pausado",
+      "credit_exhausted": "Cloud pausado"
     },
     "includedTitle": "Qué incluye",
     "perYear": "${price}/año"
@@ -241,5 +259,75 @@
     "active": "Tu plan de Cloud está activo.",
     "pending": "Es posible que tu pago siga procesándose. Actualiza esta página para consultar el plan y el saldo. Contacta con soporte si falta un pago completado.",
     "support": "Contactar con soporte"
+  },
+  "deployGate": {
+    "title": "Elige un plan para desplegar",
+    "description": "Configura tus proyectos gratis. Para compilarlos y ejecutarlos necesitas un plan Cloud de pago.",
+    "preserved": "La configuración de tu proyecto se conserva aquí. El pago se abre en otra pestaña; vuelve aquí después de activar tu plan para continuar.",
+    "close": "Volver al proyecto",
+    "checkPlan": "Comprobar plan",
+    "loading": "Cargando tu plan Cloud…",
+    "loadError": "No se pudo cargar tu plan Cloud. Inténtalo de nuevo.",
+    "ownerRequired": "Pide al propietario de tu espacio de trabajo que elija o gestione el plan Cloud.",
+    "readyTitle": "Vuelve a tu proyecto",
+    "ready": "Tu plan Cloud se ha actualizado. Cierra esta ventana e inténtalo de nuevo.",
+    "pending": "Tu plan aún no ha cambiado. Completa el pago y vuelve a comprobarlo.",
+    "blockedTitle": "Tu plan Cloud necesita atención",
+    "creditsTitle": "Has agotado tus créditos Cloud",
+    "creditsDescription": "Añade créditos o elige un plan que incluya más para continuar. Las recargas no aumentan los límites de compilación ni de servicios.",
+    "paymentDescription": "Actualiza tus datos de pago o suscripción para seguir desplegando.",
+    "pausedDescription": "El despliegue Cloud está pausado en este espacio. Contacta con soporte para restablecer el acceso.",
+    "upgradeTitle": "Este proyecto necesita más capacidad",
+    "upgradeDescription": "Elige un plan con capacidad suficiente o ajusta tu proyecto e inténtalo de nuevo.",
+    "manageBilling": "Gestionar facturación",
+    "topups": "Añadir créditos",
+    "checkoutOpened": "El pago está listo en otra pestaña. Si no se ha abierto, usa el enlace de abajo.",
+    "continueCheckout": "Continuar al pago",
+    "reasons": {
+      "static-only": "Tu plan no incluye este tipo de aplicación. Elige un plan compatible para desplegar.",
+      "build-minutes-exhausted": "Has alcanzado tu límite mensual de compilación. Elige un plan superior o espera a que se renueve tu cuota.",
+      "free-subdomain-limit": "Has usado todos los subdominios Cloud de tu plan. Elige un plan superior o elimina un subdominio que no uses.",
+      "resource-tier": "Este proyecto necesita más CPU o memoria de lo que permite tu plan. Elige un plan superior o reduce los recursos en la configuración del proyecto.",
+      "running-services": "Has alcanzado tu límite de servicios activos. Elige un plan superior o detén un servicio que ya no necesites.",
+      "project-limit": "Has alcanzado tu límite de proyectos. Elige un plan superior o elimina un proyecto que ya no necesites."
+    }
+  },
+  "resourcesGuide": {
+    "title": "Cómo funciona el uso de Cloud",
+    "credits": "Créditos Cloud",
+    "creditsHint": "Las compilaciones y las aplicaciones activas consumen créditos por CPU, memoria, actividad de disco y transferencia de datos. Las cargas mayores consumen créditos más rápido.",
+    "creditsPerCycle": "{amount} créditos / ciclo de facturación",
+    "buildTime": "Tiempo de compilación",
+    "buildMinutes": "{amount} min / mes",
+    "buildHint": "Tiempo dedicado a compilar tu código. Una compilación de 5 minutos consume 5 minutos de cuota. Sus recursos también consumen créditos Cloud.",
+    "apps": "Servicios activos",
+    "appsHint": "Aplicaciones, bases de datos y procesos en ejecución al mismo tiempo. Cada servicio Compose activo cuenta para este límite.",
+    "machine": "CPU y memoria por servicio",
+    "machineHint": "La capacidad máxima de CPU y memoria para un servicio. Es un límite, no un saldo compartido.",
+    "projects": "Proyectos",
+    "projectsHint": "Proyectos guardados en tu espacio de trabajo, incluidos los borradores.",
+    "routesHint": "Direcciones Cloud públicas para tus aplicaciones.",
+    "unlimited": "Sin límite establecido",
+    "notIncluded": "No incluido",
+    "noPlan": "Sin plan Cloud",
+    "setupOnly": "Configurar proyectos es gratis",
+    "setupHint": "Las compilaciones y las aplicaciones Cloud requieren un plan de pago. No se incluye capacidad de cómputo Cloud gratuita.",
+    "includedTitle": "Uso incluido y límites",
+    "limitsHint": "Los límites del plan y los créditos son independientes. Para desplegar necesitas capacidad disponible y créditos.",
+    "balanceRule": "Las cargas Cloud se pausan al agotarse los créditos. Una recarga repone tu saldo; un plan superior aumenta los límites de recursos.",
+    "reset": "La cuota de compilación se renueva el {date}",
+    "cpuHint": "Procesamiento utilizado a lo largo del tiempo. 1 vCPU durante 1 hora equivale a 1 vCPU-hora.",
+    "memoryHint": "Memoria utilizada a lo largo del tiempo. 1 GB durante 1 hora equivale a 1 GB-hora.",
+    "diskHint": "Datos que leen y escriben tus aplicaciones. Es actividad de disco, no el tamaño almacenado.",
+    "networkHint": "Datos enviados y recibidos por tus aplicaciones.",
+    "usageMeaning": "Cómo interpretar el valor",
+    "selectedRange": "Créditos usados en este intervalo",
+    "usageHint": "Uso real de recursos en las fechas seleccionadas. El total de créditos Cloud se muestra arriba.",
+    "creditsChart": "Créditos Cloud por {unit}.",
+    "allProjects": "Todos los proyectos",
+    "from": "Desde (UTC)",
+    "to": "Hasta inclusive (UTC)",
+    "invalidRange": "Elige una fecha final igual o posterior a la inicial.",
+    "moreFeatures": "Más funciones"
   }
 }

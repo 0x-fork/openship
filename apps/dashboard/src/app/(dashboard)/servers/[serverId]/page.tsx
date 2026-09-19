@@ -57,6 +57,7 @@ import { ServerConnectionCard } from "./_components/connection-card";
 import { ServerDeletionModal } from "./_components/ServerDeletionModal";
 import { serverRemovalSummary, type ServerRemovalResult, type ServerRemovalWorkloadResult } from "@/lib/server-removal";
 import { usePlatform } from "@/context/PlatformContext";
+import { ServerInfrastructure } from "@/components/servers/ServerInfrastructure";
 
 
 type Tab = "overview" | "migrations" | "components" | "github" | "security" | "ports" | "terminal";
@@ -878,6 +879,7 @@ export default function ServerDetailPage({
           {activeTab !== "migrations" && (
             <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
               <ServerConnectionCard server={server} />
+              <ServerInfrastructure serverId={serverId} />
             </div>
           )}
         </div>

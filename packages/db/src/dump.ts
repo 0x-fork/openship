@@ -304,12 +304,14 @@ const TABLES: ReadonlyArray<TableSpec> = [
   },
 
   // Infra — instance-only.
-  { sqlName: "server_cluster", table: schema.serverCluster, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "compute_cluster", table: schema.computeCluster, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "compute_cluster_member", table: schema.computeClusterMember, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "private_network", table: schema.serverCluster, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
   { sqlName: "managed_network_operation", table: schema.managedNetworkOperation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
   { sqlName: "managed_network_preparation", table: schema.managedNetworkPreparation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
   { sqlName: "managed_network_claim", table: schema.managedNetworkClaim, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
-  { sqlName: "cluster_network", table: schema.clusterNetwork, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
-  { sqlName: "cluster_member", table: schema.clusterMember, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "private_network_config", table: schema.clusterNetwork, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "network_member", table: schema.clusterMember, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
   { sqlName: "server_network_attachment", table: schema.serverNetworkAttachment, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
   {
     sqlName: "servers",
@@ -778,7 +780,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   update_status: "cached upstream scan result; the next `updates:scan` refills it",
   server_container_status: "cached container drift; re-probed from the host",
   server_module_status: "cached module drift; re-probed from the host",
-  cluster_verification: "network observations and bounded probe runs; re-verify after instance restore",
+  network_verification: "network observations and bounded probe runs; re-verify after instance restore",
 
   // History that is observability only — no config, no pending work, and prunable.
   job_run: "append-only tick log; job DEFINITIONS travel, executions do not",
@@ -1386,6 +1388,18 @@ export async function restoreSubgraphInTransaction(
       `Dump format version ${dump.formatVersion} cannot be restored by this build (expected ${DUMP_FORMAT_VERSION}).`,
     );
   }
+
+  // Older instance archives used the original network aggregate's cluster names.
+  // Row property names and approved journal payloads are unchanged.
+  const legacyNetworks: Record<string, string> = { server_cluster: "private_network", cluster_network: "private_network_config", cluster_member: "network_member" };
+  const tables = { ...dump.tables };
+  for (const [legacy, current] of Object.entries(legacyNetworks)) {
+    if (!tables[legacy]?.length) continue;
+    if (tables[current]?.length) throw new Error(`Archive contains both ${legacy} and ${current}.`);
+    tables[current] = tables[legacy];
+    delete tables[legacy];
+  }
+  dump = { ...dump, tables };
 
   // Remap path (cloud ingest / project transfer) is the only place an untrusted
   // caller supplies a dump for a DIFFERENT org — reject cross-tenant FKs there.

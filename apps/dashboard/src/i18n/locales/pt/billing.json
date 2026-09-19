@@ -60,8 +60,25 @@
       "reconnect": "Reconectar"
     },
     "notEnabled": {
-      "title": "A cobrança não está ativada para esta organização",
-      "description": "A cobrança está configurada, mas não está ativa para esta organização. Entre em contato com o administrador para ativá-la."
+      "title": "As compras do Cloud ainda não estão disponíveis",
+      "description": "O Openship ainda não ativou as assinaturas e a compra de créditos. Tente novamente mais tarde."
+    },
+    "notConfigured": {
+      "title": "A configuração de cobrança do Cloud está incompleta",
+      "description": "O Openship precisa concluir a configuração de cobrança. Entre em contato com o suporte do Openship."
+    },
+    "forbidden": {
+      "title": "Você não tem acesso à cobrança",
+      "description": "Peça ao proprietário da sua organização que conceda acesso à cobrança."
+    },
+    "signInRequired": {
+      "title": "Entre para ver a cobrança",
+      "description": "Não foi possível verificar sua sessão. Entre novamente para continuar.",
+      "signIn": "Entrar"
+    },
+    "loadFailed": {
+      "title": "Não foi possível carregar a cobrança",
+      "description": "A cobrança está temporariamente indisponível. Tente novamente. Se o problema persistir, entre em contato com o suporte do Openship."
     }
   },
   "plansRoute": {
@@ -143,11 +160,11 @@
     },
     "chart": {
       "title": "Uso ao longo do tempo",
-      "subtitle": "Unidades medidas empilhadas por {unit}."
+      "subtitle": "Créditos Cloud por {unit}."
     },
     "breakdown": {
       "title": "Detalhamento de recursos",
-      "subtitle": "Créditos atribuídos proporcionalmente ao uso medido de recursos no intervalo selecionado.",
+      "subtitle": "Uso real de recursos nas datas selecionadas. O total de créditos Cloud aparece acima.",
       "resource": "Recurso",
       "units": "Unidades",
       "credits": "Créditos",
@@ -165,11 +182,11 @@
         "units": "GB-horas"
       },
       "disk": {
-        "label": "IO de disco",
+        "label": "Atividade de disco",
         "units": "GB"
       },
       "network": {
-        "label": "Rede",
+        "label": "Transferência de dados",
         "units": "GB"
       }
     },
@@ -208,7 +225,8 @@
       "incomplete": "Incompleto",
       "incomplete_expired": "Expirado",
       "unpaid": "Não pago",
-      "paused": "Pausado"
+      "paused": "Pausado",
+      "credit_exhausted": "Cloud pausado"
     },
     "includedTitle": "O que está incluído",
     "perYear": "${price}/ano"
@@ -241,5 +259,75 @@
     "active": "Seu plano do Cloud está ativo.",
     "pending": "Seu pagamento ainda pode estar sendo processado. Atualize esta página para verificar seu plano e saldo. Contate o suporte se um pagamento concluído não aparecer.",
     "support": "Contatar suporte"
+  },
+  "deployGate": {
+    "title": "Escolha um plano para implantar",
+    "description": "Configure seus projetos gratuitamente. Para compilá-los e executá-los, é necessário um plano Cloud pago.",
+    "preserved": "As configurações do projeto ficam aqui. O pagamento abre em outra aba; volte aqui após ativar seu plano para continuar.",
+    "close": "Voltar ao projeto",
+    "checkPlan": "Verificar plano",
+    "loading": "Carregando seu plano Cloud…",
+    "loadError": "Não foi possível carregar seu plano Cloud. Tente novamente.",
+    "ownerRequired": "Peça ao proprietário do espaço de trabalho para escolher ou gerenciar o plano Cloud.",
+    "readyTitle": "Volte ao seu projeto",
+    "ready": "Seu plano Cloud foi atualizado. Feche esta janela e tente novamente.",
+    "pending": "Seu plano ainda não mudou. Conclua o pagamento e verifique novamente.",
+    "blockedTitle": "Seu plano Cloud precisa de atenção",
+    "creditsTitle": "Seus créditos Cloud acabaram",
+    "creditsDescription": "Adicione créditos ou escolha um plano com mais créditos para continuar. As recargas não aumentam os limites de compilação ou de serviços.",
+    "paymentDescription": "Atualize os dados de pagamento ou da assinatura para continuar implantando.",
+    "pausedDescription": "A implantação Cloud está pausada neste espaço. Entre em contato com o suporte para restaurar o acesso.",
+    "upgradeTitle": "Este projeto precisa de mais capacidade",
+    "upgradeDescription": "Escolha um plano com capacidade suficiente ou ajuste seu projeto e tente novamente.",
+    "manageBilling": "Gerenciar cobrança",
+    "topups": "Adicionar créditos",
+    "checkoutOpened": "O pagamento está pronto em outra aba. Se ela não abriu, use o link abaixo.",
+    "continueCheckout": "Continuar para o pagamento",
+    "reasons": {
+      "static-only": "Seu plano não inclui este tipo de aplicativo. Escolha um plano compatível para implantar.",
+      "build-minutes-exhausted": "Você atingiu seu limite mensal de compilação. Escolha um plano maior ou aguarde a renovação da cota.",
+      "free-subdomain-limit": "Você usou todos os subdomínios Cloud do seu plano. Escolha um plano maior ou remova um subdomínio que não usa.",
+      "resource-tier": "Este projeto precisa de mais CPU ou memória do que seu plano permite. Escolha um plano maior ou reduza os recursos nas configurações do projeto.",
+      "running-services": "Você atingiu seu limite de serviços ativos. Escolha um plano maior ou pare um serviço de que não precisa mais.",
+      "project-limit": "Você atingiu seu limite de projetos. Escolha um plano maior ou exclua um projeto de que não precisa mais."
+    }
+  },
+  "resourcesGuide": {
+    "title": "Como funciona o uso do Cloud",
+    "credits": "Créditos Cloud",
+    "creditsHint": "Compilações e aplicativos ativos consomem créditos por CPU, memória, atividade de disco e transferência de dados. Cargas maiores consomem créditos mais rápido.",
+    "creditsPerCycle": "{amount} créditos / ciclo de cobrança",
+    "buildTime": "Tempo de compilação",
+    "buildMinutes": "{amount} min / mês",
+    "buildHint": "Tempo gasto compilando seu código. Uma compilação de 5 minutos usa 5 minutos da cota. Seus recursos também consomem créditos Cloud.",
+    "apps": "Serviços ativos",
+    "appsHint": "Aplicativos, bancos de dados e processos executados ao mesmo tempo. Cada serviço Compose ativo conta para este limite.",
+    "machine": "CPU e memória por serviço",
+    "machineHint": "A capacidade máxima de CPU e memória para um serviço. É um limite, não um saldo compartilhado.",
+    "projects": "Projetos",
+    "projectsHint": "Projetos salvos no seu espaço de trabalho, incluindo rascunhos.",
+    "routesHint": "Endereços Cloud públicos para seus aplicativos.",
+    "unlimited": "Sem limite definido",
+    "notIncluded": "Não incluído",
+    "noPlan": "Sem plano Cloud",
+    "setupOnly": "Configurar projetos é grátis",
+    "setupHint": "Compilações e aplicativos Cloud exigem um plano pago. Não há capacidade de computação Cloud gratuita incluída.",
+    "includedTitle": "Uso incluído e limites",
+    "limitsHint": "Os limites do plano e os créditos são separados. As implantações precisam de capacidade disponível e de créditos.",
+    "balanceRule": "As cargas Cloud são pausadas quando os créditos acabam. Uma recarga repõe seu saldo; um plano maior aumenta os limites de recursos.",
+    "reset": "A cota de compilação renova em {date}",
+    "cpuHint": "Processamento usado ao longo do tempo. 1 vCPU durante 1 hora equivale a 1 vCPU-hora.",
+    "memoryHint": "Memória usada ao longo do tempo. 1 GB durante 1 hora equivale a 1 GB-hora.",
+    "diskHint": "Dados lidos e gravados pelos seus aplicativos. É atividade de disco, não o tamanho armazenado.",
+    "networkHint": "Dados enviados e recebidos pelos seus aplicativos.",
+    "usageMeaning": "Como interpretar o valor",
+    "selectedRange": "Créditos usados neste período",
+    "usageHint": "Uso real de recursos nas datas selecionadas. O total de créditos Cloud aparece acima.",
+    "creditsChart": "Créditos Cloud por {unit}.",
+    "allProjects": "Todos os projetos",
+    "from": "De (UTC)",
+    "to": "Até inclusive (UTC)",
+    "invalidRange": "Escolha uma data final igual ou posterior à data inicial.",
+    "moreFeatures": "Mais recursos"
   }
 }

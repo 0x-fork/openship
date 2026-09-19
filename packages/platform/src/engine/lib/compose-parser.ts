@@ -13,6 +13,7 @@ import {
   composeMountToSpec,
   composePortToSpec,
   parseComposeNamespace,
+  parseEnvFile,
 } from "@repo/core";
 import type { ComposeAdvanced, ComposeHealthcheck, ComposeNamespaceField } from "@repo/core";
 
@@ -957,91 +958,18 @@ function buildInterpolationEnv(options: ComposeParseOptions): Record<string, str
 }
 
 export function parseComposeEnvFile(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  const literalKeys = new Set<string>();
-
-  const lines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i].trim();
-    if (!line || line.startsWith("#")) continue;
-    if (line.startsWith("export ")) line = line.slice("export ".length).trimStart();
-
-    const eqIdx = line.indexOf("=");
-    if (eqIdx <= 0) continue;
-
-    const key = line.slice(0, eqIdx).trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
-
-    let rawValue = line.slice(eqIdx + 1);
-    const continued = joinQuotedContinuation(rawValue, lines, i);
-    if (continued) {
-      rawValue = continued.value;
-      i = continued.endLine;
-    }
-
-    const parsed = parseEnvValue(rawValue);
-    result[key] = parsed.value;
-    if (parsed.expand) literalKeys.delete(key);
-    else literalKeys.add(key);
+  const entries = parseEnvFile(content);
+  const result = Object.fromEntries(entries.map(({ key, value }) => [key, value]));
+  const expressions = new Map<string, string>();
+  for (const { key, interpolation } of entries) {
+    if (interpolation === undefined) expressions.delete(key);
+    else expressions.set(key, interpolation);
   }
-
-  for (const [key, value] of Object.entries(result)) {
-    if (literalKeys.has(key)) continue;
-    result[key] = interpolateComposeString(value, result);
+  for (const key of Object.keys(result)) {
+    const expression = expressions.get(key);
+    if (expression !== undefined) result[key] = interpolateComposeString(expression, result);
   }
-
   return result;
-}
-
-function joinQuotedContinuation(
-  rawValue: string,
-  lines: string[],
-  start: number,
-): { value: string; endLine: number } | undefined {
-  const value = rawValue.trimStart();
-  const quote = value[0];
-  if (quote !== '"' && quote !== "'") return undefined;
-  if (findClosingQuote(value, quote) >= 0) return undefined;
-
-  let joined = value;
-  for (let i = start + 1; i < lines.length; i++) {
-    joined += `\n${lines[i]}`;
-    if (findClosingQuote(joined, quote) >= 0) return { value: joined, endLine: i };
-  }
-
-  return undefined;
-}
-
-function parseEnvValue(rawValue: string): { value: string; expand: boolean } {
-  const value = rawValue.trimStart();
-  if (!value) return { value: "", expand: true };
-
-  if (value.startsWith('"')) {
-    const end = findClosingQuote(value, '"');
-    const quoted = end >= 0 ? value.slice(1, end) : value.slice(1);
-    return {
-      value: quoted.replace(/\\([nrt"\\])/g, (_m, ch: string) =>
-        ch === "n" ? "\n" : ch === "r" ? "\r" : ch === "t" ? "\t" : ch,
-      ),
-      expand: true,
-    };
-  }
-
-  if (value.startsWith("'")) {
-    const end = findClosingQuote(value, "'");
-    return { value: end >= 0 ? value.slice(1, end) : value.slice(1), expand: false };
-  }
-
-  const commentMatch = value.match(/\s+#/);
-  const bare = commentMatch?.index === undefined ? value : value.slice(0, commentMatch.index);
-  return { value: bare.trimEnd(), expand: true };
-}
-
-function findClosingQuote(value: string, quote: '"' | "'"): number {
-  for (let i = 1; i < value.length; i++) {
-    if (value[i] === quote && value[i - 1] !== "\\") return i;
-  }
-  return -1;
 }
 
 const BARE_VARIABLE_RE = /^[A-Za-z_][A-Za-z0-9_]*/;

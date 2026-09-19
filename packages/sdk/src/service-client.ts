@@ -57,6 +57,7 @@ export function createRemoteServiceOperations(http: HttpClient): ServiceOperatio
         path: (p, id) => `${service(p, id)}/restart`,
         inputLocation: "query",
       },
+      applyEnvironment: { method: "POST", path: (p, id) => `${service(p, id)}/apply-env` },
       runtimeLogs: { method: "GET", path: (p, id) => `${service(p, id)}/logs`, envelope: "data" },
       exec: { method: "POST", path: (p, id) => `${service(p, id)}/exec`, envelope: "data" },
     }),

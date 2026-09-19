@@ -1,6 +1,9 @@
 "use client";
 
 import { BillingSubscriptionControls } from "./BillingSubscriptionControls";
+import { BillingCapacity } from "./BillingCapacity";
+import { CloudUsageGuide } from "./CloudUsageGuide";
+import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
@@ -64,34 +67,8 @@ interface TopupCheckoutResponse {
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-function formatCredits(milliCredits: number | null): string {
-  if (milliCredits === null) return "∞";
-  const credits = Math.floor(milliCredits / 1000);
-  return credits.toLocaleString();
-}
-
 function formatDollars(cents: number): string {
   return `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
-}
-
-function pctUsed(used: number, limit: number | null): number {
-  if (limit === null || limit <= 0) return 0;
-  return Math.min(100, Math.max(0, (used / limit) * 100));
-}
-
-function ringStrokeClass(pct: number): string {
-  if (pct >= 90) return "text-danger";
-  if (pct >= 75) return "text-warning";
-  return "text-primary";
-}
-
-function daysUntil(end: Date | string | null): number | null {
-  if (!end) return null;
-  const endMs = typeof end === "string" ? Date.parse(end) : end.getTime();
-  if (Number.isNaN(endMs)) return null;
-  const diff = endMs - Date.now();
-  if (diff <= 0) return null;
-  return Math.ceil(diff / (24 * 60 * 60 * 1000));
 }
 
 function statusPillClass(status: string): string {
@@ -104,67 +81,6 @@ function statusPillClass(status: string): string {
   if (s === "credit_exhausted") return "bg-danger-bg text-danger border-danger-border";
   if (s === "canceled" || s === "cancelled") return "bg-muted text-muted-foreground border-border";
   return "bg-muted text-muted-foreground border-border";
-}
-
-/* ------------------------------------------------------------------ */
-/*  Ring gauge                                                        */
-/* ------------------------------------------------------------------ */
-
-/**
- * Circular usage indicator. Built with SVG so it scales cleanly and
- * doesn't pull in a chart library for one shape. Stroke color comes
- * from the parent via `currentColor`; pass the right text-color class
- * (text-primary / text-warning / text-danger) based on threshold.
- */
-function RingGauge({
-  pct,
-  size = 168,
-  stroke = 14,
-  children,
-}: {
-  pct: number;
-  size?: number;
-  stroke?: number;
-  children?: React.ReactNode;
-}) {
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - Math.min(100, Math.max(0, pct)) / 100);
-  return (
-    <div
-      className="relative shrink-0"
-      style={{ width: size, height: size }}
-    >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {/* Track */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          className="stroke-muted"
-          strokeWidth={stroke}
-        />
-        {/* Progress */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={stroke}
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: "stroke-dashoffset 600ms ease" }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        {children}
-      </div>
-    </div>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -189,71 +105,11 @@ export function UpgradeButton({ children, onClick, className = "" }: {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Hero — ring on left, plan summary on right                        */
-/* ------------------------------------------------------------------ */
-
-function BalanceHero({ state }: { state: BillingState }) {
-  const { t } = useI18n();
-  const { quotaLimit, quotaUsed, quotaRemaining } = state.balance;
-  const pct = pctUsed(quotaUsed, quotaLimit);
-  const days = daysUntil(state.currentPeriod.end);
-  const ringTone = ringStrokeClass(pct);
-
-  return (
-    <div className="rounded-2xl border border-border/50 bg-card p-6">
-      <div className="flex flex-col items-center gap-7 sm:flex-row sm:items-center sm:gap-8">
-        {/* Ring */}
-        <div className={ringTone}>
-          <RingGauge pct={pct}>
-            <span className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-              {formatCredits(quotaRemaining)}
-            </span>
-            <span className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {t.billing.overview.creditsLeft}
-            </span>
-          </RingGauge>
-        </div>
-
-        {/* Usage metrics (plan identity lives in PlanCard above) */}
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="grid grid-cols-2 gap-4 sm:max-w-md">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {t.billing.overview.usedThisPeriod}
-              </p>
-              <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">
-                {formatCredits(quotaUsed)}
-                <span className="ms-1 text-xs font-normal text-muted-foreground">
-                  / {formatCredits(quotaLimit)}
-                </span>
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {t.billing.overview.resets}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-foreground">
-                {days !== null
-                  ? interpolate(
-                      days === 1 ? t.billing.overview.resetsInDay : t.billing.overview.resetsInDays,
-                      { n: String(days) },
-                    )
-                  : t.billing.overview.none}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Recent-activity sparkline                                          */
 /* ------------------------------------------------------------------ */
 
 function RecentActivityCard() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [buckets, setBuckets] = useState<UsageBucket[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -286,7 +142,7 @@ function RecentActivityCard() {
 
   const data = (buckets ?? []).map((b) => ({
     timestamp: b.timestamp,
-    credits: Math.max(0, b.credits / 1000),
+    credits: b.credits,
   }));
 
   return (
@@ -294,7 +150,7 @@ function RecentActivityCard() {
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-foreground">{t.billing.overview.recentActivity}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t.billing.overview.last7Days}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t.billing.overview.last7Days}{!loading && !error && ` · ${formatBillingNumber(data.reduce((sum, point) => sum + point.credits, 0), locale)} ${t.billing.usage.kpi.credits}`}</p>
         </div>
         <Link
           href="/billing/usage"
@@ -348,7 +204,7 @@ function RecentActivityCard() {
 /* ------------------------------------------------------------------ */
 
 function BuyCreditsCard({ available }: { available: boolean }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [packs, setPacks] = useState<TopupPack[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -427,7 +283,7 @@ function BuyCreditsCard({ available }: { available: boolean }) {
               <>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">
-                    {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(pack.credits_milli) })}
+                    {interpolate(t.billing.overview.creditsAmount, { n: formatMilliCredits(pack.credits_milli, locale) })}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {interpolate(t.billing.overview.oneTime, { price: formatDollars(pack.price_cents) })}
@@ -485,7 +341,7 @@ function BuyCreditsCard({ available }: { available: boolean }) {
 
 /**
  * Subscription-first lead card: the tier the org is on, its status, the
- * included monthly credit (CPU-time) allowance + feature chips, and the
+ * included Cloud credit allowance, and the
  * upgrade / manage entry point. Credits balance is the secondary card below —
  * general credits exist but aren't the first thing the user sees.
  */
@@ -504,11 +360,11 @@ function nextPaidPlan(tier: PlanTierId): PlanTierId | undefined {
 }
 
 function PlanCard({ state }: { state: BillingState }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const plan = state.plan === undefined ? PLANS[state.tier] : state.plan;
   const planName = plan?.name ?? state.tier;
   const isFree = state.tier === "free";
-  const allowance = state.monthlyCreditLimit;
+  const allowance = state.subscription?.interval === "annual" ? state.plan?.annualCredits : state.monthlyCreditLimit;
   // The tier one step up the published ladder — the same derivation the sidebar
   // used to do. Hardcoding "Pro" here was what put two DIFFERENT upgrade offers on
   // one screen, and it would have named the wrong tier the moment a plan was
@@ -521,16 +377,16 @@ function PlanCard({ state }: { state: BillingState }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold text-foreground">
-              {interpolate(t.billing.overview.planLabel, { name: planName })}
+              {isFree ? t.billing.resourcesGuide.noPlan : interpolate(t.billing.overview.planLabel, { name: planName })}
             </h2>
-            <span
-              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${statusPillClass(state.status)}`}
+            {!isFree && <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusPillClass(state.status)}`}
             >
-              {state.status.replace(/_/g, " ")}
-            </span>
+              {(t.billing.sidebar.statuses as Record<string, string>)[state.status] ?? state.status.replace(/_/g, " ")}
+            </span>}
           </div>
-          {plan?.description && (
-            <p className="mt-1 text-sm text-muted-foreground">{plan.description}</p>
+          {(isFree || plan?.description) && (
+            <p className="mt-1 text-sm text-muted-foreground">{isFree ? t.billing.resourcesGuide.setupHint : plan?.description}</p>
           )}
         </div>
 
@@ -561,10 +417,10 @@ function PlanCard({ state }: { state: BillingState }) {
           The feature bullets moved to the right column ("What's included"), where
           they read as a list instead of a wrapped hedge of pills, and where they
           no longer compete with this card's status and CTA. */}
-      {allowance != null && (
+      {!isFree && allowance != null && (
         <div className="mt-4">
           <span className="inline-flex items-center rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-            {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(allowance) })}
+            {interpolate(t.billing.resourcesGuide.creditsPerCycle, { amount: formatMilliCredits(allowance, locale) })}
           </span>
         </div>
       )}
@@ -582,9 +438,12 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ state }) => {
       {/* Subscription/tier leads; credits balance is secondary. */}
       <PlanCard state={state} />
       <BillingSubscriptionControls state={state} />
-      <BalanceHero state={state} />
-      <RecentActivityCard />
-      <BuyCreditsCard available={state.topups?.available === true} />
+      <BillingCapacity state={state} />
+      <CloudUsageGuide />
+      {state.tier !== "free" && <>
+        <RecentActivityCard />
+        <BuyCreditsCard available={state.topups?.available === true} />
+      </>}
     </div>
   );
 };

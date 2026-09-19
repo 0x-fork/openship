@@ -154,6 +154,14 @@ export async function restartContainer(c: Context) {
   return c.json(data);
 }
 
+export async function applyEnvironment(c: Context) {
+  const data = await result(
+    c,
+    operations().applyEnvironment(operationContext(c), param(c, "id"), param(c, "serviceId")),
+  );
+  return c.json(data);
+}
+
 export async function runtimeLogs(c: Context) {
   const data = await result(
     c,

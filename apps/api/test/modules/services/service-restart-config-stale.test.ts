@@ -66,6 +66,7 @@ vi.mock("@repo/platform/engine/modules/services/service-container", async (impor
 import { restartServiceContainer } from "@repo/platform/engine/modules/services/service.service";
 import {
   ServiceConfigStaleError,
+  resolveEnvDirtyServiceIds,
   resolveStaleEnvKeysForService,
 } from "@repo/platform/engine/modules/deployments/env-drift";
 
@@ -131,7 +132,7 @@ describe("GH-615 restart refuses to silently drop pending env changes", () => {
     expect(err.staleEnvKeys).toEqual(["API_ENDPOINT", "NEW_FLAG"]);
     expect(err.serviceName).toBe("web");
     // Points at the path that actually applies config.
-    expect(err.message).toContain("refresh");
+    expect(err.message).toContain("/apply-env");
     // The refusal is DB-only: it must not bounce the container, and must not
     // have resolved a runtime it would then abandon.
     expect(mockRuntime.restart).not.toHaveBeenCalled();
@@ -197,6 +198,24 @@ describe("GH-615 restart refuses to silently drop pending env changes", () => {
 });
 
 describe("resolveStaleEnvKeysForService", () => {
+  it("clears only the applied service without creating a new deployment", async () => {
+    serviceRepo.listByProject.mockResolvedValue([service, { ...service, id: "svc_other" }]);
+    projectRepo.listEnvVarChangeMeta.mockResolvedValue([
+      { serviceId: null, key: "SHARED", updatedAt: AFTER_ANCHOR },
+      { serviceId: "svc_web", key: "NEWER_SAVE", updatedAt: new Date("2026-08-18T13:00:00Z") },
+    ]);
+    deploymentRepo.findById.mockResolvedValue({
+      ...deployment, createdAt: ANCHOR,
+      meta: { serviceEnvironmentApplied: { svc_web: { containerId: "new-container", appliedAt: "2026-08-18T12:00:00Z" } } },
+    });
+    await expect(resolveStaleEnvKeysForService(project as never, "production", "svc_web")).resolves.toEqual(["NEWER_SAVE"]);
+    await expect(resolveStaleEnvKeysForService(project as never, "production", "svc_other")).resolves.toEqual(["SHARED"]);
+    await expect(resolveEnvDirtyServiceIds(project as never, "production")).resolves.toEqual(new Set(["svc_web", "svc_other"]));
+    projectRepo.listEnvVarChangeMeta.mockResolvedValue([{ serviceId: null, key: "SHARED", updatedAt: AFTER_ANCHOR }]);
+    await expect(resolveEnvDirtyServiceIds(project as never, "production")).resolves.toEqual(new Set(["svc_other"]));
+    await expect(restartServiceContainer(ctx, "proj_1", "svc_web")).resolves.toEqual({ containerId: "c_live_1" });
+  });
+
   it("de-duplicates a key defined at both project and service scope, and sorts", async () => {
     projectRepo.listEnvVarChangeMeta.mockResolvedValue([
       { serviceId: null, key: "SHARED", updatedAt: AFTER_ANCHOR },

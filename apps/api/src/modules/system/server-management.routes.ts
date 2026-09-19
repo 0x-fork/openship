@@ -13,56 +13,68 @@ import * as tunnels from "./tunnels.controller";
 import { SaveServerTunnelInputSchema } from "@repo/contracts";
 import { CreateClusterInputSchema, UpdateClusterInputSchema, ServerClusterCollectionSchemas } from "@repo/contracts";
 import * as clusters from "./server-clusters.controller";
+import { networks, computeClusters } from "./infrastructure-resources.controller";
+import { NetworkCollectionSchemas, UpdateNetworkInputSchema, CreateComputeClusterInputSchema, UpdateComputeClusterInputSchema, ComputeClusterCollectionSchemas } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system", localOnly: true });
 
 // Organization-owned infrastructure. Shared operations enforce fleet-wide access
 // and authorize every selected server, including calls made through the native SDK.
-const clusterRead = { tag: "server:read", collection: true, authorizationHandledByOperation: true } as const;
-const clusterAdmin = { tag: "server:admin", collection: true, authorizationHandledByOperation: true, auditHandledByOperation: true } as const;
-r.get("/clusters/capabilities", clusterRead, clusters.capabilities);
-r.post(
-  "/clusters/network-plans",
-  { ...clusterAdmin, body: ServerClusterCollectionSchemas.planManagedNetwork.input },
-  clusters.planManaged,
-);
-r.get("/clusters/network-operations/:operationId", clusterRead, clusters.managedOperation);
-r.get("/clusters/network-operations/:operationId/stream", clusterRead, clusters.managedOperationEvents);
-r.delete("/clusters/network-operations/:operationId", {
-  ...clusterAdmin,
-  body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPlan.input, ["operationId"]),
-}, clusters.discardPlan);
-r.delete("/clusters/network-operations/:operationId/members/:serverId", {
-  ...clusterAdmin,
-  body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkOperationMember.input, ["operationId", "serverId"]),
-}, clusters.removeOperationMember);
-r.post(
-  "/clusters/network-operations/:operationId/apply",
-  {
-    ...clusterAdmin,
-    body: Type.Omit(ServerClusterCollectionSchemas.applyManagedNetwork.input, ["operationId"]),
-  },
-  clusters.applyManaged,
-);
-r.post("/clusters/network-preparations", { ...clusterAdmin, body: ServerClusterCollectionSchemas.prepareManagedNetwork.input }, clusters.prepareManaged);
-r.get("/clusters/network-preparations", clusterRead, clusters.managedPreparations);
-r.get("/clusters/network-preparations/:preparationId", clusterRead, clusters.managedPreparation);
-r.get("/clusters/network-preparations/:preparationId/stream", clusterRead, clusters.preparationEvents);
-r.delete("/clusters/network-preparations/:preparationId", {
-  ...clusterAdmin,
-  body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPreparation.input, ["preparationId"]),
-}, clusters.discardPreparation);
-r.delete("/clusters/network-preparations/:preparationId/members/:serverId", {
-  ...clusterAdmin,
-  body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkPreparationMember.input, ["preparationId", "serverId"]),
-}, clusters.removePreparationMember);
-r.get("/clusters/stream", clusterRead, clusters.clusterEvents);
-r.get("/clusters", clusterRead, clusters.list);
-r.get("/clusters/:id", clusterRead, clusters.get);
-r.post("/clusters", { ...clusterAdmin, body: CreateClusterInputSchema }, clusters.create);
-r.patch("/clusters/:id", { ...clusterAdmin, body: Type.Omit(UpdateClusterInputSchema, ["clusterId"]) }, clusters.update);
-r.post("/clusters/:id/verify", { ...clusterAdmin, body: Type.Omit(ServerClusterCollectionSchemas.verifyCluster.input, ["clusterId"]) }, clusters.verify);
-r.delete("/clusters/:id", { ...clusterAdmin, body: Type.Omit(ServerClusterCollectionSchemas.removeCluster.input, ["clusterId"]) }, clusters.remove);
+const fleetRead = { tag: "server:read", collection: true, authorizationHandledByOperation: true } as const;
+const fleetAdmin = { tag: "server:admin", collection: true, authorizationHandledByOperation: true, auditHandledByOperation: true } as const;
+// Both route generations share the durable setup handlers and request schemas.
+// Legacy URLs remain aliases for networks, including saved operation streams.
+for (const [base, prefix] of [["/networks", ""], ["/clusters", "network-"]] as const) {
+  const operations = `${base}/${prefix}operations`;
+  const preparations = `${base}/${prefix}preparations`;
+  r.post(`${base}/${prefix}plans`, { ...fleetAdmin, body: ServerClusterCollectionSchemas.planManagedNetwork.input }, clusters.planManaged);
+  r.get(operations + "/:operationId", fleetRead, clusters.managedOperation);
+  r.get(operations + "/:operationId/stream", fleetRead, clusters.managedOperationEvents);
+  r.delete(operations + "/:operationId", {
+    ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPlan.input, ["operationId"]),
+  }, clusters.discardPlan);
+  r.delete(operations + "/:operationId/members/:serverId", {
+    ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkOperationMember.input, ["operationId", "serverId"]),
+  }, clusters.removeOperationMember);
+  r.post(operations + "/:operationId/apply", {
+    ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.applyManagedNetwork.input, ["operationId"]),
+  }, clusters.applyManaged);
+  r.post(preparations, { ...fleetAdmin, body: ServerClusterCollectionSchemas.prepareManagedNetwork.input }, clusters.prepareManaged);
+  r.get(preparations, fleetRead, clusters.managedPreparations);
+  r.get(preparations + "/:preparationId", fleetRead, clusters.managedPreparation);
+  r.get(preparations + "/:preparationId/stream", fleetRead, clusters.preparationEvents);
+  r.patch(preparations + "/:preparationId/connections", {
+    ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.reviseManagedNetworkAccess.input, ["preparationId"]),
+  }, clusters.reviseManagedAccess);
+  r.delete(preparations + "/:preparationId", {
+    ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.discardManagedNetworkPreparation.input, ["preparationId"]),
+  }, clusters.discardPreparation);
+  r.delete(preparations + "/:preparationId/members/:serverId", {
+    ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.removeManagedNetworkPreparationMember.input, ["preparationId", "serverId"]),
+  }, clusters.removePreparationMember);
+  r.get(base + "/stream", fleetRead, clusters.clusterEvents);
+}
+
+r.get("/clusters/capabilities", fleetRead, clusters.capabilities);
+r.get("/clusters", fleetRead, clusters.list);
+r.get("/clusters/:id", fleetRead, clusters.get);
+r.post("/clusters", { ...fleetAdmin, body: CreateClusterInputSchema }, clusters.create);
+r.patch("/clusters/:id", { ...fleetAdmin, body: Type.Omit(UpdateClusterInputSchema, ["clusterId"]) }, clusters.update);
+r.post("/clusters/:id/verify", { ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.verifyCluster.input, ["clusterId"]) }, clusters.verify);
+r.delete("/clusters/:id", { ...fleetAdmin, body: Type.Omit(ServerClusterCollectionSchemas.removeCluster.input, ["clusterId"]) }, clusters.remove);
+r.get("/networks/capabilities", fleetRead, networks.capabilities);
+r.get("/networks", fleetRead, networks.list);
+r.get("/networks/:id", fleetRead, networks.get);
+r.post("/networks", { ...fleetAdmin, body: CreateClusterInputSchema }, networks.create);
+r.patch("/networks/:id", { ...fleetAdmin, body: Type.Omit(UpdateNetworkInputSchema, ["networkId"]) }, networks.update);
+r.post("/networks/:id/verify", { ...fleetAdmin, body: Type.Omit(NetworkCollectionSchemas.verifyNetwork.input, ["networkId"]) }, networks.verify);
+r.delete("/networks/:id", { ...fleetAdmin, body: Type.Omit(NetworkCollectionSchemas.removeNetwork.input, ["networkId"]) }, networks.remove);
+
+r.get("/compute-clusters", fleetRead, computeClusters.list);
+r.get("/compute-clusters/:id", fleetRead, computeClusters.get);
+r.post("/compute-clusters", { ...fleetAdmin, body: CreateComputeClusterInputSchema }, computeClusters.create);
+r.patch("/compute-clusters/:id", { ...fleetAdmin, body: Type.Omit(UpdateComputeClusterInputSchema, ["clusterId"]) }, computeClusters.update);
+r.delete("/compute-clusters/:id", { ...fleetAdmin, body: Type.Omit(ComputeClusterCollectionSchemas.removeComputeCluster.input, ["clusterId"]) }, computeClusters.remove);
 r.post("/servers/:id/network/inspect", { tag: "server:admin", readOnly: true, authorizationHandledByOperation: true }, clusters.inspect);
 
 r.get("/servers/:id/tunnels", { tag: "server:read", authorizationHandledByOperation: true }, tunnels.listTunnels);
@@ -74,6 +86,7 @@ r.delete("/servers/:id/tunnels/:tunnelId", { tag: "server:write", authorizationH
 r.get("/servers", { tag: "server:list" }, serversCtrl.listServers);
 r.get("/servers/:id", { tag: "server:read" }, serversCtrl.getServer);
 r.get("/servers/:id/reachability", { tag: "server:read" }, serversCtrl.probeReachability);
+r.get("/servers/:id/infrastructure", { tag: "server:read", authorizationHandledByOperation: true }, serversCtrl.getInfrastructure);
 // Read-only blast-radius snapshot for the removal confirm: which projects and apps
 // this box currently runs, and which server-scoped records go with it.
 r.get("/servers/:id/deletion-preview", { tag: "server:read" }, serversCtrl.serverDeletionPreview);

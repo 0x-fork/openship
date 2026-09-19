@@ -24,7 +24,7 @@ export const BillingPlansSchema = Type.Object({
     price: Type.Object({ monthly: numberOrNull, annual: numberOrNull }),
     effectivePrice: Type.Object({ monthly: numberOrNull }), listPrice: Type.Object({ monthly: numberOrNull }),
     campaign: Type.Union([Type.Object({ id: Type.String(), percentOff: Type.Number(), durationMonths: numberOrNull, endsAt: Type.String() }), Type.Null()]),
-    monthlyCredits: numberOrNull, limits: planLimits, features: Type.Array(Type.String()),
+    monthlyCredits: numberOrNull, annualCredits: Type.Optional(numberOrNull), limits: planLimits, features: Type.Array(Type.String()),
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
 });

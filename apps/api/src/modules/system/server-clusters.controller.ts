@@ -4,17 +4,27 @@ import { operationContext, operationData } from "../../lib/operation-context";
 import { operationEvents } from "../../lib/operation-stream";
 
 export function preparationEvents(c: Context) {
-  return operationEvents(c, signal => getPlatformKernel().servers.openManagedNetworkPreparationEvents(
-    operationContext(c), c.req.param("preparationId")!, { signal },
-  ));
+  return operationEvents(c, (signal) =>
+    getPlatformKernel().servers.openManagedNetworkPreparationEvents(
+      operationContext(c),
+      c.req.param("preparationId")!,
+      { signal },
+    ),
+  );
 }
 export function managedOperationEvents(c: Context) {
-  return operationEvents(c, signal => getPlatformKernel().servers.openManagedNetworkOperationEvents(
-    operationContext(c), c.req.param("operationId")!, { signal },
-  ));
+  return operationEvents(c, (signal) =>
+    getPlatformKernel().servers.openManagedNetworkOperationEvents(
+      operationContext(c),
+      c.req.param("operationId")!,
+      { signal },
+    ),
+  );
 }
 export function clusterEvents(c: Context) {
-  return operationEvents(c, signal => getPlatformKernel().servers.openClusterEvents(operationContext(c), { signal }));
+  return operationEvents(c, (signal) =>
+    getPlatformKernel().servers.openClusterEvents(operationContext(c), { signal }),
+  );
 }
 
 export async function prepareManaged(c: Context) {
@@ -22,6 +32,19 @@ export async function prepareManaged(c: Context) {
     await operationData(
       c,
       getPlatformKernel().servers.prepareManagedNetwork(operationContext(c), await c.req.json()),
+    ),
+    202,
+  );
+}
+
+export async function reviseManagedAccess(c: Context) {
+  return c.json(
+    await operationData(
+      c,
+      getPlatformKernel().servers.reviseManagedNetworkAccess(operationContext(c), {
+        ...(await c.req.json()),
+        preparationId: c.req.param("preparationId")!,
+      }),
     ),
     202,
   );
@@ -46,41 +69,55 @@ export async function managedPreparations(c: Context) {
 }
 
 export async function discardPreparation(c: Context) {
-  return c.json(await operationData(c,
-    getPlatformKernel().servers.discardManagedNetworkPreparation(operationContext(c), {
-      ...(await c.req.json()),
-      preparationId: c.req.param("preparationId")!,
-    }),
-  ));
+  return c.json(
+    await operationData(
+      c,
+      getPlatformKernel().servers.discardManagedNetworkPreparation(operationContext(c), {
+        ...(await c.req.json()),
+        preparationId: c.req.param("preparationId")!,
+      }),
+    ),
+  );
 }
 
 export async function discardPlan(c: Context) {
-  return c.json(await operationData(c,
-    getPlatformKernel().servers.discardManagedNetworkPlan(operationContext(c), {
-      ...(await c.req.json()),
-      operationId: c.req.param("operationId")!,
-    }),
-  ));
+  return c.json(
+    await operationData(
+      c,
+      getPlatformKernel().servers.discardManagedNetworkPlan(operationContext(c), {
+        ...(await c.req.json()),
+        operationId: c.req.param("operationId")!,
+      }),
+    ),
+  );
 }
 
 export async function removePreparationMember(c: Context) {
-  return c.json(await operationData(c,
-    getPlatformKernel().servers.removeManagedNetworkPreparationMember(operationContext(c), {
-      ...(await c.req.json()),
-      preparationId: c.req.param("preparationId")!,
-      serverId: c.req.param("serverId")!,
-    }),
-  ), 202);
+  return c.json(
+    await operationData(
+      c,
+      getPlatformKernel().servers.removeManagedNetworkPreparationMember(operationContext(c), {
+        ...(await c.req.json()),
+        preparationId: c.req.param("preparationId")!,
+        serverId: c.req.param("serverId")!,
+      }),
+    ),
+    202,
+  );
 }
 
 export async function removeOperationMember(c: Context) {
-  return c.json(await operationData(c,
-    getPlatformKernel().servers.removeManagedNetworkOperationMember(operationContext(c), {
-      ...(await c.req.json()),
-      operationId: c.req.param("operationId")!,
-      serverId: c.req.param("serverId")!,
-    }),
-  ), 202);
+  return c.json(
+    await operationData(
+      c,
+      getPlatformKernel().servers.removeManagedNetworkOperationMember(operationContext(c), {
+        ...(await c.req.json()),
+        operationId: c.req.param("operationId")!,
+        serverId: c.req.param("serverId")!,
+      }),
+    ),
+    202,
+  );
 }
 
 export async function planManaged(c: Context) {

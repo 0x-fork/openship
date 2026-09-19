@@ -1,3 +1,4 @@
+import { presentComputeCluster } from "./infrastructure-resources.operations";
 import { createHash } from "node:crypto";
 import { managedNetworkInProgress } from "@repo/core";
 import { repos } from "@repo/db";
@@ -60,21 +61,33 @@ export const networkSetupStreams: NonNullable<ServerDependencies["networks"]> = 
     }
     const load = async () => {
       await authorize();
-      const [clusters, preparations] = await Promise.all([
+      const [clusters, preparations, pools] = await Promise.all([
         repos.serverCluster.list(ctx.organizationId),
         repos.networkPreparation.list(ctx.organizationId),
+        repos.computeCluster.list(ctx.organizationId),
       ]);
+      const networks = clusters.map((row) => {
+        const cluster = presentCluster(row);
+        // Lists need status and connectivity, not every server's package log.
+        if (cluster.operation)
+          cluster.operation = {
+            ...cluster.operation,
+            hosts: cluster.operation.hosts.map(({ logs: _logs, steps: _steps, ...host }) => host),
+          };
+        return cluster;
+      });
       return {
-        clusters: clusters.map((row) => {
-          const cluster = presentCluster(row);
-          // Lists need status and connectivity, not every server's package log.
-          if (cluster.operation)
-            cluster.operation = {
-              ...cluster.operation,
-              hosts: cluster.operation.hosts.map(({ logs: _logs, steps: _steps, ...host }) => host),
-            };
-          return cluster;
-        }),
+        clusters: networks, // v1 overview compatibility
+        networks,
+        computeClusters: await Promise.all(
+          pools.map((pool) =>
+            presentComputeCluster(
+              ctx.organizationId,
+              pool,
+              networks.find((network) => network.id === pool.networkId),
+            ),
+          ),
+        ),
         preparations,
       };
     };

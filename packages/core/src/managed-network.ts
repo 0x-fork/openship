@@ -11,6 +11,11 @@ import {
   type NativeClusterConfig,
   type NetworkInterfaceObservation,
 } from "./infrastructure";
+import {
+  normalizeNetworkAccess,
+  retainNetworkAccess,
+  type NetworkAccessPolicy,
+} from "./network-access";
 
 export const MANAGED_NETWORK_PLAN_TTL_MS = 15 * 60_000;
 export const MANAGED_NETWORK_LEASE_MS = 90_000;
@@ -24,6 +29,7 @@ export const MANAGED_NETWORK_PREPARATION_STEPS = [
   "python3",
   "iproute2",
   "wireguard-tools",
+  "firewall",
   "kernel",
   "inspect",
 ] as const;
@@ -78,6 +84,7 @@ export interface ManagedNetworkPreparationInput {
   mtu?: number;
   probePort?: number;
   rotateKeys?: boolean;
+  access?: NetworkAccessPolicy;
   members: {
     serverId: string;
     providerId: ClusterMemberConfig["providerId"];
@@ -100,6 +107,14 @@ export function normalizeManagedNetworkInput(
     mtu: input.mtu,
     probePort: input.probePort,
     rotateKeys: input.rotateKeys,
+    ...(input.access
+      ? {
+          access: normalizeNetworkAccess(
+            input.access,
+            input.members.map((member) => member.serverId),
+          ),
+        }
+      : {}),
     members: [...input.members]
       .sort((a, b) => a.serverId.localeCompare(b.serverId))
       .map((member) => ({
@@ -118,15 +133,23 @@ export function withoutManagedNetworkMember(
   requestId: string,
 ): ManagedNetworkPreparationInput {
   if (input.clusterId || input.revision !== undefined || input.intent === "remove")
-    throw new ClusterConfigError("Remove setup servers only while creating a new cluster.");
+    throw new ClusterConfigError("Remove setup servers only while creating a new network.");
   if (!input.members.some((member) => member.serverId === serverId))
     throw new ClusterConfigError("This server is not selected in this setup.");
   const members = input.members.filter((member) => member.serverId !== serverId);
   if (new Set(members.map((member) => member.serverId)).size < 2)
-    throw new ClusterConfigError("Keep at least two servers to continue creating this cluster.");
+    throw new ClusterConfigError("Keep at least two servers to continue creating this network.");
   if (requestId === input.requestId)
     throw new ClusterConfigError("The updated selection needs a new setup request.");
-  return normalizeManagedNetworkInput({ ...input, requestId, members });
+  return normalizeManagedNetworkInput({
+    ...input,
+    requestId,
+    members,
+    access: retainNetworkAccess(
+      input.access,
+      members.map((member) => member.serverId),
+    ),
+  });
 }
 
 export function initialManagedNetworkInput(
@@ -134,7 +157,7 @@ export function initialManagedNetworkInput(
   requestId: string,
 ): ManagedNetworkPreparationInput {
   if (plan.baseRevision !== null || plan.previous !== null || plan.intent !== "configure")
-    throw new ClusterConfigError("Remove setup servers only while creating a new cluster.");
+    throw new ClusterConfigError("Remove setup servers only while creating a new network.");
   return normalizeManagedNetworkInput({
     requestId,
     name: plan.config.name,
@@ -142,6 +165,7 @@ export function initialManagedNetworkInput(
     cidr: plan.config.network.cidrs[0],
     mtu: plan.config.network.mtu,
     probePort: plan.config.network.probePort,
+    access: plan.config.network.access,
     members: plan.config.members.map(({ serverId, providerId, endpoint, listenPort }) => ({
       serverId,
       providerId,
@@ -159,7 +183,7 @@ export interface ManagedNetworkPreparationHost {
   name: string;
   address: string;
   hostIdentity: string | null;
-  /** Resolved by the planner, including DNS and inherited cluster settings. */
+  /** Resolved by the planner, including DNS and inherited network settings. */
   transport?: ManagedNetworkTransport;
   steps: ManagedNetworkStepProgress[];
   logs: ManagedNetworkSetupLog[];
@@ -207,6 +231,7 @@ export interface WireGuardClusterConfig {
     probePort: number;
     managedId: string;
     interfaceName: string;
+    access?: NetworkAccessPolicy;
   };
   members: WireGuardMemberConfig[];
 }
@@ -326,6 +351,11 @@ export function validWireGuardEndpoint(value: string): boolean {
 }
 
 export function validateWireGuardCluster(config: WireGuardClusterConfig): void {
+  if (config.network.access)
+    normalizeNetworkAccess(
+      config.network.access,
+      config.members.map((member) => member.serverId),
+    );
   if (config.network.interfaceName !== managedInterfaceName(config.network.managedId))
     throw new ClusterConfigError("The managed interface does not match its network.");
   if (config.network.cidrs.length !== 1)
@@ -400,7 +430,7 @@ export function allocateManagedSubnet(
   if (requested) {
     if (!available(requested))
       throw new ClusterConfigError(
-        "This managed range overlaps a host, Docker, VPN, route, DNS or existing cluster network, or is not a private /16–/27 subnet.",
+        "This managed range overlaps a host, Docker, VPN, route, DNS or existing private network, or is not a private /16–/27 subnet.",
       );
     return requested;
   }

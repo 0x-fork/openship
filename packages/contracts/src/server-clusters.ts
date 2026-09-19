@@ -10,6 +10,23 @@ import type { ResourceOperationSchema } from "./resource-operations";
 const text = Type.String({ minLength: 1, maxLength: 200 });
 const nullableText = Type.Union([Type.String(), Type.Null()]);
 const providerId = Type.Union(INFRASTRUCTURE_PROVIDERS.map((p) => Type.Literal(p.id)));
+export const NetworkAccessPolicySchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    rules: Type.Array(
+      Type.Object({ sourceServerId: text, targetServerId: text }, { additionalProperties: false }),
+      {
+        maxItems: MAX_CLUSTER_MEMBERS * (MAX_CLUSTER_MEMBERS - 1),
+        uniqueItems: true,
+      },
+    ),
+  },
+  { additionalProperties: false },
+);
+export const NativeNetworkSourceSchema = Type.Object(
+  { providerId, networkRef: Type.Optional(Type.String({ maxLength: 200 })) },
+  { additionalProperties: false },
+);
 export const ClusterIdInputSchema = Type.Object(
   { clusterId: text },
   { additionalProperties: false },
@@ -31,6 +48,7 @@ export const ClusterConfigSchema = Type.Object(
     network: Type.Object(
       {
         mode: Type.Literal("native"),
+        source: Type.Optional(NativeNetworkSourceSchema),
         cidrs: Type.Array(Type.String({ minLength: 3, maxLength: 18 }), {
           minItems: 1,
           maxItems: 8,
@@ -99,6 +117,9 @@ const report = Type.Object({
       tcp: Type.Boolean(),
       udp: Type.Boolean(),
       mtu: Type.Boolean(),
+      reachable: Type.Optional(Type.Boolean()),
+      expectedAccess: Type.Optional(Type.Union([Type.Literal("allow"), Type.Literal("deny")])),
+      policyPassed: Type.Optional(Type.Boolean()),
       latencyMs: Type.Union([Type.Number(), Type.Null()]),
       latencyKind: Type.Optional(Type.Literal("rtt")),
       packetLossPercent: Type.Optional(
@@ -175,6 +196,7 @@ export const WireGuardClusterConfigSchema = Type.Object(
         probePort: Type.Integer({ minimum: 1024, maximum: 65535 }),
         managedId: Type.String({ pattern: "^[a-f0-9]{32}$" }),
         interfaceName: Type.String({ pattern: "^oswg[a-f0-9]{10}$" }),
+        access: Type.Optional(NetworkAccessPolicySchema),
       },
       { additionalProperties: false },
     ),
@@ -197,6 +219,7 @@ export const PlanManagedNetworkInputSchema = Type.Object(
     mtu: Type.Optional(Type.Integer({ minimum: 1280, maximum: 1420 })),
     probePort: Type.Optional(Type.Integer({ minimum: 1024, maximum: 65535 })),
     rotateKeys: Type.Optional(Type.Boolean()),
+    access: Type.Optional(NetworkAccessPolicySchema),
     members: Type.Array(
       Type.Object(
         {
@@ -432,6 +455,17 @@ export const DiscardManagedNetworkPlanInputSchema = Type.Object(
 );
 export type DiscardManagedNetworkPlanInput = Static<typeof DiscardManagedNetworkPlanInputSchema>;
 
+export const ReviseManagedNetworkAccessInputSchema = Type.Object(
+  {
+    preparationId: text,
+    sequence: Type.Integer({ minimum: 1 }),
+    requestId: PlanManagedNetworkInputSchema.properties.requestId,
+    access: NetworkAccessPolicySchema,
+  },
+  { additionalProperties: false },
+);
+export type ReviseManagedNetworkAccessInput = Static<typeof ReviseManagedNetworkAccessInputSchema>;
+
 const removeSetupMember = {
   serverId: text,
   sequence: Type.Integer({ minimum: 1 }),
@@ -526,6 +560,12 @@ export const ServerClusterCollectionSchemas = {
     action: "admin",
     scope: "all",
     input: PlanManagedNetworkInputSchema,
+    output: ManagedNetworkPreparationSchema,
+  },
+  reviseManagedNetworkAccess: {
+    action: "admin",
+    scope: "all",
+    input: ReviseManagedNetworkAccessInputSchema,
     output: ManagedNetworkPreparationSchema,
   },
   getManagedNetworkPreparation: {

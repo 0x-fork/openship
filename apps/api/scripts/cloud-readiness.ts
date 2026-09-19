@@ -3,7 +3,7 @@ import { runtimeTarget } from "@repo/core";
 import { assertOblienEntitlementMatchesSubscription, OblienBillingApi } from "@repo/platform/engine/lib/oblien-billing-api";
 import { OBLIEN_WEBHOOK_EVENTS, oblienWebhookUrl } from "@repo/platform/engine/lib/oblien-webhook-config";
 
-const results: Array<{ check: string; ok: boolean; detail?: string }> = [];
+const results: Array<{ check: string; ok: boolean; skipped?: boolean; detail?: string }> = [];
 const record = (check: string, ok: boolean, detail?: string) => results.push({ check, ok, ...(detail ? { detail } : {}) });
 const clientId = process.env.OBLIEN_CLIENT_ID;
 const clientSecret = process.env.OBLIEN_CLIENT_SECRET;
@@ -38,8 +38,16 @@ const checks = await Promise.allSettled([
     const body = await response.json() as { success: boolean; webhooks?: Array<{ url: string; active: boolean; namespace?: string | null; events: string[]; secret?: string | null }> };
     const webhook = body.success && body.webhooks?.find((item) => item.url === callback && !item.namespace && item.active);
     const missing = OBLIEN_WEBHOOK_EVENTS.filter((event) => !webhook || !webhook.events.includes(event));
-    record("Account-wide signed billing webhook", Boolean(webhook && webhook.secret && missing.length === 0),
-      webhook ? `Missing events: ${missing.join(", ") || "none"}` : "No active account-wide webhook matches the configured callback");
+    const maskedSecret = typeof webhook?.secret === "string" && /^[*•＊…]+$/u.test(webhook.secret);
+    const matchingSecret = Boolean(webhook?.secret && webhook.secret === process.env.OBLIEN_WEBHOOK_SECRET);
+    record("Account-wide signed billing webhook", Boolean(webhook && (maskedSecret || matchingSecret) && missing.length === 0),
+      !webhook ? "No active account-wide webhook matches the configured callback"
+        : !maskedSecret && !matchingSecret ? "The registered signing secret does not match the API environment"
+          : `Missing events: ${missing.join(", ") || "none"}`);
+    if (maskedSecret) {
+      results.push({ check: "Webhook signing secret match", ok: true, skipped: true,
+        detail: "Oblien masks the registered secret. Confirm a signed delivery reaches the deployed API; registry inspection cannot compare secrets." });
+    }
   })(),
   (async () => {
     if (!clientId || !clientSecret) throw new Error("Oblien credentials are missing");
@@ -49,8 +57,16 @@ const checks = await Promise.allSettled([
     });
     if (!response.ok) throw new Error(`Namespace registry HTTP ${response.status}`);
     const body = await response.json() as { success: boolean; data?: Array<{ slug: string }> };
-    // The probe is read-only even on a new account with no namespace yet.
-    const namespace = body.success && body.data?.[0]?.slug || "openship-billing-readiness";
+    if (!body.success || !Array.isArray(body.data)) throw new Error("Invalid namespace registry response");
+    const namespace = body.data[0]?.slug;
+    if (!namespace) {
+      // A nonexistent namespace has no policy. Treating that fabricated name
+      // as a customer incorrectly reports unlimited credit on a fresh account.
+      // The automatic default policy is checked independently above.
+      results.push({ check: "Customer namespace checks", ok: true, skipped: true,
+        detail: "No namespaces exist yet. Re-run after the first customer opens billing to verify their allowance and subscription." });
+      return;
+    }
     const [state, entitlement] = await Promise.all([billing.getSubscription(namespace), billing.getEntitlement(namespace)]);
     assertOblienEntitlementMatchesSubscription(entitlement, state.subscription);
     record("Namespace entitlement and subscription", true, "The namespace's tier and billing period agree");

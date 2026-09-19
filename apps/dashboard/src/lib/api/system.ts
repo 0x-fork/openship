@@ -1,4 +1,5 @@
 import { api, getApiBaseUrl, getActiveOrganizationId } from "./client";
+import type { ServerInfrastructure } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 // Removal types + the timeout rule live with the pure helpers so the modal and this
 // client share one definition (and so the rule is testable without React).
@@ -743,6 +744,9 @@ export const systemApi = {
   /** Get a single server by ID */
   getServerById: (id: string) =>
     api.get<ServerInfo>(endpoints.system.server(id)),
+
+  getServerInfrastructure: (id: string) =>
+    api.get<ServerInfrastructure>(`${endpoints.system.server(id)}/infrastructure`),
 
   /**
    * Lightweight liveness probe for the list view (TCP reachability).

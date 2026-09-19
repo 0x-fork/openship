@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ClusterNetworkReport } from "@repo/core";
+import { setNetworkConnection, type ClusterNetworkReport } from "@repo/core";
 import { networkLinks, type NetworkTopologyMember } from "./network-topology";
 
 const members: NetworkTopologyMember[] = ["a", "b", "c"].map((serverId, i) => ({
@@ -35,6 +35,37 @@ const report = (): ClusterNetworkReport => ({
   ],
 });
 describe("cluster network topology measurements", () => {
+  it("tracks one-way access, expected denial, and removed pairs independently from transport", () => {
+    const access = setNetworkConnection(
+      { version: 1, rules: [] },
+      ["a", "b", "c"],
+      "a",
+      "b",
+      "forward",
+    );
+    const value = report();
+    Object.assign(value.peers[1]!, {
+      tcp: false,
+      udp: false,
+      mtu: false,
+      reachable: false,
+      expectedAccess: "deny",
+      policyPassed: true,
+      latencyMs: null,
+    });
+    const links = networkLinks(members, value, access);
+    expect(links[0]).toMatchObject({
+      accessMode: "forward",
+      connected: true,
+      state: "passed",
+      latencyMs: 2,
+    });
+    expect(links[1]).toMatchObject({ accessMode: "blocked", connected: false });
+    expect(links[0]!.directions.map((direction) => direction.allowed)).toEqual([true, false]);
+    value.peers[1]!.reachable = true;
+    value.peers[1]!.policyPassed = false;
+    expect(networkLinks(members, value, access)[0]!.state).toBe("failed");
+  });
   it("groups a mesh into one link per pair with independent directional measurements", () => {
     const links = networkLinks(members, report());
     expect(links).toHaveLength(3);

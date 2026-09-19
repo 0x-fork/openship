@@ -6,7 +6,7 @@ import type { ManagedNetworkPreparation } from "@repo/core";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { getApiErrorMessage } from "@/lib/api";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { privateNetworksApi } from "@/lib/api/private-networks";
 import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
 
 type PreparationActionTarget = Pick<ManagedNetworkPreparation, "id" | "sequence" | "status"> &
@@ -31,7 +31,7 @@ export function NetworkPreparationActions({
   onBusyChange?(busy: boolean): void;
 }) {
   const { t } = useI18n();
-  const m = t.servers.clusters.managed;
+  const m = t.servers.networks.managed;
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export function NetworkPreparationActions({
     onBusyChange?.(true);
     setError(null);
     try {
-      const next = await serverClustersApi.discardPreparation({
+      const next = await privateNetworksApi.discardPreparation({
         preparationId: preparation.id,
         sequence: preparation.sequence,
       });

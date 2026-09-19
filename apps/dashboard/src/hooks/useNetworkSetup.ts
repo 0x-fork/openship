@@ -29,7 +29,7 @@ export function useNetworkSetup<Kind extends keyof NetworkProgress>(
   );
   const stream = useRunEvents<Progress>(
     enabled
-      ? `system/clusters/network-${kind === "preparation" ? "preparations" : "operations"}/${encodeURIComponent(id)}/stream`
+      ? `system/networks/${kind === "preparation" ? "preparations" : "operations"}/${encodeURIComponent(id)}/stream`
       : null,
     update,
   );

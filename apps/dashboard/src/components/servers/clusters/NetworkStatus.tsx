@@ -6,7 +6,7 @@ import type { ServerCluster } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { clusterStatus } from "./model";
 
-export function ClusterStatus({ cluster }: { cluster: ServerCluster }) {
+export function NetworkStatus({ cluster }: { cluster: ServerCluster }) {
   const { t } = useI18n();
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -27,7 +27,7 @@ export function ClusterStatus({ cluster }: { cluster: ServerCluster }) {
       className={`inline-flex items-center gap-1.5 text-xs font-medium ${status === "verified" ? "text-success" : status === "attention" || status === "interrupted" ? "text-warning" : "text-muted-foreground"}`}
     >
       <Icon className={`size-3.5 ${status === "checking" ? "animate-spin" : ""}`} />
-      {t.servers.clusters.status[status]}
+      {t.servers.networks.status[status]}
     </span>
   );
 }

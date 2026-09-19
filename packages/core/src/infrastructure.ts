@@ -1,3 +1,9 @@
+import {
+  networkAccessAllowed,
+  networkConnectionMode,
+  type NetworkAccessPolicy,
+} from "./network-access";
+
 /** Provider-neutral infrastructure definitions. No SSH, database, or UI dependencies. */
 export const INFRASTRUCTURE_PROVIDERS = [
   {
@@ -84,11 +90,57 @@ export interface ClusterMemberConfig {
   interfaceName?: string;
   networkRef?: string;
 }
+/** The existing private network being adopted, independent of server inventory metadata. */
+export interface NativeNetworkSource {
+  providerId: InfrastructureProviderId;
+  networkRef?: string;
+}
 export interface NativeClusterConfig {
   name: string;
   location?: string;
-  network: { mode: "native"; cidrs: string[]; mtu: number; probePort: number };
+  network: {
+    mode: "native";
+    cidrs: string[];
+    mtu: number;
+    probePort: number;
+    /** Optional on older clients; saved networks expose their resolved source. */
+    source?: NativeNetworkSource;
+  };
   members: ClusterMemberConfig[];
+}
+
+/** Older routed networks may legitimately contain several providers or network references. */
+export function nativeNetworkSource(config: {
+  network: { mode: InfrastructureNetworkMode; source?: NativeNetworkSource | null };
+  members: readonly { providerId: InfrastructureProviderId; networkRef?: string | null }[];
+}): NativeNetworkSource {
+  if (config.network.mode === "wireguard") return { providerId: "custom" };
+  if (config.network.source)
+    return {
+      providerId: config.network.source.providerId,
+      ...(config.network.source.networkRef?.trim()
+        ? { networkRef: config.network.source.networkRef.trim() }
+        : {}),
+    };
+  const providers = new Set(config.members.map((member) => member.providerId));
+  const references = new Set(config.members.map((member) => member.networkRef?.trim() || ""));
+  if (providers.size !== 1 || references.size !== 1) return { providerId: "custom" };
+  const networkRef = [...references][0]!;
+  return {
+    providerId: [...providers][0]!,
+    ...(networkRef ? { networkRef } : {}),
+  };
+}
+
+/** Native network constraints belong to the network; managed tunnels are provider-independent. */
+export function networkMemberProvider(
+  network: { mode: InfrastructureNetworkMode; source?: NativeNetworkSource | null },
+  member: { providerId: InfrastructureProviderId },
+): InfrastructureProviderId {
+  if (network.mode === "wireguard") return "custom";
+  return network.source && network.source.providerId !== "custom"
+    ? network.source.providerId
+    : member.providerId;
 }
 export interface NetworkInterfaceObservation {
   name: string;
@@ -115,6 +167,10 @@ export interface ClusterPeerCheck {
   tcp: boolean;
   udp: boolean;
   mtu: boolean;
+  /** Raw receipt of any traffic, including an unauthenticated response. */
+  reachable?: boolean;
+  expectedAccess?: "allow" | "deny";
+  policyPassed?: boolean;
   latencyMs: number | null;
   /** Older reports measured combined probe duration; only marked values are RTT. */
   latencyKind?: "rtt";
@@ -199,8 +255,25 @@ export function validateNativeCluster(config: NativeClusterConfig): void {
     throw new ClusterConfigError(message);
   };
   if (!config.name.trim() || config.name.length > 100)
-    fail("Enter a cluster name between 1 and 100 characters.");
+    fail("Enter a network name between 1 and 100 characters.");
   if (config.network.mode !== "native") fail("This operation adopts an existing private network.");
+  if (config.network.source) {
+    const source = config.network.source;
+    const provider = INFRASTRUCTURE_PROVIDERS.find((entry) => entry.id === source.providerId);
+    if (!provider) fail("Choose a supported network provider or Custom.");
+    if (source.networkRef !== undefined && source.networkRef.length > 200)
+      fail("The private network reference must be at most 200 characters.");
+    if (provider && "maxMtu" in provider && config.network.mtu > provider.maxMtu)
+      fail(`${provider.network} supports an MTU of at most ${provider.maxMtu}.`);
+    if (source.providerId !== "custom") {
+      for (const member of config.members) {
+        if (member.providerId !== "custom" && member.providerId !== source.providerId)
+          fail(
+            "Selected servers must belong to this provider network. Use Custom for an existing routed network across providers.",
+          );
+      }
+    }
+  }
   if (config.members.length < 2 || config.members.length > MAX_CLUSTER_MEMBERS)
     fail(`Select between 2 and ${MAX_CLUSTER_MEMBERS} servers.`);
   if (
@@ -234,14 +307,17 @@ export function validateNativeCluster(config: NativeClusterConfig): void {
   const servers = new Set<string>();
   const addresses = new Set<string>();
   for (const member of config.members) {
-    if (servers.has(member.serverId)) fail("A server can appear only once in a cluster.");
+    if (servers.has(member.serverId)) fail("A server can appear only once in a network.");
     servers.add(member.serverId);
-    const provider = INFRASTRUCTURE_PROVIDERS.find((p) => p.id === member.providerId);
-    if (!provider) fail("Choose a supported provider or Custom.");
+    if (!INFRASTRUCTURE_PROVIDERS.some((p) => p.id === member.providerId))
+      fail("Choose a supported provider or Custom.");
+    const provider = INFRASTRUCTURE_PROVIDERS.find(
+      (p) => p.id === networkMemberProvider(config.network, member),
+    );
     if (provider && "maxMtu" in provider && config.network.mtu > provider.maxMtu)
       fail(`${provider.network} supports an MTU of at most ${provider.maxMtu}.`);
     if (!isInfrastructurePrivateIp(member.privateIp))
-      fail("Cluster members need private IPv4 addresses.");
+      fail("Network members need private IPv4 addresses.");
     const ip = infrastructureIpv4(member.privateIp)!;
     if (!ranges.some((r) => ip > r.start && ip < r.end))
       throw new ClusterConfigError(
@@ -371,7 +447,9 @@ export function suggestNativeClusterConfig(
     if (choice.cidr && !cidrs.some((cidr) => contains(cidr, member.privateIp)))
       cidrs.push(choice.cidr);
     if (Number.isInteger(choice.mtu) && choice.mtu >= 1280) mtu = Math.min(mtu, choice.mtu);
-    const provider = INFRASTRUCTURE_PROVIDERS.find((p) => p.id === member.providerId);
+    const provider = INFRASTRUCTURE_PROVIDERS.find(
+      (p) => p.id === networkMemberProvider(config.network, member),
+    );
     if (provider && "maxMtu" in provider) mtu = Math.min(mtu, provider.maxMtu);
   }
   // Canonical CIDRs can only be disjoint or contained. Keep observed covering ranges without
@@ -426,6 +504,7 @@ export function selectClusterInterface(
 export function networkReportSucceeded(
   report: ClusterNetworkReport,
   serverIds: readonly string[],
+  access?: NetworkAccessPolicy | null,
 ): boolean {
   if (report.stage !== "complete" || serverIds.length < 2) return false;
   if (
@@ -436,11 +515,21 @@ export function networkReportSucceeded(
   if (report.peers.length !== serverIds.length * (serverIds.length - 1)) return false;
   if (
     report.handshakes &&
-    (report.handshakes.length !== serverIds.length * (serverIds.length - 1) ||
+    (report.handshakes.length !==
+      serverIds.reduce(
+        (count, source) =>
+          count +
+          serverIds.filter(
+            (target) =>
+              source !== target && networkConnectionMode(access, source, target) !== "blocked",
+          ).length,
+        0,
+      ) ||
       !serverIds.every((source) =>
         serverIds.every(
           (target) =>
             source === target ||
+            networkConnectionMode(access, source, target) === "blocked" ||
             report.handshakes!.some(
               (peer) => peer.sourceServerId === source && peer.targetServerId === target && peer.ok,
             ),
@@ -454,7 +543,16 @@ export function networkReportSucceeded(
         source === target ||
         report.peers.some(
           (p) =>
-            p.sourceServerId === source && p.targetServerId === target && p.tcp && p.udp && p.mtu,
+            p.sourceServerId === source &&
+            p.targetServerId === target &&
+            (networkAccessAllowed(access, source, target)
+              ? p.tcp && p.udp && p.mtu
+              : p.expectedAccess === "deny" &&
+                p.policyPassed === true &&
+                p.reachable === false &&
+                !p.tcp &&
+                !p.udp &&
+                !p.mtu),
         ),
     ),
   );

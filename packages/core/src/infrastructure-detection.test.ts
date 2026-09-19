@@ -32,6 +32,26 @@ const observations = () => ({
 });
 
 describe("private network detection", () => {
+  it("uses the network provider's MTU limit when server provider metadata is unknown", () => {
+    const input = config();
+    input.network.source = { providerId: "hetzner-dedicated", networkRef: "vswitch-a" };
+    input.network.mtu = 1500;
+    input.members.forEach((member) => {
+      member.providerId = "custom";
+    });
+    const found = observations();
+    Object.values(found).forEach((host) => {
+      host.interfaces[0]!.mtu = 1500;
+    });
+    const result = suggestNativeClusterConfig(input, found);
+    expect(result.network.mtu).toBe(1400);
+    expect(result.network.source).toEqual(input.network.source);
+    expect(result.members.map((member) => member.providerId)).toEqual([
+      "custom",
+      "custom",
+      "custom",
+    ]);
+  });
   it("uses the real interface masks for the three entered addresses without inventing a /16", () => {
     const input = config();
     const original = structuredClone(input);

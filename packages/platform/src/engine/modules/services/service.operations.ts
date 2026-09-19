@@ -8,6 +8,7 @@ import { audit } from "../../lib/audit-emitter";
 import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
 import { sshManager } from "../../lib/ssh-manager";
 import * as service from "./service.service";
+import { applyServiceEnvironment } from "./service-environment";
 
 function record(
   ctx: ExecutionContext,
@@ -167,6 +168,11 @@ export const serviceDependencies: ServiceDependencies = {
       const result = await run(() => service.restartServiceContainer(ctx, projectId, id, input));
       record(ctx, id, "write", { operation: "restart", projectId, force: input?.force ?? false });
       return { success: true, ...result };
+    },
+    async applyEnvironment(ctx, projectId, id) {
+      const result = await run(() => applyServiceEnvironment(ctx, projectId, id));
+      record(ctx, id, "write", { operation: "env.apply", projectId, containerId: result.containerId });
+      return result;
     },
     runtimeLogs: (ctx, projectId, id, input) =>
       run(() => service.getServiceRuntimeLogs(ctx, projectId, id, input?.tail)),

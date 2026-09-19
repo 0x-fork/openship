@@ -6,7 +6,7 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { getApiErrorMessage } from "@/lib/api";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { privateNetworksApi } from "@/lib/api/private-networks";
 import { randomUUID } from "@/lib/random-uuid";
 import { NetworkDiagnosticText } from "./NetworkSetupProgress";
 import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
@@ -32,7 +32,7 @@ export function RemoveSetupServerButton({
   onRefresh(): void;
 }) {
   const { t } = useI18n();
-  const m = t.servers.clusters.managed;
+  const m = t.servers.networks.managed;
   const router = useRouter();
   const hintId = useId();
   const [open, setOpen] = useState(false);
@@ -50,18 +50,18 @@ export function RemoveSetupServerButton({
     try {
       const result =
         "operationId" in source
-          ? await serverClustersApi.removeOperationMember({
+          ? await privateNetworksApi.removeOperationMember({
               ...source,
               serverId,
               requestId: requestId.current,
             })
-          : await serverClustersApi.removePreparationMember({
+          : await privateNetworksApi.removePreparationMember({
               ...source,
               serverId,
               requestId: requestId.current,
             });
       setOpen(false);
-      router.push(`/servers/clusters/preparations/${result.preparation.id}`);
+      router.push(`/servers/networks/preparations/${result.preparation.id}`);
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {

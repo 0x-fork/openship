@@ -42,6 +42,7 @@ export function presentCloudPlans(catalog: OblienBillingCatalog, requestedLocale
       id, name: plan.name, description: plan.description ?? "", popular: plan.popular ?? false,
       price: { monthly, annual }, effectivePrice: { monthly }, listPrice: { monthly }, campaign: null,
       monthlyCredits: plan.creditsPerCycle === null ? null : fromOblienCredits(plan.creditsPerCycle),
+      annualCredits: plan.yearlyCreditsPerCycle === null ? null : fromOblienCredits(plan.yearlyCreditsPerCycle),
       limits: { ...planLimits(id), computeMinutesPerMonth: null, workloads: [...planLimits(id).workloads] },
       features: plan.features, inheritedFrom: null, support: "", contactSales: monthly === null ? "mailto:support@openship.io" : null,
     };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { serializeEnvFile } from "@repo/core";
 import {
   blockingComposeFields,
   parseComposeEnvFile,
@@ -335,6 +336,34 @@ BAZ=qux
     expect(parseComposeEnvFile('BLOCK="never closed\nAFTER=ok')).toEqual({
       BLOCK: "never closed",
       AFTER: "ok",
+    });
+  });
+
+  it("loads downloaded production variables without expanding or truncating secrets", () => {
+    const rows = [
+      { key: "REF", value: "must-not-be-substituted" },
+      { key: "PASSWORD", value: "user's${REF} $REF $$ 'single' \"double\" `backtick`" },
+      { key: "PATH_VALUE", value: "  C:\\new\\folder\\" },
+      { key: "CERT", value: "first\r\nNEXT=still part of the certificate\nlast\n" },
+      { key: "ESCAPES", value: "'literal \\n and real\nnewline'" },
+      { key: "__proto__", value: "valid-environment-key" },
+      { key: "AFTER", value: "intact" },
+    ];
+    expect(parseComposeEnvFile(serializeEnvFile(rows))).toEqual(Object.fromEntries(rows.map(({ key, value }) => [key, value])));
+  });
+
+  it("interpolates unescaped references while preserving escaped dollars and closing backslashes", () => {
+    expect(parseComposeEnvFile(String.raw`REF=expanded
+VALUE="\$REF $REF \${REF} \\\$REF"
+PATH_VALUE="ends with\\"
+AFTER=ok`)).toEqual({
+      REF: "expanded", VALUE: "$REF expanded ${REF} \\$REF", PATH_VALUE: "ends with\\", AFTER: "ok",
+    });
+  });
+
+  it("uses the last assignment's interpolation rule for duplicate keys", () => {
+    expect(parseComposeEnvFile("REF=value\nA=$REF\nA='$REF'\nB='$REF'\nB=$REF")).toEqual({
+      REF: "value", A: "$REF", B: "value",
     });
   });
 

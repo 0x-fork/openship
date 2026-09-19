@@ -3,6 +3,7 @@ export * from "./stacks";
 export * from "./volumes";
 export * from "./compose-namespace";
 export * from "./compose-spec";
+export * from "./env-file";
 export * from "./object-storage";
 export * from "./constants";
 export * from "./shell-split";
@@ -78,3 +79,6 @@ export * from "./sse";
 export * from "./infrastructure";
 export * from "./managed-network";
 export * from "./network-firewall";
+export * from "./network-access";
+
+export * from "./compute-cluster";

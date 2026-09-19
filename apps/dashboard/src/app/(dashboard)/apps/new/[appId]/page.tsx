@@ -68,6 +68,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useModal } from "@/context/ModalContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import { defaultDomainType } from "@/lib/default-domain-type";
@@ -262,6 +263,7 @@ export default function AppInstallPage() {
   // preflight hard-fail. Forced true on SaaS/native (CloudContext).
   const { connected: cloudConnected, requireCloud } = useCloud();
   const { showModal, hideModal } = useModal();
+  const showCloudPricing = useCloudDeployPricing();
   // Desktop mode: apps can't run on this machine yet — see useLocalDeployGate.
   const localDeployGate = useLocalDeployGate();
 
@@ -1053,6 +1055,7 @@ export default function AppInstallPage() {
           setStartedAt(Date.now());
           setPhase("installing");
         } catch (err) {
+          if (!started && showCloudPricing(err)) return;
           const msg = getApiErrorMessage(err, w.installFailed).replace(
             /^Pre-deploy checks failed:\s*/i,
             "",
@@ -1105,6 +1108,7 @@ export default function AppInstallPage() {
 
       await startDeploy(pid);
     } catch (err) {
+      if (!started && showCloudPricing(err)) return;
       // Strip the server's "Pre-deploy checks failed:" prefix for a cleaner
       // message. Nothing deployed yet → toast + stay on the form; a deploy that
       // already started keeps the log-bearing error card (with build details).

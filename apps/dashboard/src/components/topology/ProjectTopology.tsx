@@ -20,14 +20,16 @@ import { resolveWorkload, type ProjectResources } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { Button, buttonVariants } from "@/components/ui/button";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { ScaleDetailsPanel } from "@/components/scale/ScaleDetailsPanel";
 import { AddServiceModal } from "@/app/(dashboard)/projects/[id]/components/services/AddServiceModal";
 import { environmentWizardHref } from "@/app/(dashboard)/projects/[id]/components/environment-next";
 import {
   deployApi,
+  getApiErrorCode,
   getApiErrorMessage,
   projectsApi,
   servicesApi,
@@ -85,6 +87,7 @@ export default function ProjectTopology({
   const router = useRouter();
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
+  const showCloudPricing = useCloudDeployPricing();
   const runtime = useTopologyData(id, refreshServices, !!project.activeDeploymentId);
   const [changes, setChanges] = useState<TopologyChange[]>([]);
   const [selection, setSelection] = useState<TopologySelection>(null);
@@ -468,7 +471,7 @@ export default function ProjectTopology({
       setChanges([]);
       setReviewing(false);
     } catch (error) {
-      setApplyError(getApiErrorMessage(error, "Changes could not be applied."));
+      if (!showCloudPricing(error)) setApplyError(getApiErrorMessage(error, "Changes could not be applied."));
       invalidateProjectCaches(id);
       void runtime.refresh();
     } finally {
@@ -490,7 +493,12 @@ export default function ProjectTopology({
         "success",
       );
     } catch (error) {
-      showToast(getApiErrorMessage(error, "The service action failed."), "error");
+      if (action === "restart" && getApiErrorCode(error) === "SERVICE_CONFIG_STALE") {
+        showToast(interpolate(t.projectDetail.services.detail.environmentApply.restartBlocked, { name: service.name }), "info", service.name);
+        router.push(`/projects/${id}/services/${service.id}/env`);
+        return;
+      }
+      if (action === "stop" || !showCloudPricing(error)) showToast(getApiErrorMessage(error, "The service action failed."), "error");
     } finally {
       setLifecycleBusy(false);
     }

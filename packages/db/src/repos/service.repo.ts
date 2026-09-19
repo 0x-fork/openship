@@ -1343,5 +1343,71 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         .set({ ...data, updatedAt: new Date() })
         .where(eq(serviceDeployment.id, id));
     },
+
+    /** Commit a runtime-only env apply without creating a release/build session.
+     * Keep the historical image/env capture; update only the live identity and
+     * a per-service drift cutoff. The adapter retains the original container
+     * until this transaction commits, and restores it if this write fails. */
+    async recordEnvironmentApply(input: {
+      projectId: string;
+      organizationId: string;
+      deploymentId: string;
+      serviceId: string;
+      expectedContainerId: string | null;
+      previousContainerId: string;
+      containerId: string;
+      ip?: string;
+      appliedAt: Date;
+    }) {
+      await db.transaction(async tx => {
+        const [parent] = await tx.select().from(deployment).where(and(
+          eq(deployment.id, input.deploymentId),
+          eq(deployment.projectId, input.projectId),
+          eq(deployment.organizationId, input.organizationId),
+        )).for("update");
+        const [row] = await tx.select().from(serviceDeployment).where(and(
+          eq(serviceDeployment.deploymentId, input.deploymentId),
+          eq(serviceDeployment.serviceId, input.serviceId),
+        )).for("update");
+        if (!parent || !row || row.containerId !== input.expectedContainerId) {
+          throw new Error("The service changed while its environment was being applied. Try again.");
+        }
+        const now = new Date();
+        await tx.update(serviceDeployment).set({
+          containerId: input.containerId,
+          ...(input.ip ? { ip: input.ip } : {}),
+          allocatedResources: row.allocatedResources
+            ? { ...row.allocatedResources, containerId: input.containerId }
+            : null,
+          status: "success",
+          error: null,
+          errorMessage: null,
+          updatedAt: now,
+        }).where(eq(serviceDeployment.id, row.id));
+
+        // These fields contain IDs/times only. Preserve the stored (sealed)
+        // configuration verbatim; do not decrypt/reseal a historical snapshot.
+        const meta = (parent.meta ?? {}) as Record<string, unknown>;
+        const oldIds = new Set([input.expectedContainerId, input.previousContainerId]);
+        const composeServices = Array.isArray(meta.composeServices)
+          ? meta.composeServices.map((item: Record<string, unknown>) =>
+              item.name === row.serviceName
+                ? { ...item, containerId: input.containerId, ...(input.ip ? { ip: input.ip } : {}) }
+                : item)
+          : undefined;
+        await tx.update(deployment).set({
+          ...(parent.containerId && oldIds.has(parent.containerId) ? { containerId: input.containerId } : {}),
+          meta: {
+            ...meta,
+            ...(composeServices ? { composeServices } : {}),
+            serviceEnvironmentApplied: {
+              ...((meta.serviceEnvironmentApplied ?? {}) as Record<string, unknown>),
+              [input.serviceId]: { containerId: input.containerId, appliedAt: input.appliedAt.toISOString() },
+            },
+          },
+          updatedAt: now,
+        }).where(eq(deployment.id, input.deploymentId));
+      });
+    },
   };
 }

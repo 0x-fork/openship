@@ -111,6 +111,123 @@ const opTarget = (operation: typeof planned, requestId = randomUUID()) => ({
   requestId,
 });
 
+describe("revising managed network connections", () => {
+  const access = {
+    version: 1 as const,
+    rules: [
+      { sourceServerId: "server-a", targetServerId: "server-b" },
+      { sourceServerId: "server-a", targetServerId: "server-c" },
+    ],
+  };
+  const target = (sequence: number) => ({
+    preparationId: input.requestId,
+    sequence,
+    requestId: randomUUID(),
+    access,
+  });
+
+  it("replaces a failed preparation without removing servers or rewriting its history", async () => {
+    const before = await failed();
+    const change = target(before.sequence);
+    const result = await preparations.reviseAccess("org-a", "user", change);
+    expect(result.preparation).toMatchObject({
+      id: change.requestId,
+      status: "pending",
+      cleanupOperationId: null,
+      input: { access },
+    });
+    expect(result.preparation.input.members).toEqual(before.input.members);
+    expect(result.preparation.hosts).toEqual(before.hosts);
+    expect(result.sourcePreparation).toMatchObject({
+      status: "cancelled",
+      replacementPreparationId: change.requestId,
+      input: before.input,
+      inputHash: before.inputHash,
+    });
+    expect(await db.select().from(schema.servers)).toHaveLength(3);
+    expect(await preparations.heartbeat(before.id, before.generation)).toBe(false);
+    const replay = await preparations.reviseAccess("org-a", "user", change);
+    expect(replay.preparation).toEqual(result.preparation);
+    expect(replay.sourcePreparation!.sequence).toBe(result.sourcePreparation!.sequence);
+    await expect(
+      preparations.reviseAccess("org-a", "user", { ...change, access: { version: 1, rules: [] } }),
+    ).rejects.toThrow("different setup changes");
+  });
+
+  it("invalidates the prior approval atomically and keeps the allocated range in the revised input", async () => {
+    const operation = await ready();
+    const before = await preparations.get("org-a", input.requestId);
+    const result = await preparations.reviseAccess("org-a", "user", target(before.sequence));
+    expect(result.operation).toMatchObject({
+      status: "cancelled",
+      plan: operation.plan,
+      planHash: operation.planHash,
+      replacementPreparationId: result.preparation.id,
+    });
+    expect(result.preparation.input).toMatchObject({
+      members: before.input.members,
+      cidr: operation.plan.config.network.cidrs[0],
+      mtu: operation.plan.config.network.mtu,
+      probePort: operation.plan.config.network.probePort,
+      access,
+    });
+    await expect(
+      clusters.claimOperation("org-a", operation.id, operation.planHash, "apply"),
+    ).rejects.toThrow();
+    expect((await preparations.list("org-a")).map((value) => value.id)).toEqual([
+      result.preparation.id,
+    ]);
+  });
+
+  it("rejects running, stale, foreign and invalid policy requests without publishing a revision", async () => {
+    await start();
+    await expect(preparations.reviseAccess("org-a", "user", target(1))).rejects.toThrow(
+      "still running",
+    );
+    await preparations.finish(input.requestId, 1, hosts, null, "Failed");
+    const before = await preparations.get("org-a", input.requestId);
+    await expect(preparations.reviseAccess("org-a", "user", target(1))).rejects.toThrow(
+      "Setup changed",
+    );
+    await expect(
+      preparations.reviseAccess("org-b", "user", target(before.sequence)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      preparations.reviseAccess("org-a", "user", {
+        ...target(before.sequence),
+        access: { version: 1, rules: [{ sourceServerId: "server-a", targetServerId: "foreign" }] },
+      }),
+    ).rejects.toThrow("two different servers");
+    expect(await db.select().from(schema.managedNetworkPreparation)).toHaveLength(1);
+    expect((await preparations.get("org-a", before.id)).status).toBe("failed");
+  });
+
+  it("cannot supersede an operation that has already changed hosts", async () => {
+    await partial();
+    const before = await preparations.get("org-a", input.requestId);
+    await expect(
+      preparations.reviseAccess("org-a", "user", target(before.sequence)),
+    ).rejects.toThrow("Restore the applied network changes");
+    expect(await db.select().from(schema.managedNetworkPreparation)).toHaveLength(1);
+  });
+
+  it("retains one-way access when a member is subsequently removed", async () => {
+    const before = await failed();
+    const changed = await preparations.reviseAccess("org-a", "user", target(before.sequence));
+    const removed = await preparations.removeMember("org-a", "user", {
+      preparationId: changed.preparation.id,
+      sequence: changed.preparation.sequence,
+      serverId: "server-c",
+      requestId: randomUUID(),
+    });
+    expect(removed.preparation.input.access).toEqual({ version: 1, rules: [access.rules[0]] });
+    expect(removed.preparation.input.members.map((value) => value.serverId)).toEqual([
+      "server-a",
+      "server-b",
+    ]);
+  });
+});
+
 describe("removing one server from initial managed network setup", () => {
   it("atomically replaces failed preparation, retains history and reuses remaining host diagnostics", async () => {
     const source = await failed();
@@ -435,7 +552,7 @@ describe("removing one server from initial managed network setup", () => {
         serverId: "server-c",
         requestId: randomUUID(),
       }),
-    ).rejects.toThrow("new cluster");
+    ).rejects.toThrow("new network");
   });
 
   it("supports older failed operations without preparation records and checks reviewed hashes", async () => {

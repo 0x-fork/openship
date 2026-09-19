@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { Check, CircleAlert, Copy, Shield } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
-  INFRASTRUCTURE_PROVIDERS,
+  ArrowDownLeft,
+  ArrowLeftRight,
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  CircleAlert,
+  Copy,
+  Shield,
+} from "lucide-react";
+import {
   networkFirewallRules,
   networkFirewallTemplate,
+  networkAccessAllowed,
   type InfrastructureProviderId,
   type NetworkFirewallMember,
   type NetworkFirewallScope,
@@ -13,7 +22,6 @@ import {
 import { BlurIp } from "@/components/BlurIp";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { CustomSelect } from "@/components/ui/CustomSelect";
 import { InfrastructureProviderLogo } from "../InfrastructureProviderLogo";
 import { NetworkDiagnosticText } from "./NetworkSetupProgress";
 
@@ -43,25 +51,27 @@ async function copyText(value: string) {
   }
 }
 
-/** One shared rule template for preparation, plan review and connection failures. */
+/** All server rules remain visible, shared by final review and connection diagnostics. */
 export function NetworkFirewallRules({
   servers,
-  initialServerId,
   network = { mode: "wireguard" },
   failed = false,
+  embedded = false,
+  children,
 }: {
   servers: NetworkFirewallServer[];
-  initialServerId?: string;
   network?: NetworkFirewallScope;
   failed?: boolean;
+  embedded?: boolean;
+  children?: ReactNode;
 }) {
   const { t } = useI18n();
-  const m = t.servers.clusters.managed;
+  const m = t.servers.networks.managed;
   const f = m.firewallRules;
+  const a = t.servers.networks.access;
   const native = network.mode === "native";
+  const isolated = network.mode === "wireguard" && network.access?.rules.length === 0;
   const id = useId();
-  const [serverId, setServerId] = useState(initialServerId);
-  const [direction, setDirection] = useState<"inbound" | "outbound">("inbound");
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,15 +81,21 @@ export function NetworkFirewallRules({
     },
     [],
   );
-  const server = servers.find((item) => item.serverId === serverId) ?? servers[0];
-  if (!server) return null;
-  const { rules, pendingServerIds } = networkFirewallRules(servers, server.serverId, network);
-  const template = networkFirewallTemplate(servers, server.serverId, network);
-  // Native verification uses the same addresses and destination port for TCP and UDP.
-  const visibleRules = rules.filter(
-    (rule) => rule.direction === direction && rule.protocol === "udp" && !rule.reply,
-  );
-  const localCidr = rules[0]?.destination;
+  if (!servers.length) return null;
+  const groups = servers.map((server) => ({
+    server,
+    ...networkFirewallRules(servers, server.serverId, network),
+    template: networkFirewallTemplate(servers, server.serverId, network),
+  }));
+  const completeTemplate = groups.every(
+    (group) => group.template || (!group.rules.length && !group.pendingServerIds.length),
+  )
+    ? groups
+        .filter((group) => group.template)
+        .map(({ server, template }) => `${f.server}: ${server.name}\n${template}`)
+        .join("\n\n") || null
+    : null;
+  const pending = groups.some((group) => group.pendingServerIds.length > 0);
 
   async function copy(key: string, value: string) {
     setCopyError(false);
@@ -95,16 +111,13 @@ export function NetworkFirewallRules({
   }
   function valueCell(value: string, label: string, key: string, address = false) {
     return (
-      <span className="inline-flex max-w-full items-center gap-1 @sm/firewall:gap-1.5">
-        <span
-          className="whitespace-nowrap font-mono text-[11px] text-foreground @sm/firewall:text-xs"
-          dir="ltr"
-        >
+      <span className="inline-flex max-w-full items-center gap-1">
+        <span className="min-w-0 break-all font-mono text-xs text-foreground" dir="ltr">
           {address ? <BlurIp>{value}</BlurIp> : value}
         </span>
         <button
           type="button"
-          className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 @sm/firewall:size-7"
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           aria-label={`${f.copy} ${label}`}
           title={copied === key ? f.copied : f.copy}
           onClick={() => void copy(key, value)}
@@ -117,200 +130,277 @@ export function NetworkFirewallRules({
 
   return (
     <section
-      className="@container/firewall min-w-0 space-y-4 rounded-2xl bg-card p-4"
+      className={`@container/firewall min-w-0 space-y-5 ${embedded ? "" : "rounded-2xl bg-card p-5 sm:p-7"}`}
       aria-labelledby={`${id}-title`}
     >
-      <div className="-mx-4 -mt-4 rounded-t-2xl bg-warning/5 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-warning/10 text-warning">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className={`grid size-9 shrink-0 place-items-center rounded-xl ${isolated ? "bg-muted text-muted-foreground" : "bg-warning/10 text-warning"}`}
+          >
             <Shield className="size-4" aria-hidden="true" />
           </span>
-          <h3 id={`${id}-title`} className="text-sm font-semibold">
-            {f.title}
-          </h3>
-          <span className="text-[11px] font-medium text-warning">{f.required}</span>
+          <div>
+            <h3 id={`${id}-title`} className="text-lg font-semibold">
+              {f.title}
+            </h3>
+            <p
+              className={`mt-1 text-sm font-medium ${isolated ? "text-muted-foreground" : "text-warning"}`}
+            >
+              {isolated ? a.noConnections : f.required}
+            </p>
+          </div>
         </div>
-        <p className="mt-2 text-xs font-medium leading-relaxed">{f.requiredHint}</p>
-        <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-          {native ? f.nativeDescription : f.description}
-        </p>
+        {!isolated && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={!completeTemplate}
+            onClick={() => completeTemplate && void copy("all", completeTemplate)}
+          >
+            {copied === "all" ? <Check /> : <Copy />}
+            {copied === "all" ? f.copied : f.copyAllRules}
+          </Button>
+        )}
       </div>
       {failed && (
-        <div role="alert" className="space-y-1 text-xs leading-relaxed">
-          <p className="flex items-center gap-2 font-medium text-warning">
-            <CircleAlert className="size-4 shrink-0" />
-            {m.transportFailedTitle}
-          </p>
-          <p className="text-muted-foreground">
-            {native ? f.nativeFailedHint : m.transportFailedHint}
-          </p>
-        </div>
-      )}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-0 flex-1 basis-48 space-y-1.5">
-          <label htmlFor={`${id}-server`} className="text-xs font-medium text-muted-foreground">
-            {f.server}
-          </label>
-          <CustomSelect
-            id={`${id}-server`}
-            aria-label={f.server}
-            value={server.serverId}
-            variant="filled"
-            onChange={(value) => {
-              setServerId(value);
-              setCopied(null);
-              setCopyError(false);
-            }}
-            options={servers.map((member) => ({
-              value: member.serverId,
-              label: member.name,
-              description: INFRASTRUCTURE_PROVIDERS.find(
-                (provider) => provider.id === member.providerId,
-              )?.name,
-              icon: <InfrastructureProviderLogo providerId={member.providerId ?? "custom"} />,
-            }))}
-          />
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={!template}
-          onClick={() => template && void copy("template", template)}
-        >
-          {copied === "template" ? <Check /> : <Copy />}
-          {copied === "template" ? f.copied : f.copyRules}
-        </Button>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
         <div
-          role="tablist"
-          aria-label={f.title}
-          className="inline-flex gap-1 rounded-lg bg-muted/40 p-1"
+          role="alert"
+          className="flex items-start gap-2.5 rounded-xl bg-warning/5 p-3 text-sm leading-relaxed"
         >
-          {(["inbound", "outbound"] as const).map((value) => (
-            <button
-              key={value}
-              id={`${id}-${value}`}
-              role="tab"
-              type="button"
-              aria-selected={direction === value}
-              aria-controls={`${id}-rules`}
-              tabIndex={direction === value ? 0 : -1}
-              onClick={() => setDirection(value)}
-              onKeyDown={(event) => {
-                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-                event.preventDefault();
-                const next =
-                  event.key === "Home"
-                    ? "inbound"
-                    : event.key === "End"
-                      ? "outbound"
-                      : value === "inbound"
-                        ? "outbound"
-                        : "inbound";
-                setDirection(next);
-                document.getElementById(`${id}-${next}`)?.focus();
-              }}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${direction === value ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {f[value]}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {f.allow} · {native ? "TCP / UDP" : "UDP"} · {f.sourcePort}: {f.any}
-        </p>
-      </div>
-      <div role="tabpanel" id={`${id}-rules`} aria-labelledby={`${id}-${direction}`}>
-        {localCidr && (
-          <div className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-            <span>{direction === "inbound" ? f.destination : f.source}:</span>
-            {valueCell(
-              localCidr,
-              direction === "inbound" ? f.destination : f.source,
-              `local-${localCidr}`,
-              true,
-            )}
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <div>
+            <p className="font-medium text-warning">{m.transportFailedTitle}</p>
+            <p className="mt-1 text-muted-foreground">
+              {native ? f.nativeFailedHint : m.transportFailedHint}
+            </p>
           </div>
-        )}
-        {native && (
-          <p className="mb-3 text-xs text-muted-foreground">
-            {t.servers.clusters.interfaceName}: {server.interfaceName || f.privateInterfaceHint}
-          </p>
-        )}
-        {visibleRules.length > 0 && (
-          <table className="w-full table-fixed text-start text-xs">
-            <thead className="text-muted-foreground">
-              <tr className="border-b border-border/40">
-                <th scope="col" className="pb-2 text-start font-normal">
-                  {direction === "inbound" ? f.sourceCidr : f.destinationCidr}
-                </th>
-                <th scope="col" className="w-20 pb-2 text-end font-normal @sm/firewall:w-32">
-                  {f.destinationPort}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/40">
-              {visibleRules.map((rule) => {
-                const peer = servers.find((item) => item.serverId === rule.peerServerId)!;
-                const cidr = direction === "inbound" ? rule.source : rule.destination;
-                return (
-                  <tr key={rule.peerServerId}>
-                    <td className="py-2 pe-2 @sm/firewall:pe-3">
-                      <p className="mb-0.5 break-words text-muted-foreground">
-                        <NetworkDiagnosticText value={peer.name} />
-                      </p>
-                      {valueCell(
-                        cidr,
-                        direction === "inbound" ? f.sourceCidr : f.destinationCidr,
-                        `${rule.peerServerId}-${cidr}`,
-                        true,
-                      )}
-                    </td>
-                    <td className="py-2 text-end">
-                      {valueCell(
-                        String(rule.destinationPort),
-                        f.destinationPort,
-                        `${rule.peerServerId}-${direction}-port`,
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-        {pendingServerIds.length > 0 && (
-          <p
-            role="status"
-            className="mt-3 rounded-lg bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground"
-          >
-            {f.pending}
-          </p>
-        )}
-      </div>
-      {native && (
-        <details className="rounded-lg bg-muted/30 p-3 text-xs">
-          <summary className="cursor-pointer font-medium">{f.returnTraffic}</summary>
-          <p className="mt-2 leading-relaxed text-muted-foreground">{f.nativeReturnHint}</p>
-          <dl className="mt-2 grid grid-cols-2 items-center gap-2 text-muted-foreground">
-            <dt>{f.sourcePort}</dt>
-            <dd>{valueCell(String(network.probePort), f.sourcePort, "reply-port")}</dd>
-            <dt>{f.destinationPort}</dt>
-            <dd>{f.any}</dd>
-          </dl>
-        </details>
+        </div>
       )}
-      <div className="space-y-1.5 text-xs leading-relaxed text-muted-foreground">
-        <p>{native ? f.nativeScopeHint : f.scopeHint}</p>
-        <p>{native ? f.nativeFirewallHint : m.firewallHint}</p>
-      </div>
+      <ul className="divide-y divide-border/50">
+        {groups.map(({ server, rules, template }, index) => {
+          const serverTitle = `${id}-server-${index}`;
+          const localAddress =
+            rules.find((rule) => rule.direction === "inbound")?.destination ??
+            (native ? server.privateIp : server.endpoint);
+          return (
+            <li key={server.serverId} className="min-w-0 py-5 first:pt-0 last:pb-0">
+              <section aria-labelledby={serverTitle}>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted/40">
+                      <InfrastructureProviderLogo providerId={server.providerId ?? "custom"} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <h4 id={serverTitle} className="break-words text-sm font-medium">
+                          <NetworkDiagnosticText value={server.name} />
+                        </h4>
+                        {localAddress && (
+                          <>
+                            <span aria-hidden="true" className="h-3 w-px bg-border" />
+                            {valueCell(
+                              localAddress,
+                              native ? t.servers.networks.privateAddress : m.endpoint,
+                              `${server.serverId}-local`,
+                              true,
+                            )}
+                          </>
+                        )}
+                      </div>
+                      {native && (
+                        <p className="mt-1 break-words text-xs text-muted-foreground">
+                          {t.servers.networks.interfaceName}:{" "}
+                          {server.interfaceName || f.privateInterfaceHint}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {(rules.length > 0 || pending) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={!template}
+                      onClick={() => template && void copy(server.serverId, template)}
+                    >
+                      {copied === server.serverId ? <Check /> : <Copy />}
+                      {copied === server.serverId ? f.copied : f.copyRules}
+                    </Button>
+                  )}
+                </div>
+                {network.mode === "wireguard" && network.access && (
+                  <dl className="mb-4 space-y-2 text-sm">
+                    {(["outgoing", "incoming"] as const).map((direction) => {
+                      const allowed = servers.filter((peer) =>
+                        direction === "outgoing"
+                          ? networkAccessAllowed(network.access, server.serverId, peer.serverId)
+                          : networkAccessAllowed(network.access, peer.serverId, server.serverId),
+                      );
+                      return (
+                        <div
+                          key={direction}
+                          className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
+                        >
+                          <dt className="text-muted-foreground">{a[direction]}:</dt>
+                          <dd>
+                            {allowed.length
+                              ? allowed.map((peer, peerIndex) => (
+                                  <span
+                                    key={peer.serverId}
+                                    className="inline-flex items-center gap-2"
+                                  >
+                                    {peerIndex > 0 && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="mx-2 text-muted-foreground"
+                                      >
+                                        ·
+                                      </span>
+                                    )}
+                                    <NetworkDiagnosticText value={peer.name} />
+                                  </span>
+                                ))
+                              : a.none}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                )}
+                {!rules.length && !pending && (
+                  <p className="text-sm text-muted-foreground">{a.empty}</p>
+                )}
+                {rules.length > 0 && (
+                  <div className="grid gap-3 @xl/firewall:grid-cols-2">
+                    {(["inbound", "outbound"] as const).map((direction) => {
+                      const DirectionIcon = direction === "inbound" ? ArrowDownLeft : ArrowUpRight;
+                      const peerLabel = direction === "inbound" ? f.sourceCidr : f.destinationCidr;
+                      // Native TCP and UDP probes share the same addresses and ports.
+                      const visibleRules = rules.filter(
+                        (rule) =>
+                          rule.direction === direction && rule.protocol === "udp" && !rule.reply,
+                      );
+                      return (
+                        <section
+                          key={direction}
+                          className="min-w-0 rounded-xl bg-muted/25 p-3"
+                          aria-labelledby={`${serverTitle}-${direction}`}
+                        >
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="grid size-6 shrink-0 place-items-center rounded-md bg-info/10 text-info">
+                                <DirectionIcon className="size-3.5" aria-hidden="true" />
+                              </span>
+                              <h5
+                                id={`${serverTitle}-${direction}`}
+                                className="text-sm font-semibold"
+                              >
+                                {f[direction]}
+                              </h5>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {f.allow} · {native ? "TCP / UDP" : "UDP"}
+                            </span>
+                          </div>
+                          <div className="flex items-start justify-between gap-2 text-xs text-muted-foreground">
+                            <span>{peerLabel}</span>
+                            <span className="max-w-20 shrink-0 text-end">{f.destinationPort}</span>
+                          </div>
+                          <ul className="mt-1 divide-y divide-border/40">
+                            {visibleRules.map((rule) => {
+                              const peer = servers.find(
+                                (item) => item.serverId === rule.peerServerId,
+                              )!;
+                              const cidr = direction === "inbound" ? rule.source : rule.destination;
+                              const key = `${server.serverId}-${direction}-${peer.serverId}`;
+                              return (
+                                <li
+                                  key={peer.serverId}
+                                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2 last:pb-0"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="mb-0.5 break-words text-xs text-muted-foreground">
+                                      <NetworkDiagnosticText value={peer.name} />
+                                    </p>
+                                    {valueCell(cidr, peerLabel, `${key}-address`, true)}
+                                  </div>
+                                  {valueCell(
+                                    String(rule.destinationPort),
+                                    f.destinationPort,
+                                    `${key}-port`,
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </li>
+          );
+        })}
+      </ul>
+      {pending && (
+        <p
+          role="status"
+          className="rounded-xl bg-muted/40 p-3 text-sm leading-relaxed text-muted-foreground"
+        >
+          {f.pending}
+        </p>
+      )}
+      <details className="group/firewall-guidance">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+          {f.guidanceTitle}
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 shrink-0 transition-transform group-open/firewall-guidance:rotate-180"
+          />
+        </summary>
+        <div className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
+          {!isolated && <p className="font-medium text-foreground">{f.requiredHint}</p>}
+          {!isolated && <p>{native ? f.nativeDescription : f.description}</p>}
+          {!isolated && network.mode === "wireguard" && network.access && <p>{a.transportHint}</p>}
+          {network.mode === "wireguard" && network.access && <p>{a.enforcedHint}</p>}
+          {!isolated && (
+            <p>
+              {f.sourcePort}: <span className="text-foreground">{f.any}</span>
+            </p>
+          )}
+          {native && (
+            <div className="flex items-start gap-2.5 rounded-xl bg-muted/25 p-3">
+              <ArrowLeftRight className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+              <div className="min-w-0 space-y-1.5">
+                <p className="font-medium text-foreground">
+                  {f.returnTraffic} · {f.inbound} / {f.outbound}
+                </p>
+                <p>{f.nativeReturnHint}</p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="inline-flex items-center gap-1">
+                    {f.sourcePort}:{" "}
+                    {valueCell(String(network.probePort), f.sourcePort, "reply-port")}
+                  </span>
+                  <span>
+                    {f.destinationPort}: {f.any}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          <p>{native ? f.nativeScopeHint : f.scopeHint}</p>
+          <p>{native ? f.nativeFirewallHint : m.firewallHint}</p>
+        </div>
+      </details>
+      {children && <div className="border-t border-border/50 pt-4">{children}</div>}
       <span className="sr-only" role="status">
         {copied ? f.copied : ""}
       </span>
       {copyError && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-sm text-danger">
           {f.copyFailed}
         </p>
       )}

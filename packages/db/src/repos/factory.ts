@@ -301,6 +301,7 @@ import { createServiceDeploymentRepo } from "./service-deployment.repo";
 import { createSettingsRepo } from "./settings.repo";
 import { createInstanceSettingsRepo } from "./instance-settings.repo";
 import { createServerRepo } from "./server.repo";
+import { createComputeClusterRepo } from "./compute-cluster.repo";
 import { createServerClusterRepo } from "./server-cluster.repo";
 import { createNetworkPreparationRepo } from "./network-preparation.repo";
 import { createServerGithubAuthRepo } from "./server-github-auth.repo";
@@ -384,6 +385,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   instanceSettings: createInstanceSettingsRepo(db),
   server: createServerRepo(db),
   serverCluster: createServerClusterRepo(db),
+  computeCluster: createComputeClusterRepo(db),
   networkPreparation: createNetworkPreparationRepo(db),
   serverGithubAuth: createServerGithubAuthRepo(db),
   githubDeployKey: createGithubDeployKeyRepo(db),
@@ -425,3 +427,5 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
 }
 
 export type Repositories = ReturnType<typeof createRepositories>;
+
+export { createComputeClusterRepo, type ComputeClusterRecord } from "./compute-cluster.repo";

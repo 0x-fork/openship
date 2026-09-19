@@ -72,6 +72,22 @@ beforeEach(async () => {
 });
 afterEach(async () => { await runtime?.dispose(); vi.restoreAllMocks(); });
 describe("containers on one Oblien Docker workspace", () => {
+  it("applies environment inside the existing workspace without replacing or restarting the VM", async () => {
+    const apply = vi.spyOn(DockerRuntime.prototype, "applyEnvironment").mockResolvedValue({ containerId: "replacement-a" });
+    const options = { projectId: "project-a", serviceName: "api", onReplaced: vi.fn() };
+    await expect(runtime.applyEnvironment("container-a", { VALUE: "new" }, options)).resolves.toEqual({ containerId: "replacement-a" });
+    expect(apply).toHaveBeenCalledExactlyOnceWith("container-a", { VALUE: "new" }, options);
+    expect(provider.workspaces.create).not.toHaveBeenCalled();
+    expect(ws.restart).not.toHaveBeenCalled();
+    expect(ws.delete).not.toHaveBeenCalled();
+    expect(spend).toHaveBeenCalled();
+    apply.mockClear();
+    await expect(runtime.applyEnvironment("container-a", {}, { ...options, projectId: "other-project" })).rejects.toThrow("different project");
+    expect(apply).not.toHaveBeenCalled();
+    spend.mockRejectedValue(new Error("out of credits"));
+    await expect(runtime.applyEnvironment("container-a", {}, options)).rejects.toThrow("out of credits");
+    expect(apply).not.toHaveBeenCalled();
+  });
   it.each(["running", "stopped"])("updates a %s bridge before accepting Docker connections", async initialState => {
     vi.useFakeTimers();
     let bridgeState = initialState;

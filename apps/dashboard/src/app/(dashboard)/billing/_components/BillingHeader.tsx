@@ -1,158 +1,37 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
+import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
 
-/**
- * Billing page header — title/subtitle plus a live resource-stats strip.
- *
- * Client component because the surrounding BillingLayout is an async server
- * component and locale is a client-runtime concern. Every figure here is
- * MEASURED — read from Oblien (billing/state + billing/usage) or openship-derived
- * for build time, which Oblien has no meter for. We never manage resource actions
- * here; this is display only.
- *
- * There is no ceiling line. It used to print the tier's `oblienLimits`
- * (workspaces / vCPU / RAM / disk), and three of those four are PER-WORKSPACE
- * backstops derived from the BUILD machine — so they come out identical on every
- * tier and reading them as "your plan's capacity" was actively wrong. The honest
- * per-tier ceilings (running services, projects, per-service machine size) live in
- * the Capacity panel, where each one sits next to its own consumption; restating
- * them up here would duplicate a ceiling with no usage beside it.
- */
-
-interface UsageTotals {
-  cpu_time_minutes?: number;
-  memory_gb_minutes?: number;
-  disk_io_gb?: number;
-  network_gb?: number;
-  vcpu_hours?: number;
-  gb_hours?: number;
-}
-interface UsageResponse {
-  data: { usage: { totals?: UsageTotals } | null };
-}
-
-function fmtCredits(milli: number | null): string {
-  if (milli === null) return "∞";
-  return Math.floor(milli / 1000).toLocaleString();
-}
-function fmtNum(n: number | undefined, digits = 1): string {
-  return (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: digits });
-}
-
-function Stat({
-  label,
-  value,
-  suffix,
-  danger,
-}: {
-  label: string;
-  value: string;
-  suffix?: string;
-  danger?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-border/50 bg-card px-4 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className={`mt-1 text-lg font-semibold tabular-nums ${danger ? "text-danger" : "text-foreground"}`}
-      >
-        {value}
-      </p>
-      {suffix && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{suffix}</p>}
-    </div>
-  );
-}
-
+/** Lead with the limits customers use to plan a deployment. Detailed resource
+ * measurements and their units live on Usage. */
 export function BillingHeader({ state }: { state?: BillingState | null }) {
-  const { t } = useI18n();
-  const h = t.billing.header;
-  const res = t.billing.usage.resources;
-  const periodStart = state?.currentPeriod.start ?? null;
-  const [totals, setTotals] = useState<UsageTotals | null>(null);
-
-  useEffect(() => {
-    if (!state) return;
-    let cancelled = false;
-    const to = new Date();
-    const from = periodStart
-      ? new Date(periodStart)
-      : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const qs = new URLSearchParams({
-      from: from.toISOString(),
-      to: to.toISOString(),
-      groupBy: "day",
-    });
-    api
-      .get<UsageResponse>(`billing/usage?${qs.toString()}`)
-      .then((r) => {
-        if (!cancelled) setTotals(r.data.usage?.totals ?? null);
-      })
-      .catch(() => {
-        /* header stats are best-effort; the tabs surface real errors */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [state, periodStart]);
-
-  const dash = "—";
-
+  const { t, locale } = useI18n();
+  const copy = t.billing.resourcesGuide;
+  const isFree = state?.tier === "free";
+  const format = (n: number | null | undefined) => n === undefined ? "—" : n === null ? copy.unlimited : formatBillingNumber(n, locale);
+  const meter = (used: number | null | undefined, max: number | null | undefined) => `${used == null ? "—" : format(used)} ${interpolate(t.billing.capacity.of, { max: format(max) })}`;
+  const buildMax = state?.capacity?.buildMinutes?.max;
+  const stats = state ? [
+    { label: t.billing.overview.creditsLeft, value: formatMilliCredits(state.balance.quotaRemaining, locale),
+      hint: isFree ? copy.noPlan : interpolate(t.billing.header.creditsSuffix, { limit: formatMilliCredits(state.balance.quotaLimit, locale) }), danger: !isFree && state.overQuota },
+    { label: copy.buildTime, value: isFree ? copy.notIncluded : `${format(state.buildTimeMinutes)} ${t.billing.header.min}`,
+      hint: isFree ? copy.noPlan : buildMax === null ? copy.unlimited : interpolate(t.billing.capacity.of, { max: `${format(buildMax)} ${t.billing.header.min}` }) },
+    { label: copy.apps, value: isFree ? copy.notIncluded : meter(state.capacity?.services?.used, state.capacity?.services?.max),
+      hint: isFree ? copy.noPlan : t.billing.capacity.title },
+  ] : [];
   return (
     <div>
-      <h1
-        className="text-2xl font-medium text-foreground/80"
-        style={{ letterSpacing: "-0.2px" }}
-      >
-        {t.billing.layout.title}
-      </h1>
+      <h1 className="text-2xl font-medium tracking-tight text-foreground/80">{t.billing.layout.title}</h1>
       <p className="mt-1 text-sm text-muted-foreground/70">{t.billing.layout.subtitle}</p>
-
-      {state && (
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat
-            label={h.credits}
-            value={fmtCredits(state.balance.quotaRemaining)}
-            suffix={
-              state.overQuota
-                ? h.overQuota
-                : interpolate(h.creditsSuffix, {
-                    limit: fmtCredits(state.balance.quotaLimit),
-                  })
-            }
-            danger={state.overQuota}
-          />
-          <Stat
-            label={h.bandwidth}
-            value={totals ? `${fmtNum(totals.network_gb, 2)} GB` : dash}
-            suffix={h.bandwidthNote}
-          />
-          <Stat
-            label={res.cpu.label}
-            value={totals ? fmtNum(totals.vcpu_hours) : dash}
-            suffix={res.cpu.units}
-          />
-          <Stat
-            label={res.memory.label}
-            value={totals ? fmtNum(totals.gb_hours) : dash}
-            suffix={res.memory.units}
-          />
-          <Stat
-            label={res.disk.label}
-            value={totals ? `${fmtNum(totals.disk_io_gb, 2)} GB` : dash}
-          />
-          <Stat
-            label={h.build}
-            value={fmtNum(state.buildTimeMinutes, 0)}
-            suffix={h.min}
-          />
-        </div>
-      )}
+      {state && <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {stats.map((stat) => <div key={stat.label} className="rounded-xl border border-border/50 bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">{stat.label}</p>
+          <p className={`mt-1 text-lg font-semibold tabular-nums ${stat.danger ? "text-danger" : "text-foreground"}`}>{stat.value}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{stat.hint}</p>
+        </div>)}
+      </div>}
     </div>
   );
 }

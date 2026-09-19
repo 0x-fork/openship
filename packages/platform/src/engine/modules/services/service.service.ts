@@ -126,7 +126,7 @@ import type {
   TUpdateServiceBody,
   TSetServiceEnvVarsBody,
 } from "@repo/contracts";
-import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
+import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 
 /** Cap how long the HTTP path waits for the SSH edge re-register. The underlying
  *  operation keeps the project runtime lock until it really settles, so a slow
@@ -2225,6 +2225,10 @@ export async function startServiceContainer(
   projectId: string,
   serviceId: string,
 ) {
+  return withProjectRuntimeLock(projectId, () => startServiceContainerUnlocked(ctx, projectId, serviceId));
+}
+
+async function startServiceContainerUnlocked(ctx: RequestContext, projectId: string, serviceId: string) {
   await assertNotControlPlaneById(projectId);
   // Existing container → just start it. No container yet → provision it on its
   // own (image → container/workspace), decoupled from the project deploy.
@@ -2250,6 +2254,10 @@ export async function stopServiceContainer(
   projectId: string,
   serviceId: string,
 ) {
+  return withProjectRuntimeLock(projectId, () => stopServiceContainerUnlocked(ctx, projectId, serviceId));
+}
+
+async function stopServiceContainerUnlocked(ctx: RequestContext, projectId: string, serviceId: string) {
   await assertNotControlPlaneById(projectId);
   const { runtime, containerId, row } = await resolveServiceContainer(ctx, projectId, serviceId);
   try {
@@ -2275,11 +2283,8 @@ export async function stopServiceContainer(
  * answer, because nothing tells you to go do the thing that actually works.
  *
  * So a restart with pending env changes REFUSES (409 `SERVICE_CONFIG_STALE`) and
- * names both the drifted keys and the refresh deploy that applies them. Recreating
- * the container from here instead would make a cheap bounce silently destroy and
- * replace the container (downtime, new private IP) — and the platform already has
- * the surgical path for that, `POST /deployments {refresh:true, serviceIds:[id]}`,
- * which the dashboard's env editor has always used.
+ * names the drifted keys and the separate apply-env service action. Applying
+ * saved config is an explicit action in the Environment panel.
  *
  * `force` skips the guard: a crash-looping container still has to be bounceable
  * without first applying an unrelated config change.
@@ -2289,6 +2294,12 @@ export async function restartServiceContainer(
   projectId: string,
   serviceId: string,
   opts?: { force?: boolean },
+) {
+  return withProjectRuntimeLock(projectId, () => restartServiceContainerUnlocked(ctx, projectId, serviceId, opts));
+}
+
+async function restartServiceContainerUnlocked(
+  ctx: RequestContext, projectId: string, serviceId: string, opts?: { force?: boolean },
 ) {
   await assertNotControlPlaneById(projectId);
 
@@ -2311,9 +2322,8 @@ export async function restartServiceContainer(
         // command) to the CLI, which has the structured fields to build it.
         throw new ServiceConfigStaleError(
           `"${service.name}" has ${staleEnvKeys.length} pending environment change(s) that a restart cannot apply — ` +
-            `a container's environment is fixed when it is created. Re-apply them with a refresh deploy ` +
-            `(dashboard: Redeploy → Refresh env; API: POST /api/deployments ` +
-            `{"projectId":"${projectId}","refresh":true,"serviceIds":["${serviceId}"]}). ` +
+            `a container's environment is fixed when it is created. Use Apply environment changes in the Environment panel ` +
+            `(API: POST /api/projects/${projectId}/services/${serviceId}/apply-env). ` +
             `Restart with force=true to bounce the container anyway, leaving the changes unapplied.`,
           staleEnvKeys,
           service.name,

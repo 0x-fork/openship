@@ -1,7 +1,7 @@
-**Self-hosted clusters and private networking: proposed plan**
+**Self-hosted clusters and private networking: architecture and delivery**
 
 Status: architecture agreed September 16, 2026; implementation updated September
-17, 2026. Persisted clusters now support existing-network adoption and managed
+19, 2026. Independent private networks now support existing-network adoption and managed
 WireGuard with reviewed plans, per-host progress, durable claims, verification,
 and host-local rollback/reboot recovery. A durable prerequisite preparation now
 installs missing Python, iproute2 and WireGuard tools through the shared toolchain,
@@ -10,7 +10,7 @@ Preparation, apply, and overview updates now use reconnecting SSE over durable,
 ordered snapshots. Viewing/reconnecting is read-only; retry and recovery remain
 explicit, idempotent actions that recheck actual server state.
 Stopped setup and unapplied plans can be discarded with durable cancellation;
-failed cluster setup exposes confirmed network cleanup through rollback. Cluster
+failed network setup exposes confirmed cleanup through rollback. Network
 inventory and server reservations remain until every host acknowledges cleanup.
 Individual servers can now be removed from stopped initial setup while keeping at
 least two members. A linked replacement retains the remaining selection; partial
@@ -18,7 +18,7 @@ network changes are rolled back through the existing recovery flow. Preparation
 stays paused until the user presses Retry preparation, including after cleanup or
 a reload. A fresh network plan still requires review and apply. Server
 services, disks, unrelated networks and shared installed tools remain in place.
-Cluster details now include a topology with per-direction TCP, UDP, MTU,
+Network details now include a topology with per-direction TCP, UDP, MTU,
 round-trip latency, packet loss, and jitter results. Managed attempts retain
 per-peer handshake endpoints and ports after rollback. Explicit speed tests use
 the existing verification job and SSE stream, capped at 32 MiB or three seconds
@@ -31,14 +31,25 @@ the real WireGuard transport under the host rollback timer. Every peer handshake
 must pass before private addresses and routes are assigned. Failed links retain
 their endpoint/port guidance after restoration; successful transport is promoted
 without resetting its verified interface and keys.
-Preparation, review, and failed connections share copyable per-server firewall
-templates. Managed networks show peer-scoped transport UDP rules; native networks
-show private TCP/UDP verification rules and replies for stateless firewalls.
+Firewall rules appear once at the end of review, followed by their confirmation.
+Every server's inbound and outbound rules are visible together, with copying for
+individual values, one server, or all servers. Failed connections reuse this list
+for recovery. Preparation keeps its focus on server readiness and topology.
+Managed networks show peer-scoped transport UDP rules; native networks show private
+TCP/UDP verification rules and replies for stateless firewalls.
 Resolved transport endpoints arrive through preparation SSE; unresolved hostnames
 or inherited settings cannot be copied as a complete template. Review requires
 explicit firewall confirmation for the current configuration before continuing;
 actual reachability still depends on verification. Native service ports need
-separate workload rules. Cluster creation is available in the Servers page header.
+separate workload rules. Each infrastructure tab has its own creation action in the Servers page header.
+Setup now chooses the network before server-specific configuration. Managed
+WireGuard is provider-independent; native adoption chooses one provider and actual
+network reference, with Custom for existing routed or mixed-provider networks.
+Native source context is persisted on the network, with conservative migration of
+older attachments and unchanged operation history. Networking shows expandable
+groups keyed by saved network ID. Each opens the existing server topology and
+diagnostics with a return path to all networks. This phase covers setup and network
+groups; live gateway connections between networks remain a later delivery.
 Managed hosts use Linux/systemd with no
 active firewall, raw iptables, or the supported standard nftables layout.
 UFW/firewalld and provider API/VLAN provisioning remain separate work. Cluster
@@ -47,9 +58,11 @@ See the [implementation notes](../apps/dashboard/src/components/servers/clusters
 for requirements, recovery behavior, and current limits. The remainder describes
 the wider architecture, including future capabilities.
 
-**Make server clusters a shared infrastructure resource, and keep project topology as the place to operate applications.** A cluster groups customer-managed servers, their private connectivity, and their available capacity. A project environment uses that infrastructure for its services. Adding a server increases capacity; scaling a service decides how that capacity is used.
+**Separate compute membership, networking, and workloads.** A cluster groups customer-managed servers and references an existing private network. The organization owns that network independently: several compute clusters can use it, and servers can have additional network attachments. A project environment operates its services and will use cluster placement when the scheduler and deployment contracts support it.
 
-OpenShip should provide one cluster model across providers, with two networking drivers: existing private networking and managed WireGuard. Provider integrations supply the appropriate discovery, forms, validation, and optional infrastructure operations. Custom servers use the same lifecycle and health checks.
+Implemented separation: Networking owns setup, attachments, firewall review, progress, recovery and diagnostics. Cluster creation selects a network and servers already connected to it. Removing a cluster preserves servers and networks; deleting a network or detaching a server is blocked while a cluster depends on it. These are enforced in shared operations and database constraints. Migration `0139` preserves network IDs and operation history, converts settled legacy groups to compute pools, and keeps unsettled setups free to recover. Projects retain their current service placements.
+
+OpenShip provides separate cluster and network models across providers, with two networking drivers: existing private networking and managed WireGuard. Provider integrations supply the appropriate discovery, forms, validation, and optional infrastructure operations. Custom servers use the same lifecycle and health checks.
 
 Private networking comes first. Cross-server service connections follow, then coordinated placement and replicas. Shared storage has its own capabilities and lifecycle. Creating an infrastructure cluster alone does not establish database replication, workload failover, or storage availability.
 
@@ -96,7 +109,7 @@ These are proposed integrations. Each profile becomes available only after its a
 
 Adopting an existing network should work without provider credentials. API discovery, network creation, server attachment, and server provisioning are separately advertised capabilities. A profile can support adoption before it supports creation. Show only implemented actions, and record whether a resource is externally owned or created by OpenShip.
 
-Provider identity belongs to server and network attachments, allowing one cluster to contain several providers. Custom configuration gets the same review, progress, recovery, and health UI. It accepts validated fields; arbitrary shell scripts supplied through the dashboard are outside this model.
+Hosting provider metadata belongs to server/network attachments. The adopted native network has its own source: provider and actual network reference. A shared provider alone does not identify a shared network; two Hetzner vSwitches or AWS VPCs remain separate resources. Managed WireGuard can contain servers from any provider without repeating a provider question. Custom native configuration covers already-routed infrastructure and receives the same review, progress, recovery, and health UI. It accepts validated fields; arbitrary shell scripts supplied through the dashboard are outside this model.
 
 **Choose networking from verified reachability.**
 
@@ -111,9 +124,9 @@ For Hetzner Dedicated, the user can create the vSwitch and attach servers in Rob
 
 For WireGuard, prefer reachable private transport addresses between peers when available, and public addresses where needed. Select transport endpoints per peer. Native networks can carry encrypted WireGuard traffic. The UI distinguishes private connectivity from encryption rather than implying all provider networks are encrypted.
 
-Start with directly reachable UDP peers and a small-cluster full mesh. Detect unsupported NAT/firewall conditions during preflight. Publish a tested member limit before launch; larger meshes, automatic NAT traversal, and relays need separate validation or an established mesh implementation behind the same driver contract. Traffic flows directly between servers, independently of the OpenShip controller.
+Use directly reachable UDP peers with 2–16 members and a full mesh by default. Managed networks support a versioned directed access policy: selecting a topology connection controls which server can initiate, while replies remain permitted. Removing a connection keeps both servers, removes their WireGuard peer relationship and omits their provider UDP rules. One-way private access still requires bidirectional WireGuard transport. Owned conntrack rules enforce the policy for private host traffic and published container ports, and block transit between peers. Native/provider network access remains externally configured. Unsupported NAT/firewall conditions are checked before assigning private routes. Larger meshes, automatic NAT traversal, and relays need separate validation or an established mesh implementation behind the same driver contract. Traffic flows directly between servers, independently of the OpenShip controller.
 
-Joining a native cluster requires joining its verified private network. Changing a cluster to WireGuard is an explicit, reviewed operation. Network mode changes and address changes must account for existing service endpoints before application.
+Joining a compute cluster requires attachment to its selected network. Adopting a native network and creating a managed WireGuard network are separate operations; changing a cluster’s network selects an existing attachment. Network mode changes and address changes must account for existing service endpoints before application.
 
 Every plan validates IP uniqueness, address ownership, routes, DNS conflicts, and overlap with Docker, host, VPN, and management networks. It records whether address allocation belongs to the provider, the administrator, or OpenShip. MTU is derived from the actual transport and verified across peers, including encapsulation overhead.
 
@@ -121,13 +134,13 @@ Keep the SSH management address separate from cluster addresses. Preserve manage
 
 **Give infrastructure and workloads clear places in the UI.**
 
-Use **Servers → Clusters** for membership, networking, capacity, health, and operations. Keep **Project → Environment → Topology** for services, connections, configuration, deployment, and scaling.
+Use **Servers → Clusters** for compute membership, with capacity and placement added later. Use **Servers → Networking** for network setup, attachments, topology, diagnostics and recovery. Keep **Project → Environment → Topology** for services, connections, configuration, deployment, and scaling.
 
-The cluster creation flow should be a short wizard:
+Cluster creation selects an existing network and its attached servers, with a link to the shared network flow when needed. Network creation uses this wizard:
 
-1. Name the cluster and select existing servers. Adding a server reuses the current connection/setup flow.
-2. Inspect their provider metadata and interfaces; suggest existing networking or WireGuard based on evidence.
-3. Collect only missing information, such as a network reference, VLAN, address range, or transport endpoint.
+1. Name the network and choose managed WireGuard or an existing private network. Native adoption selects the provider and actual network reference once; Custom covers existing routed infrastructure.
+2. Select existing servers. Adding a server reuses the current connection/setup flow.
+3. Inspect interfaces or prepare managed prerequisites, then collect only missing addresses, interfaces or transport endpoints. Provider metadata can inform guidance without becoming a repeated managed-network setup question.
 4. Review the exact servers, interfaces, addresses, routes, firewall changes, and any provider-side actions.
 5. Apply with per-server progress, verification results, and a recoverable operation record.
 
@@ -144,9 +157,11 @@ The following names describe responsibilities; implementation should follow exis
 | Object                                          | Responsibility                                                                                                                      |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Provider profile / optional provider connection | Versioned capability schema; organization-scoped account references and encrypted credential references                             |
-| Cluster                                         | Organization, name, primary network, locality, desired revision, and observed status                                                |
+| Cluster                                         | Organization, name, reference to an independent network, locality, desired revision, and observed status                            |
 | Cluster member                                  | Cluster/server relationship, join/drain state, verified host identity, and runtime capabilities                                     |
-| Network                                         | Driver, address ranges, allocation authority, MTU, encryption, ownership, and desired configuration                                 |
+| Network                                         | Organization-owned connectivity, driver, ranges, allocation authority, MTU, encryption, ownership, and desired configuration        |
+| Native network source                           | The adopted network's provider and actual network reference, independent of individual host metadata                                |
+| Later: network connection                       | Two networks, selected gateways, routes and return routes, access policy, verified health and a recoverable operation               |
 | Server network attachment                       | Server/network relationship, provider references, interfaces, addresses, transport endpoints, owned configuration, and observations |
 | Address lease                                   | Unique allocated address and reservation owner; coordinated allocation across concurrent operations                                 |
 | Operation plan / run                            | Reviewed revision, ordered steps, execution receipts, redacted events, recovery state, and audit identity                           |
@@ -155,7 +170,7 @@ The following names describe responsibilities; implementation should follow exis
 
 Initially, one server belongs to one active compute cluster. Multiple network attachments remain possible. Use verified host identity to detect duplicate inventory entries pointing at the same machine, and prevent competing management ownership.
 
-All references must remain within the authorized organization. Desired configuration and observed health are separate. Adopted provider networks retain external ownership: removing a cluster must not delete a customer's VPC or vSwitch.
+All references must remain within the authorized organization. Desired configuration and observed health are separate. Removing a compute cluster never changes networking. Adopted provider resources retain external ownership; removing a network only removes OpenShip inventory. Managed network removal uses reviewed cleanup and cannot proceed until cluster dependencies are removed.
 
 Introduce cluster placement through explicit, versioned contracts and a deliberate database migration. The current environment is a project record with a server binding. A cluster target needs its own representation, and deployments must snapshot the actual placements. Choosing one member's server ID as a stand-in would make migrations and runtime operations ambiguous.
 
@@ -170,6 +185,13 @@ Before a change that can disrupt connectivity, prepare a host-local rollback tim
 Peer verification includes the required TCP/UDP paths and MTU behavior. ICMP success alone cannot establish readiness. A partially configured member receives no new workload placements. Draining evaluates running workloads and storage dependencies before removal. Restoring network files does not reverse a completed data migration; those recovery steps remain in the migration lifecycle.
 
 Controller outages leave established networking and workloads running. New changes wait for the controller. Its database and configuration backups remain necessary for management recovery. Credentials, private keys, and secret outputs are excluded from browser persistence and operation logs.
+
+Controller shutdown persists `interrupted` for the network work it owns. On restart,
+exclusive PGlite ownership immediately recovers abandoned runs; shared PostgreSQL
+uses expired leases to avoid stopping another live controller. Recovery preserves
+the last host progress and all ownership claims. Retry/Resume/Restore remains an
+explicit action, and host rollback outcomes are checked before declaring recovery
+complete. A disconnected progress stream alone never means the setup has stopped.
 
 **Cross-server service access is a separate delivery milestone.**
 

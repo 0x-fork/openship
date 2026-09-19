@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useCloud } from "@/context/CloudContext";
 import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
@@ -228,6 +229,7 @@ export function useDeploymentBuild(
   setConfig: React.Dispatch<React.SetStateAction<DeploymentConfig>>,
 ) {
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing();
   // `connected` is read, not just `requireCloud`: the catch below has to tell
   // "connecting is the missing step" from "we already think we're connected and the
   // server still said no" — the two cases requireCloud's return value conflates.
@@ -1014,7 +1016,7 @@ export function useDeploymentBuild(
       if (shouldPromptCloudConnect({ errorCode, canConnectCloud, cloudConnected }) && cloudCapability) {
         const connected = await requireCloud(cloudCapability, { domain: baseDomain });
         if (!connected) showToast(message, "error", "Error");
-      } else if (!maybeOpenCredentialModal(errorCode)) {
+      } else if ((saveConfigOnly || !showCloudPricing(err)) && !maybeOpenCredentialModal(errorCode)) {
         // Clone-token / credential preflight failures open the missing-credential
         // modal (concrete recovery) instead of a dead-end toast.
         showToast(message, "error", "Error");
@@ -1022,7 +1024,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, cloudConnected, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
+  }, [baseDomain, cloudConnected, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only
@@ -1510,7 +1512,7 @@ export function useDeploymentBuild(
         const msg = getApiErrorMessage(error, "Failed to start redeployment");
         // A missing GitHub credential surfaces the SAME modal as the deploy
         // wizard (never a bare toast) — one shared handler, one source of truth.
-        const openedModal = maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);
+        const openedModal = showCloudPricing(error) || maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);
         if (!openedModal) showToast(msg, "error", "Error");
         setState((prev) => ({
           ...prev,
@@ -1522,7 +1524,7 @@ export function useDeploymentBuild(
         return null;
       }
     },
-    [buildStream, showToast, maybeOpenCredentialModal],
+    [buildStream, showToast, showCloudPricing, maybeOpenCredentialModal],
   );
 
   const reset = useCallback(() => {

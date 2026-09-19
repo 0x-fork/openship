@@ -105,6 +105,8 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/stop`,
     restart: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/restart`,
+    applyEnvironment: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/apply-env`,
     driftAccept: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/drift/accept`,
     driftKeep: (projectId: string | number, serviceId: string) =>

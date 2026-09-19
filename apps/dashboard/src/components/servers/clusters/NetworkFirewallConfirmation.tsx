@@ -1,7 +1,6 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ShieldCheck } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { Checkbox } from "@/components/ui/Checkbox";
 
@@ -26,18 +25,11 @@ export function NetworkFirewallConfirmation({
   disabled?: boolean;
 }) {
   const { t } = useI18n();
-  const f = t.servers.clusters.managed.firewallRules;
+  const f = t.servers.networks.managed.firewallRules;
   const id = useId();
   return (
-    <div className="space-y-3 rounded-xl bg-warning/5 p-4">
-      <p className="flex items-center gap-2 text-xs font-semibold text-warning">
-        <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
-        {f.confirmTitle}
-      </p>
-      <label
-        htmlFor={id}
-        className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed"
-      >
+    <div className="space-y-2" role="group" aria-label={f.confirmTitle}>
+      <label htmlFor={id} className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
         <Checkbox
           id={id}
           checked={checked}
@@ -47,7 +39,7 @@ export function NetworkFirewallConfirmation({
         />
         <span>{mode === "native" ? f.confirmNative : f.confirmManaged}</span>
       </label>
-      <p className="text-xs leading-relaxed text-muted-foreground">{f.confirmHint}</p>
+      <p className="ps-7 text-xs leading-relaxed text-muted-foreground">{f.confirmHint}</p>
     </div>
   );
 }

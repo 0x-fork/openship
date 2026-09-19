@@ -1,3 +1,4 @@
+import { NetworkCollectionSchemas, ComputeClusterCollectionSchemas, ServerInfrastructureSchema } from "./infrastructure-resources";
 import { Type, type Static } from "@sinclair/typebox";
 import { AgentExecBody } from "./exec";
 import { ServerClusterCollectionSchemas, NetworkHostObservationSchema } from "./server-clusters";
@@ -194,6 +195,8 @@ export const ServerInstallSessionSchemas = {
 
 export const ServerCollectionSchemas = {
   ...ServerClusterCollectionSchemas,
+  ...NetworkCollectionSchemas,
+  ...ComputeClusterCollectionSchemas,
   listAllContainers: { action: "read", output: Type.Array(ServerContainerGroupSchema) },
   scanAllContainers: { action: "write", output: Type.Array(ServerContainerGroupSchema) },
   containersBehind: { action: "read", output: Type.Object({ servers: Type.Number(), components: Type.Number() }) },
@@ -205,6 +208,7 @@ export const ServerCollectionSchemas = {
   testConnection: { action: "write", input: CreateServerInputSchema, output: ServerConnectionTestResultSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const ServerResourceSchemas = {
+  infrastructure: { action: "read", output: ServerInfrastructureSchema },
   inspectNetwork: { action: "admin", output: NetworkHostObservationSchema },
   githubStatus: { action: "read", output: Type.Object({
     mode: Type.Union([Type.String(), Type.Null()]), connected: Type.Boolean(), deployKeyCount: Type.Integer(),

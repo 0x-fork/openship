@@ -147,7 +147,8 @@ export function BillingSidebar({ state }: { state: BillingState }) {
   const plan = state.plan === undefined ? PLANS[state.tier] : state.plan;
   if (!plan) return null;
   const PlanIcon = PLAN_ICON[state.tier];
-  const features = plan?.features ?? [];
+  const isFree = state.tier === "free";
+  const features = isFree ? [bt.resourcesGuide.setupOnly, bt.resourcesGuide.setupHint] : plan?.features ?? [];
 
   return (
     <div className="space-y-5">
@@ -159,14 +160,14 @@ export function BillingSidebar({ state }: { state: BillingState }) {
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground">{bt.sidebar.includedTitle}</p>
             <p className="text-xs text-muted-foreground">
-              {interpolate(bt.sidebar.planSuffix, { name: plan.name })}
+              {isFree ? bt.resourcesGuide.noPlan : interpolate(bt.sidebar.planSuffix, { name: plan.name })}
               {" · "}
-              {formatPlanPrice(plan.price[state.subscription?.interval ?? "monthly"], bt, state.subscription?.interval)}
+              {isFree ? bt.resourcesGuide.setupOnly : formatPlanPrice(plan.price[state.subscription?.interval ?? "monthly"], bt, state.subscription?.interval)}
             </p>
           </div>
         </div>
 
-        {plan?.inheritedFrom && (
+        {!isFree && plan?.inheritedFrom && (
           <p className="mb-2 text-xs text-muted-foreground">{plan.inheritedFrom}</p>
         )}
 

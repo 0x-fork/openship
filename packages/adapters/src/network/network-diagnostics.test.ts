@@ -73,6 +73,7 @@ describe.skipIf(!pythonAvailable)("real local network probe programs", () => {
       expect(result.peers[0]).toMatchObject({
         tcp: true,
         udp: true,
+        reachable: true,
         latencyKind: "rtt",
         packetLossPercent: 0,
       });
@@ -92,6 +93,7 @@ describe.skipIf(!pythonAvailable)("real local network probe programs", () => {
       expect(result.peers[0]).toMatchObject({
         tcp: false,
         udp: false,
+        reachable: true,
         latencyMs: null,
         packetLossPercent: 100,
         jitterMs: null,
@@ -278,7 +280,7 @@ input = json.loads(sys.argv[1])
 with tempfile.TemporaryDirectory() as directory:
  managed_id = 'a' * 32; iface = 'oswg' + managed_id[:10]
  base = pathlib.Path(directory) / 'networks' / managed_id; base.mkdir(parents=True)
- config = {'interfaceName': iface, 'mtu': 1400, 'privateIp': '10.244.0.1', 'listenPort': 51820, 'transportOnly': True, 'peers': [
+ config = {'interfaceName': iface, 'mtu': 1400, 'privateIp': '10.244.0.1', 'listenPort': 51820, 'transportOnly': True, 'firewall': {'up': [], 'down': [], 'inspect': 'true'}, 'peers': [
   {'serverId': 'b', 'publicKey': 'peer-b', 'privateIp': '10.244.0.2', 'endpoint': '192.0.2.2', 'listenPort': 51820},
   {'serverId': 'c', 'publicKey': 'peer-c', 'privateIp': '10.244.0.3', 'endpoint': '192.0.2.3', 'listenPort': 51822},
  ]}

@@ -5,6 +5,8 @@ import {
   validateNativeCluster,
   selectClusterInterface,
   networkReportSucceeded,
+  nativeNetworkSource,
+  networkMemberProvider,
   type NativeClusterConfig,
   type ClusterNetworkReport,
 } from "./infrastructure";
@@ -19,6 +21,52 @@ const config = (): NativeClusterConfig => ({
 });
 
 describe("private infrastructure configuration", () => {
+  it("keeps legacy routed networks custom unless provider and network reference both agree", () => {
+    const value = config();
+    expect(nativeNetworkSource(value)).toEqual({ providerId: "custom" });
+    value.members = value.members.map((member) => ({
+      ...member,
+      providerId: "aws",
+      networkRef: " vpc-a ",
+    }));
+    expect(nativeNetworkSource(value)).toEqual({ providerId: "aws", networkRef: "vpc-a" });
+    value.members[1]!.networkRef = "vpc-b";
+    expect(nativeNetworkSource(value)).toEqual({ providerId: "custom" });
+    delete value.members[1]!.networkRef;
+    expect(nativeNetworkSource(value)).toEqual({ providerId: "custom" });
+    expect(() => validateNativeCluster(value)).not.toThrow();
+  });
+  it("uses explicit network context without rewriting historical member references", () => {
+    const value = config();
+    value.network.source = { providerId: "hetzner-dedicated", networkRef: " vswitch-new " };
+    value.members[0]!.networkRef = "vswitch-old";
+    expect(nativeNetworkSource(value)).toEqual({
+      providerId: "hetzner-dedicated",
+      networkRef: "vswitch-new",
+    });
+    expect(() => validateNativeCluster(value)).not.toThrow();
+    expect(value.members[0]!.networkRef).toBe("vswitch-old");
+    value.members[1]!.providerId = "aws";
+    expect(() => validateNativeCluster(value)).toThrow("Use Custom");
+    value.network.source = { providerId: "custom", networkRef: "routed-backbone" };
+    expect(() => validateNativeCluster(value)).not.toThrow();
+  });
+  it("applies native provider limits to servers without known provider metadata, but not to managed tunnels", () => {
+    const value = config();
+    value.members.forEach((member) => {
+      member.providerId = "custom";
+    });
+    value.network.source = { providerId: "hetzner-dedicated" };
+    value.network.mtu = 1500;
+    expect(() => validateNativeCluster(value)).toThrow("at most 1400");
+    expect(networkMemberProvider(value.network, value.members[0]!)).toBe("hetzner-dedicated");
+    expect(networkMemberProvider({ mode: "wireguard" }, { providerId: "hetzner-dedicated" })).toBe(
+      "custom",
+    );
+    expect(nativeNetworkSource({ ...value, network: { mode: "wireguard" } })).toEqual({
+      providerId: "custom",
+    });
+  });
   it("accepts routed private networks and mixed providers", () => {
     expect(() => validateNativeCluster(config())).not.toThrow();
   });
@@ -156,4 +204,84 @@ it("requires successful TCP, UDP, and MTU checks for every directed pair", () =>
   expect(networkReportSucceeded(report, ["one", "two"])).toBe(false);
   report.peers[1] = { ...report.peers[0]! };
   expect(networkReportSucceeded(report, ["one", "two"])).toBe(false);
+});
+
+it("verifies restrictions as well as allowed paths, including isolated members", () => {
+  const ids = ["hub", "spoke", "isolated"];
+  const access = {
+    version: 1 as const,
+    rules: [{ sourceServerId: "hub", targetServerId: "spoke" }],
+  };
+  const report: ClusterNetworkReport = {
+    stage: "complete",
+    hosts: ids.map((serverId) => ({
+      serverId,
+      ok: true,
+      mtu: 1400,
+      interfaceName: "oswg",
+      code: null,
+      message: null,
+    })),
+    peers: ids.flatMap((sourceServerId) =>
+      ids
+        .filter((id) => id !== sourceServerId)
+        .map((targetServerId) => {
+          const allowed = sourceServerId === "hub" && targetServerId === "spoke";
+          return {
+            sourceServerId,
+            targetServerId,
+            tcp: allowed,
+            udp: allowed,
+            mtu: allowed,
+            reachable: allowed,
+            expectedAccess: allowed ? ("allow" as const) : ("deny" as const),
+            policyPassed: true,
+            latencyMs: allowed ? 1 : null,
+            message: null,
+          };
+        }),
+    ),
+    handshakes: [
+      ["hub", "spoke"],
+      ["spoke", "hub"],
+    ].map(([sourceServerId, targetServerId]) => ({
+      sourceServerId: sourceServerId!,
+      targetServerId: targetServerId!,
+      ok: true,
+      endpoint: "192.0.2.1",
+      port: 51820,
+      lastHandshakeAt: new Date().toISOString(),
+    })),
+  };
+  expect(networkReportSucceeded(report, ids, access)).toBe(true);
+  expect(networkReportSucceeded(report, ids)).toBe(false);
+  const reverse = report.peers.find(
+    (peer) => peer.sourceServerId === "spoke" && peer.targetServerId === "hub",
+  )!;
+  reverse.reachable = true;
+  expect(networkReportSucceeded(report, ids, access)).toBe(false);
+  delete reverse.reachable;
+  expect(networkReportSucceeded(report, ids, access)).toBe(false); // SSH failure is not proof of isolation.
+  reverse.reachable = false;
+  reverse.policyPassed = false;
+  expect(networkReportSucceeded(report, ids, access)).toBe(false);
+  reverse.policyPassed = true;
+  reverse.tcp = true;
+  expect(networkReportSucceeded(report, ids, access)).toBe(false);
+  reverse.tcp = false;
+  report.handshakes!.pop();
+  expect(networkReportSucceeded(report, ids, access)).toBe(false); // UDP transport remains bidirectional.
+  report.handshakes = [];
+  report.peers = report.peers.map((peer) => ({
+    ...peer,
+    tcp: false,
+    udp: false,
+    mtu: false,
+    reachable: false,
+    expectedAccess: "deny",
+    policyPassed: true,
+  }));
+  expect(networkReportSucceeded(report, ids, { version: 1, rules: [] })).toBe(true);
+  report.peers.pop();
+  expect(networkReportSucceeded(report, ids, { version: 1, rules: [] })).toBe(false);
 });

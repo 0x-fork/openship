@@ -60,8 +60,25 @@
       "reconnect": "重新连接"
     },
     "notEnabled": {
-      "title": "此组织未启用账单功能",
-      "description": "账单功能已配置，但未对此组织启用。请联系您的管理员启用。"
+      "title": "Cloud 购买功能尚未开放",
+      "description": "Openship 尚未启用订阅和积分购买。请稍后重试。"
+    },
+    "notConfigured": {
+      "title": "Cloud 账单设置尚未完成",
+      "description": "Openship 需要完成账单设置。请联系 Openship 支持团队。"
+    },
+    "forbidden": {
+      "title": "你无权访问账单",
+      "description": "请让组织所有者授予你账单访问权限。"
+    },
+    "signInRequired": {
+      "title": "登录以查看账单",
+      "description": "无法验证你的会话。请重新登录以继续。",
+      "signIn": "登录"
+    },
+    "loadFailed": {
+      "title": "无法加载账单",
+      "description": "账单功能暂时不可用。请重试。如果问题仍然存在，请联系 Openship 支持团队。"
     }
   },
   "plansRoute": {
@@ -143,11 +160,11 @@
     },
     "chart": {
       "title": "用量随时间变化",
-      "subtitle": "每 {unit} 的堆叠计量单位。"
+      "subtitle": "每{unit}的 Cloud 积分。"
     },
     "breakdown": {
       "title": "资源明细",
-      "subtitle": "按所选范围内的计量资源用量按比例分摊的额度。",
+      "subtitle": "所选日期内的实际资源用量。Cloud 积分总量显示在上方。",
       "resource": "资源",
       "units": "单位",
       "credits": "积分",
@@ -165,11 +182,11 @@
         "units": "GB-小时"
       },
       "disk": {
-        "label": "磁盘 IO",
+        "label": "磁盘活动",
         "units": "GB"
       },
       "network": {
-        "label": "网络",
+        "label": "数据传输",
         "units": "GB"
       }
     },
@@ -208,7 +225,8 @@
       "incomplete": "未完成",
       "incomplete_expired": "已过期",
       "unpaid": "未付款",
-      "paused": "已暂停"
+      "paused": "已暂停",
+      "credit_exhausted": "Cloud 已暂停"
     },
     "includedTitle": "包含内容",
     "perYear": "${price}/年"
@@ -241,5 +259,75 @@
     "active": "你的 Cloud 套餐已生效。",
     "pending": "你的付款可能仍在处理中。刷新此页面以查看套餐和余额。如果已完成的付款未显示，请联系支持。",
     "support": "联系支持"
+  },
+  "deployGate": {
+    "title": "选择套餐以部署",
+    "description": "免费配置项目。在 Cloud 中构建和运行项目需要付费套餐。",
+    "preserved": "项目设置会保留在此页面。付款会在新标签页中打开；套餐生效后，请返回此处继续。",
+    "close": "返回项目",
+    "checkPlan": "检查套餐",
+    "loading": "正在加载 Cloud 套餐…",
+    "loadError": "无法加载 Cloud 套餐。请重试。",
+    "ownerRequired": "请联系工作区所有者选择或管理 Cloud 套餐。",
+    "readyTitle": "返回你的项目",
+    "ready": "Cloud 套餐已更新。关闭此窗口后重试。",
+    "pending": "套餐尚未变更。请完成付款后再次检查。",
+    "blockedTitle": "Cloud 套餐需要处理",
+    "creditsTitle": "Cloud 积分已用完",
+    "creditsDescription": "添加积分或选择包含更多积分的套餐后即可继续。充值不会提高构建时间或服务数量上限。",
+    "paymentDescription": "更新付款或订阅信息以继续部署。",
+    "pausedDescription": "此工作区的 Cloud 部署已暂停。请联系支持团队恢复访问。",
+    "upgradeTitle": "此项目需要更多容量",
+    "upgradeDescription": "选择容量足够的套餐，或调整项目后重试。",
+    "manageBilling": "管理账单",
+    "topups": "添加积分",
+    "checkoutOpened": "付款页面已在单独的标签页中准备就绪。如果未打开，请使用下方链接。",
+    "continueCheckout": "继续付款",
+    "reasons": {
+      "static-only": "当前套餐不支持此类应用。请选择支持该类型的套餐进行部署。",
+      "build-minutes-exhausted": "已达到每月构建时间上限。请选择更高套餐，或等待构建额度重置。",
+      "free-subdomain-limit": "已用完套餐中的 Cloud 子域名。请选择更高套餐，或删除未使用的子域名。",
+      "resource-tier": "此项目需要的 CPU 或内存超出了套餐上限。请选择更高套餐，或在项目设置中减少资源。",
+      "running-services": "已达到运行服务数量上限。请选择更高套餐，或停止不再需要的服务。",
+      "project-limit": "已达到项目数量上限。请选择更高套餐，或删除不再需要的项目。"
+    }
+  },
+  "resourcesGuide": {
+    "title": "了解 Cloud 用量",
+    "credits": "Cloud 积分",
+    "creditsHint": "构建和运行中的应用会因 CPU、内存、磁盘读写和数据传输消耗积分。工作负载越大，积分消耗越快。",
+    "creditsPerCycle": "每个账单周期 {amount} 积分",
+    "buildTime": "构建时间",
+    "buildMinutes": "每月 {amount} 分钟",
+    "buildHint": "构建代码所花费的时间。一次 5 分钟的构建消耗 5 分钟构建额度。构建资源同时也会消耗 Cloud 积分。",
+    "apps": "运行中的服务",
+    "appsHint": "同时运行的应用、数据库和工作进程。每个运行中的 Compose 服务都计入此上限。",
+    "machine": "每个服务的 CPU 和内存",
+    "machineHint": "单个服务可选的最大 CPU 和内存规格。这是资源上限，不是共享余额。",
+    "projects": "项目",
+    "projectsHint": "工作区中保存的项目，包括草稿。",
+    "routesHint": "应用的 Cloud 公共地址。",
+    "unlimited": "无设定上限",
+    "notIncluded": "不包含",
+    "noPlan": "未订阅 Cloud 套餐",
+    "setupOnly": "项目配置免费",
+    "setupHint": "在 Cloud 中构建和运行应用需要付费套餐。不包含免费 Cloud 计算额度。",
+    "includedTitle": "包含的用量和上限",
+    "limitsHint": "套餐上限与积分相互独立。部署同时需要可用容量和积分。",
+    "balanceRule": "积分耗尽时，Cloud 工作负载会暂停。充值可补充余额，更高套餐可提高资源上限。",
+    "reset": "构建额度将于 {date} 重置",
+    "cpuHint": "随时间累计的处理资源用量。1 个 vCPU 运行 1 小时等于 1 vCPU 小时。",
+    "memoryHint": "随时间累计的内存用量。1 GB 内存使用 1 小时等于 1 GB 小时。",
+    "diskHint": "应用读取和写入的数据量。这是磁盘活动量，不是已存储数据的大小。",
+    "networkHint": "应用发送和接收的数据量。",
+    "usageMeaning": "如何理解此数值",
+    "selectedRange": "所选日期范围内使用的积分",
+    "usageHint": "所选日期内的实际资源用量。Cloud 积分总量显示在上方。",
+    "creditsChart": "每{unit}的 Cloud 积分。",
+    "allProjects": "所有项目",
+    "from": "开始日期（UTC）",
+    "to": "结束日期，含当日（UTC）",
+    "invalidRange": "结束日期必须等于或晚于开始日期。",
+    "moreFeatures": "更多功能"
   }
 }

@@ -96,6 +96,98 @@ describe("durable network prerequisite preparation", () => {
     ).rejects.toThrow("no longer owns");
     expect(await repo.active(fixture.id, 2)).toBe(true);
   });
+  it("recovers a restarted exclusive owner immediately while preserving its saved progress", async () => {
+    const { preparation } = await start();
+    const hosts = structuredClone(fixture.hosts);
+    hosts[0]!.steps[0]!.status = "completed";
+    hosts[0]!.steps[1]!.status = "running";
+    hosts[0]!.logs.push({
+      step: "connect",
+      level: "info",
+      timestamp: new Date().toISOString(),
+      message: "Connected",
+    });
+    await repo.progress(fixture.id, 1, hosts);
+    expect(preparation.leaseExpiresAt!.getTime()).toBeGreaterThan(Date.now());
+
+    const restarted = createNetworkPreparationRepo(db);
+    expect(await restarted.recoverInterrupted(true)).toEqual([
+      { id: fixture.id, organizationId: "org-a" },
+    ]);
+    const stopped = await restarted.get("org-a", fixture.id);
+    expect(stopped).toMatchObject({
+      status: "interrupted",
+      leaseExpiresAt: null,
+      sequence: 3,
+      generation: 1,
+      hosts,
+    });
+    expect(stopped.error).toContain("restarted");
+    expect(await restarted.recoverInterrupted(true)).toEqual([]);
+    expect((await restarted.list("org-a"))[0]!.status).toBe("interrupted");
+    expect(await repo.heartbeat(fixture.id, 1)).toBe(false);
+    await expect(repo.finish(fixture.id, 1, hosts, null, "Late failure")).rejects.toThrow(
+      "no longer owns",
+    );
+
+    const retry = await start();
+    expect(retry.preparation.generation).toBe(2);
+    expect(retry.preparation.hosts).toEqual(hosts);
+    expect(await repo.interrupt(fixture.id, 1, "Old controller stopped")).toEqual([]);
+    expect(await repo.active(fixture.id, 2)).toBe(true);
+  });
+  it("preserves live shared owners and paused or terminal runs while recovering expired and missing leases", async () => {
+    await start();
+    await db.insert(schema.managedNetworkPreparation).values(
+      ["expired", "missing", "pending", "ready", "failed", "cancelled"].map((id) => ({
+        id,
+        organizationId: "org-a",
+        inputHash: "same",
+        input: { ...fixture.input, requestId: id },
+        hosts: fixture.hosts,
+        createdBy: "user",
+        status:
+          id === "expired" || id === "missing"
+            ? ("preparing" as const)
+            : (id as "pending" | "ready" | "failed" | "cancelled"),
+        leaseExpiresAt: id === "expired" ? new Date(Date.now() - 1) : null,
+      })),
+    );
+    expect((await repo.recoverInterrupted(false)).map((row) => row.id).sort()).toEqual([
+      "expired",
+      "missing",
+    ]);
+    expect(await repo.active(fixture.id, 1)).toBe(true);
+    expect(await repo.heartbeat(fixture.id, 1)).toBe(true);
+    for (const status of ["pending", "ready", "failed", "cancelled"])
+      expect((await repo.get("org-a", status)).status).toBe(status);
+    expect(await repo.recoverInterrupted(true)).toEqual([
+      { id: fixture.id, organizationId: "org-a" },
+    ]);
+    for (const status of ["pending", "ready", "failed", "cancelled"])
+      expect((await repo.get("org-a", status)).status).toBe(status);
+  });
+  it("interrupts only the worker generation being stopped and treats a missing lease as abandoned on read", async () => {
+    await start();
+    expect(await repo.interrupt(fixture.id, 2, "Wrong worker")).toEqual([]);
+    expect(await repo.interrupt(fixture.id, 1, "OpenShip stopped")).toEqual([
+      { id: fixture.id, organizationId: "org-a" },
+    ]);
+    expect(await repo.get("org-a", fixture.id)).toMatchObject({
+      status: "interrupted",
+      error: "OpenShip stopped",
+      sequence: 2,
+    });
+    await start();
+    await db
+      .update(schema.managedNetworkPreparation)
+      .set({ leaseExpiresAt: null })
+      .where(eq(schema.managedNetworkPreparation.id, fixture.id));
+    expect(await repo.get("org-a", fixture.id)).toMatchObject({
+      status: "interrupted",
+      sequence: 4,
+    });
+  });
   it("does not mark prerequisites ready until each server and step has passed", async () => {
     await start();
     await expect(repo.finish(fixture.id, 1, fixture.hosts, fixture.id, null)).rejects.toThrow(

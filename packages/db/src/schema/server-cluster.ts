@@ -9,6 +9,8 @@ import type {
   ManagedNetworkPreparation,
   ManagedNetworkPreparationInput,
   ManagedNetworkPreparationHost,
+  NativeNetworkSource,
+  NetworkAccessPolicy,
 } from "@repo/core";
 import { organization } from "./organization";
 import { servers } from "./servers";
@@ -41,8 +43,9 @@ export const managedNetworkPreparation = pgTable(
   ],
 );
 
+/** Independent network inventory. Export names and journal fields remain compatible with v1. */
 export const serverCluster = pgTable(
-  "server_cluster",
+  "private_network",
   {
     id: text("id")
       .primaryKey()
@@ -62,15 +65,17 @@ export const serverCluster = pgTable(
 );
 
 export const clusterNetwork = pgTable(
-  "cluster_network",
+  "private_network_config",
   {
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    clusterId: text("cluster_id")
+    clusterId: text("network_id")
       .notNull()
       .references(() => serverCluster.id, { onDelete: "cascade" }),
     mode: text("mode").$type<"native" | "wireguard">().notNull(),
+    source: jsonb("source").$type<NativeNetworkSource>(),
+    access: jsonb("access").$type<NetworkAccessPolicy>(),
     cidrs: jsonb("cidrs").$type<string[]>().notNull(),
     mtu: integer("mtu").notNull(),
     probePort: integer("probe_port").notNull(),
@@ -82,12 +87,12 @@ export const clusterNetwork = pgTable(
 );
 
 export const clusterMember = pgTable(
-  "cluster_member",
+  "network_member",
   {
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    clusterId: text("cluster_id")
+    clusterId: text("network_id")
       .notNull()
       .references(() => serverCluster.id, { onDelete: "cascade" }),
     // Migration makes this deferred: organization cascades cross both parent trees.
@@ -97,11 +102,12 @@ export const clusterMember = pgTable(
     hostIdentity: text("host_identity"),
   },
   (table) => [
-    uniqueIndex("cluster_member_server_idx").on(table.serverId),
-    uniqueIndex("cluster_member_host_idx")
-      .on(table.hostIdentity)
+    uniqueIndex("network_member_server_idx").on(table.clusterId, table.serverId),
+    uniqueIndex("network_member_host_idx")
+      .on(table.clusterId, table.hostIdentity)
       .where(sql`${table.hostIdentity} is not null`),
     index("cluster_member_cluster_idx").on(table.clusterId),
+    index("network_member_inventory_idx").on(table.serverId),
   ],
 );
 
@@ -142,7 +148,7 @@ export const managedNetworkOperation = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    clusterId: text("cluster_id").notNull(),
+    clusterId: text("network_id").notNull(),
     inputHash: text("input_hash").notNull(),
     planHash: text("plan_hash").notNull(),
     plan: jsonb("plan").$type<ManagedNetworkPlan>().notNull(),
@@ -182,7 +188,7 @@ export const managedNetworkClaim = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    clusterId: text("cluster_id").notNull(),
+    clusterId: text("network_id").notNull(),
     operationId: text("operation_id")
       .notNull()
       .references(() => managedNetworkOperation.id, { onDelete: "cascade" }),
@@ -191,12 +197,12 @@ export const managedNetworkClaim = pgTable(
 );
 
 export const clusterVerification = pgTable(
-  "cluster_verification",
+  "network_verification",
   {
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    clusterId: text("cluster_id")
+    clusterId: text("network_id")
       .notNull()
       .references(() => serverCluster.id, { onDelete: "cascade" }),
     revision: integer("revision").notNull(),

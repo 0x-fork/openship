@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createPrivateKey } from "crypto";
+import { assertCloudBillingEnvironment } from "./cloud-billing-env";
 import { DEFAULT_ENCRYPTION_SECRET as DEFAULT_BETTER_AUTH_SECRET } from "@repo/db/encryption";
 import {
   runtimeTarget,
@@ -502,6 +503,7 @@ const envSchema = z.object({
 type Env = z.infer<typeof envSchema>;
 
 export const env: Env = envSchema.parse(process.env);
+assertCloudBillingEnvironment(env, runtimeTarget.api);
 
 /**
  * One configuration verdict shared by auth mode resolution, capabilities,

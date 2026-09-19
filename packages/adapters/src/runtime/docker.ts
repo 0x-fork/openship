@@ -55,6 +55,7 @@ import { PassThrough, Writable, type Readable } from "node:stream";
 import { relative, sep } from "node:path";
 import { resolveDockerBuildArgs } from "./docker-build-args";
 import { dockerPublishedPortInfo } from "./docker-container-info";
+import { applyDockerEnvironment, type DockerEnvironmentOptions } from "./docker-environment";
 
 /**
  * Detect "not found" errors from the Docker SDK (dockerode). The daemon
@@ -3638,6 +3639,20 @@ export class DockerRuntime implements RuntimeAdapter {
   async restart(containerId: string): Promise<void> {
     const container = this.docker.getContainer(containerId);
     await container.restart();
+  }
+
+  /** Runtime-only environment apply, retaining this container's exact image/config. */
+  async applyEnvironment(
+    containerId: string,
+    environment: Record<string, string>,
+    options: DockerEnvironmentOptions,
+  ) {
+    const filtered = splitRuntimeEnv(environment);
+    const result = await applyDockerEnvironment(this.docker, containerId, Object.fromEntries(filtered.entries), options);
+    if (filtered.dropped.length > 0) {
+      result.warning = [result.warning, droppedRuntimeEnvMessage(filtered.dropped).trim()].filter(Boolean).join(" ");
+    }
+    return result;
   }
 
   async removeImage(imageRef: string): Promise<void> {

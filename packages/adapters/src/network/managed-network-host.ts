@@ -123,11 +123,24 @@ def inspect(c, base):
             parts = line.split()
             if len(parts) > 1 and parts[0] == 'nameserver' and ':' not in parts[1]: dns.append(parts[1])
     firewall = run(['sh', '-c', c['firewallInspect']], label='Inspect host firewall rules')
+    if c.get('requireIptables') and shutil.which('iptables'):
+        firewall = run(['iptables-save'], label='Inspect connection-policy firewall')
     chain_prefix = 'OSWG_' + c['managedId'][:16] + '_'
     if not owned and chain_prefix in firewall:
         raise RuntimeError('Owned firewall chain names are already in use without a network receipt.')
     # Counters and our own rules are not foreign configuration. Docker/admin edits are.
     firewall = '\n'.join(re.sub(r'\[\d+:\d+\]', '[0:0]', line) for line in firewall.splitlines() if not line.startswith('#') and chain_prefix not in line and c['managedId'] not in line)
+    if c.get('requireIptables'):
+        # Installing iptables may materialize empty ACCEPT tables. Only actual
+        # foreign chains, rules and restrictive policies change the review hash.
+        tables = []; current_table = ''; entries = []
+        for line in firewall.splitlines() + ['COMMIT']:
+            if line.startswith('*'): current_table = line; entries = []
+            elif line == 'COMMIT':
+                if entries: tables += [current_table] + entries
+                entries = []
+            elif line and not re.match(r'^:(INPUT|OUTPUT|FORWARD|PREROUTING|POSTROUTING) ACCEPT \[0:0\]$', line): entries.append(line)
+        firewall = '\n'.join(tables)
     active_ports = []
     for filename in ('/proc/net/udp', '/proc/net/udp6'):
         for line in pathlib.Path(filename).read_text().splitlines()[1:]:
@@ -147,7 +160,7 @@ def inspect(c, base):
         'fingerprint': fingerprint, 'interfaces': interfaces, 'routes': sorted(set(routes + docker)),
         'reservedIps': dns, 'configHash': current_hash(base),
         'publicKey': public_key(base / 'private.key') if shutil.which('wg') else None,
-        'packages': [] if shutil.which('wg') else ['wireguard-tools'],
+        'packages': ([] if shutil.which('wg') else ['wireguard-tools']) + (['iptables'] if c.get('requireIptables') and not shutil.which('iptables') else []),
         'transportMtu': min(transport) if transport else 1500,
     }
 
@@ -168,9 +181,9 @@ def down(base, config):
 def private_routes(config):
     iface = config['interfaceName']
     run(['ip', 'address', 'add', config['privateIp'] + '/32', 'dev', iface])
-    for peer in config['peers']:
+    for destination in config.get('routeCidrs', [peer['privateIp'] + '/32' for peer in config['peers']]):
         # add (never replace) refuses a foreign route instead of taking it over.
-        run(['ip', '-4', 'route', 'add', peer['privateIp'] + '/32', 'dev', iface, 'src', config['privateIp']])
+        run(['ip', '-4', 'route', 'add', destination, 'dev', iface, 'src', config['privateIp']])
 
 def up(base, config):
     if config is None: return
@@ -185,6 +198,9 @@ def up(base, config):
     path = base / 'wireguard.conf'; write(path, text)
     run(['wg', 'setconf', iface, str(path)], secrets=(key,))
     commands(config['firewall']['up'], 'Configure managed network firewall rules')
+    if config['firewall'].get('snapshot'):
+        rules = run(['sh', '-c', config['firewall']['snapshot']], label='Verify owned connection-policy rules')
+        write(base / 'firewall-state.json', {'config': digest(config['firewall']), 'rules': rules})
     run(['ip', 'link', 'set', 'dev', iface, 'mtu', str(config['mtu']), 'up'])
     # Keepalives exercise the actual reviewed UDP endpoints without assigning
     # private addresses or routes. The same receipt and timer own this stage.
@@ -206,6 +222,10 @@ def healthy(base, config):
         if len(fields) < 2 or fields[0] in peers: return False
         peers[fields[0]] = set(fields[1:])
     if peers != {peer['publicKey']: {peer['privateIp'] + '/32'} for peer in config['peers']}: return False
+    if config['firewall'].get('snapshot'):
+        expected = read(base / 'firewall-state.json')
+        if not expected or expected.get('config') != digest(config['firewall']): return False
+        if run(['sh', '-c', config['firewall']['snapshot']], label='Check connection-policy drift') != expected.get('rules'): return False
     addresses = {(item.get('local'), item.get('prefixlen')) for item in link.get('addr_info', []) if item.get('family') == 'inet'}
     if config.get('transportOnly'): return not addresses
     if addresses != {(config['privateIp'], 32)}: return False
@@ -213,11 +233,11 @@ def healthy(base, config):
     # exists. Keep rollback armed if an address or route changes after its probes.
     routes = run_json(['ip', '-j', '-4', 'route', 'show', 'table', 'main'])
     return all(any(
-        route.get('dst') in (peer['privateIp'], peer['privateIp'] + '/32') and
+        route.get('dst') in (destination, destination[:-3] if destination.endswith('/32') else destination) and
         route.get('dev') == iface and route.get('prefsrc') == config['privateIp'] and
         route.get('type', 'unicast') == 'unicast'
         for route in routes
-    ) for peer in config['peers'])
+    ) for destination in config.get('routeCidrs', [peer['privateIp'] + '/32' for peer in config['peers']]))
 
 def unit_path(suffix):
     return pathlib.Path('/etc/systemd/system') / ('openship-network-' + managed_id + suffix)

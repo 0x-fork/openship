@@ -13,6 +13,38 @@ import {
 } from "../../contracts/test/managed-network-fixtures";
 
 describe("cluster HTTP facade", () => {
+  it("revises connections through the network preparation endpoint with an immutable request ID", async () => {
+    const fetcher = vi.fn(async () => Response.json(managedPreparationFixture()));
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    const request = {
+      preparationId: "setup/a",
+      sequence: 3,
+      requestId: "bbbbbbbb-2222-4222-8222-222222222222",
+      access: {
+        version: 1 as const,
+        rules: [{ sourceServerId: "server-a", targetServerId: "server-b" }],
+      },
+    };
+    await client.servers.reviseManagedNetworkAccess(request);
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://ship.test/api/system/networks/preparations/setup%2Fa/connections",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          sequence: request.sequence,
+          requestId: request.requestId,
+          access: request.access,
+        }),
+      }),
+    );
+    await expect(
+      client.servers.reviseManagedNetworkAccess({
+        ...request,
+        access: { version: 1, rules: [request.access.rules[0]!, request.access.rules[0]!] },
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it("sends an explicit speed pair through the existing verification operation", async () => {
     const speedTest = { sourceServerId: "server-a", targetServerId: "server-b" };
     const fetcher = vi.fn(async () =>
@@ -65,12 +97,12 @@ describe("cluster HTTP facade", () => {
     });
     expect(calls).toEqual([
       {
-        url: "https://ship.test/api/system/clusters/network-preparations/setup%2Fa/members/server%2Fc",
+        url: "https://ship.test/api/system/networks/preparations/setup%2Fa/members/server%2Fc",
         method: "DELETE",
         body: { sequence: 4, requestId },
       },
       {
-        url: "https://ship.test/api/system/clusters/network-operations/plan%2Fa/members/server%2Fc",
+        url: "https://ship.test/api/system/networks/operations/plan%2Fa/members/server%2Fc",
         method: "DELETE",
         body: { sequence: 6, requestId, planHash: managedOperationFixture().planHash },
       },
@@ -106,7 +138,7 @@ describe("cluster HTTP facade", () => {
           body: JSON.parse(String(init?.body)),
         });
         return Response.json({
-          ...(String(url).includes("network-preparations")
+          ...(String(url).includes("/preparations")
             ? managedPreparationFixture()
             : managedOperationFixture()),
           status: "cancelled",
@@ -123,12 +155,12 @@ describe("cluster HTTP facade", () => {
     });
     expect(calls).toEqual([
       {
-        url: "https://ship.test/api/system/clusters/network-preparations/setup%2Fa",
+        url: "https://ship.test/api/system/networks/preparations/setup%2Fa",
         method: "DELETE",
         body: { sequence: 7 },
       },
       {
-        url: "https://ship.test/api/system/clusters/network-operations/plan%2Fa",
+        url: "https://ship.test/api/system/networks/operations/plan%2Fa",
         method: "DELETE",
         body: { planHash: managedOperationFixture().planHash },
       },
@@ -155,9 +187,9 @@ describe("cluster HTTP facade", () => {
       expect(frames[0]!.id).toBe("4");
     }
     expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
-      "https://ship.test/api/system/clusters/network-preparations/setup%2Fa/stream",
-      "https://ship.test/api/system/clusters/network-operations/op%2Fa/stream",
-      "https://ship.test/api/system/clusters/stream",
+      "https://ship.test/api/system/networks/preparations/setup%2Fa/stream",
+      "https://ship.test/api/system/networks/operations/op%2Fa/stream",
+      "https://ship.test/api/system/networks/stream",
     ]);
     abort.abort();
     for (const [, init] of fetcher.mock.calls) {
@@ -177,7 +209,7 @@ describe("cluster HTTP facade", () => {
           body: init?.body ? JSON.parse(String(init.body)) : undefined,
         });
         return Response.json(
-          String(url).endsWith("network-preparations") && init?.method !== "POST"
+          String(url).endsWith("/preparations") && init?.method !== "POST"
             ? [managedPreparationSummaryFixture()]
             : managedPreparationFixture(),
         );
@@ -188,17 +220,17 @@ describe("cluster HTTP facade", () => {
     await client.servers.listManagedNetworkPreparations();
     expect(calls).toEqual([
       {
-        url: "https://ship.test/api/system/clusters/network-preparations",
+        url: "https://ship.test/api/system/networks/preparations",
         method: "POST",
         body: managedPlanInputFixture(),
       },
       {
-        url: "https://ship.test/api/system/clusters/network-preparations/setup%2Fa",
+        url: "https://ship.test/api/system/networks/preparations/setup%2Fa",
         method: "GET",
         body: undefined,
       },
       {
-        url: "https://ship.test/api/system/clusters/network-preparations",
+        url: "https://ship.test/api/system/networks/preparations",
         method: "GET",
         body: undefined,
       },
@@ -227,14 +259,14 @@ describe("cluster HTTP facade", () => {
       action: "apply",
     });
     expect(calls).toEqual([
-      { url: "https://ship.test/api/system/clusters/network-plans", method: "POST", body: input },
+      { url: "https://ship.test/api/system/networks/plans", method: "POST", body: input },
       {
-        url: "https://ship.test/api/system/clusters/network-operations/operation%2Fa",
+        url: "https://ship.test/api/system/networks/operations/operation%2Fa",
         method: "GET",
         body: undefined,
       },
       {
-        url: "https://ship.test/api/system/clusters/network-operations/operation%2Fa/apply",
+        url: "https://ship.test/api/system/networks/operations/operation%2Fa/apply",
         method: "POST",
         body: { planHash: operation.planHash, action: "apply" },
       },

@@ -5,33 +5,14 @@ import { Cloud } from "lucide-react";
 import { PLANS, RESOURCE_TIER_SPECS, formatCpuCores, formatMemoryMb } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState, CapacityMeter } from "@/lib/api/billing";
+import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
 
 export type { BillingState };
-
-/* ------------------------------------------------------------------ */
-/*  Capacity & usage panel                                            */
-/*                                                                    */
-/*  A per-resource "used vs maximum capacity" view that renders for    */
-/*  every tier (free included). Ceilings come from the tier's `limits` */
-/*  in the pricing catalog — the same numbers enforcement reads — so   */
-/*  the panel is meaningful immediately; live consumption (and         */
-/*  cloud-only ceilings like free routes) fills in from               */
-/*  `state.capacity` once Openship Cloud reports it. Any meter still   */
-/*  awaiting cloud data shows a "syncing" hint rather than a fake zero.*/
-/*                                                                    */
-/*  EVERY METER HERE CAN FILL. The vCPU / RAM / disk rows this panel   */
-/*  used to draw took their ceiling from `oblienLimits`, which are     */
-/*  PER-WORKSPACE caps rather than a namespace pool — a used/max bar   */
-/*  was the wrong shape for them at any value, and their `used` was    */
-/*  never reported, so they were four permanently-empty rows. The      */
-/*  bandwidth row was worse: nothing enforced it. Per-service machine  */
-/*  size is now a plain labelled VALUE at the foot of the panel, which */
-/*  is what it actually is.                                            */
-/* ------------------------------------------------------------------ */
 
 interface RowSpec {
   key: string;
   label: string;
+  hint: string;
   meter: CapacityMeter;
   /** Render a raw resource value (already in display units) → string. */
   format: (n: number) => string;
@@ -39,19 +20,8 @@ interface RowSpec {
   unit?: string;
 }
 
-function fmtInt(n: number): string {
-  return Math.round(n).toLocaleString();
-}
-function fmtCredits(n: number): string {
-  // Values arrive in milli-credits. The result is read as COMPUTE MINUTES: one
-  // compute minute is one credit (`MILLI_PER_COMPUTE_MINUTE`), which is why the
-  // divisor is unchanged even though the label now says compute — the plans
-  // publish minutes, so the meter beside them has to speak minutes too.
-  return Math.floor(n / 1000).toLocaleString();
-}
-
 function pct(used: number, max: number): number {
-  if (max <= 0) return 0;
+  if (max <= 0) return used > 0 ? 100 : 0;
   return Math.min(100, Math.max(0, (used / max) * 100));
 }
 
@@ -63,7 +33,7 @@ function toneClass(p: number): string {
   return "text-primary";
 }
 
-function MeterRow({ label, meter, format, unit }: Omit<RowSpec, "key">) {
+function MeterRow({ label, hint, meter, format, unit }: Omit<RowSpec, "key">) {
   const { t } = useI18n();
   const c = t.billing.capacity;
   const suffix = unit ? ` ${unit}` : "";
@@ -75,7 +45,7 @@ function MeterRow({ label, meter, format, unit }: Omit<RowSpec, "key">) {
 
   return (
     <div className="py-3">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <span className="text-sm font-medium text-foreground">{label}</span>
         <span className="text-sm tabular-nums text-muted-foreground">
           {hasUsed ? (
@@ -111,18 +81,14 @@ function MeterRow({ label, meter, format, unit }: Omit<RowSpec, "key">) {
         </span>
       </div>
 
-      {/* Track — filled only when we have both used + max. */}
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        {hasMax && hasUsed ? (
-          <div
-            className={`${tone} h-full rounded-full bg-current transition-[width] duration-500`}
-            style={{ width: `${p}%` }}
-          />
-        ) : hasMax ? (
-          // Ceiling known but no usage yet — show a faint indeterminate hint.
-          <div className="h-full w-1/4 rounded-full bg-border/60" />
-        ) : null}
-      </div>
+      {hasMax && meter.max! > 0 && <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        role={hasUsed ? "progressbar" : undefined} aria-label={label}
+        aria-valuemin={hasUsed ? 0 : undefined} aria-valuemax={hasUsed ? meter.max! : undefined}
+        aria-valuenow={hasUsed ? Math.min(meter.max!, Math.max(0, meter.used!)) : undefined}
+        aria-valuetext={hasUsed ? `${format(meter.used!)}${suffix} ${interpolate(c.of, { max: `${format(meter.max!)}${suffix}` })}` : undefined}>
+        {hasUsed && <div className={`${tone} h-full rounded-full bg-current transition-[width] duration-500`} style={{ width: `${p}%` }} />}
+      </div>}
+      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{hint}</p>
     </div>
   );
 }
@@ -140,104 +106,59 @@ function ValueRow({ label, value }: { label: string; value: string }) {
 }
 
 export const BillingCapacity: React.FC<{ state: BillingState }> = ({ state }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const copy = t.billing.resourcesGuide;
   const c = t.billing.capacity;
-  const h = t.billing.header;
-  // Customer-facing ceilings, from the same catalog entry enforcement reads.
   const limits = state.plan?.limits ?? PLANS[state.tier]?.limits ?? null;
   const cap = state.capacity;
-
-  // Merge cloud-reported meters with the plan's ceilings. Cloud wins for the
-  // ceiling when present; otherwise fall back to the tier's `limits` so the max
-  // is never blank for a resource we know the plan caps. `null` on either side
-  // is meaningful — see CapacityMeter.
-  const meter = (
-    reported: CapacityMeter | undefined,
-    fallbackMax: number | null,
-  ): CapacityMeter => ({
-    used: reported?.used ?? null,
-    max: reported ? reported.max : fallbackMax,
-  });
-
-  const rows: RowSpec[] = [];
-
-  // Compute minutes — fully live from the balance (the primary allowance meter).
-  // The quota behind it is the tier's whole derived grant, app runtime PLUS its
-  // build allowance (see `planMonthlyCredits`), which is why the build row below is
-  // a view of the same pool rather than a second, independent budget.
-  rows.push({
-    key: "credits",
-    label: h.credits,
-    meter: { used: state.balance.quotaUsed, max: state.balance.quotaLimit },
-    format: fmtCredits,
-  });
-
-  // Build minutes — the allowance a deploy is actually refused on, so it sits
-  // directly under credits rather than at the bottom with the informational rows.
-  if (cap?.buildMinutes) {
+  const isFree = state.tier === "free";
+  const number = (n: number) => formatBillingNumber(n, locale);
+  const credits = (n: number) => formatMilliCredits(n, locale);
+  const rows: RowSpec[] = [{
+    key: "credits", label: copy.credits, hint: copy.creditsHint,
+    meter: { used: state.balance.quotaUsed, max: state.balance.quotaLimit }, format: credits,
+  }];
+  // Free accounts can configure projects, but a catalog ceiling is not a grant
+  // of Cloud compute. Never advertise the legacy free build ceiling as included.
+  if (!isFree) {
     rows.push({
-      key: "buildMinutes",
-      label: h.build,
-      meter: meter(cap.buildMinutes, null),
-      format: fmtInt,
-      unit: h.min,
+      key: "buildMinutes", label: copy.buildTime, hint: copy.buildHint,
+      meter: cap?.buildMinutes ?? { used: state.buildTimeMinutes, max: limits?.buildMinutesPerMonth ?? null },
+      format: number, unit: t.billing.header.min,
+    }, {
+      key: "services", label: copy.apps, hint: copy.appsHint,
+      meter: cap?.services ?? { used: null, max: limits?.runningServices ?? null }, format: number,
     });
   }
-
-  // Running services — one Oblien workspace each, and the ceiling a customer
-  // actually feels. Rendered for every tier: the catalog supplies the max even
-  // before the cloud reports usage, and "0 of 3" is a real statement.
   rows.push({
-    key: "services",
-    label: c.runningServices,
-    meter: meter(cap?.services, limits?.runningServices ?? null),
-    format: fmtInt,
+    key: "projects", label: copy.projects, hint: copy.projectsHint,
+    meter: cap?.projects ?? { used: null, max: limits?.maxProjects ?? null }, format: number,
   });
+  if (!isFree && cap?.routes) rows.push({ key: "routes", label: c.routes, hint: copy.routesHint, meter: cap.routes, format: number });
 
-  // Projects — Openship-enforced; Oblien has no project concept at all.
-  rows.push({
-    key: "projects",
-    label: c.projects,
-    meter: meter(cap?.projects, limits?.maxProjects ?? null),
-    format: fmtInt,
-  });
-
-  // Free edge routes — cloud-only concept (no static plan ceiling).
-  if (cap?.routes) {
-    rows.push({ key: "routes", label: c.routes, meter: meter(cap.routes, null), format: fmtInt });
-  }
-
-  /**
-   * Largest machine a single service may select on this tier. Deliberately not a
-   * meter — it is a PER-SERVICE size, so there is no pool to fill.
-   *
-   * The label is borrowed from the project's own machine-power section
-   * (`projectSettings.resources.title`, translated in all nine locales) so the
-   * size quoted on the billing page and the size in the picker are named the same
-   * thing, with no new dictionary key. The VALUE is the spec itself rather than
-   * the tier's name: `RESOURCE_TIER_SPECS` is keyed by every `FixedResourceTier`,
-   * so reading it can't go stale when a tier is added, whereas a per-tier name
-   * lookup in a dictionary silently would. `null` = the negotiated tier, where no
-   * size cap applies.
-   */
   const sizeTier = limits?.maxResourceTier ?? null;
-  const spec = sizeTier ? RESOURCE_TIER_SPECS[sizeTier] : null;
-  const machineSize = spec
-    ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}`
-    : c.unlimited;
+  const spec = state.maxServiceMachine === undefined
+    ? (sizeTier ? RESOURCE_TIER_SPECS[sizeTier] : null) : state.maxServiceMachine;
+  const machineSize = spec ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}` : copy.unlimited;
+  const resetAt = state.buildMinutesResetAt ? new Date(state.buildMinutesResetAt) : null;
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-6">
-      <div className="mb-2">
-        <h2 className="text-base font-semibold text-foreground">{c.title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{c.subtitle}</p>
+      <h2 className="text-base font-semibold text-foreground">{copy.includedTitle}</h2>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{isFree ? copy.setupHint : copy.limitsHint}</p>
+      <div className="mt-2 divide-y divide-border/50">
+        {rows.map(({ key, ...row }) => <MeterRow key={key} {...row} />)}
+        {isFree ? <>
+          <ValueRow label={copy.buildTime} value={copy.notIncluded} />
+          <ValueRow label={copy.apps} value={copy.notIncluded} />
+        </> : <div>
+          <ValueRow label={copy.machine} value={machineSize} />
+          <p className="pb-3 text-xs leading-relaxed text-muted-foreground">{copy.machineHint}</p>
+        </div>}
       </div>
-      <div className="divide-y divide-border/50">
-        {rows.map(({ key, ...row }) => (
-          <MeterRow key={key} {...row} />
-        ))}
-        <ValueRow label={t.projectSettings.resources.title} value={machineSize} />
-      </div>
+      {!isFree && resetAt && Number.isFinite(resetAt.getTime()) && <p className="mt-3 text-xs text-muted-foreground">
+        {interpolate(copy.reset, { date: resetAt.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" }) })}
+      </p>}
     </div>
   );
 };

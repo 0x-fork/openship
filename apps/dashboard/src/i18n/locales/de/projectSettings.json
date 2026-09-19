@@ -864,9 +864,9 @@
   },
   "serviceEnvironment": {
     "title": "Laufzeitumgebung des Dienstes",
-    "description": "Gilt nur zur Laufzeit für diesen Dienst. Diese Werte überschreiben Compose-Werte und gleichnamige Projektvariablen. Sie werden beim Neustart oder Bereitstellen angewendet.",
+    "description": "Diese Variablen gelten nur für diesen Dienst und überschreiben gleichnamige Werte aus Compose oder dem Projekt. Aktiviere gespeicherte Werte mit Umgebungsänderungen anwenden.",
     "overrides": "Diese Schlüssel haben für diesen Dienst Vorrang vor den Projektwerten: {keys}.",
-    "buildArguments": "Explizite Image-Build-Argumente werden in der Compose-Datei oder Quellkonfiguration bearbeitet. Zum Anwenden erneut bauen und bereitstellen; dieser Editor ändert nur Laufzeitvariablen.",
+    "buildArguments": "Build-Argumente werden in der Compose-Datei oder der Quellkonfiguration festgelegt und erfordern einen erneuten Build.",
     "projectLink": "Gemeinsame Projektumgebung bearbeiten",
     "loadFailed": "Die Namen der Projektvariablen konnten nicht zum Prüfen von Überschreibungen geladen werden."
   }

@@ -178,6 +178,16 @@ non-production project environment and deploying its project ID. Passing `--env 
 a production project is rejected; it cannot promote that preview onto the production runtime.
 See [preview deployment](/docs/cli/deploy) for the complete flow.
 
+## Download environment variables
+
+In a service's **Environment** tab, choose **Download .env** beside **Upload .env**.
+The file contains the listed variables and their real saved secret values. Downloading
+does not reveal those secrets in the editor, save edits, or restart the service.
+Unsaved edits shown in the editor are included in the download.
+
+The file uses Compose-compatible `.env` quoting. **Upload .env** restores its literal
+values, including dollar signs, quotes, and multiline values, without expanding variable references.
+
 ## Apply without a full rebuild
 
 Rebuilding an app just to change a setting is slow — nothing about your _code_ changed. So when you save an
@@ -187,7 +197,27 @@ Press it and Openship recreates the running container from the image it already 
 injected. No git clone, no build — just a quick restart. It's the fastest way to roll out a changed key or a
 rotated secret.
 
-The same thing from the terminal is `openship deploy --refresh` (shown below).
+From the terminal, `openship deploy --refresh` (shown below) applies environment
+changes through a deployment without rebuilding.
+
+For one service, open its **Environment** tab, press **Save**, then
+**Apply environment changes** in the toolbar above the variables. It refreshes only
+that service using the image already running on its target. The editor stays open
+and shows completion after the service starts. This is a dedicated service action
+(`POST /api/projects/:id/services/:serviceId/apply-env`); it creates no deployment or
+build session. Docker gets a graceful stop, and the replacement retains the existing
+ports, project network address, volumes, commands, and resource limits. If startup
+fails, Openship restores the previous container and leaves the changes pending.
+The info icon contains details about variable precedence, build arguments, and shared project values.
+
+This action supports Docker services on a server or an Openship Cloud Docker
+workspace. Legacy cloud workspaces and adopted containers on Docker's default bridge
+require **Redeploy**. Namespace-sharing services must be refreshed together through
+a deployment.
+
+A normal **Restart** keeps the container's existing variables. When saved changes are
+pending, Openship opens the service's **Environment** panel so you can apply them there.
+Variables used during a build still require a rebuild.
 
 ## CLI
 

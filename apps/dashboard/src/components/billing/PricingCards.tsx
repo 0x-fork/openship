@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { PlanLimits, PlanTierId } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { PlanResources } from "./PlanResources";
 
 /* ------------------------------------------------------------------ */
 /*  Types — mirror the shape returned by GET /api/billing/plans       */
@@ -50,6 +51,8 @@ export interface ApiPlan {
   effectivePrice: { monthly: number | null };
   campaign: ApiCampaign | null;
   monthlyCredits: number | null;
+  /** Milli-credits granted for an annual cycle, reported separately by Oblien. */
+  annualCredits?: number | null;
   /**
    * The tier's ceilings in CUSTOMER-FACING units, straight off the pricing
    * catalog — typed as the catalog's own `PlanLimits` so a limit added or
@@ -342,7 +345,11 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
               ) : null}
             </div>
 
-            {/* Features */}
+            <PlanResources plan={plan} interval={interval} />
+
+            {/* Additional features supplied by the live catalog. */}
+            {plan.features.length > 0 && <details className="mt-auto border-t border-border/30 pt-3 text-sm">
+              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{t.billing.resourcesGuide.moreFeatures}</summary>
             {plan.inheritedFrom ? (
               <p className="border-t border-border/30 pt-5 text-[12px] font-medium text-muted-foreground">
                 {plan.inheritedFrom}
@@ -366,6 +373,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
                 </li>
               ))}
             </ul>
+            </details>}
           </div>
         );
       })}

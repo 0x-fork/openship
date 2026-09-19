@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Download,
   Eye,
   EyeOff,
   FileText,
@@ -24,6 +25,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import type { EnvironmentVariable } from "./types";
 import { useDemoMode } from "@/lib/demo-mode";
+import { parseDotenv, serializeDotenv } from "@/lib/dotenv";
 
 // #336: env values arrive masked as ENV_MASK (shared with the API via @repo/core
 // so the exact sentinel can't drift). A masked row keeps the sentinel in state —
@@ -77,7 +79,7 @@ interface EnvironmentVariablesPropsOptional {
   showSecretToggle?: boolean;
   /**
    * #336: fetch the REAL (unmasked) values for EXACTLY `keys` — one row's eye
-   * asks for that one key, the header's "Show values" asks for every masked key.
+   * asks for that one key; "Show values" and "Download .env" ask for all masked keys.
    * Never a "give me everything" call: the API requires the key names, so a
    * single reveal discloses a single secret. When provided and any row is masked
    * (`••••••••`), the reveal affordances appear. Omit when there's no reveal
@@ -113,6 +115,8 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pasteZoneRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const downloadInFlight = useRef(false);
   const [internalIsEditingMode, setInternalIsEditingMode] = useState(mode === "deploy");
   // Body starts hidden when `collapsible` is set. Auto-expanded by the
   // paste / upload handlers below so the user sees parsed rows land
@@ -298,9 +302,8 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     [currentEnvVars, updateEnvVars, shownKeys, hideKeys, revealAndShow],
   );
 
-  // Header "Show values" / "Hide values": the explicit bulk action — the only
-  // request that names every masked key at once. Hiding clears the overlay so
-  // nothing is left exposed.
+  // Header "Show values" / "Hide values": an explicit bulk action. Hiding
+  // clears the overlay so nothing is left exposed.
   const toggleRevealAll = useCallback(async () => {
     if (allShown) {
       hideKeys(maskedKeys);
@@ -565,6 +568,53 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     fileInputRef.current?.click();
   };
 
+  const downloadableRows = currentEnvVars.filter((row) => row.key.trim());
+  const handleDownload = async () => {
+    if (downloadInFlight.current || isSaving || downloadableRows.length === 0) return;
+    downloadInFlight.current = true;
+    setIsDownloading(true);
+    try {
+      const keys = [
+        ...new Set(
+          downloadableRows
+            .filter((row) => row.preserveValue || isMaskedValue(row.value))
+            .map((row) => row.originalKey ?? row.key.trim()),
+        ),
+      ];
+      // Download is an explicit reveal. Keep plaintext local to the export so
+      // it neither exposes values in the form nor changes its saved-value masks.
+      const revealed = keys.length > 0 && onReveal ? await onReveal(keys) : {};
+      const rows = downloadableRows.map((row) => {
+        let value: string | undefined = row.value;
+        if (row.preserveValue || isMaskedValue(row.value)) {
+          const key = row.originalKey ?? row.key.trim();
+          value = Object.hasOwn(revealed, key) ? revealed[key] : undefined;
+        }
+        if (typeof value !== "string" || isMaskedValue(value)) {
+          throw new Error("A saved environment value could not be retrieved");
+        }
+        return { key: row.key, value };
+      });
+      const blob = new Blob([serializeDotenv(rows)], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = ".env";
+      document.body.appendChild(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    } catch {
+      showToast(ev.toast.downloadFailed, "error", ev.toast.title);
+    } finally {
+      downloadInFlight.current = false;
+      setIsDownloading(false);
+    }
+  };
+
   // Check if a file is a .env file
   const isEnvFile = (file: File) => {
     const name = file.name.toLowerCase();
@@ -643,9 +693,24 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     [processFile],
   );
 
-  // One class for every secondary toolbar action (paste / upload / edit / reveal).
+  // One class for every secondary toolbar action.
   const actionBtn =
     "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-muted/60 px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50";
+  const downloadAction = (
+    <button
+      type="button"
+      onClick={() => void handleDownload()}
+      disabled={isDownloading || isSaving || downloadableRows.length === 0}
+      className={actionBtn}
+    >
+      {isDownloading ? (
+        <LoaderCircle className="size-3.5 animate-spin" />
+      ) : (
+        <Download className="size-3.5" />
+      )}
+      {ev.downloadEnv}
+    </button>
+  );
   // With `hideTitle` the row can end up empty — don't render a bare 56px gap.
   const hasHeaderActions =
     mode === "settings" ||
@@ -656,7 +721,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   return (
     <div className={borderless ? "" : "bg-card rounded-2xl border border-border/50"}>
       {(!hideTitle || hasHeaderActions) && (
-        <div className="flex items-center justify-between gap-3 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
           {!hideTitle && (
             <div className="flex min-w-0 items-center gap-3">
               <div className="size-9 shrink-0 rounded-xl bg-violet-500/10 flex items-center justify-center">
@@ -677,7 +742,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
               </div>
             </div>
           )}
-          <div className="ms-auto flex shrink-0 items-center gap-2">
+          <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
             {mode === "settings" && !isEditingMode && (
               <>
                 {/* Paste / Upload always available — clicking either
@@ -704,6 +769,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   <Upload className="size-3.5" />
                   {ev.uploadEnv}
                 </button>
+                {downloadAction}
                 <button onClick={() => setIsEditingMode(true)} className={actionBtn}>
                   <Pencil className="size-3.5" />
                   {ev.edit}
@@ -729,6 +795,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   <Upload className="size-3.5" />
                   {ev.uploadEnv}
                 </button>
+                {downloadAction}
                 {showSettingsActions && (
                   <button
                     onClick={onSave}
@@ -750,10 +817,10 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   <Upload className="size-3.5" />
                   {ev.uploadEnv}
                 </button>
+                {downloadAction}
               </>
             )}
-            {/* #336: bulk reveal — the one action that asks for every masked key at
-              once. Only when a reveal source is wired and something is masked. */}
+            {/* Bulk reveal is available when a source is wired and something is masked. */}
             {onReveal && hasMaskedRow && (
               <button
                 type="button"
@@ -834,18 +901,18 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                     {resolution.label}
                   </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                   <input
                     type="text"
                     value={env.key}
                     onChange={(e) => handleKeyChange(index, e.target.value)}
                     placeholder="KEY"
                     readOnly={!isEditingMode}
-                    className={`flex-1 px-3.5 py-2.5 border border-border/50 rounded-lg text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${
+                    className={`w-full min-w-0 flex-none px-3.5 py-2.5 border border-border/50 rounded-lg text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all sm:w-auto sm:flex-1 ${
                       !isEditingMode ? "cursor-default bg-muted/20" : "bg-muted/30"
                     } ${inputStateClass}`}
                   />
-                  <div className="relative flex-1">
+                  <div className="relative min-w-0 flex-1">
                     <input
                       type={showAsText ? "text" : "password"}
                       value={displayValue}
@@ -904,7 +971,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   {showEditControls && isEditingMode && (
                     <button
                       onClick={() => removeEnvVar(index)}
-                      className="flex size-8 items-center justify-center rounded-lg text-muted-foreground/50 hover:text-danger hover:bg-danger-bg transition-colors"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 hover:text-danger hover:bg-danger-bg transition-colors"
                       type="button"
                       title={ev.delete}
                     >
@@ -973,38 +1040,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
 };
 
 function parseEnvFile(content: string) {
-  const lines = content.split(/\r?\n/);
-  const parsed: EnvironmentVariableRow[] = [];
-
-  lines.forEach((line) => {
-    const trimmedLine = line.trim();
-    if (!trimmedLine || trimmedLine.startsWith("#")) return;
-
-    const equalIndex = trimmedLine.indexOf("=");
-    if (equalIndex === -1) return;
-
-    const key = trimmedLine.substring(0, equalIndex).trim();
-    let value = trimmedLine.substring(equalIndex + 1).trim();
-
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return;
-
-    if (value.startsWith('"')) {
-      const closingQuoteIndex = value.indexOf('"', 1);
-      value = closingQuoteIndex !== -1 ? value.substring(1, closingQuoteIndex) : value.substring(1);
-    } else if (value.startsWith("'")) {
-      const closingQuoteIndex = value.indexOf("'", 1);
-      value = closingQuoteIndex !== -1 ? value.substring(1, closingQuoteIndex) : value.substring(1);
-    } else {
-      const commentMatch = value.match(/\s+#/);
-      if (commentMatch && commentMatch.index !== undefined) {
-        value = value.substring(0, commentMatch.index).trim();
-      }
-    }
-
-    parsed.push({ key, value, visible: true });
-  });
-
-  return parsed;
+  return parseDotenv(content).map((row) => ({ ...row, visible: true }));
 }
 
 function looksLikeEnvPaste(content: string, allowSingleLine: boolean) {

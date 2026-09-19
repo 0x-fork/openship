@@ -123,6 +123,7 @@
     "noneSet": "未設定",
     "pasteEnv": ".env を貼り付け",
     "uploadEnv": ".env をアップロード",
+    "downloadEnv": ".env をダウンロード",
     "edit": "編集",
     "cancel": "キャンセル",
     "saving": "保存中...",
@@ -144,6 +145,7 @@
       "interpolated": "補間済み"
     },
     "toast": {
+      "downloadFailed": "環境変数をダウンロードできませんでした。",
       "title": "環境変数",
       "added": "{count} 件追加",
       "updated": "{count} 件更新",

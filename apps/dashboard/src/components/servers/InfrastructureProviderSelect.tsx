@@ -21,7 +21,7 @@ export function InfrastructureProviderSelect({
 }) {
   const id = useId();
   const { t } = useI18n();
-  const c = t.servers.clusters;
+  const c = t.servers.networks;
 
   return (
     <div className="min-w-0">

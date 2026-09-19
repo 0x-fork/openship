@@ -123,6 +123,7 @@
     "noneSet": "Nenhuma definida",
     "pasteEnv": "Colar .env",
     "uploadEnv": "Enviar .env",
+    "downloadEnv": "Baixar .env",
     "edit": "Editar",
     "cancel": "Cancelar",
     "saving": "Salvando...",
@@ -144,6 +145,7 @@
       "interpolated": "Interpolado"
     },
     "toast": {
+      "downloadFailed": "Não foi possível baixar as variáveis de ambiente.",
       "title": "Variáveis de Ambiente",
       "added": "{count} adicionada(s)",
       "updated": "{count} atualizada(s)",

@@ -81,3 +81,5 @@ export * from "./notices";
 export * from "./billing";
 
 export * from "./billing-inputs";
+
+export * from "./infrastructure-resources";

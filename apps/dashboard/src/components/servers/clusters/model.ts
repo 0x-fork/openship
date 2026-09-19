@@ -2,18 +2,19 @@ import type { ServerCluster } from "@repo/contracts";
 import {
   NETWORK_CHECK_TTL_MS,
   managedNetworkInProgress,
+  nativeNetworkSource,
   type NativeClusterConfig,
   type InfrastructureProviderId,
 } from "@repo/core";
 
-export type ClusterStatus =
+export type NetworkStatus =
   | "unchecked"
   | "checking"
   | "verified"
   | "attention"
   | "stale"
   | "interrupted";
-export function clusterStatus(cluster: ServerCluster, now = Date.now()): ClusterStatus {
+export function clusterStatus(cluster: ServerCluster, now = Date.now()): NetworkStatus {
   const operation = cluster.operation;
   if (operation) {
     if (managedNetworkInProgress(operation.status))
@@ -45,6 +46,7 @@ export function clusterConfig(cluster?: ServerCluster): NativeClusterConfig {
           cidrs: cluster.network.cidrs,
           mtu: cluster.network.mtu,
           probePort: cluster.network.probePort,
+          source: nativeNetworkSource(cluster),
         },
         members: cluster.members.map(
           ({ serverId, providerId, privateIp, interfaceName, networkRef }) => ({
@@ -59,7 +61,13 @@ export function clusterConfig(cluster?: ServerCluster): NativeClusterConfig {
     : {
         name: "",
         location: "",
-        network: { mode: "native", cidrs: [], mtu: 1400, probePort: 51821 },
+        network: {
+          mode: "native",
+          cidrs: [],
+          mtu: 1400,
+          probePort: 51821,
+          source: { providerId: "custom" },
+        },
         members: [],
       };
 }

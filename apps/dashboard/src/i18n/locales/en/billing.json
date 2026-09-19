@@ -60,8 +60,25 @@
       "reconnect": "Reconnect"
     },
     "notEnabled": {
-      "title": "Billing is not enabled for this organization",
-      "description": "Billing is configured but not active for this organization. Contact your administrator to enable it."
+      "title": "Cloud purchases are not available yet",
+      "description": "Openship has not enabled subscriptions and credit purchases yet. Please try again later."
+    },
+    "notConfigured": {
+      "title": "Cloud billing setup is incomplete",
+      "description": "Openship needs to finish setting up billing. Please contact Openship support."
+    },
+    "forbidden": {
+      "title": "You don't have access to billing",
+      "description": "Ask your organization owner to grant you billing access."
+    },
+    "signInRequired": {
+      "title": "Sign in to view billing",
+      "description": "Your session could not be verified. Sign in again to continue.",
+      "signIn": "Sign in"
+    },
+    "loadFailed": {
+      "title": "Couldn't load billing",
+      "description": "Billing is temporarily unavailable. Try again. If the problem continues, contact Openship support."
     }
   },
   "plansRoute": {
@@ -143,11 +160,11 @@
     },
     "chart": {
       "title": "Usage over time",
-      "subtitle": "Stacked metered units per {unit}."
+      "subtitle": "Cloud credits per {unit}."
     },
     "breakdown": {
       "title": "Resource breakdown",
-      "subtitle": "Credits attributed proportionally to metered resource usage in the selected range.",
+      "subtitle": "Actual resource usage for the selected dates. Total Cloud credits are shown above.",
       "resource": "Resource",
       "units": "Units",
       "credits": "Credits",
@@ -165,11 +182,11 @@
         "units": "GB-hours"
       },
       "disk": {
-        "label": "Disk IO",
+        "label": "Disk activity",
         "units": "GB"
       },
       "network": {
-        "label": "Network",
+        "label": "Data transfer",
         "units": "GB"
       }
     },
@@ -208,7 +225,8 @@
       "incomplete": "Incomplete",
       "incomplete_expired": "Expired",
       "unpaid": "Unpaid",
-      "paused": "Paused"
+      "paused": "Paused",
+      "credit_exhausted": "Cloud paused"
     },
     "includedTitle": "What's included",
     "perYear": "${price}/yr"
@@ -241,5 +259,75 @@
     "confirmCancel": "Stop renewal",
     "keepPlan": "Keep subscription",
     "error": "Unable to update your subscription. Please retry."
+  },
+  "deployGate": {
+    "title": "Choose a plan to deploy",
+    "description": "Set up projects for free. A paid Cloud plan is required to build and run them.",
+    "preserved": "Your project settings stay here. Checkout opens in a new tab; return here after activating your plan to continue.",
+    "close": "Back to project",
+    "checkPlan": "Check plan",
+    "loading": "Loading your Cloud plan…",
+    "loadError": "Couldn't load your Cloud plan. Try again.",
+    "ownerRequired": "Ask your workspace owner to choose or manage your Cloud plan.",
+    "readyTitle": "Return to your project",
+    "ready": "Your Cloud plan is updated. Close this window and try again.",
+    "pending": "Your plan hasn't changed yet. Finish checkout, then check again.",
+    "blockedTitle": "Your Cloud plan needs attention",
+    "creditsTitle": "You've used your Cloud credits",
+    "creditsDescription": "Add credits or choose a plan with more credits to continue. Top-ups don't raise your build time or service limits.",
+    "paymentDescription": "Update your payment or subscription details to continue deploying.",
+    "pausedDescription": "Cloud deployment is paused for this workspace. Contact support to restore access.",
+    "upgradeTitle": "This project needs more capacity",
+    "upgradeDescription": "Choose a plan with enough capacity, or adjust your project and try again.",
+    "manageBilling": "Manage billing",
+    "topups": "Add credits",
+    "checkoutOpened": "Checkout is ready in a separate tab. If it did not open, use the link below.",
+    "continueCheckout": "Continue to checkout",
+    "reasons": {
+      "static-only": "Your plan does not include this type of app. Choose a plan that supports it to deploy.",
+      "build-minutes-exhausted": "You've reached your monthly build time limit. Choose a larger plan, or wait for your build allowance to reset.",
+      "free-subdomain-limit": "You've used all the Cloud subdomains in your plan. Choose a larger plan, or remove an unused subdomain.",
+      "resource-tier": "This project needs more CPU or memory than your plan allows. Choose a larger plan, or lower the resources in your project settings.",
+      "running-services": "You've reached your running service limit. Choose a larger plan, or stop a service you no longer need.",
+      "project-limit": "You've reached your project limit. Choose a larger plan, or delete a project you no longer need."
+    }
+  },
+  "resourcesGuide": {
+    "title": "How Cloud usage works",
+    "credits": "Cloud credits",
+    "creditsHint": "Builds and running apps use credits for CPU, memory, disk activity and data transfer. Larger workloads use credits faster.",
+    "creditsPerCycle": "{amount} credits / billing cycle",
+    "buildTime": "Build time",
+    "buildMinutes": "{amount} min / month",
+    "buildHint": "Time spent building your code. A 5-minute build uses 5 build minutes. Build resources also use Cloud credits.",
+    "apps": "Running services",
+    "appsHint": "Apps, databases and workers running at the same time. Each running Compose service counts toward this limit.",
+    "machine": "CPU & memory per service",
+    "machineHint": "The largest CPU and memory size available for one service. This is a limit, not a shared balance.",
+    "projects": "Projects",
+    "projectsHint": "Projects saved in your workspace, including drafts.",
+    "routesHint": "Public Cloud addresses for your apps.",
+    "unlimited": "No set limit",
+    "notIncluded": "Not included",
+    "noPlan": "No Cloud plan",
+    "setupOnly": "Project setup is free",
+    "setupHint": "Cloud builds and running apps require a paid plan. No free Cloud compute is included.",
+    "includedTitle": "Included usage & limits",
+    "limitsHint": "Plan limits and credits are separate. Deployments need both available capacity and credits.",
+    "balanceRule": "Cloud workloads pause when credits run out. Adding credits replenishes your balance; a larger plan raises your resource limits.",
+    "reset": "Build allowance resets {date}",
+    "cpuHint": "Processing used over time. 1 vCPU running for 1 hour is 1 vCPU-hour.",
+    "memoryHint": "Memory used over time. 1 GB for 1 hour is 1 GB-hour.",
+    "diskHint": "Data read and written by your apps. This is disk activity, not stored disk size.",
+    "networkHint": "Data sent and received by your apps.",
+    "usageMeaning": "How to read it",
+    "selectedRange": "Credits used in this date range",
+    "usageHint": "Actual resource usage for the selected dates. Total Cloud credits are shown above.",
+    "creditsChart": "Cloud credits per {unit}.",
+    "allProjects": "All projects",
+    "from": "From (UTC)",
+    "to": "Through (UTC)",
+    "invalidRange": "Choose an end date on or after the start date.",
+    "moreFeatures": "More features"
   }
 }

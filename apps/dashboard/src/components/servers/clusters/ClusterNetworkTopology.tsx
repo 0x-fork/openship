@@ -9,6 +9,7 @@ import {
   Controls,
   EdgeLabelRenderer,
   Handle,
+  MarkerType,
   Position,
   ReactFlow,
   getBezierPath,
@@ -44,7 +45,7 @@ type ConnectionEdge = Edge<
 const sides = [Position.Left, Position.Right, Position.Top, Position.Bottom];
 const ServerNodeView = memo(function ServerNodeView({ data, selected }: NodeProps<ServerNode>) {
   const { t } = useI18n();
-  const c = t.servers.clusters;
+  const c = t.servers.networks;
   return (
     <article
       className={`w-[220px] rounded-2xl border bg-popover p-4 text-start ${selected ? "border-primary" : "border-border/60"}`}
@@ -75,13 +76,13 @@ const ServerNodeView = memo(function ServerNodeView({ data, selected }: NodeProp
           <p className="truncate text-sm font-medium">
             <NetworkDiagnosticText value={data.member.name} />
           </p>
-          <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+          <p className="mt-1 font-mono text-xs text-muted-foreground">
             <BlurIp>{data.member.privateIp || data.member.endpoint || "—"}</BlurIp>
           </p>
         </div>
       </div>
       <p
-        className={`mt-3 flex items-center gap-1.5 text-[11px] ${data.member.progress?.state === "restored" ? "text-warning" : data.state === "passed" ? "text-success" : data.state === "failed" ? "text-danger" : data.member.progress?.state === "running" ? "text-primary" : "text-muted-foreground"}`}
+        className={`mt-3 flex items-center gap-1.5 text-xs ${data.member.progress?.state === "restored" ? "text-warning" : data.state === "passed" ? "text-success" : data.state === "failed" ? "text-danger" : data.member.progress?.state === "running" ? "text-primary" : "text-muted-foreground"}`}
       >
         {data.member.progress?.state === "running" ? (
           <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />
@@ -112,6 +113,8 @@ const ConnectionEdgeView = memo(function ConnectionEdgeView(props: EdgeProps<Con
       <BaseEdge
         id={id}
         path={path}
+        markerStart={props.markerStart}
+        markerEnd={props.markerEnd}
         interactionWidth={24}
         style={{
           stroke: color,
@@ -125,12 +128,12 @@ const ConnectionEdgeView = memo(function ConnectionEdgeView(props: EdgeProps<Con
           <button
             type="button"
             onClick={data?.onSelect}
-            className={`nodrag nopan absolute rounded-lg bg-popover px-2 py-1 text-[10px] tabular-nums text-foreground ${selected ? "ring-1 ring-primary/40" : ""}`}
+            className={`nodrag nopan absolute rounded-lg bg-popover px-2 py-1 text-xs tabular-nums text-foreground ${selected ? "ring-1 ring-primary/40" : ""}`}
             style={{
               pointerEvents: "all",
               transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
             }}
-            aria-label={`${data?.link.source.name} ↔ ${data?.link.target.name}`}
+            aria-label={`${data?.link.source.name} ${data?.link.accessMode === "forward" ? "→" : data?.link.accessMode === "reverse" ? "←" : data?.link.connected ? "↔" : "—"} ${data?.link.target.name}`}
           >
             {data?.label}
           </button>
@@ -142,7 +145,7 @@ const ConnectionEdgeView = memo(function ConnectionEdgeView(props: EdgeProps<Con
 const nodeTypes = { server: ServerNodeView };
 const edgeTypes = { connection: ConnectionEdgeView };
 
-function FitNetworkView() {
+export function FitNetworkView() {
   const ready = useNodesInitialized();
   const width = useStore((state) => state.width);
   const height = useStore((state) => state.height);
@@ -171,7 +174,7 @@ export function ClusterNetworkTopology({
   onFocus(serverId: string): void;
 }) {
   const { t } = useI18n();
-  const c = t.servers.clusters;
+  const c = t.servers.networks;
   const [measurements, setMeasurements] = useState<
     Record<string, { width: number; height: number }>
   >({});
@@ -228,9 +231,10 @@ export function ClusterNetworkTopology({
   const edges: ConnectionEdge[] = links
     .filter(
       (link) =>
-        !focusedServer ||
-        link.source.serverId === focusedServer ||
-        link.target.serverId === focusedServer,
+        (link.connected || link.state === "failed") &&
+        (!focusedServer ||
+          link.source.serverId === focusedServer ||
+          link.target.serverId === focusedServer),
     )
     .map((link) => {
       const source = nodes.find((node) => node.id === link.source.serverId)!;
@@ -248,6 +252,34 @@ export function ClusterNetworkTopology({
         sourceHandle: `${from}-out`,
         targetHandle: `${to}-in`,
         selected: selected === link.id,
+        markerStart:
+          link.accessMode === "reverse"
+            ? {
+                type: MarkerType.ArrowClosed,
+                width: 18,
+                height: 18,
+                color:
+                  link.state === "failed"
+                    ? "var(--danger)"
+                    : link.state === "passed"
+                      ? "var(--success)"
+                      : "var(--th-on-30)",
+              }
+            : undefined,
+        markerEnd:
+          link.accessMode === "forward"
+            ? {
+                type: MarkerType.ArrowClosed,
+                width: 18,
+                height: 18,
+                color:
+                  link.state === "failed"
+                    ? "var(--danger)"
+                    : link.state === "passed"
+                      ? "var(--success)"
+                      : "var(--th-on-30)",
+              }
+            : undefined,
         data: {
           link,
           label:

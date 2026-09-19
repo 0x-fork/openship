@@ -1,4 +1,10 @@
-import type { ClusterNetworkReport, InfrastructureProviderId } from "@repo/core";
+import {
+  networkAccessAllowed,
+  networkConnectionMode,
+  type NetworkAccessPolicy,
+  type ClusterNetworkReport,
+  type InfrastructureProviderId,
+} from "@repo/core";
 
 export interface NetworkTopologyMember {
   interfaceName?: string;
@@ -17,6 +23,7 @@ export interface NetworkTopologyMember {
 export function networkLinks(
   members: NetworkTopologyMember[],
   report?: ClusterNetworkReport | null,
+  access?: NetworkAccessPolicy,
 ) {
   return members.flatMap((source, i) =>
     members.slice(i + 1).map((target) => {
@@ -26,6 +33,7 @@ export function networkLinks(
       ].map(([from, to]) => ({
         source: from!,
         target: to!,
+        allowed: networkAccessAllowed(access, from!.serverId, to!.serverId),
         check: report?.peers.find(
           (p) => p.sourceServerId === from!.serverId && p.targetServerId === to!.serverId,
         ),
@@ -37,20 +45,33 @@ export function networkLinks(
         ),
       }));
       const failed = directions.some(
-        ({ check, handshake }) =>
-          handshake?.ok === false || (check && (!check.tcp || !check.udp || !check.mtu)),
+        ({ allowed, check, handshake }) =>
+          handshake?.ok === false ||
+          (check &&
+            (allowed ? !check.tcp || !check.udp || !check.mtu : check.policyPassed === false)),
       );
-      const passed = directions.every(({ check }) => check?.tcp && check.udp && check.mtu);
-      const rtts = directions.flatMap(({ check }) =>
-        check?.latencyKind === "rtt" && check.latencyMs !== null ? [check.latencyMs] : [],
+      const passed = directions.every(({ allowed, check }) =>
+        allowed ? check?.tcp && check.udp && check.mtu : check?.policyPassed === true,
       );
+      const rtts = directions.flatMap(({ allowed, check }) =>
+        allowed && check?.latencyKind === "rtt" && check.latencyMs !== null
+          ? [check.latencyMs]
+          : [],
+      );
+      const accessMode = networkConnectionMode(access, source.serverId, target.serverId);
       return {
         id: JSON.stringify([source.serverId, target.serverId]),
         source,
         target,
         directions,
+        accessMode,
+        connected: accessMode !== "blocked",
         state: failed ? ("failed" as const) : passed ? ("passed" as const) : ("unchecked" as const),
-        latencyMs: rtts.length === 2 ? Math.max(...rtts) : null,
+        latencyMs:
+          rtts.length > 0 &&
+          rtts.length === directions.filter((direction) => direction.allowed).length
+            ? Math.max(...rtts)
+            : null,
       };
     }),
   );

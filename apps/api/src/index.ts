@@ -162,6 +162,17 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     console.log("[shutdown] dev hot-reload — skipping drains to release the database lock");
   }
 
+  // Fence this controller's network work even on hot reload. Otherwise its
+  // still-valid lease makes a stopped setup look active after the successor boots.
+  if (!env.CLOUD_MODE) {
+    try {
+      const { stopNetworkSetups } = await import("@repo/platform/engine/modules/system/network-setup-lifecycle");
+      await stopNetworkSetups();
+    } catch (err) {
+      console.warn("[shutdown] network setup interruption failed:", err);
+    }
+  }
+
   // Close any live SSH port-forward tunnels (desktop-only feature; the
   // manager is RAM-only, so this Map is empty on SaaS/VPS and the import
   // is cheap). Dynamic import keeps it off the cloud startup path.

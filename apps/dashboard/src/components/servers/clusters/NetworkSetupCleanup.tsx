@@ -8,7 +8,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { useNetworkSetup } from "@/hooks/useNetworkSetup";
 import { getApiErrorMessage } from "@/lib/api";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { privateNetworksApi } from "@/lib/api/private-networks";
 import { NetworkSetupProgress } from "./NetworkSetupProgress";
 import { NetworkStreamNotice } from "./NetworkStreamNotice";
 
@@ -27,7 +27,7 @@ export function NetworkSetupCleanup({
   onContinue(): void;
 }) {
   const { t } = useI18n();
-  const m = t.servers.clusters.managed;
+  const m = t.servers.networks.managed;
   const { progress: operation, update, stream } = useNetworkSetup("operation", operationId, true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,7 +40,7 @@ export function NetworkSetupCleanup({
     setError(null);
     try {
       update(
-        await serverClustersApi.applyManaged({
+        await privateNetworksApi.applyManaged({
           operationId,
           planHash: operation.planHash,
           action: "rollback",
@@ -105,7 +105,7 @@ export function NetworkSetupCleanup({
           </Button>
         )}
         <Link
-          href={`/servers/clusters/operations/${operationId}`}
+          href={`/servers/networks/operations/${operationId}`}
           className="block text-sm font-medium text-primary hover:underline"
         >
           {m.viewCleanup}

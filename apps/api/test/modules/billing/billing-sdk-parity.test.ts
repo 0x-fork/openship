@@ -99,7 +99,12 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const native = await c.native.listPlans({ locale: "ar" });
     expect(await remote.billing.listPlans({ locale: "ar" })).toEqual(native);
     expect(native.locale).toBe("ar");
-    expect(native.plans.find(plan => plan.id === "starter")?.price.monthly).toBe(1000);
+    expect(native.plans.find(plan => plan.id === "starter")).toMatchObject({
+      price: { monthly: 1000, annual: 10000 },
+      monthlyCredits: 1_200_000,
+      annualCredits: 14_400_000,
+      limits: { buildMinutesPerMonth: 3000 },
+    });
     expect(JSON.stringify(native)).not.toMatch(/stripeCouponEnv|oblienLimits|STRIPE_PRICE/);
     const response = await app.request("/api/billing/plans", { headers: { "Accept-Language": "de" } });
     expect(response.headers.get("Vary")).toBe("Accept-Language");

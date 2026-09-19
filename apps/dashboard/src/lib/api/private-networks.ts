@@ -10,6 +10,7 @@ import type {
   DiscardManagedNetworkPlanInput,
   RemoveManagedNetworkPreparationMemberInput,
   RemoveManagedNetworkOperationMemberInput,
+  ReviseManagedNetworkAccessInput,
 } from "@repo/contracts";
 import type {
   NetworkHostObservation,
@@ -20,28 +21,28 @@ import type {
 } from "@repo/core";
 import { api } from "./client";
 
-const path = (id: string) => `system/clusters/${encodeURIComponent(id)}`;
+const path = (id: string) => `system/networks/${encodeURIComponent(id)}`;
 type RemoveSetupMemberResult = {
   preparation: ManagedNetworkPreparation;
   operation: ManagedNetworkOperation | null;
 };
-export const serverClustersApi = {
+export const privateNetworksApi = {
   prepareManaged: (input: PlanManagedNetworkInput) =>
-    api.post<ManagedNetworkPreparation>("system/clusters/network-preparations", input),
+    api.post<ManagedNetworkPreparation>("system/networks/preparations", input),
+  reviseConnections: ({ preparationId, ...input }: ReviseManagedNetworkAccessInput) =>
+    api.patch<ManagedNetworkPreparation>(`system/networks/preparations/${encodeURIComponent(preparationId)}/connections`, input),
   managedPreparation: (id: string) =>
-    api.get<ManagedNetworkPreparation>(
-      `system/clusters/network-preparations/${encodeURIComponent(id)}`,
-    ),
+    api.get<ManagedNetworkPreparation>(`system/networks/preparations/${encodeURIComponent(id)}`),
   managedPreparations: () =>
-    api.get<ManagedNetworkPreparationSummary[]>("system/clusters/network-preparations"),
+    api.get<ManagedNetworkPreparationSummary[]>("system/networks/preparations"),
   discardPreparation: ({ preparationId, ...input }: DiscardManagedNetworkPreparationInput) =>
     api.delete<ManagedNetworkPreparation>(
-      `system/clusters/network-preparations/${encodeURIComponent(preparationId)}`,
+      `system/networks/preparations/${encodeURIComponent(preparationId)}`,
       { body: input },
     ),
   discardPlan: ({ operationId, ...input }: DiscardManagedNetworkPlanInput) =>
     api.delete<ManagedNetworkOperation>(
-      `system/clusters/network-operations/${encodeURIComponent(operationId)}`,
+      `system/networks/operations/${encodeURIComponent(operationId)}`,
       { body: input },
     ),
   removePreparationMember: ({
@@ -50,7 +51,7 @@ export const serverClustersApi = {
     ...input
   }: RemoveManagedNetworkPreparationMemberInput) =>
     api.delete<RemoveSetupMemberResult>(
-      `system/clusters/network-preparations/${encodeURIComponent(preparationId)}/members/${encodeURIComponent(serverId)}`,
+      `system/networks/preparations/${encodeURIComponent(preparationId)}/members/${encodeURIComponent(serverId)}`,
       { body: input },
     ),
   removeOperationMember: ({
@@ -59,24 +60,22 @@ export const serverClustersApi = {
     ...input
   }: RemoveManagedNetworkOperationMemberInput) =>
     api.delete<RemoveSetupMemberResult>(
-      `system/clusters/network-operations/${encodeURIComponent(operationId)}/members/${encodeURIComponent(serverId)}`,
+      `system/networks/operations/${encodeURIComponent(operationId)}/members/${encodeURIComponent(serverId)}`,
       { body: input },
     ),
   planManaged: (input: PlanManagedNetworkInput) =>
-    api.post<ManagedNetworkOperation>("system/clusters/network-plans", input, { timeout: 240_000 }),
+    api.post<ManagedNetworkOperation>("system/networks/plans", input, { timeout: 240_000 }),
   managedOperation: (id: string) =>
-    api.get<ManagedNetworkOperation>(
-      `system/clusters/network-operations/${encodeURIComponent(id)}`,
-    ),
+    api.get<ManagedNetworkOperation>(`system/networks/operations/${encodeURIComponent(id)}`),
   applyManaged: ({ operationId, ...input }: ApplyManagedNetworkInput) =>
     api.post<ManagedNetworkOperation>(
-      `system/clusters/network-operations/${encodeURIComponent(operationId)}/apply`,
+      `system/networks/operations/${encodeURIComponent(operationId)}/apply`,
       input,
     ),
-  capabilities: () => api.get<ClusterCapabilities>("system/clusters/capabilities"),
-  list: () => api.get<ServerCluster[]>("system/clusters"),
+  capabilities: () => api.get<ClusterCapabilities>("system/networks/capabilities"),
+  list: () => api.get<ServerCluster[]>("system/networks"),
   get: (id: string) => api.get<ServerCluster>(path(id)),
-  create: (input: CreateClusterInput) => api.post<ServerCluster>("system/clusters", input),
+  create: (input: CreateClusterInput) => api.post<ServerCluster>("system/networks", input),
   update: ({ clusterId, ...input }: UpdateClusterInput) =>
     api.patch<ServerCluster>(path(clusterId), input),
   verify: (cluster: Pick<ServerCluster, "id" | "revision">, speedTest?: ClusterSpeedTest) =>

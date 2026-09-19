@@ -1,24 +1,52 @@
 # Server clusters and private networking
 
-Cluster infrastructure lives under **Servers → Cluster / Networking**. An
-organization owns its clusters; project environments keep their existing server
-targets and topology. A cluster is not yet a deployment target.
+Infrastructure lives under **Servers → Cluster / Networking**, with independent
+organization-owned resources. Project environments retain their existing service
+placements; a compute cluster is not yet a deployment target.
 
-**Cluster** manages server groups and membership. **Networking** lists their
-private address ranges, connected servers, and verification results, with links
-to each network's details. Each cluster currently has one primary private network,
-registered during cluster setup. The views share inventory loading but have
-separate empty states, using the existing server-group and network illustrations.
-Cluster offers creation; Networking directs users to Cluster for initial setup.
-Create cluster and Refresh sit in the page header above the tabs. Header refresh
-reconnects the same overview subscription used by the cards and network table.
+**Cluster** manages server pools and membership. A cluster references one existing
+private network and selects 1–16 servers already attached to it. Multiple clusters
+can share a network, and a server can attach to multiple networks while belonging
+to one compute cluster. Cluster creation and edits never configure a host.
+
+**Networking** owns network creation/adoption, server attachments, firewall review,
+preparation, operations, recovery, topology, and diagnostics. Each network appears
+as its own expandable group, even when no compute cluster uses it. Sharing a
+provider never merges networks or creates a connection between them. Network
+pages show their dependent clusters and link to creating a cluster on that network.
+Server detail pages show their own cluster and network references; users without
+fleet read access see names without links to inaccessible fleet pages.
+
+Both tabs share one overview subscription and have separate empty states. Create
+cluster / Create network and Refresh sit in the page header above the tabs.
+Deleting a cluster preserves every server and network attachment. A network cannot
+be deleted, or a server detached from it, while a compute cluster depends on that
+relationship. These checks happen before managed host work and are backed by
+deferred database foreign keys. Network recovery also prevents a new cluster from
+acquiring a dependency until the operation is settled.
+
+## Cluster workflow
+
+`/servers/clusters/new` selects an existing network and its connected servers, with
+an optional `networkId` query to carry context from Networking. The form uses shared
+filled inputs, checkboxes and the network selector, plus a sticky right summary.
+Create network opens the shared network wizard. `/servers/clusters/:clusterId` shows
+membership and a link to the network; `/edit` changes the pool with a captured
+revision. No firewall setup, probes, host provisioning or cleanup is duplicated in
+these routes.
 
 ## Available workflow
 
-Create a cluster, select 2–16 existing servers, and choose managed WireGuard or an
-existing private network. Each member retains its provider profile. The wizard
-runs inline at `/servers/clusters/new`; edits use
-`/servers/clusters/:clusterId/edit`. Both routes share the same stepper, validation,
+Name the network and choose native adoption or managed WireGuard, then configure 2–16
+existing servers. Managed WireGuard works across providers and does not ask for
+provider selection. Native adoption chooses a provider and optional actual network
+reference once (for example, a specific vSwitch or VPC), then collects only private
+address/interface settings per server. **Custom** adopts an existing routed LAN,
+VLAN or VPN, including mixed providers. A provider selection is not network discovery;
+the operator must attach the servers and establish routes before adoption.
+The wizard
+runs inline at `/servers/networks/new`; edits use
+`/servers/networks/:networkId/edit`. Both routes share the same stepper, validation,
 and review/verification flow. The form uses the standard page width, with steps and
 Continue/Back/Cancel controls in a sticky right column. Narrow layouts stack the
 controls below the form. Both columns share the normal page scroll, with no
@@ -38,7 +66,7 @@ or retried. Multiple private interfaces remain an explicit choice; missing
 networks and failed inspections are explained on the affected server's card.
 Host-only masks require the operator's real routed range, rather than an invented
 subnet. Detection updates only the draft and never configures a host or claims
-connectivity. Review saves the cluster and starts a persisted connectivity check.
+connectivity. Review saves the network and starts a persisted connectivity check.
 
 Form fields, checkboxes, and actions use the shared UI components. Provider
 selection uses the shared searchable selector with local brand logos and network
@@ -49,7 +77,17 @@ focus rings. Containers retain the theme's borderless surfaces.
 Profiles cover Hetzner Dedicated vSwitch, Hetzner Cloud Networks, AWS, Azure,
 Google Cloud, DigitalOcean, OVHcloud, Scaleway, and Custom. Capabilities explicitly
 advertise adoption only. Provider references are metadata, not proof of network
-membership. Hetzner Dedicated checks enforce the vSwitch MTU limit of 1400.
+membership. Native configuration stores this context in `network.source`, containing
+`providerId` and optional `networkRef`. Shared validation, detection and host checks
+use the network's provider constraints, including the vSwitch MTU limit of 1400,
+even when server provider metadata is unknown. Legacy member provider/reference
+fields remain available for compatibility and custom routed setups.
+
+Migration `0138` resolves older native sources only when every attachment agrees on
+both provider and reference; ambiguous or mixed configurations remain Custom.
+Managed networks have no native source. Existing member metadata, saved operation
+plans and request hashes are preserved. Older create/update requests may omit the
+source; persistence derives it without changing the old input's idempotency hash.
 
 Native adoption needs Linux, Python 3, iproute2, a persistent machine identity, configured
 private interfaces, and mutually reachable routes. Allow the selected verification
@@ -70,8 +108,8 @@ minutes. Temporary authenticated listeners bind only the selected private
 addresses and are closed after verification; they also expire locally after
 270 seconds if controller cleanup cannot reach them.
 
-Cluster details open on **Topology**, with a separate **Servers** tab for member
-inventory. Networking links to the same detail view. Select a server to focus its
+Network details open on **Topology**, with a separate **Servers** tab for attached
+server inventory. Select a server to focus its
 connections, or select a connection to inspect both directions. The map separates
 interface checks from connection health and labels saved results with their test
 time. It does not imply continuous monitoring.
@@ -99,8 +137,9 @@ checks and do not reconfigure or roll back a network.
 
 The native list and detail views provide retry, edit, and inventory removal. Edits use a
 captured revision and invalidate older observations. Active checks block edits and
-removal. Removing a cluster leaves its servers and externally owned networking in
-place. A member must leave its cluster before its server entry can be deleted.
+removal. Removing an adopted network only removes its inventory after all cluster references
+are cleared. Servers and provider networking stay in place. Server deletion requires
+removing its compute membership and network attachments first.
 Enrollment and server teardown share the existing mutex/advisory-lock mechanism,
 so a concurrent enrollment cannot occur halfway through workload removal. This
 lock is scoped to an organization and uses one database connection per operation.
@@ -108,7 +147,7 @@ lock is scoped to an organization and uses one database connection per operation
 ## Managed WireGuard
 
 Managed setup uses **prepare servers → inspect → plan → review → apply → verify → commit**.
-The wizard starts a durable preparation at `/servers/clusters/preparations/:preparationId`.
+The wizard starts a durable preparation at `/servers/networks/preparations/:preparationId`.
 It checks SSH, machine identity, Linux/systemd, privilege and firewall support,
 then uses the shared toolchain to install missing Python 3.8+, iproute2, and WireGuard
 tools. Kernel support and JSON network inspection are checked separately. Inspection
@@ -123,34 +162,74 @@ start collapsed, retain manual choices through SSE updates, and open when their
 node is selected. Collapsed failures retain a short error summary. Connection
 details stay compact until selected or a connection fails.
 
-Local inspection does not establish UDP reachability. Managed preparation, review and failed
-connections share the per-server firewall rule template: incoming UDP from each
-peer `/32` to the selected server's listen port, and outgoing UDP to each peer's
-actual port, with unrestricted source ports. Outgoing rules are needed when egress
-is restricted. Individual values and the complete server template can be copied;
-the template is provider-neutral TSV, not a provider API payload. Only transport
-endpoints are included, never private service or probe ports. Preparation publishes
-resolved DNS endpoints and inherited cluster ports through its existing SSE stream;
-incomplete values disable full-template copying. OpenShip manages supported host firewall rules,
-while provider firewalls, upstream routing and NAT forwarding remain administrator
-configuration. SSH access is never presented as proof of peer UDP access.
-The panel uses a restrained warning accent and required-before-setup cue instead
-of a separate repeated warning card. Both network modes require explicit firewall
-confirmation in review before creating/verifying or applying a network. Native
+Local inspection does not establish UDP reachability. Preparation focuses on server
+readiness and topology; firewall rules lead the final review, with the
+confirmation directly beneath them. The shared list shows every server's inbound
+and outbound rules together, without server selectors or direction tabs. Managed
+rules allow incoming UDP from each connected peer `/32` to that server's listen port, and
+outgoing UDP to each peer's actual port, with unrestricted source ports. Outgoing
+rules are needed when egress is restricted. Individual values, a server template,
+or all server templates can be copied; these are provider-neutral TSV blocks, not
+provider API payloads. Only transport endpoints are included, never private service
+or probe ports. Preparation publishes resolved DNS endpoints and inherited cluster
+ports through its existing SSE stream; incomplete values disable full-template
+copying. OpenShip manages supported host firewall rules, while provider firewalls,
+upstream routing and NAT forwarding remain administrator configuration. SSH access
+is never presented as proof of peer UDP access.
+The panel uses restrained warning and direction icons. Failed connection diagnostics
+reuse the same list; managed recovery shows it above progress, with renewed
+confirmation, rather than repeating it inside the topology. Both network modes
+require explicit firewall confirmation before creating/verifying or applying a network. Native
 confirmation is scoped to the draft's network settings and members; managed
 confirmation is scoped to the operation, plan hash, generation and status, so a
 failed attempt needs confirmation again before resume. Cleanup/removal stays
-available without firewall confirmation. This is a UI acknowledgment, not proof of
+available without firewall confirmation. A managed policy with no enabled
+connections has no provider UDP rules to confirm; review shows the isolated
+members instead. This is a UI acknowledgment, not proof of
 connectivity or an authorization boundary; the existing server checks still decide
 whether the network is ready.
+
+### Connection access
+
+The managed network topology is editable during server selection and preparation.
+Click a connection to choose either initiation direction, remove the connection,
+or restore it from the connection selector. A one-way connection has an arrow;
+two-way connections retain the existing line. Removing a connection keeps both
+servers. Directions apply to all private ports, and permitted connections include
+their replies. Provider/native networks remain adopted, externally configured
+networks; this editor does not claim to enforce provider-side access controls.
+
+`NetworkAccessPolicy` is a versioned directed allowlist shared by the wizard,
+contracts, planner, database, firewall compiler and diagnostics. Omitted policies
+preserve existing full meshes; an explicit empty policy isolates every member.
+Membership removal filters the existing rules, and never widens access. Private
+network addresses are retained when a reviewed setup is revised.
+
+Preparation edits are local until **Save and review**. The revision endpoint locks
+the existing preparation and unapplied operation, atomically supersedes them with
+a new request, and starts the existing preparation worker. Original inputs and
+plan hashes remain immutable. Replays reuse the same request, old approval cannot
+be applied, and a running attempt must settle before a revision can be saved.
+Changes after host application use network settings and the existing recovery flow.
+
+WireGuard peer entries and provider UDP templates include only connected pairs.
+Transport is bidirectional even when private initiation is one-way. Owned stateful
+host rules enforce both directions ahead of general established-connection rules,
+cover published container ports through FORWARD, and prohibit forwarding between
+WireGuard peers. They do not change public access or other private networks. The
+owned subnet route prevents removed peers from falling through to the public
+default route. Canonical firewall snapshots are checked before commit and recovery;
+drift keeps rollback armed. Verification probes every directed pair, including
+denied directions; missing SSH results are never accepted as proof of isolation.
+Latency and speed measurements apply only to permitted directions.
 
 Plans expire after fifteen minutes. Apply requires the reviewed plan hash and
 unchanged cluster revision, host identity, and network fingerprint. Allocation
 avoids host/Docker/VPN routes, DNS addresses, management and transport endpoints,
-and other clusters' ranges. Database claims prevent concurrent ownership of the
+and other networks' ranges. Database claims prevent concurrent ownership of the
 same server or physical host. Only one unsettled operation may own a cluster.
 
-The operation page at `/servers/clusters/operations/:operationId` retains per-host
+The operation page at `/servers/networks/operations/:operationId` retains per-host
 steps, installation logs, verification results, errors, and recovery actions.
 Failures remain in the step history after rollback. Preparation and apply pages
 survive reloads; unfinished preparations also appear in the Servers cluster/network tabs.
@@ -169,6 +248,16 @@ lock before starting; each host step rechecks membership and authority.
 The saved draft can be reopened for editing without reentering its settings. Workers use a
 renewable 90-second lease and recheck authority, generation, and physical host
 identity before host work. Provisioning and inventory work reuse existing locks.
+
+API shutdown marks its own preparation, apply/recovery, and verification
+runs `interrupted` before cancelling further host work, including dev hot reloads.
+On boot, the exclusive PGlite owner immediately interrupts abandoned runs even if
+their leases have not expired. A shared PostgreSQL controller only recovers expired
+or missing leases so another live owner's work is preserved. Native exclusive
+recovery uses the same path. Interrupted steps display **Stopped** and saved progress
+remains available; only an explicit Retry, Resume, Restore, or verification request
+starts work again. Recovery retains host receipts, rollback timers, reservations,
+and logs, and never assumes remote changes have already been restored.
 
 Preparation, apply, and overview progress use read-only SSE subscriptions through
 the shared operation stream adapter and dashboard SSE reader. Each connection
@@ -277,15 +366,18 @@ kernel support must be available; preparation reports incompatible hosts with a
 specific failed step. OpenShip does not replace kernels, reboot servers, change
 their init system, or replace their firewall manager. Installed prerequisites remain
 installed if a later network operation rolls back.
+Custom connection policies additionally check conntrack support and install
+iptables 1.8+ through the same toolchain on hosts without an nftables manager.
 
 | Host firewall                          | Managed support                                                                                        |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| None                                   | Supported; provider-side UDP access is still required                                                  |
-| Raw iptables                           | Dedicated INPUT/OUTPUT chains and tagged jumps                                                         |
+| None                                   | Supported; directed policies install owned iptables rules; provider-side UDP access is still required |
+| Raw iptables                           | Dedicated INPUT/OUTPUT chains and tagged jumps; custom policies also protect FORWARD                  |
 | nftables                               | Standard `inet filter input/output` chains, without additional filtering IPv4 input/output base chains |
 | UFW, firewalld, other nftables layouts | Refused during inspection pending an owned-rule adapter                                                |
 
-The initial driver is a direct IPv4 UDP full mesh with 2–16 servers. It has no
+The driver uses direct IPv4 UDP between selected peers, with 2–16 servers and a
+full mesh by default. Connections may be restricted or removed. It has no
 relay or automatic NAT traversal. Provider firewalls/security groups must permit
 the reviewed UDP transport ports (default 51820). Subnets must be RFC1918
 `/16`–`/27`. Tunnel MTU is derived from transport routes, capped at 1420, and verified.
@@ -305,8 +397,8 @@ There is no continuous controller reconciliation or automatic workload failover.
 - `packages/contracts/src/server-clusters.ts`: schemas consumed by the engine,
   HTTP controllers, SDK, and dashboard. Cluster actions use the existing server
   operation surface and require fleet-wide read/admin access.
-- `packages/db/src/schema/server-cluster.ts` and migrations `0129`/`0130`: cluster,
-  primary network, compute membership, separate server network attachments, and
+- `packages/db/src/schema/server-cluster.ts` and migrations `0129`/`0130`: network,
+  network configuration, network membership, separate server network attachments, and
   verification records. Server foreign keys are deferred in SQL so organization
   cascades can remove both parent trees in one transaction after managed cleanup.
   Migration `0136` enforces that cleanup requirement at the database boundary. Direct server removal
@@ -325,7 +417,7 @@ There is no continuous controller reconciliation or automatic workload failover.
 - `apps/api/src/modules/system/server-clusters.controller.ts` and
   `packages/sdk/src/server-client.ts`: thin transports over the shared operations.
 
-Cluster inventory, managed journals, and claims belong in whole-instance backups,
+Network and compute-cluster inventory, managed journals, and claims belong in whole-instance backups,
 not project or organization transfer bundles. Transient verification rows are
 excluded. Host keys remain with their servers and require host backups.
 API/native operation guards and managed workers reject Oblien-managed Cloud before host
@@ -334,9 +426,40 @@ controllers support cluster inventory and manual network verification against
 registered Linux servers. These bounded checks do not require an always-on
 controller; future continuous reconciliation does.
 
+## Resource contracts and upgrades
+
+`packages/contracts/src/infrastructure-resources.ts` defines canonical network and
+compute-cluster operations on the existing server authorization surface.
+`infrastructure-resources.operations.ts` delegates network work to the existing
+network engine and implements compute-only membership through
+`packages/db/src/repos/compute-cluster.repo.ts`. Native SDK and HTTP use the same
+validation, organization checks, idempotency and revision checks.
+
+Canonical HTTP paths are `/system/networks` (including `/preparations`, `/plans`,
+`/operations`, and `/stream`) and `/system/compute-clusters`.
+`/system/servers/:id/infrastructure` exposes only that server's associations.
+The single overview SSE includes `networks`, `computeClusters`, and `preparations`.
+Legacy `/system/clusters` API paths and its `clusters` snapshot field still refer to
+networks for compatibility. Old setup/progress page URLs redirect into Networking.
+
+Migration `0139` renames network inventory tables, adds compute pool tables, and
+converts established legacy groups into compute pools referencing their original
+networks. In-flight or unresolved managed setups remain independent networks so
+rollback can complete. Network IDs, attachment IDs, verification history, signed
+plans, hashes, leases and host receipts are preserved. Legacy TypeScript exports
+and serialized `clusterId` fields in approved plans still identify the network;
+rewriting them would invalidate recovery. Whole-instance imports accept the old
+network table names and the new ones. Infrastructure does not travel in project
+or organization transfer bundles.
+
 ## Scope of this increment
 
-This delivers native network adoption and managed WireGuard. Provider API
+This delivers independent network and compute-cluster lifecycles, shared network
+setup, expandable network groups, native adoption and managed WireGuard. Live connections between whole networks are deferred: they
+need explicit gateway selection, route/return-route management, subnet overlap
+validation, access policy, verification and an independent recovery flow. No
+inter-group connections are drawn or exposed as working actions.
+Provider API
 provisioning, vSwitch attachment, guest VLAN configuration, cross-server Docker
 and service endpoints, private service DNS, workload drain/placement/replicas,
 shared storage, additional firewall managers, and larger meshes remain in

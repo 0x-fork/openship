@@ -9,6 +9,7 @@ import {
   CircleAlert,
   Loader2,
   Minus,
+  PauseCircle,
 } from "lucide-react";
 import type { ManagedNetworkSetupLog, ManagedNetworkStepProgress } from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
@@ -50,7 +51,7 @@ export function NetworkSetupProgress({
   openHost?: { serverId: string } | null;
 }) {
   const { t } = useI18n();
-  const m = t.servers.clusters.managed;
+  const m = t.servers.networks.managed;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   useEffect(() => {
     if (openHost) setExpanded((old) => ({ ...old, [openHost.serverId]: true }));
@@ -72,6 +73,7 @@ export function NetworkSetupProgress({
       {hosts.map((host) => {
         const failed = host.steps.find((step) => step.status === "failed");
         const current = host.steps.find((step) => step.status === "running");
+        const stopped = !running && !!current;
         const done = host.steps.filter(
           (step) => step.status === "completed" || step.status === "skipped",
         ).length;
@@ -80,9 +82,11 @@ export function NetworkSetupProgress({
           ? CircleAlert
           : running && current
             ? Loader2
-            : complete
-              ? CheckCircle2
-              : Circle;
+            : stopped
+              ? PauseCircle
+              : complete
+                ? CheckCircle2
+                : Circle;
         const open =
           expanded[host.serverId] ??
           (!initiallyCollapsed && (hosts.length <= 3 || host.serverId === hosts[0]?.serverId));
@@ -125,10 +129,12 @@ export function NetworkSetupProgress({
                       ? m.setupSteps[failed.id]
                       : running && current
                         ? m.setupSteps[current.id]
-                        : interpolate(m.completedSteps, {
-                            done: String(done),
-                            total: String(host.steps.length),
-                          })}
+                        : stopped
+                          ? m.stepStatus.interrupted
+                          : interpolate(m.completedSteps, {
+                              done: String(done),
+                              total: String(host.steps.length),
+                            })}
                   </span>
                 </span>
                 <ChevronDown
@@ -146,7 +152,8 @@ export function NetworkSetupProgress({
             {open && (
               <ol id={`network-steps-${host.serverId}`} className="mt-5 space-y-1">
                 {host.steps.map((step) => {
-                  const effective = step.status === "running" && !running ? "pending" : step.status;
+                  const effective =
+                    step.status === "running" && !running ? "interrupted" : step.status;
                   const StepIcon =
                     effective === "completed"
                       ? CheckCircle2
@@ -154,9 +161,11 @@ export function NetworkSetupProgress({
                         ? CircleAlert
                         : effective === "running"
                           ? Loader2
-                          : effective === "skipped"
-                            ? Minus
-                            : Circle;
+                          : effective === "interrupted"
+                            ? PauseCircle
+                            : effective === "skipped"
+                              ? Minus
+                              : Circle;
                   return (
                     <li
                       key={step.id}

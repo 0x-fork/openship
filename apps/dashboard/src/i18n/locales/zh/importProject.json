@@ -123,6 +123,7 @@
     "noneSet": "未设置",
     "pasteEnv": "粘贴 .env",
     "uploadEnv": "上传 .env",
+    "downloadEnv": "下载 .env",
     "edit": "编辑",
     "cancel": "取消",
     "saving": "正在保存……",
@@ -144,6 +145,7 @@
       "interpolated": "已插值"
     },
     "toast": {
+      "downloadFailed": "无法下载环境变量。",
       "title": "环境变量",
       "added": "已添加 {count} 个",
       "updated": "已更新 {count} 个",

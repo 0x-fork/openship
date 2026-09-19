@@ -18,20 +18,25 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { getApiErrorMessage } from "@/lib/api";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { privateNetworksApi } from "@/lib/api/private-networks";
 import { NetworkSetupProgress } from "./NetworkSetupProgress";
 import { NetworkSetupTopology } from "./NetworkSetupTopology";
-import { MANAGED_NETWORK_PORT } from "@repo/core";
+import {
+  MANAGED_NETWORK_PORT,
+  fullNetworkAccess,
+  normalizeNetworkAccess,
+  type NetworkAccessPolicy,
+} from "@repo/core";
+import { randomUUID } from "@/lib/random-uuid";
 import { useNetworkSetup } from "@/hooks/useNetworkSetup";
 import { NetworkStreamNotice } from "./NetworkStreamNotice";
 import { NetworkPreparationActions } from "./NetworkPreparationActions";
 import { RemoveSetupServerButton } from "./RemoveSetupServerButton";
 import { NetworkSetupCleanup } from "./NetworkSetupCleanup";
-import { ManagedNetworkTransportNotice } from "./ManagedNetworkTransportNotice";
 
 export function ManagedNetworkPreparationPage({ id }: { id: string }) {
   const { t } = useI18n();
-  const c = t.servers.clusters;
+  const c = t.servers.networks;
   const m = c.managed;
   const router = useRouter();
   const { selfHosted, deployMode } = usePlatform();
@@ -45,11 +50,42 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const actionPending = useRef(false);
+  const [connectionDraft, setConnectionDraft] = useState<{
+    preparationId: string;
+    access: NetworkAccessPolicy;
+  } | null>(null);
+  const connectionRequest = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [openHost, setOpenHost] = useState<{ serverId: string } | null>(null);
+  useEffect(() => {
+    actionPending.current = false;
+    setBusy(false);
+    setConnectionDraft(null);
+    connectionRequest.current = null;
+  }, [id]);
   const running = preparation?.status === "preparing";
   const waiting = preparation?.status === "pending";
   const paused = waiting && !preparation?.cleanupOperationId;
+  const connectionAccess =
+    connectionDraft?.preparationId === id ? connectionDraft.access : preparation?.input.access;
+  const connectionChanges =
+    !!preparation &&
+    connectionDraft?.preparationId === id &&
+    JSON.stringify(connectionAccess) !==
+      JSON.stringify(
+        normalizeNetworkAccess(
+          preparation.input.access ??
+            fullNetworkAccess(preparation.input.members.map((member) => member.serverId)),
+          preparation.input.members.map((member) => member.serverId),
+        ),
+      );
+  const canDesignConnections =
+    !!capabilities?.canManage &&
+    !!preparation &&
+    preparation.input.intent !== "remove" &&
+    preparation.status !== "cancelled" &&
+    !preparation.replacementPreparationId &&
+    !preparation.cleanupOperationId;
   const members =
     preparation?.input.members.map((member) => {
       const host = preparation.hosts.find((item) => item.serverId === member.serverId);
@@ -78,7 +114,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
   useEffect(() => {
     if (!eligible) return;
     let active = true;
-    void serverClustersApi
+    void privateNetworksApi
       .capabilities()
       .then((caps) => {
         if (active) {
@@ -93,13 +129,53 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
       active = false;
     };
   }, [id, eligible, attempt]);
+  const saveConnections = async () => {
+    if (
+      !preparation ||
+      !connectionChanges ||
+      !connectionAccess ||
+      !canDesignConnections ||
+      running ||
+      actionPending.current
+    )
+      return;
+    actionPending.current = true;
+    setBusy(true);
+    setError(null);
+    const fingerprint = JSON.stringify({ id, access: connectionAccess });
+    if (connectionRequest.current?.fingerprint !== fingerprint)
+      connectionRequest.current = { fingerprint, requestId: randomUUID() };
+    const requestId = connectionRequest.current.requestId;
+    let navigating = false;
+    try {
+      const next = await privateNetworksApi.reviseConnections({
+        preparationId: id,
+        sequence: preparation.sequence,
+        requestId,
+        access: connectionAccess,
+      });
+      router.push(`/servers/networks/preparations/${next.id}`);
+      navigating = true;
+    } catch (err) {
+      const saved = await privateNetworksApi.managedPreparation(requestId).catch(() => null);
+      if (saved?.id === requestId) {
+        router.push(`/servers/networks/preparations/${saved.id}`);
+        navigating = true;
+      } else setError(getApiErrorMessage(err));
+    } finally {
+      if (!navigating) {
+        actionPending.current = false;
+        setBusy(false);
+      }
+    }
+  };
   const retry = useCallback(async () => {
     if (!preparation || actionPending.current || !capabilities?.canManage) return;
     actionPending.current = true;
     setBusy(true);
     setError(null);
     try {
-      setPreparation(await serverClustersApi.prepareManaged(preparation.input));
+      setPreparation(await privateNetworksApi.prepareManaged(preparation.input));
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
@@ -109,8 +185,8 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
     }
   }, [preparation, busy, capabilities, setPreparation, stream.reconnect]);
   const edit = preparation?.input.clusterId
-    ? `/servers/clusters/${encodeURIComponent(preparation.input.clusterId)}/edit`
-    : "/servers/clusters/new";
+    ? `/servers/networks/${encodeURIComponent(preparation.input.clusterId)}/edit`
+    : "/servers/networks/new";
   return (
     <PageContainer>
       <section
@@ -118,7 +194,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
         aria-labelledby="network-preparation-title"
       >
         <Link
-          href="/servers?tab=cluster"
+          href="/servers?tab=networking"
           className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4 rtl:rotate-180" />
@@ -138,14 +214,14 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
               preparation={preparation}
               name={preparation.input.name}
               canManage={!!capabilities?.canManage}
-              disabled={busy}
+              disabled={busy || connectionChanges}
               onBusyChange={(pending) => {
                 actionPending.current = pending;
                 setBusy(pending);
               }}
               onDiscarded={(next) => {
                 setPreparation(next);
-                router.replace("/servers?tab=cluster");
+                router.replace("/servers?tab=networking");
               }}
               onRefresh={stream.reconnect}
             />
@@ -190,6 +266,13 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                   <div className="min-w-0 space-y-5">
                     <NetworkSetupTopology
                       preparation
+                      network={{ mode: "wireguard", access: connectionAccess }}
+                      onAccessChange={
+                        canDesignConnections
+                          ? (access) => setConnectionDraft({ preparationId: id, access })
+                          : undefined
+                      }
+                      accessDisabled={busy}
                       members={members}
                       hosts={preparation.hosts}
                       running={running}
@@ -197,7 +280,6 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                       completeLabel={m.preparationStatus.ready}
                       onHostSelect={(serverId) => setOpenHost({ serverId })}
                     />
-                    <ManagedNetworkTransportNotice endpoints={members} />
                     <NetworkSetupProgress
                       initiallyCollapsed
                       openHost={openHost}
@@ -211,7 +293,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                                 serverId={host.serverId}
                                 name={host.name}
                                 memberCount={preparation.input.members.length}
-                                disabled={busy}
+                                disabled={busy || connectionChanges}
                                 onRefresh={stream.reconnect}
                               />
                             )
@@ -224,7 +306,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                   <div role="status" className="flex items-center gap-2 text-sm font-semibold">
                     {running ? (
                       <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-                    ) : waiting ? (
+                    ) : waiting || preparation.status === "interrupted" ? (
                       <PauseCircle className="size-4 shrink-0 text-muted-foreground" />
                     ) : preparation.status === "cancelled" ? (
                       <CheckCircle2 className="size-4 shrink-0 text-muted-foreground" />
@@ -235,6 +317,34 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                     )}
                     {m.preparationStatus[preparation.status]}
                   </div>
+                  {connectionChanges && canDesignConnections && (
+                    <div className="space-y-3 rounded-xl bg-primary/5 p-4">
+                      <p className="text-sm font-medium">{c.access.unsaved}</p>
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        {running ? c.access.preparingHint : c.access.saveHint}
+                      </p>
+                      <Button
+                        className="h-auto min-h-10 w-full whitespace-normal py-2"
+                        disabled={busy || running}
+                        aria-busy={busy}
+                        onClick={() => void saveConnections()}
+                      >
+                        {busy && <Loader2 className="size-4 animate-spin" />}
+                        {busy ? c.access.saving : c.access.save}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full"
+                        disabled={busy}
+                        onClick={() => {
+                          setConnectionDraft(null);
+                          setError(null);
+                        }}
+                      >
+                        {c.access.discard}
+                      </Button>
+                    </div>
+                  )}
                   <ol className="space-y-3 text-sm" aria-label={c.setupSteps}>
                     {[m.preparationTitle, c.stepReview, m.apply, m.status.verifying].map(
                       (label, index) => (
@@ -275,7 +385,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                   {preparation.replacementPreparationId && (
                     <Button asChild className="h-auto min-h-10 w-full whitespace-normal py-2">
                       <Link
-                        href={`/servers/clusters/preparations/${preparation.replacementPreparationId}`}
+                        href={`/servers/networks/preparations/${preparation.replacementPreparationId}`}
                       >
                         {m.viewUpdatedSetup}
                         <ArrowRight className="size-4 rtl:rotate-180" />
@@ -285,7 +395,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                   {waiting && !preparation.cleanupOperationId && capabilities?.canManage && (
                     <Button
                       onClick={() => void retry()}
-                      disabled={busy}
+                      disabled={busy || connectionChanges}
                       className="h-auto min-h-10 w-full whitespace-normal py-2"
                     >
                       {busy ? (
@@ -296,20 +406,22 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                       {m.retryPreparation}
                     </Button>
                   )}
-                  {preparation.status === "ready" && preparation.operationId && (
-                    <Button asChild className="h-auto min-h-10 w-full whitespace-normal py-2">
-                      <Link href={`/servers/clusters/operations/${preparation.operationId}`}>
-                        {m.reviewNetwork}
-                        <ArrowRight className="size-4 rtl:rotate-180" />
-                      </Link>
-                    </Button>
-                  )}
+                  {preparation.status === "ready" &&
+                    preparation.operationId &&
+                    !connectionChanges && (
+                      <Button asChild className="h-auto min-h-10 w-full whitespace-normal py-2">
+                        <Link href={`/servers/networks/operations/${preparation.operationId}`}>
+                          {m.reviewNetwork}
+                          <ArrowRight className="size-4 rtl:rotate-180" />
+                        </Link>
+                      </Button>
+                    )}
                   {capabilities?.canManage &&
                     (preparation.status === "failed" || preparation.status === "interrupted") && (
                       <div className="space-y-2">
                         <Button
                           onClick={() => void retry()}
-                          disabled={busy}
+                          disabled={busy || connectionChanges}
                           className="h-auto min-h-10 w-full whitespace-normal py-2"
                         >
                           {busy ? (
@@ -344,7 +456,7 @@ export function ManagedNetworkPreparationPage({ id }: { id: string }) {
                       className="w-full"
                       variant={preparation.replacementPreparationId ? "ghost" : "default"}
                     >
-                      <Link href="/servers?tab=cluster">{m.closeSetup}</Link>
+                      <Link href="/servers?tab=networking">{m.closeSetup}</Link>
                     </Button>
                   )}
                 </aside>

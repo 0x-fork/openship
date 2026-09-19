@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import {
   AppError,
   NotFoundError,
@@ -6,6 +6,7 @@ import {
   MANAGED_NETWORK_LEASE_MS,
   infrastructureCidr,
   networkReportSucceeded,
+  nativeNetworkSource,
   managedNetworkInProgress,
   type NativeClusterConfig,
   type ClusterNetworkReport,
@@ -30,6 +31,7 @@ import {
   servers,
 } from "../schema";
 import { discardNetworkSetup } from "./network-setup-discard";
+import { assertNetworkDependencies } from "./compute-cluster.repo";
 
 export type ClusterVerificationRecord = typeof clusterVerification.$inferSelect;
 export type ManagedNetworkOperationRecord = typeof managedNetworkOperation.$inferSelect;
@@ -62,28 +64,39 @@ export function createServerClusterRepo(db: Database) {
       await tx.execute(sql`select pg_advisory_xact_lock(${key})`);
   }
 
-  async function expire(tx: Database | DatabaseTransaction, clusterId: string) {
-    await tx
+  async function interruptVerification(
+    tx: Database | DatabaseTransaction,
+    condition: SQL | undefined,
+    error: string,
+  ) {
+    const rows = await tx
       .update(clusterVerification)
       .set({
         status: "interrupted",
         finishedAt: new Date(),
-        error: "Verification was interrupted. Run it again.",
+        error,
       })
-      .where(
-        and(
-          eq(clusterVerification.clusterId, clusterId),
-          eq(clusterVerification.status, "running"),
-          lte(clusterVerification.expiresAt, new Date()),
-        ),
-      );
+      .where(and(eq(clusterVerification.status, "running"), condition))
+      .returning();
+    return rows.map(({ id, clusterId }) => ({ id, clusterId }));
+  }
+
+  async function expire(tx: Database | DatabaseTransaction, clusterId: string) {
+    await interruptVerification(
+      tx,
+      and(
+        eq(clusterVerification.clusterId, clusterId),
+        lte(clusterVerification.expiresAt, new Date()),
+      ),
+      "Verification was interrupted. Run it again.",
+    );
   }
 
   async function lock(tx: DatabaseTransaction, org: string, id: string, revision: number) {
     const [row] = await tx.select().from(serverCluster).where(owned(org, id)).for("update");
-    if (!row) throw new NotFoundError("Cluster", id);
+    if (!row) throw new NotFoundError("Network", id);
     if (row.revision !== revision)
-      throw conflict("The cluster changed. Reload it before continuing.");
+      throw conflict("The network changed. Reload it before continuing.");
     await expire(tx, id);
     return row;
   }
@@ -136,17 +149,6 @@ export function createServerClusterRepo(db: Database) {
       .orderBy(servers.id)
       .for("update");
     if (found.length !== config.members.length) throw new NotFoundError("Server");
-    const memberships = await tx
-      .select()
-      .from(clusterMember)
-      .where(
-        inArray(
-          clusterMember.serverId,
-          config.members.map((m) => m.serverId),
-        ),
-      );
-    if (memberships.some((m) => m.clusterId !== existingId))
-      throw conflict("A selected server already belongs to a cluster.");
     const claims = await tx
       .select()
       .from(managedNetworkClaim)
@@ -164,7 +166,7 @@ export function createServerClusterRepo(db: Database) {
     await expireManaged(db, org, id);
     return db.transaction(async (tx) => {
       const [row] = await tx.select().from(serverCluster).where(owned(org, id)).for("share");
-      if (!row) throw new NotFoundError("Cluster", id);
+      if (!row) throw new NotFoundError("Network", id);
       await expire(tx, id);
       const [network] = await tx
         .select()
@@ -251,28 +253,43 @@ export function createServerClusterRepo(db: Database) {
     );
   }
 
+  async function interruptOperation(
+    tx: Database | DatabaseTransaction,
+    condition: SQL | undefined,
+    error: string,
+  ) {
+    const rows = await tx
+      .update(managedNetworkOperation)
+      .set({
+        status: "interrupted",
+        sequence: sql`${managedNetworkOperation.sequence} + 1`,
+        leaseExpiresAt: null,
+        error,
+        updatedAt: new Date(),
+      })
+      .where(and(inArray(managedNetworkOperation.status, runningStates), condition))
+      .returning();
+    return rows.map(({ id, organizationId }) => ({ id, organizationId }));
+  }
+  const expiredManagedLease = () =>
+    or(
+      isNull(managedNetworkOperation.leaseExpiresAt),
+      lte(managedNetworkOperation.leaseExpiresAt, new Date()),
+    );
   async function expireManaged(
     tx: Database | DatabaseTransaction,
     org: string,
     clusterId?: string,
   ) {
-    await tx
-      .update(managedNetworkOperation)
-      .set({
-        status: "interrupted",
-        sequence: sql`${managedNetworkOperation.sequence} + 1`,
-        error:
-          "The controller stopped reporting progress. Resume or restore this operation; each host also has a local rollback deadline.",
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(managedNetworkOperation.organizationId, org),
-          clusterId ? eq(managedNetworkOperation.clusterId, clusterId) : undefined,
-          inArray(managedNetworkOperation.status, runningStates),
-          lte(managedNetworkOperation.leaseExpiresAt, new Date()),
-        ),
-      );
+    await interruptOperation(
+      tx,
+      and(
+        eq(managedNetworkOperation.organizationId, org),
+        clusterId ? eq(managedNetworkOperation.clusterId, clusterId) : undefined,
+        expiredManagedLease(),
+      ),
+      "The controller stopped reporting progress. Resume or restore this operation; each host also has a local rollback deadline.",
+    );
   }
 
   async function getOperation(org: string, id: string) {
@@ -298,6 +315,47 @@ export function createServerClusterRepo(db: Database) {
 
   return {
     get,
+    /** Never expire another live controller's work on a shared PostgreSQL database. */
+    async recoverInterrupted(exclusive: boolean) {
+      return db.transaction(async (tx) => {
+        const operations = await interruptOperation(
+          tx,
+          exclusive ? undefined : expiredManagedLease(),
+          exclusive
+            ? "OpenShip restarted before network setup finished. Resume or restore this operation to check the host recovery state; host rollback timers run independently."
+            : "The controller stopped reporting progress. Resume or restore this operation; each host also has a local rollback deadline.",
+        );
+        const interrupted = await interruptVerification(
+          tx,
+          exclusive ? undefined : lte(clusterVerification.expiresAt, new Date()),
+          exclusive
+            ? "OpenShip restarted during network verification. Run the checks again."
+            : "Verification was interrupted. Run it again.",
+        );
+        const verifications = interrupted.length
+          ? await tx
+              .select({ organizationId: serverCluster.organizationId })
+              .from(serverCluster)
+              .where(
+                inArray(
+                  serverCluster.id,
+                  interrupted.map((run) => run.clusterId),
+                ),
+              )
+          : [];
+        return { operations, verifications };
+      });
+    },
+    async interruptOperation(id: string, generation: number, error: string) {
+      return interruptOperation(
+        db,
+        and(eq(managedNetworkOperation.id, id), eq(managedNetworkOperation.generation, generation)),
+        error,
+      );
+    },
+    async interruptVerification(id: string, error: string) {
+      return interruptVerification(db, eq(clusterVerification.id, id), error);
+    },
     async list(org: string) {
       const rows = await db
         .select({ id: serverCluster.id })
@@ -311,15 +369,16 @@ export function createServerClusterRepo(db: Database) {
       // the friendly auth preflight and Better Auth's subsequent DELETE.
       const [row] = await db
         .select({ active: sql<boolean>`openship_has_managed_network_state(${org})` })
-        .from(organization).where(eq(organization.id, org));
+        .from(organization)
+        .where(eq(organization.id, org));
       return row?.active ?? false;
     },
-    async membership(serverId: string) {
+    async membership(serverId: string, reservationsOnly = false) {
       const [row] = await db
         .select()
         .from(clusterMember)
         .where(eq(clusterMember.serverId, serverId));
-      if (row) return row;
+      if (row && !reservationsOnly) return row;
       const [claim] = await db
         .select()
         .from(managedNetworkClaim)
@@ -333,6 +392,8 @@ export function createServerClusterRepo(db: Database) {
           }
         : null;
     },
+    assertDependencies: (org: string, id: string, serverIds?: string[]) =>
+      assertNetworkDependencies(db, org, id, serverIds),
     async create(org: string, config: NativeClusterConfig, requestId: string, inputHash: string) {
       const id = await db.transaction(async (tx) => {
         const [created] = await tx
@@ -360,7 +421,7 @@ export function createServerClusterRepo(db: Database) {
         await assertMembers(tx, org, config);
         const [network] = await tx
           .insert(clusterNetwork)
-          .values({ clusterId: created.id, ...config.network })
+          .values({ clusterId: created.id, ...config.network, source: nativeNetworkSource(config) })
           .returning();
         await writeMembers(tx, created.id, network!.id, config);
         return created.id;
@@ -373,13 +434,14 @@ export function createServerClusterRepo(db: Database) {
         await nativeOnly(tx, id);
         await assertIdle(tx, id);
         await assertMembers(tx, org, config, id);
+        await assertNetworkDependencies(tx, org, id, config.members.map((member) => member.serverId));
         const members = await tx
           .select()
           .from(clusterMember)
           .where(eq(clusterMember.clusterId, id));
         const [network] = await tx
           .update(clusterNetwork)
-          .set(config.network)
+          .set({ ...config.network, source: nativeNetworkSource(config) })
           .where(eq(clusterNetwork.clusterId, id))
           .returning();
         await tx
@@ -410,6 +472,7 @@ export function createServerClusterRepo(db: Database) {
         await lock(tx, org, id, revision);
         await nativeOnly(tx, id);
         await assertIdle(tx, id);
+        await assertNetworkDependencies(tx, org, id);
         // Native networks are externally owned. This removes inventory only.
         await tx.delete(serverCluster).where(owned(org, id));
       });
@@ -434,7 +497,7 @@ export function createServerClusterRepo(db: Database) {
               members.some((member) => member.serverId === serverId),
             )
           )
-            throw conflict("Choose two different members of this cluster for the speed test.");
+            throw conflict("Choose two different members of this network for the speed test.");
         }
         const [active] = await tx
           .select()
@@ -506,8 +569,8 @@ export function createServerClusterRepo(db: Database) {
           const [other] = await tx
             .select()
             .from(clusterMember)
-            .where(eq(clusterMember.hostIdentity, identity));
-          if (other && other.id !== member?.id)
+            .where(and(eq(clusterMember.hostIdentity, identity), ne(clusterMember.serverId, serverId)));
+          if (other)
             throw conflict(
               "This physical server is already enrolled through another server entry.",
             );
@@ -683,7 +746,10 @@ export function createServerClusterRepo(db: Database) {
           throw conflict("This operation needs an explicit resume or restore action.");
         if (new Set(plan.hosts.map((host) => host.hostIdentity)).size !== plan.hosts.length)
           throw conflict("Two server entries point to the same physical host.");
-        await lockHostIdentities(tx, plan.hosts.map((host) => host.hostIdentity));
+        await lockHostIdentities(
+          tx,
+          plan.hosts.map((host) => host.hostIdentity),
+        );
         for (const host of plan.hosts) {
           const memberships = await tx
             .select()
@@ -728,7 +794,7 @@ export function createServerClusterRepo(db: Database) {
             )
           )
             throw conflict(
-              "Another cluster reserved this range after planning. Inspect and review a new plan.",
+              "Another network reserved this range after planning. Inspect and review a new plan.",
             );
         }
         if (plan.baseRevision !== null) {
@@ -761,9 +827,11 @@ export function createServerClusterRepo(db: Database) {
               new Map(plan.hosts.map((host) => [host.serverId, host.hostIdentity])),
             );
           } else if (existing.requestId !== operation.id || existing.revision !== 1)
-            throw conflict("The cluster changed after planning.");
+            throw conflict("The network changed after planning.");
         }
         await assertIdle(tx, plan.clusterId, operation.id);
+        if (action !== "rollback")
+          await assertNetworkDependencies(tx, org, plan.clusterId, plan.intent === "remove" ? undefined : plan.config.members.map((member) => member.serverId));
         // Keep former members reserved until their owned network has been removed.
         const allMembers = plan.hosts.map((host) => ({
           ...(plan.config.members.find((member) => member.serverId === host.serverId) ??
@@ -869,7 +937,10 @@ export function createServerClusterRepo(db: Database) {
           .for("update");
         if (!operation) throw conflict("This network worker no longer owns the operation.");
         const plan = operation.plan;
-        await lockHostIdentities(tx, plan.hosts.map((host) => host.hostIdentity));
+        await lockHostIdentities(
+          tx,
+          plan.hosts.map((host) => host.hostIdentity),
+        );
         const expected = outcome === "succeeded" ? "committed" : "rolled_back";
         if (
           hosts.length !== plan.hosts.length ||
@@ -896,7 +967,7 @@ export function createServerClusterRepo(db: Database) {
             throw conflict("Each member needs its host-generated public key.");
           const [network] = await tx
             .update(clusterNetwork)
-            .set({ ...config.network, ownership: "openship" })
+            .set({ ...config.network, source: null, ownership: "openship" })
             .where(eq(clusterNetwork.clusterId, plan.clusterId))
             .returning();
           if (!network) throw conflict("The cluster network is missing.");
@@ -926,6 +997,7 @@ export function createServerClusterRepo(db: Database) {
             !networkReportSucceeded(
               report,
               config.members.map((member) => member.serverId),
+              config.network.access,
             )
           )
             throw conflict("A managed network needs a successful, complete connectivity report.");

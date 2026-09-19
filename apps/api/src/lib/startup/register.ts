@@ -13,8 +13,11 @@ import { registerInfraReconcile } from "./infra-reconcile";
 import { registerAppServiceRowReconcile } from "@repo/platform/engine/modules/services/service.service";
 import { registerCustomCommandRestoreBackfill } from "@repo/platform/engine/modules/backups/restore-command-backfill";
 import { registerCredentialBackfill } from "./credential-backfill";
+import { registerNetworkSetupRecovery } from "@repo/platform/engine/lib/startup/network-setups";
 
 export function registerStartupHooks(): void {
+  // Persist stopped preparation/apply/check runs before serving saved progress.
+  registerNetworkSetupRecovery();
   // Desktop: re-open saved port-forward tunnels marked auto-start.
   registerTunnelAutostart();
   // Self-app: reconcile the control-plane adopt deployment + route/port/cert +

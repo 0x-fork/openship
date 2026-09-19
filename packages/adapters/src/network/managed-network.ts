@@ -5,6 +5,8 @@ import {
   MANAGED_NETWORK_ROLLBACK_SECONDS,
   validateWireGuardCluster,
   validWireGuardEndpoint,
+  networkAccessAllowed,
+  networkTransportPeers,
   type ManagedNetworkObservation,
   type ManagedNetworkPlanHost,
   type WireGuardClusterConfig,
@@ -43,12 +45,14 @@ export interface ManagedHostIdentity {
   endpoint: string;
   listenPort: number;
   transportEndpoints?: string[];
+  accessControlled?: boolean;
 }
 export interface ManagedHostTransaction {
   managedId: string;
   operationId: string;
   generation: number;
   host: ManagedNetworkPlanHost;
+  accessControlled?: boolean;
 }
 export interface ManagedHostReceipt {
   operationId: string;
@@ -216,6 +220,7 @@ async function transact(
     expectedConfigHash: transaction.host.configHash,
     stateDir: access.ops.stateDir(),
     firewallInspect: access.firewall.inspect,
+    requireIptables: !!transaction.accessControlled && access.profile.firewall !== "nftables",
     ...extra,
   });
   return receipt(result, transaction);
@@ -227,11 +232,7 @@ async function peerStatus(
   expectedPeers: readonly string[],
   waitSeconds: number,
 ): Promise<ManagedPeerStatus> {
-  if (
-    expectedPeers.length < 1 ||
-    expectedPeers.length > 15 ||
-    new Set(expectedPeers).size !== expectedPeers.length
-  )
+  if (expectedPeers.length > 15 || new Set(expectedPeers).size !== expectedPeers.length)
     throw new PrivateNetworkError("Invalid WireGuard peer selection.");
   const access = await hostAccess(executor, managedId);
   const result = await run<ManagedPeerStatus>(
@@ -294,7 +295,7 @@ async function applyHostConfig(
     validateWireGuardCluster(config);
     const member = config.members.find((member) => member.serverId === transaction.host.serverId);
     if (!member) throw new PrivateNetworkError("This server is absent from the reviewed network.");
-    const peers = config.members.filter((peer) => peer.serverId !== member.serverId);
+    const peers = networkTransportPeers(config.members, member.serverId, config.network.access);
     if (peers.some((peer) => !peer.publicKey))
       throw new PrivateNetworkError("Every peer needs a host-generated public key before apply.");
     const rules = managedNetworkFirewall(
@@ -303,6 +304,21 @@ async function applyHostConfig(
       config.network.interfaceName,
       member.listenPort,
       peers,
+      config.network.access
+        ? {
+            privateIp: member.privateIp,
+            incoming: peers
+              .filter((peer) =>
+                networkAccessAllowed(config.network.access, peer.serverId, member.serverId),
+              )
+              .map((peer) => peer.privateIp),
+            outgoing: peers
+              .filter((peer) =>
+                networkAccessAllowed(config.network.access, member.serverId, peer.serverId),
+              )
+              .map((peer) => peer.privateIp),
+          }
+        : undefined,
     );
     if (!rules.supported) throw new PrivateNetworkError(rules.reason);
     hostConfig = {
@@ -313,6 +329,7 @@ async function applyHostConfig(
       listenPort: member.listenPort,
       peers,
       firewall: rules.value,
+      ...(config.network.access ? { routeCidrs: config.network.cidrs } : {}),
       ...(transportOnly ? { transportOnly: true } : {}),
     };
   }
@@ -322,7 +339,7 @@ async function applyHostConfig(
   return result;
 }
 
-/** A full mesh driver; authorization, inventory locks and journaling belong to the engine. */
+/** Managed WireGuard driver; authorization, inventory locks and journaling belong to the engine. */
 export const managedNetworkTools = {
   /** Package bootstrap runs before the Python inspector, through the shared toolchain. */
   async prepareHost(
@@ -330,6 +347,7 @@ export const managedNetworkTools = {
     managedId: string,
     observer: ManagedNetworkPreparationObserver,
     signal?: AbortSignal,
+    accessControlled = false,
   ): Promise<void> {
     let current: ManagedNetworkStepId = "host";
     try {
@@ -369,6 +387,42 @@ export const managedNetworkTools = {
         }
         await observer.step(current, "completed", status.message);
       }
+      current = "firewall";
+      if (accessControlled) {
+        await observer.step(current, "running");
+        if (access.profile.firewall !== "nftables") {
+          let status = await checkTool(access.root, "iptables", { minVersion: "1.8" });
+          if (!status.healthy) {
+            const installed = await installTool(
+              executor,
+              "iptables",
+              (entry) => observer.log("firewall", entry),
+              "1.8",
+              { signal },
+            );
+            if (!installed.success)
+              throw new PrivateNetworkError(
+                installed.error || "Could not install the connection-policy firewall.",
+                "MANAGED_NETWORK_INSTALL_FAILED",
+              );
+            status = await checkTool(access.root, "iptables", { minVersion: "1.8" });
+            if (!status.healthy)
+              throw new PrivateNetworkError(status.message, "MANAGED_NETWORK_INSTALL_FAILED");
+          }
+          await access.root.exec("iptables -m conntrack --help", { timeout: 20_000 });
+        }
+        await observer.step(
+          current,
+          "completed",
+          "Stateful firewall tools are available for the selected private connection policy.",
+        );
+      } else {
+        await observer.step(
+          current,
+          "skipped",
+          "The existing full-mesh policy does not need additional firewall tools.",
+        );
+      }
       current = "kernel";
       await observer.step(current, "running");
       const result = await run<{ ready: boolean }>(access.root, "prerequisites", {
@@ -406,6 +460,7 @@ export const managedNetworkTools = {
         interfaceName: managedInterfaceName(identity.managedId),
         stateDir: access.ops.stateDir(),
         firewallInspect: access.firewall.inspect,
+        requireIptables: !!identity.accessControlled && access.profile.firewall !== "nftables",
       },
       60_000,
     );
@@ -415,7 +470,7 @@ export const managedNetworkTools = {
       !Array.isArray(result.routes) ||
       !Array.isArray(result.reservedIps) ||
       !Array.isArray(result.packages) ||
-      result.packages.some((name) => name !== "wireguard-tools") ||
+      result.packages.some((name) => !["wireguard-tools", "iptables"].includes(name)) ||
       !Number.isInteger(result.transportMtu)
     )
       throw new PrivateNetworkError("The host returned an invalid managed network inspection.");
@@ -435,18 +490,23 @@ export const managedNetworkTools = {
     signal?: AbortSignal,
   ): Promise<void> {
     if (packages.length === 0) return;
-    if (packages.some((name) => name !== "wireguard-tools"))
+    if (packages.some((name) => !["wireguard-tools", "iptables"].includes(name)))
       throw new PrivateNetworkError("Unrecognized managed network prerequisite.");
     const access = await hostAccess(executor, managedId);
-    const current = await checkTool(access.root, "wireguard-tools", { minVersion: "1.0" });
-    if (current.healthy) return;
-    const result = await installTool(executor, "wireguard-tools", onLog, "1.0", { signal });
-    if (!result.success) {
-      throw new PrivateNetworkError(
-        result.error ||
-          "WireGuard tools could not be installed. Check the server's package repositories, then resume the operation.",
-        "MANAGED_NETWORK_INSTALL_FAILED",
-      );
+    for (const name of packages) {
+      const minimum = name === "iptables" ? "1.8" : "1.0";
+      const current = await checkTool(access.root, name, { minVersion: minimum });
+      if (current.healthy) continue;
+      const result = await installTool(executor, name, onLog, minimum, { signal });
+      if (!result.success)
+        throw new PrivateNetworkError(
+          result.error ||
+            `${name} could not be installed. Check the server's package repositories, then resume.`,
+          "MANAGED_NETWORK_INSTALL_FAILED",
+        );
+      const installed = await checkTool(access.root, name, { minVersion: minimum });
+      if (!installed.healthy)
+        throw new PrivateNetworkError(installed.message, "MANAGED_NETWORK_INSTALL_FAILED");
     }
   },
 

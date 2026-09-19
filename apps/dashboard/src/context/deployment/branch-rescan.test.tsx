@@ -11,6 +11,8 @@ import type { PrepareProjectResponse } from "@/lib/api/deploy";
 import type { DeploymentContextType } from "./types";
 import { useDeploymentConfig } from "./useDeploymentConfig";
 import { useDeploymentBuild } from "./useDeploymentBuild";
+import { ApiError } from "@/lib/api/client";
+import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
 
 const api = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -23,10 +25,16 @@ const api = vi.hoisted(() => ({
   ensure: vi.fn(),
   buildAccess: vi.fn(),
   showToast: vi.fn(),
+  showModal: vi.fn(),
+  hideModal: vi.fn(),
+  push: vi.fn(),
+  buildRedeploy: vi.fn(),
+  selfHosted: true,
+  query: "mode=config",
 }));
 
 vi.mock("@/lib/api", () => ({
-  deployApi: { prepare: api.prepare, buildAccess: api.buildAccess },
+  deployApi: { prepare: api.prepare, buildAccess: api.buildAccess, buildRedeploy: api.buildRedeploy },
   projectsApi: {
     getInfo: api.getInfo,
     getEnv: api.getEnv,
@@ -48,12 +56,12 @@ vi.mock("@/context/CloudContext", () => ({
   useCloud: () => ({ requireCloud: async () => true }),
 }));
 vi.mock("@/context/PlatformContext", () => ({
-  usePlatform: () => ({ selfHosted: true, baseDomain: "example.test" }),
-  canUseCloudConnection: () => true,
+  usePlatform: () => ({ selfHosted: api.selfHosted, baseDomain: "example.test" }),
+  canUseCloudConnection: () => api.selfHosted,
 }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: api.showToast }) }));
 vi.mock("@/context/ModalContext", () => ({
-  useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }),
+  useModal: () => ({ showModal: api.showModal, hideModal: api.hideModal }),
 }));
 vi.mock("@/components/i18n-provider", () => ({
   useI18n: () => ({ t: baseDictionary }),
@@ -61,8 +69,8 @@ vi.mock("@/components/i18n-provider", () => ({
     text.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? key),
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
-  useSearchParams: () => new URLSearchParams("mode=config"),
+  useRouter: () => ({ push: api.push }),
+  useSearchParams: () => new URLSearchParams(api.query),
 }));
 vi.mock("@/context/GitHubContext", () => ({ useGitHub: () => ({ state: {} }) }));
 vi.mock("@/components/github/ServerGitHubConnect", () => ({
@@ -167,6 +175,9 @@ async function selectBranch(branch: string) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  api.selfHosted = true;
+  api.query = "mode=config";
+  api.showModal.mockReturnValue("modal-1");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.getInfo.mockResolvedValue({
     data: {
@@ -475,5 +486,48 @@ describe("deploy branch detection", () => {
     expect(current.config.projectId).toBe("project-2");
     expect(current.config.repo).toBe("different");
     expect(current.config.branch).toBe("main");
+  });
+});
+
+
+describe("Cloud pricing is offered only at deployment time", () => {
+  async function configureCloud() {
+    await selectBranch("openship");
+    api.selfHosted = false;
+    api.query = "";
+    await act(async () => current.updateConfig({ deployTarget: "cloud", serverId: undefined, noPublicRoute: true }));
+  }
+  it("lets a paid Cloud deployment pass the former waitlist gate", async () => {
+    await configureCloud();
+    expect(api.showModal).not.toHaveBeenCalled();
+    expect(api.buildAccess).not.toHaveBeenCalled();
+    await act(async () => button(baseDictionary.deploy.sidebar.deploy).click());
+    expect(api.buildAccess).toHaveBeenCalledOnce();
+    expect(api.push).toHaveBeenCalledWith("/build/deployment-1");
+    expect(api.showModal).not.toHaveBeenCalled();
+  });
+  it("opens pricing after the deployment is refused and preserves configuration", async () => {
+    await configureCloud();
+    const envBefore = current.config.envVars;
+    api.buildAccess.mockRejectedValueOnce(new ApiError(402, "Payment Required", { code: "CLOUD_BILLING_BLOCKED" }));
+    await act(async () => button(baseDictionary.deploy.sidebar.deploy).click());
+    expect(api.showModal).toHaveBeenCalledOnce();
+    expect(api.showModal.mock.calls[0]![0].customContent.type).toBe(CloudDeployPlanModal);
+    expect(api.push).not.toHaveBeenCalled();
+    expect(current.config.envVars).toEqual(envBefore);
+    expect(build.state.isDeploying).toBe(false);
+  });
+  it("never opens pricing from a configuration-only save", async () => {
+    api.setOptions.mockRejectedValueOnce(new ApiError(402, "Payment Required", { code: "PLAN_UPGRADE_REQUIRED" }));
+    await act(async () => button(baseDictionary.deploy.sidebar.saveChanges).click());
+    expect(api.showModal).not.toHaveBeenCalled();
+    expect(api.buildAccess).not.toHaveBeenCalled();
+  });
+  it("handles a build-screen redeploy hitting a Cloud limit with the same pricing dialog", async () => {
+    api.buildRedeploy.mockRejectedValueOnce(new ApiError(402, "Payment Required", { code: "PLAN_UPGRADE_REQUIRED", reason: "build-minutes-exhausted" }));
+    await act(async () => { await build.redeploy("previous-build"); });
+    expect(api.showModal).toHaveBeenCalledOnce();
+    expect(api.showModal.mock.calls[0]![0].customContent.props.restriction.reason).toBe("build-minutes-exhausted");
+    expect(build.state.isDeploying).toBe(false);
   });
 });

@@ -124,6 +124,7 @@
     "noneSet": "None set",
     "pasteEnv": "Paste .env",
     "uploadEnv": "Upload .env",
+    "downloadEnv": "Download .env",
     "edit": "Edit",
     "cancel": "Cancel",
     "saving": "Saving...",
@@ -145,6 +146,7 @@
       "interpolated": "Interpolated"
     },
     "toast": {
+      "downloadFailed": "Couldn’t download environment variables.",
       "title": "Environment Variables",
       "added": "{count} added",
       "updated": "{count} updated",

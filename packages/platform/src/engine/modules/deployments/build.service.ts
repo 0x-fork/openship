@@ -44,6 +44,7 @@ import {
 import type { LogEntry, ResourceConfig } from "@repo/adapters";
 import { resolveCloudResourceConfig } from "./cloud-resources";
 import { resolveEnvDirtyServiceIds } from "./env-drift";
+import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
 import type { TBuildAccessBody } from "@repo/contracts";
 import { platform } from "../../lib/platform-config";
@@ -1239,7 +1240,14 @@ export async function checkNoActiveBuild(projectId: string) {
   }
 }
 
-export async function createQueuedDeployment(opts: {
+export async function createQueuedDeployment(opts: Parameters<typeof createQueuedDeploymentUnlocked>[0]) {
+  // A service env apply owns the same lock until its replacement is durable.
+  // Once a queued row exists, apply refuses it via listInFlightByProject, so
+  // neither ordering can replace the same container concurrently.
+  return withProjectRuntimeLock(opts.projectId, () => createQueuedDeploymentUnlocked(opts));
+}
+
+async function createQueuedDeploymentUnlocked(opts: {
   projectId: string;
   /** Org that owns this deployment. Pass project.organizationId — the
    *  scoping key for the row. (Actor attribution lives on the audit

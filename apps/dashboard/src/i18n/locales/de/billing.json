@@ -60,8 +60,25 @@
       "reconnect": "Erneut verbinden"
     },
     "notEnabled": {
-      "title": "Für diese Organisation ist die Abrechnung nicht aktiviert",
-      "description": "Die Abrechnung ist konfiguriert, aber für diese Organisation nicht aktiv. Wende dich an deinen Administrator, um sie zu aktivieren."
+      "title": "Cloud-Käufe sind noch nicht verfügbar",
+      "description": "Openship hat Abonnements und Guthabenkäufe noch nicht freigeschaltet. Bitte versuche es später erneut."
+    },
+    "notConfigured": {
+      "title": "Die Cloud-Abrechnung ist noch nicht vollständig eingerichtet",
+      "description": "Openship muss die Einrichtung der Abrechnung abschließen. Bitte kontaktiere den Openship-Support."
+    },
+    "forbidden": {
+      "title": "Du hast keinen Zugriff auf die Abrechnung",
+      "description": "Bitte den Inhaber deiner Organisation, dir Zugriff auf die Abrechnung zu gewähren."
+    },
+    "signInRequired": {
+      "title": "Melde dich an, um die Abrechnung anzuzeigen",
+      "description": "Deine Sitzung konnte nicht bestätigt werden. Melde dich erneut an, um fortzufahren.",
+      "signIn": "Anmelden"
+    },
+    "loadFailed": {
+      "title": "Die Abrechnung konnte nicht geladen werden",
+      "description": "Die Abrechnung ist vorübergehend nicht verfügbar. Versuche es erneut. Wenn das Problem weiterhin besteht, kontaktiere den Openship-Support."
     }
   },
   "plansRoute": {
@@ -143,11 +160,11 @@
     },
     "chart": {
       "title": "Nutzung im Zeitverlauf",
-      "subtitle": "Gestapelte abgerechnete Einheiten pro {unit}."
+      "subtitle": "Cloud-Credits pro {unit}."
     },
     "breakdown": {
       "title": "Ressourcenaufschlüsselung",
-      "subtitle": "Credits werden anteilig der abgerechneten Ressourcennutzung im ausgewählten Zeitraum zugeordnet.",
+      "subtitle": "Tatsächliche Ressourcennutzung im gewählten Zeitraum. Die gesamten Cloud-Credits werden oben angezeigt.",
       "resource": "Ressource",
       "units": "Einheiten",
       "credits": "Credits",
@@ -165,11 +182,11 @@
         "units": "GB-Stunden"
       },
       "disk": {
-        "label": "Festplatten-IO",
+        "label": "Festplattenaktivität",
         "units": "GB"
       },
       "network": {
-        "label": "Netzwerk",
+        "label": "Datentransfer",
         "units": "GB"
       }
     },
@@ -208,7 +225,8 @@
       "incomplete": "Unvollständig",
       "incomplete_expired": "Abgelaufen",
       "unpaid": "Unbezahlt",
-      "paused": "Pausiert"
+      "paused": "Pausiert",
+      "credit_exhausted": "Cloud pausiert"
     },
     "includedTitle": "Enthaltene Leistungen",
     "perYear": "${price}/Jahr"
@@ -241,5 +259,75 @@
     "active": "Dein Cloud-Tarif ist aktiv.",
     "pending": "Deine Zahlung wird möglicherweise noch verarbeitet. Aktualisiere diese Seite, um Tarif und Guthaben zu prüfen. Kontaktiere den Support, wenn eine abgeschlossene Zahlung fehlt.",
     "support": "Support kontaktieren"
+  },
+  "deployGate": {
+    "title": "Tarif zum Bereitstellen auswählen",
+    "description": "Richte Projekte kostenlos ein. Zum Bauen und Ausführen ist ein kostenpflichtiger Cloud-Tarif erforderlich.",
+    "preserved": "Deine Projekteinstellungen bleiben hier erhalten. Die Zahlung öffnet sich in einem neuen Tab. Kehre nach der Aktivierung deines Tarifs hierher zurück, um fortzufahren.",
+    "close": "Zurück zum Projekt",
+    "checkPlan": "Tarif prüfen",
+    "loading": "Dein Cloud-Tarif wird geladen…",
+    "loadError": "Dein Cloud-Tarif konnte nicht geladen werden. Versuche es erneut.",
+    "ownerRequired": "Bitte den Inhaber deines Arbeitsbereichs, den Cloud-Tarif auszuwählen oder zu verwalten.",
+    "readyTitle": "Kehre zu deinem Projekt zurück",
+    "ready": "Dein Cloud-Tarif wurde aktualisiert. Schließe dieses Fenster und versuche es erneut.",
+    "pending": "Dein Tarif hat sich noch nicht geändert. Schließe die Zahlung ab und prüfe erneut.",
+    "blockedTitle": "Dein Cloud-Tarif erfordert eine Aktion",
+    "creditsTitle": "Deine Cloud-Credits sind aufgebraucht",
+    "creditsDescription": "Füge Credits hinzu oder wähle einen Tarif mit mehr Credits. Aufladungen erhöhen weder das Build-Zeitlimit noch das Dienstlimit.",
+    "paymentDescription": "Aktualisiere deine Zahlungs- oder Abonnementdaten, um weiter bereitzustellen.",
+    "pausedDescription": "Cloud-Bereitstellungen sind für diesen Arbeitsbereich pausiert. Kontaktiere den Support, um den Zugang wiederherzustellen.",
+    "upgradeTitle": "Dieses Projekt benötigt mehr Kapazität",
+    "upgradeDescription": "Wähle einen Tarif mit ausreichender Kapazität oder passe dein Projekt an und versuche es erneut.",
+    "manageBilling": "Abrechnung verwalten",
+    "topups": "Credits hinzufügen",
+    "checkoutOpened": "Die Zahlung ist in einem separaten Tab bereit. Falls er nicht geöffnet wurde, nutze den Link unten.",
+    "continueCheckout": "Weiter zur Zahlung",
+    "reasons": {
+      "static-only": "Dein Tarif enthält diesen Anwendungstyp nicht. Wähle zum Bereitstellen einen geeigneten Tarif.",
+      "build-minutes-exhausted": "Du hast dein monatliches Build-Zeitlimit erreicht. Wähle einen größeren Tarif oder warte, bis dein Build-Kontingent erneuert wird.",
+      "free-subdomain-limit": "Du hast alle Cloud-Subdomains deines Tarifs verwendet. Wähle einen größeren Tarif oder entferne eine ungenutzte Subdomain.",
+      "resource-tier": "Dieses Projekt benötigt mehr CPU oder Arbeitsspeicher als dein Tarif erlaubt. Wähle einen größeren Tarif oder reduziere die Ressourcen in den Projekteinstellungen.",
+      "running-services": "Du hast dein Limit für laufende Dienste erreicht. Wähle einen größeren Tarif oder stoppe einen nicht mehr benötigten Dienst.",
+      "project-limit": "Du hast dein Projektlimit erreicht. Wähle einen größeren Tarif oder lösche ein nicht mehr benötigtes Projekt."
+    }
+  },
+  "resourcesGuide": {
+    "title": "So funktioniert die Cloud-Nutzung",
+    "credits": "Cloud-Credits",
+    "creditsHint": "Builds und laufende Apps verbrauchen Credits für CPU, Arbeitsspeicher, Festplattenzugriffe und Datentransfer. Größere Arbeitslasten verbrauchen Credits schneller.",
+    "creditsPerCycle": "{amount} Credits / Abrechnungszeitraum",
+    "buildTime": "Build-Zeit",
+    "buildMinutes": "{amount} Min. / Monat",
+    "buildHint": "Zeit zum Bauen deines Codes. Ein 5-minütiger Build verbraucht 5 Build-Minuten. Build-Ressourcen verbrauchen zusätzlich Cloud-Credits.",
+    "apps": "Laufende Dienste",
+    "appsHint": "Gleichzeitig laufende Apps, Datenbanken und Worker. Jeder laufende Compose-Dienst zählt zu diesem Limit.",
+    "machine": "CPU und Arbeitsspeicher pro Dienst",
+    "machineHint": "Die maximale CPU- und Speichergröße für einen Dienst. Dies ist eine Obergrenze und kein gemeinsames Guthaben.",
+    "projects": "Projekte",
+    "projectsHint": "In deinem Arbeitsbereich gespeicherte Projekte, einschließlich Entwürfen.",
+    "routesHint": "Öffentliche Cloud-Adressen für deine Apps.",
+    "unlimited": "Kein festes Limit",
+    "notIncluded": "Nicht enthalten",
+    "noPlan": "Kein Cloud-Tarif",
+    "setupOnly": "Projekte kostenlos einrichten",
+    "setupHint": "Cloud-Builds und laufende Apps benötigen einen kostenpflichtigen Tarif. Kostenlose Cloud-Rechenleistung ist nicht enthalten.",
+    "includedTitle": "Enthaltene Nutzung und Limits",
+    "limitsHint": "Tariflimits und Credits sind getrennt. Bereitstellungen benötigen sowohl freie Kapazität als auch Credits.",
+    "balanceRule": "Cloud-Arbeitslasten pausieren, wenn die Credits aufgebraucht sind. Eine Aufladung füllt dein Guthaben auf; ein größerer Tarif erhöht die Ressourcenlimits.",
+    "reset": "Build-Kontingent wird am {date} erneuert",
+    "cpuHint": "Rechenleistung über die Zeit. 1 vCPU für 1 Stunde entspricht 1 vCPU-Stunde.",
+    "memoryHint": "Arbeitsspeicher über die Zeit. 1 GB für 1 Stunde entspricht 1 GB-Stunde.",
+    "diskHint": "Von deinen Apps gelesene und geschriebene Daten. Dies misst Festplattenaktivität, nicht die gespeicherte Datenmenge.",
+    "networkHint": "Von deinen Apps gesendete und empfangene Daten.",
+    "usageMeaning": "So liest du den Wert",
+    "selectedRange": "Verbrauchte Credits in diesem Zeitraum",
+    "usageHint": "Tatsächliche Ressourcennutzung im gewählten Zeitraum. Die gesamten Cloud-Credits werden oben angezeigt.",
+    "creditsChart": "Cloud-Credits pro {unit}.",
+    "allProjects": "Alle Projekte",
+    "from": "Von (UTC)",
+    "to": "Bis einschließlich (UTC)",
+    "invalidRange": "Wähle ein Enddatum am oder nach dem Startdatum.",
+    "moreFeatures": "Weitere Funktionen"
   }
 }

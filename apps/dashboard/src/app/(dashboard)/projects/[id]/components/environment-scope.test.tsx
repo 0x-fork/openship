@@ -3,6 +3,7 @@ import { act, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
+import { ModalProvider } from "@/context/ModalContext";
 import { ProjectSettingsProvider, useProjectSettings } from "@/context/ProjectSettingsContext";
 import { BuildSettings } from "./BuildSettings";
 import { AppConfiguration } from "./AppConfiguration";
@@ -93,7 +94,7 @@ async function mountProject(
 ) {
   await act(async () =>
     root.render(
-      <ProjectSettingsProvider
+      <ModalProvider><ProjectSettingsProvider
         id="project"
         initialProjectData={{
           id: "project",
@@ -107,7 +108,7 @@ async function mountProject(
       >
         <TabsProbe />
         {children}
-      </ProjectSettingsProvider>,
+      </ProjectSettingsProvider></ModalProvider>,
     ),
   );
 }
@@ -175,7 +176,11 @@ describe("project environment access (GH-881)", () => {
 });
 
 describe("service runtime scope", () => {
-  it("identifies only matching production keys, explains build args, and never renders project values", async () => {
+  const scopeCopy = baseDictionary.projectSettings.serviceEnvironment;
+  const info = () => host.querySelector<HTMLButtonElement>(`button[aria-label="${scopeCopy.title}"]`)!;
+  const openInfo = async () => { await act(async () => info().click()); };
+
+  it("keeps guidance behind Info, reads matching keys on demand, and never renders project values", async () => {
     await act(async () =>
       root.render(
         <ServiceEnvironmentScope
@@ -184,14 +189,21 @@ describe("service runtime scope", () => {
         />,
       ),
     );
-    expect(host.textContent).toContain("Service runtime environment");
+    expect(host.textContent).not.toContain(scopeCopy.description);
+    expect(info().getAttribute("aria-expanded")).toBe("false");
+    expect(api.getEnv).not.toHaveBeenCalled();
+    await openInfo();
+    expect(info().getAttribute("aria-expanded")).toBe("true");
     expect(host.textContent).toContain(
       "These keys take precedence over project values for this service: TOKEN.",
     );
     expect(host.textContent).not.toContain("PREVIEW_ONLY");
     expect(host.textContent).not.toContain("••••••••");
-    expect(host.textContent).toContain("Compose file or source configuration");
+    expect(host.textContent).toContain(scopeCopy.buildArguments);
     expect(host.querySelector('a[href="/projects/project/runtime"]')).not.toBeNull();
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(info().getAttribute("aria-expanded")).toBe("false");
+    expect(host.textContent).not.toContain(scopeCopy.description);
   });
 
   it("keeps scope guidance when project key lookup fails", async () => {
@@ -199,8 +211,9 @@ describe("service runtime scope", () => {
     await act(async () =>
       root.render(<ServiceEnvironmentScope projectId="project" keys={["TOKEN"]} />),
     );
+    await openInfo();
     expect(host.textContent).toContain("Could not load project variable names");
-    expect(host.textContent).toContain("Applies only to this service at runtime");
+    expect(host.textContent).toContain(scopeCopy.description);
     expect(host.textContent).not.toContain("These keys take precedence");
   });
 
@@ -214,6 +227,7 @@ describe("service runtime scope", () => {
     await act(async () =>
       root.render(<ServiceEnvironmentScope projectId="old-project" keys={["TOKEN"]} />),
     );
+    await openInfo();
     api.getEnv.mockResolvedValue({ data: [] });
     await act(async () =>
       root.render(<ServiceEnvironmentScope projectId="new-project" keys={["TOKEN"]} />),

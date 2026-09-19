@@ -11,6 +11,9 @@ export async function listServers(c: Context) {
 export async function getServer(c: Context) {
   return c.json(await operationData(c, operations().get(operationContext(c), param(c, "id"))));
 }
+export async function getInfrastructure(c: Context) {
+  return c.json(await operationData(c, operations().infrastructure(operationContext(c), param(c, "id"))));
+}
 export async function probeReachability(c: Context) {
   return c.json(await operationData(c, operations().reachability(operationContext(c), param(c, "id"))));
 }

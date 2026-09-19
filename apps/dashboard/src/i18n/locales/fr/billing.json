@@ -60,8 +60,25 @@
       "reconnect": "Se reconnecter"
     },
     "notEnabled": {
-      "title": "La facturation n'est pas activée pour cette organisation",
-      "description": "La facturation est configurée mais inactive pour cette organisation. Contactez votre administrateur pour l'activer."
+      "title": "Les achats Cloud ne sont pas encore disponibles",
+      "description": "Openship n’a pas encore activé les abonnements et les achats de crédits. Veuillez réessayer plus tard."
+    },
+    "notConfigured": {
+      "title": "La configuration de la facturation Cloud est incomplète",
+      "description": "Openship doit terminer la configuration de la facturation. Veuillez contacter l’assistance Openship."
+    },
+    "forbidden": {
+      "title": "Vous n’avez pas accès à la facturation",
+      "description": "Demandez au propriétaire de votre organisation de vous accorder l’accès à la facturation."
+    },
+    "signInRequired": {
+      "title": "Connectez-vous pour consulter la facturation",
+      "description": "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour continuer.",
+      "signIn": "Se connecter"
+    },
+    "loadFailed": {
+      "title": "Impossible de charger la facturation",
+      "description": "La facturation est temporairement indisponible. Réessayez. Si le problème persiste, contactez l’assistance Openship."
     }
   },
   "plansRoute": {
@@ -143,11 +160,11 @@
     },
     "chart": {
       "title": "Utilisation dans le temps",
-      "subtitle": "Unités mesurées empilées par {unit}."
+      "subtitle": "Crédits Cloud par {unit}."
     },
     "breakdown": {
       "title": "Répartition des ressources",
-      "subtitle": "Crédits attribués proportionnellement à l'utilisation mesurée des ressources dans la plage sélectionnée.",
+      "subtitle": "Utilisation réelle des ressources aux dates sélectionnées. Le total des crédits Cloud est affiché ci-dessus.",
       "resource": "Ressource",
       "units": "Unités",
       "credits": "Crédits",
@@ -165,11 +182,11 @@
         "units": "Go-heures"
       },
       "disk": {
-        "label": "E/S disque",
+        "label": "Activité disque",
         "units": "Go"
       },
       "network": {
-        "label": "Réseau",
+        "label": "Transfert de données",
         "units": "Go"
       }
     },
@@ -208,7 +225,8 @@
       "incomplete": "Incomplet",
       "incomplete_expired": "Expiré",
       "unpaid": "Impayé",
-      "paused": "En pause"
+      "paused": "En pause",
+      "credit_exhausted": "Cloud suspendu"
     },
     "includedTitle": "Ce qui est inclus",
     "perYear": "${price}/an"
@@ -241,5 +259,75 @@
     "active": "Votre offre Cloud est active.",
     "pending": "Votre paiement est peut-être encore en cours de traitement. Actualisez cette page pour vérifier votre offre et votre solde. Contactez l’assistance si un paiement effectué manque.",
     "support": "Contacter l’assistance"
+  },
+  "deployGate": {
+    "title": "Choisir une offre pour déployer",
+    "description": "Configurez vos projets gratuitement. Une offre Cloud payante est nécessaire pour les compiler et les exécuter.",
+    "preserved": "Les paramètres de votre projet restent ici. Le paiement ouvre un nouvel onglet ; revenez ici après avoir activé votre offre pour continuer.",
+    "close": "Retour au projet",
+    "checkPlan": "Vérifier l’offre",
+    "loading": "Chargement de votre offre Cloud…",
+    "loadError": "Impossible de charger votre offre Cloud. Réessayez.",
+    "ownerRequired": "Demandez au propriétaire de votre espace de travail de choisir ou gérer votre offre Cloud.",
+    "readyTitle": "Retournez à votre projet",
+    "ready": "Votre offre Cloud est à jour. Fermez cette fenêtre et réessayez.",
+    "pending": "Votre offre n’a pas encore changé. Terminez le paiement, puis vérifiez à nouveau.",
+    "blockedTitle": "Votre offre Cloud nécessite une action",
+    "creditsTitle": "Vous avez utilisé vos crédits Cloud",
+    "creditsDescription": "Ajoutez des crédits ou choisissez une offre qui en inclut davantage. Les recharges n’augmentent pas les limites de compilation ou de services.",
+    "paymentDescription": "Mettez à jour vos informations de paiement ou votre abonnement pour continuer à déployer.",
+    "pausedDescription": "Le déploiement Cloud est suspendu pour cet espace. Contactez l’assistance pour rétablir l’accès.",
+    "upgradeTitle": "Ce projet nécessite plus de capacité",
+    "upgradeDescription": "Choisissez une offre avec une capacité suffisante, ou ajustez votre projet et réessayez.",
+    "manageBilling": "Gérer la facturation",
+    "topups": "Ajouter des crédits",
+    "checkoutOpened": "Le paiement est prêt dans un onglet séparé. S’il ne s’est pas ouvert, utilisez le lien ci-dessous.",
+    "continueCheckout": "Continuer vers le paiement",
+    "reasons": {
+      "static-only": "Votre offre n’inclut pas ce type d’application. Choisissez une offre compatible pour déployer.",
+      "build-minutes-exhausted": "Vous avez atteint votre limite mensuelle de compilation. Choisissez une offre supérieure ou attendez le renouvellement de votre quota.",
+      "free-subdomain-limit": "Vous avez utilisé tous les sous-domaines Cloud de votre offre. Choisissez une offre supérieure ou supprimez un sous-domaine inutilisé.",
+      "resource-tier": "Ce projet nécessite plus de CPU ou de mémoire que votre offre ne le permet. Choisissez une offre supérieure ou réduisez les ressources dans ses paramètres.",
+      "running-services": "Vous avez atteint votre limite de services actifs. Choisissez une offre supérieure ou arrêtez un service dont vous n’avez plus besoin.",
+      "project-limit": "Vous avez atteint votre limite de projets. Choisissez une offre supérieure ou supprimez un projet dont vous n’avez plus besoin."
+    }
+  },
+  "resourcesGuide": {
+    "title": "Comprendre l’utilisation du Cloud",
+    "credits": "Crédits Cloud",
+    "creditsHint": "Les compilations et les applications actives consomment des crédits pour le CPU, la mémoire, les accès disque et les transferts de données. Les charges plus importantes les consomment plus vite.",
+    "creditsPerCycle": "{amount} crédits / cycle de facturation",
+    "buildTime": "Temps de compilation",
+    "buildMinutes": "{amount} min / mois",
+    "buildHint": "Temps passé à compiler votre code. Une compilation de 5 minutes utilise 5 minutes du quota. Ses ressources consomment aussi des crédits Cloud.",
+    "apps": "Services actifs",
+    "appsHint": "Applications, bases de données et workers exécutés en même temps. Chaque service Compose actif compte dans cette limite.",
+    "machine": "CPU et mémoire par service",
+    "machineHint": "La capacité maximale de CPU et de mémoire pour un service. Il s’agit d’une limite, pas d’un solde partagé.",
+    "projects": "Projets",
+    "projectsHint": "Projets enregistrés dans votre espace de travail, y compris les brouillons.",
+    "routesHint": "Adresses Cloud publiques de vos applications.",
+    "unlimited": "Sans limite définie",
+    "notIncluded": "Non inclus",
+    "noPlan": "Aucune offre Cloud",
+    "setupOnly": "La configuration des projets est gratuite",
+    "setupHint": "Les compilations et les applications Cloud nécessitent une offre payante. Aucune ressource de calcul Cloud gratuite n’est incluse.",
+    "includedTitle": "Utilisation incluse et limites",
+    "limitsHint": "Les limites de votre offre sont distinctes des crédits. Déployer nécessite à la fois une capacité disponible et des crédits.",
+    "balanceRule": "Les charges Cloud sont suspendues lorsque les crédits sont épuisés. Une recharge réapprovisionne votre solde ; une offre supérieure augmente vos limites de ressources.",
+    "reset": "Le quota de compilation est renouvelé le {date}",
+    "cpuHint": "Puissance de calcul utilisée dans le temps. 1 vCPU pendant 1 heure correspond à 1 vCPU-heure.",
+    "memoryHint": "Mémoire utilisée dans le temps. 1 Go pendant 1 heure correspond à 1 Go-heure.",
+    "diskHint": "Données lues et écrites par vos applications. Il s’agit de l’activité du disque, pas du volume stocké.",
+    "networkHint": "Données envoyées et reçues par vos applications.",
+    "usageMeaning": "Comment lire cette valeur",
+    "selectedRange": "Crédits utilisés sur cette période",
+    "usageHint": "Utilisation réelle des ressources aux dates sélectionnées. Le total des crédits Cloud est affiché ci-dessus.",
+    "creditsChart": "Crédits Cloud par {unit}.",
+    "allProjects": "Tous les projets",
+    "from": "Du (UTC)",
+    "to": "Au inclus (UTC)",
+    "invalidRange": "Choisissez une date de fin égale ou postérieure à la date de début.",
+    "moreFeatures": "Autres fonctionnalités"
   }
 }

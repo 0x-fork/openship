@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import {
   AppError,
   NotFoundError,
@@ -13,6 +13,8 @@ import { discardNetworkSetup } from "./network-setup-discard";
 import {
   removeNetworkSetupMember,
   type RemoveNetworkSetupMemberTarget,
+  reviseNetworkSetupAccess,
+  type ReviseNetworkAccessTarget,
 } from "./network-setup-member";
 
 export type NetworkPreparationRecord = typeof table.$inferSelect;
@@ -27,23 +29,27 @@ export function createNetworkPreparationRepo(db: Database) {
       eq(table.status, "preparing"),
       gt(table.leaseExpiresAt, new Date()),
     );
-  async function expire(org: string) {
-    await db
+  async function interrupt(condition: SQL | undefined, error: string) {
+    const rows = await db
       .update(table)
       .set({
         status: "interrupted",
         sequence: sql`${table.sequence} + 1`,
+        leaseExpiresAt: null,
         updatedAt: new Date(),
-        error:
-          "The controller stopped reporting progress. Retry preparation to recheck each server and continue installing missing tools.",
+        error,
       })
-      .where(
-        and(
-          eq(table.organizationId, org),
-          eq(table.status, "preparing"),
-          lte(table.leaseExpiresAt, new Date()),
-        ),
-      );
+      .where(and(eq(table.status, "preparing"), condition))
+      .returning();
+    return rows.map(({ id, organizationId }) => ({ id, organizationId }));
+  }
+  const expiredLease = () =>
+    or(isNull(table.leaseExpiresAt), lte(table.leaseExpiresAt, new Date()));
+  async function expire(org: string) {
+    await interrupt(
+      and(eq(table.organizationId, org), expiredLease()),
+      "The controller stopped reporting progress. Retry preparation to recheck each server and continue installing missing tools.",
+    );
   }
   async function get(org: string, id: string) {
     await expire(org);
@@ -53,9 +59,25 @@ export function createNetworkPreparationRepo(db: Database) {
   }
   return {
     get,
+    /** Only an exclusive database owner may stop runs whose leases are still valid. */
+    async recoverInterrupted(exclusive: boolean) {
+      return interrupt(
+        exclusive ? undefined : expiredLease(),
+        exclusive
+          ? "OpenShip restarted before server preparation finished. Retry preparation to recheck each server and continue installing missing tools."
+          : "The controller stopped reporting progress. Retry preparation to recheck each server and continue installing missing tools.",
+      );
+    },
+    async interrupt(id: string, generation: number, error: string) {
+      return interrupt(and(eq(table.id, id), eq(table.generation, generation)), error);
+    },
     async removeMember(org: string, createdBy: string, target: RemoveNetworkSetupMemberTarget) {
       await expire(org);
       return removeNetworkSetupMember(db, org, createdBy, target);
+    },
+    async reviseAccess(org: string, createdBy: string, target: ReviseNetworkAccessTarget) {
+      await expire(org);
+      return reviseNetworkSetupAccess(db, org, createdBy, target);
     },
     async interruptPending(org: string, id: string, error: string) {
       await db

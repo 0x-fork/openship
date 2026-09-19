@@ -13,6 +13,7 @@ let context: ExecutionContext;
 const get = vi.fn(),
   update = vi.fn(),
   create = vi.fn(),
+  applyEnvironment = vi.fn(),
   revealEnv = vi.fn(),
   unsubscribe = vi.fn();
 let write: (event: string, data: string) => boolean;
@@ -31,7 +32,7 @@ beforeEach(async () => {
   context = await authorization.resolveScope(alice, "org-a");
   operations = createServiceOperations(authorization, {
     collection: { create },
-    resources: { get, update, revealEnv },
+    resources: { get, update, revealEnv, applyEnvironment },
     parentFor: async (_ctx, id) => state.services.get(id)?.projectId,
     subscribe: () => async (fn) => {
       write = fn;
@@ -42,9 +43,21 @@ beforeEach(async () => {
   get.mockResolvedValue(serviceFixture());
   update.mockResolvedValue(serviceFixture());
   create.mockResolvedValue(serviceFixture());
+  applyEnvironment.mockResolvedValue({ success: true, containerId: "new-container" });
 });
 
 describe("shared service authorization", () => {
+  it("gates environment apply on the service write grant and its actual parent", async () => {
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["read"] });
+    await expect(operations.applyEnvironment(context, "project-a", "service-a")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["write"] });
+    await expect(operations.applyEnvironment(context, "project-sibling", "service-a")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(operations.applyEnvironment(context, "project-b", "service-b")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(applyEnvironment).not.toHaveBeenCalled();
+    await expect(operations.applyEnvironment(context, "project-a", "service-a")).resolves.toMatchObject({ data: { success: true, containerId: "new-container" } });
+    expect(applyEnvironment).toHaveBeenCalledOnce();
+  });
   it("refuses forged same-org parent/child pairs and cross-tenant access", async () => {
     await expect(operations.get(context, "project-sibling", "service-a")).rejects.toMatchObject({
       code: "NOT_FOUND",

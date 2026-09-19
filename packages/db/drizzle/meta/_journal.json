@@ -967,6 +967,27 @@
       "when": 1789770107337,
       "tag": "0137_service_allocated_resources",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1789770107338,
+      "tag": "0138_network_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1789770107339,
+      "tag": "0139_independent_networks",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1789770107340,
+      "tag": "0140_network_access",
+      "breakpoints": true
     }
   ]
 }

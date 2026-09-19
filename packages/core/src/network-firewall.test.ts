@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { networkFirewallRules, networkFirewallTemplate } from "./network-firewall";
 import { managedNetworkFirewall } from "./host-firewall";
+import { setNetworkConnection } from "./network-access";
 
 const members = [
   { serverId: "a", endpoint: "192.0.2.10", listenPort: 51820, privateIp: "10.244.0.1" },
@@ -9,6 +10,30 @@ const members = [
 ];
 
 describe("provider firewall templates", () => {
+  it("removes disconnected peers while keeping both transport directions for a one-way private connection", () => {
+    const access = setNetworkConnection(
+      { version: 1, rules: [] },
+      ["a", "b", "c"],
+      "a",
+      "b",
+      "forward",
+    );
+    const scope = { mode: "wireguard" as const, access };
+    for (const serverId of ["a", "b"]) {
+      const { rules } = networkFirewallRules(members, serverId, scope);
+      expect(rules.map((rule) => rule.direction)).toEqual(["inbound", "outbound"]);
+      expect(rules.every((rule) => rule.peerServerId !== "c")).toBe(true);
+      expect(networkFirewallTemplate(members, serverId, scope)).not.toContain("198.51.100.30");
+    }
+    expect(networkFirewallRules(members, "c", scope)).toEqual({ rules: [], pendingServerIds: [] });
+    expect(
+      networkFirewallTemplate(
+        [members[0]!, members[1]!, { ...members[2]!, endpoint: undefined }],
+        "a",
+        scope,
+      ),
+    ).not.toBeNull();
+  });
   it("scopes both directions to peers and uses the destination server's port", () => {
     const result = networkFirewallRules(members, "a");
     expect(result.pendingServerIds).toEqual([]);

@@ -6,6 +6,7 @@ import { projectsApi, deployApi } from "@/lib/api";
 import { connectionsApi, type ProjectConnection } from "@/lib/api/connections";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import type { EnvironmentVariable } from "@/components/import-project/types";
@@ -44,6 +45,7 @@ export function EnvVarsEditor({
   onClose: () => void;
 }) {
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing();
   const { t } = useI18n();
   const { projectData } = useProjectSettings();
   const hasActiveDeployment = Boolean(projectData?.activeDeploymentId);
@@ -163,7 +165,7 @@ export function EnvVarsEditor({
       showToast(t.projectSettings.envVars.toast.applying, "success", t.projectSettings.envVars.toast.applyingTitle);
       onClose();
     } catch (err) {
-      showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.applyFailed), "error", t.projectSettings.envVars.toast.applyFailedTitle);
+      if (!showCloudPricing(err)) showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.applyFailed), "error", t.projectSettings.envVars.toast.applyFailedTitle);
     } finally {
       setApplying(false);
     }

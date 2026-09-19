@@ -38,7 +38,7 @@ import { useContainerApplyModal } from "@/hooks/useSystemPrepareModal";
 import { InfraFleetCard } from "@/components/infra/InfraFleetCard";
 import { InfraFilters } from "@/components/infra/InfraFilters";
 import type { ClusterCapabilities } from "@repo/contracts";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { privateNetworksApi } from "@/lib/api/private-networks";
 import { ServerClustersPanel } from "@/components/servers/clusters/ServerClustersPanel";
 import { useServerClustersOverview } from "@/hooks/useServerClustersOverview";
 import * as CountryFlags from "country-flag-icons/react/3x2";
@@ -109,7 +109,7 @@ export default function ServersPage() {
     setClusterCapabilities(null);
     setClusterCapabilitiesError(null);
     if (clustersEligible) {
-      void serverClustersApi
+      void privateNetworksApi
         .capabilities()
         .then((value) => {
           if (current) setClusterCapabilities(value);
@@ -400,18 +400,18 @@ export default function ServersPage() {
               size="icon"
               onClick={clusterOverview.refresh}
               disabled={clusterOverview.refreshing}
-              aria-label={t.servers.clusters.refresh}
-              title={t.servers.clusters.refresh}
+              aria-label={t.servers.networks.refresh}
+              title={t.servers.networks.refresh}
             >
               <RefreshCw
                 className={`size-4 ${clusterOverview.refreshing ? "animate-spin" : ""}`}
               />
             </Button>
-            {activeTab === "cluster" && clusterCapabilities.canManage && (
+            {clusterCapabilities.canManage && (
               <Button asChild>
-                <Link href="/servers/clusters/new">
+                <Link href={activeTab === "networking" ? "/servers/networks/new" : "/servers/clusters/new"}>
                   <Plus className="size-4" />
-                  {t.servers.clusters.createCluster}
+                  {activeTab === "networking" ? t.servers.networks.createCluster : t.servers.clusters.createCluster}
                 </Link>
               </Button>
             )}
@@ -433,14 +433,14 @@ export default function ServersPage() {
               className="shrink-0 font-medium underline"
               onClick={() => setClusterCapabilitiesAttempt((attempt) => attempt + 1)}
             >
-              {t.servers.clusters.retry}
+              {t.servers.networks.retry}
             </button>
           </div>
         ) : !clusterCapabilities ? (
           <div
             role="status"
             className="flex justify-center py-16"
-            aria-label={t.servers.clusters.listTitle}
+            aria-label={activeTab === "networking" ? t.servers.networks.listTitle : t.servers.clusters.listTitle}
           >
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
@@ -452,7 +452,7 @@ export default function ServersPage() {
           />
         ) : (
           <p role="status" className="rounded-xl bg-muted/50 p-5 text-sm text-muted-foreground">
-            {clusterCapabilities.reason || t.servers.clusters.selfHostedOnly}
+            {clusterCapabilities.reason || t.servers.networks.selfHostedOnly}
           </p>
         ))}
 

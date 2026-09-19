@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
+import { useServiceEnvironmentApply } from "@/hooks/useServiceEnvironmentApply";
 import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import {
   serviceKind,
@@ -52,12 +54,13 @@ import {
   MonitorSmartphone,
   PlugZap,
 } from "lucide-react";
-import { backupsApi, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
+import { backupsApi, getApiErrorCode, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
 import { ServiceTerminal } from "@/components/terminal/ServiceTerminal";
 import { useTheme } from "@/components/theme-provider";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
+import { Button } from "@/components/ui/button";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { ServiceSettingsForm } from "./ServiceSettingsForm";
 import { ServiceEnvironmentScope } from "./ServiceEnvironmentScope";
@@ -157,6 +160,8 @@ export function ServiceDetailPanel({
   const revealEnv = useServiceEnvReveal(projectId, service.id, SERVICE_ENVIRONMENT);
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
+  const showCloudPricing = useCloudDeployPricing();
+  const environmentApply = useServiceEnvironmentApply(projectId, onRefresh);
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const router = useRouter();
@@ -168,6 +173,12 @@ export function ServiceDetailPanel({
   const [deleting, setDeleting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
+  const applyingEnvironment = environmentApply.applyingServiceId !== null;
+  // The API resolves and validates the current deployment. A live container is
+  // enough to offer Apply while the panel's parent metadata is still loading.
+  const hasEnvironmentTarget = Boolean(activeDeploymentId || container?.containerId);
+  const canApplyEnvironment = hasEnvironmentTarget && service.enabled;
+  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment;
   const status = container?.status ?? (service.enabled ? "stopped" : "disabled");
 
   // Desktop-only "Open": SSH-forward this service's published host port onto
@@ -311,6 +322,13 @@ export function ServiceDetailPanel({
       JSON.stringify(comparableEnvRows(savedEnvRows)),
     [envRows, savedEnvRows],
   );
+  const applyEnvironmentHint = !service.enabled
+    ? t.projectDetail.services.detail.toast.enableBeforeRedeploy
+    : !hasEnvironmentTarget
+      ? t.projectDetail.services.detail.toast.deployFirstRedeploy
+      : envDirty
+        ? t.projectDetail.services.detail.environmentApply.saveFirst
+        : t.projectDetail.services.detail.environmentApply.hint;
   const handleSaveEnv = async () => {
     setEnvSaving(true);
     try {
@@ -431,6 +449,7 @@ export function ServiceDetailPanel({
   /* ── Handlers ───────────────────────────────────────────────── */
 
   const handleContainerAction = async (action: "start" | "stop" | "restart") => {
+    if (serviceOperationBusy) return;
     setActionLoading(action);
     try {
       if (action === "start") await servicesApi.start(projectId, service.id);
@@ -438,6 +457,18 @@ export function ServiceDetailPanel({
       else await servicesApi.restart(projectId, service.id);
       onRefresh();
     } catch (err) {
+      if (action === "restart" && getApiErrorCode(err) === "SERVICE_CONFIG_STALE") {
+        showToast(
+          envDirty
+            ? t.projectDetail.services.detail.environmentApply.saveFirst
+            : interpolate(t.projectDetail.services.detail.environmentApply.restartBlocked, { name: service.name }),
+          "info",
+          service.name,
+        );
+        changeTab("env");
+        return;
+      }
+      if (action !== "stop" && showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -468,8 +499,8 @@ export function ServiceDetailPanel({
   const handleDeployStart = async () => {
     setDeploying(true);
     try {
-      // Start = provision + launch THIS service on its own (its own container /
-      // Oblien workspace), DECOUPLED from the project deploy — no build page, no
+      // Start = provision + launch this service, using its project Docker
+      // workspace for Compose. No build page, no
       // one-deploy lock, never touches the main app. servicesApi.start
       // provisions-if-missing server-side (and enables the service first).
       const res = await servicesApi.start(projectId, service.id);
@@ -491,6 +522,7 @@ export function ServiceDetailPanel({
       onRefresh();
     } catch (err) {
       setDeploying(false);
+      if (showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -529,6 +561,7 @@ export function ServiceDetailPanel({
       router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
     } catch (err) {
       setRedeploying(false);
+      if (showCloudPricing(err)) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",
@@ -914,7 +947,39 @@ export function ServiceDetailPanel({
           {/* No extra padding here — EnvironmentVariables (borderless) brings its
               own px-5/py-4, so a wrapper p-6 would double it. */}
           <div className="bg-card rounded-2xl border border-border/50">
-            <ServiceEnvironmentScope projectId={projectId} keys={envRows.map(row => row.key)} />
+            <div className="flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <ServiceEnvironmentScope projectId={projectId} keys={envRows.map(row => row.key)} />
+                <h3 className="text-sm font-medium text-foreground">{t.importProject.environmentVariables.title}</h3>
+              </div>
+              <div className="ms-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSaveEnv}
+                  aria-label={t.projectDetail.services.detail.saveEnvironment}
+                  disabled={envLoading || envSaving || applyingEnvironment || !envDirty}
+                  className="h-auto min-h-8 max-w-full whitespace-normal py-1.5"
+                >
+                  {envSaving ? <Loader2 className="animate-spin" /> : <Save />}
+                  {t.projectSettings.settingSection.save}
+                </Button>
+                <span className="max-w-full" title={applyEnvironmentHint}>
+                  <Button
+                    size="sm"
+                    onClick={() => void environmentApply.apply(service)}
+                    disabled={!canApplyEnvironment || envLoading || envSaving || envDirty || serviceOperationBusy}
+                    title={applyEnvironmentHint}
+                    className="h-auto min-h-8 max-w-full whitespace-normal py-1.5"
+                  >
+                    {applyingEnvironment ? <Loader2 className="animate-spin" /> : <RotateCw />}
+                    {applyingEnvironment
+                      ? t.projectDetail.services.detail.environmentApply.applying
+                      : t.projectDetail.services.detail.environmentApply.title}
+                  </Button>
+                </span>
+              </div>
+            </div>
             <EnvironmentVariables
               mode="settings"
               hideTitle
@@ -932,20 +997,6 @@ export function ServiceDetailPanel({
               onReveal={revealEnv}
               borderless
             />
-          </div>
-          <div className="flex justify-end">
-            <button
-              onClick={handleSaveEnv}
-              disabled={envLoading || envSaving || !envDirty}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {envSaving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              {t.projectDetail.services.detail.saveEnvironment}
-            </button>
           </div>
         </div>
       )}
@@ -969,6 +1020,7 @@ export function ServiceDetailPanel({
                           icon={Square}
                           label={t.projectDetail.services.detail.stop}
                           loading={actionLoading === "stop"}
+                          disabled={serviceOperationBusy}
                           onClick={() => handleContainerAction("stop")}
                           variant="danger"
                         />
@@ -976,6 +1028,7 @@ export function ServiceDetailPanel({
                           icon={RotateCw}
                           label={t.projectDetail.services.detail.restart}
                           loading={actionLoading === "restart"}
+                          disabled={serviceOperationBusy}
                           onClick={() => handleContainerAction("restart")}
                           variant="warning"
                         />
@@ -986,6 +1039,7 @@ export function ServiceDetailPanel({
                         icon={Play}
                         label={t.projectDetail.services.detail.start}
                         loading={actionLoading === "start"}
+                        disabled={serviceOperationBusy}
                         onClick={() => handleContainerAction("start")}
                         variant="success"
                       />
@@ -1005,6 +1059,7 @@ export function ServiceDetailPanel({
                           : t.projectDetail.services.detail.start
                       }
                       loading={deploying}
+                      disabled={serviceOperationBusy}
                       onClick={handleDeployStart}
                       variant="success"
                     />
@@ -1021,6 +1076,7 @@ export function ServiceDetailPanel({
                         : t.projectDetail.services.detail.redeploy
                     }
                     loading={redeploying}
+                    disabled={serviceOperationBusy}
                     onClick={handleRedeployService}
                     variant="primary"
                   />
@@ -1244,12 +1300,14 @@ function ActionButton({
   icon: Icon,
   label,
   loading,
+  disabled,
   onClick,
   variant,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   loading: boolean;
+  disabled?: boolean;
   onClick: () => void;
   variant: "success" | "danger" | "warning" | "primary";
 }) {
@@ -1265,7 +1323,7 @@ function ActionButton({
         e.stopPropagation();
         onClick();
       }}
-      disabled={loading}
+      disabled={loading || disabled}
       className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-[13px] font-medium transition-colors disabled:opacity-50 ${colors[variant]}`}
     >
       {loading ? <Loader2 className="size-4 animate-spin" /> : <Icon className="size-4" />}

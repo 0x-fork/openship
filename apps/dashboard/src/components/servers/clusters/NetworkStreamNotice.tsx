@@ -6,7 +6,7 @@ import type { RunEventsState } from "@/hooks/useRunEvents";
 
 export function NetworkStreamNotice({ stream }: { stream: RunEventsState }) {
   const { t } = useI18n();
-  const m = t.servers.clusters.managed;
+  const m = t.servers.networks.managed;
   if (!stream.reconnecting && !stream.error) return null;
   return (
     <div

@@ -858,9 +858,9 @@
   },
   "serviceEnvironment": {
     "title": "Ambiente de execução do serviço",
-    "description": "Aplica-se apenas a este serviço em execução. Estes valores substituem os do Compose e as variáveis do projeto com a mesma chave. Aplique-os ao reiniciar ou implantar.",
+    "description": "Estas variáveis se aplicam apenas a este serviço e substituem os valores correspondentes do Compose ou do projeto. Use Aplicar alterações de ambiente para ativar os valores salvos.",
     "overrides": "Estas chaves têm prioridade sobre os valores do projeto para este serviço: {keys}.",
-    "buildArguments": "Os argumentos explícitos de compilação são editados no arquivo Compose ou na configuração do código-fonte. Compile e implante novamente para aplicá-los; este editor altera apenas variáveis de execução.",
+    "buildArguments": "Os argumentos de compilação são definidos no arquivo Compose ou na configuração do código-fonte e exigem uma nova compilação.",
     "projectLink": "Editar ambiente compartilhado do projeto",
     "loadFailed": "Não foi possível carregar os nomes das variáveis do projeto para verificar substituições."
   }

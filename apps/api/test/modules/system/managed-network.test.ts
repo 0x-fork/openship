@@ -22,6 +22,8 @@ const h = vi.hoisted(() => ({
   list: vi.fn(),
   get: vi.fn(),
   membership: vi.fn(),
+  dependencies: vi.fn(),
+  computeList: vi.fn(),
   find: vi.fn(),
   save: vi.fn(),
   getOperation: vi.fn(),
@@ -49,6 +51,7 @@ const h = vi.hoisted(() => ({
   prepFinish: vi.fn(),
   prepDiscard: vi.fn(),
   removeMember: vi.fn(),
+  reviseAccess: vi.fn(),
   interruptPending: vi.fn(),
   discardPlan: vi.fn(),
   interfaces: vi.fn(),
@@ -95,13 +98,16 @@ vi.mock("@repo/db", () => ({
       finish: h.prepFinish,
       discard: h.prepDiscard,
       removeMember: h.removeMember,
+      reviseAccess: h.reviseAccess,
       interruptPending: h.interruptPending,
     },
     server: { getInOrganization: h.server },
+    computeCluster: { list: h.computeList },
     serverCluster: {
       list: h.list,
       get: h.get,
       membership: h.membership,
+      assertDependencies: h.dependencies,
       findOperation: h.find,
       savePlan: h.save,
       getOperation: h.getOperation,
@@ -143,7 +149,8 @@ import { networkSetupMemberCollection } from "@repo/platform/engine/modules/syst
 import { networkSetupStreams } from "@repo/platform/engine/modules/system/network-setup.events";
 import { notifyNetworkSetup } from "@repo/platform/engine/modules/system/network-setup-bus";
 const ctx = { organizationId: "org-a", userId: "user-a", role: "owner" } as ExecutionContext;
-const publicKey = (id: string) => Buffer.alloc(32, id === "server-a" ? 1 : 2).toString("base64");
+const publicKey = (id: string) =>
+  Buffer.alloc(32, id === "server-a" ? 1 : id === "server-b" ? 2 : 3).toString("base64");
 function stored(ids?: string[]) {
   const value = managedOperationFixture(ids);
   return {
@@ -193,6 +200,8 @@ beforeEach(() => {
   h.identity.mockImplementation(async ({ id }) => `host:${id}`);
   h.list.mockResolvedValue([]);
   h.membership.mockResolvedValue(null);
+  h.dependencies.mockResolvedValue(undefined);
+  h.computeList.mockResolvedValue([]);
   h.find.mockResolvedValue(null);
   h.save.mockImplementation(async (organizationId, id, createdBy, inputHash, planHash, plan) => ({
     ...stored(),
@@ -291,6 +300,72 @@ beforeEach(() => {
       message: null,
     })),
   );
+});
+
+describe("revising setup connection access", () => {
+  const request = {
+    preparationId: preparing().id,
+    sequence: 4,
+    requestId: "bbbbbbbb-2222-4222-8222-222222222222",
+    access: {
+      version: 1 as const,
+      rules: [{ sourceServerId: "server-a", targetServerId: "server-b" }],
+    },
+  };
+  it("reuses the preparation worker after the repository publishes an immutable revision", async () => {
+    const source = { ...preparing(), status: "ready", sequence: request.sequence };
+    const child = {
+      ...preparing(),
+      id: request.requestId,
+      status: "pending",
+      input: { ...source.input, requestId: request.requestId, access: request.access },
+    };
+    h.prepGet.mockImplementation(async (_org, id) => (id === child.id ? child : source));
+    h.reviseAccess.mockResolvedValue({
+      preparation: child,
+      sourcePreparation: { ...source, status: "cancelled", replacementPreparationId: child.id },
+      operation: null,
+    });
+    h.prepStart.mockResolvedValue({
+      started: true,
+      preparation: { ...child, status: "preparing" },
+    });
+    const result = await networkSetupMemberCollection.reviseManagedNetworkAccess(ctx, request);
+    expect(result).toMatchObject({
+      id: child.id,
+      status: "preparing",
+      input: { access: request.access },
+    });
+    expect(h.reviseAccess).toHaveBeenCalledWith("org-a", "user-a", request);
+    expect(h.prepStart).toHaveBeenCalledWith(
+      "org-a",
+      "user-a",
+      expect.any(String),
+      child.input,
+      expect.any(Array),
+    );
+    expect(h.executor).not.toHaveBeenCalled();
+    expect(h.work).toHaveLength(1);
+    h.prepStart.mockResolvedValue({
+      started: false,
+      preparation: { ...child, status: "preparing" },
+    });
+    await networkSetupMemberCollection.reviseManagedNetworkAccess(ctx, request);
+    expect(h.work).toHaveLength(1);
+  });
+  it("requires self-hosted fleet administration before changing access", async () => {
+    h.env.CLOUD_MODE = true;
+    await expect(
+      networkSetupMemberCollection.reviseManagedNetworkAccess(ctx, request),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    h.env.CLOUD_MODE = false;
+    h.authorize.mockRejectedValue(new AppError("Denied", 403));
+    await expect(
+      networkSetupMemberCollection.reviseManagedNetworkAccess(ctx, request),
+    ).rejects.toThrow("Denied");
+    expect(h.reviseAccess).not.toHaveBeenCalled();
+    expect(h.prepStart).not.toHaveBeenCalled();
+  });
 });
 
 describe("removing a setup server through the existing recovery workflow", () => {
@@ -558,6 +633,22 @@ describe("managed network setup discard", () => {
 });
 
 describe("managed network prerequisite preparation", () => {
+  it("persists inherited access for older callers so preparation cannot display a wider topology", async () => {
+    const current = { ...stored().plan.config, id: "existing", revision: 3 };
+    current.network.access = {
+      version: 1,
+      rules: [{ sourceServerId: "server-a", targetServerId: "server-b" }],
+    };
+    h.get.mockResolvedValue(current);
+    const result = await networkPreparationCollection.prepareManagedNetwork(ctx, {
+      ...managedPlanInputFixture(),
+      clusterId: current.id,
+      revision: 3,
+    });
+    expect(result.input.access).toEqual(current.network.access);
+    expect(h.prepStart.mock.calls[0]![3].access).toEqual(current.network.access);
+    expect(h.prepareHost).not.toHaveBeenCalled();
+  });
   function reconnectingExecutor() {
     const reconnects: string[] = [];
     // Model the existing SSH manager's single retry with a fresh connection.
@@ -664,7 +755,7 @@ describe("managed network prerequisite preparation", () => {
         }),
       );
   });
-  it("stops host preparation if a server joins another cluster after the request was accepted", async () => {
+  it("stops host preparation if another network operation reserves the server after the request was accepted", async () => {
     h.membership.mockResolvedValue({ clusterId: "another-cluster" });
     await runNetworkPreparation(ctx, preparing());
     expect(h.executor).not.toHaveBeenCalled();
@@ -673,7 +764,7 @@ describe("managed network prerequisite preparation", () => {
     expect(h.prepFinish.mock.calls.at(-1)?.[2][0].steps[0]).toMatchObject({
       id: "connect",
       status: "failed",
-      message: expect.stringContaining("joined another cluster"),
+      message: expect.stringContaining("Another network operation reserved"),
     });
   });
   it("uses stable retry hashes when jsonb changes object key order", async () => {
@@ -970,6 +1061,37 @@ describe("managed network progress subscriptions", () => {
 });
 
 describe("managed network authority and dry-run planning", () => {
+  it("includes directed access in the reviewed plan and inspects only selected transport pairs", async () => {
+    const access = { version: 1 as const, rules: [] };
+    const result = await operations.planManagedNetwork(ctx, {
+      ...managedPlanInputFixture(),
+      access,
+    });
+    expect(result.plan.config.network.access).toEqual(access);
+    expect(result.plan.config.members).toHaveLength(2);
+    expect(h.inspect).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ accessControlled: true, transportEndpoints: [] }),
+    );
+    expect(h.apply).not.toHaveBeenCalled();
+  });
+  it("blocks detaching a cluster dependency before preparation or planning touches a host", async () => {
+    const current = { ...stored().plan.config, id: "existing", revision: 3 };
+    h.get.mockResolvedValue(current);
+    h.dependencies.mockRejectedValue(
+      new AppError("A cluster uses this network", 409, "NETWORK_IN_USE"),
+    );
+    const input = { ...managedPlanInputFixture(), clusterId: current.id, revision: 3 };
+    await expect(
+      networkPreparationCollection.prepareManagedNetwork(ctx, input),
+    ).rejects.toMatchObject({ code: "NETWORK_IN_USE" });
+    await expect(
+      operations.planManagedNetwork(ctx, { ...input, intent: "remove" }),
+    ).rejects.toMatchObject({ code: "NETWORK_IN_USE" });
+    expect(h.executor).not.toHaveBeenCalled();
+    expect(h.prepStart).not.toHaveBeenCalled();
+    expect(h.save).not.toHaveBeenCalled();
+  });
   it.each(["cloud-mode", "cloud"])(
     "blocks %s in planning, apply and workers before host access",
     async (mode) => {
@@ -1078,6 +1200,98 @@ describe("managed network authority and dry-run planning", () => {
 });
 
 describe("managed network application and recovery", () => {
+  it("verifies allowed and denied directions while excluding isolated servers from WireGuard peer lists", async () => {
+    const value = {
+      ...stored(["server-a", "server-b", "server-c"]),
+      status: "applying" as const,
+      generation: 1,
+    };
+    value.plan.config.network.access = {
+      version: 1,
+      rules: [{ sourceServerId: "server-a", targetServerId: "server-b" }],
+    };
+    h.interfaces.mockImplementation(async ({ id }) => [
+      {
+        name: value.plan.interfaceName,
+        mtu: 1400,
+        up: true,
+        kind: "wireguard",
+        addresses: [
+          {
+            address: value.plan.config.members.find((member) => member.serverId === id)!.privateIp,
+            prefixLength: 32,
+          },
+        ],
+      },
+    ]);
+    h.check.mockImplementation(async (_executor, source, peers) =>
+      peers.map((peer: { serverId: string }) => {
+        const allowed = source.serverId === "server-a" && peer.serverId === "server-b";
+        return {
+          sourceServerId: source.serverId,
+          targetServerId: peer.serverId,
+          tcp: allowed,
+          udp: allowed,
+          mtu: allowed,
+          reachable: allowed,
+          latencyMs: allowed ? 1 : null,
+          message: null,
+        };
+      }),
+    );
+    await runManagedNetwork(ctx, value);
+    expect(h.ready).toHaveBeenCalledWith({ id: "server-a" }, value.plan.managedId, ["server-b"]);
+    expect(h.ready).toHaveBeenCalledWith({ id: "server-b" }, value.plan.managedId, ["server-a"]);
+    expect(h.ready).toHaveBeenCalledWith({ id: "server-c" }, value.plan.managedId, []);
+    expect(h.prepare.mock.calls.every(([, transaction]) => transaction.accessControlled)).toBe(
+      true,
+    );
+    expect(h.check).toHaveBeenCalledTimes(3);
+    const [, , , status, , report] = h.finish.mock.calls.at(-1)!;
+    expect(status).toBe("succeeded");
+    expect(report.handshakes).toHaveLength(2);
+    expect(report.peers).toHaveLength(6);
+    expect(
+      report.peers.filter((peer: { expectedAccess: string }) => peer.expectedAccess === "deny"),
+    ).toHaveLength(5);
+    expect(report.peers.every((peer: { policyPassed: boolean }) => peer.policyPassed)).toBe(true);
+    expect(h.rollback).not.toHaveBeenCalled();
+    expect(h.commit).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["reachable", "lost-ssh"])(
+    "restores the network when a blocked direction cannot be verified: %s",
+    async (failure) => {
+      const value = applying();
+      value.plan.config.network.access = {
+        version: 1,
+        rules: [{ sourceServerId: "server-a", targetServerId: "server-b" }],
+      };
+      h.check.mockImplementation(async (_executor, source, peers) => {
+        if (failure === "lost-ssh" && source.serverId === "server-b")
+          throw new SshDisconnectedError("Disconnected");
+        return peers.map((peer: { serverId: string }) => ({
+          sourceServerId: source.serverId,
+          targetServerId: peer.serverId,
+          tcp: true,
+          udp: true,
+          mtu: true,
+          reachable: true,
+          latencyMs: 1,
+          message: null,
+        }));
+      });
+      await runManagedNetwork(ctx, value);
+      expect(h.commit).not.toHaveBeenCalled();
+      expect(h.rollback).toHaveBeenCalledTimes(2);
+      expect(h.finish.mock.calls.at(-1)![3]).toBe("rolled_back");
+      const reverse = h.finish.mock.calls
+        .at(-1)![5]
+        .peers.find((peer: { sourceServerId: string }) => peer.sourceServerId === "server-b");
+      expect(reverse).toMatchObject({ expectedAccess: "deny", policyPassed: false });
+    },
+  );
+
   it("tests every encrypted transport before assigning routes, verifies private connectivity, then commits", async () => {
     h.stageTransport.mockImplementation(async (_executor, _transaction, config) => {
       expect(h.prepare).toHaveBeenCalledTimes(2);
@@ -1293,9 +1507,12 @@ describe("managed network application and recovery", () => {
     expect(h.finish).not.toHaveBeenCalled();
     expect(h.finalize).not.toHaveBeenCalled();
     expect(h.progress).toHaveBeenLastCalledWith(
-      stored().id, 1, "needs_attention",
+      stored().id,
+      1,
+      "needs_attention",
       expect.arrayContaining([expect.objectContaining({ stage: "failed" })]),
-      expect.any(Object), expect.any(String),
+      expect.any(Object),
+      expect.any(String),
     );
   });
   it("checks host fingerprints again before installation or preparation", async () => {

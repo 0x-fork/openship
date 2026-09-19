@@ -1523,7 +1523,7 @@ describe("triggerDeployment", () => {
     expect(repos.deployment.create).not.toHaveBeenCalled();
   });
 
-  it("returns an actionable 409 when there is no active deployment to refresh", async () => {
+  it.each([false, true])("requires an active deployment to refresh (service pipeline: %s)", async (useServicePipeline) => {
     repos.project.findById.mockResolvedValue(
       baseProject({
         framework: "nextjs",
@@ -1531,14 +1531,14 @@ describe("triggerDeployment", () => {
       }),
     );
     resolveServicePipelineMode.mockResolvedValue({
-      useServicePipeline: false,
+      useServicePipeline,
       servicePreflightServices: [],
-      useSingleAppPipeline: true,
+      useSingleAppPipeline: !useServicePipeline,
     });
 
     await expect(
       triggerDeployment(ctx, { projectId: "project-1", refresh: true }),
-    ).rejects.toMatchObject({ statusCode: 409 });
+    ).rejects.toMatchObject({ statusCode: 409, message: "Nothing to refresh yet — deploy the project first." });
     expect(repos.deployment.create).not.toHaveBeenCalled();
   });
 

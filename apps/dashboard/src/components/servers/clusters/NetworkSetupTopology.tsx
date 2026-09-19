@@ -1,6 +1,11 @@
 "use client";
 
-import type { ClusterNetworkReport, ManagedNetworkHostProgress } from "@repo/core";
+import type {
+  ClusterNetworkReport,
+  ManagedNetworkHostProgress,
+  NetworkAccessPolicy,
+  NetworkFirewallScope,
+} from "@repo/core";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { ClusterNetworkDiagnostics } from "./ClusterNetworkDiagnostics";
 import type { NetworkProgressHost } from "./NetworkSetupProgress";
@@ -18,6 +23,10 @@ export function NetworkSetupTopology({
   observedAt,
   restored = false,
   onHostSelect,
+  showFirewallRules,
+  network,
+  onAccessChange,
+  accessDisabled,
 }: {
   members: NetworkTopologyMember[];
   hosts: (NetworkProgressHost & { stage?: ManagedNetworkHostProgress["stage"] })[];
@@ -29,16 +38,24 @@ export function NetworkSetupTopology({
   observedAt?: string | null;
   restored?: boolean;
   onHostSelect(serverId: string): void;
+  showFirewallRules?: boolean;
+  network?: NetworkFirewallScope;
+  onAccessChange?(access: NetworkAccessPolicy): void;
+  accessDisabled?: boolean;
 }) {
   const { t } = useI18n();
-  const m = t.servers.clusters.managed;
+  const m = t.servers.networks.managed;
   return (
     <ClusterNetworkDiagnostics
       compact
+      showFirewallRules={showFirewallRules}
+      network={network}
+      onAccessChange={onAccessChange}
+      accessDisabled={accessDisabled}
       members={members.map((member) => {
         const host = hosts.find((item) => item.serverId === member.serverId);
         if (!host) return member;
-        const current = running && host.steps.find((step) => step.status === "running");
+        const current = host.steps.find((step) => step.status === "running");
         const failed = host.steps.find((step) => step.status === "failed");
         const done = host.steps.filter(
           (step) => step.status === "completed" || step.status === "skipped",
@@ -49,7 +66,7 @@ export function NetworkSetupTopology({
           host.steps.some((step) => step.id === "rollback" && step.status === "completed");
         const progress: NonNullable<NetworkTopologyMember["progress"]> = recovered
           ? { state: "restored", label: m.stages.rolled_back }
-          : current
+          : running && current
             ? { state: "running", label: m.setupSteps[current.id] }
             : failed || host.stage === "failed"
               ? { state: "failed", label: failed ? m.setupSteps[failed.id] : m.stages.failed }
@@ -57,14 +74,16 @@ export function NetworkSetupTopology({
                 ? { state: "completed", label: completeLabel }
                 : {
                     state: "pending",
-                    label: host.steps.length
-                      ? interpolate(m.completedSteps, {
-                          done: String(done),
-                          total: String(host.steps.length),
-                        })
-                      : host.stage
-                        ? m.stages[host.stage]
-                        : m.stepStatus.pending,
+                    label: current
+                      ? m.stepStatus.interrupted
+                      : host.steps.length
+                        ? interpolate(m.completedSteps, {
+                            done: String(done),
+                            total: String(host.steps.length),
+                          })
+                        : host.stage
+                          ? m.stages[host.stage]
+                          : m.stepStatus.pending,
                   };
         return { ...member, progress };
       })}

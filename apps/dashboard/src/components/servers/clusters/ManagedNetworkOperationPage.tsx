@@ -21,7 +21,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
 import { usePlatform } from "@/context/PlatformContext";
 import { getApiErrorMessage } from "@/lib/api";
-import { serverClustersApi } from "@/lib/api/server-clusters";
+import { privateNetworksApi } from "@/lib/api/private-networks";
 import { ManagedNetworkReview } from "./ManagedNetworkReview";
 import { NetworkSetupProgress } from "./NetworkSetupProgress";
 import { useNetworkSetup } from "@/hooks/useNetworkSetup";
@@ -37,7 +37,7 @@ import { ManagedNetworkTransportNotice } from "./ManagedNetworkTransportNotice";
 
 export function ManagedNetworkOperationPage({ id }: { id: string }) {
   const { t } = useI18n();
-  const c = t.servers.clusters;
+  const c = t.servers.networks;
   const m = c.managed;
   const router = useRouter();
   const { selfHosted, deployMode } = usePlatform();
@@ -56,13 +56,16 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
   const [now, setNow] = useState(Date.now);
   const [openHost, setOpenHost] = useState<{ serverId: string } | null>(null);
   const running = !!operation && managedNetworkInProgress(operation.status);
+  const requiresFirewallConfirmation =
+    operation?.plan.intent === "configure" &&
+    operation.plan.config.network.access?.rules.length !== 0;
   const firewall = useNetworkFirewallConfirmation(
     `${operation?.id}:${operation?.planHash}:${operation?.generation}:${operation?.status}`,
   );
   useEffect(() => {
     if (!eligible) return;
     let active = true;
-    void serverClustersApi
+    void privateNetworksApi
       .capabilities()
       .then((caps) => {
         if (active) {
@@ -85,7 +88,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
   const apply = useCallback(
     async (action: "apply" | "resume" | "rollback") => {
       if (!operation || actionPending.current || !capabilities?.canManage) return;
-      if (action !== "rollback" && operation.plan.intent !== "remove" && !firewall.checked) {
+      if (action !== "rollback" && requiresFirewallConfirmation && !firewall.checked) {
         setError(m.firewallRules.confirmRequired);
         return;
       }
@@ -94,7 +97,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
       setError(null);
       try {
         setOperation(
-          await serverClustersApi.applyManaged({
+          await privateNetworksApi.applyManaged({
             operationId: id,
             planHash: operation.planHash,
             action,
@@ -117,6 +120,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
       setOperation,
       stream.reconnect,
       firewall.checked,
+      requiresFirewallConfirmation,
       m.firewallRules.confirmRequired,
     ],
   );
@@ -127,10 +131,10 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
     setError(null);
     try {
       setOperation(
-        await serverClustersApi.discardPlan({ operationId: id, planHash: operation.planHash }),
+        await privateNetworksApi.discardPlan({ operationId: id, planHash: operation.planHash }),
       );
       setConfirmation(null);
-      router.replace("/servers?tab=cluster");
+      router.replace("/servers?tab=networking");
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
@@ -151,6 +155,10 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
   }, [operation?.status, confirmation]);
   const recoverable =
     operation?.status === "interrupted" || operation?.status === "needs_attention";
+  const showFirewallReview =
+    operation?.plan.intent === "configure" &&
+    !operation.replacementPreparationId &&
+    (operation.status === "planned" || recoverable);
   const clusterExists =
     operation &&
     ((operation.status === "succeeded" && operation.plan.intent === "configure") ||
@@ -191,7 +199,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
     <PageContainer>
       <section className="@container/network-operation" aria-labelledby="network-operation-title">
         <Link
-          href="/servers?tab=cluster"
+          href="/servers?tab=networking"
           className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4 rtl:rotate-180" />
@@ -231,14 +239,35 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
             {operation && (
               <div className="mt-6 grid items-start gap-6 @4xl/network-operation:grid-cols-[minmax(0,1fr)_340px]">
                 <div className="min-w-0 space-y-5">
+                  {showFirewallReview && (
+                    <ManagedNetworkTransportNotice
+                      access={operation.plan.config.network.access}
+                      failed={operation.report?.handshakes?.some((peer) => !peer.ok)}
+                      endpoints={operation.plan.hosts
+                        .filter((host) => host.action === "configure")
+                        .map((host) => ({
+                          ...host,
+                          providerId: operation.plan.config.members.find(
+                            (member) => member.serverId === host.serverId,
+                          )?.providerId,
+                        }))}
+                    >
+                      {capabilities?.canManage && requiresFirewallConfirmation && (
+                        <NetworkFirewallConfirmation
+                          mode="wireguard"
+                          {...firewall}
+                          disabled={busy || !!expired}
+                        />
+                      )}
+                    </ManagedNetworkTransportNotice>
+                  )}
                   {operation.status === "planned" ? (
-                    <div className="rounded-2xl bg-card p-5 sm:p-7">
-                      <h2 className="mb-5 text-lg font-semibold">{m.reviewTitle}</h2>
-                      <ManagedNetworkReview plan={operation.plan} />
-                    </div>
+                    <ManagedNetworkReview plan={operation.plan} />
                   ) : (
                     <>
                       <NetworkSetupTopology
+                        network={operation.plan.config.network}
+                        showFirewallRules={!showFirewallReview}
                         members={operation.plan.config.members.map((member) => ({
                           ...member,
                           name:
@@ -254,19 +283,6 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                         restored={operation.status === "rolled_back"}
                         onHostSelect={(serverId) => setOpenHost({ serverId })}
                       />
-                      {recoverable &&
-                        operation.plan.intent !== "remove" &&
-                        !operation.report?.handshakes?.some((peer) => !peer.ok) && (
-                          <ManagedNetworkTransportNotice
-                            endpoints={operation.plan.config.members.map((member) => ({
-                              ...member,
-                              name:
-                                operation.plan.hosts.find(
-                                  (host) => host.serverId === member.serverId,
-                                )?.name ?? member.serverId,
-                            }))}
-                          />
-                        )}
                       {operation.hosts.some((host) => host.steps?.length) ? (
                         <NetworkSetupProgress
                           running={running}
@@ -334,7 +350,9 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                     </>
                   )}
                 </div>
-                <aside className="order-first space-y-4 rounded-2xl bg-card p-5 @4xl/network-operation:sticky @4xl/network-operation:top-6 @4xl/network-operation:order-last">
+                <aside
+                  className={`${showFirewallReview ? "order-last" : "order-first"} space-y-4 rounded-2xl bg-card p-5 @4xl/network-operation:sticky @4xl/network-operation:top-6 @4xl/network-operation:order-last`}
+                >
                   <div role="status" className="flex items-center gap-2 text-sm font-semibold">
                     {running ? (
                       <Loader2 className="size-4 animate-spin text-primary" />
@@ -378,7 +396,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                       </p>
                       <Button asChild className="h-auto min-h-10 w-full whitespace-normal py-2">
                         <Link
-                          href={`/servers/clusters/preparations/${operation.replacementPreparationId}`}
+                          href={`/servers/networks/preparations/${operation.replacementPreparationId}`}
                         >
                           {m.viewUpdatedSetup}
                           <ArrowRight className="size-4 rtl:rotate-180" />
@@ -388,7 +406,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                   )}
                   {operation.plan.preparationId && (
                     <Link
-                      href={`/servers/clusters/preparations/${operation.plan.preparationId}`}
+                      href={`/servers/networks/preparations/${operation.plan.preparationId}`}
                       className="block text-sm font-medium text-primary hover:underline"
                     >
                       {m.viewPreparation}
@@ -397,29 +415,17 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                   {expired && capabilities?.canManage && operation.plan.preparationId && (
                     <Button asChild variant="outline" className="w-full">
                       <Link
-                        href={`${operation.plan.baseRevision ? `/servers/clusters/${operation.clusterId}/edit` : "/servers/clusters/new"}?preparation=${encodeURIComponent(operation.plan.preparationId)}`}
+                        href={`${operation.plan.baseRevision ? `/servers/networks/${operation.clusterId}/edit` : "/servers/networks/new"}?preparation=${encodeURIComponent(operation.plan.preparationId)}`}
                       >
                         {m.editSettings}
                       </Link>
                     </Button>
                   )}
-                  {capabilities?.canManage &&
-                    operation.plan.intent !== "remove" &&
-                    !operation.replacementPreparationId &&
-                    (operation.status === "planned" || recoverable) && (
-                      <NetworkFirewallConfirmation
-                        mode="wireguard"
-                        {...firewall}
-                        disabled={busy || !!expired}
-                      />
-                    )}
                   {capabilities?.canManage && operation.status === "planned" && (
                     <Button
                       className="h-auto min-h-10 w-full whitespace-normal py-2"
                       disabled={
-                        busy ||
-                        !!expired ||
-                        (operation.plan.intent !== "remove" && !firewall.checked)
+                        busy || !!expired || (requiresFirewallConfirmation && !firewall.checked)
                       }
                       onClick={() => void apply("apply")}
                     >
@@ -432,9 +438,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                       {!operation.replacementPreparationId && (
                         <Button
                           className="h-auto min-h-10 w-full whitespace-normal py-2"
-                          disabled={
-                            busy || (operation.plan.intent !== "remove" && !firewall.checked)
-                          }
+                          disabled={busy || (requiresFirewallConfirmation && !firewall.checked)}
                           onClick={() => void apply("resume")}
                         >
                           {busy && <Loader2 className="size-4 animate-spin" />}
@@ -461,7 +465,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                   )}
                   {clusterExists && (
                     <Button className="h-auto min-h-10 w-full whitespace-normal py-2" asChild>
-                      <Link href={`/servers/clusters/${operation.clusterId}`}>
+                      <Link href={`/servers/networks/${operation.clusterId}`}>
                         {m.viewCluster}
                         <ArrowRight className="size-4 rtl:rotate-180" />
                       </Link>
@@ -475,7 +479,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                         variant="outline"
                         asChild
                       >
-                        <Link href="/servers/clusters/new">{c.createCluster}</Link>
+                        <Link href="/servers/networks/new">{c.createCluster}</Link>
                       </Button>
                     )}
                   {operation.status === "planned" && capabilities?.canManage && (
@@ -502,7 +506,7 @@ export function ManagedNetworkOperationPage({ id }: { id: string }) {
                         clusterExists || operation.replacementPreparationId ? "ghost" : "default"
                       }
                     >
-                      <Link href="/servers?tab=cluster">{m.closeSetup}</Link>
+                      <Link href="/servers?tab=networking">{m.closeSetup}</Link>
                     </Button>
                   )}
                 </aside>

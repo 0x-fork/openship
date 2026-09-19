@@ -1036,9 +1036,9 @@
   },
   "serviceEnvironment": {
     "title": "Servis çalışma zamanı ortamı",
-    "description": "Yalnızca bu servisin çalışma zamanında uygulanır. Bu değerler Compose ortamını ve aynı adlı proje değişkenlerini geçersiz kılar. Yeniden başlatma veya dağıtımla uygulayın.",
+    "description": "Bu değişkenler yalnızca bu hizmete uygulanır ve Compose veya projedeki aynı adlı değerlerin yerini alır. Kaydedilen değerleri etkinleştirmek için Ortam değişikliklerini uygula seçeneğini kullanın.",
     "overrides": "Bu serviste şu anahtarlar proje değerlerinden önceliklidir: {keys}.",
-    "buildArguments": "Açık imaj derleme argümanları Compose dosyasında veya kaynak yapılandırmasında düzenlenir. Uygulamak için yeniden derleyip dağıtın; bu düzenleyici yalnızca çalışma zamanı değişkenlerini değiştirir.",
+    "buildArguments": "Derleme argümanları Compose dosyasında veya kaynak yapılandırmasında tanımlanır ve yeniden derleme gerektirir.",
     "projectLink": "Ortak proje ortamını düzenle",
     "loadFailed": "Geçersiz kılmaları denetlemek için proje değişkenlerinin adları yüklenemedi."
   }
