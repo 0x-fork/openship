@@ -293,7 +293,7 @@ interface CompactSummaryProps {
   /** Retention shown as its own chip. Rollback is configured inside the collapsed
    *  Advanced panel, so without this the summary bar gave no hint that retention
    *  exists at all — an operator could ship without ever learning they get
-   *  restorable versions. `null`/undefined window = the auto (disk-sized) value. */
+   *  restorable versions. `null`/undefined window inherits the instance default. */
   rollbackWindow?: number | null;
   rollbackStrategy?: "git" | "snapshot";
   onEdit: () => void;

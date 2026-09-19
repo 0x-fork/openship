@@ -15,7 +15,6 @@ import {
 import { entitlementQuota, syncOblienEntitlement } from "./billing-oblien-quota";
 import { cloudPlan } from "./billing-catalog";
 import { presentCloudSubscription } from "./billing-subscription";
-import { getOblienBillingApi } from "../../lib/oblien-client";
 import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
 import { env } from "@repo/platform/engine/config/env";
@@ -60,12 +59,12 @@ export interface UpsertSubscriptionInput {
 
 /** Mirror fresh provider entitlement and add Openship application usage. */
 export async function getBillingState(orgId: string): Promise<BillingState> {
-  const namespace = await ensureNamespace(orgId);
-  const { entitlement, tier } = await syncOblienEntitlement(orgId);
-  const [plan, providerSubscription, legacySubscriptions] = await Promise.all([
-    cloudPlan(tier), getOblienBillingApi().getSubscription(namespace), listLiveSubscriptions(orgId),
+  await ensureNamespace(orgId);
+  const { entitlement, tier, subscription: providerSubscription } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
+  const [plan, legacySubscriptions] = await Promise.all([
+    cloudPlan(tier), listLiveSubscriptions(orgId),
   ]);
-  const subscription = presentCloudSubscription(providerSubscription.subscription);
+  const subscription = presentCloudSubscription(providerSubscription);
   const managed = legacySubscriptions.length === 0;
   const monthlyCreditLimit = plan?.monthlyCredits ?? null;
   const { quotaLimit, quotaUsed, quotaRemaining } = entitlementQuota(entitlement);

@@ -170,6 +170,8 @@ export function createProjectInspectionOperations(
         page,
         perPage,
         environment,
+        status: input.status,
+        search: input.search,
       });
       return {
         // #336: mask meta.composeServices[].environment (twin of deployment.controller list).

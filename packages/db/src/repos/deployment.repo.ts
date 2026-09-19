@@ -1,5 +1,5 @@
-import { eq, and, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import { ilike, type SQL, eq, and, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { generateId, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery } from "@repo/core";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { deployment, buildSession, project } from "../schema";
@@ -17,6 +17,34 @@ export type NewBuildSession = typeof buildSession.$inferInsert;
 
 export function createDeploymentRepo(db: Database, encryption: ConfigurationEncryption) {
   const codec = createConfigurationSecrets(encryption);
+  async function listHistory(scope: SQL, opts: DeploymentHistoryQuery = {}) {
+    const page = opts.page ?? 1;
+    const perPage = opts.perPage ?? 20;
+    const conditions = [scope];
+    if (opts.environment) conditions.push(eq(deployment.environment, opts.environment));
+    if (opts.status) conditions.push(inArray(deployment.status, [...DEPLOYMENT_HISTORY_STATUSES[opts.status]]));
+    const query = opts.search?.trim();
+    if (query) {
+      // A literal search: '%' and '_' in a commit message are not wildcards.
+      const pattern = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
+      conditions.push(or(
+        ilike(deployment.commitMessage, pattern),
+        ilike(deployment.commitSha, pattern),
+        ilike(sql<string>`${deployment.meta}->>'gitOwner'`, pattern),
+        sql`exists (select 1 from "project" where "project"."id" = ${deployment.projectId} and "project"."name" ilike ${pattern})`,
+      )!);
+    }
+    const where = and(...conditions);
+    const rows = (await db.query.deployment.findMany({
+      where,
+      orderBy: [desc(deployment.createdAt), desc(deployment.id)],
+      limit: perPage,
+      offset: (page - 1) * perPage,
+    })).map(codec.openDeployment);
+    const [{ value: total }] = await db.select({ value: sql<number>`count(*)` }).from(deployment).where(where);
+    return { rows, total: Number(total), page, perPage };
+  }
+
   return {
     // ── Deployments ────────────────────────────────────────────────────
 
@@ -38,32 +66,8 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       return rows.map(codec.openDeployment);
     },
 
-    async listByProject(
-      projectId: string,
-      opts?: { page?: number; perPage?: number; environment?: string },
-    ) {
-      const page = opts?.page ?? 1;
-      const perPage = opts?.perPage ?? 20;
-      const offset = (page - 1) * perPage;
-
-      const conditions = [eq(deployment.projectId, projectId)];
-      if (opts?.environment) {
-        conditions.push(eq(deployment.environment, opts.environment));
-      }
-
-      const rows = (await db.query.deployment.findMany({
-        where: and(...conditions),
-        orderBy: [desc(deployment.createdAt)],
-        limit: perPage,
-        offset,
-      })).map(codec.openDeployment);
-
-      const [{ value: total }] = await db
-        .select({ value: sql<number>`count(*)` })
-        .from(deployment)
-        .where(and(...conditions));
-
-      return { rows, total: Number(total), page, perPage };
+    async listByProject(projectId: string, opts?: DeploymentHistoryQuery) {
+      return listHistory(eq(deployment.projectId, projectId), opts);
     },
 
     /** Exact active-work query for the project teardown safety gate.
@@ -117,24 +121,19 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     // is gone; access is org-only.
 
     /** Org-scoped list — every deployment for the active org. */
-    async listByOrganization(organizationId: string, opts?: { page?: number; perPage?: number }) {
-      const page = opts?.page ?? 1;
-      const perPage = opts?.perPage ?? 50;
-      const offset = (page - 1) * perPage;
+    async listByOrganization(organizationId: string, opts?: DeploymentHistoryQuery) {
+      return listHistory(eq(deployment.organizationId, organizationId), { ...opts, perPage: opts?.perPage ?? 50 });
+    },
 
-      const rows = (await db.query.deployment.findMany({
-        where: eq(deployment.organizationId, organizationId),
-        orderBy: [desc(deployment.createdAt)],
-        limit: perPage,
-        offset,
-      })).map(codec.openDeployment);
-
-      const [{ value: total }] = await db
-        .select({ value: sql<number>`count(*)` })
-        .from(deployment)
-        .where(eq(deployment.organizationId, organizationId));
-
-      return { rows, total: Number(total), page, perPage };
+    /** Options for the global history's project filter. Independent of the
+     * current page/filter; also supplies row metadata without one query per row. */
+    async listHistoryProjects(organizationId: string) {
+      return db.selectDistinct({
+        id: project.id, name: project.name,
+        activeDeploymentId: project.activeDeploymentId, favicon: project.favicon,
+      }).from(project).innerJoin(deployment, eq(deployment.projectId, project.id))
+        .where(and(eq(project.organizationId, organizationId), eq(deployment.organizationId, organizationId)))
+        .orderBy(project.name, project.id);
     },
 
     /**
@@ -674,6 +673,23 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     // Owned by the RollbackOrchestrator. These methods are policy-free
     // — they only do the DB work. Decisions (when to archive, when to
     // purge, pin limits) live in the orchestrator.
+
+    /** Successful/unverified releases plus artifacts still awaiting cleanup. Partial
+     * releases are valid rollback targets too; omitting them leaks their badge
+     * and files forever once they stop being active. */
+    async listForRetention(projectId: string) {
+      return (await db.query.deployment.findMany({
+        where: and(
+          eq(deployment.projectId, projectId),
+          or(
+            inArray(deployment.status, ["ready", "partial_failure", "reconciling"]),
+            isNotNull(deployment.artifactRetainedAt),
+            eq(deployment.pinned, true),
+          ),
+        ),
+        orderBy: [desc(deployment.createdAt), desc(deployment.id)],
+      })).map(codec.openDeployment);
+    },
 
     /** Set the timestamp marking "this deployment's artifact is archived
      *  and rollback-restorable". Pass null to mark it purged. */

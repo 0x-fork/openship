@@ -474,13 +474,13 @@
       "title": "Rollback-Strategie",
       "rebuild": "Neubau (Git)",
       "instant": "Sofort (Snapshot)",
-      "descRebuild": "Baut den alten Commit neu, sofern dessen Image nicht noch auf dem Host liegt.",
-      "descInstant": "Behält das Image jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher.",
+      "descRebuild": "Baut den früheren Commit neu, sofern sein Image nicht mehr auf dem Host liegt.",
+      "descInstant": "Bewahrt Artefakte bis zum Verlaufslimit auf. Ältere Versionen müssen eventuell neu gebaut werden.",
       "toggleAria": "Snapshot-Aufbewahrung umschalten",
-      "keepNone": "Keine Extra-Kopien",
-      "keepCopies": "Eine Kopie pro Version",
-      "descRebuildFiles": "Baut den alten Commit neu, sofern dessen Dateien nicht noch auf dem Host liegen.",
-      "descInstantFiles": "Behält die Dateien jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher."
+      "keepNone": "Images wiederverwenden oder neu bauen",
+      "keepCopies": "Rollback-Artefakte aufbewahren",
+      "descRebuildFiles": "Baut den früheren Commit neu, sofern seine Dateien nicht mehr auf dem Host liegen.",
+      "descInstantFiles": "Bewahrt Build-Dateien bis zum Verlaufslimit auf. Ältere Versionen müssen eventuell neu gebaut werden."
     },
     "rollbackHistory": {
       "title": "Rollback-Verlauf",
@@ -490,13 +490,17 @@
       "descGit": "Aktuelle Images bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann.",
       "decreaseAria": "Rollback-Verlauf verringern",
       "increaseAria": "Rollback-Verlauf erhöhen",
-      "sizeEach": "~{size} pro Version",
+      "sizeEach": "~{size} pro Image, einschließlich gemeinsam genutzter Schichten",
       "diskFree": "{size} frei",
       "autoBadge": "automatisch bemessen",
       "manualBadge": "manuell gesetzt",
       "kindFiles": "gebaute Dateien auf der Platte",
       "kindImages": "Images auf dem Host",
-      "descGitFiles": "Die Dateien aktueller Versionen bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann."
+      "descGitFiles": "Die Dateien aktueller Versionen bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann.",
+      "retentionHint": "Artefakte neuerer Bereitstellungen für ein schnelles Rollback aufbewahren.",
+      "retentionDescription": "Maximale Anzahl aufzubewahrender früherer Versionen. Aktive und angeheftete Versionen zählen zusätzlich. Ältere Artefakte werden entfernt; der Bereitstellungsverlauf bleibt verfügbar. Bei 0 bleiben nur aktive und angeheftete Versionen erhalten.",
+      "defaultBadge": "Instanzstandard",
+      "loadFailed": "Rollback-Einstellungen konnten nicht geladen werden."
     },
     "commits": {
       "title": "Letzte Commits",

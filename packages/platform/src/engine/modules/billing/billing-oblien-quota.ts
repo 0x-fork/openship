@@ -7,7 +7,7 @@ import { repos } from "@repo/db";
 import type { NamespaceUsageUnits } from "@repo/adapters";
 import { env } from "../../config/env";
 import { getOblienBillingApi, getOblienClient } from "../../lib/oblien-client";
-import { assertOblienEntitlementMatchesSubscription, type OblienEntitlement } from "../../lib/oblien-billing-api";
+import { assertOblienEntitlementMatchesSubscription, type OblienEntitlement, type OblienSubscription } from "../../lib/oblien-billing-api";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { syncCloudResourceLimits } from "../../lib/cloud-resource-limits";
 import { openshipTier } from "./billing-catalog";
@@ -53,23 +53,29 @@ export interface EntitlementDrift {
  */
 export interface SyncedCloudEntitlement {
   entitlement: OblienEntitlement;
+  subscription: OblienSubscription;
   tier: PlanTierId;
   drift: EntitlementDrift;
 }
 
+interface EntitlementSyncOptions {
+  /** Billing reads and checkout do not provision or resize customer workloads. */
+  syncResourceLimits?: boolean;
+}
+
 /** Shares one lock with webhook deduplication, without nesting pooled DB locks. */
 export async function withCloudBillingLock<T>(organizationId: string, work: (
-  sync: () => Promise<SyncedCloudEntitlement>,
+  sync: (options?: EntitlementSyncOptions) => Promise<SyncedCloudEntitlement>,
 ) => Promise<T>): Promise<T> {
   return createProvisionLock(`billing:entitlement:${organizationId}`).run(() =>
-    work(() => readAndMirrorEntitlement(organizationId)));
+    work(options => readAndMirrorEntitlement(organizationId, options)));
 }
 
-export async function syncOblienEntitlement(organizationId: string): Promise<SyncedCloudEntitlement> {
-  return withCloudBillingLock(organizationId, (sync) => sync());
+export async function syncOblienEntitlement(organizationId: string, options?: EntitlementSyncOptions): Promise<SyncedCloudEntitlement> {
+  return withCloudBillingLock(organizationId, (sync) => sync(options));
 }
 
-async function readAndMirrorEntitlement(organizationId: string): Promise<SyncedCloudEntitlement> {
+async function readAndMirrorEntitlement(organizationId: string, options: EntitlementSyncOptions = {}): Promise<SyncedCloudEntitlement> {
     const org = await repos.organization.findById(organizationId);
     if (!org?.oblienNamespace) {
       throw new AppError("Cloud namespace is not ready", 503, "CLOUD_NAMESPACE_REQUIRED");
@@ -86,7 +92,10 @@ async function readAndMirrorEntitlement(organizationId: string): Promise<SyncedC
     // Positive entitlements must have provider-enforced resource ceilings before
     // issuing a token or allowing another deployment. Exhausted/suspended
     // customers can still obtain management access to stop/delete resources.
-    if (entitlement.status === "active") await syncCloudResourceLimits(org.oblienNamespace, tier);
+    // Reading billing or opening checkout requires no resource-policy write.
+    if (options.syncResourceLimits !== false && entitlement.status === "active") {
+      await syncCloudResourceLimits(org.oblienNamespace, tier);
+    }
     const currentPeriodStart = entitlement.periodStart ? new Date(entitlement.periodStart) : null;
     const currentPeriodEnd = entitlement.periodEnd ? new Date(entitlement.periodEnd) : null;
     const changed = org.planTierId !== tier || org.subscriptionStatus !== entitlement.status ||
@@ -99,7 +108,7 @@ async function readAndMirrorEntitlement(organizationId: string): Promise<SyncedC
       });
     }
     return {
-      entitlement, tier,
+      entitlement, subscription: state.subscription, tier,
       drift: {
         quotaMissing: entitlement.quota.limit === null && tier !== "enterprise",
         statusWas: org.subscriptionStatus, statusNow: entitlement.status, changed,
@@ -121,7 +130,7 @@ export async function getQuotaState(orgId: string): Promise<QuotaState | null> {
   const org = await repos.organization.findById(orgId);
   if (!org) throw new AppError("Organization not found", 404, "ORGANIZATION_NOT_FOUND");
   if (!org.oblienNamespace) return null;
-  return entitlementQuota((await syncOblienEntitlement(orgId)).entitlement);
+  return entitlementQuota((await syncOblienEntitlement(orgId, { syncResourceLimits: false })).entitlement);
 }
 
 /** Token issuance still allows exhausted customers to inspect and stop workloads. */

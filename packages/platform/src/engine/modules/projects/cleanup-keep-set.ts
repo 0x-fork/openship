@@ -20,7 +20,7 @@
 
 import { repos, type Project } from "@repo/db";
 import { findProjectDeployment } from "../../lib/active-deployment";
-import { computeKeepSet } from "../deployments/image-gc";
+import { computeKeepSet } from "../deployments/retained-artifacts";
 import type { RollbackWindowProject } from "../deployments/release-retention";
 import { usableRef } from "../deployments/rollback/restore-plan";
 
@@ -67,9 +67,9 @@ export async function computeCleanupKeepSet(
     { ...project, activeDeploymentId: effectiveActiveId },
     excludeId
       ? {
-          listReadyOrderedDesc: (id) =>
+          listForRetention: (id) =>
             repos.deployment
-              .listReadyOrderedDesc(id)
+              .listForRetention(id)
               .then((rows) => rows.filter((d) => d.id !== excludeId)),
           findById: (id) => (id === excludeId ? Promise.resolve(undefined) : repos.deployment.findById(id)),
         }
@@ -80,12 +80,12 @@ export async function computeCleanupKeepSet(
 
   const containers = new Set<string>();
   for (const depId of live) {
-    const dep = await findProjectDeployment(project, depId).catch(() => undefined);
+    const dep = await findProjectDeployment(project, depId);
     if (!dep) continue;
     const own = usableRef(dep?.containerId);
     if (own) containers.add(own);
 
-    const rows = await repos.service.listByDeployment(dep.id).catch(() => []);
+    const rows = await repos.service.listByDeployment(dep.id);
     for (const row of rows) {
       const ref = usableRef(row.containerId);
       if (ref) containers.add(ref);

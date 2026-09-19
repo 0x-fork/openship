@@ -6,6 +6,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { CreateDeploymentSchema } from "./deployments";
 import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "./project-inputs";
 import { SourceScanOptionsSchema } from "./env-reveal";
+import { ListDeploymentsSchema } from "./deployment-resources";
 
 // ─── Route params ────────────────────────────────────────────────────────────
 
@@ -15,12 +16,7 @@ export const DeploymentIdParam = Type.Object({
 
 // ─── Query params ────────────────────────────────────────────────────────────
 
-export const ListDeploymentsQuery = Type.Object({
-  projectId: Type.Optional(Type.String()),
-  environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")])),
-  page: Type.Optional(Type.Number({ minimum: 1, default: 1 })),
-  perPage: Type.Optional(Type.Number({ minimum: 1, maximum: 100, default: 20 })),
-});
+export const ListDeploymentsQuery = ListDeploymentsSchema;
 
 // ─── Request bodies ──────────────────────────────────────────────────────────
 

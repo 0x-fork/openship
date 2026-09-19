@@ -34,4 +34,10 @@ describe("Cloud preflight", () => {
     expect(await runCloudPreflight("org-a", {})).toMatchObject({ runtime: { ok: false, message: expect.stringContaining("credits exhausted") } });
     expect(h.createPlatform).not.toHaveBeenCalled();
   });
+  it("does not block an entitled customer on the account-level workspace quota endpoint", async () => {
+    h.quota.mockRejectedValue(new Error("Account quota is unavailable for scoped tokens"));
+    expect(await runCloudPreflight("org-a", {})).toMatchObject({ runtime: { ok: true } });
+    expect(h.spend).toHaveBeenCalledWith("org-a");
+    expect(h.quota).not.toHaveBeenCalled();
+  });
 });

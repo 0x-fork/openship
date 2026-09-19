@@ -43,6 +43,14 @@ async function setup() {
 }
 
 describe("shared deployment lifecycle", () => {
+  it("passes history filters and complete project options through the shared contract", async () => {
+    const s = await setup();
+    vi.mocked(s.resources.list).mockResolvedValue({ rows: s.rows.slice(0, 1), total: 41, page: 3, perPage: 20,
+      projects: [{ id: "project-a", name: "Project A" }] });
+    const result = await s.platform.deployments.list(s.ctx, { page: 3, perPage: 20, status: "failed", search: "earlier commit" });
+    expect(s.resources.list).toHaveBeenCalledWith("org-a", { page: 3, perPage: 20, status: "failed", search: "earlier commit" });
+    expect(result.data).toMatchObject({ total: 41, page: 3, perPage: 20, projects: [{ id: "project-a", name: "Project A" }] });
+  });
   it("confines reads and mutations to the fixed tenant before reaching the engine", async () => {
     const s = await setup();
     await expect(s.platform.deployments.get(s.ctx, "dep-project-b")).rejects.toMatchObject({ code: "NOT_FOUND" });

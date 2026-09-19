@@ -170,8 +170,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <UpdateCenter />
         <div className="flex flex-1 min-h-0">
           <Sidebar />
-          {/* Main content */}
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          {/* Keep absolute descendants, including hidden status messages, inside the scroll area. */}
+          <main className="relative flex-1 overflow-y-auto overscroll-y-contain">{children}</main>
         </div>
       </div>
     </DashboardProviders>

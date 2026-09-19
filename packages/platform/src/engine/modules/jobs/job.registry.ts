@@ -85,16 +85,15 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   },
   {
     key: "images:gc",
-    label: "Built-image garbage collection",
-    // Off-peak daily. Prunes each project's superseded build images beyond the
-    // rollback window on its deploy host. Cloud (SaaS) workloads live on Oblien,
-    // not local Docker, so there's nothing to sweep there.
+    label: "Deployment artifact cleanup",
+    // Retry retention on every runtime, including Cloud Docker workspaces and
+    // durable cloud units. Old badges/files need reconciliation too.
     defaultCron: "23 4 * * *",
-    available: () => platform().target !== "cloud",
     run: async () => {
       const r = await runImageGcSweep();
       return {
         scanned: r.projectsScanned,
+        releasesPurged: r.releasesPurged,
         removed: r.imagesRemoved,
         bytesReclaimed: r.bytesReclaimed,
         skipped: r.skippedInUse,

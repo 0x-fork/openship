@@ -39,8 +39,8 @@ import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
 
 const BASE_IMAGE = "busybox:latest";
-const TAG_V1 = "openship/e2e-cycle:v1";
-const TAG_V2 = "openship/e2e-cycle:v2";
+const TAG_V1 = "openship/e2e-cycle:bld_v1";
+const TAG_V2 = "openship/e2e-cycle:bld_v2";
 const APP_PORT = 80;
 
 async function freePort(): Promise<number> {
@@ -227,7 +227,7 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
         }),
       };
     });
-    vi.doMock("../../src/lib/controller-helpers", async (importOriginal) => {
+    vi.doMock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
@@ -445,20 +445,3 @@ describeDockerE2E("full rollback cycle through the real entry point", () => {
     expect(rollbackMod.planNeedsRepository(plan)).toBe(true);
   }, 120_000);
 });
-
-// The application seams moved with the shared engine.
-vi.doMock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
-      const actual = (await importOriginal()) as Record<string, unknown>;
-      return {
-        ...actual,
-        platform: () => localPlatform.platform,
-      };
-    });
-
-vi.doMock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
-      const actual = (await importOriginal()) as Record<string, unknown>;
-      return {
-        ...actual,
-        platform: () => localPlatform.platform,
-      };
-    });

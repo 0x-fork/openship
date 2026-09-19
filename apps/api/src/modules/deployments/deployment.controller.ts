@@ -20,6 +20,8 @@ export async function list(c: Context) {
   const result = await getPlatformKernel().deployments.list(operationContext(c), {
     projectId: c.req.query("projectId"), environment: c.req.query("environment") as "production" | "preview" | undefined,
     page: Number(c.req.query("page") ?? 1), perPage: Number(c.req.query("perPage") ?? 50),
+    status: c.req.query("status") as import("@repo/core").DeploymentHistoryFilter | undefined,
+    search: c.req.query("search"),
   });
   applyOperationContext(c, result.context);
   return c.json({ success: true, ...result.data });

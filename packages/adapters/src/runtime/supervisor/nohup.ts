@@ -189,6 +189,10 @@ export class NohupSupervisor implements ProcessSupervisor {
     );
   }
 
+  async canStart(_deploymentId: string): Promise<boolean> {
+    return false;
+  }
+
   async restart(deploymentId: string): Promise<void> {
     // Nohup can't restart - the service layer must re-deploy.
     await this.stop(deploymentId);

@@ -92,6 +92,9 @@ describe("Cloud customer checkout", () => {
   });
   it("blocks purchases through a provider deployment without the namespace billing contract", async () => {
     h.subscription.mockRejectedValue(new Error("subscription API unavailable"));
+    // Subscription checkout verifies this through the shared entitlement read;
+    // top-ups check the namespace subscription directly.
+    h.sync.mockRejectedValue(new Error("subscription API unavailable"));
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow("subscription API unavailable");
     await expect(createTopupCheckoutSession(ctx(), "starter")).rejects.toThrow("subscription API unavailable");
     expect(h.checkout).not.toHaveBeenCalled();

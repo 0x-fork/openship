@@ -87,7 +87,9 @@ async function tierFor(organizationId: string): Promise<PlanTierId> {
   const org = await repos.organization.findById(organizationId);
   if (env.CLOUD_MODE && org?.oblienNamespace) {
     const { syncOblienEntitlement } = await import("../modules/billing/billing-oblien-quota");
-    return (await syncOblienEntitlement(organizationId)).tier;
+    // Plan lookups are reads. Token issuance and actual spend operations still
+    // synchronize provider resource limits before allowing a workload to start.
+    return (await syncOblienEntitlement(organizationId, { syncResourceLimits: false })).tier;
   }
   return (org?.planTierId ?? "free") as PlanTierId;
 }

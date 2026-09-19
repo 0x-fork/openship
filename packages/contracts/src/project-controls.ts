@@ -11,7 +11,7 @@ import {
   SetReleaseSourceBody,
   SetAutoDeployBody,
 } from "./project-inputs";
-import { DeploymentLogsSchema, DeploymentPageSchema, LogEntrySchema } from "./deployment-resources";
+import { DeploymentHistoryFilters, DeploymentLogsSchema, DeploymentPageSchema, LogEntrySchema } from "./deployment-resources";
 import { AppError } from "@repo/core";
 import { ProjectSchema } from "./projects";
 import type { ResourceOperationSchema, ResourceOperations } from "./resource-operations";
@@ -350,6 +350,7 @@ export const ProjectControlSchemas = {
   listDeployments: {
     action: "read",
     input: Type.Object({
+      ...DeploymentHistoryFilters,
       page: Type.Optional(Type.Integer({ minimum: 1 })),
       perPage: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
       environment: Type.Optional(Type.String()),
@@ -386,7 +387,7 @@ export const ProjectControlSchemas = {
     action: "read",
     output: Type.Object({
       window: Type.Integer(),
-      source: Type.String(),
+      source: Type.Union([Type.Literal("explicit"), Type.Literal("instance-default")]),
       explicit: nullableNumber,
       snapshotSizeBytes: nullableNumber,
       measuredAt: nullableString,
@@ -484,3 +485,4 @@ export const ProjectControlSchemas = {
   deletionPreview: { action: "read", output: ProjectDeletionPreviewSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export type ProjectControlOperations = ResourceOperations<typeof ProjectControlSchemas>;
+export type RollbackCapacity = Static<typeof ProjectControlSchemas.getRollbackCapacity.output>;

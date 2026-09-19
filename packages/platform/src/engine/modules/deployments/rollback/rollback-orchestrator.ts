@@ -13,8 +13,7 @@
  *
  *   2. AUTO-PURGE ON OVERFLOW — `prune` drops the oldest unpinned releases
  *      beyond `resolveRollbackWindow(project)` (explicit override, else the
- *      disk-sized auto window, else the instance default). Pinned releases are
- *      exempt and don't consume the budget.
+ *      instance default of five). Active and pinned releases are exempt.
  *
  * ── Restore ──────────────────────────────────────────────────────────────
  *
@@ -41,18 +40,19 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Project } from "@repo/db";
-import { DockerRuntime, type DeploymentRef, type ResourceConfig } from "@repo/adapters";
+import { BareRuntime, DockerRuntime, type DeploymentRef, type ResourceConfig } from "@repo/adapters";
 import { AppError, safeErrorMessage } from "@repo/core";
-import { isArtifactRef } from "../../../lib/container-ref";
+import { isArtifactRef, usableRef } from "../../../lib/container-ref";
 import { resolveDeploymentRuntime } from "../../../lib/deployment-runtime";
-import { resolveRollbackWindow } from "../release-retention";
+import { withProjectRuntimeLock } from "../../../lib/project-runtime-lock";
 import {
   checkNoActiveBuild,
   triggerDeployment,
   type DeploymentConfigSnapshot,
 } from "../build.service";
 import { buildBackgroundContext } from "../../../lib/background-context";
-import { computeKeepSet } from "../image-gc";
+import { retainedArtifacts, effectiveServiceArtifacts } from "../retained-artifacts";
+import { withRetentionLock } from "../retention-lock";
 import { withoutPinnedArtifacts } from "../pinned-artifacts";
 import {
   planRestore,
@@ -81,7 +81,8 @@ function toRef(dep: Deployment): DeploymentRef {
 /**
  * Called by the deployment lifecycle when a new deployment goes `ready`.
  * Retains the previous release, marks both rows retained, prunes past the
- * window, then reclaims superseded images.
+ * window, then reclaims superseded images. An unfinished worker defers cleanup
+ * until its final acknowledgement, after all deployment activity stops.
  *
  * Idempotent. Every step is best-effort: the new deployment is already live and
  * a bookkeeping failure must never roll it back.
@@ -90,18 +91,26 @@ export async function onDeploymentReady(opts: {
   newDeployment: Deployment;
   previousActive: Deployment | null;
 }): Promise<void> {
+  return withProjectRuntimeLock(opts.newDeployment.projectId, () => onDeploymentReadyUnlocked(opts));
+}
+
+async function onDeploymentReadyUnlocked(opts: {
+  newDeployment: Deployment;
+  previousActive: Deployment | null;
+}): Promise<void> {
   const { newDeployment, previousActive } = opts;
   const project = await repos.project.findById(newDeployment.projectId).catch(() => null);
+  if (!project || project.deletionInProgress || project.activeDeploymentId !== newDeployment.id) return;
 
   if (previousActive && previousActive.id !== newDeployment.id) {
     try {
       // Only a durable-unit runtime has something to stop-and-keep, and only
       // when the project wants artifacts held. Docker's artifact is the image
       // (retained by the keep set) and its container is already gone.
-      if (project && shouldRetainArtifact(project)) {
+      if (shouldRetainArtifact(project) && previousActive.containerId !== newDeployment.containerId) {
         const { runtime } = await resolveDeploymentRuntime(previousActive);
         try {
-          if (runtime.supports("unitRestore") && runtime.makeActive) {
+          if (runtime.supports("unitRestore") && runtime.makeActive && !isArtifactRef(previousActive.containerId)) {
             await runtime.archive(toRef(previousActive));
           }
         } finally {
@@ -125,21 +134,15 @@ export async function onDeploymentReady(opts: {
   });
 
   try {
-    await prune(newDeployment.projectId);
+    // A running build defers reclamation until its final acknowledgement. The
+    // same hook also serves callers that have already completed their worker.
+    await reconcileProjectRetention(newDeployment.projectId);
   } catch (err) {
     console.error(
       `[rollback-orchestrator] Prune failed for project ${newDeployment.projectId}:`,
       err,
     );
   }
-
-  // Reclaim this project's superseded BUILT IMAGES now (the immediate "remove the
-  // old image on redeploy" cleanup), keeping the rollback-window keep-set so
-  // restores still work, and re-measure the snapshot size / auto window while
-  // we're already talking to the host. Never throws — the daily images:gc job is
-  // the backstop.
-  const { reapProjectImagesSafe } = await import("../image-gc");
-  await reapProjectImagesSafe(newDeployment.projectId);
 }
 
 /**
@@ -180,6 +183,9 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
     const { runtime } = await resolveDeploymentRuntime(target);
     try {
       unitRestore = runtime.supports("unitRestore") && !!runtime.makeActive;
+      if (unitRestore && runtime instanceof BareRuntime) {
+        unitRestore = await runtime.canRestoreUnit(toRef(target));
+      }
       if (runtime instanceof DockerRuntime) {
         for (const ref of candidates) {
           presence.set(ref, await runtime.imageExistsLocally(ref).catch(() => false));
@@ -192,6 +198,7 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
   } catch (err) {
     // Host unreachable / server row gone: we can't prove an artifact is there, so
     // plan a safe non-retained recovery rather than promising an instant restore.
+    unitRestore = false;
     console.warn(
       `[rollback] Could not inspect the host for ${target.id}; planning artifact recovery: ${safeErrorMessage(err)}`,
     );
@@ -222,21 +229,10 @@ export async function resolveRestorePlan(targetDeploymentId: string): Promise<{
 async function resolveEffectiveServiceImages(
   target: Deployment,
 ): Promise<Array<{ serviceName: string | null; imageRef: string | null }>> {
-  const rows = await repos.service.listByDeployment(target.id).catch(() => []);
-  if (rows.length === 0) return [];
-
-  const missing = rows.filter((row) => !row.imageRef);
-  if (missing.length === 0) {
-    return rows.map((row) => ({ serviceName: row.serviceName, imageRef: row.imageRef }));
-  }
-
-  const asOf = await repos.serviceDeployment
-    .effectiveImagesAsOf(target.projectId, target.createdAt)
-    .catch(() => new Map<string, { imageRef: string; serviceName: string | null }>());
-
-  return rows.map((row) => ({
-    serviceName: row.serviceName ?? asOf.get(row.serviceId)?.serviceName ?? null,
-    imageRef: row.imageRef ?? asOf.get(row.serviceId)?.imageRef ?? null,
+  const rows = await repos.service.listByDeployment(target.id);
+  return (await effectiveServiceArtifacts(target, rows)).map((row) => ({
+    serviceName: row.serviceName ?? null,
+    imageRef: row.imageRef,
   }));
 }
 
@@ -280,7 +276,15 @@ export async function rollback(targetDeploymentId: string): Promise<void> {
     throw new AppError(plan.message, 409, plan.code);
   }
   if (plan.mode === "unit-swap") {
-    await restoreViaUnitSwap(target, project);
+    await withProjectRuntimeLock(project.id, async () => {
+      // A cleanup may have won between the preview and this lock.
+      const current = await resolveRestorePlan(targetDeploymentId);
+      if (current.plan.mode !== "unit-swap") {
+        throw new AppError("The retained runtime changed. Retry the rollback to use its current restore plan.", 409, ROLLBACK_ERROR_CODES.ARTIFACT_GONE);
+      }
+      await restoreViaUnitSwap(current.target, current.project);
+      await reconcileProjectRetentionSafe(project.id);
+    });
     return;
   }
   await restoreViaRedeploy(target, project, plan);
@@ -419,11 +423,18 @@ async function restoreViaUnitSwap(
       | ResourceConfig
       | undefined;
 
-    const result = await makeActive({
-      from: currentActive ? toRef(currentActive) : null,
-      to: toRef(target),
-      resources: targetResources ?? undefined,
-    });
+    let result;
+    try {
+      result = await makeActive({
+        from: currentActive ? toRef(currentActive) : null,
+        to: toRef(target),
+        resources: targetResources ?? undefined,
+      });
+    } catch (err) {
+      // The old unit may already be stopped when starting the target fails.
+      await revertUnitSwap(runtime, target, currentActive, target.containerId);
+      throw err;
+    }
 
     const liveContainerId = result.containerId ?? target.containerId;
 
@@ -535,71 +546,57 @@ async function revertUnitSwap(
  *
  * Called after every successful deploy, and exposed for admin tooling.
  */
-export async function prune(projectId: string): Promise<{ purged: number }> {
-  const project = await repos.project.findById(projectId);
-  if (!project) return { purged: 0 };
+export async function prune(projectId: string): Promise<{ purged: number; failed: number }> {
+  return await withRetentionLock(projectId, pruneUnlocked) ?? { purged: 0, failed: 0 };
+}
 
-  const rollbackWindow = await resolveRollbackWindow(project);
-  // Newest first. Within the window we keep; beyond it we purge unless pinned.
-  const ready = await repos.deployment.listReadyOrderedDesc(projectId);
-
-  const overflow: Deployment[] = [];
-  let unpinnedRetained = 0;
-  for (const dep of ready) {
-    // Never purge the active release, regardless of position.
-    if (dep.id === project.activeDeploymentId) continue;
-    // Pinned releases are exempt AND don't consume the window budget.
-    if (dep.pinned) continue;
-    if (unpinnedRetained < rollbackWindow) {
-      unpinnedRetained += 1;
-      continue;
-    }
-    if (dep.artifactRetainedAt) overflow.push(dep);
-  }
-
-  if (overflow.length === 0) return { purged: 0 };
-
-  // A restore reuses its source release's image tag, so two rows legitimately
-  // point at one image. Purging by row would then delete an image another
-  // retained release (possibly the ACTIVE one) still needs — so consult the
-  // same keep set the image GC uses and never remove a tag that's still in it.
-  const keep = await computeKeepSet(project).catch(() => new Set<string>());
+async function pruneUnlocked(project: Project): Promise<{ purged: number; failed: number }> {
+  const keep = await retainedArtifacts(project);
   let purged = 0;
-
-  for (const dep of overflow) {
+  let failed = 0;
+  for (const dep of keep.overflow) {
     try {
+      // Read the complete inventory before any deletion. Losing the query must
+      // never look like a release without services and clear its retry marker.
+      const serviceRows = await effectiveServiceArtifacts(dep, await repos.service.listByDeployment(dep.id));
       const { runtime } = await resolveDeploymentRuntime(dep);
       try {
-        if (runtime.supports("rollback")) {
-          const ref = toRef(dep);
+        const ref = toRef(dep);
+        const container = usableRef(ref.containerId);
+        const image = usableRef(ref.imageRef);
+        const sharedUnit = container && keep.containers.has(container) &&
+          (runtime.supports("unitRestore") || isArtifactRef(container));
+        if (runtime.supports("rollback") && !sharedUnit) {
           await runtime.purge({
             ...ref,
-            imageRef: ref.imageRef && keep.has(ref.imageRef) ? null : ref.imageRef,
+            containerId: container && !keep.containers.has(container) ? container : null,
+            imageRef: image && !keep.images.has(image) ? image : null,
           });
         }
-        // `purge` works off the DEPLOYMENT ref, which for a compose release is the
-        // "compose" sentinel — so a compose static sub-app's release DIRECTORY is
-        // invisible to it and nothing beyond the rollback window ever reclaimed
-        // one. Per-service artifacts are reclaimed here, under the same keep set,
-        // so a directory a retained release still serves is never removed.
-        // (`--link-dest` means these releases mostly share inodes, but each one
-        // still holds every changed file.)
-        const serviceRows = await repos.service.listByDeployment(dep.id).catch(() => []);
-        // Collected, not swallowed: one service whose directory refuses to go must
-        // not stop the siblings from being reclaimed, but it must also not let this
-        // row record itself as reclaimed. `setArtifactRetainedAt(null)` below is the
-        // claim "nothing of this release is on disk any more", and for a compose
-        // static release these directories ARE the release.
         let serviceFailure: unknown = null;
         for (const row of serviceRows) {
-          if (!isArtifactRef(row.imageRef) || keep.has(row.imageRef!)) continue;
-          await runtime.destroy(row.imageRef!).catch((err: unknown) => {
-            console.error(
-              `[rollback-orchestrator] Failed to purge static output ${row.imageRef}:`,
-              err,
-            );
+          try {
+            const serviceImage = usableRef(row.imageRef);
+            const serviceContainer = usableRef(row.containerId);
+            if (isArtifactRef(serviceImage) && !keep.images.has(serviceImage!)) {
+              await runtime.destroy(serviceImage!);
+            }
+            if (runtime instanceof DockerRuntime) {
+              // Compose's deployment row is a sentinel; its per-service images
+              // and containers are the actual artifacts. Reclaim them before
+              // clearing the row, using the same protection as single apps.
+              await runtime.purge({
+                id: dep.id,
+                projectId: dep.projectId,
+                containerId: serviceContainer && !keep.containers.has(serviceContainer) &&
+                  serviceContainer !== serviceImage ? serviceContainer : null,
+                imageRef: serviceImage && !isArtifactRef(serviceImage) &&
+                  !keep.images.has(serviceImage) ? serviceImage : null,
+              });
+            }
+          } catch (err) {
             serviceFailure ??= err;
-          });
+          }
         }
         if (serviceFailure) throw serviceFailure;
       } finally {
@@ -608,11 +605,33 @@ export async function prune(projectId: string): Promise<{ purged: number }> {
       await repos.deployment.setArtifactRetainedAt(dep.id, null);
       purged += 1;
     } catch (err) {
+      failed += 1;
       console.error(`[rollback-orchestrator] Failed to purge ${dep.id}:`, err);
     }
   }
+  if (purged > 0) console.log(`[rollback-orchestrator] project ${project.id}: reclaimed artifacts for ${purged} past release(s)`);
+  return { purged, failed };
+}
 
-  return { purged };
+/** Reconcile the row, its artifacts, and leftover build tags under one lock.
+ * Used by deploy completion, settings, unpinning, and the scheduled backstop. */
+export async function reconcileProjectRetention(projectId: string) {
+  return await withRetentionLock(projectId, async (project) => {
+    const result = await pruneUnlocked(project);
+    // A failed purge keeps its retry marker; don't let a second collector
+    // remove more of that release while its cleanup is incomplete.
+    if (result.failed) return { purged: result.purged, removed: 0, bytes: 0, skippedInUse: 0, errors: result.failed };
+    const { reapProjectImages } = await import("../image-gc");
+    return { ...await reapProjectImages(project), purged: result.purged };
+  }) ?? { purged: 0, removed: 0, bytes: 0, skippedInUse: 0, errors: 0 };
+}
+
+export async function reconcileProjectRetentionSafe(projectId: string): Promise<void> {
+  try {
+    await reconcileProjectRetention(projectId);
+  } catch (err) {
+    console.error(`[rollback-orchestrator] Cleanup deferred for ${projectId}:`, err);
+  }
 }
 
 /**
@@ -632,9 +651,16 @@ export async function setPin(deploymentId: string, pinned: boolean): Promise<voi
   if (!dep) {
     throw new AppError("Deployment not found", 404, "DEPLOYMENT_NOT_FOUND");
   }
+  return withProjectRuntimeLock(dep.projectId, () => setPinUnlocked(deploymentId, pinned));
+}
+
+async function setPinUnlocked(deploymentId: string, pinned: boolean): Promise<void> {
+  const dep = await repos.deployment.findById(deploymentId);
+  if (!dep) throw new AppError("Deployment not found", 404, "DEPLOYMENT_NOT_FOUND");
+  if (dep.pinned === pinned) return;
 
   if (pinned) {
-    if (dep.status !== "ready") {
+    if (dep.status !== "ready" && dep.status !== "partial_failure") {
       throw new AppError(
         "Only successful deployments can be pinned.",
         409,
@@ -659,4 +685,5 @@ export async function setPin(deploymentId: string, pinned: boolean): Promise<voi
   }
 
   await repos.deployment.setPinned(deploymentId, pinned);
+  if (!pinned) await reconcileProjectRetentionSafe(dep.projectId);
 }

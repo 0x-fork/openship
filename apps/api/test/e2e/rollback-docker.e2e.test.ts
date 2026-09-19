@@ -52,8 +52,8 @@ import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedOrg, seedProject, seedDeployment, setActive } from "../helpers/seed";
 
 const BASE_IMAGE = "busybox:latest";
-const TAG_V1 = "openship/e2e-rollback:v1";
-const TAG_V2 = "openship/e2e-rollback:v2";
+const TAG_V1 = "openship/e2e-rollback:bld_v1";
+const TAG_V2 = "openship/e2e-rollback:bld_v2";
 const APP_PORT = 80;
 
 /** A free loopback port, the way the allocator's callers use one: bind :0, read

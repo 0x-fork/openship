@@ -509,10 +509,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
             </div>
           </div>
 
-          {/* Rollback retention used to live here. It moved to the Backup tab,
-              next to the other recovery controls — and to the deploy wizard's
-              target panel, since retention is a property of the machine you
-              deploy to. Both render the one RollbackRetentionCards component. */}
+
         </SectionCard>
 
         <SectionCard

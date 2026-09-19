@@ -7,7 +7,9 @@ import type {
   ProxySettings,
   OpenshipReadiness,
   WorkloadType,
+  DeploymentHistoryQuery,
 } from "@repo/core";
+import type { DeploymentPage, RollbackCapacity } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type { ReleaseImageSource } from "../release-image-source";
 import {
@@ -53,21 +55,8 @@ export interface PendingAction {
   resolveWith: PendingActionResolution[];
 }
 
-/** Rollback retention as the API reports it. `source` says where `window` came
- *  from: an explicit operator override, the disk-sized auto value measured at the
- *  last deploy, or the instance default when nothing has been measured yet. */
-export interface RollbackCapacityUI {
-  window: number;
-  source: "explicit" | "auto" | "instance-default";
-  explicit: number | null;
-  snapshotSizeBytes: number | null;
-  measuredAt: string | null;
-  diskFreeBytes: number | null;
-  diskTotalBytes: number | null;
-  maxWindow: number;
-  diskBudgetFraction: number;
-  strategy: string;
-}
+/** Fixed rollback limit: project override, otherwise the instance default (5). */
+export type RollbackCapacityUI = RollbackCapacity;
 
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
  *  optional — only the fields sent are written. Mirrors the backend allowlist. */
@@ -257,7 +246,7 @@ export const projectsApi = {
     projectId?: string;
     name: string;
     /** Rollback retention picked in the wizard before the project existed.
-     *  `null` window = size it from the deploy host's free disk. */
+     *  `null` window inherits the instance default. */
     rollbackWindow?: number | null;
     defaultRollbackStrategy?: "git" | "snapshot";
     slug?: string;
@@ -430,9 +419,10 @@ export const projectsApi = {
       };
     }>(`${endpoints.projects.item(id)}/deletion-preview`),
 
-  /** Update name or description — pass any subset of TUpdateProjectBody fields. */
+  /** Retention edits include artifact cleanup on the project's host. */
   update: (id: string | number, fields: Record<string, unknown>) =>
-    api.patch<any>(endpoints.projects.item(id), fields),
+    api.patch<any>(endpoints.projects.item(id), fields,
+      fields.rollbackWindow !== undefined ? { timeout: 120_000 } : undefined),
 
   /**
    * Read-only edge health for the project's server: is OpenResty already the
@@ -660,12 +650,12 @@ export const projectsApi = {
   getResources: async (id: string | number): Promise<ProjectResourcesResponse> =>
     normalizeProjectResourcesResponse(await api.get<unknown>(endpoints.projects.resources(id))),
 
-  /** Rollback retention: the window in force (explicit or disk-sized), the
+  /** Rollback retention: the configured window (explicit or instance default), the
    *  measured per-release size, and the deploy host's free disk. Everything is
    *  read from values measured at the last deploy plus a cached probe, so this
    *  is cheap enough to call whenever the retention control is shown. */
-  getRollbackCapacity: (id: string | number) =>
-    api.get<{ data: RollbackCapacityUI }>(endpoints.projects.rollbackCapacity(id)),
+  getRollbackCapacity: (id: string | number, signal?: AbortSignal) =>
+    api.get<{ data: RollbackCapacityUI }>(endpoints.projects.rollbackCapacity(id), { signal }),
 
   /** Set resources (POST - tier-based) */
   setResources: async (
@@ -691,5 +681,6 @@ export const projectsApi = {
     api.post<any>(endpoints.projects.sleepMode(id), { sleep_mode }),
 
   /** List deployments for a project */
-  getDeployments: (id: string | number) => api.get<any>(endpoints.projects.deployments(id)),
+  getDeployments: (id: string | number, params?: DeploymentHistoryQuery, signal?: AbortSignal) =>
+    api.get<DeploymentPage>(endpoints.projects.deployments(id), { params: { ...params }, signal }),
 };

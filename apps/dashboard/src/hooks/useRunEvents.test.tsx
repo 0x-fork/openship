@@ -13,7 +13,7 @@ vi.mock("@/lib/api/client", () => ({
 
 const fixture = managedPreparationFixture();
 const url = (id = fixture.id) =>
-  `http://localhost:4000/api/system/clusters/network-preparations/${encodeURIComponent(id)}/stream`;
+  `http://localhost:4000/api/system/networks/preparations/${encodeURIComponent(id)}/stream`;
 function response(signal: AbortSignal) {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   let closed = false;

@@ -20,7 +20,7 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
 vi.mock("@repo/platform/engine/lib/cloud-resource-limits", () => ({ syncCloudResourceLimits: h.limits }));
 import {
   syncOblienEntitlement, reconcileOblienEntitlement, entitlementQuota,
-  assertCloudCanSpend, assertNamespaceHasQuota, ensureOblienDefaultQuota, resetAndRegrant,
+  assertCloudCanSpend, assertNamespaceHasQuota, ensureOblienDefaultQuota, resetAndRegrant, getQuotaState,
 } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
 
 const entitlement = () => ({
@@ -104,6 +104,14 @@ describe("Oblien-managed entitlements", () => {
     await expect(assertCloudCanSpend("org_1")).rejects.toThrow("resource policy unavailable");
     expect(h.limits).toHaveBeenCalledWith("os-customer", "pro");
     expect(h.mirror).not.toHaveBeenCalled();
+  });
+  it("allows billing reads without resource-policy writes while keeping the spend gate enforced", async () => {
+    h.limits.mockRejectedValue(new Error("resource policy unavailable"));
+    await expect(syncOblienEntitlement("org_1", { syncResourceLimits: false })).resolves.toMatchObject({ tier: "pro" });
+    await expect(getQuotaState("org_1")).resolves.toEqual({ quotaLimit: 3_000_000, quotaUsed: 420_000, quotaRemaining: 2_580_000 });
+    expect(h.limits).not.toHaveBeenCalled();
+    await expect(assertCloudCanSpend("org_1")).rejects.toThrow("resource policy unavailable");
+    expect(h.limits).toHaveBeenCalledWith("os-customer", "pro");
   });
   it("does not require resource writes to inspect an exhausted account", async () => {
     h.entitlement.mockResolvedValue({ ...entitlement(), status: "credit_exhausted" });

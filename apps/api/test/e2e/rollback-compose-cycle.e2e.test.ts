@@ -47,9 +47,9 @@ import {
 } from "../helpers/seed";
 
 const BASE_IMAGE = "busybox:1.37.0";
-const WEB_V1 = "openship/e2e-compose-web:v1";
-const WEB_V2 = "openship/e2e-compose-web:v2";
-const API_V1 = "openship/e2e-compose-api:v1";
+const WEB_V1 = "openship/e2e-compose-web:bld_v1";
+const WEB_V2 = "openship/e2e-compose-web:bld_v2";
+const API_V1 = "openship/e2e-compose-api:bld_v1";
 const SVC_PORT = 80;
 
 async function freePort(): Promise<number> {

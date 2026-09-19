@@ -127,8 +127,8 @@ export class BareRuntime implements RuntimeAdapter {
     "usage",
     "containerIp",
     "rollback",
-    // The release dir + supervisor unit survive a redeploy, so restoring a
-    // past release really is an in-place unit swap (see makeActive).
+    // Systemd releases support a unit swap. canRestoreUnit verifies that this
+    // host's supervisor and the particular release still support it.
     "unitRestore",
     "inContainerExec",
   ]);
@@ -968,7 +968,18 @@ export class BareRuntime implements RuntimeAdapter {
   //     (the actual rollback-restorable artifact).
   //   purge     — destroy the supervisor unit + rm -rf the release dir.
 
+  async canRestoreUnit(deployment: DeploymentRef): Promise<boolean> {
+    if (!deployment.containerId || isArtifactPathRef(deployment.containerId)) return false;
+    const sv = await this.supervisor();
+    return await sv.canStart(deployment.containerId) && !!await this.retainedReleaseArtifact(deployment.id);
+  }
+
   async makeActive(input: RollbackInput): Promise<MakeActiveResult> {
+    // Nohup has no saved restart configuration; a removed systemd unit cannot
+    // restart either. Refuse before stopping the currently serving process.
+    if (!await this.canRestoreUnit(input.to)) {
+      throw new Error(`Cannot restart deployment ${input.to.id} from its retained unit. Redeploy it from source.`);
+    }
     if (input.from?.containerId) {
       try {
         await this.stop(input.from.containerId);
@@ -976,17 +987,8 @@ export class BareRuntime implements RuntimeAdapter {
         // already stopped / gone — ignore
       }
     }
-    if (!input.to.containerId) {
-      // No containerId means the supervisor unit was destroyed. The
-      // release dir might still be on disk but without the unit we
-      // can't restart it. Fail closed — the orchestrator will return
-      // ARTIFACT_GONE upstream.
-      throw new Error(
-        `Cannot make deployment ${input.to.id} active: supervisor unit is gone. Artifact has been purged.`,
-      );
-    }
-    await this.start(input.to.containerId);
-    return { containerId: input.to.containerId };
+    await this.start(input.to.containerId!);
+    return { containerId: input.to.containerId! };
   }
 
   async archive(deployment: DeploymentRef): Promise<void> {

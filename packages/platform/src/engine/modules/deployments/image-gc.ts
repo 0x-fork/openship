@@ -17,140 +17,53 @@
  * Scheduled as the `images:gc` system job (see modules/jobs/job.registry.ts).
  */
 
-import { activeDeploymentForProject, findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
-import { repos, type Deployment, type Project } from "@repo/db";
-import { DockerRuntime } from "@repo/adapters";
-import { deploymentBelongsToProject, normalizeRollbackWindow, safeErrorMessage } from "@repo/core";
+import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import { repos, type Project } from "@repo/db";
+import { DockerRuntime, ownsBuiltImage } from "@repo/adapters";
+import { safeErrorMessage } from "@repo/core";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
-import { getHostDisk } from "../../lib/host-disk";
-import {
-  refreshRollbackCapacity,
-  resolveRollbackWindow,
-  type RollbackWindowProject,
-} from "./release-retention";
+import { refreshRollbackCapacity } from "./release-retention";
+import { computeKeepSet } from "./retained-artifacts";
+import { withRetentionLock } from "./retention-lock";
 
 export interface ImageGcSummary {
   projectsScanned: number;
+  releasesPurged: number;
   imagesRemoved: number;
   bytesReclaimed: number;
   skippedInUse: number;
   errors: number;
 }
 
-/**
- * imageRefs to KEEP for a project: every image referenced by the active
- * deployment, all pinned deployments, and the newest `rollbackWindow` ready
- * deployments — collected at BOTH the deployment level (`dep.imageRef`,
- * single-app) and the per-service level (`serviceDeployment.imageRef`, compose).
- * Because each retained deployment contributes all of its services' images, a
- * compose service naturally keeps `rollbackWindow` of ITS builds.
- *
- * Exported for unit testing; pure given the injected loaders.
- */
-export async function computeKeepSet(
-  project: Pick<Project, "id" | "organizationId" | "activeDeploymentId"> & RollbackWindowProject,
-  loaders?: {
-    listReadyOrderedDesc?: (projectId: string) => Promise<Deployment[]>;
-    findById?: (id: string) => Promise<Deployment | undefined>;
-    listByDeployment?: (depId: string) => Promise<Array<{ imageRef: string | null }>>;
-  },
-): Promise<Set<string>> {
-  const listReady = loaders?.listReadyOrderedDesc ?? ((id: string) => repos.deployment.listReadyOrderedDesc(id));
-  const findById = loaders?.findById ?? ((id: string) => repos.deployment.findById(id));
-  const listSds = loaders?.listByDeployment ?? ((id: string) => repos.service.listByDeployment(id));
-
-  const keep = new Set<string>();
-  const window = await resolveRollbackWindow(project);
-  const ready = await listReady(project.id); // newest first
-
-  const keepDeployments: Deployment[] = [];
-  let unpinnedKept = 0;
-  for (const dep of ready) {
-    if (!deploymentBelongsToProject(project, dep)) continue;
-    if (dep.id === project.activeDeploymentId || dep.pinned) {
-      keepDeployments.push(dep);
-      continue;
-    }
-    if (unpinnedKept < window) {
-      unpinnedKept += 1;
-      keepDeployments.push(dep);
-    }
-    // else: beyond the window and unpinned → its images are prune candidates.
-  }
-  // The active deployment is kept even if it isn't in the ready list (e.g. still
-  // "reconciling" after a connection-loss deploy).
-  if (
-    project.activeDeploymentId &&
-    !keepDeployments.some((d) => d.id === project.activeDeploymentId)
-  ) {
-    const active = activeDeploymentForProject(project, await findById(project.activeDeploymentId));
-    if (active) keepDeployments.push(active);
-  }
-
-  for (const dep of keepDeployments) {
-    if (dep.imageRef) keep.add(dep.imageRef);
-    const sds = await listSds(dep.id);
-    for (const sd of sds) if (sd.imageRef) keep.add(sd.imageRef);
-  }
-  return keep;
-}
+// The policy/inventory is shared with artifact pruning and explicit teardown.
+export { computeKeepSet } from "./retained-artifacts";
 
 export interface ReapResult {
   removed: number;
   bytes: number;
   skippedInUse: number;
-}
-
-/**
- * Feed the auto-sized rollback window: mean built-image size for this project +
- * free disk where the daemon stores images. Uses the images this sweep already
- * listed and the CACHED disk probe, so a burst of deploys costs one `df`.
- * Best-effort — an unmeasured project simply falls back to the instance default.
- */
-async function refreshRollbackCapacityFor(
-  project: Project,
-  images: Array<{ repoTags: string[]; size: number }>,
-): Promise<void> {
-  // Only OUR build images estimate a release's size; a project that has never
-  // built anything (pure registry-image compose stack) has no snapshot cost.
-  const sizes = images
-    .filter((img) => img.repoTags.some((t) => t.startsWith("openship/")))
-    .map((img) => img.size);
-  if (sizes.length === 0) return;
-
-  const activeDep = project.activeDeploymentId
-    ? await findActiveDeployment(project)
-    : null;
-  const serverId = (activeDep?.meta as { serverId?: string } | null)?.serverId;
-  const disk = await getHostDisk(serverId, project.organizationId).catch(() => null);
-  const settings = await repos.instanceSettings.get().catch(() => null);
-
-  await refreshRollbackCapacity({
-    projectId: project.id,
-    imageSizes: sizes,
-    diskFreeBytes: disk?.freeBytes ?? null,
-    instanceDefault: normalizeRollbackWindow(settings?.defaultRollbackWindow),
-  });
+  errors: number;
 }
 
 /**
  * Decide what to remove for ONE listed (label-scoped) image — the safety-
  * critical selection, kept pure + unit-tested so "never ruin an operator's
  * image" is verifiable:
- *   - in the keep-set (active/pinned/rollback-window) → keep (`[]`).
- *   - has `openship/…` tags → return THOSE tags: we untag only what we own, so
+ *   - an image id in the keep-set → keep the whole image (`[]`).
+ *   - has managed build tags → return only the expired tags, keeping retained
+ *     aliases even when they share the same image id. We untag only what we own, so
  *     Docker deletes the image when our last tag is gone. Removing by these tags
  *     (not the image id) can never yank a foreign tag the operator added.
  *   - truly dangling (NO tags at all) → the image id: our superseded, untagged
  *     final layer, safe to drop.
- *   - only NON-openship tags remain → the operator re-purposed this image → keep.
+ *   - only foreign or retained tags remain → keep.
  */
 export function selectImageRemovalRefs(
   img: { id: string; repoTags: string[] },
   keep: Set<string>,
 ): string[] {
-  if (img.repoTags.some((t) => keep.has(t))) return [];
-  const ownTags = img.repoTags.filter((t) => t.startsWith("openship/"));
+  if (keep.has(img.id)) return [];
+  const ownTags = img.repoTags.filter((t) => ownsBuiltImage(t) && !keep.has(t));
   if (ownTags.length > 0) return ownTags;
   if (img.repoTags.length === 0) return [img.id];
   return []; // only foreign tags → never touch
@@ -158,9 +71,9 @@ export function selectImageRemovalRefs(
 
 /**
  * Reclaim one project's superseded built images on its own deploy host, keeping
- * the rollback-window keep-set. Called at REDEPLOY (onDeploymentReady, immediate)
- * and from the daily sweep (backstop). No-op for a project that never deployed
- * or whose runtime isn't Docker (cloud/bare have no local image accumulation).
+ * the rollback-window keep-set. Called by retention reconciliation after a
+ * worker finishes, a limit changes, or the daily backstop runs. Includes Cloud
+ * Docker hosts; runtimes without Docker images have nothing to reap here.
  *
  * Observable, never a black box: every non-empty reclaim logs a single line with
  * the project id + counts + bytes, and the counts roll up into the images:gc
@@ -168,14 +81,19 @@ export function selectImageRemovalRefs(
  * every rollback-eligible image, and volumes/backups aren't images.
  */
 export async function reapProjectImages(project: Project): Promise<ReapResult> {
-  const out: ReapResult = { removed: 0, bytes: 0, skippedInUse: 0 };
+  return await withRetentionLock(project.id, reapProjectImagesUnlocked)
+    ?? { removed: 0, bytes: 0, skippedInUse: 0, errors: 0 };
+}
+
+async function reapProjectImagesUnlocked(project: Project): Promise<ReapResult> {
+  const out: ReapResult = { removed: 0, bytes: 0, skippedInUse: 0, errors: 0 };
   if (!project.activeDeploymentId) return out; // no host to resolve
   const activeDep = await findActiveDeployment(project);
   if (!activeDep) return out;
 
   const { runtime } = await resolveDeploymentRuntime(activeDep);
   try {
-    if (!(runtime instanceof DockerRuntime)) return out; // cloud/bare — nothing local
+    if (!(runtime instanceof DockerRuntime)) return out;
     const keep = await computeKeepSet(project);
     const images = await runtime.listProjectImages(project.id);
     for (const img of images) {
@@ -184,21 +102,23 @@ export async function reapProjectImages(project: Project): Promise<ReapResult> {
       try {
         for (const ref of refs) await runtime.removeImage(ref);
         out.removed += 1;
-        out.bytes += img.size;
-      } catch {
-        // removeImage swallows not-found and re-throws everything else — an
-        // in-use 409 (a container still references it) lands here. Treat as
-        // "keep" and move on; never abort the sweep for one stuck image.
-        out.skippedInUse += 1;
+        if (refs.length === img.repoTags.length || img.repoTags.length === 0) out.bytes += img.size;
+      } catch (err) {
+        if ((err as { statusCode?: number } | null)?.statusCode === 409) {
+          out.skippedInUse += 1;
+        } else {
+          out.errors += 1;
+          console.error(`[image-gc] project ${project.id}: image removal failed: ${safeErrorMessage(err)}`);
+        }
       }
     }
     // Reclaim this project's untagged (superseded final) layers too.
     await runtime.pruneProjectDanglingImages(project.id);
 
-    // Re-measure the AUTO rollback window while we're here: we already have this
-    // project's image sizes, and host capacity is cached, so retention stays
-    // sized to the disk without prune or the wizard ever probing anything.
-    await refreshRollbackCapacityFor(project, images).catch(() => {});
+    await refreshRollbackCapacity({
+      projectId: project.id,
+      imageSizes: images.filter((img) => img.repoTags.some(ownsBuiltImage)).map((img) => img.size),
+    });
   } finally {
     await runtime.dispose?.();
   }
@@ -216,10 +136,8 @@ export async function reapProjectImages(project: Project): Promise<ReapResult> {
  * hiccup can't fail a deploy. Accepts a Project or a projectId (loaded here) and
  * routes warnings to `onWarn` (e.g. the BuildLogger) or console by default.
  *
- * One caller today: `onDeploymentReady` (rollback-orchestrator), which runs after
- * every successful deploy regardless of rollback strategy — the strategy decides
- * how many releases `computeKeepSet` protects, not whether the reclaim happens.
- * The daily `images:gc` job is the backstop for anything this misses.
+ * The normal deployment/settings lifecycle uses reconcileProjectRetentionSafe,
+ * which also updates release markers and purges non-image artifacts.
  */
 export async function reapProjectImagesSafe(
   projectOrId: Project | string,
@@ -244,6 +162,7 @@ export async function reapProjectImagesSafe(
 export async function runImageGcSweep(): Promise<ImageGcSummary> {
   const summary: ImageGcSummary = {
     projectsScanned: 0,
+    releasesPurged: 0,
     imagesRemoved: 0,
     bytesReclaimed: 0,
     skippedInUse: 0,
@@ -253,10 +172,15 @@ export async function runImageGcSweep(): Promise<ImageGcSummary> {
   for (const project of projects) {
     summary.projectsScanned += 1;
     try {
-      const r = await reapProjectImages(project);
+      // Retry the complete artifact lifecycle too: image-only sweeps left
+      // snapshot badges and static/cloud artifacts behind after a failed prune.
+      const { reconcileProjectRetention } = await import("./rollback/rollback-orchestrator");
+      const r = await reconcileProjectRetention(project.id);
       summary.imagesRemoved += r.removed;
+      summary.releasesPurged += r.purged;
       summary.bytesReclaimed += r.bytes;
       summary.skippedInUse += r.skippedInUse;
+      summary.errors += r.errors;
     } catch (err) {
       summary.errors += 1;
       console.error(`[image-gc] project ${project.id} sweep failed:`, safeErrorMessage(err));

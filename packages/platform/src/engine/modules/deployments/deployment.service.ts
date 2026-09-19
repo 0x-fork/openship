@@ -8,7 +8,7 @@
 import { findProjectDeployment } from "../../lib/active-deployment";
 import { existsSync, readFileSync } from "node:fs";
 import { repos, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, deploymentBelongsToProject } from "@repo/core";
+import { NotFoundError, ForbiddenError, deploymentBelongsToProject, type DeploymentHistoryQuery } from "@repo/core";
 import type { LogEntry } from "@repo/adapters";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import {
@@ -71,21 +71,12 @@ export async function assertGitHubAccessForDeployment(
 
 export async function listDeployments(
   organizationId: string,
-  opts: {
-    projectId?: string;
-    environment?: string;
-    page?: number;
-    perPage?: number;
-  },
+  opts: DeploymentHistoryQuery & { projectId?: string },
 ) {
   if (opts.projectId) {
     const project = await repos.project.findById(opts.projectId);
     assertResourceInOrg(project, "Project", organizationId, opts.projectId);
-    const result = await repos.deployment.listByProject(opts.projectId, {
-      page: opts.page,
-      perPage: opts.perPage,
-      environment: opts.environment,
-    });
+    const result = await repos.deployment.listByProject(opts.projectId, opts);
     // Mark which row is currently active so the dashboard can render the
     // "Active" chip + gate the rollback action. The schema columns
     // artifactRetainedAt + pinned flow through ...row automatically.
@@ -95,6 +86,7 @@ export async function listDeployments(
       rows: result.rows.map((d) => ({
         ...d,
         isActive: d.id === activeId,
+        projectName: project.name,
         // Project favicon → the dashboard uses it as the row's logo instead
         // of the framework/Docker glyph.
         favicon: project.favicon ?? null,
@@ -105,25 +97,10 @@ export async function listDeployments(
   // No projectId — list scoped to active org. organizationId is required
   // on every authenticated route (the route-permission middleware
   // ensures it's set before this is reached).
-  const result = await repos.deployment.listByOrganization(organizationId, {
-    page: opts.page,
-    perPage: opts.perPage,
-  });
+  const result = await repos.deployment.listByOrganization(organizationId, opts);
 
-  const projectIds = [...new Set(result.rows.map((d) => d.projectId))];
-  const projectMap = new Map<
-    string,
-    { name: string; activeDeploymentId: string | null; favicon: string | null }
-  >();
-  for (const pid of projectIds) {
-    const p = await repos.project.findById(pid);
-    if (p)
-      projectMap.set(pid, {
-        name: p.name,
-        activeDeploymentId: p.activeDeploymentId,
-        favicon: p.favicon ?? null,
-      });
-  }
+  const projects = await repos.deployment.listHistoryProjects(organizationId);
+  const projectMap = new Map(projects.map((project) => [project.id, project]));
 
   const enriched = result.rows.map((d) => {
     const proj = projectMap.get(d.projectId);
@@ -136,7 +113,7 @@ export async function listDeployments(
     };
   });
 
-  return { ...result, rows: enriched };
+  return { ...result, rows: enriched, projects: projects.map(({ id, name }) => ({ id, name })) };
 }
 
 export async function getDeployment(deploymentId: string, organizationId: string) {

@@ -60,8 +60,10 @@ export async function createCheckoutSession(
   if (!plan || price == null || price <= 0) {
     throw new AppError("This plan is not available for checkout", 400, "BILLING_PLAN_NOT_PURCHASABLE");
   }
-  const namespace = await checkoutNamespace(ctx.organizationId);
-  await syncOblienEntitlement(ctx.organizationId);
+  const namespace = await ensureNamespace(ctx.organizationId);
+  // The entitlement read verifies this namespace's subscription too; do not
+  // fetch it a second time before opening checkout.
+  await syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false });
   // Oblien replaces only this namespace's subscription after payment. This
   // starts a full-price cycle without proration; disclose that before checkout.
   const result = await getOblienBillingApi().createCheckout({

@@ -474,13 +474,13 @@
       "title": "Stratégie de restauration",
       "rebuild": "Reconstruction (git)",
       "instant": "Instantanée (snapshot)",
-      "descRebuild": "Reconstruit l'ancien commit, sauf si son image est encore sur le serveur.",
-      "descInstant": "Conserve l'image de chaque version, donc une restauration ne reconstruit jamais. Utilise plus de disque.",
+      "descRebuild": "Reconstruit l’ancien commit, sauf si son image est encore sur l’hôte.",
+      "descInstant": "Conserve les artefacts dans la limite de l’historique. Les versions plus anciennes peuvent nécessiter une reconstruction.",
       "toggleAria": "Basculer la rétention des snapshots",
-      "keepNone": "Aucune copie supplémentaire",
-      "keepCopies": "Une copie par version",
-      "descRebuildFiles": "Reconstruit l'ancien commit, sauf si ses fichiers sont encore sur le serveur.",
-      "descInstantFiles": "Conserve les fichiers de chaque version, donc une restauration ne reconstruit jamais. Utilise plus de disque."
+      "keepNone": "Réutiliser les images ou reconstruire",
+      "keepCopies": "Conserver les artefacts de retour arrière",
+      "descRebuildFiles": "Reconstruit l’ancien commit, sauf si ses fichiers sont encore sur l’hôte.",
+      "descInstantFiles": "Conserve les fichiers compilés dans la limite de l’historique. Les versions plus anciennes peuvent nécessiter une reconstruction."
     },
     "rollbackHistory": {
       "title": "Historique de restauration",
@@ -490,13 +490,17 @@
       "descGit": "Les images récentes sont conservées de toute façon, donc un rollback peut éviter la compilation.",
       "decreaseAria": "Diminuer l'historique de restauration",
       "increaseAria": "Augmenter l'historique de restauration",
-      "sizeEach": "~{size} chacune",
+      "sizeEach": "~{size} par image, couches partagées incluses",
       "diskFree": "{size} libres",
       "autoBadge": "dimensionné automatiquement",
       "manualBadge": "défini manuellement",
       "kindFiles": "fichiers générés sur le disque",
       "kindImages": "images sur l'hôte",
-      "descGitFiles": "Les fichiers des versions récentes sont conservés de toute façon, donc un rollback peut éviter la compilation."
+      "descGitFiles": "Les fichiers des versions récentes sont conservés de toute façon, donc un rollback peut éviter la compilation.",
+      "retentionHint": "Conservez les artefacts des déploiements récents pour un retour arrière rapide.",
+      "retentionDescription": "Nombre maximal de versions précédentes à conserver. Les versions actives et épinglées ne sont pas comptées dans cette limite. Les anciens artefacts sont supprimés, mais l’historique reste disponible. Indiquez 0 pour ne conserver que les versions actives et épinglées.",
+      "defaultBadge": "valeur par défaut de l’instance",
+      "loadFailed": "Impossible de charger les paramètres de retour arrière."
     },
     "commits": {
       "title": "Commits récents",

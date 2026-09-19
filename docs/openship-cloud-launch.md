@@ -55,9 +55,12 @@ public purchases disabled until these checks pass.
   repeated Stop and Delete pass during billing and manual suspension. Accepted
   asynchronous workspace deletions are confirmed before completing local
   teardown; failed inspection or timeout leaves cleanup retryable.
-- New namespaces get explicit resource ceilings. Verified active entitlements
-  synchronize those ceilings with the plan and the reseller account's capacity,
-  without changing credits or usage. Builds, updates, rollbacks and direct
+- New namespaces get explicit resource ceilings derived from the customer's
+  Openship plan. Oblien owns reseller/platform capacity; billing and namespace
+  onboarding do not depend on the reseller's workspace-quota response. Billing
+  reads and checkout do not synchronize resource ceilings. Spend and token gates
+  still confirm customer ceilings without changing credits or usage. Builds,
+  updates, rollbacks and direct
   Start/Restart and project resume check the actual CPU/RAM allocation and service
   allowance before starting containers. Service deployments record the applied
   limits for their exact container identity; a stopped Cloud Docker host can use

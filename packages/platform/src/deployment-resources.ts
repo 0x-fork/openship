@@ -16,7 +16,7 @@ export interface DeploymentResourceDependencies {
   controls?: ResourceServices<typeof DeploymentControlSchemas>;
   ssl?: ScopedServices<typeof DeploymentSslSchemas>;
   get(id: string, organizationId: string): Promise<StoredDeployment>;
-  list(organizationId: string, input: ListDeploymentsInput): Promise<{ rows: StoredDeployment[]; total: number; page: number; perPage: number }>;
+  list(organizationId: string, input: ListDeploymentsInput): Promise<{ rows: StoredDeployment[]; total: number; page: number; perPage: number; projects?: Array<{ id: string; name: string }> }>;
   logs(id: string, organizationId: string, tail?: number): Promise<LogEntry[]>;
   buildStatus(id: string): Promise<DeploymentBuildStatus>;
   reconcile(id: string): void;
@@ -66,7 +66,10 @@ export function createDeploymentResourceOperations(deps: DeploymentDependencies)
       const context = await deps.authorization.authorize(ctx, { resourceType: "deployment", resourceId: "*", action: "read", scope: "list" });
       if (input.projectId) await deps.authorization.authorize(context, { resourceType: "project", resourceId: input.projectId, action: "read" });
       const result = await resources().list(context.organizationId, input);
-      return { context, data: { data: result.rows.map(deps.present), total: result.total, page: result.page, perPage: result.perPage } };
+      return { context, data: {
+        data: result.rows.map(deps.present), total: result.total, page: result.page, perPage: result.perPage,
+        ...(result.projects ? { projects: result.projects } : {}),
+      } };
     },
     async logs(ctx: ExecutionContext, id: string, value: { tail?: number } = {}) {
       const input = parseInput(DeploymentLogsSchema, value);

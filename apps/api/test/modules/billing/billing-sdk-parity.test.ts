@@ -5,7 +5,7 @@ const provider = vi.hoisted(() => ({
   cloudMode: true, enabled: true, topups: true,
   checkout: vi.fn(), catalog: vi.fn(), entitlement: vi.fn(), namespaces: vi.fn(),
   portal: vi.fn(), subscription: vi.fn(), cancel: vi.fn(), resume: vi.fn(), subscriptions: new Map<string, OblienSubscription>(),
-  cloudRequest: vi.fn(),
+  cloudRequest: vi.fn(), quota: vi.fn(), resourceRead: vi.fn(), resourceUpdate: vi.fn(),
   limits: new Map<string, Record<string, number | null>>(),
 }));
 vi.mock("@repo/platform/engine/config/env", async original => {
@@ -20,14 +20,11 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
     getDefaults: async () => ({ success: true, autoApply: true, service: "workspace_vm", quotaLimit: 100, overdraft: 0, onOverdraftAction: "stop_workspaces", suspendThreshold: 0 }),
   }),
   getOblienClient: () => ({
-    workspaces: { getQuota: async () => ({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 256000 }, maxSandboxes: 300 }) },
+    workspaces: { getQuota: provider.quota },
     namespaces: {
       ensure: provider.namespaces,
-      get: async (slug: string) => ({ data: { id: slug, slug, resource_limits: provider.limits.get(slug) } }),
-      update: async (slug: string, input: { resource_limits: Record<string, number | null> }) => {
-        provider.limits.set(slug, input.resource_limits);
-        return { data: { id: slug, slug, resource_limits: input.resource_limits } };
-      },
+      get: provider.resourceRead,
+      update: provider.resourceUpdate,
     },
   }),
 }));
@@ -60,6 +57,12 @@ beforeEach(() => {
   provider.cloudMode = provider.enabled = provider.topups = true;
   provider.subscriptions.clear();
   provider.limits.clear();
+  provider.quota.mockResolvedValue({ success: true, limits: { cpus: null, memory_mb: null, disk_size_mb: null }, maxSandboxes: null });
+  provider.resourceRead.mockImplementation(async (slug: string) => ({ data: { id: slug, slug, resource_limits: provider.limits.get(slug) } }));
+  provider.resourceUpdate.mockImplementation(async (slug: string, input: { resource_limits: Record<string, number | null> }) => {
+    provider.limits.set(slug, input.resource_limits);
+    return { data: { id: slug, slug, resource_limits: input.resource_limits } };
+  });
   provider.namespaces.mockImplementation(async ({ slug, resource_limits }) => {
     provider.limits.set(slug, resource_limits);
     return { data: { id: slug, slug, resource_limits } };
@@ -93,6 +96,40 @@ beforeEach(() => {
 afterEach(async () => { await flushAudit(); vi.clearAllMocks(); vi.unstubAllEnvs(); await db.delete(schema.creditPack); });
 
 describe("billing through the same SDK and HTTP application operations", () => {
+  it("loads new and paid customer billing and checkout without reseller capacity or resource-policy writes", async () => {
+    provider.resourceRead.mockRejectedValue(new Error("Workspace resource operations unavailable"));
+    provider.resourceUpdate.mockRejectedValue(new Error("Workspace resource operations unavailable"));
+    const owner = await seedOwner(), c = await clients(owner);
+    // First visit must onboard the namespace despite the unlimited reseller quota.
+    expect((await c.remote.getState()).billing.enabled).toBe(true);
+    expect(provider.entitlement).toHaveBeenCalledTimes(1);
+    expect(provider.subscription).toHaveBeenCalledTimes(1);
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    provider.subscriptions.set(namespace, {
+      tierId: "pro", status: "active", billingInterval: "monthly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+      cancelAtPeriodEnd: false, canceledAt: null,
+    });
+    for (const client of [c.native, c.remote]) {
+      expect(await client.getState()).toMatchObject({ tier: "pro", billing: { enabled: true }, subscription: { tier: "pro" } });
+      expect(await client.createSubscription({ planTierId: "starter", interval: "monthly" })).toHaveProperty("checkoutUrl");
+    }
+    expect(provider.entitlement).toHaveBeenCalledTimes(5);
+    expect(provider.subscription).toHaveBeenCalledTimes(5);
+    expect(provider.quota).not.toHaveBeenCalled();
+    expect(provider.resourceRead).not.toHaveBeenCalled();
+    expect(provider.resourceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("still refuses checkout when the customer's subscription cannot be verified", async () => {
+    provider.subscription.mockRejectedValue(new AppError("Namespace subscription unavailable", 503, "OBLIEN_BILLING_UNAVAILABLE"));
+    const c = await clients(await seedOwner());
+    for (const client of [c.native, c.remote]) {
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
+      await expect(client.createTopup({ packId: "starter" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
+    }
+    expect(provider.checkout).not.toHaveBeenCalled();
+  });
+
   it("keeps localized plan discovery public and preserves monetary units and catalog secrecy", async () => {
     const c = await clients(await seedOwner());
     const remote = new OpenshipClient({ baseUrl: "http://openship.test", fetch: fetcher });

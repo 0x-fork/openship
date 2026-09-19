@@ -185,6 +185,10 @@ WantedBy=multi-user.target
     await this.executor.exec(`systemctl start ${sq(unitName)}`);
   }
 
+  async canStart(deploymentId: string): Promise<boolean> {
+    return this.executor.exists(this.unitPath(deploymentId));
+  }
+
   async restart(deploymentId: string): Promise<void> {
     const unitName = this.unitName(deploymentId);
     await this.executor.exec(`systemctl restart ${sq(unitName)}`);

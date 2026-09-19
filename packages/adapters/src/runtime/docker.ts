@@ -3668,7 +3668,10 @@ export class DockerRuntime implements RuntimeAdapter {
     }
     const image = this.docker.getImage(imageRef);
     try {
-      await image.remove({ force: true });
+      // Cleanup must leave an image that a container still needs alone. The
+      // engine's retained-artifact set is the first guard; Docker's conflict is
+      // the backstop for containers created outside the recorded deployment.
+      await image.remove({ force: false });
     } catch (err) {
       // Idempotent: swallow "not found" / 404 so partial-cleanup retries
       // don't re-fail on already-deleted images. Re-throw anything else

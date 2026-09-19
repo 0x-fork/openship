@@ -30,6 +30,7 @@ export * from "./backup-image-detect";
 export * from "./runtime-config";
 export * from "./resources";
 export * from "./rollback-window";
+export * from "./deployment-history";
 export * from "./secret-keys";
 export * from "./credentials";
 export * from "./workspaces";

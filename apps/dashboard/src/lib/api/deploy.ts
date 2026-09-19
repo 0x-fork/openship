@@ -1,4 +1,5 @@
 import { api } from "./client";
+import type { DeploymentPage, ListDeploymentsInput } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type {
   StackId,
@@ -238,8 +239,8 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
 
 export const deployApi = {
   /** List all deployments for the authenticated user */
-  getAll: (opts?: { page?: number; perPage?: number }) =>
-    api.get<any>(endpoints.deploy.list, { params: opts }),
+  getAll: (opts?: ListDeploymentsInput, signal?: AbortSignal) =>
+    api.get<DeploymentPage>(endpoints.deploy.list, { params: opts, signal }),
 
   /** Cancel a deployment */
   cancel: (id: string) =>

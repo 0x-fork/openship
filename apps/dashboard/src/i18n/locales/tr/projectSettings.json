@@ -608,13 +608,13 @@
       "title": "Geri alma stratejisi",
       "rebuild": "Yeniden derle (git)",
       "instant": "Anında (anlık görüntü - snapshot)",
-      "descRebuild": "Görüntüsü hâlâ makinede değilse eski commit'i yeniden derler.",
-      "descInstant": "Her sürümün görüntüsünü saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır.",
+      "descRebuild": "İmajı sunucuda yoksa eski commit yeniden derlenir.",
+      "descInstant": "Çıktıları geçmiş sınırı içinde saklar. Daha eski sürümlerin yeniden derlenmesi gerekebilir.",
       "toggleAria": "Anlık görüntü saklamayı değiştir",
-      "keepNone": "Ek kopya tutulmaz",
-      "keepCopies": "Sürüm başına bir kopya",
-      "descRebuildFiles": "Dosyaları hâlâ makinede değilse eski commit'i yeniden derler.",
-      "descInstantFiles": "Her sürümün dosyalarını saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır."
+      "keepNone": "İmajları yeniden kullan veya yeniden derle",
+      "keepCopies": "Geri alma çıktılarını sakla",
+      "descRebuildFiles": "Dosyaları sunucuda yoksa eski commit yeniden derlenir.",
+      "descInstantFiles": "Derlenmiş dosyaları geçmiş sınırı içinde saklar. Daha eski sürümlerin yeniden derlenmesi gerekebilir."
     },
     "rollbackHistory": {
       "title": "Geri alma geçmişi",
@@ -624,13 +624,17 @@
       "descGit": "Son görüntüler her durumda saklanır, böylece geri alma derlemeyi atlayabilir.",
       "decreaseAria": "Geri alma geçmişini azalt",
       "increaseAria": "Geri alma geçmişini artır",
-      "sizeEach": "her biri ~{size}",
+      "sizeEach": "paylaşılan katmanlar dahil imaj başına ~{size}",
       "diskFree": "{size} boş",
       "autoBadge": "otomatik boyutlandırıldı",
       "manualBadge": "elle ayarlandı",
       "kindFiles": "diskteki üretilmiş dosyalar",
       "kindImages": "sunucudaki imajlar",
-      "descGitFiles": "Son sürümlerin dosyaları her durumda saklanır, böylece geri alma derlemeyi atlayabilir."
+      "descGitFiles": "Son sürümlerin dosyaları her durumda saklanır, böylece geri alma derlemeyi atlayabilir.",
+      "retentionHint": "Hızlı geri dönüş için son dağıtımların çıktılarını saklayın.",
+      "retentionDescription": "Saklanacak önceki sürümlerin en yüksek sayısıdır. Etkin ve sabitlenmiş sürümler bu sınıra dahil değildir. Eski çıktılar silinir; dağıtım geçmişi korunur. Yalnızca etkin ve sabitlenmiş sürümleri saklamak için 0 olarak ayarlayın.",
+      "defaultBadge": "örnek varsayılanı",
+      "loadFailed": "Geri alma ayarları yüklenemedi."
     },
     "commits": {
       "title": "Son commitler",

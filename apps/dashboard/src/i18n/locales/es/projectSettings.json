@@ -469,12 +469,12 @@
       "rebuild": "Reconstruir (git)",
       "instant": "Instantáneo (snapshot)",
       "descRebuild": "Reconstruye el commit anterior, salvo que su imagen siga en el host.",
-      "descInstant": "Guarda la imagen de cada versión, así una restauración nunca reconstruye. Usa más disco.",
+      "descInstant": "Conserva los artefactos dentro del límite del historial. Las versiones más antiguas pueden necesitar reconstruirse.",
       "toggleAria": "Alternar retención de snapshots",
-      "keepNone": "Sin copias extra",
-      "keepCopies": "Una copia por versión",
+      "keepNone": "Reutilizar imágenes o reconstruir",
+      "keepCopies": "Conservar artefactos de reversión",
       "descRebuildFiles": "Reconstruye el commit anterior, salvo que sus archivos sigan en el host.",
-      "descInstantFiles": "Guarda los archivos de cada versión, así una restauración nunca reconstruye. Usa más disco."
+      "descInstantFiles": "Conserva los archivos compilados dentro del límite del historial. Las versiones más antiguas pueden necesitar reconstruirse."
     },
     "rollbackHistory": {
       "title": "Historial de reversiones",
@@ -484,13 +484,17 @@
       "descGit": "Las imágenes recientes se conservan igualmente, así un rollback puede omitir la compilación.",
       "decreaseAria": "Reducir historial de reversiones",
       "increaseAria": "Aumentar historial de reversiones",
-      "sizeEach": "~{size} cada una",
+      "sizeEach": "~{size} por imagen, incluidas las capas compartidas",
       "diskFree": "{size} libres",
       "autoBadge": "ajustado automáticamente",
       "manualBadge": "definido manualmente",
       "kindFiles": "archivos generados en disco",
       "kindImages": "imágenes en el host",
-      "descGitFiles": "Los archivos de las versiones recientes se conservan igualmente, así un rollback puede omitir la compilación."
+      "descGitFiles": "Los archivos de las versiones recientes se conservan igualmente, así un rollback puede omitir la compilación.",
+      "retentionHint": "Conserva los artefactos de los despliegues recientes para volver atrás rápidamente.",
+      "retentionDescription": "Número máximo de versiones anteriores que se conservan. Las versiones activas y fijadas no cuentan para este límite. Se eliminan los artefactos antiguos, pero el historial sigue disponible. Usa 0 para conservar solo las versiones activas y fijadas.",
+      "defaultBadge": "valor predeterminado de la instancia",
+      "loadFailed": "No se pudo cargar la configuración de reversión."
     },
     "commits": {
       "title": "Commits recientes",

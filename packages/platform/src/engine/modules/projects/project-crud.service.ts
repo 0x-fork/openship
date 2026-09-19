@@ -92,9 +92,22 @@ import type {
 } from "@repo/contracts";
 import { UpdateProjectBody } from "@repo/contracts";
 import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
-import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
+import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { requireOrgServer } from "../../lib/server-target";
 export { resolveProjectDeployTarget } from "./project-deploy-target";
+
+/** A retention edit and its cleanup share the admission lock. A concurrent
+ * increase/pin must not race a sweep operating on the previous policy. */
+async function persistProjectFields(projectId: string, update: Record<string, unknown>) {
+  const save = async () => {
+    await repos.project.update(projectId, update);
+    if (update.rollbackWindow !== undefined) {
+      const { reconcileProjectRetentionSafe } = await import("../deployments/rollback/rollback-orchestrator");
+      await reconcileProjectRetentionSafe(projectId);
+    }
+  };
+  return update.rollbackWindow !== undefined ? withProjectRuntimeLock(projectId, save) : save();
+}
 
 /**
  * Mass-assignment allow-list for PATCH /projects/:id — the exact set of
@@ -718,7 +731,7 @@ function buildProductionProjectInput(
       data.projectType === "monorepo" ? (data.monorepoWorkspace?.prepareCommand ?? null) : null,
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
-      data.rollbackWindow !== undefined ? normalizeRollbackWindow(data.rollbackWindow) : null,
+      data.rollbackWindow != null ? normalizeRollbackWindow(data.rollbackWindow) : null,
     cloudArchiveStrategy: data.cloudArchiveStrategy ?? undefined,
     defaultRollbackStrategy: data.defaultRollbackStrategy ?? undefined,
     // Edge→app upstream addressing. Omitted → schema default "auto" (loopback-
@@ -1526,7 +1539,7 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     }
 
     if (Object.keys(update).length > 0) {
-      await repos.project.update(project.id, update);
+      await persistProjectFields(project.id, update);
     }
 
     // Reconcile routes AFTER persisting the project (best-effort) so a route-sync
@@ -1806,7 +1819,7 @@ export async function updateProject(
     }
   }
 
-  await repos.project.update(projectId, update);
+  await persistProjectFields(projectId, update);
 
   // Reconcile routes AFTER persisting the project (best-effort) — a route-sync
   // failure must not discard the field edits already committed; the next deploy
@@ -2676,18 +2689,12 @@ export async function updateOptions(
 export async function listProjectDeployments(
   projectId: string,
   organizationId: string,
-  opts?: { page?: number; perPage?: number; environment?: string },
+  opts?: import("@repo/core").DeploymentHistoryQuery,
 ) {
-  const p = await repos.project.findById(projectId);
-  assertResourceInOrg(p, "Project", organizationId, projectId);
-
-  const result = await repos.deployment.listByProject(projectId, opts);
-  // Project favicon → the dashboard uses it as each row's logo instead of the
-  // framework/Docker glyph (twin of deploymentService.listDeployments).
-  return {
-    ...result,
-    rows: result.rows.map((d) => ({ ...d, favicon: p.favicon ?? null })),
-  };
+  // The project tab and global history share the same ownership checks and
+  // presentation, including the active pointer used by snapshot badges/actions.
+  const { listDeployments } = await import("../deployments/deployment.service");
+  return listDeployments(organizationId, { ...opts, projectId });
 }
 
 // ─── Deployment session ──────────────────────────────────────────────────────

@@ -38,3 +38,27 @@ docker compose exec api bun run --cwd apps/api cloud:check
 ```
 
 See [Cloud launch configuration](openship-cloud-launch.md#enable-purchases-in-the-deployed-saas).
+
+## Follow-up: unlimited reseller accounts
+
+Removed the reseller `/workspace/quota` dependency from namespace onboarding,
+resource-policy synchronization, and deployment preflight. Customer ceilings come
+from their Openship plan; Oblien owns platform capacity. Billing, checkout, and
+plan reads no longer write workspace resource policies. Token issuance, spending,
+and webhook synchronization still enforce customer ceilings and credit policy.
+Billing and subscription checkout reuse the verified subscription instead of
+fetching it twice.
+
+The rebuilt production API passed 20 integration checks with the standalone
+dashboard, isolated Postgres and Redis, and simulated Oblien HTTP responses.
+The provider fixture returned unlimited reseller quotas and deliberately failed
+workspace-management endpoints while paid billing and checkout continued to work.
+No reseller workspace-quota requests occurred during onboarding, billing,
+checkout, or webhook handling. Free and paid customer isolation, signed webhooks,
+portal access, cancellation/resumption, and delayed billing reads also passed.
+
+All 170 targeted billing, provider-contract, preflight, and deployment/service
+quota tests passed, along with API type checking and the production API build.
+This follow-up requires deploying the updated API; it does not require a new
+dashboard build or an environment change. Production deployment and live payment
+completion were not performed in this verification.

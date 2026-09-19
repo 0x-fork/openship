@@ -17,6 +17,7 @@ import {
   Pause,
   Pencil,
   Play,
+  RotateCcw,
   Server,
   Settings2,
   ShieldCheck,
@@ -45,6 +46,7 @@ import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWiz
 import { useAuth } from "@/context/AuthContext";
 import { ExportPanel } from "@/components/data-transfer/ExportPanel";
 import { usePlatform } from "@/context/PlatformContext";
+import { ProjectRollbackSettings } from "@/components/rollback/ProjectRollbackSettings";
 
 interface Props {
   onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void;
@@ -138,7 +140,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   const { user } = useAuth();
   const { selfHosted } = usePlatform();
   const { t } = useI18n();
-  const { projectData } = useProjectSettings();
+  const { projectData, servicesData } = useProjectSettings();
   // `enabled` is the server's answer (derived from disabled_at in enrichProject).
   // This local copy exists only so the button flips the instant the call returns;
   // the effect below re-seeds it from the payload, so a refresh — or a toggle that
@@ -471,6 +473,22 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
         </SectionCard>
 
       </div>
+
+      <SectionCard
+        title={t.projectSettings.git.rollbackHistory.title}
+        description={t.projectSettings.git.rollbackHistory.retentionHint}
+        icon={RotateCcw}
+        iconTone="primary"
+      >
+        <ProjectRollbackSettings
+          key={projectId}
+          projectId={projectId}
+          artifactKind={workloadOf({
+            workloadType: projectData.workloadType ?? projectData.options?.workloadType,
+            hasServer: projectData.hasServer ?? projectData.options?.hasServer,
+          }) === "static" && (servicesData?.services?.length ?? 0) === 0 ? "files" : "image"}
+        />
+      </SectionCard>
 
         {/* Migration — a COLLAPSED full-width row, like Routing and Health checks below.
             Collapsed because you migrate a project rarely and read this tab often, and

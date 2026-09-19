@@ -60,8 +60,9 @@ export interface CloudPreflightData {
  * always have master credentials on hand. Each check uses the right
  * scope:
  *
- *   - `runtime` + `getQuota`  → namespace-scoped client (quota lives
- *                               inside the user's namespace).
+ *   - `runtime`              → namespace entitlement, balance, scoped token.
+ *                               The reseller's workspace capacity is not a
+ *                               customer billing/readiness check.
  *   - `slug` check            → MASTER client. Availability on the
  *                               shared `.opsh.io` zone is an
  *                               account-level read; namespace tokens
@@ -96,7 +97,6 @@ export async function runCloudPreflight(
       cloudApiUrl: env.OBLIEN_API_URL,
     });
     cloud = cloudPlatform.runtime as CloudRuntime;
-    await cloud.getQuota();
   } catch (err) {
     runtimeError = safeErrorMessage(err);
   }

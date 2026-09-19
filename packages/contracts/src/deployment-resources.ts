@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import type { LogEntry, PromptPayload } from "@repo/core";
+import { DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryFilter, type LogEntry, type PromptPayload } from "@repo/core";
 import { DeploymentSchema, type Deployment, type CreateDeploymentResult } from "./deployments";
 import type { DeploymentControlSchemas, DeploymentSslSchemas } from "./deployment-controls";
 import type { ResourceOperations, ScopedOperations } from "./resource-operations";
@@ -8,7 +8,14 @@ import type { ResourceOperations, ScopedOperations } from "./resource-operations
 export type { LogEntry, PromptPayload } from "@repo/core";
 
 export const ResourceIdSchema = Type.String({ minLength: 1, maxLength: 512 });
+export const DeploymentHistoryFilters = {
+  status: Type.Optional(Type.Union(
+    (Object.keys(DEPLOYMENT_HISTORY_STATUSES) as DeploymentHistoryFilter[]).map((status) => Type.Literal(status)),
+  )),
+  search: Type.Optional(Type.String({ maxLength: 200 })),
+};
 export const ListDeploymentsSchema = Type.Object({
+  ...DeploymentHistoryFilters,
   projectId: Type.Optional(ResourceIdSchema),
   environment: Type.Optional(Type.Union([Type.Literal("production"), Type.Literal("preview")])),
   page: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -26,6 +33,8 @@ export interface DeploymentPage {
   total: number;
   page: number;
   perPage: number;
+  /** Global history's project options, independent of the current page. */
+  projects?: Array<{ id: string; name: string }>;
 }
 export interface CancellationResult {
   success: boolean;
@@ -92,6 +101,7 @@ export interface DeploymentResourceOperations extends ResourceOperations<typeof 
 export const DeploymentPageSchema = Type.Object({
   data: Type.Array(DeploymentSchema), total: Type.Integer({ minimum: 0 }),
   page: Type.Integer({ minimum: 1 }), perPage: Type.Integer({ minimum: 1 }),
+  projects: Type.Optional(Type.Array(Type.Object({ id: ResourceIdSchema, name: Type.String() }))),
 });
 export const LogEntrySchema = Type.Object({
   timestamp: Type.String(), message: Type.String(),

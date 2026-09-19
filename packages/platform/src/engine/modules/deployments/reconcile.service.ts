@@ -16,8 +16,9 @@
  *
  * Works for server-backed (docker) AND cloud deployments: cloud drift shows up
  * as a `missing` from `getContainerInfo` when the workspace was deleted on
- * Openship Cloud. It NEVER destroys anything (that's the whole point — the
- * containers may be healthy) and NEVER advances the project pointer on failure.
+ * Openship Cloud. Uncertain artifacts stay protected until verification settles
+ * the outcome. Successful releases enter the normal retention lifecycle; a
+ * failure never advances the project pointer.
  */
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
@@ -27,6 +28,7 @@ import { disposeRuntime, resolveDeploymentRuntime } from "../../lib/deployment-r
 import { isRealContainerRef } from "../../lib/container-ref";
 import { createReachabilityProbe } from "../../lib/server-reachability";
 import { isConnectionLoss } from "../../lib/remote-state";
+import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 
 export type ReconcileOutcome =
   | "finalized" // resolved to ready / partial_failure / failed
@@ -44,12 +46,20 @@ export interface DeploymentDrift {
  *  to success must NOT steal the pointer back (forward-only). */
 async function isSuperseded(project: Project, dep: Deployment): Promise<boolean> {
   if (!project.activeDeploymentId || project.activeDeploymentId === dep.id) return false;
-  const active = await findActiveDeployment(project).catch(() => undefined);
+  const active = await findActiveDeployment(project);
   if (!active) return false;
   return active.createdAt.getTime() >= dep.createdAt.getTime();
 }
 
 export async function reconcileDeployment(deploymentId: string): Promise<ReconcileOutcome> {
+  const dep = await repos.deployment.findById(deploymentId);
+  if (!dep || dep.status !== "reconciling") return "skipped";
+  // Verification, pointer movement, and retention share the admission/cleanup
+  // lock. A sweep cannot prune a newly verified release before it becomes live.
+  return await withLiveProjectRuntimeMutation(dep.projectId, () => reconcileDeploymentUnlocked(deploymentId)) ?? "skipped";
+}
+
+async function reconcileDeploymentUnlocked(deploymentId: string): Promise<ReconcileOutcome> {
   const dep = await repos.deployment.findById(deploymentId);
   if (!dep || dep.status !== "reconciling") return "skipped";
 
@@ -124,6 +134,8 @@ export async function reconcileDeployment(deploymentId: string): Promise<Reconci
       await repos.deployment.updateStatus(dep.id, "failed", {
         errorMessage: "Reconcile found no containers to verify.",
       });
+      const { reconcileProjectRetentionSafe } = await import("./rollback/rollback-orchestrator");
+      await reconcileProjectRetentionSafe(dep.projectId);
       return "finalized";
     }
 
@@ -170,6 +182,8 @@ export async function reconcileDeployment(deploymentId: string): Promise<Reconci
     if (verdict === "failed") {
       // Forward-only: a failed reconcile NEVER advances the project pointer.
       await repos.deployment.updateStatus(dep.id, "failed", { meta: nextMeta });
+      const { reconcileProjectRetentionSafe } = await import("./rollback/rollback-orchestrator");
+      await reconcileProjectRetentionSafe(dep.projectId);
       return "finalized";
     }
 
@@ -186,7 +200,17 @@ export async function reconcileDeployment(deploymentId: string): Promise<Reconci
 
     const project = await repos.project.findById(dep.projectId);
     if (project && !(await isSuperseded(project, dep))) {
+      const previousActive = await findActiveDeployment(project) ?? null;
       await repos.project.setActiveDeployment(project.id, dep.id);
+      const { onDeploymentReady } = await import("./rollback/rollback-orchestrator");
+      const finalDep = await repos.deployment.findById(dep.id);
+      if (finalDep) await onDeploymentReady({ newDeployment: finalDep, previousActive });
+    } else if (project) {
+      // Verified after a newer release shipped: record its artifact without
+      // moving the live pointer backward, then enforce the current window.
+      await repos.deployment.setArtifactRetainedAt(dep.id, new Date());
+      const { reconcileProjectRetentionSafe } = await import("./rollback/rollback-orchestrator");
+      await reconcileProjectRetentionSafe(dep.projectId);
     }
     return "finalized";
   } finally {

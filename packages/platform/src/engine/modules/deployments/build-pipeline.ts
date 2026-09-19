@@ -300,6 +300,12 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
           console.error(`[DEPLOY] Failed to acknowledge worker completion for ${dep.id}:`, err),
         );
       releaseDeploymentExecution(dep.id, cancellationSignal);
+      // A limit can change while this worker is finishing, or after it fails.
+      // Reclamation starts only after acknowledgement, under the same lock as
+      // new deployment admission and teardown; either may win and defer it.
+      await import("./rollback/rollback-orchestrator")
+        .then(({ reconcileProjectRetentionSafe }) => reconcileProjectRetentionSafe(project.id))
+        .catch((err) => console.error(`[DEPLOY] Retention cleanup unavailable for ${project.id}:`, err));
     }
   })();
 
