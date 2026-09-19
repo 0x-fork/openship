@@ -126,6 +126,49 @@ console.log(subscription?.cancelAtPeriodEnd);
 await ship.billing.resumeSubscription();
 ```
 
+## Resource usage
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+const resources = await ship.billing.getResources();
+if (resources.compute.status === "available") {
+  console.log(resources.compute.cpuHours, resources.compute.memoryGbHours);
+}
+if (resources.edge.status === "available") {
+  console.log(resources.edge.bandwidthGb, resources.edge.limits.bandwidthGb);
+  console.log(resources.edge.requests);
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl "$OPENSHIP_URL/api/billing/resources" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN"
+```
+
+</Tab>
+</Tabs>
+
+Requires `billing:read`. Openship resolves the authenticated organization's
+namespace; callers do not supply a namespace or another customer's account.
+The REST response wraps the resource snapshot in `{ data }`.
+
+`compute` reports vCPU-hours, memory GB-hours, disk I/O GB, and network GB across
+builds and running apps in the billing period. These measurements consume the
+shared Cloud allowance; they are not separate included runtime-hour quotas.
+`edge` reports request counts, inbound and outbound bandwidth, total bandwidth,
+and the monthly bandwidth limit in `limits.bandwidthGb`. Each group includes
+its own `period`, since edge allowances reset monthly even on annual plans.
+
+Read each group's `status` before displaying its measurements. An unavailable
+provider returns `"unavailable"` and `null` measurements for that group while
+the other group can remain available. A `null` measurement does not mean zero
+usage or unlimited resources. `measuredAt` identifies the snapshot time.
+
 ## Top-ups and the portal
 
 `GET /topup-packs` lists the one-shot credit packs from the same catalog;
@@ -154,6 +197,7 @@ closure and resource cleanup.
 | --- | --- | --- |
 | Read the plan catalog, optionally localized. | `billing.listPlans(input?)` | `GET /api/billing/plans`<br />`Handler authentication` |
 | Read current billing state. | `billing.getState()` | `GET /api/billing/state`<br />`billing:read` |
+| Read compute usage, edge traffic, and bandwidth limits. | `billing.getResources()` | `GET /api/billing/resources`<br />`billing:read` |
 | Read subscription and renewal state. | `billing.getSubscription()` | `GET /api/billing/subscription`<br />`billing:read` |
 | Create a subscription checkout or subscription change. | `billing.createSubscription(input)` | `POST /api/billing/subscription`<br />`billing:write` |
 | Stop subscription renewal at the end of the paid period. | `billing.cancelSubscription()` | `POST /api/billing/cancel`<br />`billing:admin` |

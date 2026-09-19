@@ -1602,6 +1602,12 @@
       "description": "Read current billing state.",
       "route": "GET /api/billing/state"
     },
+    "billing.getResources": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read compute usage, edge traffic, and bandwidth limits.",
+      "route": "GET /api/billing/resources"
+    },
     "billing.getSubscription": {
       "page": "billing",
       "section": "Operations",
