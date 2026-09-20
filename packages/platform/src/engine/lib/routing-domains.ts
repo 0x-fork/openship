@@ -3,7 +3,11 @@ import type { RoutedDomainInput, SslProvider, SslResult } from "@repo/adapters";
 import { SYSTEM, ConflictError, resolveServiceHostnameLabel, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
 import { env } from "../config/env";
 import { serviceKind } from "./deployable-service";
-import { resolveServicePublicEndpoints, type StoredPublicEndpoint } from "./public-endpoints";
+import {
+  publicEndpointHostname,
+  resolveServicePublicEndpoints,
+  type StoredPublicEndpoint,
+} from "./public-endpoints";
 import { acmeIssueLockKey, LOCAL_ACME_SCOPE, resolveSslPatch, sslIssueLockKey } from "./domain-ssl";
 import { resolveRouteRedirect } from "./domain-redirect";
 import { createProvisionLock } from "./provision-lock";
@@ -426,11 +430,18 @@ export function resolveServiceRouteEndpoints(opts: {
   const { project, service } = opts;
   if (!service.exposed) return [];
   const endpoints = resolveServicePublicEndpoints(service, { projectSlug: project.slug ?? project.name });
+  const hostnames = new Set(endpoints.map(publicEndpointHostname));
   for (const route of project.compositeRoutes ?? []) {
     if (route.rootServiceId !== service.id || !route.isCustomDomain) continue;
     if (opts.domainByHostname?.get(route.hostname)?.serviceId !== service.id) continue;
+    // A path-routed primary is also present in the composite metadata. Its
+    // current endpoint wins over the port recorded when it was imported.
+    if (hostnames.has(route.hostname)) continue;
     const port = route.rootPort ?? endpoints[0]?.port;
-    if (port) endpoints.push({ port, domainType: "custom", customDomain: route.hostname });
+    if (port) {
+      endpoints.push({ port, domainType: "custom", customDomain: route.hostname });
+      hostnames.add(route.hostname);
+    }
   }
   return endpoints;
 }
