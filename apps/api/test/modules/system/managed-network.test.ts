@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AppError } from "@repo/core";
+import { AppError, MANAGED_NETWORK_PREPARATION_STEPS } from "@repo/core";
 import {
   PrivateNetworkError,
   SshDisconnectedError,
@@ -236,7 +236,7 @@ beforeEach(() => {
     preparation: { ...preparing(), organizationId, createdBy, inputHash, input, hosts },
   }));
   h.prepareHost.mockImplementation(async (_executor, _managedId, observer) => {
-    for (const key of ["host", "python3", "iproute2", "wireguard-tools", "kernel"]) {
+    for (const key of ["host", "python3", "iproute2", "wireguard-tools", "firewall", "kernel"]) {
       await observer.step(key, "running");
       observer.log(key, {
         level: "info",
@@ -814,6 +814,12 @@ describe("managed network prerequisite preparation", () => {
     );
     expect(h.save.mock.calls[0]![5]).toMatchObject({ preparationId: preparing().id });
     expect(h.save.mock.calls[0]![6]).toBe(preparing().generation);
+    for (const host of h.prepFinish.mock.calls.at(-1)![2])
+      expect(host.steps).toEqual(
+        MANAGED_NETWORK_PREPARATION_STEPS.map((id) =>
+          expect.objectContaining({ id, status: "completed" }),
+        ),
+      );
     expect(h.apply).not.toHaveBeenCalled();
     expect(h.prepare).not.toHaveBeenCalled();
   });
@@ -872,6 +878,13 @@ describe("managed network prerequisite preparation", () => {
 
   it("restores resolved firewall endpoints when a preparation retry reuses its saved plan", async () => {
     const source = preparing();
+    source.generation = 2;
+    source.hosts.forEach((host) => {
+      host.hostIdentity = `host:${host.serverId}`;
+      host.steps.forEach((step) => {
+        step.status = step.id === "firewall" ? "skipped" : "completed";
+      });
+    });
     source.input.members[1]!.listenPort = 53111;
     await operations.planManagedNetwork(ctx, source.input);
     const [, id, , inputHash, planHash, plan] = h.save.mock.calls[0]!;
@@ -883,7 +896,18 @@ describe("managed network prerequisite preparation", () => {
       endpoint: "192.0.2.11",
       listenPort: 53111,
     });
+    expect(h.prepFinish.mock.calls.at(-1)![1]).toBe(2);
+    expect(h.prepFinish.mock.calls.at(-1)![3]).toBe(source.id);
+    for (const host of h.prepFinish.mock.calls.at(-1)![2])
+      expect(host.steps).toEqual(
+        MANAGED_NETWORK_PREPARATION_STEPS.map((id) =>
+          expect.objectContaining({ id, status: "completed" }),
+        ),
+      );
+    expect(h.prepareHost).toHaveBeenCalledTimes(2);
+    expect(h.save).toHaveBeenCalledTimes(1);
     expect(h.inspect).not.toHaveBeenCalled();
+    expect(h.apply).not.toHaveBeenCalled();
   });
 
   it("persists each failed prerequisite and keeps preparing other servers", async () => {

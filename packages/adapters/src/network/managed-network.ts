@@ -418,9 +418,11 @@ export const managedNetworkTools = {
           "Stateful firewall tools are available for the selected private connection policy.",
         );
       } else {
+        // The prerequisite is satisfied even when no extra tooling is needed.
+        // Preparation's durable ready check requires every prerequisite to complete.
         await observer.step(
           current,
-          "skipped",
+          "completed",
           "The existing full-mesh policy does not need additional firewall tools.",
         );
       }

@@ -130,6 +130,19 @@ describe("managed network prerequisite bootstrap", () => {
     expect(host.commands).toContain("iptables -m conntrack --help");
   });
 
+  it("passes the firewall prerequisite when the network needs no additional firewall tools", async () => {
+    const { iptables: _missing, ...versions } = tools;
+    const host = machine({ versions });
+    await managedNetworkTools.prepareHost(host.executor, managedId, host.observer);
+    expect(host.installs).toEqual([]);
+    expect(host.commands).not.toContain("iptables -m conntrack --help");
+    expect(host.updates).toContainEqual({
+      id: "firewall",
+      status: "completed",
+      message: "The existing full-mesh policy does not need additional firewall tools.",
+    });
+  });
+
   it("installs absent tools before invoking the Python inspector and streams each step", async () => {
     const host = machine({ versions: {} });
     await managedNetworkTools.prepareHost(host.executor, managedId, host.observer);
@@ -139,7 +152,7 @@ describe("managed network prerequisite bootstrap", () => {
     expect(host.installs[2]).toContain("--no-install-recommends wireguard-tools");
     expect(
       host.updates.filter((step) => step.status === "completed").map((step) => step.id),
-    ).toEqual(["host", "python3", "iproute2", "wireguard-tools", "kernel"]);
+    ).toEqual(["host", "python3", "iproute2", "wireguard-tools", "firewall", "kernel"]);
     expect(host.logs.some((entry) => entry.message === "Package installation output")).toBe(true);
   });
   it("reuses healthy tools without invoking a package installer", async () => {
