@@ -46,6 +46,7 @@ r.get("/migrations/:id/stream", { tag: "server:read", collection: true }, migrat
 r.post("/migrations/:id/cutover", { tag: "server:write", collection: true }, migration.confirmCutover);
 // Abort an in-flight migration (kills the transfer + rolls back).
 r.post("/migrations/:id/cancel", { tag: "server:write", collection: true }, migration.cancelMigration);
+r.post("/migrations/:id/respond", { tag: "server:write", collection: true }, migration.respondMigration);
 // Resume a partial run: re-transfer pending paths (edit/skip), then finish.
 r.post("/migrations/:id/resume", { tag: "server:write", collection: true }, migration.resumeMigration);
 // Remove the volumes a FAILED run copied to the target (retry starts clean).

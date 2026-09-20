@@ -15,6 +15,8 @@ import { compileVercelRouting, type RouteProxyLocation } from "@repo/adapters";
 import { isStaticService, serviceKind } from "../../../lib/deployable-service";
 import type { RouteRegister } from "../../../lib/route-apply.service";
 import type { DeploymentRewrite, RoutingConfig, ProjectCompositeRoute } from "@repo/core";
+import type { Domain, Service } from "@repo/db";
+import { publicEndpointHostname, resolveServicePublicEndpoints } from "../../../lib/public-endpoints";
 
 interface CompositeCandidate {
   id: string;
@@ -175,23 +177,53 @@ export function buildCompositeRegistration(input: {
  * dropped (best-effort, never throws). Unlike `buildCompositeRegistration` this
  * expresses ARBITRARY multi-service fan-out, not the 1-static + 1-server shape.
  */
+type DomainOwners = ReadonlyMap<string, Pick<Domain, "serviceId">>;
+
+/** Resolve stored topology against current endpoint ports and domain ownership. */
+export function resolveDomainFanoutRoutes(input: {
+  routes: ProjectCompositeRoute[] | null | undefined;
+  services: Service[];
+  domainByHostname?: DomainOwners;
+}): ProjectCompositeRoute[] {
+  return (input.routes ?? []).flatMap((route) => {
+    const service = input.services.find((row) => row.id === route.rootServiceId);
+    if (!service?.enabled) return [];
+    // A project-level route can target an internal service. Only service-owned
+    // domains follow that service's exposure switch.
+    if (!service.exposed && input.domainByHostname?.get(route.hostname)?.serviceId === service.id) return [];
+    const endpoint = resolveServicePublicEndpoints(service).find(
+      (endpoint) => publicEndpointHostname(endpoint) === route.hostname,
+    );
+    return [{ ...route, rootPort: endpoint?.port ?? route.rootPort }];
+  });
+}
+
 export function buildDomainFanoutRegistrations(input: {
   routes: ProjectCompositeRoute[] | null | undefined;
-  resolveTargetUrl: (serviceId: string) => string | null | undefined;
+  resolveTargetUrl: (serviceId: string, port?: number) => string | null | undefined;
+  services?: Service[];
+  domainByHostname?: DomainOwners;
+  onWarning?: (message: string) => void;
 }): RouteRegister[] {
   const out: RouteRegister[] = [];
-  for (const route of input.routes ?? []) {
-    const rootUrl = input.resolveTargetUrl(route.rootServiceId);
-    if (!rootUrl) continue; // can't serve the domain at all without the root
+  const routes = input.services ? resolveDomainFanoutRoutes({ ...input, services: input.services }) : input.routes ?? [];
+  for (const route of routes) {
+    const rootUrl = input.resolveTargetUrl(route.rootServiceId, route.rootPort);
+    if (!rootUrl) {
+      input.onWarning?.(`${route.hostname}: the root service has no live upstream; its route was not replaced.`);
+      continue;
+    }
     const proxyLocations: RouteProxyLocation[] = [];
     for (const loc of route.locations) {
-      const url = input.resolveTargetUrl(loc.serviceId);
+      const url = input.resolveTargetUrl(loc.serviceId, loc.port);
       if (url) {
         proxyLocations.push({
           pathPrefix: loc.pathPrefix,
           targetUrl: url,
           ...(loc.exact ? { exact: true } : {}),
         });
+      } else {
+        input.onWarning?.(`${route.hostname}${loc.pathPrefix}: the service has no live upstream.`);
       }
     }
     out.push({

@@ -699,7 +699,23 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     },
 
     async remove(id: string) {
-      await db.delete(service).where(eq(service.id, id));
+      await db.transaction(async (tx) => {
+        const [row] = await tx.select({ projectId: service.projectId }).from(service).where(eq(service.id, id));
+        if (row) {
+          const [owner] = await tx.select({ compositeRoutes: project.compositeRoutes })
+            .from(project).where(eq(project.id, row.projectId)).for("update");
+          const routes = owner?.compositeRoutes ?? [];
+          if (routes.some((route) => route.rootServiceId === id || route.locations.some((location) => location.serviceId === id))) {
+            await tx.update(project).set({
+              compositeRoutes: routes.filter((route) => route.rootServiceId !== id).map((route) => ({
+                ...route, locations: route.locations.filter((location) => location.serviceId !== id),
+              })),
+              updatedAt: new Date(),
+            }).where(eq(project.id, row.projectId));
+          }
+        }
+        await tx.delete(service).where(eq(service.id, id));
+      });
     },
 
     /**

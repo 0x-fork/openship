@@ -16,7 +16,7 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, restoreSubgraph, PkCollisionError, type Service } from "@repo/db";
-import { slugify, safeErrorMessage, mergeAdvanced } from "@repo/core";
+import { slugify, safeErrorMessage, mergeAdvanced, looksLikeSecretKey } from "@repo/core";
 import { buildNetworkAliases, type ContainerInfo, type ContainerStatus } from "@repo/adapters";
 import { serviceAliasExtras } from "../../lib/deployable-service";
 import { COMPOSE_SENTINEL } from "../../lib/container-ref";
@@ -31,6 +31,7 @@ import {
   type ComposeService,
 } from "../../lib/compose-parser";
 import { unmaskEnv } from "../../lib/secret-env";
+import { encrypt } from "../../lib/encryption";
 import { createServerDockerRuntime } from "../../lib/deployment-runtime";
 import { sshManager } from "../../lib/ssh-manager";
 import { readProjectSnapshot } from "../../lib/openship-manifest";
@@ -65,7 +66,7 @@ const REPO_COMPOSE_FILES = [
  *  with no running container (e.g. `redis`) is a first-class, editable unit. */
 /** Parser service minus scan-only provenance. Deriving this shape prevents a
  * new compose-owned field from being stranded in another handwritten map. */
-export type RepoComposeService = Omit<ComposeService, "environmentTemplates" | "environmentMeta">;
+export type RepoComposeService = Omit<ComposeService, "environmentMeta">;
 
 /**
  * Parse a LINKED repo's docker-compose into its services, so the migrate wizard
@@ -111,7 +112,7 @@ export async function parseRepoCompose(
         );
       }
       return parsed.services.map(
-        ({ environmentTemplates: _templates, environmentMeta: _meta, ...service }) => service,
+        ({ environmentMeta: _meta, ...service }) => service,
       );
     } catch (err) {
       // RETHROWN, not swallowed. Returning [] showed the wizard's mapping step an empty
@@ -291,6 +292,8 @@ export function buildAdoptedServiceRows(
   repoServices?: Map<string, RepoComposeService>,
 ): {
   rows: ParsedComposeList;
+  /** Runtime values go into the encrypted service Environment scope, not Compose defaults. */
+  environments: Record<string, Record<string, string>>;
   renames: Record<string, string>;
   /**
    * DISCOVERED NAME → adopted ROW name.
@@ -324,6 +327,7 @@ export function buildAdoptedServiceRows(
   });
 
   const handover: Record<string, string> = {};
+  const environments: Record<string, Record<string, string>> = {};
   const rows = chosen.map((s, i) => {
     const { ports, stripped } = normalizeHostPorts(s.ports);
     if (stripped.length > 0) {
@@ -358,6 +362,8 @@ export function buildAdoptedServiceRows(
       repoServices?.get(uniqueNames[i]) ??
       repoServices?.get(perService(serviceRenames, s) ?? s.name);
     const native = repo && (repo.build || repo.image);
+    const override = perService(serviceEnv, s);
+    environments[uniqueNames[i]] = override ? unmaskEnv(override, s.env) : s.env;
     const source = native
       ? {
           image: repo.image,
@@ -411,13 +417,10 @@ export function buildAdoptedServiceRows(
       ...(exposedPort ? { exposedPort } : {}),
       // Only keep dependencies on services we're also adopting.
       dependsOn: s.dependsOn.filter((d) => adoptedNames.has(d)).map((d) => firstUnique.get(d) ?? d),
-      // Env override (edited in the wizard) keyed by the DISCOVERED name; default
-      // = the container's live env. #336: the wizard sees env masked, so restore
-      // any echoed mask sentinel from the freshly-discovered live env (server truth).
-      environment: (() => {
-        const override = perService(serviceEnv, s);
-        return override ? unmaskEnv(override, s.env) : s.env;
-      })(),
+      // Keep the source recipe separate from the captured runtime values. The
+      // latter are service-scoped overrides, visible/editable in Environment.
+      environment: repo?.environment ?? {},
+      environmentTemplates: repo?.environmentTemplates,
       volumes: s.volumes.map(volumeToComposeString).filter((v): v is string => v !== null),
       command: s.command,
       commandArgv: s.commandArgv ?? null, // #332: adopt the real argv, not sh -c
@@ -449,7 +452,26 @@ export function buildAdoptedServiceRows(
       })(),
     };
   });
-  return { rows, renames, rowNameByDiscovered: Object.fromEntries(firstUnique), handover };
+  return { rows, environments, renames, rowNameByDiscovered: Object.fromEntries(firstUnique), handover };
+}
+
+async function saveImportedEnvironments(
+  projectId: string,
+  services: Service[],
+  environments: Record<string, Record<string, string>>,
+): Promise<void> {
+  for (const service of services) {
+    const values = environments[service.name];
+    if (!values) continue;
+    await repos.project.bulkSetEnvVars(
+      projectId,
+      "production",
+      Object.entries(values).map(([key, value]) => ({
+        key, value: encrypt(value), isSecret: looksLikeSecretKey(key),
+      })),
+      service.id,
+    );
+  }
 }
 
 export async function adoptServerStack(opts: {
@@ -574,6 +596,7 @@ export async function adoptServerStack(opts: {
 
   const {
     rows: parsed,
+    environments,
     renames,
     rowNameByDiscovered,
     handover,
@@ -597,6 +620,7 @@ export async function adoptServerStack(opts: {
   if (repoServices) {
     for (const [name, rs] of repoServices) {
       if (adoptedNames.has(name)) continue;
+      if (serviceEnv?.[name]) environments[name] = unmaskEnv(serviceEnv[name], rs.environment ?? {});
       // Run the compose host ports through the SAME normalizer as the adopted
       // rows: strip every host binding (edge-owned 80/443 AND pinned ports) so a
       // new `web` on "80:80" doesn't collide with the edge and a `db` on "5432:5432"
@@ -613,10 +637,8 @@ export async function adoptServerStack(opts: {
         ports,
         // Keep deps only on services this project actually has (adopted or new).
         dependsOn: (rs.dependsOn ?? []).filter((d) => repoServices.has(d) || adoptedNames.has(d)),
-        // #336: restore masked sentinels from the repo compose env (real values).
-        environment: serviceEnv?.[name]
-          ? unmaskEnv(serviceEnv[name], rs.environment ?? {})
-          : (rs.environment ?? {}),
+        environment: rs.environment ?? {},
+        environmentTemplates: rs.environmentTemplates,
         volumes: rs.volumes ?? [],
         command: rs.command,
         commandArgv: rs.commandArgv ?? null, // #332
@@ -639,6 +661,7 @@ export async function adoptServerStack(opts: {
   const createdServices = await repos.service.syncFromCompose(project_id, [...parsed, ...newRows], {
     removeMissing: false,
   });
+  await saveImportedEnvironments(project_id, createdServices, environments);
 
   // Apply the per-service options keyed by the DISCOVERED name: iterate `chosen`
   // (discovered), resolve the created row by its FINAL (possibly-renamed) name,
@@ -654,7 +677,7 @@ export async function adoptServerStack(opts: {
     // "copy", which keep the scoped openship-<slug>-<name> name so the deploy
     // mounts the fresh copy (populated in moving_data) and the original is left
     // untouched. Cross-server always reuses bare names (the A→B stream trick).
-    const copy = Boolean(sameServer) && volumeStrategies?.[s.name] === "copy";
+    const copy = Boolean(sameServer) && perService(volumeStrategies, s) === "copy";
     if (svc.namespaceVolumes !== copy) {
       await repos.service.update(svc.id, { namespaceVolumes: copy });
     }
@@ -1178,8 +1201,9 @@ export async function reimportOpenshipProject(opts: {
 
   // Re-import preserves the original service names (from the manifest/labels),
   // so no rename map — buildAdoptedServiceRows returns identity renames here.
-  const { rows: parsed } = buildAdoptedServiceRows(chosen, selected);
+  const { rows: parsed, environments } = buildAdoptedServiceRows(chosen, selected);
   const createdServices = await repos.service.syncFromCompose(created.id, parsed);
+  await saveImportedEnvironments(created.id, createdServices, environments);
 
   // Reuse the original bare-named volumes in place (data survives) — combined
   // with the preserved id, the running containers count as this project's own in

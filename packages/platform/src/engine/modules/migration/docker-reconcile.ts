@@ -21,9 +21,10 @@ import type {
 } from "@repo/adapters";
 import { classifyProxy, isBuildHelperMarkers, OPENSHIP_LABEL } from "@repo/adapters";
 import type { ComposeHealthcheck, ProxySettings } from "@repo/core";
+import { isLoopbackHost } from "@repo/core";
 import type { ComposeService } from "../../lib/compose-parser";
 import type { ManifestProjectEntry } from "../../lib/openship-manifest";
-import type { ExistingRoute } from "./proxy-route-scan";
+import type { ExistingRoute, ProxyRouteScan } from "./proxy-route-scan";
 
 export interface DiscoveredVolumeMount {
   /** "volume" reuses a named volume in place; "bind" is a host path. */
@@ -93,13 +94,16 @@ export interface DiscoveredService {
    *  the edge. */
   edgePorts?: number[];
   /** Routes the server's EXISTING (foreign) reverse proxy already serves for this
-   *  container, matched by published host port — so the wizard can show the
+   *  container, matched by private address or published host port — so the wizard can show the
    *  current domain(s)+path+SSL and offer to keep them. ONE ENTRY PER
    *  (port,path,match mode):
    *  a container behind a path-fan-out domain (`/ → :1010`, `/v3 → :1020`) or with
    *  several published ports collects several. Absent = no proxied route detected. */
   existingRoute?: Array<{
     port: number;
+    /** Container listen port, which can differ from the proxy's published host port. */
+    containerPort?: number;
+    upstream?: string;
     path: string;
     exact?: boolean;
     domains: string[];
@@ -161,6 +165,8 @@ export interface OpenshipProjectGroup {
 
 export interface DiscoveredStack {
   serverId: string;
+  /** The server edge, even when its container belongs to another Compose stack. */
+  proxy?: ProxyRouteScan["proxy"];
   /** compose "project" groupings found (com.docker.compose.project). */
   composeProjects: string[];
   /** Services grouped for display: each compose stack, then standalone last. */
@@ -448,6 +454,36 @@ export function openshipStackName(
   return stripped.slice(0, -suffix.length) || null;
 }
 
+/** Match an upstream to this container without confusing identical private ports. */
+function proxyRouteContainerPort(route: ExistingRoute, detail: DockerContainerDetail): number | undefined {
+  let host: string | undefined;
+  if (route.upstream) {
+    let url: URL;
+    try { url = new URL(route.upstream); } catch { return undefined; }
+    // These need upstream transformations the service-route model cannot express.
+    // Leave them unmatched and visible in the review instead of changing their meaning.
+    if (url.protocol !== "http:" || url.pathname !== "/" || url.search || url.username || url.password) return undefined;
+    host = url.hostname.toLowerCase();
+    const addresses = (detail.networkAddresses ?? []).flatMap((address) => {
+      try { return [new URL(`http://${address.includes(":") ? `[${address}]` : address}`).hostname]; }
+      catch { return []; }
+    });
+    if (addresses.includes(host) || host === detail.name.toLowerCase() || host === detail.id) {
+      return route.port;
+    }
+  }
+  // No upstream is the legacy by-port representation. With an upstream identity,
+  // only a loopback/bound-host route can join through a published Docker port.
+  return detail.ports.find((binding) =>
+    binding.type === "tcp" && binding.publicPort === route.port &&
+    (!host || isLoopbackHost(host) || host === binding.ip),
+  )?.privatePort;
+}
+
+function proxyRouteKey(route: ExistingRoute): string {
+  return JSON.stringify([route.upstream, route.port, route.path, Boolean(route.exact), route.domains]);
+}
+
 export function toDiscoveredService(
   detail: DockerContainerDetail,
   declared: ComposeService | undefined,
@@ -516,37 +552,15 @@ export function toDiscoveredService(
       ? classifyProxy([image, command, name].filter(Boolean).join(" "))
       : undefined;
 
-  // Match every route the foreign proxy serves, across ALL published host ports —
-  // no break, so a path-fan-out domain (its paths live on different ports) and a
-  // multi-port container both collect all their routes.
+  // Match every upstream identity and port: services commonly share a private
+  // listen port, and one service may own several hostnames or path matches.
   let existingRoute: DiscoveredService["existingRoute"];
   if (proxyRoutesByPort && proxyRoutesByPort.size > 0) {
     const routes: NonNullable<DiscoveredService["existingRoute"]> = [];
-    // Iterate DISTINCT public ports. Docker publishes each host port on BOTH
-    // IPv4 (0.0.0.0) and IPv6 (::), so detail.ports lists the same publicPort
-    // twice — without deduping we'd push the same route (same domain) twice and
-    // the wizard would show each domain doubled (and submit two identical
-    // endpoints). proxyRoutesByPort already holds one entry per (port,path,match
-    // mode), so visiting each port ONCE preserves every match while killing the IPv4/IPv6
-    // double-count. (portsToComposeStrings already dedups the same way.)
-    const publicPorts = [
-      ...new Set(
-        detail.ports
-          .map((p) => p.publicPort)
-          .filter((n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0),
-      ),
-    ];
-    for (const port of publicPorts) {
-      for (const hit of proxyRoutesByPort.get(port) ?? []) {
-        routes.push({
-          port: hit.port,
-          path: hit.path,
-          ...(hit.exact ? { exact: true } : {}),
-          domains: hit.domains,
-          ssl: hit.ssl,
-          ...(hit.proxy ? { proxy: hit.proxy } : {}),
-          source: hit.source,
-        });
+    for (const hits of proxyRoutesByPort.values()) {
+      for (const hit of hits) {
+        const containerPort = proxyRouteContainerPort(hit, detail);
+        if (containerPort) routes.push({ ...hit, containerPort });
       }
     }
     if (routes.length > 0) existingRoute = routes;
@@ -614,6 +628,8 @@ export function reconcileStack(opts: {
   /** published host port → route the foreign proxy already serves (from the
    *  IO-shell proxy scan). Attached per-service by matching published ports. */
   proxyRoutesByPort?: Map<number, ExistingRoute[]>;
+  proxy?: ProxyRouteScan["proxy"];
+  proxyWarnings?: string[];
 }): DiscoveredStack {
   const { serverId, details, volumes, networks, declared, alreadyManaged, imageEnv, imageCmds, proxyRoutesByPort } = opts;
 
@@ -695,18 +711,20 @@ export function reconcileStack(opts: {
   // as a warning so a fan-out path (e.g. api.onvo.me/v3 → an unselected/hidden
   // container) is never lost without the operator knowing.
   const proxyRoutes = [...(proxyRoutesByPort?.values() ?? [])].flat();
-  const matchedPorts = new Set(services.flatMap((s) => (s.existingRoute ?? []).map((r) => r.port)));
+  warnings.push(...(opts.proxyWarnings ?? []));
+  const matchedRoutes = new Set(services.flatMap((s) => (s.existingRoute ?? []).map(proxyRouteKey)));
   for (const r of proxyRoutes) {
-    if (!matchedPorts.has(r.port)) {
+    if (!matchedRoutes.has(proxyRouteKey(r))) {
       warnings.push(
         `Reverse-proxy route ${r.domains[0] ?? "?"}${r.path === "/" ? "" : r.path} → :${r.port} ` +
-          `has no matching adopted service — it won't be published. Import the service on that port to keep it.`,
+          `could not be matched to a service. Review this route before migrating.`,
       );
     }
   }
 
   return {
     serverId,
+    ...(opts.proxy ? { proxy: opts.proxy } : {}),
     composeProjects,
     groups,
     services,

@@ -762,6 +762,8 @@ export interface DockerContainerDetail {
   restart?: { name: string; maximumRetryCount?: number };
   /** Names of the networks the container is attached to. */
   networks: string[];
+  /** Live addresses on every attached network, for matching proxy upstreams. */
+  networkAddresses?: string[];
   mounts: DockerMount[];
   ports: DockerPortBinding[];
   /** Healthcheck as declared on the container config (durations in ns). */

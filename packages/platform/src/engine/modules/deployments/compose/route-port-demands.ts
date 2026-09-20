@@ -6,7 +6,7 @@ import {
   type UpstreamCandidateRow,
 } from "../../../lib/project-service-upstream";
 import { buildProjectRouteDomains, buildServiceRouteDomains } from "../../../lib/routing-domains";
-import { planCompositeRoute } from "./composite-route";
+import { planCompositeRoute, resolveDomainFanoutRoutes } from "./composite-route";
 
 export type ComposeRoutePortDemands = Map<string, Set<number>>;
 
@@ -109,10 +109,13 @@ export function collectComposeRoutePortDemands(opts: {
     const backend = services.find((service) => service.id === composite.backendServiceId);
     if (backend) add(backend.id, resolveServicePort(backend, project.port));
   }
-  for (const route of project.compositeRoutes ?? []) {
-    for (const serviceId of [route.rootServiceId, ...route.locations.map((loc) => loc.serviceId)]) {
+  for (const route of resolveDomainFanoutRoutes({ routes: project.compositeRoutes, services, domainByHostname })) {
+    for (const { serviceId, port } of [
+      { serviceId: route.rootServiceId, port: route.rootPort },
+      ...route.locations,
+    ]) {
       const service = services.find((candidate) => candidate.id === serviceId);
-      if (service) add(service.id, resolveServicePort(service, project.port));
+      if (service) add(service.id, port ?? resolveServicePort(service, project.port));
     }
   }
 

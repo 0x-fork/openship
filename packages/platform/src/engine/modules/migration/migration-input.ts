@@ -8,27 +8,17 @@
 /** A per-service route to publish post-verify. `targetPath` (e.g. "/v3") marks a
  *  service that serves a PATH of a shared domain (path fan-out); its absence
  *  means the root `/`. */
-export interface MigrationRouteSpec {
-  exposedPort?: string;
-  domainType: "free" | "custom";
-  domain?: string;
-  customDomain?: string;
-  targetPath?: string;
-  exact?: boolean;
-}
+import type { MigrationRouteSpec, MigrationServiceRoutes } from "@repo/contracts";
+import { ValidationError } from "@repo/core";
+export type { MigrationRouteSpec, MigrationServiceRoutes } from "@repo/contracts";
 
-/** Normalize a location path prefix to a leading-slash form (`v3` → `/v3`),
- *  rejecting `..` traversal; `/` or empty → "/". Inlined (not imported from
- *  public-endpoints) to keep this module import-light for its unit tests. */
+/** A match prefix, not an upstream rewrite: its trailing slash is significant. */
 function normalizePathPrefix(raw: string): string {
-  const segments = raw
-    .trim()
-    .replace(/\\/g, "/")
-    .split("/")
-    .map((s) => s.trim())
-    .filter((s) => s && s !== ".");
-  if (segments.some((s) => s === "..")) return "/";
-  return segments.length > 0 ? `/${segments.join("/")}` : "/";
+  const path = raw.trim().replace(/\\/g, "/");
+  if (path.split("/").some((segment) => segment === "..")) {
+    throw new ValidationError("A migration route cannot contain '..' path segments.");
+  }
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
 /** Keep only well-formed serviceName → "reuse"|"copy" entries from client input. */
@@ -126,12 +116,12 @@ export function sanitizeConflictResolution(
 export function sanitizeRoutes(
   input: Record<string, unknown> | undefined,
 ):
-  | Record<string, MigrationRouteSpec>
+  | MigrationServiceRoutes
   | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
-  const out: Record<string, MigrationRouteSpec> = {};
-  for (const [name, raw] of Object.entries(input)) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+  const out: MigrationServiceRoutes = {};
+  const sanitizeRoute = (raw: unknown): MigrationRouteSpec | undefined => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
     const r = raw as {
       exposedPort?: unknown;
       domainType?: unknown;
@@ -145,7 +135,7 @@ export function sanitizeRoutes(
     const customDomain =
       typeof r.customDomain === "string" ? r.customDomain.trim().toLowerCase() : undefined;
     const value = domainType === "custom" ? customDomain : domain;
-    if (!value) continue; // nothing to publish without a domain
+    if (!value) return undefined;
     // A non-root location prefix (e.g. "/v3") → this service serves a PATH of the
     // domain (path fan-out); root ("/") is the default and carries no targetPath.
     const path =
@@ -154,7 +144,7 @@ export function sanitizeRoutes(
         : r.exact === true
           ? "/"
           : undefined;
-    out[name] = {
+    return {
       domainType,
       ...(domainType === "custom" ? { customDomain: value } : { domain: value }),
       ...(r.exposedPort != null && String(r.exposedPort).trim()
@@ -163,6 +153,15 @@ export function sanitizeRoutes(
       ...(path && (path !== "/" || r.exact === true) ? { targetPath: path } : {}),
       ...(r.exact === true ? { exact: true } : {}),
     };
+  };
+  for (const [name, raw] of Object.entries(input)) {
+    if (Array.isArray(raw)) {
+      const routes = raw.map(sanitizeRoute).filter((route): route is MigrationRouteSpec => !!route);
+      if (routes.length) out[name] = routes;
+    } else {
+      const route = sanitizeRoute(raw);
+      if (route) out[name] = route;
+    }
     if (Object.keys(out).length >= 100) break;
   }
   return Object.keys(out).length > 0 ? out : undefined;

@@ -113,7 +113,9 @@ export async function repoCompose(c: Context) {
       repo.trim(),
       branch?.trim() || undefined,
     );
-    return c.json({ success: true, services: maskServicesEnv(services) });
+    // Template expressions stay server-side; they may contain secret defaults.
+    const display = services.map(({ environmentTemplates: _templates, ...service }) => service);
+    return c.json({ success: true, services: maskServicesEnv(display) });
   } catch (err) {
     return c.json({ error: `Failed to parse repo compose: ${safeErrorMessage(err)}` }, 502);
   }
@@ -666,7 +668,7 @@ export async function getMigration(c: Context) {
   const safeRun = maskMigrationRunEnv(run);
   return c.json({
     success: true,
-    run: liveLogs ? { ...safeRun, logs: liveLogs } : safeRun,
+    run: { ...safeRun, ...(liveLogs ? { logs: liveLogs } : {}), pendingPrompt: migrationOrchestrator.getPendingPrompt(run.id) },
     progress: migrationOrchestrator.getProgress(run.id),
   });
 }
@@ -741,7 +743,7 @@ export async function streamMigration(c: Context) {
   return streamRunSSE(c, {
     bus: migrationRunBus,
     id,
-    snapshot: { type: "snapshot", run: initial },
+    snapshot: { type: "snapshot", run: { ...maskMigrationRunEnv(initial), pendingPrompt: migrationOrchestrator.getPendingPrompt(id) } },
     terminalComplete: finished
       ? {
           type: "complete",
@@ -791,6 +793,24 @@ export async function cancelMigration(c: Context) {
   const result = await migrationOrchestrator.cancel(param(c, "id"), ctx.organizationId);
   if (!result.ok) return c.json({ error: result.error }, result.status as 400);
   return c.json({ success: true });
+}
+
+/** POST /migration/migrations/:id/respond — answer the current takeover prompt. */
+export async function respondMigration(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  const run = await repos.dockerMigrationRun.findById(id);
+  if (!run || run.organizationId !== ctx.organizationId || !run.sourceServerId || !run.targetServerId) {
+    return c.json({ error: "Migration not found" }, 404);
+  }
+  const guard = await assertServersWritable(c, run.sourceServerId, run.targetServerId);
+  if (guard instanceof Response) return guard;
+  const body = await c.req.json<{ promptId?: string; action?: string }>();
+  if (typeof body.promptId !== "string" || typeof body.action !== "string") {
+    return c.json({ error: "promptId and action are required" }, 400);
+  }
+  const ok = await migrationOrchestrator.respondToPrompt(id, ctx.organizationId, body.promptId, body.action);
+  return ok ? c.json({ success: true }) : c.json({ error: "This prompt is no longer pending or the action is invalid." }, 409);
 }
 
 /**

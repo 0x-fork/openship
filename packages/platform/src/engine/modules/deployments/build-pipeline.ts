@@ -85,6 +85,7 @@ import { resolveGitHubWebBaseUrl } from "../github/github-source.service";
 import { openDeployRelay } from "../../lib/git-forwarding/index";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { resolveAcmeProviderOptions } from "../../lib/acme-config";
+import { pinnedEdgeImage } from "../../lib/edge-image";
 import {
   preCreateServiceDeployments,
   emitServiceCheckRun,
@@ -1664,7 +1665,7 @@ function buildDeployEnvironment(
                       onLog: systemLog,
                       promptUser: p,
                     }),
-                  { promptUser, onLog: systemLog, nginx: resolveAcmeProviderOptions() },
+                  { promptUser, onLog: systemLog, nginx: resolveAcmeProviderOptions(), edgeImage: pinnedEdgeImage() },
                 );
                 if (edge.migrated && !edge.ok) {
                   // ensureEdge already rolled back to the previous proxy — we

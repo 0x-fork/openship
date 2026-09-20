@@ -43,6 +43,7 @@ import {
   buildCompositeRegistration,
   buildDomainFanoutRegistrations,
   planCompositeRoute,
+  resolveDomainFanoutRoutes,
 } from "../deployments/compose/composite-route";
 import { resolveLiveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import {
@@ -150,6 +151,11 @@ export async function applyProjectRouting(
     };
     for (const { def, route } of serviceRoutePlans) requirePort(def.id, route.targetPort);
     for (const def of defs) requirePort(def.id, resolveServicePort(def, project.port));
+    const fanoutRoutes = resolveDomainFanoutRoutes({ routes: project.compositeRoutes, services: defs, domainByHostname });
+    for (const route of fanoutRoutes) {
+      requirePort(route.rootServiceId, route.rootPort);
+      for (const location of route.locations) requirePort(location.serviceId, location.port);
+    }
 
     const upstreamKey = (serviceId: string, containerPort: number) =>
       `${serviceId}\0${containerPort}`;
@@ -179,9 +185,9 @@ export async function applyProjectRouting(
       rememberObservedPublish(serviceId, containerPort, targetUrl);
       return targetUrl;
     };
-    const resolveTargetUrl = (serviceId: string) => {
+    const resolveTargetUrl = (serviceId: string, requestedPort?: number) => {
       const def = defs.find((candidate) => candidate.id === serviceId);
-      const port = def ? resolveServicePort(def, project.port) : null;
+      const port = def?.enabled ? (requestedPort ?? resolveServicePort(def, project.port)) : null;
       return port ? resolveTargetUrlForPort(serviceId, port) : null;
     };
 
@@ -212,7 +218,10 @@ export async function applyProjectRouting(
       // A failed live inspection is not authority to replace a working vhost
       // with a cached address. Leave this one untouched; a later retry/deploy can
       // re-observe it. Static services are authoritative through their release dir.
-      if (!redirectHost && !staticRoot && !targetUrl) return [];
+      if (!redirectHost && !staticRoot && !targetUrl) {
+        warn(`${route.hostname}: ${def.name} has no live upstream on port ${route.targetPort}; its route was not replaced.`);
+        return [];
+      }
       const observed = targetUrl
         ? observedLoopbackPublishFromUrl({
             targetUrl,
@@ -286,8 +295,9 @@ export async function applyProjectRouting(
     // disagreed with the live path about the same vhost. The composite is left alone:
     // it compiles its own topology-aware superset with the backend it resolved.
     const fanout = buildDomainFanoutRegistrations({
-      routes: project.compositeRoutes,
+      routes: fanoutRoutes,
       resolveTargetUrl,
+      onWarning: warn,
     }).map((reg) => {
       // CONCATENATED, not overwritten — same rule and same order as the deploy path:
       // the fan-out's explicit per-path upstreams first, then the compiled rules, or
@@ -358,8 +368,9 @@ export async function applyCloudRouting(opts: {
       buildServiceRouteDomains({ project, service, runtimeName: "cloud", usesManagedRouting: true, domainByHostname })
         .map(route => ({ service, route })));
     const projectPlans = buildProjectRouteDomains({ project, projectDomains: domainRows, runtimeName: "cloud", usesManagedRouting: true });
+    const fanoutRoutes = resolveDomainFanoutRoutes({ routes: project.compositeRoutes, services: defs, domainByHostname });
     const hostnames = [...servicePlans.map(item => item.route.hostname), ...projectPlans.map(route => route.hostname),
-      ...(project.compositeRoutes ?? []).map(route => route.hostname)];
+      ...fanoutRoutes.map(route => route.hostname)];
     const errors = new Map<string, string>();
     const targets = new Map<string, ReturnType<CloudDockerRuntime["resolveRoutingTarget"]>>();
     const serviceTarget = async (serviceId: string, port?: number) => {
@@ -397,10 +408,10 @@ export async function applyCloudRouting(opts: {
         serviceId: owner.serviceId, port: owner.containerPort, domain: route });
       else errors.set(route.hostname.toLowerCase(), "No service owns the configured cloud route port");
     }
-    for (const route of project.compositeRoutes ?? []) {
+    for (const route of fanoutRoutes) {
       const key = route.hostname.toLowerCase();
       tables.set(key, { hostname: route.hostname, custom: route.isCustomDomain, serviceId: route.rootServiceId,
-        domain: tables.get(key)?.domain, locations: route.locations });
+        port: route.rootPort, domain: tables.get(key)?.domain, locations: route.locations });
       errors.delete(key);
     }
     for (const [key, table] of tables) {
@@ -410,7 +421,7 @@ export async function applyCloudRouting(opts: {
         const locations = [...(table.locations ?? [])].sort((a, b) => b.pathPrefix.length - a.pathPrefix.length || Number(b.exact ?? false) - Number(a.exact ?? false));
         const proxies = await Promise.all(locations.map(async location => ({
           match: { path: location.pathPrefix, type: location.exact ? "exact" as const : "prefix" as const },
-          action: { kind: "proxy" as const, ...await serviceTarget(location.serviceId) },
+          action: { kind: "proxy" as const, ...await serviceTarget(location.serviceId, location.port) },
         })));
         const firstProxy = input.routes.findIndex(rule => rule.action.kind === "proxy");
         input.routes.splice(firstProxy < 0 ? 0 : firstProxy, 0, ...proxies);

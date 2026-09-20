@@ -4031,6 +4031,9 @@ export class DockerRuntime implements RuntimeAdapter {
       labels,
       restart: rp?.Name ? { name: rp.Name, maximumRetryCount: rp.MaximumRetryCount } : undefined,
       networks: Object.keys(data.NetworkSettings?.Networks ?? {}),
+      networkAddresses: Object.values(data.NetworkSettings?.Networks ?? {}).flatMap((network) =>
+        [network.IPAddress, network.GlobalIPv6Address].filter((ip): ip is string => Boolean(ip)),
+      ),
       mounts: (data.Mounts ?? []).map(normalizeDockerMount),
       ports: normalizeInspectPorts(data),
       healthcheck: hc

@@ -40,7 +40,7 @@ import {
   verifyExistingCert,
   tlsIssuedElsewhere,
 } from "../../lib/domain-ssl";
-import { getRoutingBaseDomain } from "../../lib/routing-domains";
+import { getRoutingBaseDomain, resolveServiceRouteEndpoints } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
 import {
   resolveProjectServerHost,
@@ -404,12 +404,11 @@ async function addWwwSibling(
  * Idempotent: an existing row keeps its verification state (already-verified
  * domains stay green); we only backfill its service/port/type identity.
  */
-export async function ensurePendingServiceDomain(opts: {
+/** Resolve the shared ownership gate without changing a service or domain row. */
+export async function resolveServiceDomainOwnership(opts: {
   projectId: string;
-  serviceId: string;
   hostname: string;
-  targetPort?: number;
-}): Promise<{ created: boolean; domainId: string | null }> {
+}): Promise<{ hostname: string; existing: Domain | null; mayOwn: boolean }> {
   const hostname = normalizeCustomHostname(opts.hostname);
   // THROW (was: silent return) so a per-service custom domain gets the same
   // "row + Verify button, or a clear error" contract as project-level addDomain
@@ -421,16 +420,7 @@ export async function ensurePendingServiceDomain(opts: {
 
   // Project-scoped lookup — only ever read/mutate a row THIS project owns.
   const existing = await repos.domain.findByHostnameForProject(opts.projectId, hostname);
-  if (existing) {
-    const patch: Record<string, unknown> = {};
-    if ((existing.serviceId ?? null) !== opts.serviceId) patch.serviceId = opts.serviceId;
-    if (opts.targetPort != null && (existing.targetPort ?? null) !== opts.targetPort) {
-      patch.targetPort = opts.targetPort;
-    }
-    if ((existing.domainType ?? null) !== "custom") patch.domainType = "custom";
-    if (Object.keys(patch).length > 0) await repos.domain.update(existing.id, patch);
-    return { created: false, domainId: existing.id };
-  }
+  if (existing) return { hostname, existing, mayOwn: true };
 
   // hostname carries a GLOBAL unique constraint. If another project owns it we
   // must neither create (collision) nor touch theirs (cross-tenant write) —
@@ -442,12 +432,33 @@ export async function ensurePendingServiceDomain(opts: {
   // that, not this function. Asked even when there is NO row, for the reason documented
   // there.
   if (await routableWithoutOwnership(hostname, opts.projectId, foreign)) {
-    return { created: false, domainId: null };
+    return { hostname, existing: null, mayOwn: false };
   }
 
   if (foreign) {
     throw new ConflictError(`The domain "${hostname}" is already connected to another project.`);
   }
+  return { hostname, existing: null, mayOwn: true };
+}
+
+export async function ensurePendingServiceDomain(opts: {
+  projectId: string;
+  serviceId: string;
+  hostname: string;
+  targetPort?: number;
+}): Promise<{ created: boolean; domainId: string | null }> {
+  const { hostname, existing, mayOwn } = await resolveServiceDomainOwnership(opts);
+  if (existing) {
+    const patch: Record<string, unknown> = {};
+    if ((existing.serviceId ?? null) !== opts.serviceId) patch.serviceId = opts.serviceId;
+    if (opts.targetPort != null && (existing.targetPort ?? null) !== opts.targetPort) {
+      patch.targetPort = opts.targetPort;
+    }
+    if ((existing.domainType ?? null) !== "custom") patch.domainType = "custom";
+    if (Object.keys(patch).length > 0) await repos.domain.update(existing.id, patch);
+    return { created: false, domainId: existing.id };
+  }
+  if (!mayOwn) return { created: false, domainId: null };
 
   // findOrCreate (not create) so a concurrent insert of the same brand-new
   // hostname races safely to the existing row instead of throwing 23505 — the
@@ -1215,7 +1226,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
   // awaits a failure between them recreates exactly that stale state, with the
   // row already gone so there's nothing left to retry against.
   const serviceRouting = domain.serviceId
-    ? await resolveRemainingServiceRouting(domain.serviceId, domain.hostname)
+    ? await resolveRemainingServiceRouting(project, domain.serviceId, domain.hostname)
     : null;
 
   if (domain.serviceId && serviceRouting) {
@@ -1234,11 +1245,12 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
  * surviving endpoints, or fully unexposed when none remain — "exposed with no
  * hostname" is the state that produces a dead Pending route.
  *
- * Pure resolution (one read, no writes) so the caller can commit it inside the
+ * Resolution without writes so the caller can commit it inside the
  * same transaction as the domain delete. Returns null when the service row is
  * missing, so the caller falls back to a plain delete.
  */
 async function resolveRemainingServiceRouting(
+  project: Project,
   serviceId: string,
   hostname: string,
 ): Promise<Record<string, unknown> | null> {
@@ -1246,7 +1258,12 @@ async function resolveRemainingServiceRouting(
   if (!svc) return null;
   const target = hostname.toLowerCase();
 
-  const remaining = resolveServicePublicEndpoints(svc).filter(
+  const domainByHostname = project.compositeRoutes?.length
+    ? new Map((await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain]))
+    : undefined;
+  // A surviving alias becomes the port's primary endpoint when its original
+  // hostname is removed. Otherwise normalizing the empty set disables it too.
+  const remaining = resolveServiceRouteEndpoints({ project, service: svc, domainByHostname }).filter(
     (endpoint) => publicEndpointHostname(endpoint)?.toLowerCase() !== target,
   );
 

@@ -22,6 +22,7 @@ type EdgeSite = {
   target: { kind: "proxy"; url: string } | { kind: "static"; root: string };
   tls?: { certPath: string; keyPath: string };
   source?: string;
+  projectServices?: string[];
 };
 
 function asEdgeSites(details: Record<string, unknown>): EdgeSite[] {
@@ -125,6 +126,9 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
                     {site.source && (
                       <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{site.source}</p>
                     )}
+                    {site.projectServices?.map((service) => (
+                      <p key={service} className="mt-1 text-xs font-medium text-primary">{service}</p>
+                    ))}
                   </div>
                 </div>
               ))}
