@@ -86,6 +86,7 @@ import {
 } from "../../lib/deployable-service";
 import { inferComposeEnvironmentTemplates } from "../../lib/compose-parser";
 import { deriveProjectRouteState } from "../domains/project-route.service";
+import { applyProjectRouting } from "../domains/routing-apply.service";
 import { registerStartupHook } from "../../lib/startup/index";
 import {
   buildServiceRouteDomains,
@@ -773,6 +774,7 @@ export async function updateService(
   projectId: string,
   serviceId: string,
   data: TUpdateServiceBody,
+  options: { /** Batch import persists configuration before its edge takeover. */ applyLiveRoutes?: boolean } = {},
 ) {
   const { project, svc } = await assertServiceAccess(ctx, projectId, serviceId);
 
@@ -996,7 +998,7 @@ export async function updateService(
   const enabledChanged = typeof data.enabled === "boolean" && data.enabled !== svc.enabled;
   const exposedChanged = touchesRouting && patch.exposed !== svc.exposed;
 
-  if (updated && (enabledChanged || exposedChanged || touchesRouting || nameChanged)) {
+  if (updated && options.applyLiveRoutes !== false && (enabledChanged || exposedChanged || touchesRouting || nameChanged)) {
     // Resolved below only when there's a container to inspect; disposed in the
     // `finally` because it may own an SSH bridge to the serving box.
     let runtime: RuntimeAdapter | undefined;
@@ -1006,6 +1008,9 @@ export async function updateService(
       // `enabled` / `exposed` are non-nullable DB columns - no need to
       // fall back to `svc.*` on the updated row.
       const isRoutable = updated.enabled && updated.exposed;
+      const domainByHostname = project.compositeRoutes?.length
+        ? new Map((await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain]))
+        : undefined;
       // Diff the SET of routes (a service can publish several ports). A hostname
       // present before but gone now is removed; every current route is
       // (re-)registered (register is additive/idempotent upstream).
@@ -1014,13 +1019,21 @@ export async function updateService(
         service: svc,
         runtimeName,
         usesManagedRouting: true,
+        domainByHostname,
       });
+      const configured = new Set(serviceCustomHostnames(updated));
+      const retired = new Set(serviceCustomHostnames(svc).filter((hostname) => !configured.has(hostname)));
+      const nextProject = {
+        ...project,
+        compositeRoutes: project.compositeRoutes?.filter((route) => !retired.has(route.hostname)) ?? null,
+      };
       const nextRoutes = isRoutable
         ? buildServiceRouteDomains({
-            project,
+            project: nextProject,
             service: updated,
             runtimeName,
             usesManagedRouting: true,
+            domainByHostname,
           })
         : [];
       const nextByHost = new Map(nextRoutes.map((route) => [route.hostname.toLowerCase(), route]));
@@ -1191,6 +1204,9 @@ export async function updateService(
         for (const domainId of freshlyPublishedDomainIds) {
           await reuseServerCertForDomain(ctx, domainId).catch(() => {});
         }
+        // A base service write replaces its vhost. Reapply the project's saved
+        // path routes last so editing the root service cannot erase its backend.
+        if (liveProject.compositeRoutes?.length) await applyProjectRouting(project.id);
       });
       applyEdge.catch((err) => console.error(`[SERVICE] edge apply for ${svc.name}:`, err));
       await advisoryWork(applyEdge, undefined, ROUTE_EDGE_APPLY_TIMEOUT_MS);
@@ -1274,6 +1290,9 @@ async function deleteLiveService(project: Project, svc: Service): Promise<void> 
         service: svc,
         runtimeName: platform().runtime.name,
         usesManagedRouting: true,
+        ...(project.compositeRoutes?.length ? {
+          domainByHostname: new Map((await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain])),
+        } : {}),
       });
       if (routes.length > 0) {
         // Same single path as edit: cloud → page/workspace teardown, self-hosted

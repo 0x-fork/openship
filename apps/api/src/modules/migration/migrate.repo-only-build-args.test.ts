@@ -7,12 +7,13 @@ const h = vi.hoisted(() => ({
   syncFromCompose: vi.fn(),
   updateService: vi.fn(),
   findProject: vi.fn(),
+  bulkSetEnvVars: vi.fn(),
 }));
 
 vi.mock("@repo/db", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   repos: {
-    project: { findById: h.findProject },
+    project: { findById: h.findProject, bulkSetEnvVars: h.bulkSetEnvVars },
     service: {
       syncFromCompose: h.syncFromCompose,
       update: h.updateService,

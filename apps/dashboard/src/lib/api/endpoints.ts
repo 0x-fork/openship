@@ -477,6 +477,7 @@ export const endpoints = {
     migration: (id: string) => `migration/migrations/${id}`,
     cutover: (id: string) => `migration/migrations/${id}/cutover`,
     cancel: (id: string) => `migration/migrations/${id}/cancel`,
+    respond: (id: string) => `migration/migrations/${id}/respond`,
     resume: (id: string) => `migration/migrations/${id}/resume`,
     cleanupTarget: (id: string) => `migration/migrations/${id}/cleanup-target`,
     active: "migration/active",

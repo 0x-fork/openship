@@ -69,6 +69,29 @@ curl -X POST "$OPENSHIP_URL/api/migration/adopt" \
 
 On success the response is `{ "success": true, … }` with the created project's details.
 
+## Run a reviewed migration
+
+`POST /api/migration/migrate` starts the complete migration. Per-service options use the discovered
+container IDs as keys; legacy service-name keys remain accepted. `routesByServiceName` accepts an array of
+routes per service, preserving aliases, listen ports, path prefixes and exact matches. Environment values
+are saved in the service's production environment scope.
+
+When routes are selected, migration prepares the target edge before changing source containers. If another
+proxy must be replaced, the run waits for consent. Read `pendingPrompt` from
+`GET /api/migration/migrations/:id` (also included in the stream snapshot), then answer it with:
+
+```http
+POST /api/migration/migrations/:id/respond
+Content-Type: application/json
+
+{"promptId":"<pendingPrompt.promptId>","action":"migrate"}
+```
+
+Use an action ID from the current prompt. An expired, already answered or invalid prompt returns `409`.
+Answering requires write access to both migration servers. Cancelling keeps the original proxy and source
+containers intact. After attachment or deployment, Openship applies the owned routes and retries pending
+domain verification; unresolved routing failures remain visible on the run.
+
 ## Errors
 
 <Callout title="400 — missing or empty field" type="warn">
@@ -103,6 +126,7 @@ its Docker is accessible, then retry.
 | Clean up resources created on the migration target. | `POST /api/migration/migrations/:id/cleanup-target`<br />`server:write` · Self-hosted |
 | Switch traffic to the prepared migration target. | `POST /api/migration/migrations/:id/cutover`<br />`server:write` · Self-hosted |
 | Resume an interrupted migration. | `POST /api/migration/migrations/:id/resume`<br />`server:write` · Self-hosted |
+| Answer a pending migration prompt, including edge takeover consent. | `POST /api/migration/migrations/:id/respond`<br />`server:write` · Self-hosted |
 | Stream migration progress. | `GET /api/migration/migrations/:id/stream`<br />`server:read` · Self-hosted |
 | Preview a migration plan. | `POST /api/migration/preview`<br />`server:write` · Self-hosted |
 | Import a discovered project. | `POST /api/migration/project`<br />`server:write` · Self-hosted |

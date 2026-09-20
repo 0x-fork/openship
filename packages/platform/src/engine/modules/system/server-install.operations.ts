@@ -165,6 +165,7 @@ export const serverInstallationDependencies: NonNullable<ServerDependencies["ins
                 promptUser,
                 onLog,
                 acmeEmail: config?.acmeEmail,
+                edgeImage: config.edgeImage,
                 nginx: {
                   ...resolveAcmeProviderOptions(),
                   ...(config?.acmeEmail ? { acmeEmail: config.acmeEmail } : {}),

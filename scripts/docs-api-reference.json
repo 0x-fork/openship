@@ -2922,6 +2922,10 @@
       "page": "migration",
       "description": "Resume an interrupted migration."
     },
+    "POST /api/migration/migrations/:id/respond": {
+      "page": "migration",
+      "description": "Answer a pending migration prompt, including edge takeover consent."
+    },
     "GET /api/migration/migrations/:id/stream": {
       "page": "migration",
       "description": "Stream migration progress."

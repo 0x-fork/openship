@@ -417,6 +417,24 @@ export function resolveServiceEndpointHostname(
   return `${label}.${getRoutingBaseDomain()}`;
 }
 
+/** The configured endpoints plus owned aliases, shared by deploy and deletion. */
+export function resolveServiceRouteEndpoints(opts: {
+  project: Project;
+  service: Service;
+  domainByHostname?: ReadonlyMap<string, Pick<Domain, "serviceId">>;
+}) {
+  const { project, service } = opts;
+  if (!service.exposed) return [];
+  const endpoints = resolveServicePublicEndpoints(service, { projectSlug: project.slug ?? project.name });
+  for (const route of project.compositeRoutes ?? []) {
+    if (route.rootServiceId !== service.id || !route.isCustomDomain) continue;
+    if (opts.domainByHostname?.get(route.hostname)?.serviceId !== service.id) continue;
+    const port = route.rootPort ?? endpoints[0]?.port;
+    if (port) endpoints.push({ port, domainType: "custom", customDomain: route.hostname });
+  }
+  return endpoints;
+}
+
 export function buildServiceRouteDomains(opts: {
   project: Project;
   service: Service;
@@ -440,9 +458,7 @@ export function buildServiceRouteDomains(opts: {
   // primary free route alive with its default `<project>-<service>` label even
   // before a slug is persisted, so an exposed service is never silently
   // unrouted. See resolveServicePublicEndpoints.
-  const endpoints = resolveServicePublicEndpoints(service, {
-    projectSlug: project.slug ?? project.name,
-  });
+  const endpoints = resolveServiceRouteEndpoints(opts);
   const planned: PlannedRouteDomain[] = [];
   const seen = new Set<string>();
 

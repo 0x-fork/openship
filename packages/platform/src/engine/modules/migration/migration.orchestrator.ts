@@ -58,19 +58,17 @@ import {
   withDeploymentPlatform,
 } from "../../lib/deployment-runtime";
 import { establishDirectLink, PathMissingError, statPath, sq } from "./direct-transfer";
-import type { MigrationRouteSpec } from "./migration-input";
+import type { MigrationServiceRoutes } from "./migration-input";
+import { remapMigrationRoutes, saveMigrationRoutes } from "./migration-routes";
+import { PromptRegistry, type PromptPayload } from "../../lib/prompt-gateway";
+import { prepareServerEdge, applyProjectEdgeRoutes } from "../domains/project-edge.service";
 import { sizeOfMoveSet, volumeBytes } from "./migration-size";
 import { withKeyedMutex } from "../../lib/provision-lock";
 import { requestBuildAccess } from "../deployments/build.service";
-import { restartServiceContainer, updateService } from "../services/service.service";
+import { restartServiceContainer } from "../services/service.service";
 import { describeLiveState, resolveLiveServiceState } from "../services/live-state";
-import { applyProjectRouting } from "../domains/routing-apply.service";
-import {
-  resolveProjectRouteState,
-  reapplyProjectLiveRoutes,
-} from "../domains/project-route.service";
 import { linkProjectRepo } from "../projects/project-crud.service";
-import type { ProjectCompositeRoute, ProxySettings } from "@repo/core";
+import type { ProxySettings } from "@repo/core";
 import { teardownProject } from "../projects/project-teardown";
 import { discoverServerStack } from "./docker-inspect.service";
 import {
@@ -202,11 +200,10 @@ export interface StartMigrationInput {
    *  by the unique VOLUME name (two services can share a display name). Chosen at
    *  the plan step; a resolved volume no longer hard-fails the move. */
   conflictResolution?: Record<string, "override" | "clone" | "keep">;
-  /** serviceName → the domain/route to publish once the target is verified.
-   *  Published SERVER-SIDE post-verify (was client-only, so it was lost when the
-   *  wizard unmounted or a run was opened from the list). `targetPath` marks a
-   *  service that serves a PATH of a shared domain (path fan-out). */
-  routesByServiceName?: Record<string, MigrationRouteSpec>;
+  /** Container ID (legacy: service name) → reviewed routes. Ownership is saved
+   *  before takeover; live routes are reconciled after attachment/deployment.
+   *  `targetPath` selects a path of a shared hostname. */
+  routesByServiceName?: MigrationServiceRoutes;
   /** Container ids of the selected services — globally unique, unlike a compose
    *  service name. Sent by the wizard; absent from older clients, which fall back to
    *  the ambiguous name match. See {@link selectDiscoveredServices}. */
@@ -246,25 +243,6 @@ interface ResolvedWorkload {
   adopt: AdoptResult;
   /** Linked repo's compose services, when one was mapped (door A only). */
   repoServices?: Map<string, RepoComposeService>;
-}
-
-/** Re-key a DISCOVERED-name-keyed map onto the adopted ROW names via a
- *  discovered→row rename map. Keys with no rename entry pass through unchanged.
- *  Used so migrate inputs (e.g. routesByServiceName) land on renamed rows.
- *
- *  MUST be given `adopt.rowNameByDiscovered`, NOT `adopt.renames`: the latter is keyed
- *  by service IDENTITY (`serviceUid`), so a name lookup in it misses for every adopted
- *  container and the key passed through UNRENAMED — `publishRoutes` then looked the row
- *  up by the discovered name, found nothing, and dropped a renamed service's route with
- *  no warning. */
-function remapKeys<T>(
-  map: Record<string, T> | undefined,
-  renames: Record<string, string>,
-): Record<string, T> | undefined {
-  if (!map) return map;
-  const out: Record<string, T> = {};
-  for (const [k, v] of Object.entries(map)) out[renames[k] ?? k] = v;
-  return out;
 }
 
 /** One source container the cutover could not remove. */
@@ -423,6 +401,34 @@ class MigrationOrchestratorImpl {
    *  Kept until run()'s finally flushes-and-clears — NOT cleared by transition. */
   private readonly logsByRun = new Map<string, string[]>();
   private readonly logFlushAt = new Map<string, number>();
+  private readonly prompts = new PromptRegistry();
+  private readonly pendingPrompts = new Map<string, PromptPayload>();
+
+  getPendingPrompt(id: string): PromptPayload | null {
+    return this.pendingPrompts.get(id) ?? null;
+  }
+
+  private async promptUser(id: string, prompt: PromptPayload): Promise<string> {
+    this.throwIfCancelled(id);
+    const pending = { ...prompt, promptId: crypto.randomUUID(), expiresAt: this.prompts.deadlineFromNow() };
+    const answer = this.prompts.wait(id);
+    this.pendingPrompts.set(id, pending);
+    migrationRunBus.publish(id, { type: "prompt", prompt: pending });
+    try {
+      return await answer;
+    } finally {
+      this.pendingPrompts.delete(id);
+      migrationRunBus.publish(id, { type: "prompt", prompt: null });
+    }
+  }
+
+  async respondToPrompt(id: string, organizationId: string, promptId: string, action: string): Promise<boolean> {
+    const run = await repos.dockerMigrationRun.findById(id);
+    if (!run || run.organizationId !== organizationId) return false;
+    const prompt = this.pendingPrompts.get(id);
+    if (!prompt || prompt.promptId !== promptId || !prompt.actions.some((choice) => choice.id === action)) return false;
+    return this.prompts.respond(id, action);
+  }
 
   /** Latest transfer progress for a run, or null. */
   getProgress(id: string): ProgressUpdate | null {
@@ -556,7 +562,8 @@ class MigrationOrchestratorImpl {
       migrationRunBus.publish(id, {
         type: "complete",
         status,
-        errorMessage: (patch as { errorMessage?: string })?.errorMessage ?? null,
+        errorMessage: (patch as { errorMessage?: string })?.errorMessage ??
+          (await repos.dockerMigrationRun.findById(id))?.errorMessage ?? null,
       });
     }
   }
@@ -818,6 +825,27 @@ class MigrationOrchestratorImpl {
         throw new Error("The migration project is being deleted; aborting before data movement.");
       }
       await this.transition(id, "adopting", { scannedContainerIds });
+
+      // Save the reviewed service identities/routes before any source is stopped.
+      // The edge then imports existing sites under the normal consent flow; the
+      // final live reconcile replaces the selected sites with owned service routes.
+      const routeHostnames = await saveMigrationRoutes(
+        ctx, projectId, remapMigrationRoutes(input.routesByServiceName, chosen, adopt.renames), log,
+      );
+      const needsEdge = routeHostnames.length > 0 || Boolean(input.projectMove && (
+        (await repos.service.listByProject(projectId)).some((service) => service.enabled && service.exposed) ||
+        (await repos.domain.listByProject(projectId)).length > 0
+      ));
+      if (needsEdge) {
+        this.throwIfCancelled(id);
+        log("Preparing the target server's edge and reviewing existing sites…");
+        await prepareServerEdge(targetServerId, organizationId, {
+          projectId,
+          onLog: (entry) => log(entry.message),
+          promptUser: (prompt) => this.promptUser(id, prompt),
+        });
+        this.throwIfCancelled(id);
+      }
 
       // Link the repo (if the user picked one) BEFORE deploy so source + push
       // auto-deploy are bound from the first release. Best-effort: adopted rows
@@ -1160,17 +1188,16 @@ class MigrationOrchestratorImpl {
         log(`proxy tunables not adopted: ${safeErrorMessage(err)}`),
       );
 
-      // Publish the chosen domains/routes SERVER-SIDE now the target is verified
-      // (was client-only → lost when the wizard unmounted or a run was opened
-      // from the list; same-server included). Best-effort — domains never fail a
-      // migration. Route keys are DISCOVERED names → translate onto the adopted
-      // ROW names so a renamed service still gets its routes.
-      await this.publishRoutes(
-        ctx,
-        projectId,
-        remapKeys(input.routesByServiceName, adopt.rowNameByDiscovered),
-        log,
-      );
+      // Workload is live. Route/TLS trouble must not tear it down; retain an
+      // actionable warning and keep the originals until the operator reviews it.
+      const routingWarnings = needsEdge
+        ? await applyProjectEdgeRoutes(ctx, projectId, { onLog: log }).catch((error) => [safeErrorMessage(error)])
+        : [];
+      if (routingWarnings.length > 0) {
+        const message = `Workload migrated; routing needs attention: ${routingWarnings.join("; ")}`;
+        log(message);
+        await this.transition(id, "verifying", { errorMessage: message.slice(0, 4096) });
+      }
 
       // Read back what the migration actually produced: one line per service
       // naming the container it resolves to on the host, how it was identified,
@@ -1185,7 +1212,7 @@ class MigrationOrchestratorImpl {
        * `syncProjectManagedEdge` reads the server from the project's ACTIVE deployment — which
        * is why it runs HERE and not in the deploy: at that point the target deployment was not
        * active yet, so the sync inside the deploy re-pointed the subdomain at the server the
-       * project was leaving. It must also run AFTER `publishRoutes`, because the mapping only
+       * project was leaving. It must also run AFTER live route application, because the mapping only
        * exists once the routes do.
        *
        * Best-effort, and deliberately so: the workload is already up and verified on the
@@ -1246,7 +1273,7 @@ class MigrationOrchestratorImpl {
         // Only the deploy set has originals to retire. A pure attach-live run
         // adopted the live containers in place, so there is nothing to cut over.
         const run = await repos.dockerMigrationRun.findById(id);
-        if (run?.killOriginals) {
+        if (run?.killOriginals && routingWarnings.length === 0) {
           this.throwIfCancelled(id);
           await this.transition(id, "cutover");
           log(`cutover: stopping + removing the source originals`);
@@ -1291,6 +1318,8 @@ class MigrationOrchestratorImpl {
         reason,
       );
     } finally {
+      this.prompts.reject(id, "Migration finished");
+      this.pendingPrompts.delete(id);
       // Persist the tail (throttling may have skipped the last lines), then
       // release the buffer — the DB copy is now the source of truth.
       await this.flushLogs(id);
@@ -2139,124 +2168,6 @@ class MigrationOrchestratorImpl {
     }
   }
 
-  private async publishRoutes(
-    ctx: RequestContext,
-    projectId: string,
-    routes: StartMigrationInput["routesByServiceName"],
-    log: (m: string) => void,
-  ): Promise<void> {
-    // Snapshot the hostnames the project's edge serves NOW, BEFORE publishing —
-    // so the symmetric reconcile at the end can TEAR DOWN any hostname this
-    // migration drops (a service set to "None", or a domain reassigned). Without
-    // this, publishRoutes was publish-only: a dropped domain's legacy <slug>.conf
-    // kept proxying the hostname to its OLD upstream port (stale exposure — a
-    // security gap). This runs even when `routes` is empty (everything → None).
-    const project = await repos.project.findById(projectId).catch(() => null);
-    const before = project ? await resolveProjectRouteState(project).catch(() => null) : null;
-    const previousHostnames = before?.projectDomains.map((d) => d.hostname) ?? [];
-
-    const services = await repos.service.listByProject(projectId).catch(() => []);
-    const byName = new Map(services.map((s) => [s.name, s]));
-
-    // Group by DOMAIN: a domain can be shared by several services at different
-    // paths (path fan-out, e.g. api.onvo.me `/` → web, `/v3` → api). `domain` is
-    // globally unique, so exactly one service can own its row.
-    type Entry = { name: string; svcId: string; spec: MigrationRouteSpec; domain: string };
-    const byDomain = new Map<string, Entry[]>();
-    for (const [name, spec] of Object.entries(routes ?? {})) {
-      const svc = byName.get(name);
-      const domain = (spec.domainType === "custom" ? spec.customDomain : spec.domain)
-        ?.trim()
-        .toLowerCase();
-      if (!svc || !domain) continue;
-      const list = byDomain.get(domain) ?? [];
-      list.push({ name, svcId: svc.id, spec, domain });
-      byDomain.set(domain, list);
-    }
-
-    const composites: ProjectCompositeRoute[] = [];
-    for (const [domain, entries] of byDomain) {
-      // Root = the `/` entry (no targetPath), else the shortest path, else first.
-      const root =
-        entries.find((e) => !e.spec.targetPath) ??
-        [...entries].sort(
-          (a, b) => (a.spec.targetPath ?? "/").length - (b.spec.targetPath ?? "/").length,
-        )[0];
-      // If an exact route is the only match for a domain it also has to seed the
-      // mandatory root upstream, but retain it as an explicit location so the
-      // exact-match bit survives persistence and every later re-render.
-      const extras = entries.filter((e) => e.spec.targetPath && (e !== root || e.spec.exact));
-
-      // Root mints the domain row + exposes.
-      try {
-        await updateService(ctx, projectId, root.svcId, {
-          exposed: true,
-          ...(root.spec.exposedPort ? { exposedPort: root.spec.exposedPort } : {}),
-          domainType: root.spec.domainType,
-          ...(root.spec.domainType === "custom" ? { customDomain: domain } : { domain }),
-        });
-        log(`published route ${root.name} → ${domain}${root.spec.targetPath ?? ""}`);
-      } catch (err) {
-        log(`route ${root.name} skipped: ${safeErrorMessage(err)}`);
-        continue; // couldn't publish the domain at all
-      }
-
-      // Extras share the domain at a path — just EXPOSE them (no own domain) so
-      // their upstream resolves for the fan-out proxy locations.
-      for (const e of extras) {
-        try {
-          await updateService(ctx, projectId, e.svcId, {
-            exposed: true,
-            ...(e.spec.exposedPort ? { exposedPort: e.spec.exposedPort } : {}),
-          });
-          log(`published fan-out ${e.name} → ${domain}${e.spec.targetPath}`);
-        } catch (err) {
-          log(`fan-out ${e.name} skipped: ${safeErrorMessage(err)}`);
-        }
-      }
-
-      if (extras.length > 0) {
-        composites.push({
-          hostname: domain,
-          isCustomDomain: root.spec.domainType === "custom",
-          rootServiceId: root.svcId,
-          locations: extras.map((e) => ({
-            pathPrefix: e.spec.targetPath!,
-            serviceId: e.svcId,
-            ...(e.spec.exact ? { exact: true } : {}),
-          })),
-        });
-      }
-    }
-
-    // Persist the fan-out map + apply it NOW (proxyLocations, last so it wins over
-    // the root's plain route). Persistence makes every future redeploy re-emit it
-    // (deploy.service + routing-apply read project.compositeRoutes). Best-effort.
-    if (composites.length > 0) {
-      try {
-        await repos.project.update(projectId, { compositeRoutes: composites });
-        await applyProjectRouting(projectId);
-        log(`published ${composites.length} path-routed domain(s)`);
-      } catch (err) {
-        log(`path-routing apply skipped: ${safeErrorMessage(err)}`);
-      }
-    }
-
-    // SYMMETRIC RECONCILE (the security fix): re-apply the CURRENT live routes and
-    // REMOVE every hostname that was served before but is NOT published now — via
-    // the same atomic path the interactive edits use (reconcileProjectRoutes →
-    // NginxProvider.removeRoute deletes <slug>.conf + <slug>.route.json + validates
-    // and reloads, plus deregisters dropped free *.opsh.io slugs). This makes a
-    // migrated route set to "None" actually take the domain DOWN on the edge
-    // instead of leaving a legacy vhost pointed at the old port.
-    const refreshed = await repos.project.findById(projectId).catch(() => null);
-    if (refreshed) {
-      await reapplyProjectLiveRoutes(refreshed, previousHostnames).catch((err) =>
-        log(`edge reconcile skipped: ${safeErrorMessage(err)}`),
-      );
-    }
-  }
-
   /**
    * Carry the source vhosts' reverse-proxy tunables onto the migrated project.
    *
@@ -2565,6 +2476,7 @@ class MigrationOrchestratorImpl {
     const reg = this.cancelByRun.get(id) ?? { cancelled: false };
     reg.cancelled = true;
     this.cancelByRun.set(id, reg);
+    this.prompts.reject(id, "Migration cancelled");
     await this.killTransfer(run.sourceServerId, run.targetServerId, run.organizationId, reg.runTag);
     return { ok: true };
   }
@@ -2908,7 +2820,7 @@ class MigrationOrchestratorImpl {
       } else {
         await repos.dockerMigrationRun.updatePending(id, []);
         const scanned = (run.scannedContainerIds ?? {}) as Record<string, string>;
-        if (run.killOriginals && run.sourceServerId) {
+        if (run.killOriginals && run.sourceServerId && !run.errorMessage) {
           await this.transition(id, "cutover");
           await this.cutover(run.sourceServerId, organizationId, scanned);
           await this.transition(id, "succeeded");
@@ -3040,7 +2952,11 @@ class MigrationOrchestratorImpl {
         await teardownProject(ctx, createdProjectId, {
           force: true,
           wipeVolumes: false,
-          forceOrphan: true,
+          // Target resources were reclaimed above. A draft already owns the
+          // reviewed hostnames, which may still be served by the ORIGINAL proxy
+          // (including when takeover was cancelled). Never tear those down just
+          // to remove the draft, or destroy attached source containers here.
+          recordOnly: true,
         });
       } catch (err) {
         console.warn(

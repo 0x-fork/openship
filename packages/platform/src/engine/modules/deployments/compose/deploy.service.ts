@@ -102,6 +102,7 @@ import {
 import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 import { ensureRoutingReady } from "../../../lib/edge-reconcile";
 import { resolveAcmeProviderOptions } from "../../../lib/acme-config";
+import { pinnedEdgeImage } from "../../../lib/edge-image";
 import * as sessionManager from "../session-manager";
 import { parseServicePort, serviceAliasExtras } from "../../../lib/deployable-service";
 import { auditPorts } from "../port-audit.service";
@@ -1136,6 +1137,7 @@ async function deployComposeServicesUnlocked(
               promptUser: opts.promptUser,
               onLog: systemLog,
               nginx: resolveAcmeProviderOptions(),
+              edgeImage: pinnedEdgeImage(),
             },
           );
           if (edge.migrated && !edge.ok) {
@@ -4142,13 +4144,13 @@ async function deployComposeServicesUnlocked(
           containerPort: number;
         }
       >();
-      const resolveTargetUrl = (serviceId: string) => {
+      const resolveTargetUrl = (serviceId: string, requestedPort?: number) => {
         const svc = enabled.find((s) => s.id === serviceId);
         const res = results.find((r) => r.serviceId === serviceId);
         // Composite/fan-out config itself is the exposure demand. Do not gate it
         // on the service owning a separate hostname (`service.exposed`): project
         // routes intentionally reach internal services.
-        const port = svc ? (resolveServicePort(svc, project.port) ?? undefined) : undefined;
+        const port = svc ? (requestedPort ?? resolveServicePort(svc, project.port) ?? undefined) : undefined;
         if (!port) return null;
         const targetUrl = buildUpstreamUrl({
           strategy: upstreamStrategy,
@@ -4193,6 +4195,9 @@ async function deployComposeServicesUnlocked(
       const fanoutRegistrations = buildDomainFanoutRegistrations({
         routes: project.compositeRoutes,
         resolveTargetUrl,
+        services: enabled,
+        domainByHostname: routeContext.domainByHostname,
+        onWarning: (message) => logger.log(`${message}\n`, "warn"),
       });
       // Resolve every topology-aware target first, then validate the complete
       // set before the first vhost is mutated. A conflict cannot leave half of a

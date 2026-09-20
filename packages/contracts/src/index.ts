@@ -35,6 +35,7 @@ export * from "./dns";
 export * from "./project-routing";
 export * from "./project-logs";
 export * from "./project-transfer";
+export * from "./migration";
 export * from "./credential-inputs";
 export * from "./credentials";
 export * from "./servers";

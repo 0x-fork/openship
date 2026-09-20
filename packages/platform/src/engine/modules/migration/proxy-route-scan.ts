@@ -1,19 +1,15 @@
 /**
- * Routes the server's existing reverse proxy already serves, indexed by the
- * published host port it forwards to — the join key the migrate wizard uses to
- * attach each container's current domain(s) + SSL and offer to keep them.
- *
- * The parsing, indexing, and cert reading all live in the adapter's proxy read api
- * (`edgeProxy`) now. This file is the SSH-bound wrapper: it resolves an executor
- * for a serverId and delegates. It used to own `buildProxyRouteIndex` itself, which
- * meant anything needing a by-port view — including cert reuse in the domains
- * module — had to import from `../migration/`.
+ * Existing proxy routes, including their upstream addresses, source proxy and
+ * discovery notices. The adapter owns parsing/indexing; this wrapper supplies
+ * the executor for the selected server. Reconciliation can match both private
+ * Docker addresses and published host ports without confusing shared ports.
  *
  * Read-only; never throws (a scan failure must not fail discovery).
  */
 
-import { edgeProxy } from "@repo/adapters";
-import type { CommandExecutor, ProxySiteRoute } from "@repo/adapters";
+import { buildProxyRouteIndex, edgeProxy } from "@repo/adapters";
+import type { CommandExecutor, ProxySiteRoute, ProxyKind } from "@repo/adapters";
+import { safeErrorMessage } from "@repo/core";
 import { sshManager } from "../../lib/ssh-manager";
 
 /** @deprecated Use `ProxySiteRoute` from `@repo/adapters`. Kept so existing
@@ -21,27 +17,45 @@ import { sshManager } from "../../lib/ssh-manager";
 export type ExistingRoute = ProxySiteRoute;
 export type ExistingRouteSsl = ProxySiteRoute["ssl"];
 
-export async function scanProxyRoutes(serverId: string): Promise<Map<number, ExistingRoute[]>> {
+export interface ProxyRouteScan {
+  routesByPort: Map<number, ExistingRoute[]>;
+  proxy?: { kind: ProxyKind; container: string | null; ours: boolean };
+  warnings: string[];
+}
+
+function failedScan(error: unknown): ProxyRouteScan {
+  return {
+    routesByPort: new Map(),
+    warnings: [`Could not inspect the existing reverse proxy: ${safeErrorMessage(error)}. Review the routes before migrating.`],
+  };
+}
+
+export async function scanProxyRoutes(serverId: string): Promise<ProxyRouteScan> {
   try {
     return await sshManager.withExecutor(serverId, scanProxyRoutesWithExecutor);
-  } catch {
-    return new Map<number, ExistingRoute[]>();
+  } catch (error) {
+    return failedScan(error);
   }
 }
 
 /**
  * Executor-scoped core of {@link scanProxyRoutes}. Split out so callers that
- * already hold the right host executor — e.g. cert reuse on the auto-registered
- * LOCAL host-server, where `sshManager` (SSH-only) can't connect — can scan the
- * edge on `createHostExecutor()` instead. Never throws; empty map on any failure.
+ * already hold the right host executor can scan without another connection.
+ * Failures remain visible as discovery notices.
  */
 export async function scanProxyRoutesWithExecutor(
   exec: CommandExecutor,
-): Promise<Map<number, ExistingRoute[]>> {
+): Promise<ProxyRouteScan> {
   try {
     const proxy = await edgeProxy(exec);
-    return (await proxy?.sitesByPort()) ?? new Map<number, ExistingRoute[]>();
-  } catch {
-    return new Map<number, ExistingRoute[]>();
+    if (!proxy) return { routesByPort: new Map(), warnings: [] };
+    const scan = await proxy.listSites();
+    return {
+      routesByPort: buildProxyRouteIndex(scan.sites),
+      proxy: { kind: proxy.kind, container: proxy.container, ours: proxy.ours },
+      warnings: scan.warnings,
+    };
+  } catch (error) {
+    return failedScan(error);
   }
 }

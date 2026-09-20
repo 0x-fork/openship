@@ -344,12 +344,13 @@ describe("buildAdoptedServiceRows — two same-named picks stay distinct (#584 c
   });
 
   it("applies each service's env override to its own row", () => {
-    const { rows } = buildAdoptedServiceRows([OURS, THEIRS], undefined, {
+    const { rows, environments } = buildAdoptedServiceRows([OURS, THEIRS], undefined, {
       "c-a": { WHICH: "ours" },
       "c-b": { WHICH: "theirs" },
     });
-    expect(rows[0]!.environment).toMatchObject({ WHICH: "ours" });
-    expect(rows[1]!.environment).toMatchObject({ WHICH: "theirs" });
+    expect(environments[rows[0]!.name]).toEqual({ WHICH: "ours" });
+    expect(environments[rows[1]!.name]).toEqual({ WHICH: "theirs" });
+    expect(rows.every((row) => Object.keys(row.environment ?? {}).length === 0)).toBe(true);
   });
 
   it("renames only the service the operator mapped", () => {
@@ -362,10 +363,10 @@ describe("buildAdoptedServiceRows — two same-named picks stay distinct (#584 c
 
   it("still keys by name for a client that sends name keys", () => {
     // One pick, no ambiguity — the legacy shape must keep working unchanged.
-    const { rows, renames } = buildAdoptedServiceRows([THEIRS], undefined, {
+    const { rows, renames, environments } = buildAdoptedServiceRows([THEIRS], undefined, {
       postgres: { WHICH: "legacy" },
     });
-    expect(rows[0]!.environment).toMatchObject({ WHICH: "legacy" });
+    expect(environments[rows[0]!.name]).toEqual({ WHICH: "legacy" });
     expect(renames["c-b"]).toBe("postgres");
   });
 });

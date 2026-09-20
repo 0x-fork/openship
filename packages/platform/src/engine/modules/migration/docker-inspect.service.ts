@@ -265,13 +265,11 @@ export async function discoverServerStack(
         step("Reading compose files…");
         const declared = await readComposeDeclarations(serverId, groups);
 
-        // Detect routes the server's existing (foreign) reverse proxy already serves,
-        // indexed by published host port — so the wizard can surface each container's
-        // current domain(s)+SSL. Own read-only SSH pass; self-catching (never fails
-        // discovery). Skipped in flat mode is unnecessary — a foreign proxy is a
-        // foreign proxy regardless of how we classify the app containers.
+        // Retain private upstream addresses as well as host ports, so Traefik
+        // services with no published port can keep their domains too. Failures
+        // are review notices and do not prevent inspecting the workload.
         step("Scanning existing reverse proxy…");
-        const proxyRoutesByPort = await scanProxyRoutes(serverId);
+        const proxyScan = await scanProxyRoutes(serverId);
 
         // Fetch each distinct image's baked-in env + CMD once (candidates AND
         // openship containers), so discovery can tell which env the OPERATOR set
@@ -392,7 +390,9 @@ export async function discoverServerStack(
           imageEnv,
           imageCmds,
           openshipProjects,
-          proxyRoutesByPort,
+          proxyRoutesByPort: proxyScan.routesByPort,
+          proxy: proxyScan.proxy,
+          proxyWarnings: proxyScan.warnings,
         });
       })(),
       DISCOVERY_TIMEOUT_MS,

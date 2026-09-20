@@ -12,6 +12,21 @@ type RepoTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createDomainRepo(db: Database) {
+  /** The topology and domain row own the same hostname and must disappear together. */
+  async function removeInTransaction(tx: RepoTransaction, id: string) {
+    const [row] = await tx.select({ projectId: domain.projectId, hostname: domain.hostname })
+      .from(domain).where(eq(domain.id, id));
+    if (row?.projectId) {
+      const [owner] = await tx.select({ compositeRoutes: project.compositeRoutes })
+        .from(project).where(eq(project.id, row.projectId)).for("update");
+      const routes = owner?.compositeRoutes ?? [];
+      const remaining = routes.filter((route) => route.hostname.toLowerCase() !== row.hostname.toLowerCase());
+      if (remaining.length !== routes.length) await tx.update(project)
+        .set({ compositeRoutes: remaining, updatedAt: new Date() }).where(eq(project.id, row.projectId));
+    }
+    await tx.delete(domain).where(eq(domain.id, id));
+  }
+
   /**
    * A project has at most ONE primary domain: promoting one demotes the rest.
    *
@@ -550,7 +565,7 @@ export function createDomainRepo(db: Database) {
     },
 
     async remove(id: string) {
-      await db.delete(domain).where(eq(domain.id, id));
+      await db.transaction((tx) => removeInTransaction(tx, id));
     },
 
     /**
@@ -568,7 +583,7 @@ export function createDomainRepo(db: Database) {
       servicePatch: { serviceId: string; routing: Record<string, unknown> },
     ) {
       await db.transaction(async (tx) => {
-        await tx.delete(domain).where(eq(domain.id, id));
+        await removeInTransaction(tx, id);
         await tx
           .update(service)
           .set({ ...servicePatch.routing, updatedAt: new Date() })

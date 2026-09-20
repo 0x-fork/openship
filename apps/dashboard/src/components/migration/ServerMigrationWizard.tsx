@@ -50,6 +50,9 @@ import {
 } from "@/lib/api";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { parseSessionLog } from "./session-log-line";
+import { keptServiceRoutes, toServerRoutes } from "./migration-route-input";
+import { MigrationPrompt } from "./MigrationPrompt";
+import { MigrationProxyReview } from "./MigrationProxyReview";
 import { useGitHub } from "@/context/GitHubContext";
 import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryList";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
@@ -282,40 +285,6 @@ const rowsToEnv = (rows: Array<{ key: string; value: string }>) => {
   return env;
 };
 
-/** Map the wizard's per-service endpoints → the server route spec sent to
- *  migrate() (published SERVER-SIDE post-verify). Takes the first endpoint with a
- *  resolved domain per service and carries its `targetPath` so a path-fan-out
- *  domain (e.g. `/v3` → this service) is preserved; the server groups by domain. */
-type ServerRouteSpec = {
-  exposedPort?: string;
-  domainType: "free" | "custom";
-  domain?: string;
-  customDomain?: string;
-  targetPath?: string;
-  exact?: boolean;
-};
-function toServerRoutes(
-  routes: Record<string, PublicEndpoint[]> | undefined,
-): Record<string, ServerRouteSpec> | undefined {
-  if (!routes) return undefined;
-  const out: Record<string, ServerRouteSpec> = {};
-  for (const [name, endpoints] of Object.entries(routes)) {
-    const ep = endpoints[0];
-    if (!ep) continue;
-    const domain = (ep.domainType === "custom" ? ep.customDomain : ep.domain)?.trim().toLowerCase();
-    if (!domain) continue;
-    const targetPath = ep.targetPath?.trim();
-    out[name] = {
-      domainType: ep.domainType === "custom" ? "custom" : "free",
-      ...(ep.domainType === "custom" ? { customDomain: domain } : { domain }),
-      ...(ep.port ? { exposedPort: String(ep.port) } : {}),
-      ...(targetPath && (targetPath !== "/" || ep.exact) ? { targetPath } : {}),
-      ...(ep.exact ? { exact: true } : {}),
-    };
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
 /**
  * Migrate existing Docker deployment(s) into Openship: pick a server → inspect →
  * organise the discovered stack into one or more PROJECTS (tabs) → migrate.
@@ -421,7 +390,7 @@ export function ServerMigrationWizard({
   // Sequential multi-project migration state.
   const [queue, setQueue] = useState<MigrateItem[] | null>(null);
   const [queueIndex, setQueueIndex] = useState(0);
-  const [completed, setCompleted] = useState<Array<{ name: string; projectId?: string | null }>>(
+  const [completed, setCompleted] = useState<Array<{ name: string; projectId?: string | null; warning?: string | null }>>(
     [],
   );
   const [starting, setStarting] = useState(false);
@@ -987,19 +956,7 @@ export function ServerMigrationWizard({
         const mode: RouteMode = p.serviceRouteMode[uid] ?? (hasKeepableRoute(s) ? "keep" : "none");
         let routes: PublicEndpoint[] = [];
         if (mode === "keep" && hasKeepableRoute(s)) {
-          // One endpoint per detected route so a path-fan-out domain is kept:
-          // each entry carries its location path (→ targetPath, root omitted).
-          routes = (s.existingRoute ?? [])
-            .filter((r) => r.domains.length > 0)
-            .map((r) =>
-              createPublicEndpoint({
-                port: firstContainerPort(s),
-                domainType: "custom",
-                customDomain: r.domains[0],
-                ...(r.path && (r.path !== "/" || r.exact) ? { targetPath: r.path } : {}),
-                ...(r.exact ? { exact: true } : {}),
-              }),
-            );
+          routes = keptServiceRoutes(s, firstContainerPort(s));
         } else if (mode === "free" || mode === "custom") {
           routes = (p.serviceRoutes[uid] ?? []).filter(routeHasDomain);
         }
@@ -1009,8 +966,8 @@ export function ServerMigrationWizard({
       }
       // Repo compose services with no running container (built/pulled fresh from
       // the repo): carry their route + env override keyed by the REPO service
-      // name. The backend creates the row (reconcileFromCompose) and publishRoutes
-      // routes it by that name — so they deploy and route like any native service.
+      // name. The engine saves their routes against the resulting service rows
+      // so they deploy and route like any native service.
       const mappedRepoNames = new Set(
         picked.map((s) => p.serviceMap[svcUid(s)]).filter((n): n is string => !!n),
       );
@@ -1078,7 +1035,7 @@ export function ServerMigrationWizard({
     // unmounted / run opened from the list). Here we only advance the queue.
     setCompleted((prev) => [
       ...prev,
-      { name: queue[queueIndex]?.name ?? "", projectId: run.projectId },
+      { name: queue[queueIndex]?.name ?? "", projectId: run.projectId, warning: run.errorMessage },
     ]);
     const nextIndex = queueIndex + 1;
     if (nextIndex < queue.length) {
@@ -1564,6 +1521,12 @@ export function ServerMigrationWizard({
             <Plus className="size-3.5" />
             {m.wizard.addProject}
           </button>
+        </div>
+      )}
+
+      {stack && (
+        <div className="shrink-0 px-6 pt-4 max-h-48 overflow-y-auto">
+          <MigrationProxyReview stack={stack} />
         </div>
       )}
 
@@ -2332,6 +2295,7 @@ export function ServerMigrationWizard({
 
       return (
         <div ref={stepTopRef} className="space-y-5">
+          <MigrationProxyReview stack={stack} />
           {step === "source" ? (
             /* Source — repo picker inline (like Library) on the left, selected
                repo + actions in the right rail; once linked, the left becomes
@@ -2549,6 +2513,8 @@ export function ServerMigrationWizard({
               `active` falls back to projects[0], which the scan always creates,
               so the single-project path works untouched. */}
           {backBtn && <div className="flex items-center gap-3">{backBtn}</div>}
+
+          {stack && <MigrationProxyReview stack={stack} />}
 
           {!stack && !error && <EmptyHint scanning={scanning} status={scanStatus} />}
           {stack && !adoptable && !hasReimport && <NoResults message={m.discover.nothing} />}
@@ -4458,7 +4424,7 @@ export function MigrationProgress({
   queueName: string;
   queueIndex: number;
   queueTotal: number;
-  completed: Array<{ name: string; projectId?: string | null }>;
+  completed: Array<{ name: string; projectId?: string | null; warning?: string | null }>;
   deployServices?: Array<{ name: string; status: string; error?: string }>;
   /** True when at least one migrated service got a domain — suppresses the
    *  "not public yet, add a domain" hint (the stack is already reachable). */
@@ -4501,6 +4467,15 @@ export function MigrationProgress({
 
   return (
     <div className="py-2 space-y-5 text-sm">
+      {run?.pendingPrompt && <MigrationPrompt run={run} />}
+      {run?.errorMessage && !failed && (
+        <p role="alert" className="rounded-xl bg-warning/10 p-3 text-sm text-warning">{run.errorMessage}</p>
+      )}
+      {completed.filter((item) => item.warning && item.projectId !== run?.projectId).map((item, index) => (
+        <p key={`${item.projectId}-${index}`} role="alert" className="rounded-xl bg-warning/10 p-3 text-sm text-warning">
+          {item.name}: {item.warning}
+        </p>
+      ))}
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-foreground">{m.run.title}</h3>
         {queueTotal > 1 && !allDone && (

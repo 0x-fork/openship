@@ -4,15 +4,17 @@
 
 import type { DockerMigrationRun, DockerMigrationStatus } from "@repo/db";
 import { createRunBus } from "../../lib/run-bus";
+import type { PromptPayload } from "../../lib/prompt-gateway";
 
 export type MigrationRunEvent =
+  | { type: "prompt"; prompt: PromptPayload | null }
   | {
       type: "transition";
       status: DockerMigrationStatus;
       bytesMoved?: number | null;
       deploymentId?: string | null;
     }
-  | { type: "snapshot"; run: DockerMigrationRun }
+  | { type: "snapshot"; run: DockerMigrationRun & { pendingPrompt?: PromptPayload | null } }
   | { type: "log"; line: string }
   | {
       /** Live data-move progress during `moving_data`. `movedBytes` is the
