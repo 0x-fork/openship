@@ -164,6 +164,32 @@ describe("persisted migration routing through service edits and deletion", () =>
     expect((await render()).base.map((route) => route.hostname)).toEqual(["admin.example.com"]);
   });
 
+  it("keeps the edited primary port when an alias is removed", async () => {
+    await updateService(
+      ctx,
+      projectId,
+      web.id,
+      {
+        publicEndpoints: [
+          { domainType: "custom", customDomain: "shop.example.com", port: 8090 },
+          { domainType: "custom", customDomain: "admin.example.com", port: 8081 },
+        ],
+      },
+      { applyLiveRoutes: false },
+    );
+    const alias = (await repos.domain.listByProject(projectId)).find(
+      (domain) => domain.hostname === "www.example.com",
+    )!;
+    await removeDomain(ctx, alias.id);
+    expect((await repos.service.findById(web.id))!.publicEndpoints).toEqual([
+      { domainType: "custom", customDomain: "shop.example.com", port: 8090 },
+      { domainType: "custom", customDomain: "admin.example.com", port: 8081 },
+    ]);
+    expect(
+      (await render()).topology.find((route) => route.hostname === "shop.example.com")?.targetUrl,
+    ).toBe(`http://${web.id}:8090`);
+  });
+
   it("rejects a hostname owned by another project before changing earlier services", async () => {
     const other = await seedProject(ctx.organizationId);
     await repos.domain.create({
