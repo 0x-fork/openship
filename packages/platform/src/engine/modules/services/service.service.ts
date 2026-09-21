@@ -7,6 +7,7 @@ import {
   normalizeRoutingFields,
   repos,
   composeSpecDiff,
+  reconcileComposeSpec,
   toComposeSpec,
   type Project,
   type Service,
@@ -315,23 +316,9 @@ export async function acceptServiceDrift(
   const theirs = svc.driftSpec;
   if (!theirs) return withDrift(svc);
   await repos.service.update(serviceId, {
-    image: theirs.image ?? null,
-    build: theirs.build ?? null,
-    dockerfile: theirs.dockerfile ?? null,
-    buildArgs: theirs.buildArgs ?? {},
-    ports: theirs.ports ?? [],
-    dependsOn: theirs.dependsOn ?? [],
-    environment: theirs.environment ?? {},
-    volumes: theirs.volumes ?? [],
-    command: theirs.command ?? null,
-    // #332: this list has to cover EVERY field of ComposeServiceSpec, or accepting
-    // drift advances the baseline while quietly keeping the old value — the change
-    // then never re-flags, because the baseline now says it was applied. That is
-    // what happened to `commandArgv`: accepting an upstream argv change discarded
-    // it permanently. Same field-by-field omission as #533.
-    commandArgv: theirs.commandArgv ?? null,
-    restart: theirs.restart ?? "unless-stopped",
-    advanced: theirs.advanced ?? {},
+    ...reconcileComposeSpec(toComposeSpec(svc), svc.importedSpec ?? null, theirs, undefined, {
+      acceptUpstream: true,
+    }),
     importedSpec: theirs,
     driftSpec: null,
   });

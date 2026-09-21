@@ -4,8 +4,10 @@ import { Hono } from "hono";
 import type Dockerode from "dockerode";
 import { DockerRuntime } from "@repo/adapters";
 import { ENV_MASK } from "@repo/core";
+import { toComposeSpec } from "@repo/db";
 import { OpenshipClient } from "@repo/sdk/client";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
 import * as deploymentRuntime from "@repo/platform/engine/lib/deployment-runtime";
 import { resolveStaleEnvKeysForService } from "@repo/platform/engine/modules/deployments/env-drift";
 import { buildConfigSnapshot, createQueuedDeployment } from "@repo/platform/engine/modules/deployments/build.service";
@@ -233,5 +235,59 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
     });
     expect(response.status).toBe(404);
     expect(await exec(probe, ["wget", "-qO-", "http://api:3000"])).toBe("new");
+  });
+
+  it("applies new Compose values while preserving legacy credentials and explicit service overrides end to end", async () => {
+    await client.services.setEnvVars(project.id, service.id, {
+      environment: "production",
+      vars: [
+        { key: "VALUE", value: "new" },
+        { key: "TOKEN", value: ENV_MASK, isSecret: true },
+      ],
+    });
+    const parse = (environment: Record<string, string>) =>
+      parseComposeFile(
+        JSON.stringify({
+          services: { api: { image: "busybox:latest", environment } },
+        }),
+      ).services;
+    const baseline = toComposeSpec(
+      parse({ INLINE: "compose", ROTATE: "v1", LEGACY: "only-saved", RETAINED: "keep" })[0]!,
+    );
+    await repos.service.update(service.id, { ...baseline, importedSpec: baseline });
+    const result = await repos.service.reconcileFromCompose(
+      project.id,
+      parse({
+        INLINE: "compose",
+        ROTATE: "v2",
+        LEGACY: "${LEGACY:?required}",
+        VALUE: "from-repo",
+        DERIVED: "token=${TOKEN:?required}",
+      }),
+    );
+    expect(result.driftedNames).toEqual([]);
+    const saved = (await repos.service.findById(service.id))!;
+    expect(saved.environment).toMatchObject({
+      ROTATE: "v2",
+      LEGACY: "only-saved",
+      RETAINED: "keep",
+    });
+    expect(saved.driftSpec).toBeNull();
+    const applied = await client.services.applyEnvironment(project.id, service.id);
+    const current = runtime.docker.getContainer(applied.containerId);
+    const info = await current.inspect();
+    expect(info.Config.Env).toEqual(
+      expect.arrayContaining([
+        "ROTATE=v2",
+        "LEGACY=only-saved",
+        "RETAINED=keep",
+        "VALUE=new",
+        "TOKEN=unchanged-secret",
+        "DERIVED=token=unchanged-secret",
+        "SHARED=new shared",
+      ]),
+    );
+    expect(await exec(probe, ["wget", "-qO-", "http://api-alias:3000"])).toBe("new");
+    expect(await exec(current, ["cat", "/data/keep"])).toBe("persistent");
   });
 });

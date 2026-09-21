@@ -87,11 +87,9 @@ function maskValue(value: string): string {
  * deletes keys the client removed. Callers that only want partial semantics must
  * pre-merge (this is a whole-map replace with sentinel protection).
  *
- * This is the right helper when the caller genuinely owns the WHOLE set — create,
- * compose sync, and the migration/deploy paths, which each rebuild the map from an
- * upstream spec and must be able to drop a variable the spec no longer declares.
- * The PATCH endpoint wants `mergeServiceEnv` below instead: a partial body there
- * would otherwise delete every variable it merely failed to mention.
+ * Use this only when the caller explicitly replaces the whole map. Deployment
+ * forms and partial service edits use `mergeServiceEnv` below so omitted keys
+ * retain their saved values.
  */
 export function unmaskEnv(
   incoming: Record<string, string> | null | undefined,

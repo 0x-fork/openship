@@ -3,7 +3,7 @@
 import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
-import { deployApi, projectsApi, isAbortError } from "@/lib/api";
+import { deployApi, projectsApi, isAbortError, getApiErrorMessage } from "@/lib/api";
 import type { PendingAction } from "@/lib/api/projects";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { useModal } from "@/context/ModalContext";
@@ -167,9 +167,12 @@ export const Deployments = () => {
         }
         console.error("Redeploy failed:", error);
         showToast(
-          mode === "refresh"
-            ? t.projects.redeploy.couldNotRefresh
-            : t.projects.redeploy.couldNotRedeploy,
+          getApiErrorMessage(
+            error,
+            mode === "refresh"
+              ? t.projects.redeploy.couldNotRefresh
+              : t.projects.redeploy.couldNotRedeploy,
+          ),
           "error",
           t.projects.redeploy.errorTitle,
         );
