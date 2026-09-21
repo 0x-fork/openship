@@ -9,6 +9,7 @@ import { createProjectControls } from "./project-controls.operations";
 import { createProjectLocalDependencies } from "./project-local.operations";
 import { getProjectHome } from "./project-home.operations";
 import { subscribeProjectLogs, openProjectServerLogs } from "./project-logs.operations";
+import { subscribeRoutingRetry } from "./project-routing-retry.operations";
 
 async function checkSource(input: Partial<CreateProjectInput>) {
   if (input.localPath && process.env.OPENSHIP_NATIVE === "true") await assertNativeSourcePath(input.localPath);
@@ -33,6 +34,7 @@ const create = async (ctx: ExecutionContext, input: EnsureProjectInput) => {
 export const projectDependencies: ProjectDependencies = {
   home: getProjectHome,
   subscribeLogs: subscribeProjectLogs,
+  subscribeRoutingRetry,
   openServerLogs: openProjectServerLogs,
   controls: createProjectControls(recordAudit),
   local: createProjectLocalDependencies(create),

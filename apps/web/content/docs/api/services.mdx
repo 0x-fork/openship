@@ -191,9 +191,10 @@ curl -X PATCH "$OPENSHIP_URL/api/projects/proj_123/services/svc_456" \
 
 ## Sync from docker-compose
 
-Reads the project's `docker-compose` file and reconciles the service table to match it — adding, updating,
-and flagging services. Where your edits diverge from the compose file, the affected services are marked as
-**drifted** so you can resolve them explicitly (see below).
+Explicitly replace Compose service configuration with the supplied parsed services, adding or updating
+rows and removing services absent from the list. The CLI's `service sync` command reads and validates
+the file before submitting this request. Ordinary redeploys automatically merge repo changes with
+saved overrides; they do not require this replacement operation.
 
 ```
 POST /api/projects/:id/services/sync
@@ -201,11 +202,12 @@ POST /api/projects/:id/services/sync
 
 ## Resolve compose drift
 
-When a service's stored config diverges from the upstream `docker-compose` file, it's flagged as drifted.
-Choose one resolution per service:
+These endpoints resolve pending reviews saved by older versions. Routine redeploys now preserve
+explicit overrides and automatically apply other source changes, clearing old review records.
+Accepting a legacy review applies source configuration while preserving saved environment values.
 
 ```
-POST /api/projects/:id/services/:serviceId/drift/accept   # take upstream, discard your edits
+POST /api/projects/:id/services/:serviceId/drift/accept   # accept source config, preserve saved env
 POST /api/projects/:id/services/:serviceId/drift/keep     # keep your edits, stop flagging
 ```
 
@@ -371,7 +373,7 @@ organization. List the project's services with `GET /api/projects/:id/services` 
 | Read one service definition and state. | `services.get(parentId, id)` | `GET /api/projects/:id/services/:serviceId`<br />`project:service:read` |
 | Update service configuration. | `services.update(parentId, id, input)` | `PATCH /api/projects/:id/services/:serviceId`<br />`project:service:write` |
 | Remove a service and its selected resources. | `services.remove(parentId, id)` | `DELETE /api/projects/:id/services/:serviceId`<br />`project:service:admin` |
-| Accept the source version of a detected configuration drift. | `services.acceptDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/accept`<br />`project:service:write` |
+| Accept a legacy source review while preserving saved environment values. | `services.acceptDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/accept`<br />`project:service:write` |
 | Keep the current configuration when resolving drift. | `services.keepDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/keep`<br />`project:service:write` |
 | Read service environment variables with masked secrets. | `services.listEnvVars(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/env`<br />`project:service:read` |
 | Apply service environment variable changes. | `services.setEnvVars(parentId, id, input)` | `PUT /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |

@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
 import type { Service } from "@/lib/api/services";
+import { ApiError } from "@/lib/api/client";
 import { Deployments } from "./Deployments";
 
 const mocks = vi.hoisted(() => ({
@@ -14,17 +15,23 @@ const mocks = vi.hoisted(() => ({
   hideModal: vi.fn(),
   setActiveTab: vi.fn(),
   openBuild: vi.fn(),
+  showToast: vi.fn(),
+  commitStatus: vi.fn(),
 }));
 vi.mock("@/context/ProjectSettingsContext", () => ({ useProjectSettings: mocks.context }));
-vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: mocks.showToast }) }));
 vi.mock("@/context/ModalContext", () => ({
   useModal: () => ({ showModal: mocks.showModal, hideModal: mocks.hideModal }),
 }));
-vi.mock("@/lib/api", () => ({
-  deployApi: { trigger: mocks.trigger },
-  projectsApi: { getCommitStatus: async () => ({ data: { supported: false } }) },
-  isAbortError: () => false,
-}));
+vi.mock("@/lib/api", async () => {
+  const { getApiErrorMessage } = await import("@/lib/api/client");
+  return {
+    deployApi: { trigger: mocks.trigger },
+    projectsApi: { getCommitStatus: mocks.commitStatus },
+    isAbortError: () => false,
+    getApiErrorMessage,
+  };
+});
 vi.mock("@/lib/deploy-nav", () => ({ openTriggeredBuild: mocks.openBuild }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/i18n-provider", () => ({
@@ -86,6 +93,7 @@ beforeEach(() => {
   };
   mocks.context.mockImplementation(() => context);
   mocks.trigger.mockResolvedValue({ data: { deploymentId: "deployment" } });
+  mocks.commitStatus.mockResolvedValue({ data: { supported: false } });
   mocks.showModal.mockReturnValue("warning");
 });
 
@@ -105,6 +113,42 @@ async function redeploy() {
   await act(async () => root.render(<Deployments />));
   await act(async () => button(baseDictionary.projects.redeploy.redeployProject).click());
 }
+
+it.each(["project", "new-commit"])(
+  "shows the API rejection when deploying from %s",
+  async (entry) => {
+    context.hasMultipleServices = false;
+    const reason = "Compose environment needs review (postgres: POSTGRES_PASSWORD).";
+    mocks.trigger.mockRejectedValue(new ApiError(409, "Conflict", { error: reason }));
+    mocks.commitStatus.mockResolvedValue({
+      data: {
+        supported: true,
+        behind: true,
+        mode: "commit",
+        latestSha: "803526d",
+        deployedSha: "1d4bfc0",
+        branch: "main",
+      },
+    });
+
+    await act(async () => root.render(<Deployments />));
+    await act(async () =>
+      button(
+        entry === "new-commit"
+          ? baseDictionary.projects.redeploy.redeployLatest
+          : baseDictionary.projects.redeploy.redeployProject,
+      ).click(),
+    );
+
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      reason,
+      "error",
+      baseDictionary.projects.redeploy.errorTitle,
+    );
+    expect(mocks.openBuild).not.toHaveBeenCalled();
+    expect(button(baseDictionary.projects.redeploy.redeployProject).disabled).toBe(false);
+  },
+);
 
 it.each([
   { hostname: "app.example.test", serviceId: "web", targetPort: 9000 },

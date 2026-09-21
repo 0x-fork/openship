@@ -164,6 +164,7 @@ async function reRegisterDomainRoute(
             const observed = observedLoopbackPublishFromUrl({
               targetUrl,
               serviceId: primarySvc.serviceId,
+              containerId: primarySvc.containerId,
               containerPort,
             });
             return observed ? { observedLoopbackPublishes: [observed] } : {};

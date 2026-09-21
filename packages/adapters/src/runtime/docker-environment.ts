@@ -138,9 +138,16 @@ export async function applyDockerEnvironment(
     await replacement.start();
     // Docker acknowledges start before PID 1 has read its environment. Catch an
     // immediate startup exit before discarding the recoverable old container.
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     const after = await replacement.inspect();
-    if (!after.State.Running || after.State.Restarting || after.State.Health?.Status === "unhealthy") {
+    // A crash loop can be "running" between two exits. This is a freshly
+    // created container, so any restart belongs to this startup attempt.
+    if (
+      !after.State.Running ||
+      after.State.Restarting ||
+      after.RestartCount > 0 ||
+      after.State.Health?.Status === "unhealthy"
+    ) {
       throw new Error("The service did not start with the new environment.");
     }
     const ip = Object.values(after.NetworkSettings.Networks ?? {})

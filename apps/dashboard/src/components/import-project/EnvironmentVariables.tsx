@@ -26,6 +26,7 @@ import type { Dictionary } from "@/i18n";
 import type { EnvironmentVariable } from "./types";
 import { useDemoMode } from "@/lib/demo-mode";
 import { parseDotenv, serializeDotenv } from "@/lib/dotenv";
+import { isEnvironmentValueMissing, type EnvironmentVariableMeta } from "./environment-resolution";
 
 // #336: env values arrive masked as ENV_MASK (shared with the API via @repo/core
 // so the exact sentinel can't drift). A masked row keeps the sentinel in state —
@@ -34,16 +35,6 @@ import { parseDotenv, serializeDotenv } from "@/lib/dotenv";
 // row replaces the sentinel with the typed value.
 type EnvironmentVariableRow = EnvironmentVariable & {
   sourceId?: string;
-};
-
-type EnvironmentVariableMeta = {
-  source: "env-file" | "default" | "missing" | "interpolated";
-  variable?: string;
-  defaultValue?: string;
-  resolvedValue: string;
-  expression?: string;
-  required?: boolean;
-  unresolvedVariables?: string[];
 };
 
 interface EnvironmentVariablesPropsOptional {
@@ -1091,7 +1082,7 @@ function getEnvResolutionState(
   if (!meta) return null;
   const res = t.importProject.environmentVariables.resolution;
 
-  if (meta.required || (meta.source === "missing" && !value)) {
+  if (isEnvironmentValueMissing(meta, value)) {
     return {
       icon: AlertTriangle,
       label: res.needsValue,

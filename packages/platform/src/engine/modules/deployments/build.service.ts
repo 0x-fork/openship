@@ -15,7 +15,13 @@
  */
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
-import { repos, unresolvedComposeEnvironmentKeys, type Project, type Service } from "@repo/db";
+import {
+  repos,
+  toComposeSpec,
+  unresolvedComposeEnvironmentKeys,
+  type Project,
+  type Service,
+} from "@repo/db";
 import {
   AppError,
   NotFoundError,
@@ -30,6 +36,7 @@ import {
   releaseArtifactKind,
   renderReleaseImage,
   looksLikeSecretKey,
+  mergeAdvanced,
   resolveProjectVolumes,
   type StackId,
   type DeployTarget,
@@ -62,7 +69,12 @@ import {
 } from "./prepare.service";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 import { getFolderSession } from "../projects/folder/session-store";
-import { hasMaskedValue, isMaskedValue, unmaskEnv, unmaskBuildArgs } from "../../lib/secret-env";
+import {
+  hasMaskedValue,
+  isMaskedValue,
+  mergeServiceEnv,
+  unmaskBuildArgs,
+} from "../../lib/secret-env";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import {
   assertBuildMinutesAvailable,
@@ -870,19 +882,7 @@ async function reconcileComposeSource(
         `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
       );
     }
-    const { driftedNames, unresolvedEnvironment } = await repos.service.reconcileFromCompose(project.id, services);
-    if (unresolvedEnvironment?.length) {
-      const keys = unresolvedEnvironment.map((entry) => `${entry.name}: ${entry.keys.join(", ")}`).join("; ");
-      throw new AppError(
-        `Compose environment needs review (${keys}). The saved values may be old interpolation results or inline edits. Review the service's Compose changes and choose Accept upstream or Keep mine before redeploying.`,
-        409,
-      );
-    }
-    if (driftedNames.length > 0) {
-      console.log(
-        `[compose-drift] ${project.id}: kept user edits on ${driftedNames.join(", ")} (pending review)`,
-      );
-    }
+    await repos.service.reconcileFromCompose(project.id, services);
     return info;
   } catch (err) {
     if (err instanceof AppError) throw err;
@@ -1134,8 +1134,12 @@ function resolveSubmittedProjectEnv(
     });
   }
 
-  const encrypted = Object.fromEntries(rows.map(({ key, value }) => [key, value]));
-  return { encrypted: rows.length > 0 ? encrypted : null, rows };
+  // Deploy input is an overlay, not an environment deletion command. An older
+  // wizard or a CLI request may submit only one changed key.
+  const encrypted = Object.fromEntries(
+    [...storedRows, ...rows].map(({ key, value }) => [key, value]),
+  );
+  return { encrypted: Object.keys(encrypted).length > 0 ? encrypted : null, rows };
 }
 
 type PersistableProjectEnv = { key: string; value: string; isSecret: boolean };
@@ -1739,35 +1743,60 @@ export async function requestBuildAccess(
     }
   }
 
-  // #336: the wizard sees compose env MASKED, so a deploy request can echo the
-  // "••••••••" sentinel back. Recover the real values before they're persisted
-  // to the snapshot / service rows (else containers launch with KEY=••••••••).
-  // Recovery sources, all plaintext: the staged upload's scan (session.services,
-  // captured pre-mask) and the stored service rows — which reconcileComposeSource
-  // above just refreshed from a git repo's compose, so this also covers a git
-  // first-deploy. A revealed-and-edited value arrives real and passes through.
-  if (
-    effectiveServices?.some((s) => hasMaskedValue(s.environment) || hasMaskedValue(s.buildArgs))
-  ) {
-    const realEnvByName = new Map<string, Record<string, string>>();
+  // A deploy form is an overlay, including when an older tab omits some service
+  // variables. Recover masked values and retain unsubmitted saved values before
+  // freezing the snapshot. The stored row outranks a stale upload preview.
+  if (effectiveServices?.length) {
+    const sourceByName = new Map<string, ReturnType<typeof toComposeSpec>>();
     const realArgsByName = new Map<string, Record<string, string | null>>();
+    for (const s of uploadSession?.services ?? []) {
+      sourceByName.set(s.name, toComposeSpec(s));
+    }
     for (const s of await listProjectComposeServices(project.id)) {
-      realEnvByName.set(s.name, (s.environment as Record<string, string> | null) ?? {});
+      sourceByName.set(s.name, toComposeSpec(s));
       realArgsByName.set(s.name, s.buildArgs ?? {});
     }
     for (const s of uploadSession?.services ?? []) {
-      if (s.name && s.environment) realEnvByName.set(s.name, s.environment);
       if (s.name && s.buildArgs) realArgsByName.set(s.name, s.buildArgs);
     }
-    effectiveServices = effectiveServices.map((s) => ({
-      ...s,
-      ...(hasMaskedValue(s.environment) && {
-        environment: unmaskEnv(s.environment, realEnvByName.get(s.name)),
-      }),
-      ...(hasMaskedValue(s.buildArgs) && {
-        buildArgs: unmaskBuildArgs(s.buildArgs, realArgsByName.get(s.name)),
-      }),
-    }));
+    effectiveServices = effectiveServices.map((s) => {
+      const source = serviceKind(s) === "compose" ? sourceByName.get(s.name) : undefined;
+      const environment = mergeServiceEnv(source?.environment, s.environment);
+      const templateKeys = new Set(s.advanced?.environmentTemplateKeys ?? []);
+      for (const key of source?.advanced?.environmentTemplateKeys ?? []) {
+        // Retained values retain their interpolation semantics. A real edit
+        // replaces both the source value and its old template marker.
+        if (
+          s.environment?.[key] === undefined ||
+          isMaskedValue(s.environment[key]) ||
+          s.environment[key] === source?.environment?.[key]
+        )
+          templateKeys.add(key);
+        else templateKeys.delete(key);
+      }
+      const hasTemplateMarker =
+        Object.hasOwn(s.advanced ?? {}, "environmentTemplateKeys") ||
+        Object.hasOwn(source?.advanced ?? {}, "environmentTemplateKeys");
+      const overrideKeys = [
+        ...new Set([
+          ...(source?.advanced?.environmentOverrideKeys ?? []),
+          ...(s.advanced?.environmentOverrideKeys ?? []),
+        ]),
+      ];
+      return {
+        ...s,
+        environment,
+        ...((hasTemplateMarker || overrideKeys.length) && {
+          advanced: mergeAdvanced(s.advanced ?? null, {
+            ...(hasTemplateMarker && { environmentTemplateKeys: [...templateKeys] }),
+            ...(overrideKeys.length > 0 && { environmentOverrideKeys: overrideKeys }),
+          }),
+        }),
+        ...(hasMaskedValue(s.buildArgs) && {
+          buildArgs: unmaskBuildArgs(s.buildArgs, realArgsByName.get(s.name)),
+        }),
+      };
+    });
   }
 
   const projectDomains = await listProjectRouteRows(project.id);
@@ -2036,10 +2065,10 @@ export async function requestBuildAccess(
     // These arrive as a flat map with no per-variable flag. New keys therefore
     // use the name heuristic, while resolveSubmittedProjectEnv keeps an existing
     // row's explicit flag and (for an unreadable secret) its exact ciphertext.
-    await repos.project.bulkSetEnvVars(project.id, env, submittedProjectEnv);
+    await repos.project.mergeEnvVars(project.id, env, submittedProjectEnv, []);
   }
   if (sourceEnv.additions.length > 0) {
-    // Add only missing source defaults after the optional full wizard replace.
+    // Add only missing source defaults after the optional wizard overlay.
     // This preserves the ownership rule: a saved/operator value always wins,
     // while headless and folder deploys gain newly declared defaults.
     await repos.project.mergeEnvVars(project.id, env, sourceEnv.additions, []);

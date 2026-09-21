@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   composeWritePatch,
   createServiceRepo,
-  isComposeProvenanceUpgrade,
   normalizeRoutingFields,
   toComposeSpec,
 } from "./service.repo";
@@ -104,7 +103,7 @@ describe("reconcileFromCompose keeps the route set", () => {
 });
 
 describe("reconcileFromCompose bootstraps dynamic env provenance (#673)", () => {
-  it("restores known expressions and preserves an ambiguous legacy value for review", async () => {
+  it("restores known expressions and preserves ambiguous legacy values as overrides", async () => {
     const writes: Array<Record<string, unknown>> = [];
     const db = {
       query: {
@@ -161,9 +160,10 @@ describe("reconcileFromCompose bootstraps dynamic env provenance (#673)", () => 
     expect(writes[0].advanced).toEqual({
       readiness: { enabled: true },
       environmentTemplateKeys: ["DATABASE_URL"],
+      environmentOverrideKeys: ["POSTGRES_PASSWORD"],
     });
-    expect(writes[0].importedSpec).toBeNull();
-    expect(writes[0].driftSpec).toBeTruthy();
+    expect(writes[0].importedSpec).not.toBeNull();
+    expect(writes[0].driftSpec).toBeNull();
   });
 });
 
@@ -183,16 +183,6 @@ describe("legacy compose provenance baselines", () => {
       buildArgTemplateKeys: [],
     },
   };
-
-  it("recognizes parser metadata as an upgrade instead of a repo edit", () => {
-    expect(isComposeProvenanceUpgrade(oldBaseline, parsedNow)).toBe(true);
-  });
-
-  it("does not hide a real compose change that arrived with the metadata", () => {
-    expect(isComposeProvenanceUpgrade(oldBaseline, { ...parsedNow, image: "example/api:2" })).toBe(
-      false,
-    );
-  });
 
   it("restores unchanged source expressions while preserving live operator edits", async () => {
     const writes: Array<Record<string, unknown>> = [];

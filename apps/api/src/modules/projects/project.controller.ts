@@ -13,7 +13,7 @@ import type { Context } from "hono";
 import { streamSSE } from "../../lib/sse";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
-import { AppError } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
 import type { TEnsureProjectBody } from "@repo/contracts";
 import { parseProjectDeleteOptions } from "./project-delete-options";
 
@@ -536,9 +536,8 @@ export async function disable(c: Context) {
   return c.json(result.data);
 }
 
-/** Re-run the managed free-domain edge-proxy sync (no rebuild). Clears the
- *  "Action Required" routing warning on success; returns the failure text
- *  (200, ok:false) when it still can't sync so the UI re-surfaces guidance. */
+/** Repair live routes and verify their domains. The JSON and streamed variants
+ * use the same engine operation and report partial failures without a rebuild. */
 export async function retryRouting(c: Context) {
   const result = await getPlatformKernel().projects.retryRouting(
     operationContext(c),
@@ -546,6 +545,35 @@ export async function retryRouting(c: Context) {
   );
   applyOperationContext(c, result.context);
   return c.json(result.data);
+}
+
+export async function retryRoutingStream(c: Context) {
+  const context = operationContext(c);
+  const id = param(c, "id");
+  return streamSSE(c, async (stream) => {
+    const abort = new AbortController();
+    stream.onAbort(() => abort.abort());
+    try {
+      for await (const event of getPlatformKernel().projects.retryRoutingStream(context, id, {
+        signal: abort.signal,
+      })) {
+        await stream.writeSSE(event);
+      }
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        await stream.writeSSE({
+          event: "log",
+          data: JSON.stringify({ type: "log", level: "error", message: safeErrorMessage(error) }),
+        });
+        await stream.writeSSE({
+          event: "complete",
+          data: JSON.stringify({ type: "complete", status: "failed" }),
+        });
+      }
+    } finally {
+      abort.abort();
+    }
+  });
 }
 
 // ─── Project deployments ─────────────────────────────────────────────────────

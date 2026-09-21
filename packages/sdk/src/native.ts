@@ -280,9 +280,18 @@ function createAttachedShip<Assertion>({
           }
         },
       } satisfies DeploymentOperations);
-      const { streamRuntimeLogs, openServerLogStream, ...projectResources } = platform.projects;
+      const { streamRuntimeLogs, openServerLogStream, retryRoutingStream, ...projectResources } =
+        platform.projects;
       const projects = Object.freeze({
         ...bindGroup(projectResources),
+        async *retryRoutingStream(id, options = {}) {
+          const settings = { ...options };
+          const context = await resolveContext();
+          for await (const event of retryRoutingStream(context, id, settings)) {
+            await resolveContext();
+            yield event;
+          }
+        },
         async *streamRuntimeLogs(id, input = {}, options = {}) {
           const command = structuredClone(input);
           const settings = { ...options };

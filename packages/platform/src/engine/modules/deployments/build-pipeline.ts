@@ -1779,7 +1779,8 @@ function buildDeployEnvironment(
       await reserveResolvedLoopbackRoutes({
         target: phase.hostPortTarget,
         projectId: project.id,
-        routes: [{ targetUrl, serviceId: null, containerPort: port }],
+        runtime,
+        routes: [{ targetUrl, serviceId: null, containerId: id, containerPort: port }],
       });
       return targetUrl;
     },

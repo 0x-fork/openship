@@ -5,7 +5,7 @@ import {
   ImportLocalProjectBody, ScanLocalProjectBody, isLocalProjectScan,
   type LocalProjectScan, type ImportLocalProjectInput,
   type Project, type ProjectOperations, type CreateProjectInput, type EnsureProjectInput,
-  type EnsureProjectResult, type UpdateProjectInput, type ListProjectsInput, type ProjectLogStreams, type ServerLogsInput,
+  type EnsureProjectResult, type UpdateProjectInput, type ListProjectsInput, type ProjectLogStreams, type ProjectRoutingStreams, type ServerLogsInput,
 } from "@repo/contracts";
 import type { Authorization } from "./authorization";
 import type { ExecutionContext } from "./context";
@@ -14,9 +14,15 @@ import { createResourceOperations, type ResourceServices } from "./resource-oper
 import { subscriptionEvents, type EventSubscription } from "./event-stream";
 
 export type PlatformProjectOperations = {
-  [K in Exclude<keyof ProjectOperations, keyof ProjectLogStreams>]: (ctx: ExecutionContext, ...args: Parameters<ProjectOperations[K]>) =>
-    Promise<OperationResult<Awaited<ReturnType<ProjectOperations[K]>>>>;
+  [K in Exclude<keyof ProjectOperations, keyof ProjectLogStreams | keyof ProjectRoutingStreams>]: (
+    ctx: ExecutionContext,
+    ...args: Parameters<ProjectOperations[K]>
+  ) => Promise<OperationResult<Awaited<ReturnType<ProjectOperations[K]>>>>;
 } & {
+  retryRoutingStream(
+    ctx: ExecutionContext,
+    ...args: Parameters<ProjectRoutingStreams["retryRoutingStream"]>
+  ): ReturnType<ProjectRoutingStreams["retryRoutingStream"]>;
   streamRuntimeLogs(ctx: ExecutionContext, ...args: Parameters<ProjectLogStreams["streamRuntimeLogs"]>): ReturnType<ProjectLogStreams["streamRuntimeLogs"]>;
   /** Raw provider bytes keep HTTP relay framing intact; SDK facades decode them with the shared SSE codec. */
   openServerLogStream(ctx: ExecutionContext, id: string, input?: ServerLogsInput, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<Uint8Array>>>;
@@ -25,6 +31,7 @@ export interface ProjectDependencies {
   controls?: ResourceServices<typeof ProjectControlSchemas>;
   home?(ctx: ExecutionContext): Promise<unknown>;
   subscribeLogs?(ctx: ExecutionContext, id: string, input: { tail?: number }): EventSubscription;
+  subscribeRoutingRetry?(ctx: ExecutionContext, id: string): EventSubscription;
   openServerLogs?(ctx: ExecutionContext, id: string, input: ServerLogsInput, options: { signal?: AbortSignal }): Promise<AsyncIterable<Uint8Array>>;
   create(ctx: ExecutionContext, input: CreateProjectInput): Promise<unknown>;
   ensure(ctx: ExecutionContext, input: EnsureProjectInput): Promise<EnsureProjectResult>;
@@ -65,6 +72,22 @@ export function createProjectOperations(authorization: Authorization, dependenci
   };
   return Object.freeze({
     ...createResourceOperations(ProjectControlSchemas, authorization, "project", dependencies?.controls),
+    async *retryRoutingStream(ctx, value, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      options.signal?.throwIfAborted();
+      const context = await authorize(ctx, id, "write");
+      const subscribe = resources().subscribeRoutingRetry;
+      if (!subscribe)
+        throw new AppError("Routing retry is not configured", 501, "CAPABILITY_UNAVAILABLE");
+      for await (const event of subscriptionEvents(
+        subscribe(context, id),
+        options.signal,
+        "complete",
+      )) {
+        await authorize(context, id, "write");
+        yield event;
+      }
+    },
     async getHome(ctx) {
       const context = await authorization.authorize(ctx, { resourceType: "project", resourceId: "*", action: "read", scope: "list" });
       const home = resources().home;
