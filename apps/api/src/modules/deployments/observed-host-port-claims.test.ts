@@ -7,7 +7,9 @@ import {
 } from "@repo/platform/engine/modules/deployments/observed-host-port-claims";
 
 const reserve = vi.hoisted(() => vi.fn());
-vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({ reserveTargetPinnedHostPort: reserve }));
+vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
+  reserveVerifiedTargetPinnedHostPort: reserve,
+}));
 
 const target: HostPortTargetIdentity = {
   targetKey: "local",

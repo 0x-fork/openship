@@ -130,6 +130,34 @@ export function reserveTargetPinnedHostPort(
 }
 
 /**
+ * Restore ownership after the runtime has proved the exact container-port →
+ * host-port binding. The caller must hold {@link withHostPortTargetLock}.
+ * Ordinary allocation must keep using reserveTargetPinnedHostPort: only a
+ * verified workload may replace a quarantine, never another workload's claim.
+ */
+export async function reserveVerifiedTargetPinnedHostPort(
+  target: HostPortTargetIdentity,
+  claim: ReusablePinnedHostPort & { containerPort: number },
+): Promise<HostPortClaim> {
+  try {
+    // Preserve normal reservation and the matching legacy scalar's in-place
+    // refinement. The quarantine-only operation intentionally rejects scalars.
+    return await reserveTargetPinnedHostPort(target, claim);
+  } catch (error) {
+    if (!(error instanceof HostPortClaimConflictError) || error.conflict !== "port") {
+      throw error;
+    }
+  }
+  const replaced = await repos.hostPortClaim.replaceQuarantinedHostPortClaim({
+    targetKey: target.targetKey,
+    ...claim,
+  });
+  // An exact release may have removed the row; normal reservation arbitrates
+  // that race without weakening protection against a different owner.
+  return replaced ?? reserveTargetPinnedHostPort(target, claim);
+}
+
+/**
  * Read the target's own edge before allocation and quarantine every loopback
  * upstream which has no canonical claim.
  *
@@ -191,19 +219,11 @@ export async function prepareTargetPinnedHostPorts(input: {
       continue;
     }
 
-    const identity = {
+    const claim = await reserveVerifiedTargetPinnedHostPort(input.target, {
       ...candidate.owner,
+      containerPort,
       port: candidate.hostPort,
-    };
-    const canonicalQuarantine = canonicalClaims.find(
-      (claim) => claim.port === candidate.hostPort && isQuarantineClaim(claim),
-    );
-    const claim = canonicalQuarantine
-      ? ((await repos.hostPortClaim.replaceQuarantinedHostPortClaim({
-          targetKey: input.target.targetKey,
-          ...identity,
-        })) ?? (await reserveTargetPinnedHostPort(input.target, identity)))
-      : await reserveTargetPinnedHostPort(input.target, identity);
+    });
     claims = [
       ...claims.filter(
         (current) =>

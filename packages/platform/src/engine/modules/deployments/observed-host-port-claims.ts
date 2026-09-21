@@ -1,6 +1,6 @@
 import type { HostPortTargetIdentity } from "../../lib/host-port-target";
 import { isLoopbackHost } from "@repo/core";
-import { reserveTargetPinnedHostPort } from "./pinned-host-ports";
+import { reserveVerifiedTargetPinnedHostPort } from "./pinned-host-ports";
 
 export interface ObservedLoopbackPublish {
   serviceId: string | null;
@@ -49,10 +49,11 @@ export function loopbackHostPortFromUrl(targetUrl: string | null | undefined): n
 }
 
 /**
- * Persist every loopback publish observed from live Docker/route state before a
- * caller registers an edge route to it. The repository's unique indexes are the
- * final arbiter: an exact repeat is idempotent; another owner raises and the
- * caller must fail closed. Nothing here catches or overwrites that conflict.
+ * Persist every loopback publish verified against the live runtime before a
+ * caller registers an edge route to it, while holding the physical-target lock.
+ * A verified binding may atomically replace its quarantine; an exact repeat is
+ * idempotent. Another workload's claim still raises before any route is written.
+ * Cached deployment values alone are not ownership evidence.
  */
 export async function reserveObservedLoopbackPublishes(input: {
   target: HostPortTargetIdentity;
@@ -65,7 +66,7 @@ export async function reserveObservedLoopbackPublishes(input: {
     const key = `${publish.serviceId ?? ""}\0${publish.containerPort}\0${publish.hostPort}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    await reserveTargetPinnedHostPort(input.target, {
+    await reserveVerifiedTargetPinnedHostPort(input.target, {
       projectId: input.projectId,
       serviceId: publish.serviceId,
       containerPort: publish.containerPort,
