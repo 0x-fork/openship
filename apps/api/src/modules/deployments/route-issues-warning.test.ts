@@ -20,11 +20,22 @@ import { routeIssuesWarning } from "@repo/platform/engine/modules/deployments/de
  * operator to do — hence one builder, and hence this test on the branch inside it.
  */
 describe("routeIssuesWarning", () => {
-  it("sends an unresolved domain to DNS/routing, as before", () => {
+  it("does not describe a failed SSH update as proof that a working domain is unrouted", () => {
+    const msg = routeIssuesWarning([
+      "www.example.com: Cannot reach root@192.0.2.20:22 over SSH (connect ENETUNREACH)",
+    ]);
+    expect(msg).toContain("could not be confirmed");
+    expect(msg).toContain("ENETUNREACH");
+    expect(msg).toContain("Retry from the Domains tab");
+    expect(msg).not.toContain("aren't routed yet");
+    expect(msg).not.toContain("fix DNS");
+  });
+
+  it("preserves a confirmed DNS error and directs the operator to Retry", () => {
     const msg = routeIssuesWarning([
       "test.hekai.org: DNS problem: NXDOMAIN looking up A for test.hekai.org",
     ]);
-    expect(msg).toMatch(/fix DNS\/routing and Retry from the Domains tab/);
+    expect(msg).toContain("Retry from the Domains tab");
     expect(msg).toContain("NXDOMAIN");
   });
 
@@ -58,16 +69,16 @@ describe("routeIssuesWarning", () => {
     for (const issue of issues) expect(msg).toContain(issue);
   });
 
-  // A routed domain with no certificate is a DIFFERENT outcome with a DIFFERENT
-  // remedy: the vhost exists and answers on :80, it just has no cert, so "fix
-  // routing and Retry" would send the operator after the wrong thing.
-  it("tells a routed-but-uncertified domain to point DNS and Verify, not to retry routing", () => {
-    const msg = routeIssuesWarning([], [
-      "api.example.com: DNS is not pointing at this server yet, so no HTTPS certificate could be issued",
-    ]);
-    expect(msg).toMatch(/routed but has no HTTPS certificate yet/);
-    expect(msg).toMatch(/point DNS at this server, then Verify/);
-    expect(msg).not.toMatch(/aren't routed yet/);
+  it("directs a certificate problem to Verify and preserves the observed reason", () => {
+    const msg = routeIssuesWarning(
+      [],
+      ["api.example.com: no usable HTTPS certificate was found on this server"],
+    );
+    expect(msg).toContain("HTTPS could not be confirmed for 1 domain");
+    expect(msg).toContain("Verify from the Domains tab");
+    expect(msg).toContain("no usable HTTPS certificate was found");
+    expect(msg).not.toContain("Retry");
+    expect(msg).not.toContain("point DNS");
     expect(msg).toContain("api.example.com");
   });
 
@@ -76,15 +87,15 @@ describe("routeIssuesWarning", () => {
       ["a.example.com: NXDOMAIN"],
       ["b.example.com: no HTTPS certificate yet"],
     );
-    expect(msg).toMatch(/fix DNS\/routing and Retry from the Domains tab/);
-    expect(msg).toMatch(/1 domain is routed but has no HTTPS certificate yet/);
+    expect(msg).toContain("Retry from the Domains tab");
+    expect(msg).toContain("HTTPS could not be confirmed for 1 domain");
     expect(msg).toContain("a.example.com");
     expect(msg).toContain("b.example.com");
   });
 
-  it("pluralises the uncertified count", () => {
+  it("pluralises the count of domains whose HTTPS needs attention", () => {
     const msg = routeIssuesWarning([], ["a.example.com: x", "b.example.com: y"]);
-    expect(msg).toMatch(/2 domains are routed but have no HTTPS certificate yet/);
+    expect(msg).toContain("HTTPS could not be confirmed for 2 domains");
   });
 
   it("returns nothing when there is nothing to report", () => {

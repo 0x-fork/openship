@@ -4403,13 +4403,13 @@ async function deployComposeServicesUnlocked(
     }
   }
 
-  // Routed, but is it actually serving HTTPS? One shared auditor with the
-  // single-app pipeline — `composeRouteWarnings` is passed so a host already
-  // reported as UNROUTED isn't also reported as routed-without-a-cert.
+  // Check certificate records against this deploy's target, excluding hosts
+  // whose route update already produced a warning.
   const tlsPendingDomains = await auditRoutedDomainTls({
     projectId: project.id,
     routes: registeredRoutes,
     routeWarnings: composeRouteWarnings,
+    ssl: opts?.ssl,
     log: (message) => logger.log(`${message}\n`, "warn"),
   });
 
