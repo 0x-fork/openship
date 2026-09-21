@@ -1,6 +1,65 @@
 import type { Context } from "hono";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { operationContext, operationData } from "../../lib/operation-context";
+import { operationEvents } from "../../lib/operation-stream";
+
+export const clusterRuntime = {
+  async get(c: Context) {
+    return c.json(
+      await operationData(
+        c,
+        getPlatformKernel().servers.getClusterRuntime(operationContext(c), {
+          clusterId: c.req.param("id")!,
+        }),
+      ),
+    );
+  },
+  async setup(c: Context) {
+    return c.json(
+      await operationData(
+        c,
+        getPlatformKernel().servers.setupClusterRuntime(operationContext(c), {
+          ...(await c.req.json()),
+          clusterId: c.req.param("id")!,
+        }),
+      ),
+      202,
+    );
+  },
+  async retry(c: Context) {
+    return c.json(
+      await operationData(
+        c,
+        getPlatformKernel().servers.retryClusterRuntime(operationContext(c), {
+          ...(await c.req.json()),
+          clusterId: c.req.param("id")!,
+        }),
+      ),
+      202,
+    );
+  },
+  async remove(c: Context) {
+    return c.json(
+      await operationData(
+        c,
+        getPlatformKernel().servers.removeClusterRuntime(operationContext(c), {
+          ...(await c.req.json()),
+          clusterId: c.req.param("id")!,
+        }),
+      ),
+      202,
+    );
+  },
+  events(c: Context) {
+    return operationEvents(c, (signal) =>
+      getPlatformKernel().servers.openClusterRuntimeEvents(
+        operationContext(c),
+        c.req.param("id")!,
+        { signal },
+      ),
+    );
+  },
+};
 
 export const networks = {
   async capabilities(c: Context) {

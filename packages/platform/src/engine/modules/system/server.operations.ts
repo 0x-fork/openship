@@ -33,6 +33,7 @@ import { managedNetworkCollection } from "./managed-network.operations";
 import { networkPreparationCollection } from "./network-preparation.operations";
 import { networkSetupMemberCollection } from "./network-setup-member.operations";
 import { networkSetupStreams } from "./network-setup.events";
+import { clusterRuntimeCollection } from "./cluster-runtime.operations";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { authorization } from "../../lib/authorization";
 
@@ -691,7 +692,7 @@ function failServer(details: Record<string, unknown>, status: number): never {
 
 export const serverDependencies: ServerDependencies = {
   networks: networkSetupStreams,
-  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection, ...serverClusterCollection, ...networkCollection, ...computeClusterCollection, ...managedNetworkCollection, ...networkPreparationCollection, ...networkSetupMemberCollection },
+  collection: { list: listServers, create: createServer, testConnection, ...serverContainerCollection, ...serverClusterCollection, ...networkCollection, ...computeClusterCollection, ...clusterRuntimeCollection, ...managedNetworkCollection, ...networkPreparationCollection, ...networkSetupMemberCollection },
   resources: {
     ...infrastructureResources,
     get: getServer, reachability: probeReachability, update: updateServer,

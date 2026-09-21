@@ -190,6 +190,8 @@ export interface RuntimeAdapter {
 
   /** Clean up any resources held by the runtime (connections, temp files) */
   dispose?(): Promise<void>;
+  /** Cancel this deployment's API/build work without disposing the cleanup transport. */
+  setOperationSignal?(signal: AbortSignal): void;
 
   // ── Build lifecycle ──────────────────────────────────────────────────
 
@@ -240,6 +242,8 @@ export interface RuntimeAdapter {
    * present when `supports("projectContainerSweep")`.
    */
   listProjectContainerIds?(projectId: string): Promise<string[]>;
+  /** Remove an empty owned project scope after full project teardown (not one release). */
+  cleanupProject?(projectId: string): Promise<void>;
 
   /**
    * List the containers this runtime owns for `deploymentId`, matched by the

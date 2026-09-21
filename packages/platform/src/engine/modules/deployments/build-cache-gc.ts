@@ -33,7 +33,7 @@ export interface BuildCacheTarget {
 type CacheProject = Pick<
   Project,
   "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId"
->;
+> & { clusterId?: string | null };
 
 interface BuildCacheRuntime {
   pruneBuildCache(options?: BuildCachePruneOptions): Promise<BuildCachePruneResult>;
@@ -49,7 +49,8 @@ export interface BuildCacheGcDependencies {
   ): Promise<Pick<Server, "id" | "isLocal"> | undefined>;
   resolveProjectTarget(
     project: CacheProject,
-  ): Promise<{ deployTarget: "local" | "server" | "cloud" | null; serverId: string | null }>;
+  ): Promise<{ deployTarget: "local" | "server" | "cloud" | "cluster" | null; serverId: string | null }>;
+  resolveClusterBuildServer?(project: CacheProject): Promise<string>;
   createRuntime(target: BuildCacheTarget): Promise<BuildCacheRuntime>;
   runLocked<T>(targetKey: string, run: () => Promise<T>): Promise<T>;
 }
@@ -60,6 +61,12 @@ const defaultDependencies: BuildCacheGcDependencies = {
   findServer: (serverId, organizationId) =>
     repos.server.getInOrganization(serverId, organizationId),
   resolveProjectTarget: (project) => resolveProjectDeployTarget(project),
+  resolveClusterBuildServer: async project => {
+    if (!project.clusterId) throw new AppError("The cluster build target is unavailable.", 409, "BUILD_CACHE_TARGET_MISSING");
+    const { requireClusterDeploymentTarget } = await import("../../lib/cluster-deployment-target");
+    const { runtime } = await requireClusterDeploymentTarget(project.organizationId, project.clusterId);
+    return runtime.plan.hosts.find(host => host.role === "server")!.serverId;
+  },
   createRuntime: async (target) => {
     if (target.serverId) {
       if (!target.organizationId) {
@@ -159,6 +166,10 @@ export async function clearProjectBuildCache(
   }
 
   let serverId = resolved.deployTarget === "server" ? resolved.serverId : null;
+  if (resolved.deployTarget === "cluster") {
+    if (!deps.resolveClusterBuildServer) throw new AppError("The cluster build target is unavailable.", 409, "BUILD_CACHE_TARGET_MISSING");
+    serverId = await deps.resolveClusterBuildServer(project);
+  }
   if (serverId) {
     const server = await deps.findServer(serverId, project.organizationId);
     if (!server) {

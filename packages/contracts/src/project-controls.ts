@@ -20,6 +20,8 @@ import { ProjectRoutingSchemas } from "./project-routing";
 import { ProjectLogSchemas } from "./project-logs";
 import { ProjectTransferSchemas } from "./project-transfer";
 import { AppProjectSchemas } from "./apps";
+import { ProjectClusterSchemas } from "./project-cluster";
+import { ProjectDatabaseSchemas } from "./cluster-database";
 import { BranchPageInput, BranchPaginationSchema } from "./github";
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
@@ -294,6 +296,7 @@ export const ProjectDriftSchema = Type.Union([
 ]);
 
 export const ProjectControlSchemas = {
+  ...ProjectDatabaseSchemas,
   ...AppProjectSchemas,
   ...ProjectTransferSchemas,
   ...ProjectLogSchemas,
@@ -448,6 +451,7 @@ export const ProjectControlSchemas = {
     output: Type.Object({ upserted: Type.Integer(), deleted: Type.Integer(), warnings: Type.Optional(Type.Array(Type.String())) }),
   },
   getResources: { action: "read", output: ProjectResourcesSchema },
+  ...ProjectClusterSchemas,
   updateResources: { action: "write", input: UpdateResourcesBody, output: ProjectResourcesSchema },
   setSleepMode: {
     action: "write",

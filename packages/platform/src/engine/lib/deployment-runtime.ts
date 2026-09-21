@@ -58,6 +58,10 @@ export interface DeploymentMeta {
   deployTarget?: DeployTarget;
   runtimeMode?: RuntimeMode;
   serverId?: string;
+  clusterId?: string;
+  clusterRuntimeId?: string;
+  clusterProjectId?: string;
+  clusterConfig?: import("@repo/core").ClusterWorkloadConfig;
   /**
    * Adopt an already-running, externally-supervised process instead of building
    * + starting one. Set for the self-deployed control plane (the "openship"
@@ -332,6 +336,11 @@ export function resolveEffectiveTarget(
   base: Platform["target"],
   snapshot: DeploymentMeta,
 ): DeployTarget {
+  if (snapshot.deployTarget === "cluster" || snapshot.clusterId) {
+    if (base === "cloud" || env.CLOUD_MODE || snapshot.serverId || snapshot.cloudDockerWorkspace || snapshot.workspaceId || (snapshot.deployTarget && snapshot.deployTarget !== "cluster"))
+      throw new AppError("Cluster metadata conflicts with the deployment target.", 409, "CLUSTER_TARGET_CONFLICT");
+    return "cluster";
+  }
   if (snapshot.cloudDockerWorkspace) {
     if (snapshot.serverId || (snapshot.deployTarget && snapshot.deployTarget !== "cloud")) {
       throw new Error("Cloud Docker workspace metadata conflicts with the deployment target");
@@ -377,7 +386,7 @@ export function usesManagedRouting(
   // target — including the local-orchestrated cloud deploy — routes via cloud
   // pages/edge, not the local proxy.
   return (
-    (effectiveTarget === "server" || effectiveTarget === "local") &&
+    (effectiveTarget === "server" || effectiveTarget === "local" || effectiveTarget === "cluster") &&
     (base === "selfhosted" || base === "desktop")
   );
 }
@@ -481,6 +490,10 @@ export async function resolveDeploymentPlatform(
 ): Promise<ResolvedDeploymentPlatform> {
   const basePlatform = opts?.basePlatform ?? platform();
   const effectiveTarget = resolveEffectiveTarget(basePlatform.target, snapshot);
+  if (effectiveTarget === "cluster") {
+    const { resolveClusterDeploymentPlatform } = await import("./cluster-deployment-target");
+    return resolveClusterDeploymentPlatform(snapshot, opts?.organizationId);
+  }
   const runtimeMode =
     snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare");
 
@@ -906,6 +919,11 @@ function toDockerSshTransport(ssh: SshConfig, executor: CommandExecutor): Docker
 
 // ─── Per-deployment runtime resolution ───────────────────────────────────────
 
+function assertDeploymentProjectTarget(snapshot: DeploymentMeta, projectId?: string) {
+  if (snapshot.clusterId && projectId && snapshot.clusterProjectId !== projectId)
+    throw new AppError("Cluster workload does not belong to this deployment's project", 404, "CLUSTER_WORKLOAD_NOT_FOUND");
+}
+
 /**
  * Resolve the correct RuntimeAdapter for an existing deployment.
  *
@@ -935,6 +953,7 @@ export async function resolveDeploymentRuntime(
   executor: Platform["executor"];
 }> {
   const snapshot = (dep.meta ?? {}) as DeploymentMeta;
+  assertDeploymentProjectTarget(snapshot, dep.projectId);
   if (snapshot.cloudDockerWorkspace && dep.projectId && snapshot.cloudDockerWorkspace.projectId !== dep.projectId) {
     throw new AppError("Cloud Docker workspace does not belong to this deployment's project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
   }
@@ -1154,7 +1173,7 @@ export function disposePlatform(
  * already bound a listener that only `dispose()` closes.
  */
 export async function withDeploymentPlatform<T>(
-  dep: Pick<Deployment, "meta" | "organizationId">,
+  dep: Pick<Deployment, "meta" | "organizationId"> & Partial<Pick<Deployment, "projectId">>,
   fn: (resolved: {
     runtime: RuntimeAdapter;
     routing: Platform["routing"];
@@ -1166,6 +1185,7 @@ export async function withDeploymentPlatform<T>(
     hostPortTarget: HostPortTargetIdentity | null;
   }) => Promise<T>,
 ): Promise<T> {
+  assertDeploymentProjectTarget((dep.meta ?? {}) as DeploymentMeta, dep.projectId);
   const resolved = await resolveDeploymentPlatform((dep.meta ?? {}) as DeploymentMeta, {
     organizationId: dep.organizationId,
   });
@@ -1216,10 +1236,16 @@ export async function resolveDeploymentRuntimeForRead(
   // so a bare project's sidecars still resolve a docker runtime (matches
   // resolveServicePlatform's long-standing behaviour).
   const snapshot = { ...((dep.meta ?? {}) as DeploymentMeta), runtimeMode: "docker" as const };
+  assertDeploymentProjectTarget(snapshot, dep.projectId);
   if (snapshot.cloudDockerWorkspace && dep.projectId && snapshot.cloudDockerWorkspace.projectId !== dep.projectId) {
     throw new AppError("Cloud Docker workspace does not belong to this deployment's project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
   }
   const effectiveTarget = resolveEffectiveTarget(platform().target, snapshot);
+
+  if (effectiveTarget === "cluster") {
+    const { resolveClusterDeploymentRuntime } = await import("./cluster-deployment-target");
+    return resolveClusterDeploymentRuntime(snapshot, dep.organizationId);
+  }
 
   if (effectiveTarget === "server") {
     const target = await resolveServerExecutor(snapshot.serverId, dep.organizationId);

@@ -19,6 +19,7 @@ import {
   usesManagedRouting as usesManagedRoutingFor,
 } from "../../lib/deployment-runtime";
 import {
+  AppError,
   normalizeCustomHostname,
   cloudRequiredCode,
   CLOUD_UNREACHABLE_CODE,
@@ -1224,8 +1225,14 @@ async function checkCustomDomainSelfHosted(
   // Resolve the server's IP set. If the configured "host" is a
   // hostname (not an IP literal), look it up too — we can't compare
   // an IP record against a hostname string.
+  let edgeServerId = snapshot?.serverId;
+  if (snapshot?.clusterId && snapshot.organizationId) {
+    const { requireClusterDeploymentTarget } = await import("../../lib/cluster-deployment-target");
+    const { runtime } = await requireClusterDeploymentTarget(snapshot.organizationId, snapshot.clusterId, snapshot.clusterRuntimeId);
+    edgeServerId = runtime.plan.hosts.find(host => host.role === "server")!.serverId;
+  }
   const serverHost = snapshot?.organizationId
-    ? await resolveServerHost(snapshot.organizationId, snapshot.serverId).catch(() => null)
+    ? await resolveServerHost(snapshot.organizationId, edgeServerId).catch(() => null)
     : null;
   let serverIps: string[] = [];
   if (serverHost) {
@@ -1438,6 +1445,16 @@ export async function runPreflightChecks(
   snapshot: DeploymentConfigSnapshot,
   opts?: PreflightOptions,
 ): Promise<PreflightResult> {
+  if (snapshot.deployTarget === "cluster" || snapshot.clusterId) {
+    const { requireClusterDeploymentTarget, assertClusterWorkloadSupported } = await import("../../lib/cluster-deployment-target");
+    if (!snapshot.organizationId || !snapshot.clusterId || !snapshot.clusterProjectId) throw new Error("Choose a project cluster before deploying.");
+    if (opts?.projectId && opts.projectId !== snapshot.clusterProjectId) throw new AppError("Cluster workload does not belong to this project.", 404, "CLUSTER_WORKLOAD_NOT_FOUND");
+    await requireClusterDeploymentTarget(snapshot.organizationId, snapshot.clusterId, snapshot.clusterRuntimeId);
+    await assertClusterWorkloadSupported({ projectId: snapshot.clusterProjectId, workload: snapshotToClass(snapshot).workload, volumes: snapshot.volumes,
+      services: opts?.multiService ? opts.composeServices?.length ? opts.composeServices : [{}] : [], framework: snapshot.framework,
+      image: snapshot.releaseImageRef || snapshot.handoverAppImage, imageRepository: snapshot.clusterConfig?.imageRepository,
+    });
+  }
   const cloudPreflight = await resolveCloudPreflight(snapshot, opts);
 
   // Determine whether this deployment requires cloud directly or via managed routing
@@ -1495,7 +1512,7 @@ export async function runPreflightChecks(
   // Does this machine meet what the app says it needs? Cloud is sized from the
   // tier table, not from host hardware, so there is nothing to match there (and
   // nothing to probe — a multi-tenant control plane must not dial a tenant's box).
-  if (opts?.appTemplateId && snapshot.organizationId && effectiveTarget !== "cloud") {
+  if (opts?.appTemplateId && snapshot.organizationId && effectiveTarget !== "cloud" && effectiveTarget !== "cluster") {
     const hostCapacity = await checkHostCapacity(
       snapshot.organizationId,
       opts.appTemplateId,

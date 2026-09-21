@@ -21,7 +21,13 @@ import { sshManager } from "./ssh-manager";
 export async function resolveServerIdForProject(project: Project): Promise<string | null> {
   if (!project.activeDeploymentId) return null;
   const dep = await findActiveDeployment(project).catch(() => null);
-  return (dep?.meta as DeploymentMeta | undefined)?.serverId ?? null;
+  const meta = dep?.meta as DeploymentMeta | undefined;
+  if (meta?.clusterId) {
+    const { requireClusterDeploymentTarget } = await import("./cluster-deployment-target");
+    const { runtime } = await requireClusterDeploymentTarget(project.organizationId, meta.clusterId, meta.clusterRuntimeId);
+    return runtime.plan.hosts.find(host => host.role === "server")!.serverId;
+  }
+  return meta?.serverId ?? null;
 }
 
 /**

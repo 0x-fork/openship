@@ -2,9 +2,12 @@ import { AppError } from "@repo/core";
 import { repos } from "@repo/db";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { notifyNetworkSetup } from "./network-setup-bus";
+import { notifyClusterDatabase } from "../projects/cluster-database.events";
 
 type NetworkSetupWorker = { organizationId: string; id: string } & (
   | { kind: "preparation" | "operation"; generation: number }
+  | { kind: "runtime"; generation: number; clusterId: string }
+  | { kind: "database"; generation: number; projectId: string }
   | { kind: "verification" }
 );
 
@@ -70,7 +73,17 @@ export function createNetworkSetupLifecycle(dependencies: {
 const lifecycle = createNetworkSetupLifecycle({
   defer: deferBackgroundWork,
   async interrupt(worker) {
-    if (worker.kind === "preparation") {
+    if (worker.kind === "database") {
+      const changed = await repos.clusterDatabase.interrupt(worker.id, worker.generation, "OpenShip stopped during database setup. Retry to inspect the saved resources and continue.");
+      if (changed.length) notifyClusterDatabase(worker.organizationId, worker.projectId);
+    } else if (worker.kind === "runtime") {
+      const changed = await repos.clusterRuntime.interrupt(
+        worker.id,
+        worker.generation,
+        "OpenShip stopped before cluster setup finished. Retry to inspect the saved installation and continue.",
+      );
+      if (changed.length) notifyNetworkSetup(worker.organizationId, "runtime", worker.clusterId);
+    } else if (worker.kind === "preparation") {
       const changed = await repos.networkPreparation.interrupt(
         worker.id,
         worker.generation,
@@ -100,11 +113,15 @@ export const stopNetworkSetups = lifecycle.stop;
 
 /** Metadata recovery only. Shared databases retain other controllers' valid leases. */
 export async function recoverNetworkSetups(exclusive: boolean): Promise<void> {
+  const databases = await repos.clusterDatabase.recoverInterrupted(exclusive);
+  for (const row of databases) notifyClusterDatabase(row.organizationId, row.projectId);
+  const runtimes = await repos.clusterRuntime.recoverInterrupted(exclusive);
+  for (const row of runtimes) notifyNetworkSetup(row.organizationId, "runtime", row.clusterId);
   const preparations = await repos.networkPreparation.recoverInterrupted(exclusive);
   for (const row of preparations) notifyNetworkSetup(row.organizationId, "preparation", row.id);
   const { operations, verifications } = await repos.serverCluster.recoverInterrupted(exclusive);
   for (const row of operations) notifyNetworkSetup(row.organizationId, "operation", row.id);
   for (const row of verifications) notifyNetworkSetup(row.organizationId, "overview");
-  const count = preparations.length + operations.length + verifications.length;
+  const count = preparations.length + operations.length + verifications.length + runtimes.length + databases.length;
   if (count) console.log(`[network-setup] marked ${count} abandoned run(s) interrupted`);
 }

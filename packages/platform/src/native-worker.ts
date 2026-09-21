@@ -230,8 +230,10 @@ try {
         streams.set(streamId, { iterator: result.data[Symbol.asyncIterator](), abort });
         return { streamId, context: result.context };
       }
-      if (kind === "servers.managedNetworkPreparationEvents" || kind === "servers.managedNetworkOperationEvents" || kind === "servers.clusterEvents") {
-        const result = kind === "servers.clusterEvents"
+      if (kind === "servers.managedNetworkPreparationEvents" || kind === "servers.managedNetworkOperationEvents" || kind === "servers.clusterEvents" || kind === "servers.clusterRuntimeEvents") {
+        const result = kind === "servers.clusterRuntimeEvents"
+          ? await kernel.servers.openClusterRuntimeEvents(context as ExecutionContext, input[0] as string, { signal: abort.signal })
+          : kind === "servers.clusterEvents"
           ? await kernel.servers.openClusterEvents(context as ExecutionContext, { signal: abort.signal })
           : kind === "servers.managedNetworkPreparationEvents"
             ? await kernel.servers.openManagedNetworkPreparationEvents(context as ExecutionContext, input[0] as string, { signal: abort.signal })
@@ -260,6 +262,8 @@ try {
       }
       const stream = kind === "deployments.events"
         ? kernel.deployments.events(context as ExecutionContext, input[0] as string, { since: input[1] as number | undefined, signal: abort.signal })
+        : kind === "projects.streamClusterDatabaseEvents"
+          ? kernel.projects.streamClusterDatabaseEvents(context as ExecutionContext, input[0] as string, { signal: abort.signal })
         : kind === "projects.streamRuntimeLogs"
           ? kernel.projects.streamRuntimeLogs(context as ExecutionContext, input[0] as string, input[1] as { tail?: number }, { signal: abort.signal })
         : kind === "services.streamLogs"
@@ -288,7 +292,7 @@ try {
     }
     if (operation.startsWith("projects.")) {
       const key = operation.slice("projects.".length) as keyof typeof kernel.projects;
-      if (key !== "streamRuntimeLogs" && key !== "openServerLogStream" && Object.hasOwn(kernel.projects, key)) {
+      if (key !== "streamRuntimeLogs" && key !== "streamClusterDatabaseEvents" && key !== "openServerLogStream" && Object.hasOwn(kernel.projects, key)) {
         const fn = kernel.projects[key] as (...args: unknown[]) => Promise<unknown>;
         return runWithOperationSource((args[0] as ExecutionContext).source ?? "api", () => fn(...args));
       }

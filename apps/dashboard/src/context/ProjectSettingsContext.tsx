@@ -94,7 +94,9 @@ interface BasicProjectData {
    * session — a run is part of the project's state, not something a panel fetches.
    */
   activeMigration?: ActiveMigration | null;
-  deployTarget?: "cloud" | "server" | "local";
+  deployTarget?: "cloud" | "server" | "local" | "cluster";
+  clusterId?: string | null;
+  clusterConfig?: import("@repo/core").ClusterWorkloadConfig | null;
   cloudWorkspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;

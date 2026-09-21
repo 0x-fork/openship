@@ -335,7 +335,14 @@ async function restoreViaRedeploy(
     // Carry the ref selected by the pure plan back onto the cloned snapshot. Do
     // not call the release resolver here: today's project template/source may
     // differ, while this digest is the artifact the target actually ran.
-    meta.releaseImageRef = plan.releaseImageRef;
+    if (frozen.clusterId) {
+      // A source-built cluster image is also a registry artifact. Use the
+      // existing one-deployment pin so a later ordinary redeploy still builds
+      // the project's source instead of inheriting an image-only source.
+      meta.handoverAppImage = plan.releaseImageRef;
+    } else {
+      meta.releaseImageRef = plan.releaseImageRef;
+    }
   }
   const replayBranch =
     plan.mode === "reacquire-image"

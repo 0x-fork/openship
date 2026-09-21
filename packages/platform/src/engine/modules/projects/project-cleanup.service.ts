@@ -93,6 +93,8 @@ export interface CleanupResource {
 
 export interface CleanupManifest {
   projectId: string;
+  /** Only a full project teardown may remove the runtime's project namespace. */
+  projectCleanup?: boolean;
   /**
    * Owning org — needed to release a managed (`*.opsh.io`) route on Openship
    * Cloud's edge, which is namespace-scoped upstream. Optional so an older
@@ -406,6 +408,7 @@ export async function collectProjectManifest(
     resources.push({ type: "image", ref, label: tagLabel, runtime, ...targetFields(target) });
   };
 
+  const clusterRuntimes = new Map<string, Awaited<ReturnType<typeof resolveDeploymentRuntime>>>();
   for (const dep of allDeps) {
     const dockerHost = (dep.meta as DeploymentMeta | null)?.cloudDockerWorkspace;
     if (dockerHost) {
@@ -456,7 +459,10 @@ export async function collectProjectManifest(
     let runtime: RuntimeAdapter;
     let resourceTarget: CollectedTarget;
     try {
-      const resolved = await resolveDeploymentRuntime(dep);
+      const meta = (dep.meta ?? {}) as DeploymentMeta;
+      const clusterKey = meta.clusterId ? JSON.stringify([meta.clusterId, meta.clusterRuntimeId, meta.clusterProjectId]) : null;
+      const resolved = (clusterKey ? clusterRuntimes.get(clusterKey) : undefined) ?? await resolveDeploymentRuntime(dep);
+      if (clusterKey) clusterRuntimes.set(clusterKey, resolved);
       runtime = resolved.runtime;
       resourceTarget = targetForResolved(resolved, dep);
       runtimeTargets.set(runtime, resourceTarget);
@@ -611,7 +617,7 @@ export async function collectProjectManifest(
   // resolved). De-duped via pushContainer's seenContainers; best-effort +
   // bounded (SSH can hang). A separate set keeps the networks block above
   // from gaining a spurious local-host network resource.
-  const sweepRuntimes = new Set<DockerRuntime>(dockerRuntimes);
+  const sweepRuntimes = new Set<RuntimeAdapter>([...dockerRuntimes, ...[...resolvedRuntimes].filter(runtime => runtime.supports("projectContainerSweep"))]);
   const localRuntime = platform().runtime;
   if (localRuntime instanceof DockerRuntime) {
     sweepRuntimes.add(localRuntime);
@@ -684,6 +690,7 @@ export async function collectProjectManifest(
   // hard delete. Deduped via `seenImages`. Base/third-party images are PULLED
   // (unlabeled) so they can never be selected. Best-effort + bounded.
   for (const docker of sweepRuntimes) {
+    if (!(docker instanceof DockerRuntime)) continue;
     const target = runtimeTargets.get(docker);
     if (!target) continue;
     const imgs = await authoritativeRead(
@@ -857,6 +864,7 @@ export async function collectProjectManifest(
 
   return {
     projectId: project.id,
+    projectCleanup: true,
     organizationId: project.organizationId,
     resources,
     runtimes: [...resolvedRuntimes],
@@ -1243,6 +1251,14 @@ export async function executeCleanup(
       }
     }
 
+    if (result.failed.length === 0 && manifest.projectCleanup) {
+      for (const runtime of new Set(manifest.runtimes ?? [])) {
+        if (!runtime.cleanupProject) continue;
+        result.total++;
+        try { await runtime.cleanupProject(manifest.projectId); result.succeeded++; }
+        catch (error) { result.failed.push({ type: "container", ref: manifest.projectId, label: "Cluster project namespace", error: safeErrorMessage(error) }); }
+      }
+    }
     // Claims are a resource too. Reclaim them only after ALL workload and route
     // cleanup succeeded. A fresh edge scan proves vhost absence, but it cannot
     // prove a failed/stopped container no longer owns the bind; releasing in

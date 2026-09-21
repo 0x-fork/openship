@@ -25,6 +25,13 @@ import type { ToolchainCheckEntry, ToolchainInstallPlan, ToolStep, ToolStepUser 
 // ─── Check recipes ───────────────────────────────────────────────────────────
 
 const CHECKS = {
+  curl: {
+    label: "curl",
+    versionCommand: "curl --version",
+    parseVersion: (output: string) => output.match(/^curl ([0-9.]+)/)?.[1] ?? output.trim(),
+    missingMessage: "curl is not installed",
+    installable: true,
+  },
   node: {
     label: "Node.js",
     versionCommand: "node --version",
@@ -453,6 +460,11 @@ const RECIPES: Record<InstallableTool, ToolRecipe> = {
               `ln -sf ${shellQuote(`${ops.home()}/.cargo/bin/cargo`)} ${shellQuote(`${ops.home()}/.cargo/bin/rustc`)} /usr/local/bin/`,
             ),
           ),
+  },
+
+  curl: {
+    verify: "curl --version",
+    steps: (ops) => asRoot(ops.pkgInstall(["curl", "ca-certificates"])),
   },
 
   python3: {

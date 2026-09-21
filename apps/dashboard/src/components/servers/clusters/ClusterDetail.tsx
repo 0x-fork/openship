@@ -28,6 +28,7 @@ import { NetworkSource } from "./NetworkSource";
 import { NetworkDiagnosticText } from "./NetworkSetupProgress";
 import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
 import { NetworkStreamNotice } from "./NetworkStreamNotice";
+import { ClusterRuntimePanel } from "./ClusterRuntimePanel";
 
 export function ClusterDetail({ id }: { id: string }) {
   const { t } = useI18n();
@@ -151,6 +152,11 @@ export function ClusterDetail({ id }: { id: string }) {
               </div>
             )}
           </div>
+          <ClusterRuntimePanel
+            key={cluster.id}
+            cluster={cluster}
+            canManage={!!capabilities?.canManage}
+          />
           <div className="@container/cluster-detail">
             <div className="grid grid-cols-1 items-start gap-6 @4xl/cluster-detail:grid-cols-[minmax(0,1fr)_320px]">
               <section
@@ -189,8 +195,10 @@ export function ClusterDetail({ id }: { id: string }) {
                   <Network className="size-4 text-info" />
                   {cluster.network.name}
                 </div>
-                <NetworkStatus cluster={cluster.network} />
-                <NetworkSource cluster={cluster.network} />
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <NetworkStatus cluster={cluster.network} />
+                  <NetworkSource cluster={cluster.network} />
+                </div>
                 <p className="break-words font-mono text-xs text-muted-foreground">
                   <BlurIp>{cluster.network.network.cidrs.join(", ")}</BlurIp>
                 </p>

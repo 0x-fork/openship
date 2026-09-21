@@ -12,7 +12,7 @@ import { deriveProjectDeployTarget, type DeployTarget } from "@repo/core";
  * a Cloud-bound project back into a server project in the dashboard/API.
  */
 export function readDeployMeta(
-  project: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  project: Pick<Project, "cloudWorkspaceId" | "serverId" | "activeDeploymentId"> & { clusterId?: string | null },
   activeDeployment: Deployment | null | undefined,
 ): { deployTarget: DeployTarget | null; serverId: string | null } {
   const meta = (activeDeployment?.meta ?? null) as {
@@ -29,6 +29,7 @@ export function readDeployMeta(
   if (project.cloudWorkspaceId) {
     return { deployTarget: "cloud", serverId: null };
   }
+  if (project.clusterId) return { deployTarget: "cluster", serverId: null };
 
   if (project.serverId) {
     return {
@@ -78,7 +79,7 @@ export function readDeployMeta(
 
 /** Canonical target resolver for callers that do not already hold the active deployment. */
 export async function resolveProjectDeployTarget(
-  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId"> & { clusterId?: string | null },
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   const activeDeployment = project.activeDeploymentId
     ? ((await findActiveDeployment(project)) ?? null)
@@ -95,18 +96,27 @@ export async function resolveProjectDeployTarget(
  * deployment snapshot or they can mutate a future server after a target edit.
  */
 export async function resolveProjectLiveDeployTarget(
-  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId">,
+  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId"> & { clusterId?: string | null },
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   if (!project.activeDeploymentId) return { deployTarget: null, serverId: null };
   const active = (await findActiveDeployment(project)) ?? null;
   const meta = (active?.meta ?? null) as {
     deployTarget?: unknown;
     serverId?: string;
+    clusterId?: string;
+    clusterRuntimeId?: string;
   } | null;
+
+  if (meta?.clusterId) {
+    const { requireClusterDeploymentTarget } = await import("../../lib/cluster-deployment-target");
+    const { runtime } = await requireClusterDeploymentTarget(project.organizationId, meta.clusterId, meta.clusterRuntimeId);
+    return { deployTarget: "cluster", serverId: runtime.plan.hosts.find(host => host.role === "server")!.serverId };
+  }
 
   if (
     meta?.deployTarget === "local" ||
     meta?.deployTarget === "cloud" ||
+    meta?.deployTarget === "cluster" ||
     meta?.deployTarget === "server"
   ) {
     return meta.deployTarget === "server"

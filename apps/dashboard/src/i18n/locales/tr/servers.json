@@ -886,5 +886,45 @@
       "discard": "Değişiklikleri iptal et",
       "noConnections": "Etkin bağlantı yok"
     }
+  },
+  "runtime": {
+    "title": "Ölçeklendirme",
+    "description": "Uygulamaları bu kümedeki sunucularda çalıştırın.",
+    "setup": "Ölçeklendirmeyi etkinleştir",
+    "oneControl": "Bir kontrol sunucusu. Yüksek erişilebilirlik sağlayan bir kontrol düzlemi için en az üç sunucu gerekir.",
+    "threeControls": "Üç kontrol sunucusu kümenin erişilebilirliğini korur. Ek sunucular çalışan düğüm olarak katılır.",
+    "requirements": "OpenShip sunucuları hazırlar, birbirine bağlar ve uygulama yönlendirmesini denetler. İlerleme kaydedilir; daha sonra geri dönebilirsiniz.",
+    "readyHint": "Uygulama örneklerini bu kümenin sunucularında dağıtmak için projenin ölçeklendirme ayarlarından bu kümeyi seçin.",
+    "privateConnections": "Gerekli özel güvenlik duvarı kuralları",
+    "privateHint": "OpenShip desteklenen sunucu güvenlik duvarlarını otomatik yapılandırır. Sağlayıcınız özel ağı filtreliyorsa listelenen özel kaynak adreslerinden bu hedef portlarına izin verin. Bu portları internete açmayın.",
+    "remove": "Ölçeklendirmeyi devre dışı bırak",
+    "removeDescription": "Ölçeklendirmeyi devre dışı bırakın ve kurulumunu bu kümeden kaldırın. Önce kümede dağıtılmış uygulamaları ve kalıcı birimleri kaldırın. Sunucu grubu, Docker uygulamaları ve özel ağ kullanılabilir kalır.",
+    "details": "Kurulum ayrıntıları",
+    "status": {
+      "setting_up": "Ölçeklendirme etkinleştiriliyor",
+      "ready": "Ölçeklendirmeye hazır",
+      "failed": "Ölçeklendirme dikkat gerektiriyor",
+      "interrupted": "Kurulum durdu — devam etmek için yeniden deneyin",
+      "removing": "Ölçeklendirme devre dışı bırakılıyor",
+      "removed": "Ölçeklendirme devre dışı",
+      "not_enabled": "Ölçeklendirme etkin değil",
+      "unknown": "Ölçeklendirme durumu alınamıyor"
+    },
+    "steps": {
+      "connect": "Sunucuya bağlan",
+      "prerequisites": "Sunucuyu hazırla",
+      "inspect": "Bağlantıları denetle",
+      "install": "Ölçeklendirmeyi etkinleştir",
+      "join": "Sunucuları bağla",
+      "verify": "Uygulama yönlendirmesini denetle",
+      "remove": "Ölçeklendirme kurulumunu kaldır"
+    },
+    "requirementsDetails": "OpenShip eksik araçları yükler, özel ağ üzerinden K3s kurar ve servis yönlendirmesi ile DNS’i doğrular. systemd kullanan Linux ve filtrelenmeyen veya iptables tabanlı bir sunucu güvenlik duvarı gerekir.",
+    "technicalDetails": "Teknik ayrıntılar",
+    "technology": "Orkestratör",
+    "applicationNetwork": "Pod ağı",
+    "serviceNetwork": "Servis ağı",
+    "lastChecked": "Son doğrulama",
+    "scaleProject": "Proje seç"
   }
 }

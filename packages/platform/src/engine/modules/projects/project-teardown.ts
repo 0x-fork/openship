@@ -32,7 +32,7 @@
  */
 
 import { repos, type Project } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
 import {
   collectProjectManifest,
   disposeManifestRuntimes,
@@ -228,6 +228,8 @@ async function teardownProjectLocked(
   // refuse BEFORE claiming the lock so we never mangle its row. (The controller
   // guards this too; this is defense-in-depth for any other caller.)
   const preload = await repos.project.findById(projectId).catch(() => undefined);
+  if (preload?.organizationId === ctx.organizationId && preload.clusterId && (await repos.clusterDatabase.list(ctx.organizationId, projectId)).length)
+    throw new AppError("Remove this project's databases and their retained data before deleting the project. Application deletion never deletes database data implicitly.", 409, "CLUSTER_DATABASES_ATTACHED");
   if (preload?.appTemplateId === "openship") {
     push({
       step: "guard_control_plane",
@@ -837,6 +839,11 @@ async function stepRuntimeCleanup(
   // else goes through the normal destroy path.
   const unreachable = manifest.resources.filter((r) => r.type === "unreachable");
   const destroyable = manifest.resources.filter((r) => r.type !== "unreachable");
+  if (forceOrphan && manifest.runtimes?.some(runtime => runtime.name === "kubernetes")) {
+    disposeManifestRuntimes(manifest);
+    push({ step: "runtime_cleanup", status: "failed", error: "Cluster workloads require confirmed cleanup. Retry deletion with the cluster reachable instead of orphaning its resources." });
+    return { orphans, forceOrphanEligible: false };
+  }
 
   for (const r of unreachable) {
     addOrphan({
@@ -1035,7 +1042,7 @@ async function stepRuntimeCleanup(
     details,
     error: realFailures.map((f) => `${f.label}: ${f.error}`).join("; "),
   });
-  return { orphans, forceOrphanEligible: true };
+  return { orphans, forceOrphanEligible: !manifest.runtimes?.some(runtime => runtime.name === "kubernetes") };
 }
 
 async function checkpointVolumeCleanup(

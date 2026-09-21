@@ -17,6 +17,10 @@ routes, and shared project connections. `/scale` redirects to the project list.
 | Apply configuration to a running workload             | Existing deployment refresh with the affected service IDs and retained images                      |
 | Update from source                                    | Existing deployment trigger, progress, and history                                                 |
 | Initial deployment                                    | Existing environment deployment setup                                                              |
+| Scale an application across servers                   | Saved compute-cluster target, Kubernetes runtime, and existing configuration release pipeline      |
+| Add a standalone or clustered database                | Shared database capability catalog, native operators, durable setup and SSE progress               |
+| Connect a cluster database                            | Encrypted project environment variable followed by the existing deployment review                  |
+| Back up or restore PostgreSQL                         | Existing S3 destinations and CloudNativePG archives; restore creates a separate database           |
 | Clone a service to another server                     | `ProjectMigrationCard` with explicit `serviceNames`, then `ServerMigrationWizard`                  |
 | Clone or move an environment                          | The same project migration flow and its existing cutover/rollback controls                         |
 
@@ -43,9 +47,26 @@ The canvas does not call mutation APIs when a node is moved or selected.
 - A migration clone is an independent copy with its own data and deployments.
   It is not a synchronized application replica or a database replica. Moves
   apply to the whole environment because the existing project has one server.
-- Database clustering, replica synchronization, traffic distribution across
-  copies, and autoscaling need additional backend orchestration. The planning
-  catalog in `@repo/core/scale` does not enable these in production.
+- Self-hosted applications and workers use **Scale → Run across servers** to choose
+  a ready cluster and set their **Instances** count. K3s manages placement and
+  recovery. Web applications have a traffic distribution node; instance edges
+  follow observed health and are distinct from editable public routes. Friendly
+  server names appear first; pod/node identifiers remain in technical details.
+- Ready cluster targets offer PostgreSQL and Redis as standalone or replicated
+  databases. `@repo/core/cluster-database` defines supported production choices;
+  the separate canvas planning catalog does not silently enable a template.
+  Database operators own replication and failover. Each instance has a separate
+  persistent disk and server; Redis Cluster requires six servers for three shards
+  and their replicas. Known database engines do not receive application instance
+  controls. Docker migration copies remain independent.
+- Database connection edges represent saved environment bindings. Expanding a
+  database shows actual instances. PostgreSQL edges use its observed primary;
+  Redis members do not infer elected roles from StatefulSet names. Restoring an
+  archive opens the new database's progress, with the original connection intact.
+- PostgreSQL supports scheduled/manual S3 archives and restoration into a new
+  database. Redis archive recovery and automatic Docker data import are not yet
+  available. Local storage reserves capacity without imposing a quota; retained
+  volumes remain visible and require explicit deletion or manual recovery.
 
 ## Review and apply
 
@@ -54,6 +75,13 @@ affected service(s), source choice, and resource values. Image-only additions
 use the existing independent service launch path; they do not redeploy the
 parent application. Source changes use the deployment pipeline. An undeployed
 environment saves configuration and continues to the existing setup wizard.
+
+Cluster target changes use their existing compare-and-set API. **Review deployment**
+saves the selected target and opens the common deployment review; its description
+explains that cancelling review retains the saved target. Instance-count changes
+use **Apply scaling** and open existing deployment progress. Both preserve action
+locks and reconcile a lost response with one read, without automatic replay or
+deployment. Source builds require image delivery; prebuilt releases reuse theirs.
 
 The apply adapter re-reads saved services and resources before writing, rejecting
 conflicting edits. It records each successful write and service launch so a

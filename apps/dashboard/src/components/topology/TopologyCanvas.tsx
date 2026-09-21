@@ -75,7 +75,7 @@ export function TopologyResourceIcon({
       ? Globe
       : resource.kind === "linked"
         ? Database
-        : resource.kind === "environment"
+        : resource.kind === "environment" || resource.kind === "traffic"
           ? Layers
           : resource.kind === "instance"
             ? Box
@@ -98,8 +98,10 @@ export function TopologyStatus({ state }: { state: TopologyState }) {
 const Resource = memo(function Resource({ data, selected }: NodeProps<ResourceFlowNode>) {
   const { resource, onOpen } = data;
   const isService = resource.kind === "service";
-  const canInspectInstance = isService && !!resource.container?.containerId;
-  const applicationRelease = resource.kind === "application" && resource.version;
+  const canInspectInstance =
+    (isService && !!resource.container?.containerId) || !!resource.replicaStatus || !!resource.database?.observation?.pods.length;
+  const applicationRelease =
+    resource.kind === "application" && !resource.replicaStatus && resource.version;
   return (
     <article
       className="topology-node scale-resource-node scale-resource-tone w-[250px] overflow-hidden rounded-2xl border text-start"
@@ -156,16 +158,24 @@ const Resource = memo(function Resource({ data, selected }: NodeProps<ResourceFl
           onOpen(resource.id);
         }}
         aria-label={
-          canInspectInstance ? `View instances of ${resource.name}` : `Configure ${resource.name}`
+          canInspectInstance
+            ? `View instances of ${resource.name}`
+            : resource.clusterPod
+              ? `Inspect ${resource.name}`
+              : `Configure ${resource.name}`
         }
       >
         <span className="flex items-center gap-1.5">
           {canInspectInstance ? <Server className="size-3" /> : <Settings2 className="size-3" />}
           {canInspectInstance
             ? "View instances"
-            : resource.kind === "linked"
-              ? "View connection"
-              : "Configuration"}
+            : resource.clusterPod
+              ? "Inspect instance"
+              : resource.kind === "traffic"
+                ? "View traffic"
+                : resource.kind === "linked"
+                  ? "View connection"
+                  : "Configuration"}
         </span>
         <ArrowUpRight className="size-3" />
       </button>
@@ -310,7 +320,7 @@ function Canvas({
         data: {
           label: relation.label,
           showLabel: relation.kind === "binding",
-          enabled: !relation.pending,
+          enabled: !relation.pending && relation.enabled !== false,
         },
         ariaLabel: `${relation.kind}: ${relation.label}`,
       })),

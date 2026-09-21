@@ -907,5 +907,45 @@
       "discard": "Änderungen verwerfen",
       "noConnections": "Keine Verbindungen aktiviert"
     }
+  },
+  "runtime": {
+    "title": "Skalierung",
+    "description": "Anwendungen auf den Servern dieses Clusters ausführen.",
+    "setup": "Skalierung aktivieren",
+    "oneControl": "Ein Steuerungsserver. Für eine hochverfügbare Steuerungsebene werden mindestens drei Server benötigt.",
+    "threeControls": "Drei Steuerungsserver sichern die Cluster-Verfügbarkeit. Weitere Server werden als Worker hinzugefügt.",
+    "requirements": "OpenShip bereitet die Server vor, verbindet sie und prüft das Anwendungsrouting. Der Fortschritt wird gespeichert, damit Sie später zurückkehren können.",
+    "readyHint": "Wählen Sie diesen Cluster in den Skalierungseinstellungen eines Projekts, um Anwendungsinstanzen auf seinen Servern bereitzustellen.",
+    "privateConnections": "Erforderliche private Firewall-Regeln",
+    "privateHint": "OpenShip konfiguriert unterstützte Host-Firewalls automatisch. Filtert dein Anbieter das private Netzwerk, erlaube diese Zielports für die aufgeführten privaten Quelladressen. Diese Ports dürfen nicht öffentlich erreichbar sein.",
+    "remove": "Skalierung deaktivieren",
+    "removeDescription": "Skalierung deaktivieren und ihre Installation aus diesem Cluster entfernen. Entfernen Sie zuerst bereitgestellte Cluster-Anwendungen und persistente Volumes. Die Servergruppe, Docker-Anwendungen und das private Netzwerk bleiben verfügbar.",
+    "details": "Einrichtungsdetails",
+    "status": {
+      "setting_up": "Skalierung wird aktiviert",
+      "ready": "Bereit zur Skalierung",
+      "failed": "Skalierung erfordert Aufmerksamkeit",
+      "interrupted": "Einrichtung angehalten — zum Fortsetzen erneut versuchen",
+      "removing": "Skalierung wird deaktiviert",
+      "removed": "Skalierung deaktiviert",
+      "not_enabled": "Skalierung nicht aktiviert",
+      "unknown": "Skalierungsstatus nicht verfügbar"
+    },
+    "steps": {
+      "connect": "Mit Server verbinden",
+      "prerequisites": "Server vorbereiten",
+      "inspect": "Verbindungen prüfen",
+      "install": "Skalierung aktivieren",
+      "join": "Server verbinden",
+      "verify": "Anwendungsrouting prüfen",
+      "remove": "Skalierung entfernen"
+    },
+    "requirementsDetails": "OpenShip installiert fehlende Werkzeuge, konfiguriert K3s über das private Netzwerk und prüft Dienstrouting und DNS. Erforderlich sind Linux mit systemd und eine ungefilterte oder iptables-basierte Host-Firewall.",
+    "technicalDetails": "Technische Details",
+    "technology": "Orchestrator",
+    "applicationNetwork": "Pod-Netzwerk",
+    "serviceNetwork": "Service-Netzwerk",
+    "lastChecked": "Zuletzt überprüft",
+    "scaleProject": "Projekt auswählen"
   }
 }

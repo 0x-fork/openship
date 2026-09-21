@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   CheckCircle2,
@@ -11,16 +11,16 @@ import {
   Minus,
   PauseCircle,
 } from "lucide-react";
-import type { ManagedNetworkSetupLog, ManagedNetworkStepProgress } from "@repo/core";
+import type { SetupLog, SetupStepProgress, ManagedNetworkStepId } from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
-export interface NetworkProgressHost {
+export interface NetworkProgressHost<Id extends string = ManagedNetworkStepId> {
   serverId: string;
   name: string;
   address: string;
-  steps: ManagedNetworkStepProgress[];
-  logs: ManagedNetworkSetupLog[];
+  steps: SetupStepProgress<Id>[];
+  logs: SetupLog<Id>[];
 }
 
 /** Preserve readable diagnostics while obscuring addresses in demo recordings. */
@@ -36,23 +36,31 @@ export function NetworkDiagnosticText({ value }: { value: string }) {
   );
 }
 
-export function NetworkSetupProgress({
+export function NetworkSetupProgress<Id extends string = ManagedNetworkStepId>({
   hosts,
   running,
   renderHostActions,
   initiallyCollapsed = false,
+  logsInitiallyCollapsed = false,
   openHost,
+  stepLabels,
 }: {
-  hosts: NetworkProgressHost[];
+  hosts: NetworkProgressHost<Id>[];
   running: boolean;
-  renderHostActions?: (host: NetworkProgressHost) => ReactNode;
+  renderHostActions?: (host: NetworkProgressHost<Id>) => ReactNode;
   initiallyCollapsed?: boolean;
+  logsInitiallyCollapsed?: boolean;
   /** A new request opens the selected server without undoing manual choices on SSE updates. */
   openHost?: { serverId: string } | null;
+  /** Reuse the same progress/log presentation for other server setup workflows. */
+  stepLabels?: Record<string, string>;
 }) {
   const { t } = useI18n();
   const m = t.servers.networks.managed;
+  const labels: Record<string, string> = stepLabels ?? m.setupSteps;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [logsOpen, setLogsOpen] = useState(!logsInitiallyCollapsed);
+  const logId = useId();
   useEffect(() => {
     if (openHost) setExpanded((old) => ({ ...old, [openHost.serverId]: true }));
   }, [openHost]);
@@ -67,7 +75,7 @@ export function NetworkSetupProgress({
   const lastLog = entries.at(-1);
   useEffect(() => {
     if (follow && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [follow, entries.length, lastLog?.timestamp, lastLog?.message]);
+  }, [follow, logsOpen, entries.length, lastLog?.timestamp, lastLog?.message]);
   return (
     <div className="min-w-0 space-y-5">
       {hosts.map((host) => {
@@ -126,9 +134,9 @@ export function NetworkSetupProgress({
                     aria-live="polite"
                   >
                     {failed
-                      ? m.setupSteps[failed.id]
+                      ? labels[failed.id]
                       : running && current
-                        ? m.setupSteps[current.id]
+                        ? labels[current.id]
                         : stopped
                           ? m.stepStatus.interrupted
                           : interpolate(m.completedSteps, {
@@ -180,7 +188,7 @@ export function NetworkSetupProgress({
                         <span
                           className={`min-w-0 flex-1 text-sm ${effective === "pending" || effective === "skipped" ? "text-muted-foreground" : "text-foreground"}`}
                         >
-                          {m.setupSteps[step.id]}
+                          {labels[step.id] ?? step.id}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {m.stepStatus[effective]}
@@ -202,13 +210,25 @@ export function NetworkSetupProgress({
         );
       })}
       <section className="relative min-w-0 overflow-hidden rounded-2xl bg-card" aria-label={m.logs}>
-        <div className="flex items-center justify-between gap-3 px-5 py-4">
-          <h2 className="text-sm font-semibold">{m.logs}</h2>
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-2xl px-5 py-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          aria-expanded={logsOpen}
+          aria-controls={logId}
+          onClick={() => setLogsOpen((open) => !open)}
+        >
+          <span className="flex-1 text-sm font-semibold">{m.logs}</span>
           {running && (
             <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
           )}
-        </div>
+          <ChevronDown
+            aria-hidden="true"
+            className={`size-4 text-muted-foreground transition-transform ${logsOpen ? "rotate-180" : ""}`}
+          />
+        </button>
         <div
+          id={logId}
+          hidden={!logsOpen}
           ref={scroll}
           onScroll={() => {
             const el = scroll.current;
@@ -242,7 +262,7 @@ export function NetworkSetupProgress({
             </div>
           )}
         </div>
-        {!follow && !!entries.length && (
+        {logsOpen && !follow && !!entries.length && (
           <button
             type="button"
             onClick={() => setFollow(true)}

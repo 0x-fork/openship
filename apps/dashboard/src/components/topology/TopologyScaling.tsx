@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import type { Service } from "@/lib/api/services";
 import type { TopologyProject } from "./model";
+import { TopologyClusterScaling } from "./TopologyClusterScaling";
+import type { ProjectCluster } from "@repo/contracts";
 
 export function TopologyScaling({
   project,
@@ -24,11 +26,15 @@ export function TopologyScaling({
   onPlacement,
   disabled,
   placementDisabled,
+  onDeploy,
+  onClusterState,
 }: {
   project: TopologyProject;
   service?: Service;
   disabled: boolean;
   placementDisabled: boolean;
+  onDeploy: () => void;
+  onClusterState?: (state: ProjectCluster) => void;
   onStage: (
     values: { cpuCores: number; memoryMb: number },
     before: ProjectResources,
@@ -75,15 +81,26 @@ export function TopologyScaling({
     resolveWorkload(project.options?.workloadType, project.options?.hasServer) === "static";
   return (
     <div className="space-y-6">
+      {!service && !staticApplication && project.appTemplateId !== "openship" && (
+        <TopologyClusterScaling
+          project={project}
+          resources={view?.production}
+          disabled={disabled || placementDisabled}
+          onDeploy={onDeploy}
+          onClusterState={onClusterState}
+        />
+      )}
       <section className="space-y-3">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Cpu className="size-4 text-muted-foreground" />
-          CPU & memory
+          {project.deployTarget === "cluster" ? "Resources per instance" : "CPU & memory"}
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          {service
-            ? "Limits for this service. Review and apply to update its resources."
-            : "Default runtime limits for this environment. Services with their own limits keep those overrides."}
+          {project.deployTarget === "cluster"
+            ? "CPU and memory limits for each application instance. Review and apply to update all instances."
+            : service
+              ? "Limits for this service. Review and apply to update its resources."
+              : "Default runtime limits for this environment. Services with their own limits keep those overrides."}
         </p>
         {staticApplication ? (
           <p className="rounded-xl bg-muted/40 p-3 text-xs text-muted-foreground">
@@ -192,56 +209,58 @@ export function TopologyScaling({
           </div>
         )}
       </section>
-      <section className="space-y-3 border-t border-border/50 pt-5">
-        <p className="text-sm font-medium">Server placement</p>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {project.serverName ||
-            (project.deployTarget === "cloud"
-              ? "OpenShip Cloud"
-              : project.deployTarget === "local"
-                ? "Local machine"
-                : "Current server")}
-        </p>
-        {canPlace ? (
-          <>
-            <Button
-              variant="outline"
-              className="w-full justify-start gap-2"
-              disabled={disabled || placementDisabled}
-              onClick={() => onPlacement("copy", service)}
-            >
-              <Copy />
-              {service ? "Clone service to another server" : "Clone to another server"}
-            </Button>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Creates an independent copy with its own data and deployment history.
-            </p>
-            <Button
-              variant="outline"
-              className="w-full justify-start gap-2"
-              disabled={disabled || placementDisabled}
-              onClick={() => onPlacement("move")}
-            >
-              <ArrowRightLeft />
-              Move environment
-            </Button>
-            {placementDisabled && (
-              <p className="text-[11px] text-muted-foreground">
-                Apply or discard pending changes before cloning or moving.
-              </p>
-            )}
-            {service && (
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Moving relocates all services in this environment together.
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-            Clone and move are available for deployed projects on connected Docker servers.
+      {project.deployTarget !== "cluster" && (
+        <section className="space-y-3 border-t border-border/50 pt-5">
+          <p className="text-sm font-medium">Server placement</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {project.serverName ||
+              (project.deployTarget === "cloud"
+                ? "OpenShip Cloud"
+                : project.deployTarget === "local"
+                  ? "Local machine"
+                  : "Current server")}
           </p>
-        )}
-      </section>
+          {canPlace ? (
+            <>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                disabled={disabled || placementDisabled}
+                onClick={() => onPlacement("copy", service)}
+              >
+                <Copy />
+                {service ? "Clone service to another server" : "Clone to another server"}
+              </Button>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Creates an independent copy with its own data and deployment history.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                disabled={disabled || placementDisabled}
+                onClick={() => onPlacement("move")}
+              >
+                <ArrowRightLeft />
+                Move environment
+              </Button>
+              {placementDisabled && (
+                <p className="text-[11px] text-muted-foreground">
+                  Apply or discard pending changes before cloning or moving.
+                </p>
+              )}
+              {service && (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Moving relocates all services in this environment together.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="rounded-xl bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+              Clone and move are available for deployed projects on connected Docker servers.
+            </p>
+          )}
+        </section>
+      )}
     </div>
   );
 }

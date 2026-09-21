@@ -262,6 +262,10 @@ export interface DeploymentConfigSnapshot {
   sourceStaged?: boolean;
   /** Deploy target: "local" (this machine), "server" (remote SSH), or "cloud" (Oblien) */
   deployTarget?: DeployTarget;
+  clusterId?: string;
+  clusterRuntimeId?: string;
+  clusterProjectId?: string;
+  clusterConfig?: import("@repo/core").ClusterWorkloadConfig;
   /** Target server ID when deployTarget is "server" */
   serverId?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
@@ -457,7 +461,8 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     // pipeline, and rollback all see "cloud" without depending on the
     // UI to pass it on every redeploy. The desktop picker still wins
     // when it does pass an explicit deployTarget (see line ~773).
-    deployTarget: project.cloudWorkspaceId ? "cloud" : undefined,
+    deployTarget: project.cloudWorkspaceId ? "cloud" : project.clusterId ? "cluster" : undefined,
+    ...(project.clusterId ? { clusterId: project.clusterId, clusterProjectId: project.id, clusterConfig: project.clusterConfig ?? { replicas: 1 } } : {}),
     // Runtime isolation mode persisted on the project (editable in the Runtime
     // tab). So a redeploy/webhook deploy respects the saved choice instead of
     // re-defaulting. The wizard's per-deploy override still wins when passed.
@@ -1007,7 +1012,7 @@ export async function resolveRollbackContext(
 export async function resolveSnapshotTarget(
   project: Project,
   override?: { deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" },
-): Promise<{ deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" }> {
+): Promise<{ deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker"; clusterId?: string; clusterRuntimeId?: string; clusterProjectId?: string; clusterConfig?: import("@repo/core").ClusterWorkloadConfig }> {
   const activeMeta = project.activeDeploymentId
     ? ((await findActiveDeployment(project).catch(() => null))
         ?.meta as DeploymentConfigSnapshot | null)
@@ -1027,9 +1032,20 @@ export async function resolveSnapshotTarget(
   let deployTarget: DeployTarget | undefined;
   if (override?.deployTarget) deployTarget = override.deployTarget;
   else if (project.cloudWorkspaceId) deployTarget = "cloud";
+  else if (project.clusterId) deployTarget = "cluster";
   else if (project.serverId) deployTarget = "server";
-  else if (activeMeta?.deployTarget) deployTarget = activeMeta.deployTarget;
+  else if (activeMeta?.deployTarget) deployTarget = activeMeta.deployTarget === "cluster" ? "local" : activeMeta.deployTarget;
   else if (activeMeta?.serverId) deployTarget = "server";
+
+  if (project.clusterId && override?.deployTarget && override.deployTarget !== "cluster")
+    throw new AppError("Change this project's cluster target in Topology before deploying to a different target.", 409, "CLUSTER_TARGET_CONFLICT");
+  if (deployTarget === "cluster") {
+    const clusterId = project.clusterId ?? activeMeta?.clusterId;
+    if (!clusterId) throw new AppError("Choose a cluster in the project topology first.", 422, "CLUSTER_TARGET_REQUIRED");
+    const { requireClusterDeploymentTarget } = await import("../../lib/cluster-deployment-target");
+    const { runtime } = await requireClusterDeploymentTarget(project.organizationId, clusterId);
+    return { deployTarget, serverId: undefined, runtimeMode: "docker", clusterId, clusterRuntimeId: runtime.id, clusterProjectId: project.id, clusterConfig: project.clusterConfig ?? { replicas: 1 } };
+  }
 
   const serverId =
     deployTarget === "server"
@@ -1047,7 +1063,7 @@ export async function resolveSnapshotTarget(
       throw new AppError("Host execution is disabled by this native installation's policy", 403, "HOST_EXECUTION_DISABLED");
   }
 
-  return { deployTarget, serverId, runtimeMode };
+  return { deployTarget, serverId, runtimeMode, clusterId: undefined, clusterRuntimeId: undefined, clusterProjectId: undefined, clusterConfig: undefined };
 }
 
 function resolveRuntimeImage(project: Project): string {
@@ -1901,9 +1917,7 @@ export async function requestBuildAccess(
     serverId,
     runtimeMode,
   });
-  snapshot.deployTarget = resolvedTarget.deployTarget;
-  snapshot.serverId = resolvedTarget.serverId;
-  snapshot.runtimeMode = resolvedTarget.runtimeMode;
+  Object.assign(snapshot, resolvedTarget);
 
   // Folder-upload: point this deploy at the source the browser uploaded.
   //   - cloud (oblien-direct): adopt the pre-provisioned workspace, skip clone.
@@ -2253,7 +2267,7 @@ export async function redeployBuildSession(
 
   if (!frozenMeta) {
     const t = await resolveSnapshotTarget(project);
-    meta.deployTarget = t.deployTarget;
+    Object.assign(meta, t);
     meta.serverId = t.serverId;
     meta.runtimeMode = t.runtimeMode;
   }
@@ -2698,9 +2712,7 @@ export async function triggerDeployment(
       project,
       data.serverId ? { deployTarget: "server", serverId: data.serverId } : undefined,
     );
-    snapshot.deployTarget = resolvedTarget.deployTarget;
-    snapshot.serverId = resolvedTarget.serverId;
-    snapshot.runtimeMode = resolvedTarget.runtimeMode;
+    Object.assign(snapshot, resolvedTarget);
   }
 
   // Release/dist source: resolve the version (webhook-supplied tag, else newest)

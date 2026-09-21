@@ -28,6 +28,7 @@ export const ProjectLogSchemas = {
 } as const satisfies Record<string, ResourceOperationSchema>;
 export type ProjectLogOperations = ResourceOperations<typeof ProjectLogSchemas>;
 export interface ProjectLogStreams {
+  streamClusterDatabaseEvents(id: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   streamRuntimeLogs(id: string, input?: { tail?: number }, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   /** Self-hosted edge events. Cloud callers obtain a provider token through getServerLogStreamToken. */
   streamServerLogs(id: string, input?: ServerLogsInput, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;

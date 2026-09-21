@@ -1,20 +1,16 @@
-import type {
-  ManagedNetworkStepId,
-  ManagedNetworkStepProgress,
-  ManagedNetworkSetupLog,
-} from "@repo/core";
+import type { SetupStepProgress, SetupLog } from "@repo/core";
 import { boundedStorableText, sanitizeLogText } from "../deployments/build-log-sanitize";
 
-type ProgressHost = { steps?: ManagedNetworkStepProgress[]; logs?: ManagedNetworkSetupLog[] };
+type ProgressHost<Id extends string> = { steps?: SetupStepProgress<Id>[]; logs?: SetupLog<Id>[] };
 
 /** Bound and sanitize before persistence; package repositories may contain credentials. */
 export function networkSetupMessage(message: string): string {
   return boundedStorableText(sanitizeLogText(message), 2000);
 }
-export function appendNetworkSetupLog(
-  host: ProgressHost,
-  step: ManagedNetworkStepId,
-  entry: { message: string; level: ManagedNetworkSetupLog["level"]; timestamp?: string },
+export function appendNetworkSetupLog<Id extends string>(
+  host: ProgressHost<Id>,
+  step: Id,
+  entry: { message: string; level: SetupLog["level"]; timestamp?: string },
 ) {
   const message = networkSetupMessage(entry.message);
   if (!message.trim()) return;
@@ -27,10 +23,10 @@ export function appendNetworkSetupLog(
   });
   if (host.logs.length > 300) host.logs.splice(0, host.logs.length - 300);
 }
-export function updateNetworkSetupStep(
-  host: ProgressHost,
-  id: ManagedNetworkStepId,
-  status: ManagedNetworkStepProgress["status"],
+export function updateNetworkSetupStep<Id extends string>(
+  host: ProgressHost<Id>,
+  id: Id,
+  status: SetupStepProgress["status"],
   message?: string,
 ) {
   host.steps ??= [];

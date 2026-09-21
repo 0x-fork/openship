@@ -202,10 +202,11 @@ export async function getDeployDefaults(userId: string): Promise<{
 export async function resolveStrategy(
   framework: string | undefined,
   explicit?: BuildStrategy,
-  opts?: { deployTarget?: "local" | "server" | "cloud" },
+  opts?: { deployTarget?: "local" | "server" | "cloud" | "cluster" },
 ): Promise<BuildStrategy> {
   // In SaaS/Cloud mode, never allow building locally on the API host
   if (env.CLOUD_MODE) return "server";
+  if (opts?.deployTarget === "cluster") return "server";
 
   // 1. Per-deploy explicit value (source of truth)
   if (explicit) return explicit;

@@ -19,9 +19,9 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Project } from "@repo/db";
-import { DockerRuntime, ownsBuiltImage } from "@repo/adapters";
+import { DockerRuntime, ownsBuiltImage, kubernetesBuildImageTag } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
-import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { resolveDeploymentRuntime, createServerDockerRuntime, type DeploymentMeta } from "../../lib/deployment-runtime";
 import { refreshRollbackCapacity } from "./release-retention";
 import { computeKeepSet } from "./retained-artifacts";
 import { withRetentionLock } from "./retention-lock";
@@ -59,11 +59,17 @@ export interface ReapResult {
  *   - only foreign or retained tags remain → keep.
  */
 export function selectImageRemovalRefs(
-  img: { id: string; repoTags: string[] },
+  img: { id: string; repoTags: string[]; buildId?: string | null },
   keep: Set<string>,
+  clusterImageRepository?: string,
 ): string[] {
   if (keep.has(img.id)) return [];
-  const ownTags = img.repoTags.filter((t) => ownsBuiltImage(t) && !keep.has(t));
+  // A cluster build's local publish alias is temporary. Only its exact
+  // generated tag is owned; all other tags in the same repository are not.
+  const publishTag = clusterImageRepository && img.buildId
+    ? kubernetesBuildImageTag(clusterImageRepository, img.buildId)
+    : undefined;
+  const ownTags = img.repoTags.filter((t) => (ownsBuiltImage(t) || t === publishTag) && !keep.has(t));
   if (ownTags.length > 0) return ownTags;
   if (img.repoTags.length === 0) return [img.id];
   return []; // only foreign tags → never touch
@@ -91,13 +97,21 @@ async function reapProjectImagesUnlocked(project: Project): Promise<ReapResult> 
   const activeDep = await findActiveDeployment(project);
   if (!activeDep) return out;
 
-  const { runtime } = await resolveDeploymentRuntime(activeDep);
+  const meta = (activeDep.meta ?? {}) as DeploymentMeta;
+  const resolved = meta.clusterId
+    ? await (async () => {
+        const { requireClusterDeploymentTarget } = await import("../../lib/cluster-deployment-target");
+        const { runtime } = await requireClusterDeploymentTarget(project.organizationId, meta.clusterId!, meta.clusterRuntimeId);
+        return { runtime: await createServerDockerRuntime(runtime.plan.hosts.find(host => host.role === "server")!.serverId, project.organizationId) };
+      })()
+    : await resolveDeploymentRuntime(activeDep);
+  const { runtime } = resolved;
   try {
     if (!(runtime instanceof DockerRuntime)) return out;
     const keep = await computeKeepSet(project);
     const images = await runtime.listProjectImages(project.id);
     for (const img of images) {
-      const refs = selectImageRemovalRefs(img, keep);
+      const refs = selectImageRemovalRefs(img, keep, meta.clusterId ? meta.clusterConfig?.imageRepository : undefined);
       if (refs.length === 0) continue; // kept, or operator-repurposed → leave it
       try {
         for (const ref of refs) await runtime.removeImage(ref);
@@ -115,7 +129,7 @@ async function reapProjectImagesUnlocked(project: Project): Promise<ReapResult> 
     // Reclaim this project's untagged (superseded final) layers too.
     await runtime.pruneProjectDanglingImages(project.id);
 
-    await refreshRollbackCapacity({
+    if (!meta.clusterId) await refreshRollbackCapacity({
       projectId: project.id,
       imageSizes: images.filter((img) => img.repoTags.some(ownsBuiltImage)).map((img) => img.size),
     });

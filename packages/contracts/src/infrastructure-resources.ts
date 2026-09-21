@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { MAX_CLUSTER_MEMBERS } from "@repo/core";
 import type { ResourceOperationSchema } from "./resource-operations";
+import { ClusterRuntimeStatusSchema } from "./cluster-runtime";
 import {
   ServerClusterSchema,
   ServerClusterCollectionSchemas,
@@ -90,6 +91,16 @@ export const ComputeClusterSchema = Type.Object({
   networkId: id,
   serverIds: Type.Array(id),
   network: PrivateNetworkSchema,
+  /** Saved scaling readiness is independent of private-network verification. */
+  scaling: Type.Optional(
+    Type.Union([
+      Type.Object({
+        status: ClusterRuntimeStatusSchema,
+        verifiedAt: Type.Union([Type.String(), Type.Null()]),
+      }),
+      Type.Null(),
+    ]),
+  ),
   createdAt: Type.String(),
   updatedAt: Type.String(),
 });

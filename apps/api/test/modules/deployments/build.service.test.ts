@@ -10,6 +10,7 @@ const {
   getCommitByRef,
   getForwardGitToServer,
   getLatestCommit,
+  requireClusterDeploymentTarget,
   kickoffBuild,
   repos,
   resolveProjectInfo,
@@ -27,6 +28,7 @@ const {
   getCommitByRef: vi.fn(),
   getForwardGitToServer: vi.fn(),
   getLatestCommit: vi.fn(),
+  requireClusterDeploymentTarget: vi.fn(),
   kickoffBuild: vi.fn(),
   repos: {
     projectConnection: { listByTarget: vi.fn(async () => []) },
@@ -87,6 +89,8 @@ vi.mock("@repo/db", async (importOriginal) => ({
 vi.mock("@repo/platform/engine/modules/deployments/preflight", () => ({
   runPreflightChecks,
 }));
+
+vi.mock("@repo/platform/engine/lib/cluster-deployment-target", () => ({ requireClusterDeploymentTarget }));
 
 vi.mock("@repo/platform/engine/modules/deployments/prepare.service", () => ({
   resolveProjectInfo,
@@ -522,6 +526,22 @@ describe("resolveSnapshotTarget", () => {
     const t = await resolveSnapshotTarget(project());
     expect(t.deployTarget).toBeUndefined();
     expect(t.serverId).toBeUndefined();
+  });
+  it("freezes the ready Kubernetes installation and replica intent, clearing a former Docker host", async () => {
+    requireClusterDeploymentTarget.mockResolvedValue({ runtime: { id: "runtime-1" } });
+    const value = await resolveSnapshotTarget(project({ clusterId: "cluster-1", clusterConfig: { replicas: 3, imageRepository: "ghcr.io/team/api" }, serverId: "old-host" }));
+    expect(value).toMatchObject({ deployTarget: "cluster", clusterId: "cluster-1", clusterRuntimeId: "runtime-1", clusterProjectId: "project-1", clusterConfig: { replicas: 3 }, runtimeMode: "docker" });
+    expect(value.serverId).toBeUndefined();
+    expect(requireClusterDeploymentTarget).toHaveBeenCalledWith("org-1", "cluster-1");
+  });
+  it("does not override a saved cluster target through an old deployment wizard", async () => {
+    await expect(resolveSnapshotTarget(project({ clusterId: "cluster-1" }), { deployTarget: "server", serverId: "a" })).rejects.toMatchObject({ code: "CLUSTER_TARGET_CONFLICT" });
+  });
+  it("does not restore a removed cluster binding from the active release", async () => {
+    repos.deployment.findById.mockResolvedValue({ id: "old", projectId: "project-1", organizationId: "org-1", meta: { deployTarget: "cluster", clusterId: "old-cluster" } });
+    const value = await resolveSnapshotTarget(project({ activeDeploymentId: "old" }));
+    expect(value.deployTarget).toBe("local");
+    expect(value.clusterId).toBeUndefined();
   });
 });
 

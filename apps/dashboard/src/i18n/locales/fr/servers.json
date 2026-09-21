@@ -907,5 +907,45 @@
       "discard": "Annuler les modifications",
       "noConnections": "Aucune connexion activée"
     }
+  },
+  "runtime": {
+    "title": "Mise à l’échelle",
+    "description": "Exécutez des applications sur les serveurs de ce cluster.",
+    "setup": "Activer la mise à l’échelle",
+    "oneControl": "Un serveur de contrôle. Au moins trois serveurs sont nécessaires pour un plan de contrôle hautement disponible.",
+    "threeControls": "Trois serveurs de contrôle assurent la disponibilité du cluster. Les serveurs supplémentaires deviennent des nœuds de travail.",
+    "requirements": "OpenShip prépare les serveurs, les connecte et vérifie le routage des applications. La progression est enregistrée pour vous permettre de revenir plus tard.",
+    "readyHint": "Choisissez ce cluster dans les réglages de mise à l’échelle d’un projet pour déployer des instances sur ses serveurs.",
+    "privateConnections": "Règles de pare-feu privé requises",
+    "privateHint": "OpenShip configure automatiquement les pare-feu hôtes pris en charge. Si votre fournisseur filtre le réseau privé, autorisez ces ports de destination depuis les adresses privées sources indiquées. Ne les exposez pas à Internet.",
+    "remove": "Désactiver la mise à l’échelle",
+    "removeDescription": "Désactivez la mise à l’échelle et supprimez son installation de ce cluster. Supprimez d’abord les applications déployées sur le cluster et les volumes persistants. Le groupe de serveurs, les applications Docker et le réseau privé restent disponibles.",
+    "details": "Détails de configuration",
+    "status": {
+      "setting_up": "Activation de la mise à l’échelle",
+      "ready": "Prêt pour la mise à l’échelle",
+      "failed": "La mise à l’échelle nécessite une intervention",
+      "interrupted": "Configuration arrêtée — réessayez pour continuer",
+      "removing": "Désactivation de la mise à l’échelle",
+      "removed": "Mise à l’échelle désactivée",
+      "not_enabled": "Mise à l’échelle non activée",
+      "unknown": "État de mise à l’échelle indisponible"
+    },
+    "steps": {
+      "connect": "Se connecter au serveur",
+      "prerequisites": "Préparer le serveur",
+      "inspect": "Vérifier les connexions",
+      "install": "Activer la mise à l’échelle",
+      "join": "Connecter les serveurs",
+      "verify": "Vérifier le routage des applications",
+      "remove": "Supprimer la configuration de mise à l’échelle"
+    },
+    "requirementsDetails": "OpenShip installe les outils manquants, configure K3s sur le réseau privé et vérifie le routage des services et le DNS. Linux avec systemd et un pare-feu hôte sans filtrage ou basé sur iptables sont nécessaires.",
+    "technicalDetails": "Détails techniques",
+    "technology": "Orchestrateur",
+    "applicationNetwork": "Réseau des pods",
+    "serviceNetwork": "Réseau des services",
+    "lastChecked": "Dernière vérification",
+    "scaleProject": "Choisir un projet"
   }
 }

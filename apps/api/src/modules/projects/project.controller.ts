@@ -250,6 +250,46 @@ export async function updateResources(c: Context) {
   return c.json({ success: true, data: result.data });
 }
 
+export async function getClusterWorkload(c: Context) {
+  const result = await getPlatformKernel().projects.getClusterWorkload(operationContext(c), param(c, "id"));
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+export async function setClusterTarget(c: Context) {
+  const result = await getPlatformKernel().projects.setClusterTarget(operationContext(c), param(c, "id"), await c.req.json());
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+export async function scaleClusterWorkload(c: Context) {
+  const result = await getPlatformKernel().projects.scaleClusterWorkload(operationContext(c), param(c, "id"), await c.req.json());
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+
+export async function listClusterDatabases(c: Context) {
+  const result = await getPlatformKernel().projects.listClusterDatabases(operationContext(c), param(c, "id"));
+  applyOperationContext(c, result.context); return c.json({ data: result.data });
+}
+type DatabaseMutation = "createClusterDatabase" | "updateClusterDatabase" | "retryClusterDatabase" | "removeClusterDatabase" | "connectClusterDatabase" | "getClusterDatabase" | "backupClusterDatabase";
+export const clusterDatabaseCommand = (operation: DatabaseMutation) => async (c: Context) => {
+  const result = await getPlatformKernel().projects[operation](operationContext(c), param(c, "id"), await c.req.json());
+  applyOperationContext(c, result.context); return c.json({ data: result.data });
+};
+export async function clusterDatabaseStream(c: Context) {
+  const ctx = operationContext(c); const id = param(c, "id");
+  // Validate project access before committing SSE headers.
+  const initial = await getPlatformKernel().projects.listClusterDatabases(ctx, id);
+  applyOperationContext(c, initial.context);
+  return streamSSE(c, async (stream) => {
+    const abort = new AbortController(); stream.onAbort(() => abort.abort());
+    try {
+      for await (const event of getPlatformKernel().projects.streamClusterDatabaseEvents(initial.context, id, { signal: abort.signal })) await stream.writeSSE(event);
+    } catch (error) {
+      if (!abort.signal.aborted) await stream.writeSSE({ event: "error", data: JSON.stringify({ type: "error", error: error instanceof Error ? error.message : "Database progress disconnected" }) });
+    } finally { abort.abort(); }
+  });
+}
+
 // ─── Clone token (per-project override) ──────────────────────────────────────
 
 /**

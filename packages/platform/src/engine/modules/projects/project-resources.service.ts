@@ -45,6 +45,7 @@ async function resolveTargetCapacity(
   // Cloud sizes an Oblien workspace from the tier table, not from host hardware,
   // so there is nothing to probe (and no SSH target to probe it on).
   if (isCloud) return { isCloud: true, capacity: { ...UNKNOWN_CAPACITY } };
+  if (project.clusterId) return { isCloud: false, capacity: { ...UNKNOWN_CAPACITY } };
 
   const capacity = await getHostCapacity(target.serverId, project.organizationId).catch(
     () => ({ ...UNKNOWN_CAPACITY }),

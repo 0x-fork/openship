@@ -34,7 +34,9 @@
     "ignore": "^7.0.5",
     "oblien": "^2.4.0",
     "ssh2": "^1.17.0",
-    "tar-fs": "^2.1.4"
+    "tar-fs": "^2.1.4",
+    "undici": "^7.29.1",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",

@@ -907,5 +907,45 @@
       "discard": "Descartar cambios",
       "noConnections": "No hay conexiones habilitadas"
     }
+  },
+  "runtime": {
+    "title": "Escalado",
+    "description": "Ejecuta aplicaciones en los servidores de este clúster.",
+    "setup": "Activar escalado",
+    "oneControl": "Un servidor de control. Se necesitan al menos tres servidores para un plano de control de alta disponibilidad.",
+    "threeControls": "Tres servidores de control mantienen la disponibilidad del clúster. Los servidores adicionales se unen como trabajadores.",
+    "requirements": "OpenShip prepara los servidores, los conecta y verifica el enrutamiento de las aplicaciones. El progreso se guarda para que puedas salir y volver.",
+    "readyHint": "Elige este clúster en los controles de escalado de un proyecto para desplegar instancias de la aplicación en sus servidores.",
+    "privateConnections": "Reglas de firewall privado necesarias",
+    "privateHint": "OpenShip configura automáticamente los cortafuegos del host compatibles. Si tu proveedor filtra la red privada, permite estos puertos de destino desde las direcciones privadas de origen indicadas. No expongas estos puertos a Internet.",
+    "remove": "Desactivar escalado",
+    "removeDescription": "Desactiva el escalado y elimina su instalación de este clúster. Primero elimina las aplicaciones desplegadas en el clúster y los volúmenes persistentes. El grupo de servidores, las aplicaciones Docker y la red privada siguen disponibles.",
+    "details": "Detalles de configuración",
+    "status": {
+      "setting_up": "Activando escalado",
+      "ready": "Listo para escalar",
+      "failed": "El escalado necesita atención",
+      "interrupted": "Configuración detenida — reintenta para continuar",
+      "removing": "Desactivando escalado",
+      "removed": "Escalado desactivado",
+      "not_enabled": "Escalado sin activar",
+      "unknown": "Estado de escalado no disponible"
+    },
+    "steps": {
+      "connect": "Conectar al servidor",
+      "prerequisites": "Preparar servidor",
+      "inspect": "Comprobar conexiones",
+      "install": "Activar escalado",
+      "join": "Conectar servidores",
+      "verify": "Verificar enrutamiento de aplicaciones",
+      "remove": "Eliminar configuración de escalado"
+    },
+    "requirementsDetails": "OpenShip instala las herramientas que faltan, configura K3s sobre la red privada y verifica el enrutamiento de servicios y DNS. Requiere Linux con systemd y un cortafuegos del host sin filtrado o basado en iptables.",
+    "technicalDetails": "Detalles técnicos",
+    "technology": "Orquestador",
+    "applicationNetwork": "Red de pods",
+    "serviceNetwork": "Red de servicios",
+    "lastChecked": "Última verificación",
+    "scaleProject": "Elegir un proyecto"
   }
 }

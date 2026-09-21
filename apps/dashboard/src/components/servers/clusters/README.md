@@ -31,9 +31,36 @@ acquiring a dependency until the operation is settled.
 an optional `networkId` query to carry context from Networking. The form uses shared
 filled inputs, checkboxes and the network selector, plus a sticky right summary.
 Create network opens the shared network wizard. `/servers/clusters/:clusterId` shows
-membership and a link to the network; `/edit` changes the pool with a captured
-revision. No firewall setup, probes, host provisioning or cleanup is duplicated in
-these routes.
+membership, a link to the network and an inline **Set up cluster** action. `/edit`
+changes the pool with a captured revision. Network setup stays in Networking.
+
+## Enable scaling
+
+The cluster's **Enable scaling** action installs missing prerequisites, pins and verifies K3s,
+configures private cluster firewall rules, joins the servers and validates real
+cross-node pod/service traffic and DNS. It reuses shared progress presentation,
+toolchain, server locks, authorization, durable SSE and shutdown recovery. Retry
+is explicit; stopped work remains visible after restarting OpenShip.
+
+One or three servers form the control plane, with additional workers. Runtime
+removal is a separate confirmed, resumable operation which requires an empty
+cluster. An active or failed runtime retains its member/network dependency until
+cleanup completes. Pool creation alone still does not configure a host.
+
+See [K3s runtime implementation and limits](../../../../../../docs/k3s-cluster-runtime.md)
+for the supported host matrix, private ports, recovery, cleanup and acceptance
+boundary. Stateless projects now have a cluster target, immutable image releases,
+replica controls and observed pod topology through the existing deployment cycle.
+Persistent storage, database operators,
+redundant Edge gateways and autoscaling are subsequent stages.
+
+The main interface uses scaling readiness, server names and application instances.
+Cluster cards receive a small `scaling` status projection through the existing
+compute-cluster reads and overview SSE. Network verification remains separate.
+K3s versions, control roles and pod/service ranges appear under **Technical details**;
+logs are initially collapsed, while setup failures and required private firewall
+rules stay discoverable. **Disable scaling** reuses the existing cleanup review
+and never removes the server group or its network.
 
 ## Available workflow
 
@@ -371,8 +398,8 @@ iptables 1.8+ through the same toolchain on hosts without an nftables manager.
 
 | Host firewall                          | Managed support                                                                                        |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| None                                   | Supported; directed policies install owned iptables rules; provider-side UDP access is still required |
-| Raw iptables                           | Dedicated INPUT/OUTPUT chains and tagged jumps; custom policies also protect FORWARD                  |
+| None                                   | Supported; directed policies install owned iptables rules; provider-side UDP access is still required  |
+| Raw iptables                           | Dedicated INPUT/OUTPUT chains and tagged jumps; custom policies also protect FORWARD                   |
 | nftables                               | Standard `inet filter input/output` chains, without additional filtering IPv4 input/output base chains |
 | UFW, firewalld, other nftables layouts | Refused during inspection pending an owned-rule adapter                                                |
 
@@ -462,7 +489,7 @@ inter-group connections are drawn or exposed as working actions.
 Provider API
 provisioning, vSwitch attachment, guest VLAN configuration, cross-server Docker
 and service endpoints, private service DNS, workload drain/placement/replicas,
-shared storage, additional firewall managers, and larger meshes remain in
+shared storage, multi-service cluster workloads, additional firewall managers, and larger meshes remain in
 [the architecture plan](../../../../../../docs/self-hosted-clusters-and-private-networking.md).
 No unavailable provisioning choice is presented as a working action.
 

@@ -5,6 +5,9 @@ const h = vi.hoisted(() => ({
   register: vi.fn(),
   preparations: vi.fn(),
   clusters: vi.fn(),
+  runtimes: vi.fn(),
+  databases: vi.fn(),
+  interruptRuntime: vi.fn(),
   interruptPreparation: vi.fn(),
   interruptOperation: vi.fn(),
   interruptVerification: vi.fn(),
@@ -14,6 +17,8 @@ const h = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({
   getDriver: () => h.driver,
   repos: {
+    clusterDatabase: { recoverInterrupted: h.databases, interrupt: vi.fn() },
+    clusterRuntime: { recoverInterrupted: h.runtimes, interrupt: h.interruptRuntime },
     networkPreparation: { recoverInterrupted: h.preparations, interrupt: h.interruptPreparation },
     serverCluster: {
       recoverInterrupted: h.clusters,
@@ -54,6 +59,8 @@ beforeEach(() => {
   h.driver = "pglite";
   h.preparations.mockResolvedValue([]);
   h.clusters.mockResolvedValue({ operations: [], verifications: [] });
+  h.runtimes.mockResolvedValue([]);
+  h.databases.mockResolvedValue([]);
   h.defer.mockResolvedValue(undefined);
 });
 
@@ -71,6 +78,8 @@ describe("network setup controller lifecycle", () => {
       await hook.run();
       expect(h.preparations).toHaveBeenCalledWith(driver === "pglite");
       expect(h.clusters).toHaveBeenCalledWith(driver === "pglite");
+      expect(h.runtimes).toHaveBeenCalledWith(driver === "pglite");
+      expect(h.databases).toHaveBeenCalledWith(driver === "pglite");
       expect(h.defer).not.toHaveBeenCalled();
     },
   );
@@ -186,10 +195,11 @@ describe("network setup controller lifecycle", () => {
     expect(signal!.aborted).toBe(true);
     await finished.promise;
   });
-  it("persists interruption for exactly the preparation, operation and check owned by this process", async () => {
+  it("persists interruption for exactly the preparation, runtime, operation and check owned by this process", async () => {
     h.interruptPreparation.mockResolvedValue([{ id: worker.id }]);
     h.interruptOperation.mockResolvedValue([{ id: "operation-a" }]);
     h.interruptVerification.mockResolvedValue([{ id: "check-a" }]);
+    h.interruptRuntime.mockResolvedValue([{ id: "runtime-a" }]);
     const work = vi.fn();
     await deferNetworkSetupWork(worker, work);
     await deferNetworkSetupWork(
@@ -198,6 +208,16 @@ describe("network setup controller lifecycle", () => {
     );
     await deferNetworkSetupWork(
       { kind: "verification", organizationId: "org-a", id: "check-a" },
+      work,
+    );
+    await deferNetworkSetupWork(
+      {
+        kind: "runtime",
+        organizationId: "org-a",
+        id: "runtime-a",
+        clusterId: "pool-a",
+        generation: 2,
+      },
       work,
     );
     await stopNetworkSetups();
@@ -215,10 +235,16 @@ describe("network setup controller lifecycle", () => {
       "check-a",
       expect.stringContaining("Run the checks again"),
     );
+    expect(h.interruptRuntime).toHaveBeenCalledWith(
+      "runtime-a",
+      2,
+      expect.stringContaining("OpenShip stopped"),
+    );
     expect(h.notify.mock.calls).toEqual([
       ["org-a", "preparation", "prep-a"],
       ["org-a", "operation", "operation-a"],
       ["org-a", "overview"],
+      ["org-a", "runtime", "pool-a"],
     ]);
     expect(work).not.toHaveBeenCalled();
   });

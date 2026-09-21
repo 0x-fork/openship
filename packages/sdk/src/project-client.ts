@@ -109,6 +109,17 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
       listEnvVars: { method: "GET", path: (id) => path(id) + "/env", envelope: "data" },
       mergeEnvVars: { method: "PATCH", path: (id) => path(id) + "/env" },
       getResources: { method: "GET", path: (id) => path(id) + "/resources", envelope: "data" },
+      getClusterWorkload: { method: "GET", path: (id) => path(id) + "/cluster", envelope: "data" },
+      listClusterDatabases: { method: "GET", path: (id) => path(id) + "/cluster/databases", envelope: "data" },
+      getClusterDatabase: { method: "POST", path: (id) => path(id) + "/cluster/databases/inspect", envelope: "data" },
+      createClusterDatabase: { method: "POST", path: (id) => path(id) + "/cluster/databases", envelope: "data" },
+      updateClusterDatabase: { method: "PATCH", path: (id) => path(id) + "/cluster/databases", envelope: "data" },
+      retryClusterDatabase: { method: "POST", path: (id) => path(id) + "/cluster/databases/retry", envelope: "data" },
+      backupClusterDatabase: { method: "POST", path: (id) => path(id) + "/cluster/databases/backup", envelope: "data" },
+      removeClusterDatabase: { method: "DELETE", path: (id) => path(id) + "/cluster/databases", envelope: "data" },
+      connectClusterDatabase: { method: "POST", path: (id) => path(id) + "/cluster/databases/connect", envelope: "data" },
+      setClusterTarget: { method: "PATCH", path: (id) => path(id) + "/cluster", envelope: "data" },
+      scaleClusterWorkload: { method: "POST", path: (id) => path(id) + "/cluster/scale", envelope: "data" },
       updateResources: { method: "PATCH", path: (id) => path(id) + "/resources", envelope: "data" },
       setSleepMode: { method: "POST", path: (id) => path(id) + "/sleep-mode" },
       setOptions: { method: "POST", path: (id) => path(id) + "/options", envelope: "data" },
@@ -126,6 +137,9 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
       },
     }),
     async getHome() { return checked(await http.request("/projects/home"), isProjectHome); },
+    async *streamClusterDatabaseEvents(id, options = {}) {
+      yield* http.events(path(id) + "/cluster/databases/stream", { signal: options.signal });
+    },
     async *streamRuntimeLogs(id, command = {}, options = {}) {
       const input = parseInput(RuntimeLogsInputSchema, command);
       const url = http.url(path(id) + "/logs/stream");

@@ -393,6 +393,54 @@ console.log(cluster.id, cluster.networkId, cluster.serverIds);
 its servers and private network. `ship.servers.infrastructure(serverId)` reports
 the networks and compute cluster associated with a server.
 
+### Managed K3s setup
+
+Creating a pool does not install software. Start its separate runtime operation
+after connecting the selected servers to their private network:
+
+```ts
+const runtime = await ship.servers.setupClusterRuntime({
+  clusterId: "cluster_id",
+  revision: 1,
+  requestId: crypto.randomUUID(),
+});
+console.log(runtime.status);
+
+const abort = new AbortController();
+for await (const event of ship.servers.clusterRuntimeEvents("cluster_id", { signal: abort.signal })) {
+  console.log(event.data);
+  abort.abort(); // Close the subscription when leaving the setup view.
+  break;
+}
+```
+
+Setup installs missing tools, pins and checksum-verifies K3s, configures private
+host firewall rules, joins the servers, and checks actual pod traffic, Services
+and DNS. One control server is used for one/two-member pools; larger pools use
+three controls and additional workers. Initial support requires Linux
+amd64/arm64, systemd, root or passwordless sudo, disabled swap, and unfiltered or
+raw iptables host firewalls. Provider private-network ACLs remain the operator's
+responsibility; the dashboard lists exact private peer ports. These ports should
+not be exposed publicly.
+
+Read saved progress with `getClusterRuntime({ clusterId })`; it returns `null`
+before setup. Retry an interrupted or failed operation explicitly using
+`retryClusterRuntime({ clusterId, sequence })`. The retry retains the pinned
+version/configuration and reconciles host state. Reconnecting to SSE never starts
+or retries installation. Runtime streams remain open to observe later changes;
+cancel them when leaving the page. Snapshots contain dated verification, not
+continuous workload monitoring.
+
+`removeClusterRuntime({ clusterId, sequence })` starts owned cleanup. Application
+workloads, persistent volumes and additional operators must be removed first.
+Cleanup preserves the private network and existing Docker applications, and can
+resume after a partial removal. Removing the pool or changing its members/network
+is blocked while a runtime remains installed or unfinished.
+
+This prepares Kubernetes infrastructure. Cluster deployment targets, database
+operators, persistent storage and Edge routing are subsequent integrations;
+existing project deployments continue using their current runtime.
+
 ## Operations
 
 {/* api-operations:start */}
@@ -481,6 +529,16 @@ the networks and compute cluster associated with a server.
 | Group selected servers on an existing private network using an idempotent request ID. | `servers.createComputeCluster(input)` | `POST /api/system/compute-clusters`<br />`server:admin` · Self-hosted |
 | Update a compute cluster and its selected servers using the current revision. | `servers.updateComputeCluster(input)` | `PATCH /api/system/compute-clusters/:id`<br />`server:admin` · Self-hosted |
 | Remove compute-cluster inventory at the current revision, retaining its servers and private network. | `servers.removeComputeCluster(input)` | `DELETE /api/system/compute-clusters/:id`<br />`server:admin` · Self-hosted |
+
+### Cluster runtime
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read saved K3s setup, verification and cleanup progress; null before setup. | `servers.getClusterRuntime(input)` | `GET /api/system/compute-clusters/:id/runtime`<br />`server:read` · Self-hosted |
+| Start automated K3s setup with the compute-cluster revision and an idempotent request ID. | `servers.setupClusterRuntime(input)` | `POST /api/system/compute-clusters/:id/runtime`<br />`server:admin` · Self-hosted |
+| Resume failed or interrupted setup or removal using its current progress sequence. | `servers.retryClusterRuntime(input)` | `POST /api/system/compute-clusters/:id/runtime/retry`<br />`server:admin` · Self-hosted |
+| Remove the owned runtime after verifying an empty cluster, retaining Docker services and networking. | `servers.removeClusterRuntime(input)` | `DELETE /api/system/compute-clusters/:id/runtime`<br />`server:admin` · Self-hosted |
+| Subscribe to saved runtime progress through read-only, replayable SSE. | `servers.clusterRuntimeEvents(id, options?)` | `GET /api/system/compute-clusters/:id/runtime/stream`<br />`server:read` · Self-hosted |
 
 ### Legacy network methods
 

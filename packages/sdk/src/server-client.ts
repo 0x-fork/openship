@@ -25,6 +25,10 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
       createComputeCluster: { method: "POST", path: () => "/system/compute-clusters" },
       updateComputeCluster: { method: "PATCH", path: computePath, body: clusterBody },
       removeComputeCluster: { method: "DELETE", path: computePath, body: clusterBody },
+      getClusterRuntime: { method: "GET", path: input => computePath(input) + "/runtime", inputLocation: "path" },
+      setupClusterRuntime: { method: "POST", path: input => computePath(input) + "/runtime", body: clusterBody },
+      retryClusterRuntime: { method: "POST", path: input => computePath(input) + "/runtime/retry", body: clusterBody },
+      removeClusterRuntime: { method: "DELETE", path: input => computePath(input) + "/runtime", body: clusterBody },
       clusterCapabilities: { method: "GET", path: () => "/system/clusters/capabilities" },
       planManagedNetwork: { method: "POST", path: () => "/system/networks/plans" },
       prepareManagedNetwork: { method: "POST", path: () => "/system/networks/preparations" },
@@ -148,6 +152,10 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
     },
     async *clusterEvents(options = {}) {
       yield* http.events("/system/networks/stream", { signal: options.signal });
+    },
+    async *clusterRuntimeEvents(value, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      yield* http.events(`/system/compute-clusters/${encodeURIComponent(id)}/runtime/stream`, { signal: options.signal });
     },
     async *containerApplyEvents(value, command, options = {}) {
       const id = parseInput(ResourceIdSchema, value);

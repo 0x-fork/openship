@@ -139,7 +139,7 @@ export const BuildAccessBody = Type.Object({
     }),
   ),
   deployTarget: Type.Optional(
-    Type.Union([Type.Literal("local"), Type.Literal("server"), Type.Literal("cloud")], {
+    Type.Union([Type.Literal("local"), Type.Literal("server"), Type.Literal("cloud"), Type.Literal("cluster")], {
       description: "Usually omit for folder uploads — the upload session mode decides.",
     }),
   ),

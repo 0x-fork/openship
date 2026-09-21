@@ -83,3 +83,6 @@ export * from "./network-firewall";
 export * from "./network-access";
 
 export * from "./compute-cluster";
+export * from "./cluster-runtime";
+export * from "./cluster-workload";
+export * from "./cluster-database";

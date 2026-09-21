@@ -941,5 +941,45 @@
       "discard": "Discard changes",
       "noConnections": "No connections enabled"
     }
+  },
+  "runtime": {
+    "title": "Scaling",
+    "description": "Run applications across the servers in this cluster.",
+    "setup": "Enable scaling",
+    "oneControl": "One control server. At least three servers are needed for a highly available control plane.",
+    "threeControls": "Three control servers maintain cluster availability. Additional servers join as workers.",
+    "requirements": "OpenShip prepares the servers, connects them, and checks application routing. Progress is saved so you can leave and return.",
+    "readyHint": "Choose this cluster in a project’s Scale controls to deploy application instances across its servers.",
+    "privateConnections": "Required private firewall rules",
+    "privateHint": "OpenShip configures supported host firewalls automatically. If your provider filters the private network, allow these destination ports from the listed private source addresses. Keep these ports off the public internet.",
+    "remove": "Disable scaling",
+    "removeDescription": "Disable scaling and remove its installation from this cluster. Remove deployed cluster applications and persistent volumes first. The server group, Docker applications and private network remain available.",
+    "details": "Setup details",
+    "status": {
+      "setting_up": "Enabling scaling",
+      "ready": "Ready for scaling",
+      "failed": "Scaling needs attention",
+      "interrupted": "Setup stopped — retry to continue",
+      "removing": "Disabling scaling",
+      "removed": "Scaling disabled",
+      "not_enabled": "Scaling not enabled",
+      "unknown": "Scaling status unavailable"
+    },
+    "steps": {
+      "connect": "Connect to server",
+      "prerequisites": "Prepare server",
+      "inspect": "Check connections",
+      "install": "Enable scaling",
+      "join": "Connect servers",
+      "verify": "Check application routing",
+      "remove": "Clean up scaling"
+    },
+    "requirementsDetails": "OpenShip installs missing tools, configures K3s over the private network, and verifies service routing and DNS. Linux with systemd and an unfiltered or iptables host firewall is required.",
+    "technicalDetails": "Technical details",
+    "technology": "Orchestrator",
+    "applicationNetwork": "Pod network",
+    "serviceNetwork": "Service network",
+    "lastChecked": "Last verified",
+    "scaleProject": "Choose a project"
   }
 }

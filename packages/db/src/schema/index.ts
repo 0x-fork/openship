@@ -82,3 +82,5 @@ export { dnsCredential } from "./dns-credential";
 export { credential } from "./credential";
 
 export { computeCluster, computeClusterMember } from "./compute-cluster";
+export { clusterRuntime } from "./cluster-runtime";
+export { clusterDatabase } from "./cluster-database";

@@ -613,6 +613,15 @@ describe("one-time direct instance transfer", () => {
 });
 
 describe("secret-codec round-trips (extract → seal → decrypt)", () => {
+  it.each(["secretEncrypted", "envValueEncrypted"])("transfers cluster database %s with the same cipher as its writer", (column) => {
+    const registered = SECRET_COLUMNS.find((entry) => entry.sqlName === "cluster_database" && entry.column === column)!;
+    expect(registered.scheme).toBe("scalar");
+    const plaintext = column === "secretEncrypted" ? "database-password" : "postgresql://app:password@database.private/app";
+    const entry = extractPlaintext(registered, "database", encrypt(plaintext));
+    expect(entry?.value).toBe(plaintext);
+    expect(decrypt(sealForInstance(registered, entry!) as string)).toBe(plaintext);
+  });
+
   it("scalar", () => {
     const stored = encrypt("db-url");
     const entry = extractPlaintext(spec("scalar", "value"), "id1", stored);

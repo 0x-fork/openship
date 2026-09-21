@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenshipClient } from "../src/client";
+import { clusterRuntimeFixture } from "../../contracts/test/cluster-runtime-fixtures";
 import {
   clusterCapabilitiesFixture,
   clusterInputFixture,
@@ -13,6 +14,28 @@ import {
 } from "../../contracts/test/managed-network-fixtures";
 
 describe("cluster HTTP facade", () => {
+  it("uses the runtime endpoints with revision and sequence preconditions", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      return Response.json(clusterRuntimeFixture());
+    });
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    const clusterId = "pool/a";
+    const requestId = "request-1234567890";
+    await client.servers.getClusterRuntime({ clusterId });
+    await client.servers.setupClusterRuntime({ clusterId, revision: 3, requestId });
+    await client.servers.retryClusterRuntime({ clusterId, sequence: 4 });
+    await client.servers.removeClusterRuntime({ clusterId, sequence: 5 });
+    expect(calls).toEqual([
+      { url: "https://ship.test/api/system/compute-clusters/pool%2Fa/runtime", method: "GET", body: undefined },
+      { url: "https://ship.test/api/system/compute-clusters/pool%2Fa/runtime", method: "POST", body: { revision: 3, requestId } },
+      { url: "https://ship.test/api/system/compute-clusters/pool%2Fa/runtime/retry", method: "POST", body: { sequence: 4 } },
+      { url: "https://ship.test/api/system/compute-clusters/pool%2Fa/runtime", method: "DELETE", body: { sequence: 5 } },
+    ]);
+    await expect(client.servers.removeClusterRuntime({ clusterId, sequence: 0 })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
   it("revises connections through the network preparation endpoint with an immutable request ID", async () => {
     const fetcher = vi.fn(async () => Response.json(managedPreparationFixture()));
     const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
@@ -180,6 +203,7 @@ describe("cluster HTTP facade", () => {
       client.servers.managedNetworkPreparationEvents("setup/a", { signal: abort.signal }),
       client.servers.managedNetworkOperationEvents("op/a", { signal: abort.signal }),
       client.servers.clusterEvents({ signal: abort.signal }),
+      client.servers.clusterRuntimeEvents("pool/a", { signal: abort.signal }),
     ]) {
       const frames = [];
       for await (const event of source) frames.push(event);
@@ -190,6 +214,7 @@ describe("cluster HTTP facade", () => {
       "https://ship.test/api/system/networks/preparations/setup%2Fa/stream",
       "https://ship.test/api/system/networks/operations/op%2Fa/stream",
       "https://ship.test/api/system/networks/stream",
+      "https://ship.test/api/system/compute-clusters/pool%2Fa/runtime/stream",
     ]);
     abort.abort();
     for (const [, init] of fetcher.mock.calls) {
