@@ -24,6 +24,8 @@ import { PromptDetails } from "@/components/import-project/PromptDetails";
 import { InstallStepper } from "@/components/deploy/InstallStepper";
 import { getApiBaseUrl, domainsApi, projectsApi, systemApi } from "@/lib/api";
 import { canReportStreamEnd, reportLostStream } from "./prepare-stream-outcome";
+import { invalidateProjectCaches } from "./useProjectEndpoints";
+import { useI18n } from "@/components/i18n-provider";
 
 interface StreamPrompt {
   promptId: string;
@@ -78,6 +80,8 @@ export interface SystemPrepareOptions {
   labels?: { working?: string; done?: string; failed?: string; close?: string };
   /** Fired once on successful completion. */
   onDone?: () => void;
+  /** Refresh saved state after success, partial failure, or a disconnected viewer. */
+  onSettled?: () => void;
   /**
    * Last-resort outcome read, for a stream that died WITHOUT a terminal event
    * (server closed early / connection dropped mid-run). The operation's real
@@ -357,6 +361,8 @@ export function PrepareStreamContent({
           ]);
           await reportUnknownOutcome(controller.signal);
         }
+      } finally {
+        opts.onSettled?.();
       }
     })();
     return () => controller.abort();
@@ -591,6 +597,29 @@ export function useVerifyModal() {
         },
       }),
     [prepare],
+  );
+}
+
+/** Routing repairs can include SSH and certificate work. Keep their progress
+ * visible through the shared stream viewer instead of a short JSON timeout. */
+export function useRoutingRetryModal() {
+  const prepare = useSystemPrepareModal();
+  const { t } = useI18n();
+  return useCallback(
+    (projectId: string): string =>
+      prepare({
+        streamUrl: `projects/${encodeURIComponent(projectId)}/routing/retry/stream`,
+        title: t.projects.routingRetry.retry,
+        labels: {
+          working: t.projects.routingRetry.retrying,
+          done: t.projects.routingRetry.success,
+          failed: t.projects.routingRetry.failed,
+        },
+        onSettled: () => invalidateProjectCaches(projectId),
+        // A dropped stream has no terminal result. Refresh the cards, but do not
+        // infer success from an old warning flag while the repair may still run.
+      }),
+    [prepare, t],
   );
 }
 

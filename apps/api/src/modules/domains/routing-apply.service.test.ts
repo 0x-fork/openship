@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn(), listByDeployment: vi.fn() }));
-const domainRepo = vi.hoisted(() => ({ listByProject: vi.fn() }));
+const domainRepo = vi.hoisted(() => ({
+  listByProject: vi.fn(),
+  findByHostname: vi.fn(),
+  findOrCreateWithStatus: vi.fn(),
+  update: vi.fn(),
+}));
 
 const resolveDeploymentRuntime = vi.hoisted(() => vi.fn());
 const usesManagedRouting = vi.hoisted(() => vi.fn().mockReturnValue(false));
@@ -35,6 +40,9 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   },
 }));
 vi.mock("@repo/platform/engine/lib/route-apply.service", () => ({ reconcileProjectRoutes }));
+vi.mock("@repo/platform/engine/lib/domain-claims", () => ({
+  routableWithoutOwnership: async () => false,
+}));
 vi.mock("../../lib/controller-helpers", () => ({ platform: () => ({ target: "selfhosted" }) }));
 
 import { CloudDockerRuntime } from "@repo/adapters";
@@ -45,6 +53,15 @@ function emittedRegisters() {
   const [, opts] = reconcileProjectRoutes.mock.calls[0];
   return opts.registers;
 }
+
+beforeEach(() => {
+  domainRepo.findByHostname.mockReset().mockResolvedValue(undefined);
+  domainRepo.findOrCreateWithStatus.mockReset().mockImplementation(async (input) => ({
+    domain: { id: `dom_${input.hostname}`, sslStatus: "none", ...input },
+    created: true,
+  }));
+  domainRepo.update.mockReset().mockResolvedValue(undefined);
+});
 
 describe("Cloud Docker route tables", () => {
   const publish = vi.fn();
@@ -238,6 +255,27 @@ describe("applyProjectRouting — upstream resolution", () => {
       hostname: "app.example.com",
       targetUrl: "http://172.19.0.2:3001",
     });
+    expect(domainRepo.findOrCreateWithStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "proj_1",
+        serviceId: "svc_1",
+        hostname: "app.example.com",
+        targetPort: 3001,
+        domainType: "custom",
+        verified: false,
+        status: "pending",
+        verificationToken: expect.any(String),
+      }),
+    );
+  });
+
+  it("does not route a foreign hostname through either the service or its composite overlay", async () => {
+    domainRepo.findByHostname.mockResolvedValue({ id: "foreign", projectId: "other-project" });
+    const onWarning = vi.fn();
+    await applyProjectRouting("proj_1", { onWarning });
+    expect(onWarning).toHaveBeenCalledWith(expect.stringContaining("another project"));
+    expect(domainRepo.findOrCreateWithStatus).not.toHaveBeenCalled();
+    expect(reconcileProjectRoutes).not.toHaveBeenCalled();
   });
 
   /**

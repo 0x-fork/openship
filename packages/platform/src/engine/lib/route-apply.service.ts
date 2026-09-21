@@ -142,6 +142,7 @@ export async function reconcileProjectRoutes(
     removes?: RouteRemove[];
     /** Repair actions surface best-effort failures without rolling back saved routes. */
     onWarning?: (message: string) => void;
+    onLog?: (message: string) => void;
   },
 ): Promise<void> {
   const warn = (message: string) => {
@@ -162,6 +163,7 @@ export async function reconcileProjectRoutes(
         port: r.port,
         isCustomDomain: r.isCustomDomain,
       });
+      opts.onLog?.(`Applied route ${r.hostname}.`);
     }
     return;
   }
@@ -359,6 +361,7 @@ export async function reconcileProjectRoutes(
             ...(r.trailingSlash === undefined ? {} : { trailingSlash: r.trailingSlash }),
             ...(r.redirectHost ? { redirectHost: r.redirectHost } : {}),
           });
+          opts.onLog?.(`Applied route ${r.hostname} → ${r.staticRoot ?? r.targetUrl}.`);
           successfulPublishes.push(...(loopbackPublishesByRegister.get(r) ?? []));
         } catch (err) {
           warn(

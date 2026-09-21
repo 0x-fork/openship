@@ -262,6 +262,8 @@ try {
         ? kernel.deployments.events(context as ExecutionContext, input[0] as string, { since: input[1] as number | undefined, signal: abort.signal })
         : kind === "projects.streamRuntimeLogs"
           ? kernel.projects.streamRuntimeLogs(context as ExecutionContext, input[0] as string, input[1] as { tail?: number }, { signal: abort.signal })
+        : kind === "projects.retryRoutingStream"
+          ? kernel.projects.retryRoutingStream(context as ExecutionContext, input[0] as string, { signal: abort.signal })
         : kind === "services.streamLogs"
           ? kernel.services.streamLogs(context as ExecutionContext, input[0] as string, input[1] as string, input[2] as { tail?: number }, { signal: abort.signal })
           : kind === "domains.verifyStream"
@@ -288,7 +290,12 @@ try {
     }
     if (operation.startsWith("projects.")) {
       const key = operation.slice("projects.".length) as keyof typeof kernel.projects;
-      if (key !== "streamRuntimeLogs" && key !== "openServerLogStream" && Object.hasOwn(kernel.projects, key)) {
+      if (
+        key !== "streamRuntimeLogs" &&
+        key !== "openServerLogStream" &&
+        key !== "retryRoutingStream" &&
+        Object.hasOwn(kernel.projects, key)
+      ) {
         const fn = kernel.projects[key] as (...args: unknown[]) => Promise<unknown>;
         return runWithOperationSource((args[0] as ExecutionContext).source ?? "api", () => fn(...args));
       }

@@ -130,6 +130,7 @@ export interface DomainSslOptions {
   dnsAuthHook?: string;
   /** Optional custom DNS cleanup hook command/script */
   dnsCleanupHook?: string;
+  onLog?: (message: string) => void;
 }
 
 /** The lock scope for the box the API itself runs on. */
@@ -693,6 +694,7 @@ async function manageAuthorizedDomainSsl(
   }
 
   const provOpts: ProvisionCertOptions = {
+    ...(opts.onLog ? { onLog: opts.onLog } : {}),
     ...(opts.action === "renew" ? { force: true } : {}),
     ...(isDns ? { challenge: "dns-01" } : opts.challenge ? { challenge: opts.challenge } : {}),
     ...dnsHooks,

@@ -126,6 +126,13 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
       },
     }),
     async getHome() { return checked(await http.request("/projects/home"), isProjectHome); },
+    async *retryRoutingStream(value, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      yield* http.events(http.url(`${path(id)}/routing/retry/stream`).href, {
+        method: "POST",
+        signal: options.signal,
+      });
+    },
     async *streamRuntimeLogs(id, command = {}, options = {}) {
       const input = parseInput(RuntimeLogsInputSchema, command);
       const url = http.url(path(id) + "/logs/stream");

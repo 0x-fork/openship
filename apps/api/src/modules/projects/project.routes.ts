@@ -322,7 +322,14 @@ r.post(
   ctrl.disable,
 );
 
-/* ─── Retry free-domain edge routing (no rebuild) ──────────────────────── */
+/* ─── Retry routing and domain checks (no rebuild) ──────────────────────── */
+r.post(
+  "/:id/routing/retry/stream",
+  { auditHandledByOperation: true, tag: "project:write" },
+  cloudProjectProxy,
+  ctrl.retryRoutingStream,
+);
+
 r.post(
   "/:id/routing/retry",
   {
@@ -330,7 +337,7 @@ r.post(
     tag: "project:write",
     mcp: {
       description:
-        "Retry syncing the project's free .opsh.io edge route (no rebuild); clears the routing 'Action Required' warning on success.",
+        "Repair project routes and verify pending domains and HTTPS without rebuilding; clears the routing warning only when all checks succeed.",
     },
   },
   cloudProjectProxy,

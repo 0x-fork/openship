@@ -1,8 +1,13 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { RouteRuleSpec } from "@repo/core";
 import { CreateDomainResultSchema } from "./domains";
-import { ResourceIdSchema } from "./deployment-resources";
+import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import type { ResourceOperationSchema } from "./resource-operations";
+import type { StreamOptions } from "./services";
+
+export interface ProjectRoutingStreams {
+  retryRoutingStream(id: string, options?: StreamOptions): AsyncIterable<DeploymentEvent>;
+}
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 const list = Type.Optional(Type.Array(Type.String()));
