@@ -358,6 +358,9 @@ describe("pricing catalog — schema rejects bad edits", () => {
     expect(mutate((c) => { c.plans[0].limits.buildMinutesPerMonth = -1; })).toBe(false);
     expect(mutate((c) => { c.plans[0].limits.workloads = ["bogus"]; })).toBe(false);
   });
+  it.each(["customDomains", "seats"])("rejects an unenforced finite %s quota", (field) => {
+    expect(mutate((catalog) => { catalog.plans[1].limits[field] = 5; })).toBe(false);
+  });
 
   it("rejects a schemaVersion newer than this build", () => {
     expect(mutate((c) => { c.schemaVersion = 999; })).toBe(false);

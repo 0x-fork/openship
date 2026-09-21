@@ -49,6 +49,20 @@ beforeEach(() => {
   h.defaults.mockResolvedValue({ autoApply: true, quotaLimit: 0, overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" });
 });
 describe("Oblien-managed entitlements", () => {
+  it.each(["customDomains", "seats"])("cannot accept a saved offer claiming an unenforced finite %s quota", async (field) => {
+    h.entitlement.mockResolvedValue({ ...entitlement(), tierId: "reseller" });
+    h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: {
+      tierId: "reseller", status: "active", billingInterval: "monthly",
+      periodStart: entitlement().periodStart, periodEnd: entitlement().periodEnd,
+      cancelAtPeriodEnd: false, canceledAt: null,
+      offer: subscriptionOffer("starter", "monthly"),
+      metadata: { ...subscriptionMetadata("starter", "org_1", "os-customer"),
+        openship_limits: JSON.stringify({ ...planLimits("starter"), [field]: 5 }) },
+    } });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "OBLIEN_RESELLER_CONTRACT_INVALID" });
+    expect(h.mirror).not.toHaveBeenCalled();
+    expect(h.limits).not.toHaveBeenCalled();
+  });
   it("reconciles a namespace offer using its paid limits and price after the catalog changes", async () => {
     const saved = {
       tierId: "reseller",

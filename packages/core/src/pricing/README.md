@@ -47,8 +47,9 @@ delivers one annual allowance; it does not schedule twelve monthly grants.
 ## Limits and saved customer contracts
 
 The `limits` object controls workloads, service stacks, service count, projects,
-per-service machine size, build minutes, free domains, custom domains and seats.
-`null` in an application limit means uncapped. Paid plans leave the legacy
+per-service machine size, build minutes and free domains. Custom domains and seats
+remain uncapped; finite values are rejected because those admission gates are not
+implemented. `null` in an application limit means uncapped. Paid plans leave the legacy
 `computeMinutesPerMonth` field null: credit metering does not promise fixed CPU
 minutes or guarantee all allowed services can run continuously for a month.
 

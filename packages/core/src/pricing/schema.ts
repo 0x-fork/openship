@@ -68,8 +68,10 @@ export const planLimitsSchema = z.object({
   computeMinutesPerMonth: limitNumber,
   buildMinutesPerMonth: limitNumber,
   freeSubdomains: limitNumber,
-  customDomains: limitNumber,
-  seats: limitNumber,
+  // No finite admission gates exist for these fields yet. Do not sell a limit
+  // that the application cannot enforce; current offers leave both uncapped.
+  customDomains: z.null(),
+  seats: z.null(),
 });
 
 const planSchema = z.object({
