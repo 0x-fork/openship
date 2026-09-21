@@ -127,6 +127,20 @@ describe("runtime-only environment apply", () => {
     expect(h.original.start).not.toHaveBeenCalled();
   });
 
+  it("restores the old container when the replacement looks running between startup crashes", async () => {
+    const h = setup();
+    h.replacement.inspect.mockResolvedValue({
+      ...h.before,
+      Id: "new-container",
+      RestartCount: 3,
+    } as typeof h.before);
+    await expect(h.apply()).rejects.toMatchObject({ code: "SERVICE_ENVIRONMENT_APPLY_FAILED" });
+    expect(h.options.onReplaced).not.toHaveBeenCalled();
+    expect(h.original.remove).not.toHaveBeenCalled();
+    expect(h.original.start).toHaveBeenCalledOnce();
+    expect(h.replacement.remove).toHaveBeenCalledOnce();
+  });
+
   it("does not roll back a successful apply when only old-container cleanup fails", async () => {
     const h = setup();
     h.original.remove.mockRejectedValue(new Error("cleanup failed"));
