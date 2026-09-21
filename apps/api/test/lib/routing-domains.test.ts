@@ -571,7 +571,15 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
         return result;
       }),
       renewCert: vi.fn(),
-      verifyCert: vi.fn(),
+      verifyCert: vi.fn().mockResolvedValue(
+        result ?? {
+          domain: "app.example.com",
+          verified: false,
+          expiresAt: "",
+          issuer: "",
+          reason: "missing",
+        },
+      ),
       installCert: vi.fn(),
     }) as any;
 
@@ -772,7 +780,8 @@ describe("collectUncertifiedRouteWarnings", () => {
     );
     expect(out).toHaveLength(1);
     expect(out[0]).toContain("api.example.com");
-    expect(out[0]).toContain("DNS");
+    expect(out[0]).toContain("no usable HTTPS certificate was found");
+    expect(out[0]).not.toContain("DNS");
   });
 
   it("prefers the row's recorded failure reason when there is one", () => {

@@ -50,10 +50,9 @@ describe("resolved decisions stop replaying from the terminal session", () => {
 });
 
 describe("routeIssuesWarning is advisory only", () => {
-  it("describes TLS-pending domains as routed, not as failures", () => {
+  it("reports unconfirmed HTTPS without treating it as a service failure", () => {
     const msg = routeIssuesWarning([], ["api.example.com", "app.example.com"]);
-    expect(msg).toContain("routed but have no HTTPS certificate yet");
-    // The remedy is DNS + Verify, never "some services failed".
+    expect(msg).toContain("HTTPS could not be confirmed for 2 domains");
     expect(msg).toContain("Verify from the Domains tab");
     expect(msg.toLowerCase()).not.toContain("service");
   });
