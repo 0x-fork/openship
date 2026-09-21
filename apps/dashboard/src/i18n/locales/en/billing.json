@@ -247,7 +247,10 @@
     "checking": "Refreshing your Cloud plan and balance. Payment may take a moment to process.",
     "active": "Your Cloud plan is active.",
     "pending": "Your payment may still be processing. Refresh this page to check your plan and balance. Contact support if a completed payment is missing.",
-    "support": "Contact support"
+    "support": "Contact support",
+    "failed": "This checkout was not completed. Return to billing to try again.",
+    "reversed": "This payment was refunded or disputed. Check your current balance or contact support.",
+    "topupComplete": "Your additional credits have been added."
   },
   "subscription": {
     "title": "Subscription",

@@ -2,8 +2,8 @@
 
 Cloud uses Oblien Mode B. Oblien owns hosted checkout, payment collection,
 subscription renewals, credit grants, usage enforcement, and workspace lifecycle.
-Openship owns customer identity, project/build orchestration, application
-permissions, and the dashboard. It calls the provider APIs for infrastructure;
+Openship owns its prices, product copy, namespace allowances and application limits,
+customer identity, project/build orchestration, and the dashboard. It calls the provider APIs for infrastructure;
 it does not operate a hypervisor or maintain an independent payment ledger.
 
 The Docker deployment path passed 31 live staging checks on 2026-09-17, including
@@ -24,6 +24,46 @@ longer reproduces. A fresh namespace still has no paid subscription after merely
 opening checkout. A completed payment and signed public delivery remain to be
 verified; see [the checkout verification report](openship-cloud-production-verification.md).
 
+## Reseller offer contract, 2026-09-21
+
+New purchases use Openship's $10 / $39 / $99 monthly catalog. Each checkout saves
+an immutable generic offer: price, namespace credits, zero-by-default configurable
+grace, VM caps and application plan metadata. The namespace receives the customer
+subscription. The reseller account receives wallet funding and retains its own
+platform subscription. Oblien has no Openship-specific plan mapping.
+
+Openship resolves `reseller` subscriptions using the saved offer reference,
+organization, namespace and application-limit snapshot. Unknown or mismatched
+contracts fail closed. Renewals keep those terms even when the current catalog
+changes. The catalog and detailed configuration are documented in
+[`packages/core/src/pricing/README.md`](../packages/core/src/pricing/README.md).
+
+Deploy the matching Oblien API first: `/billing/catalog` must report
+`reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true }`.
+Dashboard docs alone cannot enable this contract. Then deploy the updated
+Openship API and dashboard together. Checkout and the readiness check reject an
+older provider; startup also logs the missing capability. Existing subscription
+management remains available during that update. The npm SDK remains pinned to the
+published 2.4.0 transport, so Openship does not depend on a pending SDK release.
+
+The user reports a successful test-mode payment with the earlier integration.
+That is not a live acceptance result for this new offer contract. Keep the
+configured provider mode intact and verify the changed cycle after deployment.
+The historical reports below describe their original code and dates.
+
+Checkout returns include `session_id`. `GET /api/billing/checkout?checkoutId=...`
+checks that session through the authenticated organization's namespace. The UI
+waits for paid/completed fulfillment with a positive net credit grant; an old
+active subscription or a forged success query cannot confirm payment. Refund,
+dispute, expiry and provider errors have explicit states. Signed events and the
+five-minute sweep continue to reconcile authoritative subscription state.
+
+For this deployment, the callback is
+`https://api.openship.io/api/billing/oblien-webhook`; browser checkout/portal
+returns use `https://app.openship.io`. Allowlist `app.openship.io` in Oblien's
+redirect configuration. The callback URL is a server POST receiver and is not a
+browser return URL.
+
 ## What is connected
 
 - `oblien@2.4.0` supplies the official billing module. Openship validates the
@@ -33,9 +73,9 @@ verified; see [the checkout verification report](openship-cloud-production-verif
   preserves SDK request cancellation, and keeps provider error bodies private.
   Workspace limits now return HTTP 409 in the live API; compatibility handling
   also rejects the older HTTP 200 `valid:false / NAMESPACE_LIMIT_REACHED` response.
-- Public prices and credit packs come from `/billing/catalog`. Marketing and
-  the dashboard use the same catalog as checkout. Internal plan IDs remain
-  stable: `starter → hobby`, `pro → pro`, `team → scale`.
+- Public prices and credit packs come from Openship's server catalog, served by
+  `/api/billing/plans` to marketing and all dashboards. Legacy provider IDs
+  `hobby`, `pro`, `scale` remain readable, but new checkout sends an `offer`.
 - Purchases use `/billing/checkout` with the authenticated organization's
   namespace, the selected interval, and a scoped idempotency key. Checkout first
   requires the new namespace subscription API, so older provider deployments
@@ -106,10 +146,10 @@ blocked. Returning from checkout does not grant access or automatically deploy:
 the customer checks the current plan, returns to the project, and retries the
 action through the existing server guards. Purchase feature flags still apply.
 
-Pricing uses Oblien’s monthly/yearly prices and separate credit grants, exposed
-as `monthlyCredits` and `annualCredits` in milli-credits. Build minutes remain a
+Pricing uses Openship's server-defined prices and explicit credit grants,
+exposed as `monthlyCredits` and `annualCredits` in milli-credits. Build minutes remain a
 monthly Openship limit. Cards show build minutes, simultaneous services,
-per-service CPU/RAM, project limits and monthly edge traffic with a shared usage explanation.
+per-service CPU/RAM and project limits with a shared usage explanation. Edge traffic is measured without an invented custom-plan allowance.
 
 Billing leads with measured resource usage. Provider usage buckets are already
 whole credits; balance snapshots use milli-credits. Credit totals and the chart
@@ -168,29 +208,23 @@ undated analytics home totals or billing transaction counts. Reads have a shared
 deadline and a bounded 30-second cache; an analytics outage only marks those
 metrics unavailable and cannot block checkout or subscription management.
 
-The cloud catalog exposes Oblien's documented namespace edge traffic allowances
-(50/500/2,000 GB per month for Hobby/Pro/Scale). Request counts have no invented
-per-plan cap. The overview keeps missing telemetry distinct from measured zero,
+Reseller offers do not inherit Oblien platform edge traffic allowances. Traffic
+and requests remain measurable; their plan capacity is unknown unless separately
+configured and enforced. The overview keeps missing telemetry distinct from measured zero,
 and empty circles stay empty at zero use. Builds and runtime share the compute
 allowance, so physical CPU-hours are not presented as guaranteed remaining hours.
 Build-minute periods now clamp month-end anniversaries without gaps or overlaps,
 and uncapped plans still report their measured build time.
 
-Openship supplies application limits and localized product descriptions. Prices,
-billing intervals, currency, credit grants, and checkout tier IDs come from
-Oblien's catalog. Creating a local plan description does not create a purchasable
-provider tier or grant credits. Usage, invoices, payment methods, and top-ups
-have useful empty states until a customer has relevant history. Buying top-ups
-requires an active or trialing paid subscription; extra credits alone cannot
-activate Cloud compute.
+Openship's catalog supplies prices, allowances, resource limits, metadata and
+checkout copy. The generic offer path is now used for both subscriptions and
+top-ups. Existing catalog subscriptions remain readable through a legacy ID
+mapping. New offers use their saved identity and application-limit snapshot;
+unsupported metadata blocks spending instead of borrowing the owner account tier.
 
-This is catalog-based Mode B. Oblien also documents custom reseller `offer`
-checkout, where the application sets price, allowance and product text; that
-optional path is not currently used. Its returned `reseller` tier and saved
-offer would need an explicit application-plan mapping before enabling it.
-Current catalog checkout uses the published SDK 2.4.0, installed and locked in
-the repository. Custom offers remain optional; catalog checkout continues to
-reconcile through namespace subscription, entitlement, balance and signed events.
+Buying top-ups requires an active or trialing customer subscription. Purchased
+credits add headroom and only their unused remainder survives renewal. Extra
+credits alone cannot activate a subscription or raise resource/application caps.
 
 Checkout errors preserve a validated support reference and known provider code
 without exposing the provider's arbitrary error body. Top-up retries keep their
@@ -404,8 +438,8 @@ assuming the `.env.saas` filename indicates production provider credentials.
    not require a separate webhook host. If a reverse proxy serves
    the API under a prefix, supply that full path in `OBLIEN_WEBHOOK_URL`.
    Have the Oblien operator add the dashboard return host to
-   `REDIRECT_ALLOWED_HOSTS`; unlisted hosts silently return to the provider's
-   default dashboard. Verify the actual checkout and portal return destinations.
+   `REDIRECT_ALLOWED_HOSTS`; unlisted supplied hosts return
+   `400 billing_redirect_not_allowed`. Verify the actual checkout and portal return destinations.
 4. Start the updated API and confirm webhook registration succeeds. The hook
    must be active, signed, account-wide, and include every event exported by
    `oblien-webhook-config.ts`. Confirm real signed delivery reaches the handler;
@@ -545,8 +579,10 @@ identity returns `409 billing_identity_conflict`. Neither is bypassed in Openshi
 - Verify that concurrent/abandoned subscription checkouts cannot create two
   billable subscriptions for one namespace. The provider now documents replacing
   only that namespace's old subscription after payment; test this with multiple
-  pending checkouts. A checkout status/expiration API is still not documented.
-  Do not infer payment from a checkout redirect.
+  pending checkouts. Reseller status is read through
+  `GET /billing/checkout/:checkoutId?namespace=...`; Openship exposes the safe
+  subset at `GET /api/billing/checkout?checkoutId=...`. Do not infer payment from
+  a checkout redirect.
 
 The native-workspace adapter still refuses named/shared/bind volume declarations;
 replacing a native workspace does not transfer its disk. New Compose projects
@@ -560,7 +596,8 @@ native projects require an explicit data migration to adopt that model.
 2. Buy a Pro monthly plan for A through the UI. Verify the namespace in the
    provider checkout, the charged catalog amount, the signed payment event,
    entitlement synchronization, and the dashboard's refreshed plan/balance.
-   Repeat with a yearly plan on a separate test organization.
+   Annual checkout stays hidden until an explicit price and annual allowance
+   are published; verify that unpublished intervals are refused.
 3. Retry the same checkout request/key and deliver the same webhook twice.
    Confirm there is one purchase and no duplicate credit grant. Deliver an old
    suspension event after restoration; current provider state must win.
@@ -585,7 +622,12 @@ native projects require an explicit data migration to adopt that model.
    customer's invoices/payment methods and rejects shared legacy billing.
    Exercise the support closure procedure and check for continuing charges or
    orphan resources after closure.
-10. Only after these checks pass, enable the production purchase flags, rerun
+10. Verify a paid renewal resets usage once and retains the purchased price,
+    credit grant, resource caps and configured grace. Change the catalog and
+    redeliver the old invoice: neither should rewrite that saved contract. Test
+    a partial refund, full refund and dispute, including an old-cycle refund
+    after a new cycle and cross-customer checkout-status reads.
+11. Only after these checks pass, enable the production purchase flags, rerun
     `cloud-readiness.ts`, and monitor webhook failures and reconciliation errors.
 
 Provider references: [index](https://oblien.com/llms.txt),

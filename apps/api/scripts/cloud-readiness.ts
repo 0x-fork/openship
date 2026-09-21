@@ -17,10 +17,12 @@ record("Credit purchases enabled", process.env.BILLING_TOPUPS_ENABLED === "true"
 const billing = new OblienBillingApi({ clientId, clientSecret, baseUrl: apiBase });
 const checks = await Promise.allSettled([
   (async () => {
-    const catalog = await billing.getCatalog();
-    const plans = catalog.plans.filter((plan) => plan.priceMonthly !== null);
-    record("Provider catalog", plans.length > 0 && [...catalog.plans, ...catalog.creditPacks].every((item) => item.currency.toUpperCase() === "USD"),
-      `${plans.length} priced plans, ${catalog.creditPacks.length} credit packs`);
+    await billing.assertResellerSupport();
+    record(
+      "Provider reseller contract",
+      true,
+      "Supports saved offers, renewal grace and namespace resource caps",
+    );
   })(),
   (async () => {
     const defaults = await billing.getDefaults();
@@ -78,8 +80,16 @@ checks.forEach((result, index) => {
   if (result.status === "rejected") {
     // Never serialize provider bodies, headers, credentials, or webhook secrets.
     const error = result.reason;
-    record(["Provider catalog", "Namespace default policy", "Webhook registration", "Namespace entitlement and subscription"][index]!, false,
-      error instanceof Error ? error.message : "Read failed");
+    record(
+      [
+        "Provider reseller contract",
+        "Namespace default policy",
+        "Webhook registration",
+        "Namespace entitlement and subscription",
+      ][index]!,
+      false,
+      error instanceof Error ? error.message : "Read failed",
+    );
   }
 });
 console.log(JSON.stringify({ readOnly: true, checks: results, passed: results.every((result) => result.ok) }, null, 2));

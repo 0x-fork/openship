@@ -59,19 +59,41 @@ export function BillingResourceUsage({ state }: { state: BillingState }) {
         footnote={compute?.status === "available" ? copy.sharedCompute : measured} icon={<Icon className="size-4" aria-hidden="true" />} />)}
     </div>
 
-    <div className="mb-4 mt-6 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/40 pt-5">
-      <h3 className="text-sm font-semibold">{copy.edgeTitle}</h3>
-      <p className="text-xs text-muted-foreground">{noPlan ? t.billing.onboarding.planRequired : periodLabel(edge?.period)}</p>
-    </div>
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <ResourceMeter label={copy.bandwidth} hint={copy.bandwidthHint} noPlan={noPlan} used={edge?.bandwidthGb ?? null}
-        max={edge ? edge.limits.bandwidthGb : state.plan?.edge?.bandwidthGb} unit="GB" icon={<Globe2 className="size-4" aria-hidden="true" />}
-        {...(edge?.status !== "available" ? { footnote: measured } : {})} />
-      <ResourceMeter label={copy.requests} hint={copy.requestsHint} noPlan={noPlan} used={edge?.requests ?? null}
-        footnote={edge?.status === "available" ? copy.requestsIncluded : measured} icon={<Zap className="size-4" aria-hidden="true" />} />
-    </div>
-    {!noPlan && <Link href="/billing/usage" className="mt-5 inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:underline">
-      {copy.viewUsage}<ArrowUpRight className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
-    </Link>}
-  </section>;
+      <div className="mb-4 mt-6 flex flex-wrap items-baseline justify-between gap-2 border-t border-border/40 pt-5">
+        <h3 className="text-sm font-semibold">{copy.edgeTitle}</h3>
+        <p className="text-xs text-muted-foreground">
+          {noPlan ? t.billing.onboarding.planRequired : periodLabel(edge?.period)}
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ResourceMeter
+          label={copy.bandwidth}
+          hint={copy.bandwidthHint}
+          noPlan={noPlan}
+          used={edge?.bandwidthGb ?? null}
+          max={(edge ? edge.limits.bandwidthGb : state.plan?.edge?.bandwidthGb) ?? undefined}
+          unit="GB"
+          icon={<Globe2 className="size-4" aria-hidden="true" />}
+          {...(edge?.status !== "available" ? { footnote: measured } : {})}
+        />
+        <ResourceMeter
+          label={copy.requests}
+          hint={copy.requestsHint}
+          noPlan={noPlan}
+          used={edge?.requests ?? null}
+          footnote={edge?.status === "available" ? copy.requestsIncluded : measured}
+          icon={<Zap className="size-4" aria-hidden="true" />}
+        />
+      </div>
+      {!noPlan && (
+        <Link
+          href="/billing/usage"
+          className="mt-5 inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:underline"
+        >
+          {copy.viewUsage}
+          <ArrowUpRight className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
+        </Link>
+      )}
+    </section>
+  );
 }

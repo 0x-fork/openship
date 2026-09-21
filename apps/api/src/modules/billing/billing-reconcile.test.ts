@@ -17,11 +17,20 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienBillingApi: () => ({ getEntitlement: h.entitlement, getSubscription: h.subscription, getBalance: h.balance, getDefaults: h.defaults }),
   getOblienClient: () => ({ namespaces: { setQuota: h.setQuota, resetQuota: h.resetQuota, setDefaultQuota: h.setDefaultQuota } }),
 }));
-vi.mock("@repo/platform/engine/lib/cloud-resource-limits", () => ({ syncCloudResourceLimits: h.limits }));
+vi.mock("@repo/platform/engine/lib/cloud-resource-limits", async (original) => ({
+  ...(await original<typeof import("@repo/platform/engine/lib/cloud-resource-limits")>()),
+  syncCloudResourceLimits: h.limits,
+}));
 import {
   syncOblienEntitlement, reconcileOblienEntitlement, entitlementQuota,
   assertCloudCanSpend, assertNamespaceHasQuota, ensureOblienDefaultQuota, resetAndRegrant, getQuotaState,
 } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
+import { PRICING, planLimits } from "@repo/core";
+import {
+  subscriptionOffer,
+  subscriptionMetadata,
+  cloudPlan,
+} from "@repo/platform/engine/modules/billing/billing-catalog";
 
 const entitlement = () => ({
   success: true as const, namespace: "os-customer", tierId: "pro", status: "active" as const,
@@ -40,6 +49,93 @@ beforeEach(() => {
   h.defaults.mockResolvedValue({ autoApply: true, quotaLimit: 0, overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" });
 });
 describe("Oblien-managed entitlements", () => {
+  it("reconciles a namespace offer using its paid limits and price after the catalog changes", async () => {
+    const saved = {
+      tierId: "reseller",
+      status: "active" as const,
+      billingInterval: "monthly" as const,
+      periodStart: entitlement().periodStart,
+      periodEnd: entitlement().periodEnd,
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      offer: subscriptionOffer("starter", "monthly"),
+      metadata: subscriptionMetadata("starter", "org_1", "os-customer"),
+    };
+    const limits = structuredClone(planLimits("starter"));
+    const raw = PRICING.plans.find((plan) => plan.id === "starter")!;
+    const original = {
+      amount: raw.price.monthly,
+      projects: raw.limits.maxProjects,
+      credits: raw.billing.creditsPerCycle,
+    };
+    h.entitlement.mockResolvedValue({ ...entitlement(), tierId: "reseller" });
+    h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: saved });
+    try {
+      raw.price.monthly = 2000;
+      raw.limits.maxProjects = 100;
+      raw.billing.creditsPerCycle = 9000;
+      expect(await syncOblienEntitlement("org_1")).toMatchObject({ tier: "starter", limits });
+      expect(h.limits).toHaveBeenCalledWith("os-customer", "starter", saved.offer.resourceLimits);
+      expect(await cloudPlan("starter", saved)).toMatchObject({
+        price: { monthly: 1000 },
+        effectivePrice: { monthly: 1000 },
+        monthlyCredits: 1_200_000,
+        limits,
+        name: saved.offer.name,
+      });
+      expect(h.setQuota).not.toHaveBeenCalled();
+    } finally {
+      raw.price.monthly = original.amount;
+      raw.limits.maxProjects = original.projects;
+      raw.billing.creditsPerCycle = original.credits;
+    }
+  });
+  it.each([
+    "openship_organization",
+    "openship_namespace",
+    "openship_plan",
+    "openship_offer_version",
+    "openship_limits",
+  ])(
+    "refuses a mismatched reseller contract field %s before changing customer state",
+    async (field) => {
+      const metadata = subscriptionMetadata("starter", "org_1", "os-customer");
+      metadata[field] = "foreign-or-invalid";
+      h.entitlement.mockResolvedValue({ ...entitlement(), tierId: "reseller" });
+      h.subscription.mockResolvedValue({
+        namespace: "os-customer",
+        subscription: {
+          tierId: "reseller",
+          status: "active",
+          billingInterval: "monthly",
+          periodStart: entitlement().periodStart,
+          periodEnd: entitlement().periodEnd,
+          cancelAtPeriodEnd: false,
+          canceledAt: null,
+          offer: subscriptionOffer("starter", "monthly"),
+          metadata,
+        },
+      });
+      await expect(syncOblienEntitlement("org_1")).rejects.toMatchObject({
+        code: "OBLIEN_RESELLER_CONTRACT_INVALID",
+      });
+      expect(h.mirror).not.toHaveBeenCalled();
+      expect(h.limits).not.toHaveBeenCalled();
+      expect(h.setQuota).not.toHaveBeenCalled();
+    },
+  );
+  it("allows configured grace using the provider's remaining balance, then blocks at its boundary", async () => {
+    h.entitlement.mockResolvedValue({
+      ...entitlement(),
+      quota: { limit: 3000, used: 3050, balance: 10, overdraft: 60, suspendThreshold: 60 },
+    });
+    h.balance.mockResolvedValue({ namespace: "os-customer", balance: 10, blocking: false });
+    await expect(assertCloudCanSpend("org_1")).resolves.toBeUndefined();
+    h.balance.mockResolvedValue({ namespace: "os-customer", balance: 0, blocking: true });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({
+      code: "CLOUD_BILLING_BLOCKED",
+    });
+  });
   it("mirrors the paid tier, billing status and exact provider period without writing quotas", async () => {
     const result = await syncOblienEntitlement("org_1");
     expect(result.tier).toBe("pro");
@@ -117,7 +213,7 @@ describe("Oblien-managed entitlements", () => {
   it("applies provider resource caps before mirroring paid access", async () => {
     h.limits.mockRejectedValue(new Error("resource policy unavailable"));
     await expect(assertCloudCanSpend("org_1")).rejects.toThrow("resource policy unavailable");
-    expect(h.limits).toHaveBeenCalledWith("os-customer", "pro");
+    expect(h.limits).toHaveBeenCalledWith("os-customer", "pro", expect.any(Object));
     expect(h.mirror).not.toHaveBeenCalled();
   });
   it("allows billing reads without resource-policy writes while keeping the spend gate enforced", async () => {
@@ -126,7 +222,7 @@ describe("Oblien-managed entitlements", () => {
     await expect(getQuotaState("org_1")).resolves.toEqual({ quotaLimit: 3_000_000, quotaUsed: 420_000, quotaRemaining: 2_580_000 });
     expect(h.limits).not.toHaveBeenCalled();
     await expect(assertCloudCanSpend("org_1")).rejects.toThrow("resource policy unavailable");
-    expect(h.limits).toHaveBeenCalledWith("os-customer", "pro");
+    expect(h.limits).toHaveBeenCalledWith("os-customer", "pro", expect.any(Object));
   });
   it("does not require resource writes to inspect an exhausted account", async () => {
     h.entitlement.mockResolvedValue({ ...entitlement(), status: "credit_exhausted" });

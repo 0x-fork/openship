@@ -2,11 +2,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
 const provider = vi.hoisted(() => ({
-  cloudMode: true, enabled: true, topups: true,
-  checkout: vi.fn(), catalog: vi.fn(), entitlement: vi.fn(), namespaces: vi.fn(),
-  portal: vi.fn(), subscription: vi.fn(), cancel: vi.fn(), resume: vi.fn(), subscriptions: new Map<string, OblienSubscription>(),
-  cloudRequest: vi.fn(), quota: vi.fn(), resourceRead: vi.fn(), resourceUpdate: vi.fn(),
+  cloudMode: true,
+  enabled: true,
+  topups: true,
+  checkout: vi.fn(),
+  catalog: vi.fn(),
+  entitlement: vi.fn(),
+  namespaces: vi.fn(),
+  portal: vi.fn(),
+  subscription: vi.fn(),
+  cancel: vi.fn(),
+  resume: vi.fn(),
+  subscriptions: new Map<string, OblienSubscription>(),
+  cloudRequest: vi.fn(),
+  quota: vi.fn(),
+  resourceRead: vi.fn(),
+  resourceUpdate: vi.fn(),
   resources: vi.fn(),
+  checkoutStatus: vi.fn(),
+  support: vi.fn(),
   limits: new Map<string, Record<string, number | null>>(),
 }));
 vi.mock("@repo/platform/engine/config/env", async original => {
@@ -16,9 +30,24 @@ vi.mock("@repo/platform/engine/config/env", async original => {
 vi.mock("@repo/platform/engine/lib/stripe-client", () => ({ stripe: () => { throw new Error("Direct Stripe billing is retired"); } }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienBillingApi: () => ({
-    getCatalog: provider.catalog, getEntitlement: provider.entitlement, createCheckout: provider.checkout,
-    createPortal: provider.portal, getSubscription: provider.subscription, cancelSubscription: provider.cancel, resumeSubscription: provider.resume,
-    getDefaults: async () => ({ success: true, autoApply: true, service: "workspace_vm", quotaLimit: 0, overdraft: 0, onOverdraftAction: "stop_workspaces", suspendThreshold: 0 }),
+    assertResellerSupport: provider.support,
+    getCheckout: provider.checkoutStatus,
+    getCatalog: provider.catalog,
+    getEntitlement: provider.entitlement,
+    createCheckout: provider.checkout,
+    createPortal: provider.portal,
+    getSubscription: provider.subscription,
+    cancelSubscription: provider.cancel,
+    resumeSubscription: provider.resume,
+    getDefaults: async () => ({
+      success: true,
+      autoApply: true,
+      service: "workspace_vm",
+      quotaLimit: 0,
+      overdraft: 0,
+      onOverdraftAction: "stop_workspaces",
+      suspendThreshold: 0,
+    }),
   }),
   getOblienClient: () => ({
     workspaces: { getQuota: provider.quota },
@@ -42,7 +71,7 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 import * as repository from "@repo/platform/engine/modules/billing/billing.repository";
 import { flushAudit } from "@repo/platform/engine/lib/audit-emitter";
 import { eq } from "@repo/db";
-import { __resetCloudBillingCatalogForTests } from "@repo/platform/engine/modules/billing/billing-catalog";
+import { presentCloudPlans } from "@repo/platform/engine/modules/billing/billing-catalog";
 
 const app = new Hono().onError(handleApiError)
   .use("*", async (c, next) => { c.set("clientIp", "192.0.2.64"); await next(); })
@@ -57,9 +86,9 @@ async function clients(actor: SeededOwner, organizationId = actor.orgId, limits:
   };
 }
 beforeEach(() => {
-  __resetCloudBillingCatalogForTests();
   provider.cloudMode = provider.enabled = provider.topups = true;
   provider.subscriptions.clear();
+  provider.support.mockResolvedValue(undefined);
   provider.limits.clear();
   provider.quota.mockResolvedValue({ success: true, limits: { cpus: null, memory_mb: null, disk_size_mb: null }, maxSandboxes: null });
   provider.resourceRead.mockImplementation(async (slug: string) => ({ data: { id: slug, slug, resource_limits: provider.limits.get(slug) } }));
@@ -94,12 +123,87 @@ beforeEach(() => {
       { tierId: "hobby", name: "Hobby", priceMonthly: 10, priceYearly: 100, currency: "usd", creditsPerCycle: 1200, yearlyCreditsPerCycle: 14400, features: [] },
       { tierId: "pro", name: "Pro", priceMonthly: 29, priceYearly: 290, currency: "usd", creditsPerCycle: 3000, yearlyCreditsPerCycle: 36000, features: [] },
     ],
-    creditPacks: [{ packId: "starter", name: "Starter", credits: 1000, price: 10, currency: "usd" }],
+    creditPacks: [
+      { packId: "pack_5k", name: "Starter", credits: 1000, price: 10, currency: "usd" },
+    ],
   });
 });
-afterEach(async () => { await flushAudit(); vi.clearAllMocks(); vi.unstubAllEnvs(); await db.delete(schema.creditPack); });
+afterEach(async () => {
+  await flushAudit();
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  await db.delete(schema.creditPack);
+});
 
 describe("billing through the same SDK and HTTP application operations", () => {
+  it("verifies a checkout only inside its authenticated organization in both transports", async () => {
+    const owner = await seedOwner(),
+      other = await seedOwner();
+    const a = await clients(owner),
+      b = await clients(other);
+    await a.native.getState();
+    await b.native.getState();
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    provider.checkoutStatus.mockImplementation(async (slug: string, id: string) => {
+      if (slug !== namespace || id !== "cs_owned")
+        throw new AppError("Checkout not found", 404, "BILLING_CHECKOUT_NOT_FOUND");
+      return {
+        success: true,
+        namespace: slug,
+        checkout: {
+          id,
+          kind: "topup",
+          status: "complete",
+          paymentStatus: "paid",
+          fulfillmentStatus: "completed",
+          fulfilled: true,
+          namespaceCreditsGranted: 5000,
+        },
+      };
+    });
+    for (const client of [a.native, a.remote]) {
+      expect(await client.getCheckout({ checkoutId: "cs_owned" })).toMatchObject({
+        id: "cs_owned",
+        creditsGranted: 5_000_000,
+        fulfilled: true,
+      });
+      await expect(client.getCheckout({ checkoutId: "../cs_owned" })).rejects.toMatchObject({
+        statusCode: 400,
+      });
+    }
+    for (const client of [b.native, b.remote])
+      await expect(client.getCheckout({ checkoutId: "cs_owned" })).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    expect((await app.request("/api/billing/checkout?checkoutId=cs_owned")).status).toBe(401);
+  });
+  it("loads a linked installation's prices from the SaaS without sending local credentials or using stale prices", async () => {
+    const c = await clients(await seedOwner());
+    provider.cloudMode = false;
+    const data = presentCloudPlans("de");
+    data.plans.find((plan) => plan.id === "starter")!.price.monthly = 2300;
+    const publicFetch = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ data }),
+    );
+    vi.stubGlobal("fetch", publicFetch);
+    for (const client of [c.native, c.remote])
+      expect(await client.listPlans({ locale: "de" })).toEqual(data);
+    expect(publicFetch).toHaveBeenLastCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ credentials: "omit", redirect: "error" }),
+    );
+    expect(publicFetch.mock.calls[0]![0].toString()).toBe(
+      "https://api.openship.io/api/billing/plans?locale=de",
+    );
+    expect(publicFetch.mock.calls[0]![1]).not.toHaveProperty("headers");
+    publicFetch.mockResolvedValue(Response.json({ data: { plans: [] } }));
+    for (const client of [c.native, c.remote])
+      await expect(client.listPlans()).rejects.toMatchObject({
+        code: "BILLING_CATALOG_UNAVAILABLE",
+      });
+    expect(provider.cloudRequest).not.toHaveBeenCalled();
+  });
   it("keeps resource telemetry behind the same organization and billing-read grant in the SDK and HTTP API", async () => {
     const owner = await seedOwner(), stranger = await seedOwner();
     const c = await clients(owner);
@@ -134,7 +238,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
           capacity: { buildMinutes: { used: 0, max: 0 }, services: { max: 0 }, projects: { max: 0 } },
           maxServiceMachine: null, topups: { available: false, status: "unavailable" },
         });
-        await expect(client.createTopup({ packId: "starter" })).rejects.toMatchObject({ code: "CLOUD_PLAN_REQUIRED" });
+        await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
+          code: "CLOUD_PLAN_REQUIRED",
+        });
       }
       namespaces.add((await repos.organization.findById(owner.orgId))!.oblienNamespace!);
     }
@@ -169,9 +275,12 @@ describe("billing through the same SDK and HTTP application operations", () => {
     });
     for (const client of [c.native, c.remote]) {
       expect(await client.getState()).toMatchObject({ tier: "starter", plan: null, monthlyCreditLimit: null, balance: { quotaRemaining: 1_200_000, unlimited: false }, capabilities: { portal: true, cancellation: true } });
-      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
+      expect(
+        await client.createSubscription({ planTierId: "starter", interval: "monthly" }),
+      ).toHaveProperty("checkoutUrl");
     }
-    expect(provider.checkout).not.toHaveBeenCalled();
+    expect(provider.catalog).not.toHaveBeenCalled();
+    expect(provider.checkout).toHaveBeenCalledTimes(2);
   });
 
   it.each(["active", "canceled"] as const)("identifies uncapped credits only for a verified active enterprise subscription (%s)", async status => {
@@ -215,7 +324,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const c = await clients(await seedOwner());
     for (const client of [c.native, c.remote]) {
       await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
-      await expect(client.createTopup({ packId: "starter" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
+      await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
+        code: "OBLIEN_BILLING_UNAVAILABLE",
+      });
     }
     expect(provider.checkout).not.toHaveBeenCalled();
   });
@@ -227,9 +338,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(await remote.billing.listPlans({ locale: "ar" })).toEqual(native);
     expect(native.locale).toBe("ar");
     expect(native.plans.find(plan => plan.id === "starter")).toMatchObject({
-      price: { monthly: 1000, annual: 10000 },
+      price: { monthly: 1000, annual: null },
       monthlyCredits: 1_200_000,
-      annualCredits: 14_400_000,
+      annualCredits: null,
       limits: { buildMinutesPerMonth: 3000 },
     });
     expect(JSON.stringify(native)).not.toMatch(/stripeCouponEnv|oblienLimits|STRIPE_PRICE/);
@@ -250,7 +361,12 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const org = await repos.organization.findById(owner.orgId);
     expect(org?.oblienNamespace).toBeTruthy();
     for (const [input] of provider.checkout.mock.calls) {
-      expect(input).toMatchObject({ namespace: org!.oblienNamespace, kind: "subscription", planTierId: "hobby", billingInterval: "monthly" });
+      expect(input).toMatchObject({
+        namespace: org!.oblienNamespace,
+        kind: "subscription",
+        offer: { reference: "openship:starter:v1", unitAmount: 1000, credits: 1200 },
+        billingInterval: "monthly",
+      });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");
     }
@@ -346,7 +462,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.resume).not.toHaveBeenCalled();
   });
 
-  it("uses provider credit packs instead of legacy prices and enforces the independent top-up switch", async () => {
+  it("uses Openship credit packs instead of legacy database prices and enforces the independent top-up switch", async () => {
     const owner = await seedOwner(), c = await clients(owner), legacyPack = CREDIT_PACKS[0]!;
     await c.native.getState();
     provider.subscriptions.set((await repos.organization.findById(owner.orgId))!.oblienNamespace!, {
@@ -355,12 +471,27 @@ describe("billing through the same SDK and HTTP application operations", () => {
     });
     await db.insert(schema.creditPack).values({ id: legacyPack.id, name: legacyPack.name, creditsMilli: 999, priceCents: 999, sortOrder: 0, stripeProductId: "product_retired", stripePriceId: "price_retired", active: true });
     for (const client of [c.native, c.remote]) {
-      expect(await client.listTopupPacks()).toEqual([{ id: "starter", name: "Starter", credits_milli: 1_000_000, price_cents: 1000, sortOrder: 0, explains: null }]);
-      expect(await client.createTopup({ packId: "starter" })).toEqual({ checkoutUrl: "https://checkout.stripe.com/private-session" });
+      const packs = await client.listTopupPacks();
+      expect(packs).toHaveLength(3);
+      expect(packs[0]).toMatchObject({ id: "pack_5k", credits_milli: 5_000_000, price_cents: 500 });
+      expect(await client.createTopup({ packId: "pack_5k" })).toEqual({
+        checkoutUrl: "https://checkout.stripe.com/private-session",
+      });
     }
-    expect(provider.checkout.mock.calls.every(([input]) => input.kind === "topup" && input.packId === "starter")).toBe(true);
+    expect(
+      provider.checkout.mock.calls.every(
+        ([input]) =>
+          input.kind === "topup" &&
+          input.offer.reference === "openship:pack_5k:v1" &&
+          input.offer.unitAmount === 500 &&
+          input.offer.credits === 5000,
+      ),
+    ).toBe(true);
     provider.topups = false;
-    for (const client of [c.native, c.remote]) await expect(client.createTopup({ packId: "starter" })).rejects.toMatchObject({ code: "BILLING_TOPUPS_NOT_ENABLED" });
+    for (const client of [c.native, c.remote])
+      await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
+        code: "BILLING_TOPUPS_NOT_ENABLED",
+      });
   });
 
   it("bounds usage ranges and hides projects a billing-only reader cannot access", async () => {
@@ -383,6 +514,10 @@ describe("billing through the same SDK and HTTP application operations", () => {
 
   it("does not forward a fixed local tenant through an unverified owner cloud link", async () => {
     provider.cloudMode = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ data: presentCloudPlans() })),
+    );
     const c = await clients(await seedOwner());
     for (const client of [c.native, c.remote]) {
       await expect(client.getState()).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });

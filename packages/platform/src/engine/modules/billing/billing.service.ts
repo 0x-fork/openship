@@ -1,15 +1,20 @@
 /** Customer billing delegates to Oblien Mode B; no Stripe SDK or credit writes. */
 import { createHash } from "node:crypto";
-import { AppError, type PlanTierId } from "@repo/core";
+import { AppError, PRICING, type PlanTierId } from "@repo/core";
 import { runtimeTarget, env } from "../../config/env";
 import type { ExecutionContext as RequestContext } from "../../../context";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import { ensureNamespace } from "../../lib/openship-cloud";
-import { getCloudBillingCatalog, OBLIEN_PLAN_IDS } from "./billing-catalog";
+import {
+  subscriptionOffer,
+  subscriptionMetadata,
+  topupOffer,
+  subscriptionPlan,
+} from "./billing-catalog";
 import { syncOblienEntitlement } from "./billing-oblien-quota";
-import { fromOblienCredits } from "./billing-credit-units";
 import { listLiveSubscriptions } from "./billing.repository";
 import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
+import { fromOblienCredits } from "./billing-credit-units";
 
 export function assertBillingEnabled(): void {
   if (!env.BILLING_ENABLED) {
@@ -43,6 +48,7 @@ async function topupNamespace(orgId: string): Promise<string> {
   // still shares the owner's Stripe customer. Require the namespace billing
   // contract before starting either kind of purchase.
   const { subscription } = await getOblienBillingApi().getSubscription(namespace);
+  subscriptionPlan(subscription, orgId, namespace);
   if (!canTopUpCloudSubscription(subscription)) {
     throw new AppError("An active Cloud subscription is required before adding credits", 402, "CLOUD_PLAN_REQUIRED");
   }
@@ -57,24 +63,27 @@ export async function createCheckoutSession(
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
   await assertNoLegacySubscription(ctx.organizationId);
-  const catalog = await getCloudBillingCatalog({ fresh: true });
-  const plan = catalog.plans.find((item) => item.tierId === OBLIEN_PLAN_IDS[planTierId]);
-  const price = interval === "annual" ? plan?.priceYearly : plan?.priceMonthly;
-  if (!plan || price == null || price <= 0) {
-    throw new AppError("This plan is not available for checkout", 400, "BILLING_PLAN_NOT_PURCHASABLE");
-  }
+  const offer = subscriptionOffer(planTierId, interval);
   const namespace = await ensureNamespace(ctx.organizationId);
   // The entitlement read verifies this namespace's subscription too; do not
   // fetch it a second time before opening checkout.
   await syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false });
+  await getOblienBillingApi().assertResellerSupport();
   // Oblien replaces only this namespace's subscription after payment. This
   // starts a full-price cycle without proration; disclose that before checkout.
   const result = await getOblienBillingApi().createCheckout({
-    namespace, kind: "subscription", planTierId: plan.tierId,
+    namespace,
+    kind: "subscription",
+    offer,
+    metadata: subscriptionMetadata(planTierId, ctx.organizationId, namespace),
     billingInterval: interval === "annual" ? "yearly" : "monthly",
-    successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}`,
+    successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&session_id={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled`,
-    idempotencyKey: checkoutKey(ctx.organizationId, `subscription:${plan.tierId}:${interval}`, requestKey),
+    idempotencyKey: checkoutKey(
+      ctx.organizationId,
+      `subscription:${offer.reference}:${interval}`,
+      requestKey,
+    ),
   });
   // A checkout redirect is not proof of payment. Webhooks/polling mirror access.
   return { checkoutUrl: result.url };
@@ -83,14 +92,19 @@ export async function createCheckoutSession(
 export async function createTopupCheckoutSession(ctx: RequestContext, packId: string, requestKey?: string): Promise<{ checkoutUrl: string }> {
   assertTopupsEnabled();
   await assertNoLegacySubscription(ctx.organizationId);
-  const catalog = await getCloudBillingCatalog({ fresh: true });
-  if (!catalog.creditPacks.some((pack) => pack.packId === packId)) {
-    throw new AppError("This credit pack is no longer available", 404, "BILLING_PACK_NOT_FOUND");
-  }
+  const offer = topupOffer(packId);
   const namespace = await topupNamespace(ctx.organizationId);
+  await getOblienBillingApi().assertResellerSupport();
   const result = await getOblienBillingApi().createCheckout({
-    namespace, kind: "topup", packId,
-    successUrl: `${runtimeTarget.dashboard}/billing/overview?topup=success`,
+    namespace,
+    kind: "topup",
+    offer,
+    metadata: {
+      openship_organization: ctx.organizationId,
+      openship_namespace: namespace,
+      openship_pack: packId,
+    },
+    successUrl: `${runtimeTarget.dashboard}/billing/overview?topup=success&session_id={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${runtimeTarget.dashboard}/billing/overview?topup=cancelled`,
     idempotencyKey: checkoutKey(ctx.organizationId, `topup:${packId}`, requestKey),
   });
@@ -98,10 +112,21 @@ export async function createTopupCheckoutSession(ctx: RequestContext, packId: st
 }
 
 export async function listActiveCreditPacks() {
-  return (await getCloudBillingCatalog()).creditPacks.map((pack, index) => ({
-    id: pack.packId, name: pack.name, credits_milli: fromOblienCredits(pack.credits),
-    price_cents: Math.round(pack.price * 100), sortOrder: index, explains: null,
+  return PRICING.creditPacks.map((pack) => ({
+    id: pack.id,
+    name: topupOffer(pack.id).name,
+    credits_milli: pack.creditsMilli,
+    price_cents: pack.priceCents,
+    sortOrder: pack.sortOrder,
+    explains: topupOffer(pack.id).description ?? null,
   }));
+}
+
+export async function getCheckoutStatus(orgId: string, checkoutId: string) {
+  const namespace = await ensureNamespace(orgId);
+  const { checkout } = await getOblienBillingApi().getCheckout(namespace, checkoutId);
+  const { namespaceCreditsGranted, ...state } = checkout;
+  return { ...state, creditsGranted: fromOblienCredits(namespaceCreditsGranted) };
 }
 
 // Disabling new purchases must not prevent existing customers from stopping
@@ -119,6 +144,7 @@ export async function cancelSubscription(orgId: string) {
   await assertNoLegacySubscription(orgId);
   const namespace = await ensureNamespace(orgId);
   const result = await getOblienBillingApi().cancelSubscription(namespace);
+  subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);
   if (!subscription || (!subscription.cancelAtPeriodEnd && subscription.status !== "canceled")) {
     throw new AppError("Cloud billing did not confirm cancellation. Please retry.", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
@@ -130,6 +156,7 @@ export async function resumeSubscription(orgId: string) {
   await assertNoLegacySubscription(orgId);
   const namespace = await ensureNamespace(orgId);
   const result = await getOblienBillingApi().resumeSubscription(namespace);
+  subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);
   if (!subscription || subscription.cancelAtPeriodEnd || subscription.status === "canceled") {
     throw new AppError("Cloud billing did not confirm renewal. Please retry.", 502, "OBLIEN_BILLING_INVALID_RESPONSE");

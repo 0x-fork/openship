@@ -8,7 +8,9 @@ type NamespaceLimits = NonNullable<Parameters<Oblien["namespaces"]["update"]>[1]
  * containers still receive the customer's individual CPU/memory limits.
  * Oblien owns platform capacity. Never derive customer allowances from the
  * reseller's /workspace/quota response, including its unlimited values. */
-export function cloudNamespaceLimits(tier: PlanTierId): NamespaceLimits {
+export function cloudNamespaceLimits(
+  tier: PlanTierId,
+): Required<Pick<NamespaceLimits, "max_workspaces" | "max_vcpus" | "max_ram_mb" | "max_disk_gb">> {
   const plan = planLimits(tier);
   const build = PRICING.oblien.buildResources;
   const service = plan.maxResourceTier ? RESOURCE_TIER_SPECS[plan.maxResourceTier] : null;
@@ -28,9 +30,12 @@ export async function initialCloudNamespaceLimits(): Promise<NamespaceLimits> {
 /** Called under the billing lock, after reading the provider's current tier.
  * Only resource ceilings change here: credit grants, usage and suspension remain
  * provider-owned. A downgrade never deletes or shrinks an existing VM. */
-export async function syncCloudResourceLimits(namespace: string, tier: PlanTierId): Promise<void> {
+export async function syncCloudResourceLimits(
+  namespace: string,
+  tier: PlanTierId,
+  desired: NamespaceLimits = cloudNamespaceLimits(tier),
+): Promise<void> {
   const client = getOblienClient();
-  const desired = cloudNamespaceLimits(tier);
   const { data: current } = await client.namespaces.get(namespace);
   if (current.slug !== namespace) throw new AppError("Cloud namespace ownership changed", 502, "CLOUD_NAMESPACE_MISMATCH");
   const matches = (limits: NamespaceLimits | null | undefined) =>

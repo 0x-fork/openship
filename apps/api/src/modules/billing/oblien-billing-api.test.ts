@@ -4,6 +4,8 @@ import { OblienBillingApi } from "@repo/platform/engine/lib/oblien-billing-api";
 beforeEach(() => vi.spyOn(console, "warn").mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());
 
+const offer = { name: "Example SaaS", unitAmount: 1000, credits: 100, currency: "usd" as const };
+const metadata = { app_order: "test-order" };
 const entitlement = { success: true, namespace: "os-one", tierId: "pro", status: "active", periodStart: null, periodEnd: null, quota: { limit: 3000, used: -50, balance: 3050 } };
 const subscription = { success: true, namespace: "os-one", subscription: {
   tierId: "pro", status: "active", billingInterval: "monthly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
@@ -15,6 +17,85 @@ function setup(body: unknown, status = 200) {
   return { api, fetcher };
 }
 describe("Oblien 2.4 billing SDK and transport contract", () => {
+  it("requires the generic saved-policy contract before enabling new Cloud offers", async () => {
+    const catalog = { success: true, plans: [], creditPacks: [] };
+    await expect(setup(catalog).api.assertResellerSupport()).rejects.toMatchObject({
+      code: "OBLIEN_BILLING_UPGRADE_REQUIRED",
+    });
+    await expect(
+      setup({
+        ...catalog,
+        reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true },
+      }).api.assertResellerSupport(),
+    ).resolves.toBeUndefined();
+    await expect(
+      setup({
+        ...catalog,
+        reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: false },
+      }).api.assertResellerSupport(),
+    ).rejects.toMatchObject({ code: "OBLIEN_BILLING_UPGRADE_REQUIRED" });
+  });
+  it("retains the immutable offer, policy, limits and reseller metadata on subscription reads", async () => {
+    const saved = {
+      ...subscription,
+      subscription: {
+        ...subscription.subscription,
+        tierId: "reseller",
+        offer: {
+          ...offer,
+          reference: "example:plan:v1",
+          policy: { overdraft: 60, suspendThreshold: 60, onOverdraftAction: "stop_workspaces" },
+          resourceLimits: { max_workspaces: 3, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 32 },
+        },
+        metadata: { application_order: "example-order" },
+      },
+    };
+    expect(await setup(saved).api.getSubscription("os-one")).toEqual(saved);
+  });
+  it("binds checkout verification to both the requested namespace and exact session, without exposing payment internals", async () => {
+    const result = {
+      success: true,
+      namespace: "os-one",
+      checkout: {
+        id: "cs_requested",
+        kind: "topup",
+        status: "complete",
+        paymentStatus: "paid",
+        fulfilled: true,
+        fulfillmentStatus: "completed",
+        namespaceCreditsGranted: 500,
+        walletCredits: 1000,
+        paymentId: "pi_private",
+      },
+    };
+    const { api, fetcher } = setup(result);
+    const state = await api.getCheckout("os-one", "cs_requested");
+    expect(state.checkout).toMatchObject({ id: "cs_requested", namespaceCreditsGranted: 500 });
+    expect(state.checkout).not.toHaveProperty("walletCredits");
+    expect(state.checkout).not.toHaveProperty("paymentId");
+    expect(fetcher.mock.calls[0]![0]).toBe(
+      "https://api.oblien.com/billing/checkout/cs_requested?namespace=os-one",
+    );
+    await expect(api.getCheckout("os-other", "cs_requested")).rejects.toMatchObject({
+      code: "OBLIEN_BILLING_NAMESPACE_MISMATCH",
+    });
+    await expect(api.getCheckout("os-one", "cs_other")).rejects.toMatchObject({
+      code: "OBLIEN_BILLING_INVALID_RESPONSE",
+    });
+  });
+  it("does not log the checkout session credential when status lookup fails", async () => {
+    const { api } = setup({ success: false, code: "no_checkout" }, 404);
+    await expect(api.getCheckout("os-one", "cs_private_payment_session")).rejects.toThrow(
+      "No checkout was found for this organization",
+    );
+    expect(console.warn).toHaveBeenCalledWith(
+      "[oblien:billing] Provider request failed",
+      expect.objectContaining({ operation: "/billing/checkout/:checkoutId" }),
+    );
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain(
+      "cs_private_payment_session",
+    );
+  });
   it("accepts the live catalog's custom Enterprise allowances without breaking paid checkout", async () => {
     const catalog = { success: true, plans: [
       { tierId: "hobby", name: "Hobby", priceMonthly: 10, priceYearly: 100, currency: "USD", creditsPerCycle: 1200, yearlyCreditsPerCycle: 14400, overdraftCredits: 100, features: [] },
@@ -41,15 +122,35 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
   });
   it("posts the documented namespace, interval and idempotency key", async () => {
     const { api, fetcher } = setup({ success: true, url: "https://checkout.stripe.com/c/pay/test", checkoutId: "cs_test" });
-    const input = { namespace: "os-one", kind: "subscription" as const, planTierId: "hobby", billingInterval: "yearly" as const,
-      successUrl: "https://app.openship.io/billing/overview", cancelUrl: "https://app.openship.io/billing/plans", idempotencyKey: "checkout-123" };
+    const input = {
+      namespace: "os-one",
+      kind: "subscription" as const,
+      offer,
+      metadata,
+      billingInterval: "yearly" as const,
+      successUrl: "https://app.openship.io/billing/overview",
+      cancelUrl: "https://app.openship.io/billing/plans",
+      idempotencyKey: "checkout-123",
+    };
     await api.createCheckout(input);
     expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/checkout", expect.objectContaining({ method: "POST", body: JSON.stringify(input) }));
   });
   it("rejects unexpected checkout hosts and malformed entitlements", async () => {
-    await expect(setup({ success: true, url: "https://example.com/payment", checkoutId: "cs_1" }).api.createCheckout({
-      namespace: "os-one", kind: "topup", packId: "starter", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "topup-1",
-    })).rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
+    await expect(
+      setup({
+        success: true,
+        url: "https://example.com/payment",
+        checkoutId: "cs_1",
+      }).api.createCheckout({
+        namespace: "os-one",
+        kind: "topup",
+        offer,
+        metadata,
+        successUrl: "https://app.openship.io",
+        cancelUrl: "https://app.openship.io",
+        idempotencyKey: "topup-1",
+      }),
+    ).rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
     await expect(setup({ ...entitlement, status: "unrecognized" }).api.getEntitlement("os-one")).rejects.toMatchObject({ statusCode: 502 });
   });
   it("does not expose provider error bodies or silently retry a purchase", async () => {
@@ -60,8 +161,18 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
   it("reports the live checkout collation failure as unavailable and keeps safe diagnostics in server logs", async () => {
     const { api, fetcher } = setup({ success: false, error: "ER_CANT_AGGREGATE_NCOLLATIONS", code: "ER_CANT_AGGREGATE_NCOLLATIONS",
       message: "Failed to create subscription checkout", details: { sql: "private query", customer: "cus_private" } }, 400);
-    const error = await api.createCheckout({ namespace: "private-customer", kind: "subscription", planTierId: "hobby", billingInterval: "monthly",
-      successUrl: "https://app.openship.io/billing/overview", cancelUrl: "https://app.openship.io/billing/plans", idempotencyKey: "private-attempt" }).catch(error => error);
+    const error = await api
+      .createCheckout({
+        namespace: "private-customer",
+        kind: "subscription",
+        offer,
+        metadata,
+        billingInterval: "monthly",
+        successUrl: "https://app.openship.io/billing/overview",
+        cancelUrl: "https://app.openship.io/billing/plans",
+        idempotencyKey: "private-attempt",
+      })
+      .catch((error) => error);
     expect(error).toMatchObject({ statusCode: 503, code: "OBLIEN_CHECKOUT_UNAVAILABLE", message: "Cloud checkout is temporarily unavailable. Please try again later." });
     expect(console.warn).toHaveBeenCalledExactlyOnceWith("[oblien:billing] Provider request failed", {
       method: "POST", operation: "/billing/checkout", providerStatus: 400, providerCode: "ER_CANT_AGGREGATE_NCOLLATIONS",
@@ -72,16 +183,38 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
   });
   it("retains actionable plan validation failures instead of treating them as checkout outages", async () => {
     const { api } = setup({ success: false, code: "invalid_plan", message: "private provider detail" }, 400);
-    await expect(api.createCheckout({ namespace: "os-one", kind: "subscription", planTierId: "hobby", billingInterval: "monthly",
-      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt" })).rejects.toMatchObject({
-      statusCode: 400, code: "OBLIEN_BILLING_ERROR", message: "This plan is no longer available. Refresh the plans page.",
+    await expect(
+      api.createCheckout({
+        namespace: "os-one",
+        kind: "subscription",
+        offer,
+        metadata,
+        billingInterval: "monthly",
+        successUrl: "https://app.openship.io",
+        cancelUrl: "https://app.openship.io",
+        idempotencyKey: "attempt",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: "OBLIEN_BILLING_ERROR",
+      message: "This plan is no longer available. Refresh the plans page.",
     });
   });
   it.each([400, 503])("preserves the documented billing diagnostic reference for an HTTP %s storage failure", async status => {
     const { api, fetcher } = setup({ success: false, code: "billing_database_collation_error", message: "private provider detail",
       details: { reference: "billing-support-123", retryable: false, cause: "ER_CANT_AGGREGATE_NCOLLATIONS", sql: "private query", clientSecret: "test-secret" } }, status);
-    const error = await api.createCheckout({ namespace: "private-customer", kind: "subscription", planTierId: "hobby", billingInterval: "monthly",
-      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt" }).catch(error => error);
+    const error = await api
+      .createCheckout({
+        namespace: "private-customer",
+        kind: "subscription",
+        offer,
+        metadata,
+        billingInterval: "monthly",
+        successUrl: "https://app.openship.io",
+        cancelUrl: "https://app.openship.io",
+        idempotencyKey: "attempt",
+      })
+      .catch((error) => error);
     expect(error).toMatchObject({ statusCode: 503, code: "OBLIEN_CHECKOUT_UNAVAILABLE",
       message: "Cloud billing is unavailable. Contact Openship support. Reference: billing-support-123.",
       details: { providerCode: "billing_database_collation_error", details: { reference: "billing-support-123", retryable: false } },
@@ -99,8 +232,17 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
     [409, "billing_checkout_reconciliation_required", "earlier checkout needs to be reviewed"],
   ] as const)("explains %s/%s without starting another payment", async (status, code, message) => {
     const { api, fetcher } = setup({ success: false, code, message: "private provider detail" }, status);
-    const error = await api.createCheckout({ namespace: "os-one", kind: "topup", packId: "starter",
-      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt" }).catch(error => error);
+    const error = await api
+      .createCheckout({
+        namespace: "os-one",
+        kind: "topup",
+        offer,
+        metadata,
+        successUrl: "https://app.openship.io",
+        cancelUrl: "https://app.openship.io",
+        idempotencyKey: "attempt",
+      })
+      .catch((error) => error);
     expect(error).toMatchObject({ statusCode: status, details: { providerCode: code } });
     expect(error.message).toContain(message);
     expect(error.message).not.toContain("private");

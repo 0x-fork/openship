@@ -88,12 +88,17 @@ describe("pricing catalog (pricing.json)", () => {
     }
   });
 
-  it("gives each paid tier more credit per dollar than the one below", () => {
-    // The stated deal: scaling up must never get worse value.
-    const paid = PRICING.plans.filter((p) => (p.price.monthly ?? 0) > 0 && planMonthlyCredits(p.id) !== null);
-    const perDollar = paid.map((p) => planMonthlyCredits(p.id)! / p.price.monthly!);
-    for (let i = 1; i < perDollar.length; i++) {
-      expect(perDollar[i]!, `${paid[i]!.id} must not be worse value than ${paid[i - 1]!.id}`).toBeGreaterThan(perDollar[i - 1]!);
+  it("keeps namespace allowances independent of prices and resource caps", () => {
+    const plan = PRICING.plans.find((plan) => plan.id === "starter")!;
+    const original = { price: plan.price.monthly, builds: plan.limits.buildMinutesPerMonth };
+    const credits = planMonthlyCredits(plan.id);
+    try {
+      plan.price.monthly = 2000;
+      plan.limits.buildMinutesPerMonth = 20_000;
+      expect(planMonthlyCredits(plan.id)).toBe(credits);
+    } finally {
+      plan.price.monthly = original.price;
+      plan.limits.buildMinutesPerMonth = original.builds;
     }
   });
 
@@ -136,7 +141,7 @@ describe("pricing catalog (pricing.json)", () => {
       "runningServices", // Oblien max_workspaces + plan-guard
       "maxProjects", // plan-guard: assertProjectQuota
       "maxResourceTier", // Oblien max_vcpus/max_ram_mb/max_disk_gb
-      "computeMinutesPerMonth", // Oblien credit quota, via planMonthlyCredits()
+      "computeMinutesPerMonth", // legacy display field, null on paid plans
       "buildMinutesPerMonth", // plan-guard: assertBuildMinutesAvailable
       "freeSubdomains", // plan-guard: assertFreeSubdomainQuota
       "customDomains", // null everywhere = unlimited, nothing to enforce
@@ -194,39 +199,25 @@ describe("pricing catalog (pricing.json)", () => {
     }
   });
 
-  it("derives each tier's grant from its published minutes", () => {
-    // The published number and the billed number are one number in two units. If
-    // this drifts, the pricing page and the Oblien quota disagree.
-    const buildMultiplier = PRICING.oblien.buildResources.cpuCores / RESOURCE_TIER_SPECS.low.cpuCores;
+  it("uses the reseller's explicit credit allowance for each monthly cycle", () => {
     for (const plan of PRICING.plans) {
-      const { computeMinutesPerMonth: compute, buildMinutesPerMonth: build } = plan.limits;
-      if (compute === null || build === null) {
-        expect(planMonthlyCredits(plan.id), plan.id).toBeNull();
-        continue;
-      }
-      expect(planMonthlyCredits(plan.id), plan.id).toBe((compute + build * buildMultiplier) * 1000);
+      const credits = plan.billing.creditsPerCycle;
+      expect(planMonthlyCredits(plan.id), plan.id).toBe(credits === null ? null : credits * 1000);
+    }
+    expect(planMonthlyCredits("starter")).toBe(1_200_000);
+    expect(planMonthlyCredits("pro")).toBe(3_000_000);
+    expect(planMonthlyCredits("team")).toBe(15_000_000);
+  });
+
+  it("defaults grace to zero without promising fixed runtime for metered credits", () => {
+    for (const plan of PRICING.plans) {
+      expect(plan.billing.overdraft).toBe(0);
+      expect(plan.billing.suspendThreshold).toBe(0);
+      if (plan.id !== "free") expect(plan.limits.computeMinutesPerMonth).toBeNull();
     }
   });
 
-  it("includes enough compute to run a tier's whole app cap around the clock", () => {
-    // "10 apps" next to a budget that runs three of them is the incoherence the
-    // old credit numbers had: Scale advertised 50 running services on 60,000
-    // credits, when one always-on app needs 43,200 minutes a month. A cap the
-    // included compute cannot cover is a number we would be quoting to be sued
-    // over, so the two are locked together here.
-    const MINUTES_PER_MONTH = 43_200;
-    for (const plan of PRICING.plans) {
-      const { runningServices: apps, computeMinutesPerMonth: compute } = plan.limits;
-      if (apps === null || compute === null) continue; // enterprise: negotiated
-      expect(
-        compute,
-        `${plan.id} advertises ${apps} apps but only ${compute} compute minutes ` +
-          `(${apps} apps always-on needs ${apps * MINUTES_PER_MONTH})`,
-      ).toBeGreaterThanOrEqual(apps * MINUTES_PER_MONTH);
-    }
-  });
-
-  it("charges bigger machines proportionally more per minute", () => {
+  it("expresses relative CPU sizes independently of billing", () => {
     // The multiplier is what lets ONE published allowance cover every machine size.
     // It is derived from RESOURCE_TIER_SPECS so it cannot keep charging 4x for
     // `high` after `high` has been re-specced.
@@ -313,8 +304,42 @@ describe("pricing catalog — schema rejects bad edits", () => {
     expect(mutate((c) => { c.plans[1].inherits = "ghost"; })).toBe(false);
   });
 
-  it("rejects a priced tier with no Stripe env name", () => {
-    expect(mutate((c) => { c.plans[1].stripePriceEnv.monthly = null; })).toBe(false);
+  it("allows dynamic reseller prices without a Stripe price ID", () => {
+    expect(
+      mutate((c) => {
+        c.plans[1].stripePriceEnv.monthly = null;
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects paid offers without credits and invalid grace thresholds", () => {
+    expect(
+      mutate((c) => {
+        c.plans[1].billing.creditsPerCycle = null;
+      }),
+    ).toBe(false);
+    expect(
+      mutate((c) => {
+        c.plans[1].billing.creditsPerCycle = 0;
+      }),
+    ).toBe(false);
+    expect(
+      mutate((c) => {
+        c.plans[1].billing.overdraft = 60;
+      }),
+    ).toBe(false);
+    expect(
+      mutate((c) => {
+        c.plans[1].billing.overdraft = 60;
+        c.plans[1].billing.suspendThreshold = 60;
+      }),
+    ).toBe(true);
+    expect(
+      mutate((c) => {
+        c.annual.enabled = true;
+        c.plans[1].price.annual = 10000;
+      }),
+    ).toBe(false);
   });
 
   it("rejects a tier that is neither priced nor contact-sales", () => {
@@ -557,9 +582,9 @@ describe("pricing resolution", () => {
   });
 
   it("formats large counts for the locale", () => {
-    expect(resolvePlan("team", "en").features).toContain("2,200,000 compute minutes per month");
+    expect(resolvePlan("team", "en").features).toContain("36,000 build minutes per month");
     // Arabic is pinned to Latin numerals so a price stays legible.
-    expect(resolvePlan("team", "ar").features.join(" ")).toMatch(/2,200,000/);
+    expect(resolvePlan("team", "ar").features.join(" ")).toMatch(/36,000/);
   });
 
   it("differentiates tiers on usage and size, not on capability", () => {
@@ -568,7 +593,9 @@ describe("pricing resolution", () => {
     // lacks would be the regression this locks out.
     for (const id of ["starter", "pro", "team"] as const) {
       const words = resolvePlan(id, "en").features.join(" ");
-      expect(words, `${id} must quote compute minutes`).toMatch(/compute minutes/);
+      expect(words, `${id} must not convert credits into fixed runtime`).not.toMatch(
+        /compute minutes/,
+      );
       expect(words, `${id} must quote build minutes`).toMatch(/build minutes/);
       expect(words, `${id} must quote a machine size`).toMatch(/vCPU/);
       // Nothing that reads as a paywall on something every tier already has.
@@ -633,30 +660,21 @@ describe("pricing resolution", () => {
     for (const id of PLAN_IDS) expect(PLANS[id]).toEqual(resolvePlan(id, "en"));
   });
 
-  it("explains what a top-up pack actually buys", () => {
-    const packs = resolveCreditPacks("en");
-    const small = packs.find((p) => p.id === "pack_5k")!;
-    // 5,000 compute minutes ÷ 60 = 83 hours of a `low` app; ÷ 8 (the build
-    // machine's rate) = 625 build minutes. "+5,000 compute minutes" alone answers
-    // nothing — nobody knows if that is an afternoon or a year.
-    expect(small.explains).toBe("≈ 83 hours of a small app, or 625 build minutes");
-    // Derived, not authored: every pack gets the line, in every locale, with no
-    // placeholder left unresolved.
+  it("describes top-ups as metered credits without a fixed runtime promise", () => {
+    const small = resolveCreditPacks("en").find((pack) => pack.id === "pack_5k")!;
+    expect(small.explains).toBe(
+      "Applied to metered Cloud usage; duration depends on your workload.",
+    );
     for (const locale of PRICING_LOCALES) {
       for (const pack of resolveCreditPacks(locale)) {
         expect(pack.explains, `${locale}/${pack.id}`).toBeTruthy();
-        expect(pack.explains, `${locale}/${pack.id}`).not.toMatch(/\{\w+\}/);
+        expect(pack.explains + pack.name, `${locale}/${pack.id}`).not.toMatch(/\{\w+\}/);
       }
     }
-  });
-
-  it("names credit packs in the unit the plans publish", () => {
-    // Authored in credits (`creditsMilli`, live Stripe price ids untouched), SOLD in
-    // compute minutes — one compute minute is one credit, so the number is the same.
-    expect(resolveCreditPacks("en").map((p) => p.name)).toEqual([
-      "5,000 compute minutes",
-      "25,000 compute minutes",
-      "100,000 compute minutes",
+    expect(resolveCreditPacks("en").map((pack) => pack.name)).toEqual([
+      "5,000 credits",
+      "25,000 credits",
+      "100,000 credits",
     ]);
     expect(CREDIT_PACKS[0]!.credits_milli).toBe(5_000_000);
   });

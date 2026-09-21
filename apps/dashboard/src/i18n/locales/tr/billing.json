@@ -262,7 +262,10 @@
     "checking": "Cloud planınız ve bakiyeniz güncelleniyor. Ödemenin işlenmesi biraz sürebilir.",
     "active": "Cloud planınız etkin.",
     "pending": "Ödemeniz hâlâ işleniyor olabilir. Planınızı ve bakiyenizi kontrol etmek için bu sayfayı yenileyin. Tamamlanmış bir ödeme görünmüyorsa destekle iletişime geçin.",
-    "support": "Destekle iletişime geç"
+    "support": "Destekle iletişime geç",
+    "failed": "Bu ödeme tamamlanmadı. Tekrar denemek için faturalandırmaya dönün.",
+    "reversed": "Bu ödeme iade edildi veya itiraz edildi. Bakiyenizi kontrol edin ya da destekle iletişime geçin.",
+    "topupComplete": "Ek kredileriniz eklendi."
   },
   "deployGate": {
     "title": "Dağıtım için bir plan seçin",

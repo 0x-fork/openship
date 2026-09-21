@@ -1,12 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ tier: "starter", cloud: true, readRuntime: vi.fn() }));
+const h = vi.hoisted(() => ({
+  tier: "starter",
+  cloud: true,
+  readRuntime: vi.fn(),
+  savedLimits: null as import("@repo/core").PlanLimits | null,
+}));
 vi.mock("@repo/platform/engine/config/env", async original => {
   const actual = await original<{ env: Record<string, unknown> }>();
   return { ...actual, env: { ...actual.env, get CLOUD_MODE() { return h.cloud; } } };
 });
-vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async original => ({
-  ...await original<typeof import("@repo/platform/engine/modules/billing/billing-oblien-quota")>(),
-  syncOblienEntitlement: async () => ({ tier: h.tier }),
+vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (original) => ({
+  ...(await original<
+    typeof import("@repo/platform/engine/modules/billing/billing-oblien-quota")
+  >()),
+  syncOblienEntitlement: async () => ({
+    tier: h.tier,
+    limits: h.savedLimits ?? planLimits(h.tier),
+  }),
 }));
 vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
   ...await original<typeof import("@repo/platform/engine/lib/deployment-runtime")>(),
@@ -19,6 +29,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
 }));
 import { db, schema, repos, seedOwner } from "../jobs/_harness";
 import { eq } from "@repo/db";
+import { planLimits } from "@repo/core";
 import { createService, updateService, startServiceContainer, restartServiceContainer } from "@repo/platform/engine/modules/services/service.service";
 import { createQueuedDeployment, type DeploymentConfigSnapshot } from "@repo/platform/engine/modules/deployments/build.service";
 import { createServicesProjectWithId } from "@repo/platform/engine/modules/projects/project-crud.service";
@@ -73,7 +84,10 @@ const composeSnapshot = (): DeploymentConfigSnapshot => ({
 });
 const context = () => ({ organizationId } as RequestContext);
 beforeEach(async () => {
-  vi.clearAllMocks(); h.tier = "starter"; h.cloud = true;
+  vi.clearAllMocks();
+  h.tier = "starter";
+  h.cloud = true;
+  h.savedLimits = null;
   const owner = await seedOwner(); organizationId = owner.orgId;
   await db.update(schema.organization).set({ oblienNamespace: `namespace-${organizationId}`, planTierId: "starter" }).where(eq(schema.organization.id, organizationId));
   projectId = await project();
@@ -81,6 +95,24 @@ beforeEach(async () => {
 });
 
 describe("Cloud quotas at real application mutation boundaries", () => {
+  it("enforces the paid service-count snapshot even when the current tier permits more", async () => {
+    h.tier = "team";
+    h.savedLimits = { ...planLimits("team"), runningServices: 2 };
+    await definition();
+    await definition();
+    await expect(
+      createService(context(), projectId, { name: "beyond-paid-contract", image: "alpine:3" }),
+    ).rejects.toMatchObject({ reason: "running-services" });
+    expect(await repos.service.countRunningForOrg(organizationId)).toBe(2);
+  });
+  it("enforces the paid machine-size snapshot before queueing new compute", async () => {
+    h.tier = "team";
+    h.savedLimits = { ...planLimits("team"), maxResourceTier: "low" };
+    await expect(queue(projectId)).rejects.toMatchObject({ reason: "resource-tier" });
+    expect(
+      await db.query.deployment.findMany({ where: eq(schema.deployment.projectId, projectId) }),
+    ).toHaveLength(0);
+  });
   it("serializes service creation so only one request can reserve the final slot", async () => {
     await definition(); await definition();
     const results = await Promise.allSettled([

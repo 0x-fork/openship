@@ -40,6 +40,7 @@ import copyZh from "./locales/zh.json";
  * (and locally) rather than degrade a price to `undefined` inside a checkout.
  */
 export const PRICING: PricingCatalogRaw = pricingCatalogSchema.parse(rawCatalog);
+export { planLimitsSchema } from "./schema";
 
 /** Plan tier identifier. Mirrors `pricing.json#plans[].id`; the pricing test
  *  asserts the two never drift (a new tier is a compile error, by design). */
@@ -163,7 +164,7 @@ export interface PlanLimits {
   maxProjects: number | null;
   /** Largest per-service machine this tier may select, or null for uncapped. */
   maxResourceTier: FixedResourceTier | null;
-  /** App runtime included per month, in `low`-machine minutes. See the schema. */
+  /** Legacy display field; paid offers use credits rather than fixed runtime minutes. */
   computeMinutesPerMonth: number | null;
   buildMinutesPerMonth: number | null;
   freeSubdomains: number | null;
@@ -208,15 +209,7 @@ export interface CreditPackDefinition {
   credits_milli: number;
   price_cents: number;
   sortOrder: number;
-  /**
-   * One line saying what the pack BUYS, in things the customer recognises —
-   * hours of a running app, or build minutes.
-   *
-   * "+25,000 compute minutes" is a true statement that answers nothing: nobody
-   * knows whether that is an afternoon or a year. Both figures are derived from
-   * the catalog's own rates (`computeUnitsPerMinute`, `oblien.buildResources`), so
-   * they cannot drift from what the pack actually gets spent on.
-   */
+  /** Describes how metered credits are used, without promising runtime hours. */
   explains: string;
 }
 
@@ -225,8 +218,8 @@ export interface CreditPackDefinition {
 const PLAN_BY_ID = new Map(PRICING.plans.map((p) => [p.id, p]));
 
 /**
- * The raw limits for a tier — locale-free, the ONLY thing enforcement should
- * read. An unknown tier string (a stale `plan_tier_id` in the DB, a hand-edited
+ * Current catalog limits for a tier. Paid reseller subscriptions instead use
+ * the immutable limits saved with their offer. An unknown tier string (a stale `plan_tier_id` in the DB, a hand-edited
  * row) falls back to the free tier's limits: the safe direction is the most
  * restrictive one, and it can never be `undefined` at a gate.
  */
@@ -235,57 +228,22 @@ export function planLimits(planId: string | null | undefined): PlanLimits {
   return plan.limits;
 }
 
-/**
- * Milli-credits burned by one compute minute — one minute of a `low` machine.
- *
- * Lives here, not beside `MILLI_PER_CREDIT` in the API's `billing-credit-units.ts`:
- * that file is deliberately import-free and owns a different boundary (openship
- * milli ↔ Oblien whole credits). This is a CATALOG unit, and `packages/core`
- * cannot import from `apps/api` anyway. One compute minute ≡ one credit, so the
- * two constants agree by construction; the pricing test asserts it.
- */
+/** @deprecated Historical display conversion. Not an Oblien metering rate. */
 export const MILLI_PER_COMPUTE_MINUTE = 1000;
 
 /**
- * Compute units burned per minute by a machine size — `low` is the unit, so it is
- * 1× and everything else is its ratio.
- *
- * Derived from `RESOURCE_TIER_SPECS`, never a hand-written table, for the same
- * reason `placeholders()` quotes `powerCpu` from it: the published rate has to
- * follow the sizes the deploy wizard actually offers. A hand-written multiplier
- * would silently keep charging 4× for `high` after `high` was re-specced.
+ * Relative CPU size compared with `low`. This is not a credit metering rate;
+ * Oblien bills actual resource usage independently of this display helper.
  */
 export function computeUnitsPerMinute(tier: FixedResourceTier): number {
   return RESOURCE_TIER_SPECS[tier].cpuCores / RESOURCE_TIER_SPECS.low.cpuCores;
 }
 
-/** Compute units a minute of the BUILD machine burns (its own workspace, and
- *  Oblien meters it like any other). */
-function buildUnitsPerMinute(): number {
-  return PRICING.oblien.buildResources.cpuCores / RESOURCE_TIER_SPECS.low.cpuCores;
-}
-
-/**
- * Milli-credits a tier grants per period; null = hand-granted (enterprise).
- *
- * DERIVED from the two published allowances rather than authored, so the figure on
- * the pricing page and the quota pushed to Oblien are one number in two units.
- * (Same direction as `toOblienLimits` below, and for the same reason.)
- *
- * Build minutes are in the sum, and that is load-bearing rather than tidy:
- * `toOblienCredits()` REJECTS a non-positive quota, and a static-only tier
- * legitimately publishes 0 compute minutes — so a compute-only derivation would
- * make every free-tier quota push throw. Builds are also real metered work in a
- * real workspace, so counting them is the honest reading either way.
- */
+/** Explicit namespace credits per monthly cycle, in milli-credits for Openship
+ * clients. Price, resource limits and checkout copy do not change this allowance. */
 export function planMonthlyCredits(planId: string | null | undefined): number | null {
   const plan = PLAN_BY_ID.get(planId ?? "") ?? PLAN_BY_ID.get(DEFAULT_PLAN_TIER)!;
-  const { computeMinutesPerMonth, buildMinutesPerMonth } = plan.limits;
-  // Either allowance being unlimited makes the whole grant hand-managed — there is
-  // no finite number to push.
-  if (computeMinutesPerMonth === null || buildMinutesPerMonth === null) return null;
-  const units = computeMinutesPerMonth + buildMinutesPerMonth * buildUnitsPerMinute();
-  return Math.round(units * MILLI_PER_COMPUTE_MINUTE);
+  return plan.billing.creditsPerCycle === null ? null : plan.billing.creditsPerCycle * 1000;
 }
 
 /** May this tier run that workload? Free ships static-only. */
@@ -588,28 +546,17 @@ export function resolveCreditPacks(locale: PricingLocale = "en"): CreditPackDefi
   return [...PRICING.creditPacks]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((pack) => {
-      const template = copyFor(locale).creditPacks?.[pack.id] ?? copyEn.creditPacks[pack.id as keyof PricingCopy["creditPacks"]] ?? "{computeMinutes}";
-      // Both tokens carry the same number. A pack is still AUTHORED in credits —
-      // `creditsMilli` and its live Stripe price id are untouched — but it is SOLD
-      // as compute minutes, because that is the unit the plans publish and one
-      // compute minute ≡ one credit. `{credits}` stays accepted so a translation
-      // that hasn't been updated yet still renders a number instead of a literal
-      // placeholder.
-      const minutes = pack.creditsMilli / MILLI_PER_COMPUTE_MINUTE;
-      const amount = formatCount(minutes, locale);
-      // What the pack is worth in the two things people actually spend it on. The
-      // app figure is the BASE (`low`) machine — the honest floor, since a bigger
-      // machine burns a multiple — and the build figure divides by the build
-      // machine's own rate.
+      const template =
+        copyFor(locale).creditPacks?.[pack.id] ??
+        copyEn.creditPacks[pack.id as keyof PricingCopy["creditPacks"]] ??
+        "{credits}";
+      const amount = formatCount(pack.creditsMilli / 1000, locale);
       const noteTemplate =
         copyFor(locale).ui?.creditPackNote ?? copyEn.ui.creditPackNote;
       return {
         id: pack.id,
-        name: fill(template, { computeMinutes: amount, credits: amount }),
-        explains: fill(noteTemplate, {
-          appHours: formatCount(Math.round(minutes / 60), locale),
-          buildMinutes: formatCount(Math.round(minutes / buildUnitsPerMinute()), locale),
-        }),
+        name: fill(template, { credits: amount }),
+        explains: noteTemplate,
         credits_milli: pack.creditsMilli,
         price_cents: pack.priceCents,
         sortOrder: pack.sortOrder,
@@ -693,11 +640,8 @@ export interface PlanPriceIdValidation {
 }
 
 /**
- * Boot check: every PURCHASABLE price in the catalog has a real Stripe price id
- * in the environment. CLOUD_MODE callers treat a non-empty result as fatal —
- * otherwise checkout reaches Stripe with an undefined price and fails with a
- * cryptic Stripe-side error. Self-hosted callers may log and continue (billing
- * is disabled there).
+ * Legacy direct-Stripe configuration helper. Cloud reseller checkout uses
+ * dynamic Oblien offers and does not require these historical price IDs.
  */
 export function validatePlanPriceIds(): PlanPriceIdValidation {
   const missing: string[] = [];

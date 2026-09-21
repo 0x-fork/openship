@@ -1,34 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OblienBillingCatalog } from "@repo/platform/engine/lib/oblien-billing-api";
+import { PRICING } from "@repo/core";
+import { parseInput, CreateSubscriptionBody, CreateTopupBody } from "@repo/contracts";
 
 const h = vi.hoisted(() => ({
-  catalog: vi.fn(), checkout: vi.fn(), portal: vi.fn(), subscription: vi.fn(), cancel: vi.fn(), resume: vi.fn(), namespace: vi.fn(), sync: vi.fn(), legacy: vi.fn(),
+  support: vi.fn(),
+  checkout: vi.fn(),
+  portal: vi.fn(),
+  subscription: vi.fn(),
+  cancel: vi.fn(),
+  resume: vi.fn(),
+  namespace: vi.fn(),
+  sync: vi.fn(),
+  legacy: vi.fn(),
   env: { CLOUD_MODE: true, BILLING_ENABLED: true, BILLING_TOPUPS_ENABLED: true },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env, runtimeTarget: { dashboard: "https://app.openship.io" } }));
-vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienBillingApi: () => ({
-  createCheckout: h.checkout, createPortal: h.portal, cancelSubscription: h.cancel, resumeSubscription: h.resume,
-  getSubscription: h.subscription,
-}) }));
+vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
+  getOblienBillingApi: () => ({
+    createCheckout: h.checkout,
+    createPortal: h.portal,
+    cancelSubscription: h.cancel,
+    resumeSubscription: h.resume,
+    getSubscription: h.subscription,
+    assertResellerSupport: h.support,
+  }),
+}));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ ensureNamespace: h.namespace }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ syncOblienEntitlement: h.sync }));
 vi.mock("@repo/platform/engine/modules/billing/billing.repository", () => ({ listLiveSubscriptions: h.legacy }));
-vi.mock("@repo/platform/engine/modules/billing/billing-catalog", async (original) => ({
-  ...await original<typeof import("@repo/platform/engine/modules/billing/billing-catalog")>(), getCloudBillingCatalog: h.catalog,
-}));
 import { createCheckoutSession, createTopupCheckoutSession, createPortalSession, cancelSubscription, resumeSubscription, listActiveCreditPacks } from "@repo/platform/engine/modules/billing/billing.service";
 import { presentCloudPlans } from "@repo/platform/engine/modules/billing/billing-catalog";
 
-const catalog: OblienBillingCatalog = {
-  success: true,
-  plans: [
-    { tierId: "hobby", name: "Hobby", description: "Hobby projects", priceMonthly: 10, priceYearly: 100, currency: "usd", creditsPerCycle: 1200, yearlyCreditsPerCycle: 14400, features: [] },
-    { tierId: "pro", name: "Pro", priceMonthly: 29, priceYearly: 290, currency: "usd", creditsPerCycle: 3000, yearlyCreditsPerCycle: 36000, features: [] },
-    { tierId: "scale", name: "Scale", priceMonthly: 149, priceYearly: 1490, currency: "usd", creditsPerCycle: 15000, yearlyCreditsPerCycle: 180000, features: [] },
-    { tierId: "enterprise", name: "Enterprise", priceMonthly: null, priceYearly: null, currency: "usd", creditsPerCycle: null, yearlyCreditsPerCycle: null, features: [] },
-  ],
-  creditPacks: [{ packId: "starter", name: "Starter", credits: 1000, price: 10, currency: "usd" }],
-};
 const ctx = (organizationId = "org-a") => ({ organizationId }) as never;
 const subscription = {
   tierId: "hobby", status: "active", billingInterval: "yearly",
@@ -39,10 +41,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.env.BILLING_ENABLED = true;
   h.env.BILLING_TOPUPS_ENABLED = true;
-  h.catalog.mockResolvedValue(structuredClone(catalog));
   h.namespace.mockImplementation(async (org) => `ns-${org}`);
   h.sync.mockResolvedValue({ tier: "free", entitlement: { status: "credit_exhausted", periodEnd: null } });
   h.legacy.mockResolvedValue([]);
+  h.support.mockResolvedValue(undefined);
   h.checkout.mockResolvedValue({ url: "https://checkout.stripe.com/c/pay/test", checkoutId: "cs_test" });
   h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: null }));
   h.portal.mockResolvedValue({ url: "https://billing.stripe.com/p/session/test" });
@@ -50,21 +52,97 @@ beforeEach(() => {
   h.resume.mockImplementation(async (namespace) => ({ success: true, namespace, subscription: { ...subscription } }));
 });
 describe("Cloud customer checkout", () => {
-  it("uses provider prices and credits consistently across catalog and checkout aliases", () => {
-    const plans = presentCloudPlans(catalog).plans;
-    expect(plans.map((plan) => [plan.id, plan.name, plan.price.monthly])).toEqual([
-      ["starter", "Hobby", 1000], ["pro", "Pro", 2900], ["team", "Scale", 14900], ["enterprise", "Enterprise", null],
+  it("publishes Openship prices and separate namespace allowances", () => {
+    const plans = presentCloudPlans().plans.filter(
+      (plan) => !["free", "enterprise"].includes(plan.id),
+    );
+    expect(plans.map((plan) => [plan.id, plan.price.monthly, plan.monthlyCredits])).toEqual([
+      ["starter", 1000, 1_200_000],
+      ["pro", 3900, 3_000_000],
+      ["team", 9900, 15_000_000],
     ]);
-    expect(plans[0]?.monthlyCredits).toBe(1_200_000);
-    expect(plans.every((plan) => plan.campaign === null && plan.limits.computeMinutesPerMonth === null)).toBe(true);
+    expect(presentCloudPlans().annual.enabled).toBe(false);
   });
-  it("starts the yearly provider plan for the authenticated customer's namespace", async () => {
-    await createCheckoutSession(ctx(), "starter", "annual", "attempt-00000001");
-    expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({
-      namespace: "ns-org-a", kind: "subscription", planTierId: "hobby", billingInterval: "yearly",
-      successUrl: "https://app.openship.io/billing/overview?checkout=success&tier=starter&interval=annual",
-    }));
-    expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("price");
+  it("starts an Openship offer bound to the authenticated organization", async () => {
+    await createCheckoutSession(ctx(), "starter", "monthly", "attempt-00000001");
+    const input = h.checkout.mock.calls[0]![0];
+    expect(input).toMatchObject({
+      namespace: "ns-org-a",
+      kind: "subscription",
+      billingInterval: "monthly",
+      offer: {
+        reference: "openship:starter:v1",
+        unitAmount: 1000,
+        credits: 1200,
+        policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" },
+        resourceLimits: { max_workspaces: 5 },
+      },
+      metadata: {
+        openship_plan: "starter",
+        openship_organization: "org-a",
+        openship_namespace: "ns-org-a",
+      },
+    });
+    expect(input.successUrl).toContain("session_id={CHECKOUT_SESSION_ID}");
+    expect(input).not.toHaveProperty("planTierId");
+    expect(input).not.toHaveProperty("customer");
+    expect(JSON.parse(input.metadata.openship_limits)).toMatchObject({
+      runningServices: 3,
+      maxProjects: 10,
+    });
+  });
+  it("does not invent yearly prices or grants while annual checkout is disabled", async () => {
+    await expect(createCheckoutSession(ctx(), "starter", "annual")).rejects.toMatchObject({
+      code: "BILLING_PLAN_NOT_PURCHASABLE",
+    });
+    expect(h.checkout).not.toHaveBeenCalled();
+  });
+  it("uses explicit yearly credits and configurable grace when enabled by the reseller", async () => {
+    const plan = PRICING.plans.find((plan) => plan.id === "starter")!;
+    const before = structuredClone({ annual: PRICING.annual, plan });
+    try {
+      PRICING.annual.enabled = true;
+      plan.price.annual = 10_000;
+      plan.billing.yearlyCreditsPerCycle = 14_400;
+      plan.billing.overdraft = 60;
+      plan.billing.suspendThreshold = 60;
+      await createCheckoutSession(ctx(), "starter", "annual", "annual-attempt-001");
+      expect(h.checkout).toHaveBeenCalledWith(
+        expect.objectContaining({
+          billingInterval: "yearly",
+          offer: expect.objectContaining({
+            unitAmount: 10_000,
+            credits: 14_400,
+            policy: { overdraft: 60, suspendThreshold: 60, onOverdraftAction: "stop_workspaces" },
+          }),
+        }),
+      );
+    } finally {
+      Object.assign(PRICING.annual, before.annual);
+      Object.assign(plan, before.plan);
+    }
+  });
+  it("rejects customer-supplied price, credit, namespace and payment-customer overrides", () => {
+    for (const field of [
+      "namespace",
+      "offer",
+      "metadata",
+      "customer",
+      "unitAmount",
+      "credits",
+      "resourceLimits",
+    ]) {
+      expect(() =>
+        parseInput(CreateSubscriptionBody, {
+          planTierId: "starter",
+          interval: "monthly",
+          [field]: "injected",
+        }),
+      ).toThrow();
+      expect(() =>
+        parseInput(CreateTopupBody, { packId: "pack_5k", [field]: "injected" }),
+      ).toThrow();
+    }
   });
   it("reuses a retry key within one customer and isolates the same key across customers", async () => {
     await createCheckoutSession(ctx(), "pro", "monthly", "attempt-00000001");
@@ -77,7 +155,13 @@ describe("Cloud customer checkout", () => {
   it.each(["active", "canceled", "credit_exhausted"])("uses provider replacement checkout for an existing %s subscription", async (status) => {
     h.sync.mockResolvedValue({ tier: "pro", entitlement: { status, periodEnd: "2026-10-01T00:00:00Z" } });
     await expect(createCheckoutSession(ctx(), "team", "monthly")).resolves.toHaveProperty("checkoutUrl");
-    expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({ namespace: "ns-org-a", planTierId: "scale", billingInterval: "monthly" }));
+    expect(h.checkout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        namespace: "ns-org-a",
+        offer: expect.objectContaining({ reference: "openship:team:v1", unitAmount: 9900 }),
+        billingInterval: "monthly",
+      }),
+    );
   });
   it("blocks legacy Stripe accounts before creating a second provider subscription", async () => {
     h.legacy.mockResolvedValue([{ id: "old-subscription" }]);
@@ -96,20 +180,56 @@ describe("Cloud customer checkout", () => {
     // top-ups check the namespace subscription directly.
     h.sync.mockRejectedValue(new Error("subscription API unavailable"));
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow("subscription API unavailable");
-    await expect(createTopupCheckoutSession(ctx(), "starter")).rejects.toThrow("subscription API unavailable");
+    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toThrow(
+      "subscription API unavailable",
+    );
     expect(h.checkout).not.toHaveBeenCalled();
   });
-  it("purchases provider credit packs using the same public catalog", async () => {
-    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription }));
-    expect(await listActiveCreditPacks()).toMatchObject([{ id: "starter", credits_milli: 1_000_000, price_cents: 1000 }]);
-    await createTopupCheckoutSession(ctx(), "starter", "attempt-00000001");
-    expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({ namespace: "ns-org-a", kind: "topup", packId: "starter" }));
-    await expect(createTopupCheckoutSession(ctx(), "removed-pack")).rejects.toMatchObject({ code: "BILLING_PACK_NOT_FOUND" });
+  it("purchases reseller credit packs from Openship pricing", async () => {
+    h.subscription.mockImplementation(async (namespace) => ({
+      success: true,
+      namespace,
+      subscription,
+    }));
+    expect(await listActiveCreditPacks()).toMatchObject([
+      { id: "pack_5k", credits_milli: 5_000_000, price_cents: 500 },
+      { id: "pack_25k", credits_milli: 25_000_000, price_cents: 2000 },
+      { id: "pack_100k", credits_milli: 100_000_000, price_cents: 7000 },
+    ]);
+    await createTopupCheckoutSession(ctx(), "pack_5k", "attempt-00000001");
+    expect(h.checkout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        namespace: "ns-org-a",
+        kind: "topup",
+        offer: expect.objectContaining({ credits: 5000, unitAmount: 500 }),
+      }),
+    );
+    await expect(createTopupCheckoutSession(ctx(), "removed-pack")).rejects.toMatchObject({
+      code: "BILLING_PACK_NOT_FOUND",
+    });
     expect(h.checkout).toHaveBeenCalledOnce();
+  });
+  it("refuses purchases before checkout when the provider cannot preserve the offer's policy and limits", async () => {
+    h.support.mockRejectedValue(new Error("Billing provider update required"));
+    h.subscription.mockImplementation(async (namespace) => ({
+      success: true,
+      namespace,
+      subscription,
+    }));
+    await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow(
+      "Billing provider update required",
+    );
+    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toThrow(
+      "Billing provider update required",
+    );
+    expect(h.checkout).not.toHaveBeenCalled();
   });
   it.each([null, "canceled", "past_due", "unpaid", "paused"])("does not sell unusable top-up credits to a customer with subscription %s", async status => {
     h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: status === null ? null : { ...subscription, status } }));
-    await expect(createTopupCheckoutSession(ctx(), "starter")).rejects.toMatchObject({ code: "CLOUD_PLAN_REQUIRED", statusCode: 402 });
+    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toMatchObject({
+      code: "CLOUD_PLAN_REQUIRED",
+      statusCode: 402,
+    });
     expect(h.checkout).not.toHaveBeenCalled();
   });
   it("honors both purchase switches", async () => {
@@ -117,7 +237,9 @@ describe("Cloud customer checkout", () => {
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toMatchObject({ code: "BILLING_NOT_ENABLED" });
     h.env.BILLING_ENABLED = true;
     h.env.BILLING_TOPUPS_ENABLED = false;
-    await expect(createTopupCheckoutSession(ctx(), "starter")).rejects.toMatchObject({ code: "BILLING_TOPUPS_NOT_ENABLED" });
+    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toMatchObject({
+      code: "BILLING_TOPUPS_NOT_ENABLED",
+    });
     expect(h.checkout).not.toHaveBeenCalled();
   });
   it("opens a separate customer portal for each trusted organization", async () => {
@@ -144,6 +266,16 @@ describe("Cloud customer checkout", () => {
     expect(h.portal).toHaveBeenCalledOnce();
     expect(h.cancel).toHaveBeenCalledOnce();
     expect(h.resume).toHaveBeenCalledOnce();
+  });
+  it("keeps existing subscriptions manageable while the provider needs an offer update", async () => {
+    h.support.mockRejectedValue(new Error("Billing provider update required"));
+    await createPortalSession("org-a");
+    await cancelSubscription("org-a");
+    await resumeSubscription("org-a");
+    expect(h.portal).toHaveBeenCalledOnce();
+    expect(h.cancel).toHaveBeenCalledOnce();
+    expect(h.resume).toHaveBeenCalledOnce();
+    expect(h.support).not.toHaveBeenCalled();
   });
   it("keeps legacy billing behind migration for every management action", async () => {
     h.legacy.mockResolvedValue([{ id: "old-subscription" }]);

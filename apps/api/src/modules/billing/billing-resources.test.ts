@@ -7,6 +7,7 @@ vi.mock("@repo/platform/engine/config/env", () => ({ env: {
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient: h.guard, getOblienBillingApi: vi.fn() }));
 import { getBillingResources, __resetBillingResourcesForTests } from "@repo/platform/engine/modules/billing/billing-resources.service";
 import { getBuildMinuteUsage } from "@repo/platform/engine/lib/plan-guard";
+import { planLimits } from "@repo/core";
 
 const org = { id: "org-a", oblienNamespace: "ns-a", planTierId: "starter", createdAt: new Date("2026-01-31"),
   currentPeriodStart: new Date("2026-09-01"), currentPeriodEnd: new Date("2026-10-01") };
@@ -60,7 +61,14 @@ describe("Oblien 2.4 namespace resource usage", () => {
   it("shows measured units and period edge traffic, without confusing account totals or credit records with requests", async () => {
     const result = await getBillingResources("org-a");
     expect(result.compute).toMatchObject({ status: "available", cpuHours: 2, memoryGbHours: 4, diskIoGb: .25, networkGb: 1.5 });
-    expect(result.edge).toMatchObject({ status: "available", requests: 130, bandwidthGb: 3.5, inboundGb: 1, outboundGb: 2.5, limits: { bandwidthGb: 50 } });
+    expect(result.edge).toMatchObject({
+      status: "available",
+      requests: 130,
+      bandwidthGb: 3.5,
+      inboundGb: 1,
+      outboundGb: 2.5,
+      limits: { bandwidthGb: null },
+    });
     expect(result.edge.period).toEqual({ start: "2026-09-01T00:00:00.000Z", end: "2026-10-01T00:00:00.000Z" });
     expect(fetcher).toHaveBeenCalledTimes(4);
     expect(JSON.stringify(result)).not.toMatch(/token-|test-secret|example\.com|999999999/);
@@ -96,7 +104,10 @@ describe("Oblien 2.4 namespace resource usage", () => {
   });
   it("still measures build usage on plans with no build-minute cap", async () => {
     h.org.mockResolvedValue({ ...org, planTierId: "enterprise" });
-    const result = await getBuildMinuteUsage("org-a");
+    const result = await getBuildMinuteUsage("org-a", {
+      tier: "enterprise",
+      limits: planLimits("enterprise"),
+    });
     expect(result).toMatchObject({ usedMinutes: 125, limitMinutes: null, remainingMinutes: null, exhausted: false });
     expect(h.build).toHaveBeenCalledOnce();
   });

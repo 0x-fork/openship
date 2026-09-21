@@ -43,13 +43,14 @@
         "customDomains": null,
         "seats": null
       },
-      "features": [
-        "staticOnly",
-        "buildMinutes",
-        "projects",
-        "freeSubdomains",
-        "communitySupport"
-      ]
+      "features": ["staticOnly", "buildMinutes", "projects", "freeSubdomains", "communitySupport"],
+      "billing": {
+        "creditsPerCycle": 0,
+        "yearlyCreditsPerCycle": null,
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      }
     },
     {
       "id": "starter",
@@ -75,7 +76,7 @@
         "runningServices": 3,
         "maxProjects": 10,
         "maxResourceTier": "medium",
-        "computeMinutesPerMonth": 150000,
+        "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": 3000,
         "freeSubdomains": 25,
         "customDomains": null,
@@ -85,12 +86,18 @@
         "everythingIn",
         "anyWorkload",
         "runningServices",
-        "computeMinutes",
         "buildMinutes",
         "power",
         "projects",
         "emailSupport"
-      ]
+      ],
+      "billing": {
+        "creditsPerCycle": 1200,
+        "yearlyCreditsPerCycle": null,
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      }
     },
     {
       "id": "pro",
@@ -116,7 +123,7 @@
         "runningServices": 10,
         "maxProjects": 50,
         "maxResourceTier": "high",
-        "computeMinutesPerMonth": 600000,
+        "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": 12000,
         "freeSubdomains": 100,
         "customDomains": null,
@@ -125,12 +132,18 @@
       "features": [
         "everythingIn",
         "runningServices",
-        "computeMinutes",
         "buildMinutes",
         "power",
         "projects",
         "prioritySupport"
-      ]
+      ],
+      "billing": {
+        "creditsPerCycle": 3000,
+        "yearlyCreditsPerCycle": null,
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      }
     },
     {
       "id": "team",
@@ -156,7 +169,7 @@
         "runningServices": 50,
         "maxProjects": null,
         "maxResourceTier": "xlarge",
-        "computeMinutesPerMonth": 2200000,
+        "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": 36000,
         "freeSubdomains": null,
         "customDomains": null,
@@ -165,13 +178,19 @@
       "features": [
         "everythingIn",
         "runningServices",
-        "computeMinutes",
         "buildMinutes",
         "power",
         "projectsUnlimited",
         "freeSubdomainsUnlimited",
         "prioritySupport"
-      ]
+      ],
+      "billing": {
+        "creditsPerCycle": 15000,
+        "yearlyCreditsPerCycle": null,
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      }
     },
     {
       "id": "enterprise",
@@ -210,7 +229,14 @@
         "dedicatedInfra",
         "onboarding",
         "dedicatedSupport"
-      ]
+      ],
+      "billing": {
+        "creditsPerCycle": null,
+        "yearlyCreditsPerCycle": null,
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces"
+      }
     }
   ],
   "creditPacks": [

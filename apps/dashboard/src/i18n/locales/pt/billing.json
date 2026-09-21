@@ -262,7 +262,10 @@
     "checking": "Atualizando seu plano e saldo do Cloud. O pagamento pode levar um momento para ser processado.",
     "active": "Seu plano do Cloud está ativo.",
     "pending": "Seu pagamento ainda pode estar sendo processado. Atualize esta página para verificar seu plano e saldo. Contate o suporte se um pagamento concluído não aparecer.",
-    "support": "Contatar suporte"
+    "support": "Contatar suporte",
+    "failed": "Este pagamento não foi concluído. Volte à faturação para tentar novamente.",
+    "reversed": "Este pagamento foi reembolsado ou contestado. Verifique o saldo ou contacte o suporte.",
+    "topupComplete": "Os seus créditos adicionais foram adicionados."
   },
   "deployGate": {
     "title": "Escolha um plano para implantar",

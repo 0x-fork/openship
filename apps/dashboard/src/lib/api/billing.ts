@@ -2,7 +2,7 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
-import type { BillingSubscription, BillingResources } from "@repo/contracts";
+import type { BillingSubscription, BillingResources, BillingCheckoutStatus } from "@repo/contracts";
 export type { BillingResources } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
@@ -196,6 +196,12 @@ interface Envelope<T> {
 /* ------------------------------------------------------------------ */
 
 export const billingApi = {
+  getCheckoutStatus: async (checkoutId: string): Promise<BillingCheckoutStatus> => {
+    const res = await api.get<Envelope<BillingCheckoutStatus>>(endpoints.billing.checkout, {
+      params: { checkoutId },
+    });
+    return res.data;
+  },
   /** Dashboard overview snapshot — tier, status, period, credit balance. */
   getBillingState: async (): Promise<BillingState> => {
     const res = await api.get<Envelope<BillingState>>(endpoints.billing.state);

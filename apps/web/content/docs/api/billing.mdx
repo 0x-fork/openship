@@ -6,7 +6,8 @@ description: Read plans and manage subscriptions, credits, and usage.
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 Billing covers plans, subscriptions, credits, and usage. Plan listing is public on every installation.
-Oblien owns hosted checkout, payment collection, renewals, and credits. Every
+Openship defines its prices, namespace credits, limits and checkout copy. Oblien
+collects the payment and applies the saved offer on payment and renewal. Every
 organization maps to one immutable provider namespace resolved by Openship.
 Account operations require configured Cloud billing. Self-hosted HTTP routes can proxy a connected user's
 Cloud billing account; fixed SDK scopes require a direct compatible Cloud API connection.
@@ -52,13 +53,13 @@ Each entry in `plans` looks like:
 <TypeTable
   type={{
     id: { type: 'string', description: 'Stable tier id — free, starter, pro, team, enterprise. Never localized; this is what you send back when starting a subscription.' },
-    name: { type: 'string', description: 'Provider display name. Do not key logic off this.' },
-    description: { type: 'string', description: "The provider's plan description." },
+    name: { type: 'string', description: 'Openship display name. Do not key logic off this.' },
+    description: { type: 'string', description: "Openship's checkout description." },
     popular: { type: 'boolean', description: 'Render the "most popular" badge on exactly this tier.' },
     price: { type: 'object', description: 'Monthly and annual price in the currency’s MINOR units (cents). null on either side means that interval is not purchasable.' },
     monthlyCredits: { type: 'number | null', description: 'Included monthly allowance in milli-credits. null means uncapped.' },
     limits: { type: 'object', description: 'Openship application allowances, including workloads, running services, projects, machine tier, build minutes, domains, and seats.' },
-    features: { type: 'string[]', description: 'Provider feature bullets. Render verbatim.' },
+    features: { type: 'string[]', description: 'Openship feature bullets. Render verbatim.' },
     contactSales: { type: 'string | null', description: 'Where to send a buyer when the tier has no self-serve price — a mailto or URL. null on purchasable tiers.' },
   }}
 />
@@ -68,14 +69,29 @@ Two conventions matter when you render this:
 - **`price.monthly` is in cents**, and `null` means the tier is priced per
   contract — pair it with `contactSales` and render the `ui.custom` label rather
   than a number.
-- **A `null` limit is always "unlimited"**, never zero. `annual.enabled` is
+- **A `null` application limit means "uncapped"**, never zero. An absent traffic
+  capacity is unknown; custom offers do not inherit platform traffic tiers. `annual.enabled` is
   `false` while annual terms are unpublished, and every `price.annual` is `null`
   to match — keep annual affordances hidden while it is.
 
-Prices, credits, and packs come from Oblien's live catalog. The API, dashboard,
-and [pricing page](/pricing) use that same source. Application limits come from
-`@repo/core`. Internal tier IDs stay stable: `starter` selects Oblien's `hobby`,
-`pro` selects `pro`, and `team` selects `scale`.
+Prices, credits, packs and limits come from Openship's server catalog in
+`@repo/core`. The API, dashboard and [pricing page](/pricing) read the same
+published catalog. Monthly paid plans are $10 / $39 / $99; annual checkout is
+hidden until explicit yearly terms are published. Linked local installations
+read the SaaS public catalog without sending local credentials.
+
+New checkouts send a generic Oblien `offer`. It contains the server-selected
+price, credits, grace and VM caps; versioned metadata records the Openship plan,
+application limits, organization and immutable namespace. Customers cannot
+submit their own price, offer or namespace. Existing Oblien catalog subscriptions
+remain readable, while all new purchases use Openship's catalog.
+
+The payment funds the reseller's Oblien wallet. It does not change the reseller
+account's platform subscription. Each customer subscription belongs to its
+namespace. Renewals use the saved offer and application limits, so catalog edits
+do not change existing customers' terms. Grace defaults to zero and can be
+configured in the catalog. Credits are independent of USD price and are not a
+promise of fixed CPU minutes.
 
 ## Subscription and usage
 
@@ -126,6 +142,26 @@ console.log(subscription?.cancelAtPeriodEnd);
 await ship.billing.resumeSubscription();
 ```
 
+## Verify a checkout
+
+```ts
+const checkout = await ship.billing.getCheckout({ checkoutId: 'cs_...' });
+```
+
+`GET /api/billing/checkout?checkoutId=cs_...` requires `billing:read`. Openship
+resolves the current organization's namespace before asking Oblien about that
+specific session. Another organization's checkout cannot be read. The response
+contains `id`, `kind`, `status`, `paymentStatus`, `fulfilled`,
+`fulfillmentStatus` and `creditsGranted` (milli-credits), without reseller wallet
+or payment-provider identifiers.
+
+The success URL includes `session_id`. A return URL or a previously active
+subscription is not proof of the new payment. The dashboard confirms only a
+paid checkout whose fulfillment completed with a positive net credit grant;
+subscription purchases also require the expected tier and interval to be active.
+Unfinished delivery stays pending, while refunds, disputes and failures are
+shown explicitly. Webhook events and fresh provider reads remain authoritative.
+
 ## Resource usage
 
 <Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
@@ -173,8 +209,9 @@ usage or unlimited resources. `measuredAt` identifies the snapshot time.
 
 `GET /topup-packs` lists the one-shot credit packs from the same catalog;
 `POST /topup` opens Checkout for one. Credits bought this way sit on top of the
-plan's allowance and survive renewal. Openship never resets or grants those
-credits itself.
+plan's allowance; only the unused purchased remainder survives renewal.
+A top-up cannot increase resource/project/build limits or activate a subscription.
+Openship never resets or grants credits itself.
 
 `POST /portal` returns `{ portalUrl }` for this organization's invoices, payment
 methods, and cancellation. It requires `billing:admin`, like cancel/resume,
@@ -197,6 +234,7 @@ closure and resource cleanup.
 | --- | --- | --- |
 | Read the plan catalog, optionally localized. | `billing.listPlans(input?)` | `GET /api/billing/plans`<br />`Handler authentication` |
 | Read current billing state. | `billing.getState()` | `GET /api/billing/state`<br />`billing:read` |
+| Verify a checkout and its credit delivery for this organization. | `billing.getCheckout(input)` | `GET /api/billing/checkout`<br />`billing:read` |
 | Read compute usage, edge traffic, and bandwidth limits. | `billing.getResources()` | `GET /api/billing/resources`<br />`billing:read` |
 | Read subscription and renewal state. | `billing.getSubscription()` | `GET /api/billing/subscription`<br />`billing:read` |
 | Create a subscription checkout or subscription change. | `billing.createSubscription(input)` | `POST /api/billing/subscription`<br />`billing:write` |

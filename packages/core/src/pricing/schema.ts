@@ -43,7 +43,7 @@ const limitNumber = z.number().int().nonnegative().nullable();
  * the enforced number cannot drift, and the transient BUILD workspace is
  * accounted for by construction instead of 409-ing the free tier.
  */
-const planLimitsSchema = z.object({
+export const planLimitsSchema = z.object({
   /** Which deployment workloads the tier may run. Free ships `["static"]`. */
   workloads: z.array(z.enum(WORKLOAD_TYPES)).min(1),
   /** May the tier run multi-service stacks — Compose, catalog apps, managed DBs? */
@@ -63,24 +63,8 @@ const planLimitsSchema = z.object({
    * `null` = uncapped (enterprise).
    */
   maxResourceTier: z.enum(RESOURCE_TIER_ORDER).nullable(),
-  /**
-   * App runtime included per month, in COMPUTE MINUTES — one minute of a `low`
-   * machine. Bigger machines burn proportionally more (`computeUnitsPerMinute`:
-   * medium 2×, high 4×, xlarge 8×), so one published number covers every size
-   * without quoting a separate allowance per tier of machine.
-   *
-   * This replaced an authored `credits` blob whose numbers meant nothing: 60,000
-   * credits against a 43,200-minute month, on a tier advertising 50 running
-   * services — i.e. not enough to run ONE app around the clock. The unit now has
-   * a definition, and `planMonthlyCredits()` derives the Oblien grant from it.
-   *
-   * `runningServices` is a CONCURRENCY cap, this is the METER. A tier may allow
-   * more always-on apps than its minutes cover; that is what "up to" means and is
-   * how metered compute works everywhere.
-   *
-   * 0 is meaningful and correct for a static-only tier: the edge serves static
-   * sites, `runningServices` is already 0, so no app compute is consumed.
-   */
+  /** Legacy display field. Paid offers leave it null: metered credits do not
+   * imply a fixed number of runtime minutes. It never determines a credit grant. */
   computeMinutesPerMonth: limitNumber,
   buildMinutesPerMonth: limitNumber,
   freeSubdomains: limitNumber,
@@ -95,6 +79,21 @@ const planSchema = z.object({
     monthly: z.number().int().nonnegative().nullable(),
     annual: z.number().int().nonnegative().nullable(),
   }),
+  /** Oblien namespace allowance, independent of the USD price and product copy. */
+  billing: z
+    .object({
+      creditsPerCycle: z.number().int().min(0).max(1_000_000_000).nullable(),
+      yearlyCreditsPerCycle: z.number().int().min(1).max(1_000_000_000).nullable(),
+      overdraft: z.number().int().min(0).max(1_000_000_000),
+      suspendThreshold: z.number().int().min(0).max(1_000_000_000),
+      onOverdraftAction: z.enum(["block", "stop_workspaces"]),
+      checkoutName: z.string().min(1).max(120).optional(),
+      checkoutDescription: z.string().min(1).max(500).optional(),
+    })
+    .refine(
+      (value) => value.suspendThreshold >= value.overdraft,
+      "suspendThreshold must be at least overdraft",
+    ),
   stripePriceEnv: z.object({
     monthly: z.string().min(1).nullable(),
     annual: z.string().min(1).nullable(),
@@ -254,15 +253,31 @@ export const pricingCatalogSchema = z
       if (plan.inherits === plan.id) {
         ctx.addIssue({ code: "custom", path: ["plans", i, "inherits"], message: `plan "${plan.id}" inherits itself` });
       }
-      // A purchasable price with no Stripe env name can never reach checkout;
-      // an env name with no price would render a free-looking paid tier.
+      // Namespace offers use dynamic provider prices; no Stripe price ID is needed.
       const monthlyPurchasable = plan.price.monthly !== null && plan.price.monthly > 0;
-      if (monthlyPurchasable && !plan.stripePriceEnv.monthly) {
-        ctx.addIssue({ code: "custom", path: ["plans", i, "stripePriceEnv", "monthly"], message: `plan "${plan.id}" has a monthly price but no Stripe price env name` });
+      if (monthlyPurchasable && !plan.billing.creditsPerCycle) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["plans", i, "billing", "creditsPerCycle"],
+          message: `plan "${plan.id}" needs a finite positive namespace allowance`,
+        });
       }
       const annualPurchasable = plan.price.annual !== null && plan.price.annual > 0;
-      if (annualPurchasable && !plan.stripePriceEnv.annual) {
-        ctx.addIssue({ code: "custom", path: ["plans", i, "stripePriceEnv", "annual"], message: `plan "${plan.id}" has an annual price but no Stripe price env name` });
+      if (annualPurchasable && !plan.billing.yearlyCreditsPerCycle) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["plans", i, "billing", "yearlyCreditsPerCycle"],
+          message: `plan "${plan.id}" needs an explicit annual namespace allowance`,
+        });
+      }
+      for (const amount of [plan.price.monthly, plan.price.annual]) {
+        if (amount !== null && amount !== 0 && (amount < 100 || amount > 1_000_000)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["plans", i, "price"],
+            message: "Hosted offers require USD cents between 100 and 1000000",
+          });
+        }
       }
       // "Contact sales" and "has a price" are mutually exclusive: the UI keys
       // its whole CTA off which one is set.

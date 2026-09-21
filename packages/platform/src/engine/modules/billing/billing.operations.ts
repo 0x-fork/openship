@@ -8,6 +8,7 @@ import * as service from "./billing-application.service";
 import { proxyToCloudBilling } from "./billing-local.service";
 
 const routes = {
+  getCheckout: ["GET", "/checkout"],
   getState: ["GET", "/state"], getResources: ["GET", "/resources"], getSubscription: ["GET", "/subscription"],
   createSubscription: ["POST", "/subscription"], cancelSubscription: ["POST", "/cancel"],
   resumeSubscription: ["POST", "/resume"],
