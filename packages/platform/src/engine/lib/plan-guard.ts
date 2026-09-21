@@ -1,10 +1,10 @@
 /**
  * Plan entitlement gates — the ONE place a plan's limits become a refusal.
  *
- * Every limit is read from the pricing catalog (`planLimits(tier)`), never
- * hardcoded, so the number a customer was shown on the pricing page is literally
- * the number that refuses them. Cloud project creation, builds, running services,
- * and resource sizes require the corresponding plan allowances.
+ * Paid namespaces use the limits saved with their purchased offer. Free and
+ * legacy plans use the pricing catalog (`planLimits(tier)`). Cloud project
+ * creation, builds, running services, and resource sizes require the
+ * corresponding plan allowances.
  *
  * SCOPE — cloud only, and deliberately `env.CLOUD_MODE`:
  *   Self-hosted Openship is free and unmetered; that's the product promise, so
@@ -17,7 +17,7 @@
  *   and change nothing.
  *
  * Oblien enforces credit limits and subscription suspension. These gates
- * enforce Openship application allowances using the current provider tier.
+ * enforce Openship application allowances using the verified subscription.
  */
 
 import {
@@ -28,6 +28,7 @@ import {
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
   type PlanTierId,
+  type PlanLimits,
   type WorkloadType,
 } from "@repo/core";
 import { repos } from "@repo/db";
@@ -82,19 +83,22 @@ export class FreeSubdomainLimitError extends PlanUpgradeRequiredError {
 }
 
 /** The org's current tier. Unknown/missing → the catalog's most restrictive. */
-async function tierFor(organizationId: string): Promise<PlanTierId> {
+async function planFor(organizationId: string): Promise<{ tier: PlanTierId; limits: PlanLimits }> {
   const org = await repos.organization.findById(organizationId);
   if (env.CLOUD_MODE && org?.oblienNamespace) {
     const { syncOblienEntitlement } = await import("../modules/billing/billing-oblien-quota");
     // Plan lookups are reads. Token issuance and actual spend operations still
     // synchronize provider resource limits before allowing a workload to start.
-    return (await syncOblienEntitlement(organizationId, { syncResourceLimits: false })).tier;
+    return await syncOblienEntitlement(organizationId, { syncResourceLimits: false });
   }
-  return (org?.planTierId ?? "free") as PlanTierId;
+  const tier = (org?.planTierId ?? "free") as PlanTierId;
+  return { tier, limits: planLimits(tier) };
 }
 
 /** The org's tier, for callers that need to name it in their own error. */
-export const currentPlanTier = tierFor;
+export async function currentPlanTier(organizationId: string): Promise<PlanTierId> {
+  return (await planFor(organizationId)).tier;
+}
 
 /* ─── Static-only workloads ──────────────────────────────────────────────── */
 
@@ -145,8 +149,7 @@ export async function assertPlanAllowsDeployShape(
 ): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const tier = await tierFor(organizationId);
-  const limits = planLimits(tier);
+  const { tier, limits } = await planFor(organizationId);
 
   if (!limits.services) {
     const runsServices =
@@ -180,8 +183,8 @@ export async function assertPlanAllowsDeployShape(
 export async function assertPlanAllowsServices(organizationId: string): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const tier = await tierFor(organizationId);
-  if (!planLimits(tier).services) {
+  const { tier, limits } = await planFor(organizationId);
+  if (!limits.services) {
     throw new PlanUpgradeRequiredError(
       "Your plan can deploy static sites only. Databases, one-click apps and multi-service stacks need a paid plan.",
       "static-only",
@@ -212,15 +215,16 @@ export async function assertPlanAllowsResourceTier(
 ): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const tier = await tierFor(organizationId);
-  assertResourcesFitPlan(tier, requested);
+  const { tier, limits } = await planFor(organizationId);
+  assertResourcesFitPlan(tier, requested, limits);
 }
 
 function assertResourcesFitPlan(
   tier: PlanTierId,
   requested: { tier?: string | null; cpuCores?: number | null; memoryMb?: number | null },
+  limits: PlanLimits,
 ): void {
-  const maxTier = planLimits(tier).maxResourceTier;
+  const maxTier = limits.maxResourceTier;
   if (maxTier === null) return; // uncapped (enterprise)
 
   const ceiling = RESOURCE_TIER_SPECS[maxTier];
@@ -261,9 +265,13 @@ type CloudDeploymentLimits = {
 
 type CloudServiceAllowance = Pick<CloudDeploymentLimits, "projectId" | "runsApplication" | "nativeApplication" | "services">;
 
-async function assertServiceAllowance(organizationId: string, tier: PlanTierId, input: CloudServiceAllowance): Promise<void> {
-  const limits = planLimits(tier);
-  const services = input.services?.filter(service => service.enabled !== false);
+async function assertServiceAllowance(
+  organizationId: string,
+  tier: PlanTierId,
+  input: CloudServiceAllowance,
+  limits: PlanLimits,
+): Promise<void> {
+  const services = input.services?.filter((service) => service.enabled !== false);
   const nativeApplication = input.nativeApplication ?? (!services && input.runsApplication);
   if (services?.length && !limits.services) {
     throw new PlanUpgradeRequiredError("Your plan can deploy static sites only. Service stacks need a paid plan.", "static-only", tier);
@@ -292,7 +300,8 @@ async function assertServiceAllowance(organizationId: string, tier: PlanTierId, 
 /** The same slot/plan gate for new deployments and existing-container resumes. */
 export async function assertCloudServiceAllowance(organizationId: string, input: CloudServiceAllowance): Promise<void> {
   if (!env.CLOUD_MODE) return;
-  await assertServiceAllowance(organizationId, await tierFor(organizationId), input);
+  const { tier, limits } = await planFor(organizationId);
+  await assertServiceAllowance(organizationId, tier, input, limits);
 }
 
 /** Validate the effective configuration on every deployment entry and again
@@ -300,15 +309,22 @@ export async function assertCloudServiceAllowance(organizationId: string, input:
  * must obey the same limits as the dashboard's resource picker. */
 export async function assertCloudDeploymentLimits(organizationId: string, input: CloudDeploymentLimits): Promise<void> {
   if (!env.CLOUD_MODE) return;
-  const tier = await tierFor(organizationId);
-  const limits = planLimits(tier);
-  await assertServiceAllowance(organizationId, tier, input);
+  const { tier, limits } = await planFor(organizationId);
+  await assertServiceAllowance(organizationId, tier, input, limits);
   const services = input.services?.filter(service => service.enabled !== false);
   for (const service of services ?? []) {
-    assertResourcesFitPlan(tier, resolveCloudServiceResources(service.advanced?.resources, input.resources));
+    assertResourcesFitPlan(
+      tier,
+      resolveCloudServiceResources(service.advanced?.resources, input.resources),
+      limits,
+    );
   }
   if (input.nativeApplication ?? (!services && input.runsApplication)) {
-    assertResourcesFitPlan(tier, resolveRuntimeResources(input.resources, { isCloud: true }));
+    assertResourcesFitPlan(
+      tier,
+      resolveRuntimeResources(input.resources, { isCloud: true }),
+      limits,
+    );
   }
   const build = resolveBuildResources(input.buildResources, { isCloud: true });
   const maximum = PRICING.oblien.buildResources;
@@ -330,8 +346,8 @@ export async function assertCloudRuntimeLimits(organizationId: string,
     allocatedResources?: { containerId: string; cpuCores: number; memoryMb: number } | null }>,
 ): Promise<void> {
   if (!env.CLOUD_MODE || containers.length === 0) return;
-  const tier = await tierFor(organizationId);
-  if (planLimits(tier).maxResourceTier === null) return;
+  const { tier, limits } = await planFor(organizationId);
+  if (limits.maxResourceTier === null) return;
   for (const container of containers) {
     const info = await runtime.getContainerInfo(container.containerId);
     const recorded = container.allocatedResources;
@@ -341,7 +357,7 @@ export async function assertCloudRuntimeLimits(organizationId: string,
       throw new AppError("Cannot verify this container's resource allocation. Retry when its host is reachable or redeploy it before starting.",
         409, "RESOURCE_LIMITS_UNAVAILABLE");
     }
-    assertResourcesFitPlan(tier, resources);
+    assertResourcesFitPlan(tier, resources, limits);
   }
 }
 
@@ -358,7 +374,7 @@ export async function assertCloudRuntimeLimits(organizationId: string,
  */
 export async function planProjectLimit(organizationId: string): Promise<number | null> {
   if (!env.CLOUD_MODE) return null;
-  return planLimits(await tierFor(organizationId)).maxProjects;
+  return (await planFor(organizationId)).limits.maxProjects;
 }
 
 /* ─── Application service allowance ─────────────────────────────────────── */
@@ -378,8 +394,8 @@ export async function assertRunningServiceQuota(
 ): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const tier = await tierFor(organizationId);
-  const limit = planLimits(tier).runningServices;
+  const { tier, limits } = await planFor(organizationId);
+  const limit = limits.runningServices;
   if (limit === null) return;
 
   const used = await repos.service.countRunningForOrg(organizationId, replacingServiceIds);
@@ -455,10 +471,13 @@ export interface BuildMinuteUsage {
  * A failed usage read is unknown. Never turn a database outage into a fresh
  * allowance; callers can retry without starting more metered work.
  */
-export async function getBuildMinuteUsage(organizationId: string): Promise<BuildMinuteUsage> {
+export async function getBuildMinuteUsage(
+  organizationId: string,
+  snapshot?: { tier: PlanTierId; limits: PlanLimits },
+): Promise<BuildMinuteUsage> {
   const org = await repos.organization.findById(organizationId);
-  const tier = (org?.planTierId ?? "free") as PlanTierId;
-  const limitMinutes = planLimits(tier).buildMinutesPerMonth;
+  const { tier, limits } = snapshot ?? (await planFor(organizationId));
+  const limitMinutes = limits.buildMinutesPerMonth;
   const { from, to } = buildMinutePeriod(org?.createdAt ?? new Date(), new Date());
 
   const millis = await repos.deployment
@@ -547,7 +566,7 @@ export interface FreeSubdomainSlot {
  * always agree.
  */
 export async function listFreeSubdomains(organizationId: string): Promise<FreeSubdomainSlot[]> {
-  const rows = await repos.domain.listForOrgWithProject(organizationId).catch(() => []);
+  const rows = await repos.domain.listForOrgWithProject(organizationId);
   return rows
     .filter((r) => isCloudManagedHostname(r.hostname))
     .map((r) => ({
@@ -561,16 +580,18 @@ export async function listFreeSubdomains(organizationId: string): Promise<FreeSu
     }));
 }
 
-export async function getFreeSubdomainUsage(organizationId: string): Promise<FreeSubdomainUsage> {
-  const org = await repos.organization.findById(organizationId);
-  const tier = (org?.planTierId ?? "free") as PlanTierId;
-  const limit = planLimits(tier).freeSubdomains;
+export async function getFreeSubdomainUsage(
+  organizationId: string,
+  snapshot?: { tier: PlanTierId; limits: PlanLimits },
+): Promise<FreeSubdomainUsage> {
+  const { tier, limits } = snapshot ?? (await planFor(organizationId));
+  const limit = limits.freeSubdomains;
 
   if (limit === null) {
     return { planTierId: tier, limit: null, used: 0, remaining: null };
   }
 
-  const hostnames = await repos.domain.listHostnamesForOrg(organizationId).catch(() => []);
+  const hostnames = await repos.domain.listHostnamesForOrg(organizationId);
   const used = new Set(
     hostnames.filter((h) => isCloudManagedHostname(h)).map((h) => h.trim().toLowerCase()),
   ).size;
@@ -601,9 +622,8 @@ export async function assertFreeSubdomainQuota(
     .map((h) => h.trim().toLowerCase());
   if (candidates.length === 0) return;
 
-  const org = await repos.organization.findById(organizationId);
-  const tier = (org?.planTierId ?? "free") as PlanTierId;
-  const limit = planLimits(tier).freeSubdomains;
+  const { tier, limits } = await planFor(organizationId);
+  const limit = limits.freeSubdomains;
   if (limit === null) return;
 
   // Itemized, not just counted: the refusal has to tell the user WHERE their

@@ -6,7 +6,6 @@ import {
   safeErrorMessage,
   CREDIT_PACKS,
   PLANS,
-  planLimits,
   RESOURCE_TIER_SPECS,
   resolveCreditPackPriceId,
   type PlanTierId,
@@ -60,19 +59,28 @@ export interface UpsertSubscriptionInput {
 /** Mirror fresh provider entitlement and add Openship application usage. */
 export async function getBillingState(orgId: string): Promise<BillingState> {
   await ensureNamespace(orgId);
-  const { entitlement, tier, subscription: providerSubscription } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
+  const {
+    entitlement,
+    tier,
+    limits: planLimitsForTier,
+    subscription: providerSubscription,
+  } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
   const [plan, legacySubscriptions] = await Promise.all([
     // A setup-only workspace has no product to look up. Catalog availability
     // must not hide a customer's balance, invoices or subscription controls.
-    tier === "free" ? null : cloudPlan(tier).catch(error => {
-      console.warn(`[billing] Plan details are temporarily unavailable: ${safeErrorMessage(error)}`);
-      return null;
-    }),
+    tier === "free"
+      ? null
+      : cloudPlan(tier, providerSubscription).catch((error) => {
+          console.warn(
+            `[billing] Plan details are temporarily unavailable: ${safeErrorMessage(error)}`,
+          );
+          return null;
+        }),
     listLiveSubscriptions(orgId),
   ]);
   const subscription = presentCloudSubscription(providerSubscription);
   const managed = legacySubscriptions.length === 0;
-  const canTopUp = canTopUpCloudSubscription(providerSubscription);
+  const canTopUp = canTopUpCloudSubscription(providerSubscription, entitlement);
   // A missing free catalog product is intentional: project setup is not a
   // subscription and includes no Cloud credits. Preserve any purchased balance.
   const monthlyCreditLimit = tier === "free" ? 0 : plan?.monthlyCredits ?? null;
@@ -85,8 +93,8 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
   // actually enforced, would have shown a user "3 of 15 used" while a different
   // window refused their deploy. One window, one number, one source.
   const [buildMinutes, freeSubdomains, servicesUsed, projectsUsed] = await Promise.all([
-    getBuildMinuteUsage(orgId),
-    getFreeSubdomainUsage(orgId),
+    getBuildMinuteUsage(orgId, { tier, limits: planLimitsForTier }),
+    getFreeSubdomainUsage(orgId, { tier, limits: planLimitsForTier }),
     // Running services = Oblien workspaces, the ceiling customers feel most.
     repos.service.countRunningForOrg(orgId).catch(() => null),
     repos.projectGroup
@@ -95,7 +103,6 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
       .catch(() => null),
   ]);
   const buildTimeMinutes = buildMinutes.usedMinutes;
-  const planLimitsForTier = planLimits(tier);
 
   return {
     tier,

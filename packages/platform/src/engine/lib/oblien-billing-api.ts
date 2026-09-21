@@ -12,23 +12,39 @@ const namespace = z.string().min(1).max(128);
 
 export const oblienCatalogSchema = z.object({
   success: z.literal(true),
-  plans: z.array(z.object({
-    tierId: z.string().min(1),
-    name: z.string().min(1),
-    description: z.string().nullable().optional(),
-    priceMonthly: allowance,
-    priceYearly: allowance,
-    currency: z.string(),
-    creditsPerCycle: allowance,
-    yearlyCreditsPerCycle: allowance,
-    overdraftCredits: allowance.optional(),
-    features: z.array(z.string()),
-    popular: z.boolean().optional(),
-  })),
-  creditPacks: z.array(z.object({
-    packId: z.string().min(1), name: z.string(), credits: amount.positive(),
-    price: amount.nonnegative(), currency: z.string(), popular: z.boolean().optional(),
-  })),
+  reseller: z
+    .object({
+      contractVersion: amount.int().positive(),
+      offerPolicy: z.boolean(),
+      resourceLimits: z.boolean(),
+      effectiveResourceLimits: z.boolean().optional(),
+    })
+    .optional(),
+  plans: z.array(
+    z.object({
+      tierId: z.string().min(1),
+      name: z.string().min(1),
+      description: z.string().nullable().optional(),
+      priceMonthly: allowance,
+      priceYearly: allowance,
+      currency: z.string(),
+      creditsPerCycle: allowance,
+      yearlyCreditsPerCycle: allowance,
+      overdraftCredits: allowance.optional(),
+      features: z.array(z.string()),
+      popular: z.boolean().optional(),
+    }),
+  ),
+  creditPacks: z.array(
+    z.object({
+      packId: z.string().min(1),
+      name: z.string(),
+      credits: amount.positive(),
+      price: amount.nonnegative(),
+      currency: z.string(),
+      popular: z.boolean().optional(),
+    }),
+  ),
 });
 
 export const oblienEntitlementSchema = z.object({
@@ -37,8 +53,39 @@ export const oblienEntitlementSchema = z.object({
   status: z.enum(["active", "past_due", "canceled", "credit_exhausted"]),
   periodStart: date, periodEnd: date,
   // Preserve signed legacy usage; the provider's limit includes purchased credits.
-  quota: z.object({ limit: allowance, used: amount, balance: amount.nullable() }),
+  quota: z.object({
+    limit: allowance,
+    used: amount,
+    balance: amount.nullable(),
+    overdraft: amount.nonnegative().optional(),
+    suspendThreshold: allowance.optional(),
+  }),
 });
+
+export const oblienOfferResourceLimitsSchema = z.object({
+  max_workspaces: allowance,
+  max_vcpus: allowance,
+  max_ram_mb: allowance,
+  max_disk_gb: allowance,
+});
+export const oblienOfferSchema = z.object({
+  reference: z.string().min(1).max(100).optional(),
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).optional(),
+  unitAmount: amount.int().min(100).max(1_000_000),
+  currency: z.literal("usd"),
+  credits: amount.int().min(1).max(1_000_000_000),
+  policy: z
+    .object({
+      overdraft: amount.int().nonnegative(),
+      suspendThreshold: amount.int().nonnegative(),
+      onOverdraftAction: z.enum(["block", "stop_workspaces"]),
+    })
+    .refine((value) => value.suspendThreshold >= value.overdraft)
+    .optional(),
+  resourceLimits: oblienOfferResourceLimitsSchema.optional(),
+});
+export type OblienOffer = z.infer<typeof oblienOfferSchema>;
 
 const policySchema = z.object({
   success: z.literal(true), service: z.literal("workspace_vm"),
@@ -48,14 +95,21 @@ const policySchema = z.object({
 const checkoutSchema = z.object({ success: z.literal(true), url: z.url(), checkoutId: z.string().min(1) });
 const portalSchema = z.object({ success: z.literal(true), namespace, url: z.url() });
 export const oblienSubscriptionSchema = z.object({
-  success: z.literal(true), namespace,
-  subscription: z.object({
-    tierId: z.string().min(1),
-    status: z.enum(["active", "trialing", "past_due", "unpaid", "paused", "canceled"]),
-    billingInterval: z.enum(["monthly", "yearly"]),
-    periodStart: date, periodEnd: date,
-    cancelAtPeriodEnd: z.boolean(), canceledAt: date,
-  }).nullable(),
+  success: z.literal(true),
+  namespace,
+  subscription: z
+    .object({
+      tierId: z.string().min(1),
+      status: z.enum(["active", "trialing", "past_due", "unpaid", "paused", "canceled"]),
+      billingInterval: z.enum(["monthly", "yearly"]),
+      periodStart: date,
+      periodEnd: date,
+      cancelAtPeriodEnd: z.boolean(),
+      canceledAt: date,
+      offer: oblienOfferSchema.optional(),
+      metadata: z.record(z.string(), z.string()).optional(),
+    })
+    .nullable(),
 });
 
 export type OblienBillingCatalog = z.infer<typeof oblienCatalogSchema>;
@@ -79,8 +133,9 @@ export type OblienCheckout = {
   successUrl: string;
   cancelUrl: string;
   idempotencyKey: string;
-} & ({ kind: "subscription"; planTierId: string; billingInterval: "monthly" | "yearly" }
-  | { kind: "topup"; packId: string });
+  offer: OblienOffer;
+  metadata: Record<string, string>;
+} & ({ kind: "subscription"; billingInterval: "monthly" | "yearly" } | { kind: "topup" });
 
 /** Log only a bounded error identifier, never provider messages or payment data. */
 function providerErrorCode(payload: unknown): string {
@@ -170,7 +225,10 @@ export class OblienBillingApi {
       const providerFailure = PROVIDER_FAILURES.has(code) || /^ER_[A-Z0-9_]+$/.test(code) || ![400, 404, 409, 422, 429].includes(response.status);
       const status = providerFailure ? 503 : response.status;
       console.warn("[oblien:billing] Provider request failed", {
-        method, operation: path.replace(/^\/billing\/policy\/[^/]+/, "/billing/policy/:namespace"),
+        method,
+        operation: path
+          .replace(/^\/billing\/policy\/[^/]+/, "/billing/policy/:namespace")
+          .replace(/^\/billing\/checkout\/[^/]+/, "/billing/checkout/:checkoutId"),
         providerStatus: response.status, providerCode: code,
         ...diagnostic,
       });
@@ -178,6 +236,8 @@ export class OblienBillingApi {
         invalid_plan: "This plan is no longer available. Refresh the plans page.",
         invalid_pack: "This credit pack is no longer available. Refresh the billing page.",
         no_customer: "No billing account exists yet. Complete a checkout first.",
+        no_checkout:
+          "No checkout was found for this organization. Open billing from the account that made the purchase.",
         no_subscription: "This organization has no subscription to manage.",
         subscription_ended: "This subscription has ended. Start a new checkout to subscribe again.",
         billing_customer_conflict: "This organization's billing needs to be separated from a legacy account. Contact support.",
@@ -185,6 +245,8 @@ export class OblienBillingApi {
         billing_redirect_not_allowed: "Cloud billing return links are not configured. Contact Openship support.",
         billing_idempotency_conflict: "This checkout attempt no longer matches the original request. Contact Openship support before starting another payment.",
         billing_checkout_reconciliation_required: "An earlier checkout needs to be reviewed. Contact Openship support before starting another payment.",
+        invalid_offer: "This Cloud offer is not configured correctly. Contact Openship support.",
+        reseller_enterprise_required: "Cloud payments require an account configuration update by Openship. Contact Openship support.",
         billing_provider_configuration_error: "Cloud payments are not configured correctly. Contact Openship support.",
         billing_database_collation_error: "Cloud billing is unavailable. Contact Openship support.",
         billing_storage_unavailable: "Cloud billing is temporarily unavailable. Please try again later.",
@@ -217,8 +279,53 @@ export class OblienBillingApi {
     return this.validate(this.billing.catalog(), oblienCatalogSchema);
   }
 
+  async assertResellerSupport(): Promise<void> {
+    const { reseller } = await this.getCatalog();
+    if (
+      !reseller ||
+      reseller.contractVersion < 2 ||
+      !reseller.offerPolicy ||
+      !reseller.resourceLimits ||
+      !reseller.effectiveResourceLimits
+    ) {
+      throw new AppError(
+        "The billing provider needs the namespace capacity policy update before Cloud checkout can be enabled.",
+        503,
+        "OBLIEN_BILLING_UPGRADE_REQUIRED",
+      );
+    }
+  }
+
   getEntitlement(slug: string): Promise<OblienEntitlement> {
     return this.validate(this.billing.entitlement(slug), oblienEntitlementSchema, slug);
+  }
+
+  getCheckout(slug: string, checkoutId: string) {
+    return this.validate(
+      this.billing.checkoutStatus(slug, checkoutId),
+      z.object({
+        success: z.literal(true),
+        namespace,
+        checkout: z.object({
+          id: z.literal(checkoutId),
+          kind: z.enum(["subscription", "topup"]),
+          status: z.enum(["open", "complete", "expired"]),
+          paymentStatus: z.enum(["paid", "unpaid", "no_payment_required"]),
+          fulfilled: z.boolean(),
+          fulfillmentStatus: z.enum([
+            "pending",
+            "completed",
+            "partially_refunded",
+            "refunded",
+            "disputed",
+            "expired",
+            "failed",
+          ]),
+          namespaceCreditsGranted: amount.nonnegative(),
+        }),
+      }),
+      slug,
+    );
   }
 
   getBalance(slug: string) {

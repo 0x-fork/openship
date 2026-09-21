@@ -37,6 +37,7 @@ const r = secureRouter(billingLocalRoutes, {
 // the orphan routes here just routed dashboard calls into 404 HTML
 // pages from the SaaS proxy, breaking dashboard error handling.
 r.use("/state", authMiddleware);
+r.use("/checkout", authMiddleware);
 r.use("/subscription", authMiddleware);
 r.use("/cancel", authMiddleware);
 r.use("/resume", authMiddleware);
@@ -49,6 +50,11 @@ r.use("/portal", authMiddleware);
 
 /* ---------- Dashboard state snapshot ---------- */
 r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getState);
+r.get(
+  "/checkout",
+  { tag: "billing:read", authorizationHandledByOperation: true },
+  billingLocal.getCheckout,
+);
 
 /* ---------- Subscriptions ---------- */
 r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true }, billingLocal.getSubscription);

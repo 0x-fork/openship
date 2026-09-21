@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { planLimits, type PlanTierId } from "@repo/core";
 const h = vi.hoisted(() => ({ cloud: true, tier: "starter", count: vi.fn(), usage: vi.fn(), sync: vi.fn() }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { get CLOUD_MODE() { return h.cloud; } } }));
 vi.mock("@repo/db", () => ({ repos: {
@@ -10,7 +11,12 @@ import { assertCloudDeploymentLimits, assertRunningServiceQuota, assertBuildMinu
 import { resolveCloudServiceResources } from "@repo/platform/engine/lib/resources";
 beforeEach(() => {
   vi.resetAllMocks(); h.cloud = true; h.tier = "starter";
-  h.sync.mockImplementation(async () => ({ tier: h.tier })); h.count.mockResolvedValue(3); h.usage.mockResolvedValue(0);
+  h.sync.mockImplementation(async () => ({
+    tier: h.tier,
+    limits: planLimits(h.tier as PlanTierId),
+  }));
+  h.count.mockResolvedValue(3);
+  h.usage.mockResolvedValue(0);
 });
 const base = { cpuCores: 1, memoryMb: 1024, diskMb: 8192 };
 const services = () => [{ enabled: true }, { enabled: true }, { enabled: true }];

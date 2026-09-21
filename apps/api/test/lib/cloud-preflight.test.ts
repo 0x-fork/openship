@@ -34,6 +34,13 @@ describe("Cloud preflight", () => {
     expect(await runCloudPreflight("org-a", {})).toMatchObject({ runtime: { ok: false, message: expect.stringContaining("credits exhausted") } });
     expect(h.createPlatform).not.toHaveBeenCalled();
   });
+  it("identifies a namespace capacity refusal as a deployment check failure", async () => {
+    h.token.mockRejectedValue(Object.assign(new Error("The configured Cloud limits exceed the provider account's resource capacity. Contact Openship support."), { code: "plan_limit_exceeded", status: 400 }));
+    const result = await runCloudPreflight("org-a", {});
+    expect(result.runtime).toEqual({ ok: false, message: "Cloud deployment check failed: The configured Cloud limits exceed the provider account's resource capacity. Contact Openship support." });
+    expect(h.createPlatform).not.toHaveBeenCalled();
+    expect(h.spend).not.toHaveBeenCalled();
+  });
   it("does not block an entitled customer on the account-level workspace quota endpoint", async () => {
     h.quota.mockRejectedValue(new Error("Account quota is unavailable for scoped tokens"));
     expect(await runCloudPreflight("org-a", {})).toMatchObject({ runtime: { ok: true } });

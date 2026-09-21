@@ -65,7 +65,7 @@ export function BillingResourceUsage({ state }: { state: BillingState }) {
     </div>
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <ResourceMeter label={copy.bandwidth} hint={copy.bandwidthHint} noPlan={noPlan} used={edge?.bandwidthGb ?? null}
-        max={edge ? edge.limits.bandwidthGb : state.plan?.edge?.bandwidthGb} unit="GB" icon={<Globe2 className="size-4" aria-hidden="true" />}
+        max={(edge ? edge.limits.bandwidthGb : state.plan?.edge?.bandwidthGb) ?? undefined} unit="GB" icon={<Globe2 className="size-4" aria-hidden="true" />}
         {...(edge?.status !== "available" ? { footnote: measured } : {})} />
       <ResourceMeter label={copy.requests} hint={copy.requestsHint} noPlan={noPlan} used={edge?.requests ?? null}
         footnote={edge?.status === "available" ? copy.requestsIncluded : measured} icon={<Zap className="size-4" aria-hidden="true" />} />

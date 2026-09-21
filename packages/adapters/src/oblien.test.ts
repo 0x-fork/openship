@@ -38,6 +38,20 @@ describe("Oblien SDK transport", () => {
     const error = await new Oblien({ token: "test" }).workspaces.get("ws-b").catch(error => error);
     expect(error.message).not.toContain("private-secret"); expect(error.details).toBeUndefined(); expect(error.status).toBe(403);
   });
+  it.each([
+    ["plan_limit_exceeded", "provider account's resource capacity"],
+    ["namespace_limit_exceeded", "provider account has reached its namespace limit"],
+    ["NAMESPACE_LIMIT_REACHED", "your organization's Cloud resource limits"],
+  ])("explains %s without leaking the provider's raw error body", async (code, description) => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      error: code, message: "private-account-data", details: { violations: ["private-namespace-name"] },
+    }, { status: 400 })));
+    const error = await new Oblien({ token: "scoped-test-token" }).workspaces.get("ws-a").catch(error => error);
+    expect(error).toMatchObject({ status: 400, code });
+    expect(error.message).toContain(description);
+    expect(error.message).not.toContain("private-");
+    expect(error.details).toBeUndefined();
+  });
   it("rejects requests that escape the configured API origin", async () => {
     const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
     await expect(new Oblien({ token: "test" })._http.request({ method: "GET", path: "//another-host.example/workspace" })).rejects.toThrow("escaped");
