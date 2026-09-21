@@ -350,6 +350,22 @@ curl -X POST "$OPENSHIP_URL/api/projects/proj_123/transfer/to-cloud" \
 </Tab>
 </Tabs>
 
+## Retry routing with logs
+
+Routing repair can include SSH and certificate issuance. Use the streaming operation to follow its
+progress without the ordinary request timeout:
+
+```ts
+for await (const event of ship.projects.retryRoutingStream("proj_123")) {
+  console.log(event.event, event.data);
+}
+```
+
+The HTTP equivalent is `POST /api/projects/:id/routing/retry/stream` with an SSE response. Log events
+contain the server's messages. A terminal `complete` event carries `status: "completed"` or
+`status: "failed"`; a disconnected stream alone does not establish success. Cancelling the stream
+stops log delivery while an accepted repair continues under the project's runtime lock.
+
 ## Errors
 
 <Callout title="400 — validation failed" type="warn">
@@ -430,7 +446,8 @@ IDs.
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Retry applying the project’s routing configuration. | `projects.retryRouting(id)` | `POST /api/projects/:id/routing/retry`<br />`project:write` |
+| Repair project routing and verify pending domains and HTTPS. | `projects.retryRouting(id)` | `POST /api/projects/:id/routing/retry`<br />`project:write` |
+| Repair routing with live logs and a terminal success or failure event. | `projects.retryRoutingStream(id, options?)` | `POST /api/projects/:id/routing/retry/stream`<br />`project:write` |
 | Read recent runtime log entries. | `projects.runtimeLogs(id, input?)` | `GET /api/projects/:id/logs`<br />`project:read` |
 | List the project’s edge route rules. | `projects.listRouteRules(id)` | `GET /api/projects/:id/route-rules`<br />`project:read` · Self-hosted |
 | Add an edge route rule. | `projects.createRouteRule(id, input)` | `POST /api/projects/:id/route-rules`<br />`project:write` · Self-hosted |
