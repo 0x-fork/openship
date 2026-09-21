@@ -510,6 +510,52 @@ describe("billing through the same SDK and HTTP application operations", () => {
       });
   });
 
+  it.each(["canceled", "past_due"] as const)("refuses top-ups when entitlement is %s despite an active subscription row", async status => {
+    const owner = await seedOwner(), c = await clients(owner);
+    await c.native.getState();
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    const subscription: NonNullable<OblienSubscription> = {
+      tierId: "hobby", status: "active", billingInterval: "monthly",
+      periodStart: "2025-08-01T00:00:00Z", periodEnd: "2025-09-01T00:00:00Z",
+      cancelAtPeriodEnd: false, canceledAt: null,
+    };
+    provider.subscriptions.set(namespace, subscription);
+    provider.entitlement.mockResolvedValue({
+      success: true, namespace, tierId: subscription.tierId, status,
+      periodStart: subscription.periodStart, periodEnd: subscription.periodEnd,
+      quota: { limit: 1200, used: 0, balance: 1200 },
+    });
+    for (const client of [c.native, c.remote]) {
+      expect((await client.getState()).topups).toEqual({ available: false, status: "unavailable" });
+      await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
+        statusCode: 402, code: "CLOUD_PLAN_REQUIRED",
+      });
+    }
+    expect(provider.checkout).not.toHaveBeenCalled();
+  });
+
+  it.each(["active", "credit_exhausted"] as const)("permits top-ups for a paid %s entitlement without changing resource policy", async status => {
+    const owner = await seedOwner(), c = await clients(owner);
+    await c.native.getState();
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    const subscription: NonNullable<OblienSubscription> = {
+      tierId: "hobby", status: "active", billingInterval: "monthly",
+      periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+      cancelAtPeriodEnd: true, canceledAt: null,
+    };
+    provider.subscriptions.set(namespace, subscription);
+    provider.entitlement.mockResolvedValue({
+      success: true, namespace, tierId: subscription.tierId, status,
+      periodStart: subscription.periodStart, periodEnd: subscription.periodEnd,
+      quota: { limit: 1200, used: status === "credit_exhausted" ? 1200 : 0, balance: status === "credit_exhausted" ? 0 : 1200 },
+    });
+    for (const client of [c.native, c.remote]) {
+      expect((await client.getState()).topups.available).toBe(true);
+      expect(await client.createTopup({ packId: "pack_5k" })).toHaveProperty("checkoutUrl");
+    }
+    expect(provider.resourceUpdate).not.toHaveBeenCalled();
+  });
+
   it("bounds usage ranges and hides projects a billing-only reader cannot access", async () => {
     const owner = await seedOwner(), member = await seedOwner({ bound: false });
     const input = { organizationId: owner.orgId, name: "Private project", slug: `billing-${owner.userId.replaceAll("_", "-")}` };

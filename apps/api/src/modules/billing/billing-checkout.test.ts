@@ -31,7 +31,7 @@ vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ ensureNamespace: h.
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ syncOblienEntitlement: h.sync }));
 vi.mock("@repo/platform/engine/modules/billing/billing.repository", () => ({ listLiveSubscriptions: h.legacy }));
 import { createCheckoutSession, createTopupCheckoutSession, createPortalSession, cancelSubscription, resumeSubscription, listActiveCreditPacks } from "@repo/platform/engine/modules/billing/billing.service";
-import { presentCloudPlans } from "@repo/platform/engine/modules/billing/billing-catalog";
+import { presentCloudPlans, subscriptionPlan } from "@repo/platform/engine/modules/billing/billing-catalog";
 
 const ctx = (organizationId = "org-a") => ({ organizationId }) as never;
 const subscription = {
@@ -44,7 +44,15 @@ beforeEach(() => {
   h.env.BILLING_ENABLED = true;
   h.env.BILLING_TOPUPS_ENABLED = true;
   h.namespace.mockImplementation(async (org) => `ns-${org}`);
-  h.sync.mockResolvedValue({ tier: "free", entitlement: { status: "credit_exhausted", periodEnd: null } });
+  h.sync.mockImplementation(async (orgId) => {
+    const namespace = `ns-${orgId}`;
+    const { subscription: current } = await h.subscription(namespace);
+    return {
+      ...subscriptionPlan(current, orgId, namespace),
+      subscription: current,
+      entitlement: { status: current ? "active" : "credit_exhausted", periodEnd: current?.periodEnd ?? null },
+    };
+  });
   h.legacy.mockResolvedValue([]);
   h.support.mockResolvedValue(undefined);
   h.quota.mockResolvedValue({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 }, maxSandboxes: null });
@@ -200,8 +208,7 @@ describe("Cloud customer checkout", () => {
   });
   it("blocks purchases through a provider deployment without the namespace billing contract", async () => {
     h.subscription.mockRejectedValue(new Error("subscription API unavailable"));
-    // Subscription checkout verifies this through the shared entitlement read;
-    // top-ups check the namespace subscription directly.
+    // Both purchase kinds verify the namespace through the shared entitlement read.
     h.sync.mockRejectedValue(new Error("subscription API unavailable"));
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow("subscription API unavailable");
     await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toThrow(
@@ -232,6 +239,12 @@ describe("Cloud customer checkout", () => {
       code: "BILLING_PACK_NOT_FOUND",
     });
     expect(h.checkout).toHaveBeenCalledOnce();
+  });
+  it("does not sell top-ups when current entitlement cannot be verified", async () => {
+    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription }));
+    h.sync.mockRejectedValue(new Error("entitlement unavailable"));
+    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toThrow("entitlement unavailable");
+    expect(h.checkout).not.toHaveBeenCalled();
   });
   it("refuses purchases before checkout when the provider cannot preserve the offer's policy and limits", async () => {
     h.support.mockRejectedValue(new Error("Billing provider update required"));

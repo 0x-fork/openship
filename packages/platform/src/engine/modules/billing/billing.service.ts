@@ -44,12 +44,11 @@ async function assertNoLegacySubscription(orgId: string): Promise<void> {
 
 async function topupNamespace(orgId: string): Promise<string> {
   const namespace = await ensureNamespace(orgId);
-  // Do not sell through an older provider deployment whose checkout/portal
-  // still shares the owner's Stripe customer. Require the namespace billing
-  // contract before starting either kind of purchase.
-  const { subscription } = await getOblienBillingApi().getSubscription(namespace);
-  subscriptionPlan(subscription, orgId, namespace);
-  if (!canTopUpCloudSubscription(subscription)) {
+  // Verify the namespace's current entitlement and subscription together. A
+  // raw active subscription row can outlive its paid period; only Oblien knows
+  // whether a top-up can restore spending. This read also verifies its contract.
+  const { subscription, entitlement } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
+  if (!canTopUpCloudSubscription(subscription, entitlement)) {
     throw new AppError("An active Cloud subscription is required before adding credits", 402, "CLOUD_PLAN_REQUIRED");
   }
   return namespace;

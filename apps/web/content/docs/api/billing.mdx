@@ -218,6 +218,10 @@ usage or unlimited resources. `measuredAt` identifies the snapshot time.
 `GET /topup-packs` lists the one-shot credit packs from the same catalog;
 `POST /topup` opens Checkout for one. Credits bought this way sit on top of the
 plan's allowance; only the unused purchased remainder survives renewal.
+Top-up eligibility in checkout and billing state requires an active or trialing
+paid subscription and a current Oblien entitlement of `active` or `credit_exhausted`. An expired or
+past-due entitlement cannot qualify through a stale active subscription record;
+an unavailable entitlement read blocks the purchase.
 A top-up cannot increase resource/project/build limits or activate a subscription.
 Openship never resets or grants credits itself.
 

@@ -80,7 +80,7 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
   ]);
   const subscription = presentCloudSubscription(providerSubscription);
   const managed = legacySubscriptions.length === 0;
-  const canTopUp = canTopUpCloudSubscription(providerSubscription);
+  const canTopUp = canTopUpCloudSubscription(providerSubscription, entitlement);
   // A missing free catalog product is intentional: project setup is not a
   // subscription and includes no Cloud credits. Preserve any purchased balance.
   const monthlyCreditLimit = tier === "free" ? 0 : plan?.monthlyCredits ?? null;
