@@ -32,6 +32,13 @@ grace, VM caps and application plan metadata. The namespace receives the custome
 subscription. The reseller account receives wallet funding and retains its own
 platform subscription. Oblien has no Openship-specific plan mapping.
 
+New namespace checkouts require the reseller owner's Enterprise account or an
+operator-granted Enterprise tier. Oblien enforces this for custom offers, catalog
+plans and top-ups in test and live mode. A customer's Openship plan cannot grant
+it. `reseller_enterprise_required` is an operator configuration failure, shown to
+customers as a request to contact Openship support. Existing customer billing
+management and renewal/refund processing continue after an owner downgrade.
+
 Openship resolves `reseller` subscriptions using the saved offer reference,
 organization, namespace and application-limit snapshot. Unknown or mismatched
 contracts fail closed. Renewals keep those terms even when the current catalog
@@ -39,7 +46,7 @@ changes. The catalog and detailed configuration are documented in
 [`packages/core/src/pricing/README.md`](../packages/core/src/pricing/README.md).
 
 Deploy the matching Oblien API first: `/billing/catalog` must report
-`reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true }`.
+`reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true, effectiveResourceLimits: true }`.
 Dashboard docs alone cannot enable this contract. Then deploy the updated
 Openship API and dashboard together. Checkout and the readiness check reject an
 older provider; startup also logs the missing capability. Existing subscription

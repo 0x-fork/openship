@@ -246,6 +246,7 @@ export class OblienBillingApi {
         billing_idempotency_conflict: "This checkout attempt no longer matches the original request. Contact Openship support before starting another payment.",
         billing_checkout_reconciliation_required: "An earlier checkout needs to be reviewed. Contact Openship support before starting another payment.",
         invalid_offer: "This Cloud offer is not configured correctly. Contact Openship support.",
+        reseller_enterprise_required: "Cloud payments require an account configuration update by Openship. Contact Openship support.",
         billing_provider_configuration_error: "Cloud payments are not configured correctly. Contact Openship support.",
         billing_database_collation_error: "Cloud billing is unavailable. Contact Openship support.",
         billing_storage_unavailable: "Cloud billing is temporarily unavailable. Please try again later.",

@@ -163,6 +163,21 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
     await expect(api.getEntitlement("os-one")).rejects.toThrow("Cloud billing could not complete");
     expect(fetcher).toHaveBeenCalledOnce();
   });
+  it("treats reseller eligibility as an operator setup issue without asking the customer to upgrade", async () => {
+    const { api, fetcher } = setup({ success: false, code: "reseller_enterprise_required",
+      message: "private owner identity", details: { accountTier: "free", requiredAccountTier: "enterprise" } }, 403);
+    const error = await api.createCheckout({
+      namespace: "os-one", kind: "subscription", offer, metadata, billingInterval: "monthly",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt",
+    }).catch(error => error);
+    expect(error).toMatchObject({ statusCode: 503, code: "OBLIEN_CHECKOUT_UNAVAILABLE",
+      message: "Cloud payments require an account configuration update by Openship. Contact Openship support.",
+      details: { providerCode: "reseller_enterprise_required" },
+    });
+    expect(JSON.stringify(error)).not.toMatch(/private|accountTier/);
+    expect(error.message).not.toMatch(/enterprise|upgrade/i);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it("reports the live checkout collation failure as unavailable and keeps safe diagnostics in server logs", async () => {
     const { api, fetcher } = setup({ success: false, error: "ER_CANT_AGGREGATE_NCOLLATIONS", code: "ER_CANT_AGGREGATE_NCOLLATIONS",
       message: "Failed to create subscription checkout", details: { sql: "private query", customer: "cus_private" } }, 400);
