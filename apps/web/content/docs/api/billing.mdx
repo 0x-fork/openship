@@ -94,13 +94,12 @@ configured in the catalog. Credits are independent of USD price and are not a
 promise of fixed CPU minutes.
 
 Workspace count is a namespace allowance; CPU, RAM and disk caps apply to each
-VM. Even an Enterprise provider account with unlimited aggregate capacity has
-per-VM ceilings. Openship reads those ceilings from `/workspace/quota`, intersects
-them with the selected offer's VM sizes, and saves the result before checkout.
-This does not change the customer's service count, credits, price or grace.
-Existing offers receive the same intersection when their namespace is synced,
-without rewriting the purchased offer. One Compose project must fit one VM;
-an organization's services can span multiple projects.
+VM. Openship submits `billing.resourceLimits` directly from its catalog. VM size
+fields default to `null`, which inherits Oblien capacity; a reseller may declare
+stricter caps. Oblien resolves account, platform and saved customer limits and
+enforces them on VM operations. Openship does not calculate CPU/RAM budgets,
+fetch account quota to fit an offer, or rewrite saved purchase terms on renewal.
+One Compose project must fit one VM; services can span multiple projects.
 
 ## Subscription and usage
 

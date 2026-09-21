@@ -232,31 +232,10 @@ describe("pricing catalog (pricing.json)", () => {
     expect([...rates].sort((a, b) => a - b)).toEqual(rates);
   });
 
-  it("derives Oblien ceilings that can always fit a BUILD workspace", () => {
-    // The bug this locks out: free published max_vcpus 2 / max_ram_mb 2048 while
-    // every cloud build provisions a 4 vCPU / 8 GB workspace, and Oblien 409s an
-    // over-ceiling create. Free is static-only, so that would have broken the one
-    // workload free is allowed to run — every free deploy, on day one.
-    const build = PRICING.oblien.buildResources;
+  it("declares namespace count independently and inherits Oblien's VM capacity", () => {
+    expect(PLAN_IDS.map(id => PLANS[id].oblienLimits.max_workspaces)).toEqual([2, 5, 12, 52, null]);
     for (const id of PLAN_IDS) {
-      const limits = PLANS[id].oblienLimits;
-      if (!limits) continue;
-      expect(limits.max_vcpus, `${id} max_vcpus must fit a build`).toBeGreaterThanOrEqual(build.cpuCores);
-      expect(limits.max_ram_mb, `${id} max_ram_mb must fit a build`).toBeGreaterThanOrEqual(build.memoryMb);
-      expect(limits.max_disk_gb, `${id} max_disk_gb must fit a build`).toBeGreaterThanOrEqual(build.diskGb);
-    }
-  });
-
-  it("leaves room for a build workspace on top of the running services", () => {
-    // Oblien counts a transient build workspace against max_workspaces, so a tier
-    // whose ceiling equals its service count could never deploy.
-    const headroom = PRICING.oblien.buildWorkspaceHeadroom;
-    expect(headroom).toBeGreaterThan(0);
-    for (const id of PLAN_IDS) {
-      const services = planLimits(id).runningServices;
-      const limits = PLANS[id].oblienLimits;
-      if (services === null || !limits) continue;
-      expect(limits.max_workspaces, `${id}`).toBe(services + headroom);
+      expect(PLANS[id].oblienLimits).toMatchObject({ max_vcpus: null, max_ram_mb: null, max_disk_gb: null });
     }
   });
 
@@ -279,8 +258,8 @@ describe("pricing catalog (pricing.json)", () => {
     }
   });
 
-  it("gives enterprise no derived ceiling at all", () => {
-    expect(PLANS.enterprise.oblienLimits).toBeNull();
+  it("lets enterprise inherit all Oblien capacity dimensions", () => {
+    expect(PLANS.enterprise.oblienLimits).toEqual({ max_workspaces: null, max_vcpus: null, max_ram_mb: null, max_disk_gb: null });
   });
 
   it("marks enterprise as contact-sales and nothing else", () => {
@@ -295,6 +274,13 @@ describe("pricing catalog — schema rejects bad edits", () => {
     fn(clone);
     return pricingCatalogSchema.safeParse(clone).success;
   };
+
+  it("rejects missing, negative or unknown namespace policy fields", () => {
+    expect(mutate(c => { delete c.plans[1].billing.resourceLimits; })).toBe(false);
+    expect(mutate(c => { c.plans[1].billing.resourceLimits.max_vcpus = -1; })).toBe(false);
+    expect(mutate(c => { c.plans[1].billing.resourceLimits.max_ram_mb = "8192"; })).toBe(false);
+    expect(mutate(c => { c.plans[1].billing.resourceLimits.max_cpu = 4; })).toBe(false);
+  });
 
   it("rejects a duplicate plan id", () => {
     expect(mutate((c) => { c.plans[1].id = "free"; })).toBe(false);

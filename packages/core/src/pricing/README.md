@@ -63,12 +63,17 @@ subscription. An existing catalog subscription remains readable until replaced.
 Its invoices and historical price remain in its own portal; the current catalog
 is not displayed as the price that an older customer purchased.
 
-The VM caps are derived in `cloud-resource-limits.ts`:
+`billing.resourceLimits` is explicit policy in the catalog, passed unchanged to
+Oblien. `cloud-resource-limits.ts` copies it; it performs no budget calculation.
 
-| Oblien field | Scope and source |
+| Oblien field | Scope and default |
 | --- | --- |
-| `max_workspaces` | Allocated namespace workspaces: service allowance plus build headroom |
-| `max_vcpus`, `max_ram_mb`, `max_disk_gb` | Each VM; large enough for the build machine and a Compose host containing the allowed services |
+| `max_workspaces` | Allocated namespace workspaces: explicitly 2 / 5 / 12 / 52 / null for Free / Starter / Pro / Team / Enterprise, including build workspace room |
+| `max_vcpus`, `max_ram_mb`, `max_disk_gb` | Per VM; null inherits Oblien capacity, or set an explicit stricter customer cap |
+
+Oblien computes effective capacity from declared and saved paid limits, the
+owner account and platform ceilings. Actual build/Compose resource requests are
+workload sizing; they do not determine the namespace policy or credit allowance.
 
 Openship enforces application service/project/build rules and per-service CPU/RAM
 at mutation boundaries under organization locks. Oblien enforces namespace VM
@@ -101,7 +106,8 @@ This path does not apply coupons, promotions, trials or proration. Do not
 advertise a legacy campaign as a Cloud checkout discount.
 
 The deployed Oblien API must report `reseller.contractVersion >= 2`,
-`offerPolicy: true`, `resourceLimits: true` from `/billing/catalog`. Checkout and
+`offerPolicy: true`, `resourceLimits: true`, `effectiveResourceLimits: true`
+from `/billing/catalog`. Checkout and
 readiness checks enforce this capability; startup logs a missing capability. The
 published `oblien@2.4.0` SDK already transports the offer; no unpublished SDK is
 required by Openship's lockfile. Oblien SDK 2.5.0 adds the new exported types.

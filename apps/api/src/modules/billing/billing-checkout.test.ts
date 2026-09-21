@@ -100,30 +100,26 @@ describe("Cloud customer checkout", () => {
     });
     expect(h.checkout).not.toHaveBeenCalled();
   });
-  it("saves deployable Team machine caps before payment without changing the price, credits or service allowance", async () => {
+  it("submits the Team policy without calculating provider capacity or changing customer terms", async () => {
+    h.quota.mockImplementation(() => { throw new Error("Client capacity reads are forbidden"); });
     await createCheckoutSession(ctx(), "team", "monthly", "team-attempt-001");
     const input = h.checkout.mock.calls[0]![0];
     expect(input.offer).toMatchObject({
       unitAmount: 9900, credits: 15000,
-      resourceLimits: { max_workspaces: 52, max_vcpus: 32, max_ram_mb: 65536, max_disk_gb: 64 },
+      resourceLimits: { max_workspaces: 52, max_vcpus: null, max_ram_mb: null, max_disk_gb: null },
     });
     expect(JSON.parse(input.metadata.openship_limits).runningServices).toBe(50);
-    expect(h.quota.mock.invocationCallOrder[0]).toBeLessThan(h.checkout.mock.invocationCallOrder[0]!);
+    expect(h.quota).not.toHaveBeenCalled();
   });
-  it("refuses payment before checkout when the provider cannot fit the plan's machines", async () => {
-    h.quota.mockResolvedValue({ success: true, limits: { cpus: 2, memory_mb: 4096, disk_size_mb: 51200 }, maxSandboxes: null });
-    await expect(createCheckoutSession(ctx(), "starter", "monthly")).rejects.toMatchObject({ code: "CLOUD_ACCOUNT_CAPACITY_INSUFFICIENT" });
-    expect(h.checkout).not.toHaveBeenCalled();
-  });
-  it("does not silently reduce the customer's workspace allowance to the owner's account cap", async () => {
-    h.quota.mockResolvedValue({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 }, maxSandboxes: 20 });
-    await expect(createCheckoutSession(ctx(), "team", "monthly")).rejects.toMatchObject({ code: "CLOUD_ACCOUNT_CAPACITY_INSUFFICIENT" });
-    expect(h.checkout).not.toHaveBeenCalled();
-  });
-  it("does not accept payment when the machine capacity read fails", async () => {
-    h.quota.mockRejectedValue(new Error("provider unavailable"));
-    await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
-    expect(h.checkout).not.toHaveBeenCalled();
+  it("passes a reseller's explicitly chosen VM restrictions unchanged", async () => {
+    const plan = PRICING.plans.find(plan => plan.id === "starter")!;
+    const saved = structuredClone(plan.billing.resourceLimits);
+    try {
+      plan.billing.resourceLimits = { max_workspaces: 7, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 24 };
+      await createCheckoutSession(ctx(), "starter", "monthly");
+      expect(h.checkout.mock.calls[0]![0].offer.resourceLimits).toEqual(plan.billing.resourceLimits);
+      expect(h.quota).not.toHaveBeenCalled();
+    } finally { plan.billing.resourceLimits = saved; }
   });
   it("uses explicit yearly credits and configurable grace when enabled by the reseller", async () => {
     const plan = PRICING.plans.find((plan) => plan.id === "starter")!;

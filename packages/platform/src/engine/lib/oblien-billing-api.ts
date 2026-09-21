@@ -17,6 +17,7 @@ export const oblienCatalogSchema = z.object({
       contractVersion: amount.int().positive(),
       offerPolicy: z.boolean(),
       resourceLimits: z.boolean(),
+      effectiveResourceLimits: z.boolean().optional(),
     })
     .optional(),
   plans: z.array(
@@ -283,10 +284,11 @@ export class OblienBillingApi {
       !reseller ||
       reseller.contractVersion < 2 ||
       !reseller.offerPolicy ||
-      !reseller.resourceLimits
+      !reseller.resourceLimits ||
+      !reseller.effectiveResourceLimits
     ) {
       throw new AppError(
-        "The billing provider needs the namespace offer policy update before Cloud checkout can be enabled.",
+        "The billing provider needs the namespace capacity policy update before Cloud checkout can be enabled.",
         503,
         "OBLIEN_BILLING_UPGRADE_REQUIRED",
       );

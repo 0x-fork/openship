@@ -144,22 +144,19 @@ function featureTemplate(key: string, locale: PricingLocale): string | null {
 
 /* ─── Public types ────────────────────────────────────────────────────────── */
 
-/**
- * Oblien per-workspace ceilings pushed at provision time. `null` means the tier
- * is custom (enterprise) and limits are negotiated per contract.
- */
+/** Declared namespace caps. null inherits Oblien's effective capacity. */
 export interface OblienLimits {
-  max_workspaces: number;
-  max_vcpus: number;
-  max_ram_mb: number;
-  max_disk_gb: number;
+  max_workspaces: number | null;
+  max_vcpus: number | null;
+  max_ram_mb: number | null;
+  max_disk_gb: number | null;
 }
 
 /** Numeric plan limits, in customer-facing units. `null` is ALWAYS "unlimited". */
 export interface PlanLimits {
   workloads: readonly WorkloadType[];
   services: boolean;
-  /** Concurrently running services — one Oblien workspace each. */
+  /** Concurrent services; several Compose services may share a workspace. */
   runningServices: number | null;
   maxProjects: number | null;
   /** Largest per-service machine this tier may select, or null for uncapped. */
@@ -195,7 +192,7 @@ export interface PlanDefinition {
   price: { monthly: number | null; annual: number | null };
   /** Milli-credits granted per period; null = granted by hand (enterprise). */
   monthlyCredits: number | null;
-  oblienLimits: OblienLimits | null;
+  oblienLimits: OblienLimits;
   limits: PlanLimits;
   features: readonly string[];
   popular: boolean;
@@ -257,58 +254,6 @@ export function planAllowsServices(planId: string | null | undefined): boolean {
 }
 
 /**
- * DERIVE Oblien's per-namespace ceilings from the customer-facing limits.
- *
- * Three of Oblien's four ceilings are PER-WORKSPACE (`max_vcpus`, `max_ram_mb`,
- * `max_disk_gb`); only `max_workspaces` is namespace-wide. So:
- *
- *   max_workspaces = running services + build headroom — a build runs in its own
- *     workspace and Oblien counts it, so without headroom a tier's last service
- *     slot would block every deploy.
- *   max_vcpus / max_ram_mb / max_disk_gb = the MAX of what a service may select
- *     and what a BUILD needs. A ceiling below the build machine means Oblien 409s
- *     every build — which is exactly how the free tier (2 vCPU / 2 GB against a
- *     4 vCPU / 8 GB build) would have lost the only workload it's allowed to run.
- *
- * Returns null only for a genuinely uncapped tier (enterprise). Previously this
- * returned null when ANY single dimension was null, so loosening one knob
- * silently un-enforced all four.
- *
- * CONSEQUENCE WORTH UNDERSTANDING: because the build machine dominates the max,
- * `max_vcpus`/`max_ram_mb` come out IDENTICAL on every tier. Oblien applies one
- * per-workspace ceiling to the whole namespace and cannot tell a build workspace
- * from a runtime one, so it physically cannot both fit a build and cap a
- * service. Oblien is therefore the coarse BACKSTOP; the per-service size cap
- * (`maxResourceTier`) is enforced Openship-side by `assertPlanAllowsResourceTier`
- * where the machine is actually chosen. Do not read equal ceilings as a bug.
- */
-function toOblienLimits(limits: PlanLimits): OblienLimits | null {
-  const { runningServices, maxResourceTier } = limits;
-  if (runningServices === null && maxResourceTier === null) return null;
-
-  const build = PRICING.oblien.buildResources;
-  const svc = maxResourceTier ? RESOURCE_TIER_SPECS[maxResourceTier] : null;
-
-  return {
-    max_workspaces:
-      runningServices === null
-        ? UNCAPPED_WORKSPACES
-        : runningServices + PRICING.oblien.buildWorkspaceHeadroom,
-    max_vcpus: Math.ceil(Math.max(svc?.cpuCores ?? 0, build.cpuCores)),
-    max_ram_mb: Math.max(svc?.memoryMb ?? 0, build.memoryMb),
-    max_disk_gb: Math.max(svc ? Math.ceil(svc.diskMb / 1024) : 0, build.diskGb),
-  };
-}
-
-/**
- * What `max_workspaces` becomes for a tier with unlimited services but a capped
- * machine size. Oblien takes a number, not "unlimited", so a high sentinel is the
- * only way to express "don't cap the count but do cap the size" — and leaving the
- * whole ceiling null instead would drop the size cap too.
- */
-const UNCAPPED_WORKSPACES = 10_000;
-
-/**
  * Placeholder values a feature string may interpolate for a given plan.
  *
  * Every per-service machine figure comes from `RESOURCE_TIER_SPECS` — the same
@@ -352,7 +297,7 @@ export function resolvePlan(planId: PlanTierId, locale: PricingLocale = "en"): P
     description: planTagline(plan.id, locale),
     price: plan.price,
     monthlyCredits: planMonthlyCredits(plan.id),
-    oblienLimits: toOblienLimits(plan.limits),
+    oblienLimits: { ...plan.billing.resourceLimits },
     limits: plan.limits,
     ...(() => {
       // `everythingIn` is authored inside `features` so the catalog keeps ONE

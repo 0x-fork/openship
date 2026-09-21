@@ -15,7 +15,6 @@ import { syncOblienEntitlement } from "./billing-oblien-quota";
 import { listLiveSubscriptions } from "./billing.repository";
 import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
-import { checkoutCloudNamespaceLimits } from "../../lib/cloud-resource-limits";
 
 export function assertBillingEnabled(): void {
   if (!env.BILLING_ENABLED) {
@@ -70,9 +69,6 @@ export async function createCheckoutSession(
   // fetch it a second time before opening checkout.
   await syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false });
   await getOblienBillingApi().assertResellerSupport();
-  // Save deployable per-VM ceilings before payment. Enterprise pool capacity
-  // does not mean that a single VM can hold every service in the organization.
-  offer.resourceLimits = await checkoutCloudNamespaceLimits(planTierId);
   // Oblien replaces only this namespace's subscription after payment. This
   // starts a full-price cycle without proration; disclose that before checkout.
   const result = await getOblienBillingApi().createCheckout({

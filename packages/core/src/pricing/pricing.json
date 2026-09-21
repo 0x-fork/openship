@@ -7,7 +7,6 @@
     "monthsFree": 2
   },
   "oblien": {
-    "buildWorkspaceHeadroom": 2,
     "buildResources": {
       "cpuCores": 4,
       "memoryMb": 8192,
@@ -43,13 +42,25 @@
         "customDomains": null,
         "seats": null
       },
-      "features": ["staticOnly", "buildMinutes", "projects", "freeSubdomains", "communitySupport"],
+      "features": [
+        "staticOnly",
+        "buildMinutes",
+        "projects",
+        "freeSubdomains",
+        "communitySupport"
+      ],
       "billing": {
         "creditsPerCycle": 0,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
-        "onOverdraftAction": "stop_workspaces"
+        "onOverdraftAction": "stop_workspaces",
+        "resourceLimits": {
+          "max_workspaces": 2,
+          "max_vcpus": null,
+          "max_ram_mb": null,
+          "max_disk_gb": null
+        }
       }
     },
     {
@@ -96,7 +107,13 @@
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
-        "onOverdraftAction": "stop_workspaces"
+        "onOverdraftAction": "stop_workspaces",
+        "resourceLimits": {
+          "max_workspaces": 5,
+          "max_vcpus": null,
+          "max_ram_mb": null,
+          "max_disk_gb": null
+        }
       }
     },
     {
@@ -142,7 +159,13 @@
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
-        "onOverdraftAction": "stop_workspaces"
+        "onOverdraftAction": "stop_workspaces",
+        "resourceLimits": {
+          "max_workspaces": 12,
+          "max_vcpus": null,
+          "max_ram_mb": null,
+          "max_disk_gb": null
+        }
       }
     },
     {
@@ -189,7 +212,13 @@
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
-        "onOverdraftAction": "stop_workspaces"
+        "onOverdraftAction": "stop_workspaces",
+        "resourceLimits": {
+          "max_workspaces": 52,
+          "max_vcpus": null,
+          "max_ram_mb": null,
+          "max_disk_gb": null
+        }
       }
     },
     {
@@ -235,7 +264,13 @@
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
-        "onOverdraftAction": "stop_workspaces"
+        "onOverdraftAction": "stop_workspaces",
+        "resourceLimits": {
+          "max_workspaces": null,
+          "max_vcpus": null,
+          "max_ram_mb": null,
+          "max_disk_gb": null
+        }
       }
     }
   ],

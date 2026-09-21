@@ -295,7 +295,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     for (const client of [c.native, c.remote]) expect((await client.getState()).balance.unlimited).toBe(status === "active");
   });
 
-  it("reads billing without capacity checks and verifies machine capacity before checkout without policy writes", async () => {
+  it("delegates capacity to Oblien for checkout through SDK and HTTP without policy writes", async () => {
     provider.resourceRead.mockRejectedValue(new Error("Workspace resource operations unavailable"));
     provider.resourceUpdate.mockRejectedValue(new Error("Workspace resource operations unavailable"));
     const owner = await seedOwner(), c = await clients(owner);
@@ -315,20 +315,24 @@ describe("billing through the same SDK and HTTP application operations", () => {
     }
     expect(provider.entitlement).toHaveBeenCalledTimes(5);
     expect(provider.subscription).toHaveBeenCalledTimes(5);
-    expect(provider.quota).toHaveBeenCalledTimes(2);
+    expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.resourceRead).not.toHaveBeenCalled();
     expect(provider.resourceUpdate).not.toHaveBeenCalled();
   });
 
-  it("rejects an unverified machine ceiling before selling through either SDK or HTTP", async () => {
+  it("does not depend on an owner capacity read to sell a declared namespace policy", async () => {
     const c = await clients(await seedOwner());
-    provider.quota.mockResolvedValue({ success: true, limits: { cpus: null, memory_mb: null, disk_size_mb: null }, maxSandboxes: null });
+    provider.quota.mockImplementation(() => { throw new Error("Client capacity reads are forbidden"); });
     for (const client of [c.native, c.remote]) {
-      await expect(client.createSubscription({ planTierId: "team", interval: "monthly" })).rejects.toMatchObject({ code: "CLOUD_CAPACITY_INVALID" });
+      expect(await client.createSubscription({ planTierId: "team", interval: "monthly" })).toHaveProperty("checkoutUrl");
       expect((await client.getState()).billing.enabled).toBe(true);
       expect(await client.createPortal()).toHaveProperty("portalUrl");
     }
-    expect(provider.checkout).not.toHaveBeenCalled();
+    expect(provider.quota).not.toHaveBeenCalled();
+    expect(provider.checkout).toHaveBeenCalledTimes(2);
+    for (const [input] of provider.checkout.mock.calls) {
+      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 52, max_vcpus: null, max_ram_mb: null, max_disk_gb: null });
+    }
   });
 
   it("still refuses checkout when the customer's subscription cannot be verified", async () => {
