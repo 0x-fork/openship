@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, HOST_PORT_QUARANTINE_OWNER, repos, schema, type HostPortClaim } from "@repo/db";
-import type { Platform } from "@repo/adapters";
+import type { Platform, RuntimeAdapter } from "@repo/adapters";
 import type { HostPortTargetIdentity } from "@repo/platform/engine/lib/host-port-target";
 import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.service";
-import { reserveTargetPinnedHostPort } from "@repo/platform/engine/modules/deployments/pinned-host-ports";
+import {
+  reserveTargetPinnedHostPort,
+  withHostPortTargetLock,
+} from "@repo/platform/engine/modules/deployments/pinned-host-ports";
 
 // Real claim repository, target lock, inventory and route reconciliation. Only
 // edge I/O is controlled; Vitest gives @repo/db an isolated in-memory PGlite.
@@ -29,8 +32,18 @@ const owner = { projectId: project.id, serviceId: "svc_api", containerPort: 3000
 function routeOptions(hostPortTarget = localTarget) {
   const registerRoute = vi.fn(async () => {});
   const removeRoute = vi.fn(async () => {});
+  const runtime = {
+    supports: vi.fn((capability: string) => capability === "containerInfo"),
+    getContainerInfo: vi.fn<RuntimeAdapter["getContainerInfo"]>(async () => ({
+      containerId: "container_api",
+      status: "running",
+      hostPort: owner.port,
+      hostPortByContainerPort: { [owner.containerPort]: owner.port },
+    })),
+  };
   return {
     hostPortTarget,
+    runtime,
     routing: { registerRoute, removeRoute } as unknown as Platform["routing"],
     registerRoute,
     removeRoute,
@@ -42,7 +55,12 @@ function routeOptions(hostPortTarget = localTarget) {
         isCustomDomain: true,
         targetUrl: "http://127.0.0.1:23000",
         observedLoopbackPublishes: [
-          { serviceId: owner.serviceId, containerPort: owner.containerPort, hostPort: owner.port },
+          {
+            serviceId: owner.serviceId,
+            containerId: "container_api" as string | undefined,
+            containerPort: owner.containerPort,
+            hostPort: owner.port,
+          },
         ],
       },
     ],
@@ -75,6 +93,7 @@ describe("live route host-port recovery (#915)", () => {
       await reconcileProjectRoutes(project, options);
 
       expect(options.registerRoute).toHaveBeenCalledTimes(2);
+      expect(options.runtime.getContainerInfo).toHaveBeenCalledExactlyOnceWith("container_api");
       for (const claims of claimsAtRegistration) {
         expect(claims).toContainEqual(expect.objectContaining({ ...owner, id: quarantined.id }));
       }
@@ -95,6 +114,96 @@ describe("live route host-port recovery (#915)", () => {
         expect.objectContaining({ port: 24000, projectId: HOST_PORT_QUARANTINE_OWNER }),
       ]);
     });
+  });
+
+  describe("unverified bindings", () => {
+    it("rechecks the binding after waiting for another target mutation", async () => {
+      const quarantined = await repos.hostPortClaim.reserveQuarantinedHostPortClaim({
+        targetKey: localTarget.targetKey,
+        port: owner.port,
+      });
+      const options = routeOptions();
+      let release!: () => void;
+      let entered!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const held = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const mutation = withHostPortTargetLock(localTarget, async () => {
+        entered();
+        await gate;
+      });
+      await held;
+      const retry = expect(reconcileProjectRoutes(project, options)).rejects.toThrow();
+      // The metadata was captured before a concurrent deploy changed the bind.
+      // Recovery must inspect after this mutation releases the target lock.
+      options.runtime.getContainerInfo.mockResolvedValue({
+        containerId: "container_api",
+        status: "running",
+        hostPortByContainerPort: { 3000: 23001 },
+      });
+      release();
+      await mutation;
+      await retry;
+
+      expect(options.registerRoute).not.toHaveBeenCalled();
+      expect(await repos.hostPortClaim.listHostPortClaims(localTarget.targetKey)).toContainEqual(
+        quarantined,
+      );
+    });
+
+    it.each([
+      ["a stopped container", "stopped", { 3000: 23000 }],
+      ["a changed host port", "running", { 3000: 23001 }],
+      ["another container port", "running", { 4000: 23000 }],
+      ["an ambiguous scalar publish", "running", undefined],
+    ] as const)("keeps quarantine for %s", async (_name, status, bindings) => {
+      const quarantined = await repos.hostPortClaim.reserveQuarantinedHostPortClaim({
+        targetKey: localTarget.targetKey,
+        port: owner.port,
+      });
+      const options = routeOptions();
+      options.runtime.getContainerInfo.mockResolvedValue({
+        containerId: "container_api",
+        status,
+        hostPort: owner.port,
+        hostPortByContainerPort: bindings,
+      });
+
+      await expect(reconcileProjectRoutes(project, options)).rejects.toThrow();
+
+      expect(options.registerRoute).not.toHaveBeenCalled();
+      expect(await repos.hostPortClaim.listHostPortClaims(localTarget.targetKey)).toContainEqual(
+        quarantined,
+      );
+    });
+
+    it.each(["unsupported", "unreachable", "missing identity"])(
+      "keeps quarantine when runtime verification is %s",
+      async (condition) => {
+        const quarantined = await repos.hostPortClaim.reserveQuarantinedHostPortClaim({
+          targetKey: localTarget.targetKey,
+          port: owner.port,
+        });
+        const options = routeOptions();
+        if (condition === "unsupported") options.runtime.supports.mockReturnValue(false);
+        if (condition === "unreachable") {
+          options.runtime.getContainerInfo.mockRejectedValue(new Error("runtime unreachable"));
+        }
+        if (condition === "missing identity") {
+          options.registers[0]!.observedLoopbackPublishes[0]!.containerId = undefined;
+        }
+
+        await expect(reconcileProjectRoutes(project, options)).rejects.toThrow();
+
+        expect(options.registerRoute).not.toHaveBeenCalled();
+        expect(await repos.hostPortClaim.listHostPortClaims(localTarget.targetKey)).toContainEqual(
+          quarantined,
+        );
+      },
+    );
   });
 
   it.each([

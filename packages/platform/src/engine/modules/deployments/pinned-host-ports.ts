@@ -134,10 +134,12 @@ export function reserveTargetPinnedHostPort(
  * host-port binding. The caller must hold {@link withHostPortTargetLock}.
  * Ordinary allocation must keep using reserveTargetPinnedHostPort: only a
  * verified workload may replace a quarantine, never another workload's claim.
+ * Verification runs on a reservation conflict, inside the caller's target lock.
  */
 export async function reserveVerifiedTargetPinnedHostPort(
   target: HostPortTargetIdentity,
   claim: ReusablePinnedHostPort & { containerPort: number },
+  verifyBinding: () => boolean | Promise<boolean>,
 ): Promise<HostPortClaim> {
   try {
     // Preserve normal reservation and the matching legacy scalar's in-place
@@ -147,6 +149,7 @@ export async function reserveVerifiedTargetPinnedHostPort(
     if (!(error instanceof HostPortClaimConflictError) || error.conflict !== "port") {
       throw error;
     }
+    if (!(await verifyBinding())) throw error;
   }
   const replaced = await repos.hostPortClaim.replaceQuarantinedHostPortClaim({
     targetKey: target.targetKey,
@@ -219,11 +222,11 @@ export async function prepareTargetPinnedHostPorts(input: {
       continue;
     }
 
-    const claim = await reserveVerifiedTargetPinnedHostPort(input.target, {
-      ...candidate.owner,
-      containerPort,
-      port: candidate.hostPort,
-    });
+    const claim = await reserveVerifiedTargetPinnedHostPort(
+      input.target,
+      { ...candidate.owner, containerPort, port: candidate.hostPort },
+      () => candidate.liveHostPortByContainerPort[containerPort] === candidate.hostPort,
+    );
     claims = [
       ...claims.filter(
         (current) =>

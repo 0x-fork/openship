@@ -110,6 +110,7 @@ export async function applyProjectRouting(
       const observed = observedLoopbackPublishFromUrl({
         targetUrl,
         serviceId,
+        containerId: rowByService.get(serviceId)?.containerId,
         containerPort,
       });
       if (!observed || !targetUrl) return;
@@ -245,6 +246,7 @@ export async function applyProjectRouting(
         ? observedLoopbackPublishFromUrl({
             targetUrl,
             serviceId: def.id,
+            containerId: rowByService.get(def.id)?.containerId,
             containerPort: route.targetPort,
           })
         : null;
@@ -353,6 +355,7 @@ export async function applyProjectRouting(
         onLog: options.onLog,
         deployment,
         routing,
+        runtime,
         hostPortTarget: resolved.hostPortTarget,
         ...(resolved.platform.executor
           ? { edgeProxy: edgeProxyFor(resolved.platform.executor, "openresty", { ours: true }) }

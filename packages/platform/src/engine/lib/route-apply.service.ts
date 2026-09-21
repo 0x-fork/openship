@@ -51,6 +51,7 @@ import type { HostPortTargetIdentity } from "./host-port-target";
 import {
   loopbackHostPortFromUrl,
   reserveObservedLoopbackPublishes,
+  type ObservedHostPortRuntime,
   type ObservedLoopbackPublish,
 } from "../modules/deployments/observed-host-port-claims";
 import {
@@ -134,6 +135,8 @@ export async function reconcileProjectRoutes(
     deployment?: Deployment | null;
     /** Pre-resolved self-hosted routing (avoids a second resolveDeploymentRuntime). */
     routing?: Platform["routing"];
+    /** Runtime on the same physical target, for live quarantine ownership proof. */
+    runtime?: ObservedHostPortRuntime;
     /** Required alongside pre-resolved routing when a register dials loopback. */
     hostPortTarget?: HostPortTargetIdentity | null;
     /** Strict inventory for a pre-resolved routing target. */
@@ -303,6 +306,7 @@ export async function reconcileProjectRoutes(
         await reserveObservedLoopbackPublishes({
           target: loopbackGuard.target,
           projectId: project.id,
+          runtime: resolved?.platform.runtime ?? opts.runtime,
           publishes: loopbackGuard.publishes,
         });
       }

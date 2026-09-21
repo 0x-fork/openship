@@ -248,7 +248,9 @@ describe("reapplyProjectLiveRoutes self-app loopback route (issue #129)", () => 
         hostname: "panel.example.com",
         targetUrl: "http://127.0.0.1:3001",
         isCustomDomain: false,
-        observedLoopbackPublishes: [{ serviceId: null, containerPort: 3001, hostPort: 3001 }],
+        observedLoopbackPublishes: [
+          { serviceId: null, containerId: "dep-1", containerPort: 3001, hostPort: 3001 },
+        ],
       },
     ]);
   });
@@ -610,7 +612,7 @@ describe("container-served static project routes (#879)", () => {
           isCustomDomain: domainType === "custom",
           targetUrl: "http://127.0.0.1:20001",
           observedLoopbackPublishes: [
-            { serviceId: service.id, containerPort: 80, hostPort: 20001 },
+            { serviceId: service.id, containerId, containerPort: 80, hostPort: 20001 },
           ],
         },
       ]);
@@ -911,7 +913,9 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
         hostname: "app.example.com",
         isCustomDomain: true,
         targetUrl: "http://127.0.0.1:3000",
-        observedLoopbackPublishes: [{ serviceId: "svc-web", containerPort: 3000, hostPort: 3000 }],
+        observedLoopbackPublishes: [
+          { serviceId: "svc-web", containerId: "c-web", containerPort: 3000, hostPort: 3000 },
+        ],
       },
     ]);
   });
@@ -970,7 +974,12 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
           hostname: "app.example.com",
           targetUrl: "http://127.0.0.1:3001",
           observedLoopbackPublishes: [
-            { serviceId: "svc-dashboard", containerPort: 3001, hostPort: 3001 },
+            {
+              serviceId: "svc-dashboard",
+              containerId: "c-dashboard",
+              containerPort: 3001,
+              hostPort: 3001,
+            },
           ],
         }),
       ]);
@@ -1089,7 +1098,9 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
         hostname: "app.example.com",
         isCustomDomain: true,
         targetUrl: "http://127.0.0.1:32770",
-        observedLoopbackPublishes: [{ serviceId: "svc-web", containerPort: 3000, hostPort: 32770 }],
+        observedLoopbackPublishes: [
+          { serviceId: "svc-web", containerId: "c-web", containerPort: 3000, hostPort: 32770 },
+        ],
       },
     ]);
   });

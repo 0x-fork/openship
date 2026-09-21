@@ -3159,7 +3159,8 @@ async function deployComposeServicesUnlocked(
                   await reserveResolvedLoopbackRoutes({
                     target: hostPortTarget,
                     projectId: project.id,
-                    routes: [{ targetUrl, serviceId: svc.id, containerPort: port }],
+                    runtime,
+                    routes: [{ targetUrl, serviceId: svc.id, containerId, containerPort: port }],
                   });
                   return targetUrl;
                 }
@@ -4063,10 +4064,12 @@ async function deployComposeServicesUnlocked(
           await reserveResolvedLoopbackRoutes({
             target: hostPortTarget,
             projectId: project.id,
+            runtime,
             routes: [
               {
                 targetUrl: resolved.url,
                 serviceId: resolved.owner.serviceId,
+                containerId: projectUpstreamRows.get(resolved.owner.serviceId)?.containerId,
                 containerPort: resolved.owner.containerPort,
               },
             ],
@@ -4141,6 +4144,7 @@ async function deployComposeServicesUnlocked(
         {
           targetUrl: string;
           serviceId: string;
+          containerId?: string;
           containerPort: number;
         }
       >();
@@ -4163,6 +4167,7 @@ async function deployComposeServicesUnlocked(
           resolvedRouteOwners.set(`${serviceId}\0${port}`, {
             targetUrl,
             serviceId,
+            containerId: res?.containerId,
             containerPort: port,
           });
         }
@@ -4205,6 +4210,7 @@ async function deployComposeServicesUnlocked(
       await reserveResolvedLoopbackRoutes({
         target: hostPortTarget,
         projectId: project.id,
+        runtime,
         routes: resolvedRouteOwners.values(),
       });
       if (composite) {

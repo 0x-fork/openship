@@ -63,8 +63,16 @@ describe("observed host-port claims", () => {
     });
 
     expect(reserve.mock.calls).toEqual([
-      [target, { projectId: "proj_1", serviceId: "svc_api", containerPort: 3000, port: 23000 }],
-      [target, { projectId: "proj_1", serviceId: "svc_api", containerPort: 3001, port: 23001 }],
+      [
+        target,
+        { projectId: "proj_1", serviceId: "svc_api", containerPort: 3000, port: 23000 },
+        expect.any(Function),
+      ],
+      [
+        target,
+        { projectId: "proj_1", serviceId: "svc_api", containerPort: 3001, port: 23001 },
+        expect.any(Function),
+      ],
     ]);
   });
 

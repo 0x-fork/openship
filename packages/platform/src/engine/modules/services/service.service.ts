@@ -1113,6 +1113,7 @@ export async function updateService(
             ? observedLoopbackPublishFromUrl({
                 targetUrl: targetUrls[i],
                 serviceId,
+                containerId,
                 containerPort: route.targetPort,
               })
             : null;

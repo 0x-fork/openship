@@ -649,6 +649,7 @@ describe("single-app prebuilt release-image pipeline", () => {
         containerPort: 8080,
         port: 30_000,
       },
+      expect.any(Function),
     );
     expect(mocks.allocateAndReservePinnedHostPort.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.reserveVerifiedTargetPinnedHostPort.mock.invocationCallOrder[0]!,

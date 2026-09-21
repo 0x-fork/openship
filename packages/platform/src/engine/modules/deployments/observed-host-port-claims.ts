@@ -1,25 +1,31 @@
 import type { HostPortTargetIdentity } from "../../lib/host-port-target";
 import { isLoopbackHost } from "@repo/core";
+import type { RuntimeAdapter } from "@repo/adapters";
 import { reserveVerifiedTargetPinnedHostPort } from "./pinned-host-ports";
 
 export interface ObservedLoopbackPublish {
   serviceId: string | null;
+  /** Runtime identity to re-inspect before a quarantine can be reclaimed. */
+  containerId?: string;
   containerPort: number;
   hostPort: number;
 }
+
+export type ObservedHostPortRuntime = Pick<RuntimeAdapter, "supports" | "getContainerInfo">;
 
 function validPort(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0 && value <= 65_535;
 }
 
 /**
- * Turn one route upstream into the exact durable ownership tuple it proves.
- * Bridge/container-IP routes are deliberately ignored: only a loopback URL
- * observes a bind in the physical host's TCP namespace.
+ * Describe a loopback upstream's owner. Parsing a URL does not prove ownership;
+ * its runtime identity allows the reservation gate to verify a binding before
+ * reclaiming quarantine. Bridge/container-IP routes consume no host port.
  */
 export function observedLoopbackPublishFromUrl(input: {
   targetUrl: string | null | undefined;
   serviceId: string | null;
+  containerId?: string | null;
   containerPort: number;
 }): ObservedLoopbackPublish | null {
   if (!input.targetUrl || !validPort(input.containerPort)) return null;
@@ -27,6 +33,7 @@ export function observedLoopbackPublishFromUrl(input: {
   if (!hostPort) return null;
   return {
     serviceId: input.serviceId,
+    ...(input.containerId ? { containerId: input.containerId } : {}),
     containerPort: input.containerPort,
     hostPort,
   };
@@ -49,15 +56,16 @@ export function loopbackHostPortFromUrl(targetUrl: string | null | undefined): n
 }
 
 /**
- * Persist every loopback publish verified against the live runtime before a
- * caller registers an edge route to it, while holding the physical-target lock.
- * A verified binding may atomically replace its quarantine; an exact repeat is
- * idempotent. Another workload's claim still raises before any route is written.
- * Cached deployment values alone are not ownership evidence.
+ * Persist loopback publishes before registering edge routes, while holding the
+ * physical-target lock. Quarantine recovery requires a fresh, exact binding from
+ * the running container; cached values and a loopback URL alone are insufficient.
+ * An exact repeat is idempotent. Another workload's claim still raises before
+ * any route is written.
  */
 export async function reserveObservedLoopbackPublishes(input: {
   target: HostPortTargetIdentity;
   projectId: string;
+  runtime?: ObservedHostPortRuntime;
   publishes: Iterable<ObservedLoopbackPublish | null | undefined>;
 }): Promise<void> {
   const seen = new Set<string>();
@@ -66,12 +74,26 @@ export async function reserveObservedLoopbackPublishes(input: {
     const key = `${publish.serviceId ?? ""}\0${publish.containerPort}\0${publish.hostPort}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    await reserveVerifiedTargetPinnedHostPort(input.target, {
-      projectId: input.projectId,
-      serviceId: publish.serviceId,
-      containerPort: publish.containerPort,
-      port: publish.hostPort,
-    });
+    await reserveVerifiedTargetPinnedHostPort(
+      input.target,
+      {
+        projectId: input.projectId,
+        serviceId: publish.serviceId,
+        containerPort: publish.containerPort,
+        port: publish.hostPort,
+      },
+      async () => {
+        // A loopback URL (including bare/host-network routing) is not proof of
+        // ownership. Re-inspect under the target lock only when recovery is
+        // needed; never reclaim from a cached row or an ambiguous scalar port.
+        if (!publish.containerId || !input.runtime?.supports("containerInfo")) return false;
+        const live = await input.runtime.getContainerInfo(publish.containerId);
+        return (
+          live.status === "running" &&
+          live.hostPortByContainerPort?.[publish.containerPort] === publish.hostPort
+        );
+      },
+    );
   }
 }
 
@@ -88,9 +110,11 @@ export async function reserveObservedLoopbackPublishes(input: {
 export async function reserveResolvedLoopbackRoutes(input: {
   target: HostPortTargetIdentity | null | undefined;
   projectId: string;
+  runtime?: ObservedHostPortRuntime;
   routes: Iterable<{
     targetUrl: string | null | undefined;
     serviceId: string | null;
+    containerId?: string | null;
     containerPort: number;
   }>;
 }): Promise<void> {
@@ -113,6 +137,7 @@ export async function reserveResolvedLoopbackRoutes(input: {
   await reserveObservedLoopbackPublishes({
     target: input.target,
     projectId: input.projectId,
+    runtime: input.runtime,
     publishes,
   });
 }
