@@ -4,13 +4,19 @@ import {
   type OblienOptions, type RequestOptions,
 } from "oblien";
 
+const capacityErrors = new Map([
+  ["plan_limit_exceeded", "The configured Cloud limits exceed the provider account's resource capacity. Contact Openship support."],
+  ["namespace_limit_exceeded", "The Cloud provider account has reached its namespace limit. Contact Openship support."],
+  ["namespace_limit_reached", "This workload exceeds your organization's Cloud resource limits. Reduce its resources or review your plan."],
+]);
+
 function providerError(status: number, body: unknown): OblienError {
   const input = body as { code?: unknown; error?: unknown } | null;
   const candidate = input?.code ?? (typeof input?.error === "string" ? input.error : undefined);
   const code = typeof candidate === "string" && /^[a-z0-9_-]{1,128}$/i.test(candidate) ? candidate : "OBLIEN_REQUEST_FAILED";
   // Provider error bodies can contain account data, resource payloads or auth
   // URLs. Keep the status/code needed for retries without forwarding that body.
-  const message = `Oblien rejected the request (HTTP ${status}, ${code})`;
+  const message = `${capacityErrors.get(code.toLowerCase()) ?? "Oblien rejected the request"} (HTTP ${status}, ${code})`;
   const ErrorType = status === 401 || status === 403 ? AuthenticationError
     : status === 402 ? PaymentRequiredError : status === 404 ? NotFoundError
       : status === 409 ? ConflictError : status === 429 ? RateLimitError

@@ -5,18 +5,24 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienClient: () => ({ workspaces: { getQuota: h.quota }, namespaces: { get: h.get, update: h.update } }),
 }));
 import {
-  cloudNamespaceLimits, initialCloudNamespaceLimits, syncCloudResourceLimits,
+  cloudNamespaceLimits, initialCloudNamespaceLimits, syncCloudResourceLimits, fitCloudNamespaceLimits,
 } from "@repo/platform/engine/lib/cloud-resource-limits";
+
+const enterpriseCapacity = {
+  success: true,
+  limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 },
+  maxSandboxes: null,
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
-  h.quota.mockRejectedValue(new Error("Reseller capacity is not a customer allowance"));
+  h.quota.mockResolvedValue(structuredClone(enterpriseCapacity));
   h.get.mockResolvedValue({ data: { id: "ns-a", slug: "tenant-a", resource_limits: null } });
   h.update.mockImplementation(async (_id, input) => ({ data: { id: "ns-a", slug: "tenant-a", ...input } }));
 });
 
 describe("customer namespace resource ceilings", () => {
-  it("fits native builds and a shared Compose stack within each paid plan", () => {
+  it("calculates the plan envelope before applying the provider's per-VM ceiling", () => {
     expect(cloudNamespaceLimits("free")).toEqual({ max_workspaces: 2, max_vcpus: 4, max_ram_mb: 8192, max_disk_gb: 32 });
     expect(cloudNamespaceLimits("starter")).toEqual({ max_workspaces: 5, max_vcpus: 4, max_ram_mb: 11264, max_disk_gb: 32 });
     expect(cloudNamespaceLimits("pro")).toEqual({ max_workspaces: 12, max_vcpus: 20, max_ram_mb: 28672, max_disk_gb: 32 });
@@ -30,7 +36,7 @@ describe("customer namespace resource ceilings", () => {
     await syncCloudResourceLimits("tenant-a", "starter");
     expect(h.get).toHaveBeenCalledWith("tenant-a");
     expect(h.update).toHaveBeenCalledWith("ns-a", { resource_limits: { max_workspaces: 5, max_vcpus: 4, max_ram_mb: 11264, max_disk_gb: 32 } });
-    expect(h.quota).not.toHaveBeenCalled();
+    expect(h.quota).toHaveBeenCalledOnce();
   });
   it("repeated synchronization does not rewrite already matching ceilings", async () => {
     h.get.mockResolvedValue({ data: { id: "ns-a", slug: "tenant-a", resource_limits: cloudNamespaceLimits("pro") } });
@@ -50,5 +56,52 @@ describe("customer namespace resource ceilings", () => {
   it("refuses to authorize a deployment when the provider ignores the update", async () => {
     h.update.mockResolvedValue({ data: { id: "ns-a", slug: "tenant-a", resource_limits: null } });
     await expect(syncCloudResourceLimits("tenant-a", "pro")).rejects.toMatchObject({ code: "CLOUD_RESOURCE_LIMITS_UNCONFIRMED" });
+  });
+  it("deploys a Team namespace on an Enterprise owner without requesting a 200-CPU VM", async () => {
+    // Same validation as Oblien's namespace update endpoint: the account has
+    // unlimited workspace count, but each VM is still capped at 32 CPUs / 64 GiB.
+    h.update.mockImplementation(async (_id, input) => {
+      const caps = input.resource_limits;
+      if (caps.max_vcpus > enterpriseCapacity.limits.cpus || caps.max_ram_mb > enterpriseCapacity.limits.memory_mb) {
+        throw Object.assign(new Error("plan_limit_exceeded"), { status: 400 });
+      }
+      return { data: { id: "ns-a", slug: "tenant-a", ...input } };
+    });
+    await syncCloudResourceLimits("tenant-a", "team");
+    expect(h.update).toHaveBeenCalledWith("ns-a", { resource_limits: {
+      max_workspaces: 52, max_vcpus: 32, max_ram_mb: 65536, max_disk_gb: 64,
+    } });
+  });
+  it("keeps saved customer caps and workspace counts separate from unlimited owner capacity", async () => {
+    const saved = Object.freeze({ max_workspaces: 7, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 12 });
+    await expect(fitCloudNamespaceLimits(saved)).resolves.toEqual(saved);
+    expect(saved).toEqual({ max_workspaces: 7, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 12 });
+    const olderTeamOffer = Object.freeze({ max_workspaces: 52, max_vcpus: 200, max_ram_mb: 417792, max_disk_gb: 64 });
+    await syncCloudResourceLimits("tenant-a", "team", olderTeamOffer);
+    expect(olderTeamOffer.max_vcpus).toBe(200);
+    expect(h.update.mock.calls[0]![1].resource_limits.max_workspaces).toBe(52);
+  });
+  it("uses provider ceilings without hardcoding the current Enterprise machine size", async () => {
+    h.quota.mockResolvedValue({ ...enterpriseCapacity, limits: { cpus: 16, memory_mb: 32768, disk_size_mb: 49152 } });
+    await expect(fitCloudNamespaceLimits(cloudNamespaceLimits("team"))).resolves.toEqual({
+      max_workspaces: 52, max_vcpus: 16, max_ram_mb: 32768, max_disk_gb: 48,
+    });
+  });
+  it("does not rewrite an already fitted paid namespace on every deployment", async () => {
+    h.get.mockResolvedValue({ data: { id: "ns-a", slug: "tenant-a", resource_limits: {
+      max_workspaces: 52, max_vcpus: 32, max_ram_mb: 65536, max_disk_gb: 64,
+    } } });
+    await syncCloudResourceLimits("tenant-a", "team");
+    expect(h.update).not.toHaveBeenCalled();
+  });
+  it("fails closed without applying any namespace changes when capacity cannot be verified", async () => {
+    h.quota.mockRejectedValue(new Error("private provider diagnostics"));
+    await expect(syncCloudResourceLimits("tenant-a", "team")).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+    expect(h.update).not.toHaveBeenCalled();
+  });
+  it.each([undefined, null, NaN, -1, 0, "32"])("rejects an invalid provider CPU ceiling %s", async cpus => {
+    h.quota.mockResolvedValue({ ...enterpriseCapacity, limits: { ...enterpriseCapacity.limits, cpus } });
+    await expect(syncCloudResourceLimits("tenant-a", "team")).rejects.toMatchObject({ code: "CLOUD_CAPACITY_INVALID" });
+    expect(h.update).not.toHaveBeenCalled();
   });
 });

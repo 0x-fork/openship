@@ -12,10 +12,12 @@ const h = vi.hoisted(() => ({
   namespace: vi.fn(),
   sync: vi.fn(),
   legacy: vi.fn(),
+  quota: vi.fn(),
   env: { CLOUD_MODE: true, BILLING_ENABLED: true, BILLING_TOPUPS_ENABLED: true },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env, runtimeTarget: { dashboard: "https://app.openship.io" } }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
+  getOblienClient: () => ({ workspaces: { getQuota: h.quota } }),
   getOblienBillingApi: () => ({
     createCheckout: h.checkout,
     createPortal: h.portal,
@@ -45,6 +47,7 @@ beforeEach(() => {
   h.sync.mockResolvedValue({ tier: "free", entitlement: { status: "credit_exhausted", periodEnd: null } });
   h.legacy.mockResolvedValue([]);
   h.support.mockResolvedValue(undefined);
+  h.quota.mockResolvedValue({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 }, maxSandboxes: null });
   h.checkout.mockResolvedValue({ url: "https://checkout.stripe.com/c/pay/test", checkoutId: "cs_test" });
   h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: null }));
   h.portal.mockResolvedValue({ url: "https://billing.stripe.com/p/session/test" });
@@ -95,6 +98,31 @@ describe("Cloud customer checkout", () => {
     await expect(createCheckoutSession(ctx(), "starter", "annual")).rejects.toMatchObject({
       code: "BILLING_PLAN_NOT_PURCHASABLE",
     });
+    expect(h.checkout).not.toHaveBeenCalled();
+  });
+  it("saves deployable Team machine caps before payment without changing the price, credits or service allowance", async () => {
+    await createCheckoutSession(ctx(), "team", "monthly", "team-attempt-001");
+    const input = h.checkout.mock.calls[0]![0];
+    expect(input.offer).toMatchObject({
+      unitAmount: 9900, credits: 15000,
+      resourceLimits: { max_workspaces: 52, max_vcpus: 32, max_ram_mb: 65536, max_disk_gb: 64 },
+    });
+    expect(JSON.parse(input.metadata.openship_limits).runningServices).toBe(50);
+    expect(h.quota.mock.invocationCallOrder[0]).toBeLessThan(h.checkout.mock.invocationCallOrder[0]!);
+  });
+  it("refuses payment before checkout when the provider cannot fit the plan's machines", async () => {
+    h.quota.mockResolvedValue({ success: true, limits: { cpus: 2, memory_mb: 4096, disk_size_mb: 51200 }, maxSandboxes: null });
+    await expect(createCheckoutSession(ctx(), "starter", "monthly")).rejects.toMatchObject({ code: "CLOUD_ACCOUNT_CAPACITY_INSUFFICIENT" });
+    expect(h.checkout).not.toHaveBeenCalled();
+  });
+  it("does not silently reduce the customer's workspace allowance to the owner's account cap", async () => {
+    h.quota.mockResolvedValue({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 }, maxSandboxes: 20 });
+    await expect(createCheckoutSession(ctx(), "team", "monthly")).rejects.toMatchObject({ code: "CLOUD_ACCOUNT_CAPACITY_INSUFFICIENT" });
+    expect(h.checkout).not.toHaveBeenCalled();
+  });
+  it("does not accept payment when the machine capacity read fails", async () => {
+    h.quota.mockRejectedValue(new Error("provider unavailable"));
+    await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
     expect(h.checkout).not.toHaveBeenCalled();
   });
   it("uses explicit yearly credits and configurable grace when enabled by the reseller", async () => {

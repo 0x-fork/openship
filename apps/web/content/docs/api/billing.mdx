@@ -93,6 +93,15 @@ do not change existing customers' terms. Grace defaults to zero and can be
 configured in the catalog. Credits are independent of USD price and are not a
 promise of fixed CPU minutes.
 
+Workspace count is a namespace allowance; CPU, RAM and disk caps apply to each
+VM. Even an Enterprise provider account with unlimited aggregate capacity has
+per-VM ceilings. Openship reads those ceilings from `/workspace/quota`, intersects
+them with the selected offer's VM sizes, and saves the result before checkout.
+This does not change the customer's service count, credits, price or grace.
+Existing offers receive the same intersection when their namespace is synced,
+without rewriting the purchased offer. One Compose project must fit one VM;
+an organization's services can span multiple projects.
+
 ## Subscription and usage
 
 <Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>

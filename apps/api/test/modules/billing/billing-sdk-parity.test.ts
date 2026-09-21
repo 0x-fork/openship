@@ -90,7 +90,7 @@ beforeEach(() => {
   provider.subscriptions.clear();
   provider.support.mockResolvedValue(undefined);
   provider.limits.clear();
-  provider.quota.mockResolvedValue({ success: true, limits: { cpus: null, memory_mb: null, disk_size_mb: null }, maxSandboxes: null });
+  provider.quota.mockResolvedValue({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 }, maxSandboxes: null });
   provider.resourceRead.mockImplementation(async (slug: string) => ({ data: { id: slug, slug, resource_limits: provider.limits.get(slug) } }));
   provider.resourceUpdate.mockImplementation(async (slug: string, input: { resource_limits: Record<string, number | null> }) => {
     provider.limits.set(slug, input.resource_limits);
@@ -295,7 +295,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     for (const client of [c.native, c.remote]) expect((await client.getState()).balance.unlimited).toBe(status === "active");
   });
 
-  it("loads new and paid customer billing and checkout without reseller capacity or resource-policy writes", async () => {
+  it("reads billing without capacity checks and verifies machine capacity before checkout without policy writes", async () => {
     provider.resourceRead.mockRejectedValue(new Error("Workspace resource operations unavailable"));
     provider.resourceUpdate.mockRejectedValue(new Error("Workspace resource operations unavailable"));
     const owner = await seedOwner(), c = await clients(owner);
@@ -303,6 +303,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect((await c.remote.getState()).billing.enabled).toBe(true);
     expect(provider.entitlement).toHaveBeenCalledTimes(1);
     expect(provider.subscription).toHaveBeenCalledTimes(1);
+    expect(provider.quota).not.toHaveBeenCalled();
     const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
     provider.subscriptions.set(namespace, {
       tierId: "pro", status: "active", billingInterval: "monthly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
@@ -314,9 +315,20 @@ describe("billing through the same SDK and HTTP application operations", () => {
     }
     expect(provider.entitlement).toHaveBeenCalledTimes(5);
     expect(provider.subscription).toHaveBeenCalledTimes(5);
-    expect(provider.quota).not.toHaveBeenCalled();
+    expect(provider.quota).toHaveBeenCalledTimes(2);
     expect(provider.resourceRead).not.toHaveBeenCalled();
     expect(provider.resourceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unverified machine ceiling before selling through either SDK or HTTP", async () => {
+    const c = await clients(await seedOwner());
+    provider.quota.mockResolvedValue({ success: true, limits: { cpus: null, memory_mb: null, disk_size_mb: null }, maxSandboxes: null });
+    for (const client of [c.native, c.remote]) {
+      await expect(client.createSubscription({ planTierId: "team", interval: "monthly" })).rejects.toMatchObject({ code: "CLOUD_CAPACITY_INVALID" });
+      expect((await client.getState()).billing.enabled).toBe(true);
+      expect(await client.createPortal()).toHaveProperty("portalUrl");
+    }
+    expect(provider.checkout).not.toHaveBeenCalled();
   });
 
   it("still refuses checkout when the customer's subscription cannot be verified", async () => {
