@@ -38,17 +38,9 @@ import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
 
 /**
- * The "your domains didn't route" line for a deploy that otherwise succeeded.
- *
- * Shared by both pipelines (single-app and compose) so the two can't drift — they
- * feed the same `edgeUnsynced` → "Action Required" + Retry signal, so they must not
- * disagree about what to tell the operator to do.
- *
- * The advice BRANCHES, and that's the point: "fix DNS/routing and Retry" is the right
- * answer for a domain that doesn't resolve here, and actively misleading when the
- * edge container itself is down — the routes are fine, nothing is serving them, and
- * Retry cannot succeed until the edge starts. Sending an operator to their DNS
- * provider over a crash-looping OpenResty costs them the whole debugging session.
+ * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
+ * errors don't prove an existing route or certificate stopped serving. Preserve
+ * the specific failure and only prescribe an edge restart when it is known down.
  */
 export function routeIssuesWarning(issues: string[], tlsPending: string[] = []): string {
   const parts: string[] = [];
@@ -58,20 +50,16 @@ export function routeIssuesWarning(issues: string[], tlsPending: string[] = []):
       isEdgeDownMessage(detail)
         ? `The app is deployed and running, but its domains aren't being served: the edge on this ` +
             `server is down. Bring the edge back up, then Retry from the Domains tab: ${detail}`
-        : `Some domains aren't routed yet — the app is deployed and running; fix DNS/routing and ` +
-            `Retry from the Domains tab: ${detail}`,
+        : `Some domain updates could not be confirmed — the app is deployed and running. ` +
+            `Existing routes may still be serving; review the errors and Retry from the Domains tab: ${detail}`,
     );
   }
-  // A DIFFERENT outcome with a DIFFERENT remedy, which is why it gets its own
-  // sentence rather than joining the list above: these hostnames ARE routed (the
-  // vhost exists and answers on :80), they just have no certificate, so HTTPS is
-  // served by the edge's bootstrap self-signed cert. "Fix routing and retry" would
-  // send the operator after the wrong thing — the fix is DNS + Verify.
+  // A certificate may be missing/invalid, or its check may have been interrupted.
+  // Keep the per-host evidence without inferring a DNS failure or HTTPS outage.
   if (tlsPending.length > 0) {
     parts.push(
-      `${tlsPending.length} domain${tlsPending.length === 1 ? " is" : "s are"} routed but ` +
-        `${tlsPending.length === 1 ? "has" : "have"} no HTTPS certificate yet — point DNS at this ` +
-        `server, then Verify from the Domains tab: ${tlsPending.join("; ")}`,
+      `HTTPS could not be confirmed for ${tlsPending.length} domain${tlsPending.length === 1 ? "" : "s"} — ` +
+        `review the certificate status and Verify from the Domains tab: ${tlsPending.join("; ")}`,
     );
   }
   return parts.join(" · ");
