@@ -125,6 +125,10 @@ browser return URL.
   service allowance; redeploying an existing app does not count it twice.
   Disabling a service definition does not release its slot while its active
   container remains. Unlimited project plans retain their advertised allowance.
+  Nested quota and entitlement locks share one PostgreSQL connection, preserving
+  a pool slot for normal queries even during a deployment burst. Parallel callers
+  retain per-key exclusion, and parent locks remain held until started child
+  callbacks finish. Locks still coordinate independent API instances.
 - Route removal calls the provider APIs and certificate status comes from the
   provider. Compose volumes persist inside the project's Docker workspace;
   unsupported mounts on legacy native workspaces fail before deployment.
@@ -229,9 +233,14 @@ top-ups. Existing catalog subscriptions remain readable through a legacy ID
 mapping. New offers use their saved identity and application-limit snapshot;
 unsupported metadata blocks spending instead of borrowing the owner account tier.
 
-Buying top-ups requires an active or trialing customer subscription. Purchased
-credits add headroom and only their unused remainder survives renewal. Extra
-credits alone cannot activate a subscription or raise resource/application caps.
+Buying top-ups requires an active or trialing paid customer subscription and
+Oblien's current entitlement to be `active` or `credit_exhausted`. Checkout and
+dashboard availability share that predicate. An expired period, past-due
+entitlement or failed entitlement read cannot qualify through a stale active
+subscription record. Scheduled cancellation still allows top-ups until the
+paid period ends. Purchased credits add headroom and only their unused remainder
+survives renewal. Extra credits alone cannot activate a subscription or raise
+resource/application caps.
 
 Checkout errors preserve a validated support reference and known provider code
 without exposing the provider's arbitrary error body. Top-up retries keep their
