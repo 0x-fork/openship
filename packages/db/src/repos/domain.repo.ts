@@ -748,8 +748,13 @@ export function createDomainRepo(db: Database) {
      * `sslStatus: "provisioning"` — too verified for one job, no cert for the other —
      * so nothing retried it and the operator had to click Verify + Redeploy by hand.
      */
-    async findPendingSsl(limit = 50, organizationId?: string): Promise<Domain[]> {
+    async findPendingSsl(
+      limit = 50,
+      organizationId?: string,
+      domainId?: string,
+    ): Promise<Domain[]> {
       const conds = [
+        domainId ? eq(domain.id, domainId) : undefined,
         eq(domain.verified, true),
         eq(domain.domainType, "custom"),
         or(
@@ -777,8 +782,10 @@ export function createDomainRepo(db: Database) {
       beforeDate: Date,
       limit = 100,
       organizationId?: string,
+      domainId?: string,
     ): Promise<Domain[]> {
       const conds = [
+        domainId ? eq(domain.id, domainId) : undefined,
         eq(domain.verified, false),
         inArray(domain.status, ["pending", "failed"]),
         eq(domain.domainType, "custom"),

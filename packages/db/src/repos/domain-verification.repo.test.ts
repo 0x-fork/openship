@@ -114,6 +114,27 @@ describe("persisted domain verification and retry eligibility", () => {
     ]);
   });
 
+  it.each([false, true])(
+    "rechecks only the selected domain with the same backoff and ownership rules (verified: %s)",
+    async (verified) => {
+      const state = { verified, status: verified ? "active" : "pending", sslStatus: "none" };
+      await add("other-eligible", state);
+      await add("selected", state);
+      await add("foreign", { ...state, projectId: "other" });
+      const recheck = (id: string) =>
+        verified
+          ? repo.findPendingSsl(1, "org", id)
+          : repo.findPendingVerification(minutesAgo(10), 1, "org", id);
+
+      expect((await recheck("selected")).map((row) => row.id)).toEqual(["selected"]);
+      expect(await recheck("foreign")).toEqual([]);
+      if (verified) await repo.recordSslFailure("selected", "Certificate check failed");
+      else await repo.recordVerifyFailure("selected", "DNS check failed");
+      expect(await recheck("selected")).toEqual([]);
+      expect((await recheck("other-eligible")).map((row) => row.id)).toEqual(["other-eligible"]);
+    },
+  );
+
   it("retries failed certificate issuance without including manual, removing, or backed-off rows", async () => {
     const failure = {
       verified: true,

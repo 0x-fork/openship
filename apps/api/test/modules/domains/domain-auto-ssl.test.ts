@@ -23,6 +23,10 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
+  createProvisionLock: () => ({ run: (work: () => Promise<unknown>) => work() }),
+}));
+
 vi.mock("@repo/platform/engine/lib/domain-ssl", () => ({
   manageDomainSsl: ssl.manageDomainSsl,
   tlsIssuedElsewhere: ssl.tlsIssuedElsewhere,

@@ -859,10 +859,17 @@ async function certbotLineageDirs(exec: CommandExecutor, hostname: string): Prom
 // provisioning in the background. The SSL provider re-registers the
 // route with TLS internally, so no explicit route reconciler is needed.
 
+interface DomainVerifyOptions {
+  onLog?: (line: string) => void;
+  force?: boolean;
+  /** The automatic sweep completes cloud TLS in its second, locked phase. */
+  deferSsl?: boolean;
+}
+
 export async function verifyDomain(
   ctx: RequestContext,
   domainId: string,
-  opts: { onLog?: (line: string) => void; force?: boolean } = {},
+  opts: DomainVerifyOptions = {},
 ) {
   const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
   try {
@@ -881,7 +888,7 @@ async function checkDomain(
   domainId: string,
   domain: Domain,
   project: Project,
-  opts: { onLog?: (line: string) => void; force?: boolean },
+  opts: DomainVerifyOptions,
 ) {
   const log = (line: string) => opts.onLog?.(line);
 
@@ -1103,6 +1110,19 @@ async function checkDomain(
         message:
           "Domain verified — TLS is handled by your external ingress; no certificate is issued here.",
         sslStatus: "external",
+      };
+    }
+
+    // The automatic sweep already owns the project lock and completes TLS in
+    // phase 2. Do not start detached work that inherits this lock's async context
+    // or races that phase with another attempt against the same domain.
+    if (opts.deferSsl) {
+      return {
+        verified: true,
+        cnameVerified: true,
+        txtVerified: true,
+        message: "Domain verified",
+        sslStatus: domain.sslStatus === "active" ? "active" : "provisioning",
       };
     }
 
@@ -1420,6 +1440,25 @@ export interface PendingVerificationResult {
   }>;
 }
 
+/** Recheck the same eligibility query after queued routing/certificate work finishes. */
+async function withDueDomain(
+  candidate: Domain,
+  organizationId: string | undefined,
+  findDue: () => Promise<Domain[]>,
+  check: (domain: Domain, project: Project) => Promise<void>,
+): Promise<void> {
+  if (!candidate.projectId) return;
+  await withLiveProjectRuntimeMutation(candidate.projectId, async (project) => {
+    if (!project.organizationId) return;
+    if (organizationId && project.organizationId !== organizationId) return;
+    // Another sweep or a manual retry may have succeeded, failed, or changed
+    // ownership while we waited. Keep selection and execution on one policy.
+    const [current] = await findDue();
+    if (!current || current.projectId !== project.id) return;
+    await check(current, project);
+  });
+}
+
 /**
  * Phase 2 of the domain sweep: finish TLS for domains that are already verified but
  * never got a certificate.
@@ -1439,28 +1478,31 @@ async function issuePendingSsl(
   let issued = 0;
   let retrying = 0;
 
-  for (const d of rows) {
-    if (tlsIssuedElsewhere(d)) continue;
+  for (const candidate of rows) {
+    await withDueDomain(
+      candidate,
+      organizationId,
+      () => repos.domain.findPendingSsl(1, organizationId, candidate.id),
+      async (domain, project) => {
+        if (tlsIssuedElsewhere(domain)) return;
+        if (contextFor && !(await contextFor(domain.id, "provision"))) return;
 
-    const project = await repos.project.findById(d.projectId).catch(() => null);
-    if (!project?.organizationId) continue;
-    if (organizationId && project.organizationId !== organizationId) continue;
-    if (contextFor && !(await contextFor(d.id, "provision"))) continue;
-
-    try {
-      const result = await manageDomainSsl(d.hostname, {
-        action: "provision",
-        projectId: d.projectId ?? undefined,
-      });
-      const after = await repos.domain.findById(d.id).catch(() => null);
-      if (result.verified && result.expiresAt && after?.sslStatus === "active") {
-        issued++;
-      } else {
-        retrying++;
-      }
-    } catch {
-      retrying++;
-    }
+        try {
+          const result = await manageDomainSsl(domain.hostname, {
+            action: "provision",
+            projectId: project.id,
+          });
+          const after = await repos.domain.findById(domain.id).catch(() => null);
+          if (result.verified && result.expiresAt && after?.sslStatus === "active") {
+            issued++;
+          } else {
+            retrying++;
+          }
+        } catch {
+          retrying++;
+        }
+      },
+    );
   }
 
   return { issued, retrying };
@@ -1499,60 +1541,48 @@ export async function verifyPendingDomains(opts?: {
     details: [],
   };
 
-  for (const domain of pending) {
-    const project = await repos.project.findById(domain.projectId);
-    if (!project) {
-      // Project may have been deleted between the find and now — skip,
-      // don't fail. The orphan domain row will get cleaned up by
-      // deleteByProjectId on the next cascade.
-      continue;
-    }
+  for (const candidate of pending) {
+    await withDueDomain(
+      candidate,
+      opts?.organizationId,
+      () => repos.domain.findPendingVerification(cutoff, 1, opts?.organizationId, candidate.id),
+      async (domain, project) => {
+        const context = contextFor
+          ? await contextFor(domain.id, "verify")
+          : buildBackgroundContext({
+              userId: "",
+              organizationId: project.organizationId,
+              label: "domains:verify-pending",
+            });
+        if (!context) return;
+        result.total++;
 
-    if (!project.organizationId) {
-      // Domain belongs to a project with no org binding — skip safely
-      // rather than risk a cross-tenant verify.
-      continue;
-    }
-    if (opts?.organizationId && project.organizationId !== opts.organizationId) continue;
-    const context = contextFor
-      ? await contextFor(domain.id, "verify")
-      : buildBackgroundContext({
-          userId: "",
-          organizationId: project.organizationId,
-          label: "domains:verify-pending",
-        });
-    if (!context) continue;
-    result.total++;
-
-    try {
-      // Re-use verifyDomain — same DNS check, same markVerified + isPrimary
-      // promotion + background SSL provisioning. Passing the project's
-      // organization satisfies the auth check in getDomainWithAuth without
-      // the cron needing a session.
-      const verifyResult = await verifyDomain(
-        context,
-        domain.id,
-      );
-      if (verifyResult.verified) {
-        result.verified++;
-        result.details.push({ hostname: domain.hostname, status: "verified" });
-      } else {
-        result.failed++;
-        result.details.push({
-          hostname: domain.hostname,
-          status: "failed",
-          message: verifyResult.message,
-        });
-      }
-    } catch (err) {
-      result.failed++;
-      const message = safeErrorMessage(err);
-      result.details.push({
-        hostname: domain.hostname,
-        status: "failed",
-        error: message,
-      });
-    }
+        try {
+          // Share interactive verification, but leave cloud TLS to phase 2
+          // instead of launching another attempt outside this critical section.
+          const verifyResult = await verifyDomain(context, domain.id, { deferSsl: true });
+          if (verifyResult.verified) {
+            result.verified++;
+            result.details.push({ hostname: domain.hostname, status: "verified" });
+          } else {
+            result.failed++;
+            result.details.push({
+              hostname: domain.hostname,
+              status: "failed",
+              message: verifyResult.message,
+            });
+          }
+        } catch (err) {
+          result.failed++;
+          const message = safeErrorMessage(err);
+          result.details.push({
+            hostname: domain.hostname,
+            status: "failed",
+            error: message,
+          });
+        }
+      },
+    );
   }
 
   // Phase 2, same sweep: verified domains whose cert never landed.

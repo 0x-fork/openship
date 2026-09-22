@@ -19,16 +19,22 @@ const h = vi.hoisted(() => ({
   resolved: {} as ResolvedDeploymentPlatform,
   files: new Map<string, string>(),
   resolutionError: null as Error | null,
+  target: "local" as "local" | "cloud",
+  cloudVerify: vi.fn(),
+  resolveRecords: vi.fn(),
 }));
 vi.mock("@repo/db", async (original) => ({
   ...(await original<typeof import("@repo/db")>()),
   repos: h.repos,
+  // PGlite is a single process; retain the real keyed mutex around its
+  // advisory-lock passthrough so overlapping sweeps exercise production locking.
+  withAdvisoryLock: async <T>(_key: string, work: () => Promise<T>) => work(),
 }));
 vi.mock("@repo/platform/engine/lib/platform-config", () => ({
-  platform: () => ({ target: "local", runtime: { name: "docker" } }),
+  platform: () => ({ target: h.target, runtime: { name: "docker", verifyDomain: h.cloudVerify } }),
 }));
-vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
-  createProvisionLock: () => ({ run: <T>(work: () => Promise<T>) => work() }),
+vi.mock("@repo/platform/engine/lib/dns-resolver", () => ({
+  resolveRecords: h.resolveRecords,
 }));
 vi.mock("@repo/platform/engine/lib/authorization", () => ({
   authorization: { authorize: async (ctx: ExecutionContext) => ctx },
@@ -369,4 +375,103 @@ it("persists a failed check, honors backoff, and automatically recovers from the
   });
   expect(issues).not.toHaveBeenCalled();
   expect((await nginx.verifyCert(row.hostname)).verified).toBe(true);
+});
+
+it.each([false, true])(
+  "overlapping sweeps honor a failure recorded by the first check (already verified: %s)",
+  async (verified) => {
+    await retryProjectRoutingOperation(context, "project");
+    const row = (await h.repos.domain.findByHostname(routes[0]!.hostname))!;
+    await h.repos.domain.update(row.id, {
+      verified,
+      status: verified ? "active" : "pending",
+      sslStatus: "none",
+      sslExpiresAt: null,
+      verifyAttempts: 0,
+      lastVerifyError: null,
+      createdAt: new Date(Date.now() - 30 * 60_000),
+      lastCheckedAt: null,
+    });
+
+    // Both sweeps select the same eligible row before either starts its check.
+    // The production lock must make the later waiter recheck eligibility.
+    let selected = 0;
+    let release!: () => void;
+    const bothSelected = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const barrier = async () => {
+      if (++selected === 2) release();
+      await bothSelected;
+    };
+    const findVerification = h.repos.domain.findPendingVerification.bind(h.repos.domain);
+    const findSsl = h.repos.domain.findPendingSsl.bind(h.repos.domain);
+    const verificationSpy = vi
+      .spyOn(h.repos.domain, "findPendingVerification")
+      .mockImplementation(async (...args) => {
+        const rows = await findVerification(...args);
+        if (!verified && args.length <= 3) await barrier();
+        return rows;
+      });
+    const sslSpy = vi
+      .spyOn(h.repos.domain, "findPendingSsl")
+      .mockImplementation(async (...args) => {
+        const rows = await findSsl(...args);
+        if (verified && args.length <= 2) await barrier();
+        return rows;
+      });
+    h.resolutionError = new Error("Cannot reach the deployment server over SSH");
+    try {
+      const results = await Promise.all([verifyPendingDomains(), verifyPendingDomains()]);
+      expect(selected).toBe(2);
+      expect((await h.repos.domain.findById(row.id))?.verifyAttempts).toBe(1);
+      expect(
+        results.reduce((count, result) => count + result.failed + (result.sslRetrying ?? 0), 0),
+      ).toBe(1);
+      expect(issues).not.toHaveBeenCalled();
+    } finally {
+      h.resolutionError = null;
+      verificationSpy.mockRestore();
+      sslSpy.mockRestore();
+    }
+  },
+);
+
+it("completes cloud ownership before the SSL phase without launching a duplicate background attempt", async () => {
+  await retryProjectRoutingOperation(context, "project");
+  const row = (await h.repos.domain.findByHostname(routes[0]!.hostname))!;
+  await h.repos.domain.update(row.id, {
+    verified: false,
+    status: "pending",
+    sslStatus: "none",
+    sslExpiresAt: null,
+    verifyAttempts: 0,
+    lastVerifyError: null,
+    createdAt: new Date(Date.now() - 30 * 60_000),
+    lastCheckedAt: null,
+    verificationToken: "cloud-ownership-token",
+  });
+  h.target = "cloud";
+  h.cloudVerify.mockResolvedValue({ cname: true });
+  h.resolveRecords.mockResolvedValue(["cloud-ownership-token"]);
+  h.resolutionError = new Error("Cannot reach the deployment server over SSH");
+  try {
+    expect(await verifyPendingDomains()).toMatchObject({
+      verified: 1,
+      failed: 0,
+      total: 1,
+      sslIssued: 0,
+      sslRetrying: 1,
+    });
+    expect(await h.repos.domain.findById(row.id)).toMatchObject({
+      verified: true,
+      verifyAttempts: 1,
+      lastVerifyError: h.resolutionError.message,
+    });
+    expect(await verifyPendingDomains()).toMatchObject({ total: 0, sslRetrying: 0 });
+    expect(issues).not.toHaveBeenCalled();
+  } finally {
+    h.target = "local";
+    h.resolutionError = null;
+  }
 });
