@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   Boxes,
+  Database,
   Check,
   ChevronRight,
   List,
@@ -42,6 +43,10 @@ import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { randomUUID } from "@/lib/random-uuid";
 import {
   buildProjectTopology,
+  addClusterDatabases,
+  buildDatabaseReplicaTopology,
+  databaseNodeId,
+  buildClusterReplicaTopology,
   dependencyProblem,
   hasSeparateApplication,
   serviceNodeId,
@@ -64,6 +69,8 @@ import { RelationPreview, TopologyInspector } from "./TopologyInspector";
 import { TopologyReview } from "./TopologyReview";
 import { TopologyPlacement } from "./TopologyPlacement";
 import { useTopologyData } from "./useTopologyData";
+import { useClusterDatabases } from "./useClusterDatabases";
+import { ClusterDatabasePanel } from "./ClusterDatabasePanel";
 import "@/components/scale/scale.css";
 import "./topology.css";
 
@@ -88,7 +95,15 @@ export default function ProjectTopology({
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const showCloudPricing = useCloudDeployPricing();
-  const runtime = useTopologyData(id, refreshServices, !!project.activeDeploymentId);
+  const clusterTarget = project.deployTarget === "cluster" || !!project.clusterId;
+  const databases = useClusterDatabases(id, clusterTarget);
+  const runtime = useTopologyData(
+    id,
+    refreshServices,
+    !!project.activeDeploymentId,
+    clusterTarget,
+    project.activeDeploymentId,
+  );
   const [changes, setChanges] = useState<TopologyChange[]>([]);
   const [selection, setSelection] = useState<TopologySelection>(null);
   const [expanded, setExpanded] = useState(false);
@@ -165,12 +180,17 @@ export default function ProjectTopology({
   }, [servicesData.services, changes]);
 
   const fullGraph = useMemo(() => {
-    const graph = buildProjectTopology({
+    const graph = addClusterDatabases(
+      buildProjectTopology({
+        project,
+        services: previewServices,
+        containers: runtime.containers,
+        connections: runtime.connections,
+        cluster: runtime.cluster?.status,
+      }),
       project,
-      services: previewServices,
-      containers: runtime.containers,
-      connections: runtime.connections,
-    });
+      databases.databases,
+    );
     for (const node of graph.nodes) {
       node.isNew = changes.some(
         (change) =>
@@ -193,13 +213,27 @@ export default function ProjectTopology({
       );
     }
     return graph;
-  }, [project, previewServices, runtime.containers, runtime.connections, changes]);
+  }, [
+    project,
+    previewServices,
+    runtime.containers,
+    runtime.connections,
+    runtime.cluster,
+    changes,
+    databases.databases,
+  ]);
 
   const instanceService = fullGraph.nodes.find(
-    (node) => node.serviceId === instanceServiceId && node.kind === "service",
+    (node) =>
+      (node.serviceId === instanceServiceId && node.kind === "service") ||
+      (node.id === instanceServiceId && (node.kind === "application" || node.kind === "database")),
   );
   const graph = useMemo<ProjectTopologyGraph>(() => {
     if (!instanceServiceId) return fullGraph;
+    if (instanceService?.database)
+      return buildDatabaseReplicaTopology(project, instanceService.database);
+    if (instanceService?.replicaStatus)
+      return buildClusterReplicaTopology(project, instanceService.replicaStatus);
     if (!instanceService?.container?.containerId) return { nodes: [], edges: [] };
     return {
       nodes: [
@@ -212,13 +246,13 @@ export default function ProjectTopology({
       ],
       edges: [],
     };
-  }, [fullGraph, instanceService, instanceServiceId]);
+  }, [fullGraph, instanceService, instanceServiceId, project]);
   const resource =
     selection?.kind === "node" ? graph.nodes.find((node) => node.id === selection.id) : undefined;
   const relation =
     selection?.kind === "edge" ? graph.edges.find((edge) => edge.id === selection.id) : undefined;
   const hasSelection = !!resource || !!relation;
-  const inspectorExpanded = hasSelection && expanded;
+  const inspectorExpanded = (hasSelection || (adding && clusterTarget)) && expanded;
   const currentService = reviewServiceId
     ? servicesData.services.find((service) => service.id === reviewServiceId)
     : undefined;
@@ -240,6 +274,7 @@ export default function ProjectTopology({
         : undefined;
 
   const select = useCallback((next: TopologySelection) => {
+    setAdding(false);
     setSelection(next);
     setExpanded(false);
     setInitialTab("overview");
@@ -252,7 +287,14 @@ export default function ProjectTopology({
   const openNode = useCallback(
     (nodeId: string) => {
       const node = graph.nodes.find((item) => item.id === nodeId);
-      if (node?.kind === "service" && node.container?.containerId && !node.pending) {
+      if (
+        (node?.kind === "application" && node.replicaStatus) ||
+        (node?.database && node.database.observation?.pods.length)
+      ) {
+        setInstanceServiceId(node.id);
+        setSelection(null);
+        setExpanded(false);
+      } else if (node?.kind === "service" && node.container?.containerId && !node.pending) {
         setInstanceServiceId(node.serviceId!);
         setSelection(null);
         setExpanded(false);
@@ -369,6 +411,11 @@ export default function ProjectTopology({
   const removeRelation = useCallback(
     (edge: TopologyRelation) => {
       if (busy || hasSavedChanges) return;
+      if (edge.databaseId) {
+        setSelection({ kind: "node", id: databaseNodeId(edge.databaseId) });
+        setExpanded(true);
+        return;
+      }
       if (edge.kind === "binding" && edge.connection) {
         setChanges((current) => [
           ...current.filter((change) => change.id !== `remove:${edge.connection!.id}`),
@@ -471,7 +518,8 @@ export default function ProjectTopology({
       setChanges([]);
       setReviewing(false);
     } catch (error) {
-      if (!showCloudPricing(error)) setApplyError(getApiErrorMessage(error, "Changes could not be applied."));
+      if (!showCloudPricing(error))
+        setApplyError(getApiErrorMessage(error, "Changes could not be applied."));
       invalidateProjectCaches(id);
       void runtime.refresh();
     } finally {
@@ -494,11 +542,18 @@ export default function ProjectTopology({
       );
     } catch (error) {
       if (action === "restart" && getApiErrorCode(error) === "SERVICE_CONFIG_STALE") {
-        showToast(interpolate(t.projectDetail.services.detail.environmentApply.restartBlocked, { name: service.name }), "info", service.name);
+        showToast(
+          interpolate(t.projectDetail.services.detail.environmentApply.restartBlocked, {
+            name: service.name,
+          }),
+          "info",
+          service.name,
+        );
         router.push(`/projects/${id}/services/${service.id}/env`);
         return;
       }
-      if (action === "stop" || !showCloudPricing(error)) showToast(getApiErrorMessage(error, "The service action failed."), "error");
+      if (action === "stop" || !showCloudPricing(error))
+        showToast(getApiErrorMessage(error, "The service action failed."), "error");
     } finally {
       setLifecycleBusy(false);
     }
@@ -627,7 +682,9 @@ export default function ProjectTopology({
               </div>
               <p className="topology-summary truncate text-[13px] leading-5 text-muted-foreground">
                 {instanceServiceId
-                  ? "Runtime instances"
+                  ? runtime.cluster?.observedAt
+                    ? `Instances · checked ${new Date(runtime.cluster.observedAt).toLocaleTimeString()}`
+                    : "Instances"
                   : `${serviceCount} service${serviceCount === 1 ? "" : "s"} · ${runtime.connections.length} shared connection${runtime.connections.length === 1 ? "" : "s"}`}
               </p>
             </div>
@@ -648,6 +705,7 @@ export default function ProjectTopology({
                 onClick={() => {
                   invalidateProjectCaches(id);
                   void runtime.refresh();
+                  void databases.refresh();
                 }}
               >
                 <RefreshCw className={runtime.loading ? "animate-spin" : ""} />
@@ -656,10 +714,14 @@ export default function ProjectTopology({
                 <Button
                   className="topology-add-service h-9 px-3"
                   disabled={busy || hasSavedChanges || !!servicesData.error}
-                  onClick={() => setAdding(true)}
+                  onClick={() => {
+                    setSelection(null);
+                    setAdding(true);
+                    if (clusterTarget) setExpanded(true);
+                  }}
                 >
                   <Plus />
-                  Add service
+                  {clusterTarget ? "Add database" : "Add service"}
                 </Button>
               )}
               <DropdownMenu
@@ -731,14 +793,14 @@ export default function ProjectTopology({
                 <div className="pointer-events-auto max-w-sm rounded-2xl border border-border/50 bg-card p-6 text-center">
                   <Boxes className="mx-auto mb-3 size-8 text-muted-foreground" />
                   <h2 className="text-sm font-semibold">
-                    {instanceServiceId ? "No runtime instance found" : "Build this environment"}
+                    {instanceServiceId ? "No instances running" : "Build this environment"}
                   </h2>
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                     {instanceServiceId
                       ? "Refresh to check the host, or return to the overview to manage this service."
                       : "Add a service or link an existing database. Review the configuration before deploying."}
                   </p>
-                  {!instanceServiceId && (
+                  {!instanceServiceId && !clusterTarget && (
                     <Button
                       className="mt-4"
                       size="sm"
@@ -779,12 +841,16 @@ export default function ProjectTopology({
             </div>
           ) : (
             <div
-              className="topology-hint absolute bottom-5 end-5 z-10 text-[11px] text-muted-foreground"
+              className="topology-hint absolute bottom-5 end-5 z-10 text-xs text-muted-foreground"
               inert={inspectorExpanded}
             >
               {deploymentBusy
                 ? "Deployment in progress"
-                : "Drag between services to set startup order"}
+                : instanceServiceId
+                  ? "Select an instance to view its health and server"
+                  : graph.nodes.filter((node) => node.kind === "service").length > 1
+                    ? "Drag between services to set startup order"
+                    : "Select an application or service to configure it"}
             </div>
           )}
           <button
@@ -831,27 +897,73 @@ export default function ProjectTopology({
                   : undefined
               }
             >
-              <TopologyInspector
-                project={project}
-                graph={fullGraph}
-                resource={resource}
-                relation={relation}
-                initialTab={initialTab}
-                disabled={busy || hasSavedChanges}
-                busy={lifecycleBusy}
-                hasPendingChanges={changes.length > 0}
+              {resource?.database ? (
+                <ClusterDatabasePanel
+                  projectId={id}
+                  database={resource.database}
+                  disabled={busy}
+                  onSaved={(database) => {
+                    databases.update(database);
+                    if (database.id !== resource.database!.id) {
+                      setInstanceServiceId(null);
+                      setSelection({ kind: "node", id: databaseNodeId(database.id) });
+                      setExpanded(true);
+                    }
+                  }}
+                  onClose={() => select(null)}
+                  onMinimize={() => setExpanded(false)}
+                  onDeploy={() => review("refresh")}
+                />
+              ) : (
+                <TopologyInspector
+                  project={project}
+                  graph={fullGraph}
+                  resource={resource}
+                  relation={relation}
+                  initialTab={initialTab}
+                  disabled={busy || hasSavedChanges}
+                  busy={lifecycleBusy}
+                  hasPendingChanges={changes.length > 0}
+                  onMinimize={() => setExpanded(false)}
+                  onClose={() => select(null)}
+                  onNavigate={navigate}
+                  onSave={stagePatch}
+                  onResources={stageResources}
+                  onPlacement={openPlacement}
+                  onLifecycle={(service, action) => void lifecycle(service, action)}
+                  onDeploy={review}
+                  onClusterState={runtime.setCluster}
+                  onRemoveRelation={removeRelation}
+                  onSelectRelation={(edgeId) => {
+                    setSelection({ kind: "edge", id: edgeId });
+                    setExpanded(false);
+                  }}
+                />
+              )}
+            </ScaleDetailsPanel>
+          )}
+          {adding && clusterTarget && (
+            <ScaleDetailsPanel
+              title="Add database"
+              summary="Choose a database and configure its deployment"
+              kind="postgres"
+              icon={<Database className="size-4" />}
+              open={expanded}
+              onOpen={() => setExpanded(true)}
+              onMinimize={() => setExpanded(false)}
+              onClose={() => setAdding(false)}
+            >
+              <ClusterDatabasePanel
+                projectId={id}
+                disabled={busy}
+                onClose={() => setAdding(false)}
                 onMinimize={() => setExpanded(false)}
-                onClose={() => select(null)}
-                onNavigate={navigate}
-                onSave={stagePatch}
-                onResources={stageResources}
-                onPlacement={openPlacement}
-                onLifecycle={(service, action) => void lifecycle(service, action)}
-                onDeploy={review}
-                onRemoveRelation={removeRelation}
-                onSelectRelation={(edgeId) => {
-                  setSelection({ kind: "edge", id: edgeId });
-                  setExpanded(false);
+                onDeploy={() => review("refresh")}
+                onSaved={(database) => {
+                  databases.update(database);
+                  setAdding(false);
+                  setSelection({ kind: "node", id: databaseNodeId(database.id) });
+                  setExpanded(true);
                 }}
               />
             </ScaleDetailsPanel>
@@ -859,7 +971,7 @@ export default function ProjectTopology({
         </div>
       </section>
       <AddServiceModal
-        open={adding}
+        open={adding && !clusterTarget}
         projectId={id}
         projectName={project.name}
         isCloudProject={project.deployTarget === "cloud"}

@@ -13,7 +13,8 @@ import * as tunnels from "./tunnels.controller";
 import { SaveServerTunnelInputSchema } from "@repo/contracts";
 import { CreateClusterInputSchema, UpdateClusterInputSchema, ServerClusterCollectionSchemas } from "@repo/contracts";
 import * as clusters from "./server-clusters.controller";
-import { networks, computeClusters } from "./infrastructure-resources.controller";
+import { networks, computeClusters, clusterRuntime } from "./infrastructure-resources.controller";
+import { SetupClusterRuntimeInputSchema, ChangeClusterRuntimeInputSchema } from "@repo/contracts";
 import { NetworkCollectionSchemas, UpdateNetworkInputSchema, CreateComputeClusterInputSchema, UpdateComputeClusterInputSchema, ComputeClusterCollectionSchemas } from "@repo/contracts";
 
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system", localOnly: true });
@@ -71,6 +72,11 @@ r.post("/networks/:id/verify", { ...fleetAdmin, body: Type.Omit(NetworkCollectio
 r.delete("/networks/:id", { ...fleetAdmin, body: Type.Omit(NetworkCollectionSchemas.removeNetwork.input, ["networkId"]) }, networks.remove);
 
 r.get("/compute-clusters", fleetRead, computeClusters.list);
+r.get("/compute-clusters/:id/runtime", fleetRead, clusterRuntime.get);
+r.get("/compute-clusters/:id/runtime/stream", fleetRead, clusterRuntime.events);
+r.post("/compute-clusters/:id/runtime", { ...fleetAdmin, body: Type.Omit(SetupClusterRuntimeInputSchema, ["clusterId"]) }, clusterRuntime.setup);
+r.post("/compute-clusters/:id/runtime/retry", { ...fleetAdmin, body: Type.Omit(ChangeClusterRuntimeInputSchema, ["clusterId"]) }, clusterRuntime.retry);
+r.delete("/compute-clusters/:id/runtime", { ...fleetAdmin, body: Type.Omit(ChangeClusterRuntimeInputSchema, ["clusterId"]) }, clusterRuntime.remove);
 r.get("/compute-clusters/:id", fleetRead, computeClusters.get);
 r.post("/compute-clusters", { ...fleetAdmin, body: CreateComputeClusterInputSchema }, computeClusters.create);
 r.patch("/compute-clusters/:id", { ...fleetAdmin, body: Type.Omit(UpdateComputeClusterInputSchema, ["clusterId"]) }, computeClusters.update);

@@ -16,41 +16,26 @@ import {
   type ServiceContainer,
   type ServiceEnvVar,
   type ServiceInput,
-  type ServiceVolumeSizes,
 } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
-import { formatBytes } from "@/lib/formatBytes";
-import {
-  internalServiceAddress,
-  effectiveServiceAlias,
-  looksLikeSecretKey,
-  type ComposeAdvanced,
-} from "@repo/core";
+import { looksLikeSecretKey } from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import {
   Play,
   Square,
-  Terminal,
-  Variable,
   Loader2,
-  Network,
   ExternalLink,
   Power,
   RotateCw,
   Rocket,
   ChevronDown,
-  Copy,
   Check,
-  HardDrive,
   Settings,
   Trash2,
   DatabaseBackup,
   PlayCircle,
   Plus,
-  LayoutDashboard,
-  ScrollText,
   Save,
-  Pencil,
   MonitorSmartphone,
   PlugZap,
 } from "lucide-react";
@@ -70,16 +55,22 @@ import { endpoints } from "@/lib/api/endpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import { UseInProjectModal } from "../UseInProjectModal";
-import { UsedByCard } from "../UsedByCard";
+import { ServiceOverview } from "./ServiceOverview";
+import { ServiceVolumesPanel } from "./ServiceVolumesPanel";
+import { ServiceDomainsPanel } from "./ServiceDomainsPanel";
+import type { ServiceDomainIntent } from "./ServicePortsCard";
+import { configuredServiceEndpoints } from "@/lib/service-endpoints";
 
-type ServiceTab = "overview" | "terminal" | "logs" | "env" | "settings" | "backup";
+type ServiceTab = "overview" | "terminal" | "logs" | "env" | "domains" | "volumes" | "settings" | "backup";
 const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "terminal", label: "Terminal", icon: Terminal },
-  { key: "logs", label: "Logs", icon: ScrollText },
-  { key: "env", label: "Environment", icon: Variable },
-  { key: "settings", label: "Settings", icon: Settings },
-  { key: "backup", label: "Backup", icon: DatabaseBackup },
+  { key: "overview", label: "Overview" },
+  { key: "terminal", label: "Terminal" },
+  { key: "logs", label: "Logs" },
+  { key: "env", label: "Environment" },
+  { key: "domains", label: "Domains" },
+  { key: "volumes", label: "Volumes" },
+  { key: "backup", label: "Backup" },
+  { key: "settings", label: "Settings" },
 ];
 const SERVICE_TABS = SERVICE_TAB_DEFS.map((t) => t.key);
 const SERVICE_ENVIRONMENT = "production" as const;
@@ -167,7 +158,6 @@ export function ServiceDetailPanel({
   const router = useRouter();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -221,6 +211,7 @@ export function ServiceDetailPanel({
   const [activeTab, setActiveTab] = useState<ServiceTab>(() =>
     SERVICE_TABS.includes(initialTab as ServiceTab) ? (initialTab as ServiceTab) : "overview",
   );
+  const [domainIntent, setDomainIntent] = useState<ServiceDomainIntent>({});
   const changeTab = (tab: ServiceTab) => {
     setActiveTab(tab);
     // Deep-link the tab without a route push (scroll-preserving), matching
@@ -232,37 +223,6 @@ export function ServiceDetailPanel({
       requestAnimationFrame(() => window.scrollTo(0, scrollY));
     }
   };
-
-  // ── Volume sizes (lazy) ──────────────────────────────────────────────
-  // `du` on the host is slow, so we measure only when the Overview tab is open
-  // (not on every render/poll), cache the result for the mounted service, and
-  // skip cloud workloads (no host to du on).
-  const hasVolumes = !!service.volumes && service.volumes.length > 0;
-  const [volSizes, setVolSizes] = useState<ServiceVolumeSizes | null>(null);
-  const [volSizesLoading, setVolSizesLoading] = useState(false);
-  useEffect(() => {
-    setVolSizes(null); // drop the previous service's measurement on switch
-  }, [service.id]);
-  useEffect(() => {
-    if (activeTab !== "overview" || !hasVolumes || deployTarget === "cloud") return;
-    if (volSizes || volSizesLoading) return;
-    let cancelled = false;
-    setVolSizesLoading(true);
-    servicesApi
-      .volumeSizes(projectId, service.id)
-      .then((res) => {
-        if (!cancelled) setVolSizes(res);
-      })
-      .catch(() => {
-        if (!cancelled) setVolSizes(null);
-      })
-      .finally(() => {
-        if (!cancelled) setVolSizesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, hasVolumes, deployTarget, projectId, service.id, volSizes, volSizesLoading]);
 
   // ── Service switcher ─────────────────────────────────────────────────
   // Jump to another service WITHOUT leaving the current tab (Terminal stays
@@ -375,9 +335,24 @@ export function ServiceDetailPanel({
   const [backupPolicy, setBackupPolicy] = useState<BackupPolicy | null>(null);
   const [backupEditorOpen, setBackupEditorOpen] = useState(false);
   const [activeBackupRunId, setActiveBackupRunId] = useState<string | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupRevision, setBackupRevision] = useState(0);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const backupVisible = activeTab === "backup" && supportsBackup;
 
   useEffect(() => {
+    setBackupPolicy(null);
+    setActiveBackupRunId(null);
+    setBackupEditorOpen(false);
+    setBackupError(null);
+  }, [service.id]);
+
+  useEffect(() => {
+    if (!backupVisible) return;
     let alive = true;
+    setBackupLoading(true);
+    setBackupError(null);
     void backupsApi
       .listPolicies(projectId)
       .then((res) => {
@@ -385,31 +360,29 @@ export function ServiceDetailPanel({
         const policy = res.data.find((p) => p.serviceId === service.id) ?? null;
         setBackupPolicy(policy);
       })
-      .catch(() => {
-        if (alive) setBackupPolicy(null);
-      });
+      .catch((error) => {
+        if (alive) setBackupError(getApiErrorMessage(error, t.projectDetail.services.detail.storage.backupLoadFailed));
+      })
+      .finally(() => { if (alive) setBackupLoading(false); });
     return () => {
       alive = false;
     };
-  }, [projectId, service.id]);
+  }, [projectId, service.id, backupVisible, backupRevision, t.projectDetail.services.detail.storage.backupLoadFailed]);
 
   const reloadBackupPolicy = async (): Promise<void> => {
-    try {
-      const res = await backupsApi.listPolicies(projectId);
-      const policy = res.data.find((p) => p.serviceId === service.id) ?? null;
-      setBackupPolicy(policy);
-    } catch {
-      // tolerated
-    }
+    setBackupRevision((value) => value + 1);
   };
 
   const handleBackupNow = async (): Promise<void> => {
-    if (!backupPolicy) return;
+    if (!backupPolicy || backupRunning) return;
+    setBackupRunning(true);
     try {
       const res = await backupsApi.runNow(backupPolicy.id);
       setActiveBackupRunId(res.data.runId);
     } catch (err) {
-      window.alert(getApiErrorMessage(err, t.projectDetail.services.detail.toast.backupRunFailed));
+      showToast(getApiErrorMessage(err, t.projectDetail.services.detail.toast.backupRunFailed), "error");
+    } finally {
+      setBackupRunning(false);
     }
   };
 
@@ -428,23 +401,6 @@ export function ServiceDetailPanel({
     (service.build && service.build.trim() && service.build.trim() !== "."
       ? service.build.trim()
       : "");
-
-  // The stable east-west address a sibling service uses (docker alias : port) —
-  // computed once for the Network card. Null when the service exposes no port.
-  // The custom alias (`advanced.alias`), when set, IS the primary hostname it
-  // answers to, so it must be what's shown — otherwise the card would print the
-  // service name while DNS resolves the custom one.
-  const aliasLabel = effectiveServiceAlias(
-    service.name,
-    (service.advanced as ComposeAdvanced | null)?.alias,
-  );
-  const internalAddr = internalServiceAddress(aliasLabel, service.ports as string[]);
-
-  const copy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 1500);
-  };
 
   /* ── Handlers ───────────────────────────────────────────────── */
 
@@ -724,9 +680,13 @@ export function ServiceDetailPanel({
       {/* ── Tab strip ──────────────────────────────────────────── */}
       <Tabs
         className="border-b-0"
+        size="sm"
         tabs={SERVICE_TAB_DEFS.map((def) => ({
           ...def,
           label: t.projectDetail.services.detail.tabs[def.key],
+          href: deepLink ? `/projects/${projectId}/services/${service.id}/${def.key}` : undefined,
+          ...(def.key === "volumes" && service.volumes?.length ? { count: service.volumes.length } : {}),
+          ...(def.key === "domains" && configuredServiceEndpoints(service).length ? { count: configuredServiceEndpoints(service).length } : {}),
           ...(def.key === "backup" ? { hidden: !supportsBackup } : {}),
         }))}
         value={activeTab}
@@ -735,176 +695,35 @@ export function ServiceDetailPanel({
 
       {/* ── Overview ───────────────────────────────────────────── */}
       {activeTab === "overview" && (
-        <div className="space-y-5">
-          <UsedByCard projectId={projectId} serviceId={service.id} />
-          {/* Network */}
-          {(container?.containerId || (service.ports && service.ports.length > 0)) && (
-            <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader
-                title={t.projectDetail.services.detail.network}
-                icon={Network}
-                right={
-                  <button
-                    type="button"
-                    onClick={() => changeTab("settings")}
-                    className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-                  >
-                    <Pencil className="size-3.5" />
-                    {t.projectDetail.services.detail.editInSettings}
-                  </button>
-                }
-              />
-              <div className="space-y-4">
-                {/* The stable address sibling services use — service name is the
-                    hostname (docker alias / cloud /etc/hosts), NOT the public
-                    subdomain. This is what goes in another service's DATABASE_URL. */}
-                {internalAddr && (
-                  <FieldChip
-                    label={t.projectDetail.services.detail.internalAddress}
-                    value={internalAddr}
-                    onCopy={() => copy(internalAddr, "internal")}
-                    copied={copied === "internal"}
-                    hint={t.projectDetail.services.detail.internalAddressHint}
-                  />
-                )}
-                {service.ports && service.ports.length > 0 && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.ports}
-                    value={service.ports.join(", ")}
-                    mono
-                    onCopy={() => copy(service.ports!.join(", "), "ports")}
-                    copied={copied === "ports"}
-                  />
-                )}
-                {container?.hostPort && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.hostPort}
-                    value={String(container.hostPort)}
-                    mono
-                    onCopy={() => copy(String(container.hostPort), "hostPort")}
-                    copied={copied === "hostPort"}
-                  />
-                )}
-                {container?.ip && (
-                  <div>
-                    <InfoCard
-                      label={t.projectDetail.services.detail.currentIp}
-                      value={container.ip}
-                      mono
-                      onCopy={() => copy(container.ip!, "ip")}
-                      copied={copied === "ip"}
-                    />
-                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">
-                      {t.projectDetail.services.detail.currentIpHint}
-                    </p>
-                  </div>
-                )}
-                {container?.containerId && (
-                  <InfoCard
-                    label={
-                      deployTarget === "cloud"
-                        ? t.projectDetail.services.detail.workspaceId
-                        : t.projectDetail.services.detail.containerId
-                    }
-                    // Docker ids are 64 chars — the 12-char short id is enough
-                    // to `docker exec`. Cloud workspace ids are short/opaque, so
-                    // show them in full (you need the whole thing to find it).
-                    value={
-                      deployTarget === "cloud"
-                        ? container.containerId
-                        : container.containerId.slice(0, 12)
-                    }
-                    mono
-                    onCopy={() => copy(container.containerId!, "cid")}
-                    copied={copied === "cid"}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+        <ServiceOverview
+          service={service}
+          container={container}
+          projectId={projectId}
+          deployTarget={deployTarget}
+          onSettings={() => changeTab("settings")}
+          onDomains={(intent) => { setDomainIntent(intent); changeTab("domains"); }}
+        />
+      )}
 
-          {/* Configuration */}
-          {(service.restart ||
-            service.command ||
-            (service.dependsOn && service.dependsOn.length > 0)) && (
-            <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader
-                title={t.projectDetail.services.detail.configuration}
-                icon={Settings}
-              />
-              <div className="space-y-3">
-                {service.restart && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.restartPolicy}
-                    value={service.restart}
-                  />
-                )}
-                {service.command && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.command}
-                    value={service.command}
-                    mono
-                    onCopy={() => copy(service.command!, "cmd")}
-                    copied={copied === "cmd"}
-                  />
-                )}
-                {service.dependsOn && service.dependsOn.length > 0 && (
-                  <InfoCard
-                    label={t.projectDetail.services.detail.dependsOn}
-                    value={service.dependsOn.join(", ")}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+      {activeTab === "domains" && (
+        <ServiceDomainsPanel
+          key={`${service.id}:${domainIntent.port ?? "all"}:${domainIntent.add ?? false}`}
+          projectId={projectId}
+          serviceId={service.id}
+          intent={domainIntent}
+          onChanged={onRefresh}
+        />
+      )}
 
-          {/* Volumes */}
-          {service.volumes && service.volumes.length > 0 && (
-            <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader
-                title={t.projectDetail.services.detail.volumes}
-                icon={HardDrive}
-                right={
-                  volSizesLoading ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      Measuring…
-                    </span>
-                  ) : volSizes?.measurable && volSizes.totalBytes != null ? (
-                    <span className="text-xs font-semibold tabular-nums text-foreground">
-                      {volSizes.partial ? "≥ " : ""}
-                      {formatBytes(volSizes.totalBytes)}
-                    </span>
-                  ) : undefined
-                }
-              />
-              <div className="space-y-2">
-                {service.volumes.map((vol, i) => {
-                  const vs = volSizes?.measurable ? volSizes.volumes[i] : undefined;
-                  return (
-                    <div key={vol} className="flex items-center justify-between gap-3">
-                      <span className="truncate text-xs font-mono text-foreground">{vol}</span>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {volSizesLoading && !vs ? (
-                          <Loader2 className="size-3 animate-spin text-muted-foreground/60" />
-                        ) : vs && vs.bytes != null ? (
-                          <span className="text-[11px] tabular-nums text-muted-foreground">
-                            {formatBytes(vs.bytes)}
-                          </span>
-                        ) : null}
-                        <CopyBtn
-                          onCopy={() => copy(vol, `vol-${vol}`)}
-                          copied={copied === `vol-${vol}`}
-                          size="sm"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+      {activeTab === "volumes" && (
+        <ServiceVolumesPanel
+          key={service.id}
+          service={service}
+          projectId={projectId}
+          deployTarget={deployTarget}
+          onSave={(volumes) => handleUpdateService({ volumes })}
+          onBackups={supportsBackup ? () => changeTab("backup") : undefined}
+        />
       )}
 
       {/* ── Terminal ───────────────────────────────────────────── */}
@@ -1115,6 +934,7 @@ export function ServiceDetailPanel({
 
           <ServiceSettingsForm
             service={service}
+            includeVolumes={false}
             siblingServiceNames={switchableServices
               .filter((s) => s.id !== service.id)
               .map((s) => s.name)
@@ -1130,23 +950,31 @@ export function ServiceDetailPanel({
           <SectionHeader
             title={t.projectDetail.services.detail.backup}
             subtitle={
-              backupPolicy
+              !backupLoading && !backupError && backupPolicy
                 ? `${backupPolicy.payloadKind} · ${backupPolicy.cronExpression ? interpolate(t.projectDetail.services.detail.backupSubtitle.cron, { expr: backupPolicy.cronExpression }) : t.projectDetail.services.detail.backupSubtitle.manualOnly}${backupPolicy.triggerOnPreDeploy ? ` · ${t.projectDetail.services.detail.backupSubtitle.preDeploy}` : ""}${backupPolicy.webhookToken ? ` · ${t.projectDetail.services.detail.backupSubtitle.webhook}` : ""}`
-                : t.projectDetail.services.detail.backupSubtitle.none
+                : !backupLoading && !backupError ? t.projectDetail.services.detail.backupSubtitle.none : undefined
             }
             icon={DatabaseBackup}
           />
           <div className="space-y-3">
             {activeBackupRunId && <BackupRunCard runId={activeBackupRunId} />}
 
-            <div className="flex items-center gap-2">
+            {backupLoading ? (
+              <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t.projectDetail.services.detail.storage.loadingBackups}</div>
+            ) : backupError ? (
+              <div className="space-y-3">
+                <p role="alert" className="text-sm text-danger">{backupError}</p>
+                <Button variant="outline" size="sm" onClick={() => void reloadBackupPolicy()}>{t.projectDetail.services.detail.storage.retry}</Button>
+              </div>
+            ) : <div className="flex flex-wrap items-center gap-2">
               {backupPolicy ? (
                 <>
                   <button
                     onClick={() => void handleBackupNow()}
+                    disabled={backupRunning}
                     className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
                   >
-                    <PlayCircle className="size-4" />
+                    {backupRunning ? <Loader2 className="size-4 animate-spin" /> : <PlayCircle className="size-4" />}
                     {t.projectDetail.services.detail.backupNow}
                   </button>
                   <button
@@ -1166,7 +994,7 @@ export function ServiceDetailPanel({
                   {t.projectDetail.services.detail.createPolicy}
                 </button>
               )}
-            </div>
+            </div>}
           </div>
         </div>
       )}
@@ -1176,6 +1004,7 @@ export function ServiceDetailPanel({
           projectId={projectId}
           serviceId={service.id}
           serviceName={service.name}
+          serviceImage={service.image}
           existing={backupPolicy}
           onClose={() => setBackupEditorOpen(false)}
           onSaved={async () => {
@@ -1329,92 +1158,5 @@ function ActionButton({
       {loading ? <Loader2 className="size-4 animate-spin" /> : <Icon className="size-4" />}
       {label}
     </button>
-  );
-}
-
-/** Persistent icon-only copy affordance (Copy → Check on success). */
-function CopyBtn({
-  onCopy,
-  copied,
-  size = "sm",
-}: {
-  onCopy: () => void;
-  copied: boolean;
-  size?: "sm" | "md";
-}) {
-  const dim = size === "md" ? "h-9 w-9" : "h-8 w-8";
-  const glyph = size === "md" ? "size-4" : "size-3.5";
-  return (
-    <button
-      type="button"
-      onClick={onCopy}
-      className={`flex ${dim} shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.1] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40`}
-    >
-      {copied ? <Check className={`${glyph} text-success`} /> : <Copy className={glyph} />}
-    </button>
-  );
-}
-
-/** Prominent labelled value field — mono value in a filled chip with a copy action. */
-function FieldChip({
-  label,
-  value,
-  mono = true,
-  onCopy,
-  copied,
-  hint,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  onCopy?: () => void;
-  copied?: boolean;
-  hint?: string;
-}) {
-  return (
-    <div>
-      <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </label>
-      <div className="mt-2 flex min-h-11 items-center gap-0.5 rounded-xl bg-muted py-1 pe-1 ps-3.5">
-        <code
-          className={`min-w-0 flex-1 truncate text-[13px] text-foreground ${mono ? "font-mono" : ""}`}
-        >
-          {value}
-        </code>
-        {onCopy && <CopyBtn onCopy={onCopy} copied={!!copied} size="md" />}
-      </div>
-      {hint && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">{hint}</p>}
-    </div>
-  );
-}
-
-/** Compact label → value fact row, with an optional copy action on the value. */
-function InfoCard({
-  label,
-  value,
-  mono,
-  onCopy,
-  copied,
-}: {
-  icon?: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  mono?: boolean;
-  onCopy?: () => void;
-  copied?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <p className="shrink-0 text-[13px] text-muted-foreground">{label}</p>
-      <div className="flex min-w-0 items-center gap-1">
-        <p
-          className={`max-w-[200px] truncate text-[13px] font-medium text-foreground ${mono ? "font-mono" : ""}`}
-        >
-          {value}
-        </p>
-        {onCopy && <CopyBtn onCopy={onCopy} copied={!!copied} size="sm" />}
-      </div>
-    </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import type { ProjectCluster } from "@repo/contracts";
+
 import { useState } from "react";
 import {
   ArrowRight,
@@ -101,6 +103,7 @@ export function TopologyInspector({
   onDeploy,
   onRemoveRelation,
   onSelectRelation,
+  onClusterState,
 }: {
   project: TopologyProject;
   graph: ProjectTopologyGraph;
@@ -124,11 +127,15 @@ export function TopologyInspector({
   onDeploy: (intent: DeploymentIntent, serviceId?: string) => void;
   onRemoveRelation: (relation: TopologyRelation) => void;
   onSelectRelation: (id: string) => void;
+  onClusterState?: (state: ProjectCluster) => void;
 }) {
   const [tab, setTab] = useState(initialTab);
   const [savedNotice, setSavedNotice] = useState(false);
   const service = resource?.service;
-  const editable = resource && ["application", "service", "instance"].includes(resource.kind);
+  const editable =
+    resource &&
+    !resource.clusterPod &&
+    ["application", "service", "instance"].includes(resource.kind);
   const serviceHref =
     service && !resource?.isNew ? `/projects/${project.id}/services/${service.id}` : null;
   const sourceHref =
@@ -179,7 +186,7 @@ export function TopologyInspector({
               className={`flex-1 rounded-lg px-2 py-2 text-xs capitalize ${tab === item ? "bg-muted/60 font-medium text-foreground" : "text-muted-foreground hover:bg-muted/30"}`}
               onClick={() => setTab(item)}
             >
-              {item}
+              {item === "scaling" ? "Scale" : item}
             </button>
           ))}
         </div>
@@ -198,7 +205,9 @@ export function TopologyInspector({
                   relation.kind === "binding"
                     ? "Environment binding"
                     : relation.kind === "route"
-                      ? "Public route"
+                      ? relation.scope === "instances"
+                        ? "Instance traffic"
+                        : "Public route"
                       : "Startup dependency"
                 }
               />
@@ -216,7 +225,12 @@ export function TopologyInspector({
                 <Detail label="Scope" value="Only the selected service" />
               )}
             </dl>
-            {relation.kind === "route" ? (
+            {relation.scope === "instances" ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                This connection follows instance health. Change the instance count from the
+                application's Scale tab.
+              </p>
+            ) : relation.kind === "route" ? (
               <Button
                 className="w-full"
                 variant="outline"
@@ -233,7 +247,7 @@ export function TopologyInspector({
                 onClick={() => onRemoveRelation(relation)}
               >
                 <Unplug />
-                {relation.pending ? "Removal staged" : "Remove connection"}
+                {relation.pending ? "Removal staged" : relation.databaseId ? "Manage database connection" : "Remove connection"}
               </Button>
             )}
             {relation.kind === "dependency" && relation.serviceId && (
@@ -255,6 +269,7 @@ export function TopologyInspector({
             <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
               {resource.kind === "application" &&
               resource.version &&
+              !resource.replicaStatus &&
               resource.state !== "disabled" ? (
                 <p className="text-xs">Deployed {resource.version}</p>
               ) : (
@@ -268,11 +283,17 @@ export function TopologyInspector({
               {resource.container?.duplicates?.length ? (
                 <p className="mt-2 text-[11px] leading-relaxed text-warning">
                   {resource.container.duplicates.length} additional container(s) need attention.
-                  They are not managed replicas.
+                  Review these containers before scaling this application.
                 </p>
               ) : null}
             </div>
             <dl className="grid gap-4">
+              {resource.clusterPod && (
+                <>
+                  <Detail label="Server" value={resource.description} />
+                  <Detail label="Restarts" value={String(resource.clusterPod.restarts)} />
+                </>
+              )}
               <Detail label="Running image" value={resource.container?.imageRef} />
               {!resource.container?.imageRef && (
                 <Detail label="Configured image" value={service?.image} />
@@ -282,21 +303,53 @@ export function TopologyInspector({
               <Detail
                 label="Server"
                 value={
-                  resource.kind === "linked"
+                  resource.kind === "linked" || !!resource.clusterPod
                     ? undefined
                     : project.serverName ||
                       (project.deployTarget === "cloud"
                         ? "OpenShip Cloud"
-                        : project.deployTarget === "local"
-                          ? "Local machine"
-                          : project.serverId
-                            ? "Connected server"
-                            : "Not selected")
+                        : project.deployTarget === "cluster"
+                          ? "Server cluster"
+                          : project.deployTarget === "local"
+                            ? "Local machine"
+                            : project.serverId
+                              ? "Connected server"
+                              : "Not selected")
                 }
               />
               <Detail label="Ports" value={service?.ports?.join(", ")} />
               <Detail label="Managed by" value={resource.ownerName} />
             </dl>
+            {resource.clusterPod && (
+              <>
+                {resource.clusterPod.serverId && (
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    onClick={() => onNavigate(`/servers/${resource.clusterPod!.serverId}`)}
+                  >
+                    <ArrowUpRight /> Open server
+                  </Button>
+                )}
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={() => onNavigate(`/projects/${project.id}/logs`)}
+                >
+                  <FileText /> Application logs
+                </Button>
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Technical details
+                  </summary>
+                  <dl className="mt-3 grid gap-3">
+                    <Detail label="Pod ID" value={resource.clusterPod.name} />
+                    <Detail label="Node ID" value={resource.clusterPod.nodeName} />
+                    <Detail label="Phase" value={resource.clusterPod.phase} />
+                  </dl>
+                </details>
+              </>
+            )}
             {sourceHref && (
               <Button variant="outline" className="w-full" onClick={() => onNavigate(sourceHref)}>
                 <ArrowUpRight />
@@ -317,6 +370,12 @@ export function TopologyInspector({
               <p className="text-xs leading-relaxed text-muted-foreground">
                 These linked services provide variables to this environment. Open a connection to
                 review its network and remove it.
+              </p>
+            )}
+            {resource.kind === "traffic" && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Incoming traffic is distributed across healthy application instances. Instances join
+                and leave automatically as they become ready or stop.
               </p>
             )}
             {service && !resource.pending && (
@@ -475,8 +534,10 @@ export function TopologyInspector({
             service={service}
             disabled={disabled}
             placementDisabled={hasPendingChanges}
+            onClusterState={onClusterState}
             onStage={onResources}
             onPlacement={onPlacement}
+            onDeploy={() => onDeploy("update")}
           />
         )}
       </div>

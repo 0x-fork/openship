@@ -25,14 +25,15 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  runtime: vi.fn(),
   serverInfrastructure: vi.fn(),
   networkWrite: vi.fn(),
   receive: null as null | ((snapshot: { computeClusters: ComputeCluster[] }) => void),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: h.replace }) }));
 vi.mock("@/hooks/useRunEvents", () => ({
-  useRunEvents: (_path: string | null, receive: typeof h.receive) => {
-    h.receive = receive;
+  useRunEvents: (path: string | null, receive: typeof h.receive) => {
+    if (path === "system/networks/stream") h.receive = receive;
     return { connected: true, reconnecting: false, error: null, reconnect: vi.fn() };
   },
 }));
@@ -54,6 +55,7 @@ vi.mock("@/lib/api/compute-clusters", () => ({
     create: h.create,
     update: h.update,
     remove: h.remove,
+    runtime: h.runtime,
   },
 }));
 vi.mock("@/lib/api/system", () => ({
@@ -85,6 +87,7 @@ beforeEach(() => {
   h.create.mockResolvedValue(pool());
   h.update.mockResolvedValue(pool());
   h.remove.mockResolvedValue({ removed: true });
+  h.runtime.mockResolvedValue(null);
   h.serverInfrastructure.mockResolvedValue({
     canBrowse: true,
     networks: [

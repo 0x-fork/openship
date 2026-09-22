@@ -19,7 +19,7 @@
 
 export interface ClonePlanInput {
   /** Resolved deploy target for this build. */
-  effectiveTarget: "local" | "server" | "cloud";
+  effectiveTarget: "local" | "server" | "cloud" | "cluster";
   /** Target server id (server deploys only). */
   serverId?: string | null;
   /** Resolved runtime is bare (host process) vs docker (sandbox). The pipeline

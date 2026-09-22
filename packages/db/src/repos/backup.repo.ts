@@ -10,7 +10,8 @@
 
 import { and, desc, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
-import { backupDestination, backupPolicy, backupRestore, backupRun } from "../schema";
+import { backupDestination, backupPolicy, backupRestore, backupRun, clusterDatabase } from "../schema";
+import { AppError } from "@repo/core";
 import { detailOf } from "./storable-detail";
 import { withProjectWorkAdmission } from "./project-work-admission";
 
@@ -182,6 +183,10 @@ async function persistTransition(
 // ─── Destination repo ────────────────────────────────────────────────────────
 
 export function createBackupDestinationRepo(db: Database) {
+  const clusterReferences = (id: string) => and(
+    sql`${clusterDatabase.status} <> 'deleted'`,
+    or(sql`${clusterDatabase.config}->'backup'->>'destinationId' = ${id}`, sql`${clusterDatabase.restoreSource}->>'destinationId' = ${id}`),
+  );
   return {
     /**
      * Org-scoped list — returns every destination in the org. Access is
@@ -229,12 +234,15 @@ export function createBackupDestinationRepo(db: Database) {
       id: string,
       data: Partial<Omit<NewBackupDestination, "id" | "createdAt">>,
     ): Promise<BackupDestination | undefined> {
-      const [row] = await db
-        .update(backupDestination)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(backupDestination.id, id))
-        .returning();
-      return row;
+      return db.transaction(async (tx) => {
+        const [current] = await tx.select().from(backupDestination).where(eq(backupDestination.id, id)).for("update");
+        if (!current) return undefined;
+        const moved = (["kind", "endpoint", "region", "bucket", "pathPrefix"] as const).some((key) => data[key] !== undefined && data[key] !== current[key]);
+        if (moved && (await tx.select({ id: clusterDatabase.id }).from(clusterDatabase).where(clusterReferences(id)).limit(1)).length)
+          throw new AppError("This destination contains a cluster database's recovery archives. Its storage address cannot be changed while that database or retained data exists.", 409, "CLUSTER_DATABASE_BACKUP_DESTINATION");
+        const [row] = await tx.update(backupDestination).set({ ...data, updatedAt: new Date() }).where(eq(backupDestination.id, id)).returning();
+        return row;
+      });
     },
 
     async setLastVerified(id: string, ok: boolean, error?: string): Promise<void> {
@@ -251,7 +259,11 @@ export function createBackupDestinationRepo(db: Database) {
     /** Soft delete. Refuses if any active policy still references it —
      *  caller catches and surfaces the friendly error. */
     async softDelete(id: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-      const referencingCount = await db
+      return db.transaction(async (tx) => {
+      await tx.select({ id: backupDestination.id }).from(backupDestination).where(eq(backupDestination.id, id)).for("update");
+      if ((await tx.select({ id: clusterDatabase.id }).from(clusterDatabase).where(clusterReferences(id)).limit(1)).length)
+        return { ok: false, reason: "This destination is used by cluster database backups or a retained database. Remove those databases and retained data first." };
+      const referencingCount = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(backupPolicy)
         .where(and(eq(backupPolicy.destinationId, id), isNull(backupPolicy.deletedAt)))
@@ -266,11 +278,12 @@ export function createBackupDestinationRepo(db: Database) {
         };
       }
 
-      await db
+      await tx
         .update(backupDestination)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
         .where(eq(backupDestination.id, id));
       return { ok: true };
+      });
     },
   };
 }

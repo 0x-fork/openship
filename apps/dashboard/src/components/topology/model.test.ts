@@ -4,6 +4,7 @@ import type { Service, ServiceContainer } from "@/lib/api/services";
 import { serviceFromInput } from "./changes";
 import {
   buildProjectTopology,
+  buildClusterReplicaTopology,
   dependencyProblem,
   servicePresentation,
   topologyPositions,
@@ -54,6 +55,64 @@ const graph = (extra: Partial<Parameters<typeof buildProjectTopology>[0]> = {}) 
   buildProjectTopology({ project, services, containers, connections: [], ...extra });
 
 describe("production project topology", () => {
+  it("shows only observed cluster replicas and excludes unready pods from active service edges", () => {
+    const application = {
+      ...project,
+      framework: "express",
+      deployTarget: "cluster" as const,
+      clusterId: "cluster",
+    };
+    const status = {
+      desired: 3,
+      ready: 1,
+      available: 1,
+      updated: 2,
+      generation: 2,
+      observedGeneration: 2,
+      message: null,
+      pods: [
+        {
+          name: "api-1",
+          nodeName: "a",
+          serverId: "server-a",
+          serverName: "Production A",
+          ready: true,
+          phase: "Running",
+          restarts: 0,
+        },
+        { name: "api-2", nodeName: "b", ready: false, phase: "ImagePullBackOff", restarts: 0 },
+      ],
+    };
+    const main = graph({ project: application, services: [], cluster: status });
+    expect(main.nodes.find((node) => node.kind === "application")).toMatchObject({
+      instances: 1,
+      state: "starting",
+    });
+    const replicas = buildClusterReplicaTopology(application, status);
+    expect(replicas.nodes.filter((node) => node.kind === "instance")).toHaveLength(2);
+    expect(replicas.edges.map((edge) => edge.enabled)).toEqual([true, false]);
+    expect(replicas.nodes.find((node) => node.clusterPod?.name === "api-2")?.state).toBe("failed");
+    expect(replicas.nodes.find((node) => node.id === "pod:api-1")).toMatchObject({
+      name: "Instance 1",
+      description: "Production A",
+      clusterPod: { serverId: "server-a" },
+    });
+    expect(replicas.nodes[0]).toMatchObject({ kind: "traffic", name: "Traffic distribution" });
+    expect(replicas.edges.every((edge) => edge.scope === "instances")).toBe(true);
+    const positions = topologyPositions(replicas);
+    expect(positions["cluster-service:p1"].x).toBeLessThan(positions["pod:api-1"].x);
+    const workers = buildClusterReplicaTopology(
+      { ...application, options: { workloadType: "worker" } },
+      status,
+    );
+    expect(workers.edges).toEqual([]);
+    expect(workers.nodes.every((node) => node.kind === "instance")).toBe(true);
+    expect(
+      graph({ project: application, services: [] }).nodes.find(
+        (node) => node.kind === "application",
+      )?.instances,
+    ).toBeUndefined();
+  });
   it("starts empty for a real services project with no service rows", () => {
     expect(graph({ services: [], containers: [], connections: [] })).toEqual({
       nodes: [],

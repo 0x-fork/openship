@@ -42,6 +42,7 @@
  * same shape as image-gc's `computeKeepSet`.
  */
 
+import { validateImageReference } from "@repo/core";
 import { COMPOSE_SENTINEL, usableRef } from "../../../lib/container-ref";
 
 export { usableRef };
@@ -197,6 +198,19 @@ export function planRestore(input: RestorePlanInput): RestorePlan {
   // Bare / cloud: the unit is still there, stopped. Restart it.
   if (unitRestore && target.containerId && target.artifactRetainedAt) {
     return { mode: "unit-swap" };
+  }
+
+  // Kubernetes releases live in the registry, including images built from Git.
+  // Their availability is not the local Docker cache's retention state. Reuse
+  // the exact published digest and let the normal deploy report a registry
+  // failure; never silently build different bytes for this restore.
+  const clusterSnapshot = target.meta as { clusterId?: unknown } | null | undefined;
+  const clusterImage = usableRef(target.imageRef);
+  if (typeof clusterSnapshot?.clusterId === "string" && clusterSnapshot.clusterId &&
+      clusterImage && /@sha256:[a-f0-9]{64}$/.test(clusterImage) &&
+      validateImageReference(clusterImage) === null &&
+      !(input.serviceImages ?? []).some(row => !!row.serviceName?.trim())) {
+    return { mode: "reacquire-image", releaseImageRef: clusterImage };
   }
 
   const present = input.imagePresent ?? (() => true);

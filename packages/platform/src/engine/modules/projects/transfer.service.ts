@@ -32,10 +32,13 @@ import {
   db,
   schema,
   eq,
+  and,
+  sql,
   type DatabaseDump,
   type SubgraphScope,
 } from "@repo/db";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
+import { AppError } from "@repo/core";
 import { teardownProject } from "@repo/platform/engine/modules/projects/project-teardown";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 
@@ -93,6 +96,7 @@ interface ProjectRow {
   slug: string;
   organizationId: string;
   cloudWorkspaceId: string | null;
+  clusterId: string | null;
 }
 
 async function loadProject(
@@ -105,6 +109,7 @@ async function loadProject(
       slug: schema.project.slug,
       organizationId: schema.project.organizationId,
       cloudWorkspaceId: schema.project.cloudWorkspaceId,
+      clusterId: schema.project.clusterId,
     })
     .from(schema.project)
     .where(eq(schema.project.id, projectId));
@@ -136,6 +141,10 @@ export async function transferProjectToCloud(
   if (project.cloudWorkspaceId) {
     throw new TransferAlreadyOnTargetError("cloud");
   }
+  const [clusterRelease] = await db.select({ id: schema.deployment.id }).from(schema.deployment)
+    .where(and(eq(schema.deployment.projectId, project.id), sql`${schema.deployment.meta}->>'clusterId' is not null`)).limit(1);
+  if (project.clusterId || clusterRelease)
+    throw new AppError("Projects with Kubernetes releases cannot be transferred to Cloud yet. Keep cluster workloads on this self-hosted installation.", 409, "CLUSTER_TRANSFER_UNSUPPORTED");
 
   // 2) Dump the project subgraph from local. stripEncrypted: true — the
   //    SaaS can't decrypt local-host blobs; re-link is the operator's

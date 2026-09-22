@@ -118,6 +118,29 @@ describe("clearProjectBuildCache", () => {
     expect(createRuntime).not.toHaveBeenCalled();
   });
 
+  it("prunes a cluster's builder instead of the API host or a workload node", async () => {
+    const createRuntime = vi.fn(async () => ({
+      pruneBuildCache: async () => ({ cachesDeleted: [], spaceReclaimed: 0 }),
+    }));
+    await expect(clearProjectBuildCache(project({ clusterId: "cluster-1", serverId: null }), dependencies({
+      resolveProjectTarget: async () => ({ deployTarget: "cluster", serverId: null }),
+      resolveClusterBuildServer: async () => "cluster-builder",
+      createRuntime,
+    }))).resolves.toMatchObject({ target: "server", serverId: "cluster-builder" });
+    expect(createRuntime).toHaveBeenCalledExactlyOnceWith({
+      key: "server:cluster-builder", serverId: "cluster-builder", organizationId: "org_1",
+    });
+  });
+
+  it("refuses an unresolved cluster builder without falling back to local Docker", async () => {
+    const createRuntime = vi.fn();
+    await expect(clearProjectBuildCache(project({ clusterId: "cluster-1", serverId: null }), dependencies({
+      resolveProjectTarget: async () => ({ deployTarget: "cluster", serverId: null }),
+      createRuntime,
+    }))).rejects.toMatchObject({ code: "BUILD_CACHE_TARGET_MISSING" });
+    expect(createRuntime).not.toHaveBeenCalled();
+  });
+
   it("canonicalizes the This Server row to the local-daemon lock", async () => {
     const createRuntime = vi.fn(async () => ({
       pruneBuildCache: async () => ({ cachesDeleted: [], spaceReclaimed: 0 }),

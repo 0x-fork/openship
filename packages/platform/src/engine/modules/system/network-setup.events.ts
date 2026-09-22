@@ -12,6 +12,8 @@ import {
 } from "./server-cluster.operations";
 import { presentNetworkPreparation } from "./network-preparation.operations";
 import { networkSetupBus, networkSetupTopic } from "./network-setup-bus";
+import { clusterRuntimeCollection } from "./cluster-runtime.operations";
+import { NotFoundError } from "@repo/core";
 
 export const networkSetupStreams: NonNullable<ServerDependencies["networks"]> = {
   async events(ctx, kind, id, signal) {
@@ -27,6 +29,22 @@ export const networkSetupStreams: NonNullable<ServerDependencies["networks"]> = 
     };
     const subscribe = (changed: () => void) =>
       networkSetupBus.subscribe(networkSetupTopic(ctx.organizationId, kind, id), changed);
+    if (kind === "runtime") {
+      const load = async () => {
+        await authorize();
+        const row = await clusterRuntimeCollection.getClusterRuntime(ctx, { clusterId: id! });
+        if (!row) throw new NotFoundError("Cluster runtime");
+        return row;
+      };
+      await load();
+      return durableRunEvents({
+        subscribe,
+        load,
+        signal,
+        version: (row) => `${row.id}:${row.sequence}`,
+        complete: () => false,
+      });
+    }
     if (kind === "preparation") {
       const load = async () => {
         await authorize();

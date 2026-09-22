@@ -160,6 +160,30 @@ describe("planRestore — docker (image is the artifact)", () => {
   });
 });
 
+describe("planRestore — cluster registry artifacts", () => {
+  it("reuses a source-built release's digest after its local build cache was removed", () => {
+    const plan = planRestore(input({
+      target: {
+        imageRef: FROZEN_RELEASE_IMAGE,
+        artifactRetainedAt: null,
+        meta: { clusterId: "cluster-1", source: "git", repoUrl: "https://github.com/acme/app" },
+      } as never,
+      imagePresent: () => false,
+    }));
+    expect(plan).toEqual({ mode: "reacquire-image", releaseImageRef: FROZEN_RELEASE_IMAGE });
+    expect(planNeedsRepository(plan)).toBe(false);
+  });
+
+  it("does not promise a registry restore from a mutable or malformed reference", () => {
+    for (const imageRef of ["ghcr.io/acme/app:latest", "ghcr.io/acme/app@sha256:abc"]) {
+      expect(planRestore(input({
+        target: { imageRef, meta: { clusterId: "cluster-1", source: "git" } } as never,
+        imagePresent: () => false,
+      }))).toEqual({ mode: "rebuild", commitSha: "abc1234def" });
+    }
+  });
+});
+
 describe("planRestore — compose (per-service images)", () => {
   const services = [
     { serviceName: "web", imageRef: "openship/app-web:bld_1" },

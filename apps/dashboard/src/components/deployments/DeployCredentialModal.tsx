@@ -98,7 +98,7 @@ export interface DeployCredentialModalProps {
    *  server's Security tab where the per-server credential is configured. */
   serverId?: string | null;
   /** Where is the deploy headed? Affects copy. */
-  deployTarget: "local" | "server" | "cloud" | null | undefined;
+  deployTarget: "local" | "server" | "cloud" | "cluster" | null | undefined;
   /** Current build strategy. We hide "Build locally" when it's already
    *  local (would be a no-op). */
   buildStrategy: "local" | "server" | null | undefined;

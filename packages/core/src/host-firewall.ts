@@ -11,6 +11,12 @@
  */
 
 import { type Answer, answered, refused } from "./answer";
+import { AppError } from "./errors";
+import {
+  clusterRuntimeConnections,
+  type ClusterRuntimeHost,
+  type ClusterRuntimePlan,
+} from "./cluster-runtime";
 import type { SystemFirewall } from "./host-profile";
 import { infrastructureIpv4 } from "./infrastructure";
 import { shellQuote } from "./shell-split";
@@ -482,4 +488,162 @@ export function managedNetworkFirewall(
         }
       : {}),
   });
+}
+
+/** Rules are restricted to selected private peers. Existing Docker and Edge rules are preserved. */
+export function clusterRuntimeFirewallScript(ctx: {
+  plan: ClusterRuntimePlan;
+  host: ClusterRuntimeHost;
+}): string {
+  const commands = ["#!/bin/sh", "set -eu"];
+  const rule = (chain: string, args: string[]) => {
+    const rendered = [chain, ...args].map(shellQuote).join(" ");
+    commands.push(`iptables -w 5 -C ${rendered} 2>/dev/null || iptables -w 5 -A ${rendered}`);
+  };
+  for (const chain of ["OSHIP-K3S-IN", "OSHIP-K3S-OUT"])
+    commands.push(
+      `iptables -w 5 -S ${shellQuote(chain)} >/dev/null 2>&1 || iptables -w 5 -N ${shellQuote(chain)}`,
+    );
+  const tcpPorts = ctx.host.role === "server" ? "6443,2379,2380,10250" : "10250";
+  rule("OSHIP-K3S-IN", [
+    "-i",
+    "lo",
+    "-d",
+    `${ctx.host.privateIp}/32`,
+    "-p",
+    "tcp",
+    "-m",
+    "multiport",
+    "--dports",
+    tcpPorts,
+    "-j",
+    "ACCEPT",
+  ]);
+  rule("OSHIP-K3S-IN", ["-i", "lo", "-j", "RETURN"]);
+  for (const connection of clusterRuntimeConnections(ctx.plan.hosts)) {
+    if (connection.targetServerId === ctx.host.serverId) {
+      rule("OSHIP-K3S-IN", [
+        "-i",
+        ctx.host.interfaceName!,
+        "-s",
+        `${connection.sourceIp}/32`,
+        "-d",
+        `${connection.targetIp}/32`,
+        "-p",
+        connection.protocol,
+        "--dport",
+        String(connection.port),
+        "-j",
+        "ACCEPT",
+      ]);
+      rule("OSHIP-K3S-OUT", [
+        "-o",
+        ctx.host.interfaceName!,
+        "-s",
+        `${connection.targetIp}/32`,
+        "-d",
+        `${connection.sourceIp}/32`,
+        "-p",
+        connection.protocol,
+        "--sport",
+        String(connection.port),
+        "-m",
+        "conntrack",
+        "--ctstate",
+        "ESTABLISHED",
+        "-j",
+        "ACCEPT",
+      ]);
+    }
+    if (connection.sourceServerId === ctx.host.serverId) {
+      rule("OSHIP-K3S-OUT", [
+        "-o",
+        ctx.host.interfaceName!,
+        "-s",
+        `${connection.sourceIp}/32`,
+        "-d",
+        `${connection.targetIp}/32`,
+        "-p",
+        connection.protocol,
+        "--dport",
+        String(connection.port),
+        "-j",
+        "ACCEPT",
+      ]);
+      rule("OSHIP-K3S-IN", [
+        "-i",
+        ctx.host.interfaceName!,
+        "-s",
+        `${connection.targetIp}/32`,
+        "-d",
+        `${connection.sourceIp}/32`,
+        "-p",
+        connection.protocol,
+        "--sport",
+        String(connection.port),
+        "-m",
+        "conntrack",
+        "--ctstate",
+        "ESTABLISHED",
+        "-j",
+        "ACCEPT",
+      ]);
+    }
+  }
+  if (!ctx.plan.podCidr)
+    throw new AppError(
+      "Allocate the pod network before configuring the cluster firewall.",
+      409,
+      "CLUSTER_RUNTIME_HOST",
+    );
+  for (const iface of ["cni0", "flannel.1"]) {
+    const ports = ctx.host.role === "server" ? "6443,10250" : "10250";
+    // CoreDNS and metrics run in pods and need the API/kubelet; etcd stays node-only.
+    rule("OSHIP-K3S-IN", [
+      "-i",
+      iface,
+      "-s",
+      ctx.plan.podCidr,
+      "-d",
+      `${ctx.host.privateIp}/32`,
+      "-p",
+      "tcp",
+      "-m",
+      "multiport",
+      "--dports",
+      ports,
+      "-j",
+      "ACCEPT",
+    ]);
+    rule("OSHIP-K3S-OUT", [
+      "-o",
+      iface,
+      "-s",
+      `${ctx.host.privateIp}/32`,
+      "-d",
+      ctx.plan.podCidr,
+      "-p",
+      "tcp",
+      "-m",
+      "multiport",
+      "--sports",
+      ports,
+      "-m",
+      "conntrack",
+      "--ctstate",
+      "ESTABLISHED",
+      "-j",
+      "ACCEPT",
+    ]);
+  }
+  rule("OSHIP-K3S-IN", ["-p", "udp", "--dport", "8472", "-j", "DROP"]);
+  rule("OSHIP-K3S-IN", ["-p", "tcp", "-m", "multiport", "--dports", tcpPorts, "-j", "DROP"]);
+  for (const [base, chain] of [
+    ["INPUT", "OSHIP-K3S-IN"],
+    ["OUTPUT", "OSHIP-K3S-OUT"],
+  ])
+    commands.push(
+      `iptables -w 5 -C ${base} -j ${chain} 2>/dev/null || iptables -w 5 -I ${base} 1 -j ${chain}`,
+    );
+  return commands.join("\n") + "\n";
 }

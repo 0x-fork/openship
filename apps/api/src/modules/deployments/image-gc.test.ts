@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Deployment } from "@repo/db";
+import { kubernetesBuildImageTag } from "@repo/adapters";
 import { computeKeepSet, selectImageRemovalRefs } from "@repo/platform/engine/modules/deployments/image-gc";
 
 // Minimal deployment shape for the pure keep-set logic (loaders are injected, so
@@ -109,5 +110,20 @@ describe("selectImageRemovalRefs (never ruin an operator's image)", () => {
 
   it("removes a truly dangling (untagged) labeled leftover by id", () => {
     expect(selectImageRemovalRefs({ id: "sha6", repoTags: [] }, keep)).toEqual(["sha6"]);
+  });
+
+  it("removes only a cluster build's exact local publish alias", () => {
+    const alias = kubernetesBuildImageTag("ghcr.io/acme/app", "bld_1");
+    const img = { id: "cluster-image", buildId: "bld_1", repoTags: [alias, "ghcr.io/acme/app:production", "operator/copy:latest"] };
+    expect(selectImageRemovalRefs(img, keep, "ghcr.io/acme/app")).toEqual([alias]);
+    expect(selectImageRemovalRefs(img, keep, "ghcr.io/acme/another")).toEqual([]);
+    expect(selectImageRemovalRefs({ ...img, buildId: null }, keep, "ghcr.io/acme/app")).toEqual([]);
+  });
+
+  it("honors retained image ids and aliases for cluster builds too", () => {
+    const alias = kubernetesBuildImageTag("ghcr.io/acme/app", "bld_1");
+    const img = { id: "cluster-image", buildId: "bld_1", repoTags: [alias] };
+    expect(selectImageRemovalRefs(img, new Set([img.id]), "ghcr.io/acme/app")).toEqual([]);
+    expect(selectImageRemovalRefs(img, new Set([alias]), "ghcr.io/acme/app")).toEqual([]);
   });
 });

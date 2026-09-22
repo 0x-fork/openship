@@ -1,6 +1,7 @@
-import { isServicesFramework, resolveWorkload } from "@repo/core";
+import { isServicesFramework, resolveWorkload, type ClusterWorkloadStatus } from "@repo/core";
 import type { Service, ServiceContainer } from "@/lib/api/services";
 import type { ProjectConnection } from "@/lib/api/connections";
+import type { ClusterDatabase } from "@repo/contracts";
 
 /** A projection of saved project data. Canvas positions never define infrastructure. */
 export interface TopologyProject {
@@ -15,7 +16,8 @@ export interface TopologyProject {
   activeDeploymentStatus?: string | null;
   latestDeploymentStatus?: string | null;
   enabled?: boolean | null;
-  deployTarget?: "cloud" | "server" | "local";
+  deployTarget?: "cloud" | "server" | "local" | "cluster";
+  clusterId?: string | null;
   serverName?: string | null;
   serverId?: string | null;
   isApp?: boolean;
@@ -39,7 +41,15 @@ export type TopologyState =
 
 export interface TopologyResource {
   id: string;
-  kind: "application" | "service" | "edge" | "environment" | "linked" | "instance";
+  kind:
+    | "application"
+    | "service"
+    | "edge"
+    | "environment"
+    | "linked"
+    | "instance"
+    | "traffic"
+    | "database";
   name: string;
   description: string;
   tone: TopologyTone;
@@ -52,6 +62,9 @@ export interface TopologyResource {
   version?: string;
   /** Only a runtime observation may supply the number of running instances. */
   instances?: number;
+  replicaStatus?: ClusterWorkloadStatus;
+  clusterPod?: ClusterWorkloadStatus["pods"][number];
+  database?: ClusterDatabase;
   ownerName?: string;
   pending?: boolean;
   isNew?: boolean;
@@ -62,12 +75,16 @@ export interface TopologyRelation {
   source: string;
   target: string;
   kind: "route" | "dependency" | "binding";
+  /** A runtime service route is not an editable public domain. */
+  scope?: "instances" | "database";
+  databaseId?: string;
   label: string;
   description: string;
   serviceId?: string;
   dependencyName?: string;
   connection?: ProjectConnection;
   pending?: boolean;
+  enabled?: boolean;
 }
 
 export interface ProjectTopologyGraph {
@@ -78,6 +95,149 @@ export interface ProjectTopologyGraph {
 export const applicationNodeId = (projectId: string) => `application:${projectId}`;
 export const serviceNodeId = (serviceId: string) => `service:${serviceId}`;
 export const environmentNodeId = (projectId: string) => `environment:${projectId}`;
+export const databaseNodeId = (id: string) => `database:${id}`;
+
+export function addClusterDatabases(
+  graph: ProjectTopologyGraph,
+  project: TopologyProject,
+  databases: readonly ClusterDatabase[],
+): ProjectTopologyGraph {
+  const nodes = [...graph.nodes];
+  const edges = [...graph.edges];
+  for (const database of databases) {
+    if (database.status === "deleted" || database.projectId !== project.id) continue;
+    const state: TopologyState =
+      database.status === "ready"
+        ? database.observation?.ready
+          ? "running"
+          : "failed"
+        : ["failed", "interrupted"].includes(database.status)
+          ? "failed"
+          : database.status === "retained"
+            ? "stopped"
+            : "starting";
+    nodes.push({
+      id: databaseNodeId(database.id),
+      kind: "database",
+      name: database.name,
+      projectId: project.id,
+      tone: database.config.engine,
+      description: `${database.config.engine === "postgres" ? "PostgreSQL" : "Redis"} · ${database.config.mode === "cluster" ? "Cluster" : "Standalone"}`,
+      state,
+      database,
+      instances: database.observation?.pods.length,
+    });
+    if (database.envKey && nodes.some((node) => node.id === applicationNodeId(project.id)))
+      edges.push({
+        id: `database-connection:${database.id}`,
+        source: applicationNodeId(project.id),
+        target: databaseNodeId(database.id),
+        kind: "binding",
+        scope: "database",
+        databaseId: database.id,
+        label: database.envKey,
+        description: `${database.envKey} connects this application to the database over its private network. Redeploy the application after changing the connection.`,
+      });
+  }
+  return { nodes, edges };
+}
+
+export function buildDatabaseReplicaTopology(
+  project: TopologyProject,
+  database: ClusterDatabase,
+): ProjectTopologyGraph {
+  const pods = database.observation?.pods ?? [];
+  const nodes: TopologyResource[] = pods.map((pod) => ({
+    id: `database-pod:${database.id}:${pod.name}`,
+    kind: "instance",
+    projectId: project.id,
+    name: pod.role === "primary" ? "Primary" : pod.role === "replica" ? "Replica" : pod.name,
+    description: pod.serverName ?? "Assigning a server",
+    state: pod.ready ? "running" : pod.phase === "Failed" ? "failed" : "starting",
+    tone: database.config.engine,
+    clusterPod: pod,
+  }));
+  // PostgreSQL reports the actual primary. Redis roles can change independently
+  // of StatefulSet names; do not invent a replication graph from pod ordinals.
+  const primary = database.observation?.primary;
+  const edges: TopologyRelation[] = primary
+    ? pods
+        .filter((pod) => pod.name !== primary)
+        .map((pod) => ({
+          id: `replication:${database.id}:${pod.name}`,
+          source: `database-pod:${database.id}:${primary}`,
+          target: `database-pod:${database.id}:${pod.name}`,
+          kind: "route",
+          scope: "instances",
+          label: "Replication",
+          description: "PostgreSQL streaming replication managed by the database operator.",
+        }))
+    : [];
+  return { nodes, edges };
+}
+
+export function clusterInstances(status: ClusterWorkloadStatus) {
+  return [...status.pods]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((pod, index) => ({
+      pod,
+      name: `Instance ${index + 1}`,
+      server:
+        pod.serverName ?? (pod.nodeName ? "Server details unavailable" : "Assigning a server"),
+      state: (pod.ready
+        ? "running"
+        : /BackOff|Error|Failed/.test(pod.phase)
+          ? "failed"
+          : pod.phase === "Succeeded"
+            ? "stopped"
+            : pod.phase === "Unknown"
+              ? "unknown"
+              : "starting") as TopologyState,
+    }));
+}
+
+export function buildClusterReplicaTopology(
+  project: TopologyProject,
+  status: ClusterWorkloadStatus,
+): ProjectTopologyGraph {
+  const nodes: TopologyResource[] = clusterInstances(status).map(
+    ({ pod, name, server, state }) => ({
+      id: `pod:${pod.name}`,
+      kind: "instance",
+      projectId: project.id,
+      name,
+      description: server,
+      tone: "service",
+      clusterPod: pod,
+      state,
+    }),
+  );
+  const edges: TopologyRelation[] = [];
+  if (resolveWorkload(project.options?.workloadType, project.options?.hasServer) === "web") {
+    const id = `cluster-service:${project.id}`;
+    for (const node of nodes)
+      edges.push({
+        id: `${id}:${node.id}`,
+        source: id,
+        target: node.id,
+        kind: "route",
+        scope: "instances",
+        label: node.clusterPod?.ready ? "Serving" : "Not ready",
+        description: "Traffic goes to healthy instances automatically.",
+        enabled: node.clusterPod?.ready,
+      });
+    nodes.unshift({
+      id,
+      kind: "traffic",
+      name: "Traffic distribution",
+      description: "Routes to healthy instances",
+      projectId: project.id,
+      tone: "service",
+      state: status.ready > 0 ? "running" : status.desired === 0 ? "stopped" : "starting",
+    });
+  }
+  return { nodes, edges };
+}
 
 export function hasSeparateApplication(
   project: TopologyProject,
@@ -148,12 +308,14 @@ export function buildProjectTopology({
   services,
   containers,
   connections,
+  cluster,
 }: {
   project: TopologyProject;
   services: readonly Service[];
   /** null means the host query has not succeeded; it does not mean zero instances. */
   containers: readonly ServiceContainer[] | null;
   connections: readonly ProjectConnection[];
+  cluster?: ClusterWorkloadStatus | null;
 }): ProjectTopologyGraph {
   const nodes: TopologyResource[] = [];
   const edges: TopologyRelation[] = [];
@@ -176,13 +338,21 @@ export function buildProjectTopology({
             : "Application",
       tone: "service",
       version,
+      ...(cluster ? { replicaStatus: cluster, instances: cluster.ready } : {}),
       // The release record is not a live container probe.
       state:
         project.enabled === false
           ? "disabled"
-          : project.activeDeploymentId
-            ? "unknown"
-            : "configured",
+          : cluster
+            ? cluster.desired === 0
+              ? "stopped"
+              : cluster.available >= cluster.desired &&
+                  cluster.observedGeneration >= cluster.generation
+                ? "running"
+                : "starting"
+            : project.activeDeploymentId
+              ? "unknown"
+              : "configured",
     });
   }
 
@@ -319,7 +489,7 @@ export function topologyPositions(
   const columns = new Map<number, TopologyResource[]>();
   for (const node of graph.nodes) {
     const column =
-      node.kind === "edge"
+      node.kind === "edge" || node.kind === "traffic"
         ? 0
         : node.kind === "linked"
           ? 3

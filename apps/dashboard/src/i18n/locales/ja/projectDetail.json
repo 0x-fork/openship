@@ -141,7 +141,9 @@
 				"logs": "ログ",
 				"env": "環境",
 				"settings": "設定",
-				"backup": "バックアップ"
+				"backup": "バックアップ",
+				"domains": "ドメイン",
+				"volumes": "ボリューム"
 			},
 			"status": {
 				"running": "実行中",
@@ -218,7 +220,62 @@
 				"backupRunFailed": "バックアップの実行に失敗しました"
 			},
 			"duplicateContainers": "このサービスに一致する別のコンテナがあります: {names}",
-			"editInSettings": "設定で編集"
+			"editInSettings": "設定で編集",
+			"networking": {
+				"title": "ポートとドメイン",
+				"manageDomains": "ドメインを管理",
+				"hostBinding": "ホストのバインド",
+				"paused": "ルーティングは一時停止中",
+				"managePort": "ポート {port} のドメインを管理",
+				"addToPort": "ポート {port} にドメインを追加",
+				"manage": "管理",
+				"noDomain": "ドメインが接続されていません",
+				"tcpOnly": "ドメインには TCP 経由の HTTP が必要です。",
+				"noPorts": "ポートが設定されていません。",
+				"configurePorts": "ポートを設定",
+				"service": "サービス",
+				"selectService": "サービスを選択",
+				"containerPort": "コンテナのポート",
+				"routeChanged": "このルートは変更されました。更新して再試行してください。",
+				"domainsDescription": "このサービスに接続されたドメインです。DNS と SSL をここで管理できます。",
+				"filterPort": "ポートで絞り込む",
+				"allPorts": "すべてのポート",
+				"serviceUnavailable": "このサービスは利用できなくなりました。",
+				"enableRouting": "ドメインルーティングを有効化",
+				"privateNetwork": "プライベートネットワーク",
+				"configure": "設定",
+				"copyAddress": "内部アドレスをコピー",
+				"runtimeDetails": "実行環境の詳細",
+				"copyValue": "{label} をコピー",
+				"copyFailed": "クリップボードにコピーできませんでした"
+			},
+			"storage": {
+				"description": "このサービスにマウントされた永続データです。",
+				"backups": "バックアップ",
+				"edit": "マウントを編集",
+				"add": "ボリュームを追加",
+				"mountLabel": "ボリュームマウント {n}",
+				"removeMount": "マウント {n} を削除",
+				"editHint": "name:/container/path または /host/path:/container/path を指定してください。マウントの変更は次のデプロイで適用されます。",
+				"cancel": "キャンセル",
+				"save": "マウントを保存",
+				"mountCount": "マウント数: {count}",
+				"measuring": "計測中…",
+				"usageUnavailable": "使用量を取得できません",
+				"refresh": "使用量を更新",
+				"measureFailed": "使用量を計測できませんでした。「使用量を更新」で再試行してください。",
+				"readOnly": "読み取り専用",
+				"emptyTitle": "ボリュームが設定されていません",
+				"emptyDescription": "デプロイ後もファイルを保持するには、ボリュームを追加してください。",
+				"backupLoadFailed": "バックアップポリシーを読み込めませんでした",
+				"loadingBackups": "バックアップを読み込み中…",
+				"retry": "再試行",
+				"kinds": {
+					"named": "名前付きボリューム",
+					"bind": "ホストのディレクトリ",
+					"anonymous": "匿名ボリューム"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "名前",

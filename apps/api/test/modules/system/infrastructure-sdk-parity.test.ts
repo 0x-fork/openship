@@ -10,7 +10,8 @@ import { serverManagementRoutes } from "../../../src/modules/system/server-manag
 import { handleApiError } from "../../../src/middleware/error-handler";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { createHash } from "node:crypto";
-import { normalizeManagedNetworkInput } from "@repo/core";
+import { clusterRuntimeSteps, normalizeManagedNetworkInput } from "@repo/core";
+import * as setupLifecycle from "@repo/platform/engine/modules/system/network-setup-lifecycle";
 import { managedPreparationFixture } from "../../../../../packages/contracts/test/managed-network-fixtures";
 import {
   networkPreparationCollection,
@@ -60,6 +61,118 @@ const nativeInput = (serverIds: string[], cidr = "10.20.0.0/24") => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe("independent infrastructure through native SDK and HTTP", () => {
+  it("shares durable runtime setup, SSE, retry and cleanup across native and HTTP clients", async () => {
+    const hostWork = vi
+      .spyOn(sshManager, "withExecutor")
+      .mockRejectedValue(new Error("Unexpected host work"));
+    const dispatch = vi.spyOn(setupLifecycle, "deferNetworkSetupWork").mockResolvedValue(undefined);
+    const owner = await seedOwner();
+    const servers = await Promise.all([
+      seedServer(owner.orgId, "One"),
+      seedServer(owner.orgId, "Two"),
+      seedServer(owner.orgId, "Three"),
+    ]);
+    const { native, remote } = await clients(owner);
+    const network = await native.createNetwork(nativeInput(servers));
+    const cluster = await remote.createComputeCluster({
+      name: "Runtime pool",
+      networkId: network.id,
+      serverIds: servers,
+      requestId: crypto.randomUUID(),
+    });
+    const clusterId = cluster.id;
+    expect(cluster.scaling).toBeNull();
+    const input = { clusterId, revision: cluster.revision, requestId: crypto.randomUUID() };
+    expect(await native.getClusterRuntime({ clusterId })).toBeNull();
+    await expect(
+      remote.setupClusterRuntime({ ...input, revision: input.revision + 1 }),
+    ).rejects.toMatchObject({ code: "CLUSTER_RUNTIME_CONFLICT" });
+    const started = await remote.setupClusterRuntime(input);
+    expect(started).toMatchObject({
+      status: "setting_up",
+      generation: 1,
+      plan: { networkId: network.id, version: null },
+    });
+    expect(started.plan.hosts.map((host) => host.role)).toEqual(["server", "server", "server"]);
+    expect(await native.setupClusterRuntime(input)).toEqual(started);
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch.mock.calls[0]![0]).toMatchObject({
+      kind: "runtime",
+      id: started.id,
+      clusterId,
+      generation: 1,
+    });
+    for (const client of [native, remote]) {
+      const summary = { id: clusterId, scaling: { status: "setting_up", verifiedAt: null } };
+      expect(await client.getComputeCluster({ clusterId })).toMatchObject(summary);
+      expect(await client.listComputeClusters()).toMatchObject([summary]);
+      const overviewAbort = new AbortController();
+      const overview = client
+        .clusterEvents({ signal: overviewAbort.signal })
+        [Symbol.asyncIterator]();
+      try {
+        const event = await overview.next();
+        expect(JSON.parse(event.value!.data).run.computeClusters).toMatchObject([summary]);
+      } finally {
+        overviewAbort.abort();
+        await overview.return?.();
+      }
+      const abort = new AbortController();
+      const stream = client
+        .clusterRuntimeEvents(clusterId, { signal: abort.signal })
+        [Symbol.asyncIterator]();
+      try {
+        const event = await stream.next();
+        expect(JSON.parse(event.value!.data).run).toEqual(started);
+      } finally {
+        abort.abort();
+        await stream.return?.();
+      }
+    }
+    const other = await clients(await seedOwner());
+    for (const client of [other.native, other.remote])
+      await expect(client.getClusterRuntime({ clusterId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    await expect(
+      remote.removeComputeCluster({ clusterId, revision: cluster.revision }),
+    ).rejects.toMatchObject({ code: "CLUSTER_RUNTIME_IN_USE" });
+    await repos.clusterRuntime.finish(
+      started.id,
+      started.generation,
+      started.plan,
+      "setup",
+      "A prerequisite failed",
+    );
+    const failed = (await native.getClusterRuntime({ clusterId }))!;
+    expect(failed.status).toBe("failed");
+    await expect(
+      remote.retryClusterRuntime({ clusterId, sequence: failed.sequence - 1 }),
+    ).rejects.toMatchObject({ code: "CLUSTER_RUNTIME_CONFLICT" });
+    const retried = await native.retryClusterRuntime({ clusterId, sequence: failed.sequence });
+    expect(retried).toMatchObject({ id: started.id, generation: 2, status: "setting_up" });
+    await repos.clusterRuntime.finish(
+      retried.id,
+      retried.generation,
+      retried.plan,
+      "setup",
+      "Still unavailable",
+    );
+    const stopped = (await remote.getClusterRuntime({ clusterId }))!;
+    const removing = await remote.removeClusterRuntime({ clusterId, sequence: stopped.sequence });
+    expect(removing).toMatchObject({ generation: 3, status: "removing", intent: "remove" });
+    const plan = structuredClone(removing.plan);
+    for (const host of plan.hosts)
+      host.steps = clusterRuntimeSteps(["remove"]).map((step) => ({
+        ...step,
+        status: "completed",
+      }));
+    await repos.clusterRuntime.finish(removing.id, removing.generation, plan, "remove", null);
+    expect(await native.getClusterRuntime({ clusterId })).toMatchObject({ status: "removed" });
+    await native.removeComputeCluster({ clusterId, revision: cluster.revision });
+    expect(await remote.getNetwork({ networkId: network.id })).toMatchObject({ id: network.id });
+    expect(hostWork).not.toHaveBeenCalled();
+  });
   it("publishes connection revisions through HTTP and replays them through the native SDK", async () => {
     const hostWork = vi
       .spyOn(sshManager, "withExecutor")
@@ -114,7 +227,7 @@ describe("independent infrastructure through native SDK and HTTP", () => {
       status: "pending",
       input: { access: request.access },
     });
-    expect(revised.input.members.map((member) => member.serverId)).toEqual(ids);
+    expect(revised.input.members.map((member) => member.serverId)).toEqual([...ids].sort());
     expect(await native.reviseManagedNetworkAccess(request)).toEqual(revised);
     expect(await remote.getManagedNetworkPreparation({ preparationId: source.id })).toMatchObject({
       status: "cancelled",

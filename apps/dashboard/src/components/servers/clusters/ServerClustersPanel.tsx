@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Boxes, Loader2, Server } from "lucide-react";
+import { ArrowRight, Boxes, Loader2, Network, Server } from "lucide-react";
 import type { ClusterCapabilities } from "@repo/contracts";
 import { BlurIp } from "@/components/BlurIp";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { ServerClustersOverview } from "@/hooks/useServerClustersOverview";
-import { NetworkStatus } from "./NetworkStatus";
+import { ClusterScalingStatus } from "./ClusterScalingStatus";
 import { ClusterEmptyState } from "./ClusterEmptyState";
 import { NetworkGroups } from "./NetworkGroups";
 import { NetworkStreamNotice } from "./NetworkStreamNotice";
@@ -84,7 +84,7 @@ export function ServerClustersPanel({
                 <span className="grid size-10 place-items-center rounded-xl bg-primary/8 text-primary">
                   <Boxes className="size-5" />
                 </span>
-                <NetworkStatus cluster={cluster.network} />
+                <ClusterScalingStatus cluster={cluster} />
               </div>
               <h3 className="mt-4 truncate font-semibold">{cluster.name}</h3>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -98,7 +98,10 @@ export function ServerClustersPanel({
                   })}
                 </span>
               </div>
-              <span className="text-xs text-muted-foreground">{cluster.network.name}</span>
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Network aria-hidden="true" className="size-3.5" />
+                {cluster.network.name}
+              </span>
               <div className="mt-5 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
                 <span className="truncate font-mono">
                   <BlurIp>{cluster.network.network.cidrs.join(", ")}</BlurIp>

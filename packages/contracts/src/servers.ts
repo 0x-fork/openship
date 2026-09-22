@@ -1,4 +1,5 @@
 import { NetworkCollectionSchemas, ComputeClusterCollectionSchemas, ServerInfrastructureSchema } from "./infrastructure-resources";
+import { ClusterRuntimeCollectionSchemas } from "./cluster-runtime";
 import { Type, type Static } from "@sinclair/typebox";
 import { AgentExecBody } from "./exec";
 import { ServerClusterCollectionSchemas, NetworkHostObservationSchema } from "./server-clusters";
@@ -197,6 +198,7 @@ export const ServerCollectionSchemas = {
   ...ServerClusterCollectionSchemas,
   ...NetworkCollectionSchemas,
   ...ComputeClusterCollectionSchemas,
+  ...ClusterRuntimeCollectionSchemas,
   listAllContainers: { action: "read", output: Type.Array(ServerContainerGroupSchema) },
   scanAllContainers: { action: "write", output: Type.Array(ServerContainerGroupSchema) },
   containersBehind: { action: "read", output: Type.Object({ servers: Type.Number(), components: Type.Number() }) },
@@ -247,6 +249,7 @@ export const ServerResourceSchemas = {
   scanPorts: { action: "read", output: ServerPortScanSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export interface ServerOperations extends ScopedOperations<typeof ServerCollectionSchemas>, ResourceOperations<typeof ServerResourceSchemas> {
+  clusterRuntimeEvents(id: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   managedNetworkPreparationEvents(id: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   managedNetworkOperationEvents(id: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   clusterEvents(options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;

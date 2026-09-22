@@ -233,3 +233,5 @@ export {
 export * from "./project-transfer";
 
 export { createComputeClusterRepo, type ComputeClusterRecord } from "./repos/compute-cluster.repo";
+export { createClusterRuntimeRepo, type ClusterRuntimeRecord } from "./repos/cluster-runtime.repo";
+export { createClusterDatabaseRepo, type ClusterDatabaseRecord } from "./repos/cluster-database.repo";

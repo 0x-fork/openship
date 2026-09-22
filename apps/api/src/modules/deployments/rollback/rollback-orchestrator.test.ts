@@ -74,6 +74,7 @@ vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
 }));
 
 import { rollback } from "@repo/platform/engine/modules/deployments/rollback/rollback-orchestrator";
+import { snapshotNeedsGitSource, withoutPinnedArtifacts } from "@repo/platform/engine/modules/deployments/pinned-artifacts";
 
 beforeEach(() => {
   h.runtimeName = "docker";
@@ -136,6 +137,29 @@ beforeEach(() => {
 });
 
 describe("rollback — reacquire a frozen release image", () => {
+  it("restores a cluster digest without changing the source used by a later redeploy", async () => {
+    h.runtimeName = "kubernetes";
+    h.target!.imageRef = FROZEN_RELEASE_IMAGE;
+    h.target!.commitSha = "abc1234";
+    h.target!.meta = {
+      deployTarget: "cluster", clusterId: "cluster-1", clusterRuntimeId: "runtime-1",
+      clusterProjectId: "project-1", clusterConfig: { replicas: 3 },
+      source: "git", repoUrl: "https://github.com/acme/app", branch: "main",
+      framework: "node", serviceDeploymentMode: "single",
+    };
+    await rollback("dep-target");
+    const [, request] = h.triggerDeployment.mock.calls[0] as [unknown, TriggerRequest];
+    expect(request.commitSha).toBeUndefined();
+    expect(request.reuseSnapshot.meta).toMatchObject({
+      clusterId: "cluster-1", clusterRuntimeId: "runtime-1", clusterConfig: { replicas: 3 },
+      source: "git", handoverAppImage: FROZEN_RELEASE_IMAGE,
+    });
+    expect(request.reuseSnapshot.meta.releaseImageRef).toBeUndefined();
+    expect(snapshotNeedsGitSource(request.reuseSnapshot.meta)).toBe(false);
+    expect(snapshotNeedsGitSource(withoutPinnedArtifacts(request.reuseSnapshot.meta))).toBe(true);
+    expect(request.reuseSnapshot.envVars).toEqual({ API_KEY: "encrypted-frozen" });
+  });
+
   it("pins Cloud Docker service images while retaining the original shared workspace and volume configuration", async () => {
     h.runtimeName = "cloud";
     h.imagePresent = true;

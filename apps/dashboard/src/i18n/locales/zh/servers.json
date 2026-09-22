@@ -907,5 +907,45 @@
       "discard": "放弃更改",
       "noConnections": "未启用任何连接"
     }
+  },
+  "runtime": {
+    "title": "扩缩容",
+    "description": "在此集群的服务器上运行应用。",
+    "setup": "启用扩缩容",
+    "oneControl": "一个控制服务器。高可用控制平面至少需要三台服务器。",
+    "threeControls": "三台控制服务器维持集群可用性，其余服务器作为工作节点加入。",
+    "requirements": "OpenShip 会准备并连接服务器，检查应用路由。进度会被保存，你可以离开后再返回。",
+    "readyHint": "在项目的扩缩容设置中选择此集群，即可将应用实例部署到集群服务器上。",
+    "privateConnections": "必需的私有防火墙规则",
+    "privateHint": "OpenShip 自动配置支持的主机防火墙。如果提供商过滤私有网络，请允许列出的私有源地址访问这些目标端口。不要将这些端口暴露到公网。",
+    "remove": "停用扩缩容",
+    "removeDescription": "停用扩缩容并从此集群中移除其安装。请先移除已部署的集群应用和持久卷。服务器组、Docker 应用和私有网络仍然可用。",
+    "details": "设置详情",
+    "status": {
+      "setting_up": "正在启用扩缩容",
+      "ready": "已可扩缩容",
+      "failed": "扩缩容需要处理",
+      "interrupted": "设置已停止 — 重试以继续",
+      "removing": "正在停用扩缩容",
+      "removed": "扩缩容已停用",
+      "not_enabled": "扩缩容未启用",
+      "unknown": "无法获取扩缩容状态"
+    },
+    "steps": {
+      "connect": "连接服务器",
+      "prerequisites": "准备服务器",
+      "inspect": "检查连接",
+      "install": "启用扩缩容",
+      "join": "连接服务器",
+      "verify": "检查应用路由",
+      "remove": "清理扩缩容配置"
+    },
+    "requirementsDetails": "OpenShip 会安装缺失工具，通过私有网络配置 K3s，并验证服务路由和 DNS。需要运行 systemd 的 Linux，以及无过滤或基于 iptables 的主机防火墙。",
+    "technicalDetails": "技术详情",
+    "technology": "编排器",
+    "applicationNetwork": "Pod 网络",
+    "serviceNetwork": "服务网络",
+    "lastChecked": "上次验证",
+    "scaleProject": "选择项目"
   }
 }

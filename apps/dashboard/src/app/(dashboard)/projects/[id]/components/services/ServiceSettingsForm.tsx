@@ -37,6 +37,8 @@ interface ServiceSettingsFormProps {
   onSubmit: (data: Partial<ServiceInput>) => Promise<void>;
   /** The same form can stage a topology edit before the deployment review. */
   submitLabel?: string;
+  /** Service detail owns mounts in its Volumes tab; topology editors keep them here. */
+  includeVolumes?: boolean;
 }
 
 /** Backend per-item caps (service.schema.ts ComposeFieldsBlock) surfaced here so
@@ -58,7 +60,7 @@ const splitList = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmit, submitLabel }: ServiceSettingsFormProps) {
+export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmit, submitLabel, includeVolumes = true }: ServiceSettingsFormProps) {
   const { t } = useI18n();
   const f = t.projectDetail.services.settingsForm;
   const isMonorepo = serviceKind(service) === "monorepo";
@@ -218,7 +220,7 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
           dockerfile: "",
           ports: portList,
           dependsOn,
-          volumes: volumeList,
+          ...(includeVolumes ? { volumes: volumeList } : {}),
           command: "",
           restart,
           enabled,
@@ -243,7 +245,7 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
           dockerfile: useBuild ? dockerfile.trim() : "",
           ports: portList,
           dependsOn,
-          volumes: volumeList,
+          ...(includeVolumes ? { volumes: volumeList } : {}),
           command: command.trim(),
           restart,
           advanced: buildAdvanced(),
@@ -472,7 +474,7 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
           </Field>
         </div>
 
-        <FieldBlock label={f.volumes}>
+        {includeVolumes && <FieldBlock label={f.volumes}>
           <TagListInput
             tags={volumesTags}
             draft={volumesDraft}
@@ -485,7 +487,7 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
             removeLabel={f.removeTag}
           />
           <p className="mt-1 text-xs text-muted-foreground">{f.volumesHint}</p>
-        </FieldBlock>
+        </FieldBlock>}
       </SectionCard>
 
       <SectionCard icon={HeartPulse} title={f.sections.health} description={f.sections.healthHint}>

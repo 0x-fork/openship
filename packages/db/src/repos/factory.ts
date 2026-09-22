@@ -303,6 +303,8 @@ import { createSettingsRepo } from "./settings.repo";
 import { createInstanceSettingsRepo } from "./instance-settings.repo";
 import { createServerRepo } from "./server.repo";
 import { createComputeClusterRepo } from "./compute-cluster.repo";
+import { createClusterRuntimeRepo } from "./cluster-runtime.repo";
+import { createClusterDatabaseRepo } from "./cluster-database.repo";
 import { createServerClusterRepo } from "./server-cluster.repo";
 import { createNetworkPreparationRepo } from "./network-preparation.repo";
 import { createServerGithubAuthRepo } from "./server-github-auth.repo";
@@ -387,6 +389,8 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
   server: createServerRepo(db),
   serverCluster: createServerClusterRepo(db),
   computeCluster: createComputeClusterRepo(db),
+  clusterRuntime: createClusterRuntimeRepo(db),
+  clusterDatabase: createClusterDatabaseRepo(db),
   networkPreparation: createNetworkPreparationRepo(db),
   serverGithubAuth: createServerGithubAuthRepo(db),
   githubDeployKey: createGithubDeployKeyRepo(db),

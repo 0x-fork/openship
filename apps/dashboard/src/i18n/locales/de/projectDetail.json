@@ -141,7 +141,9 @@
 				"logs": "Protokolle",
 				"env": "Umgebung",
 				"settings": "Einstellungen",
-				"backup": "Backup"
+				"backup": "Backup",
+				"domains": "Domains",
+				"volumes": "Volumes"
 			},
 			"status": {
 				"running": "Läuft",
@@ -218,7 +220,62 @@
 				"backupRunFailed": "Backup-Ausführung fehlgeschlagen"
 			},
 			"duplicateContainers": "Ein weiterer Container passt ebenfalls zu diesem Service: {names}",
-			"editInSettings": "In Einstellungen bearbeiten"
+			"editInSettings": "In Einstellungen bearbeiten",
+			"networking": {
+				"title": "Ports und Domains",
+				"manageDomains": "Domains verwalten",
+				"hostBinding": "Host-Bindung",
+				"paused": "Routing pausiert",
+				"managePort": "Domains für Port {port} verwalten",
+				"addToPort": "Domain für Port {port} hinzufügen",
+				"manage": "Verwalten",
+				"noDomain": "Keine Domain verbunden",
+				"tcpOnly": "Domains benötigen HTTP über TCP.",
+				"noPorts": "Keine Ports konfiguriert.",
+				"configurePorts": "Ports konfigurieren",
+				"service": "Dienst",
+				"selectService": "Dienst auswählen",
+				"containerPort": "Container-Port",
+				"routeChanged": "Diese Route wurde geändert. Aktualisiere die Seite und versuche es erneut.",
+				"domainsDescription": "Domains dieses Dienstes. DNS und SSL hier verwalten.",
+				"filterPort": "Nach Port filtern",
+				"allPorts": "Alle Ports",
+				"serviceUnavailable": "Dieser Dienst ist nicht mehr verfügbar.",
+				"enableRouting": "Domain-Routing aktivieren",
+				"privateNetwork": "Privates Netzwerk",
+				"configure": "Konfigurieren",
+				"copyAddress": "Interne Adresse kopieren",
+				"runtimeDetails": "Laufzeitdetails",
+				"copyValue": "{label} kopieren",
+				"copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
+			},
+			"storage": {
+				"description": "Persistente Daten, die in diesem Dienst eingebunden sind.",
+				"backups": "Backups",
+				"edit": "Einbindungen bearbeiten",
+				"add": "Volume hinzufügen",
+				"mountLabel": "Volume-Einbindung {n}",
+				"removeMount": "Einbindung {n} entfernen",
+				"editHint": "Verwende name:/container/path oder /host/path:/container/path. Änderungen gelten ab dem nächsten Deployment.",
+				"cancel": "Abbrechen",
+				"save": "Einbindungen speichern",
+				"mountCount": "Einbindungen: {count}",
+				"measuring": "Wird gemessen…",
+				"usageUnavailable": "Nutzung nicht verfügbar",
+				"refresh": "Nutzung aktualisieren",
+				"measureFailed": "Nutzung konnte nicht gemessen werden. Klicke zum Wiederholen auf Nutzung aktualisieren.",
+				"readOnly": "Nur lesen",
+				"emptyTitle": "Keine Volumes konfiguriert",
+				"emptyDescription": "Füge ein Volume hinzu, um Dateien über Deployments hinweg zu behalten.",
+				"backupLoadFailed": "Backup-Richtlinien konnten nicht geladen werden",
+				"loadingBackups": "Backups werden geladen…",
+				"retry": "Erneut versuchen",
+				"kinds": {
+					"named": "Benanntes Volume",
+					"bind": "Host-Verzeichnis",
+					"anonymous": "Anonymes Volume"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "Name",

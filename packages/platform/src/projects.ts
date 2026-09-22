@@ -19,6 +19,7 @@ export type PlatformProjectOperations = {
     ...args: Parameters<ProjectOperations[K]>
   ) => Promise<OperationResult<Awaited<ReturnType<ProjectOperations[K]>>>>;
 } & {
+  streamClusterDatabaseEvents(ctx: ExecutionContext, ...args: Parameters<ProjectLogStreams["streamClusterDatabaseEvents"]>): ReturnType<ProjectLogStreams["streamClusterDatabaseEvents"]>;
   retryRoutingStream(
     ctx: ExecutionContext,
     ...args: Parameters<ProjectRoutingStreams["retryRoutingStream"]>
@@ -28,6 +29,7 @@ export type PlatformProjectOperations = {
   openServerLogStream(ctx: ExecutionContext, id: string, input?: ServerLogsInput, options?: { signal?: AbortSignal }): Promise<OperationResult<AsyncIterable<Uint8Array>>>;
 };
 export interface ProjectDependencies {
+  databaseEvents?(ctx: ExecutionContext, id: string, signal?: AbortSignal): ReturnType<ProjectLogStreams["streamClusterDatabaseEvents"]>;
   controls?: ResourceServices<typeof ProjectControlSchemas>;
   home?(ctx: ExecutionContext): Promise<unknown>;
   subscribeLogs?(ctx: ExecutionContext, id: string, input: { tail?: number }): EventSubscription;
@@ -72,6 +74,17 @@ export function createProjectOperations(authorization: Authorization, dependenci
   };
   return Object.freeze({
     ...createResourceOperations(ProjectControlSchemas, authorization, "project", dependencies?.controls),
+    async *streamClusterDatabaseEvents(ctx, value, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      const context = await authorize(ctx, id, "read");
+      const events = resources().databaseEvents;
+      if (!events) throw new AppError("Database progress is not configured", 501, "CAPABILITY_UNAVAILABLE");
+      for await (const event of events(context, id, options.signal)) {
+        options.signal?.throwIfAborted();
+        await authorize(context, id, "read");
+        yield event;
+      }
+    },
     async *retryRoutingStream(ctx, value, options = {}) {
       const id = parseInput(ResourceIdSchema, value);
       options.signal?.throwIfAborted();

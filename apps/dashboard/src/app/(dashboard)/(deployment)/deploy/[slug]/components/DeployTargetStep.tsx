@@ -9,6 +9,7 @@ import {
   formatMemoryMb,
 } from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
+import { Button } from "@/components/ui/button";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import type { DeploymentConfig } from "@/context/deployment/types";
@@ -318,6 +319,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     local: { label: t.deploy.summary.targetLocal, icon: <Cpu className="size-3.5" /> },
     server: { label: t.deploy.summary.targetServer, icon: <Server className="size-3.5" /> },
     cloud: { label: t.deploy.summary.targetCloud, icon: <Cloud className="size-3.5" /> },
+    cluster: { label: "Server cluster", icon: <Server className="size-3.5" /> },
   };
   const buildLabels: Record<BuildStrategy, { label: string; icon: React.ReactNode }> = {
     local: { label: t.deploy.summary.buildLocal, icon: <Cpu className="size-3.5" /> },
@@ -1164,6 +1166,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
 
   // Auto-set deploy target when there's only one option
   useEffect(() => {
+    if (config.deployTarget === "cluster") return;
     if (!ready || hasChoice) {
       return;
     }
@@ -1394,6 +1397,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
 
   const hasAnyDeployTarget = deployTargetOptions.length > 0;
   const canContinue = ready && (
+    (config.deployTarget === "cluster" && !!config.projectId) ||
     config.deployTarget === "cloud" ||
     (config.deployTarget === "server" && !!config.serverId && hasServers)
   );
@@ -1635,6 +1639,13 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     </div>
   );
 
+  if (config.deployTarget === "cluster") return (
+    <div className="mx-auto w-full max-w-lg space-y-5">
+      <h1 className="text-2xl font-medium">Deploy to server cluster</h1>
+      <p className="text-sm leading-relaxed text-muted-foreground">This project uses the cluster and instance count saved in its Scale controls. OpenShip builds or reuses the application image, starts the instances, and checks their health before switching traffic.</p>
+      <Button onClick={onContinue}>Continue</Button>
+    </div>
+  );
   return (
     <div className={`mx-auto w-full space-y-8 ${showRightPanel ? "max-w-5xl" : "max-w-lg"}`}>
       {header}

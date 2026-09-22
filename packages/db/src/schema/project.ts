@@ -16,10 +16,12 @@ import type {
   ReleaseSource,
   ProjectObjectStorage,
   OpenshipReadiness,
+  ClusterWorkloadConfig,
 } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
 import { servers } from "./servers";
+import { computeCluster } from "./compute-cluster";
 
 // ─── Project apps ────────────────────────────────────────────────────────────
 
@@ -418,6 +420,9 @@ export const project = pgTable(
      * server unbinds its projects rather than cascade-deleting them.
      */
     serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
+    /** Kubernetes deployment binding; independent from the Edge/build host. */
+    clusterId: text("cluster_id").references(() => computeCluster.id, { onDelete: "restrict" }),
+    clusterConfig: jsonb("cluster_config").$type<ClusterWorkloadConfig | null>(),
 
     /**
      * User-chosen internal DNS alias for a single-app native project. Resolves
@@ -490,6 +495,7 @@ export const project = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    index("project_cluster_idx").on(table.clusterId).where(sql`${table.clusterId} IS NOT NULL`),
     uniqueIndex("uq_project_app_environment_slug_active")
       .on(table.groupId, table.environmentSlug)
       .where(sql`${table.deletedAt} IS NULL`),

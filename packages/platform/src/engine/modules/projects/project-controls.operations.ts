@@ -13,6 +13,8 @@ import { projectRoutingOperations } from "./project-routing.operations";
 import { projectLogOperations } from "./project-logs.operations";
 import { createProjectTransferOperations } from "./project-transfer.operations";
 import { appProjectOperations } from "../apps/app.operations";
+import { createProjectClusterOperations } from "./project-cluster.operations";
+import { createClusterDatabaseOperations } from "./cluster-database.operations";
 import { retryProjectRoutingOperation } from "./project-routing-retry.operations";
 
 /** Existing services, with the controller's audit/presentation duties shared by all callers. */
@@ -28,6 +30,8 @@ export function createProjectControls(
       after,
     });
   return {
+    ...createProjectClusterOperations(recordAudit),
+    ...createClusterDatabaseOperations(recordAudit),
     ...appProjectOperations,
     ...createProjectTransferOperations(recordAudit),
     ...projectLogOperations,

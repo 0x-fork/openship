@@ -1,7 +1,7 @@
 **Self-hosted clusters and private networking: architecture and delivery**
 
 Status: architecture agreed September 16, 2026; implementation updated September
-19, 2026. Independent private networks now support existing-network adoption and managed
+21, 2026. Independent private networks now support existing-network adoption and managed
 WireGuard with reviewed plans, per-host progress, durable claims, verification,
 and host-local rollback/reboot recovery. A durable prerequisite preparation now
 installs missing Python, iproute2 and WireGuard tools through the shared toolchain,
@@ -53,10 +53,25 @@ groups; live gateway connections between networks remain a later delivery.
 Managed hosts use Linux/systemd with no
 active firewall, raw iptables, or the supported standard nftables layout.
 UFW/firewalld and provider API/VLAN provisioning remain separate work. Cluster
-placement, private service endpoints, and shared storage are subsequent stages.
+workload support now includes single stateless applications and workers: projects
+can target a ready K3s cluster, deploy/update immutable images, change replicas,
+pause/resume and roll back through the existing deployment lifecycle. Topology
+shows observed pods; Kubernetes Services balance traffic behind OpenShip Edge.
+Multi-service Kubernetes projects, shared storage and database operators remain
+subsequent stages. See [cluster runtime and application scaling](k3s-cluster-runtime.md)
+for the delivered cycle, gateway limitations and live acceptance requirements.
 See the [implementation notes](../apps/dashboard/src/components/servers/clusters/README.md)
 for requirements, recovery behavior, and current limits. The remainder describes
 the wider architecture, including future capabilities.
+
+The selected multi-server workload runtime is now **K3s**. An inline cluster action
+bootstraps the runtime with shared tool preparation, private firewall rules,
+durable progress/retry/cleanup, and real pod/service/DNS verification. This is the
+runtime foundation now includes stateless cluster deployment, manual replica
+changes and Edge routing. Storage, PostgreSQL/Redis operators, highly available
+ingress and policy-driven autoscaling remain separate delivery stages. See
+[the K3s implementation](k3s-cluster-runtime.md), including the
+live Linux validation still needed before production rollout.
 
 **Separate compute membership, networking, and workloads.** A cluster groups customer-managed servers and references an existing private network. The organization owns that network independently: several compute clusters can use it, and servers can have additional network attachments. A project environment operates its services and will use cluster placement when the scheduler and deployment contracts support it.
 
@@ -195,6 +210,12 @@ complete. A disconnected progress stream alone never means the setup has stopped
 
 **Cross-server service access is a separate delivery milestone.**
 
+For the K3s cluster target, Kubernetes Services and CoreDNS provide discovery and
+routing; add namespaced project/service bindings and NetworkPolicies through the
+deployment adapter. Do not build a second cluster DNS service or manual replica
+scheduler. The Docker endpoint approach below applies only to any future support
+for connections between independent, existing Docker hosts.
+
 A private host network does not connect Docker bridges across hosts. Preserve the existing same-host service-network implementation and add a cross-server path with private endpoints and explicit policy.
 
 Publish a service on the intended private interface through runtime adapters and the existing port-claim machinery. Allocate a stable private port for the logical endpoint within its network scope, and validate destination conflicts before a move. Never silently bind a private service to every host interface. Native-network firewall policy and provider-side rules also need verification.
@@ -206,6 +227,11 @@ The connection policy must identify allowed workloads. WireGuard authenticates h
 The existing same-server restriction is replaced only for connections with a ready network, a verified endpoint, and enforceable policy. Existing project bindings apply to the whole consuming environment, and that scope remains explicit. Per-service credentials/access require an explicit contract extension. A topology “Starts after” wire continues to describe a startup dependency.
 
 **Reuse migration execution when workload coordination is ready.**
+
+K3s handles scheduling for the cluster target. Adapt the existing release and
+migration lifecycle to Kubernetes workloads and engine-specific operators. Keep
+the current Docker adapter for single-host projects; converting a Docker database
+to an operator-managed cluster needs its engine's data migration and cutover flow.
 
 Existing clone and move flows already provide valuable transfer, launch, cutover, and recovery behavior. Reuse those operations beneath cluster placement. A migration clone remains an independent copy until a managed instance model exists.
 

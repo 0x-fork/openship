@@ -14,6 +14,8 @@ import { RouteRuleInputSchema, ConnectProjectDomainInputSchema, SourceScanOption
  */
 
 import { UpdateCloneTokenSchema } from "@repo/contracts";
+import { ProjectClusterSchemas } from "@repo/contracts";
+import { ProjectDatabaseSchemas } from "@repo/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureRouter } from "../../lib/secure-router";
@@ -567,6 +569,18 @@ r.post(
 );
 
 /* ─── Resources ────────────────────────────────────────────────────────── */
+r.get("/:id/cluster", { tag: "project:read", localOnly: true }, ctrl.getClusterWorkload);
+r.get("/:id/cluster/databases", { tag: "project:read", localOnly: true }, ctrl.listClusterDatabases);
+r.get("/:id/cluster/databases/stream", { tag: "project:read", localOnly: true }, ctrl.clusterDatabaseStream);
+r.post("/:id/cluster/databases/inspect", { tag: "project:read", readOnly: true, localOnly: true, body: ProjectDatabaseSchemas.getClusterDatabase.input }, ctrl.clusterDatabaseCommand("getClusterDatabase"));
+r.post("/:id/cluster/databases", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectDatabaseSchemas.createClusterDatabase.input }, ctrl.clusterDatabaseCommand("createClusterDatabase"));
+r.patch("/:id/cluster/databases", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectDatabaseSchemas.updateClusterDatabase.input }, ctrl.clusterDatabaseCommand("updateClusterDatabase"));
+r.post("/:id/cluster/databases/retry", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectDatabaseSchemas.retryClusterDatabase.input }, ctrl.clusterDatabaseCommand("retryClusterDatabase"));
+r.post("/:id/cluster/databases/backup", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectDatabaseSchemas.backupClusterDatabase.input }, ctrl.clusterDatabaseCommand("backupClusterDatabase"));
+r.delete("/:id/cluster/databases", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectDatabaseSchemas.removeClusterDatabase.input }, ctrl.clusterDatabaseCommand("removeClusterDatabase"));
+r.post("/:id/cluster/databases/connect", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectDatabaseSchemas.connectClusterDatabase.input }, ctrl.clusterDatabaseCommand("connectClusterDatabase"));
+r.patch("/:id/cluster", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectClusterSchemas.setClusterTarget.input }, ctrl.setClusterTarget);
+r.post("/:id/cluster/scale", { tag: "project:write", localOnly: true, auditHandledByOperation: true, body: ProjectClusterSchemas.scaleClusterWorkload.input }, ctrl.scaleClusterWorkload);
 r.get(
   "/:id/resources",
   { tag: "project:read", mcp: { description: "Get the project's CPU/RAM/disk resource config." } },

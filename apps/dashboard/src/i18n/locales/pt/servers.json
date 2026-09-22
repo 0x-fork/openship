@@ -907,5 +907,45 @@
       "discard": "Descartar alterações",
       "noConnections": "Nenhuma conexão habilitada"
     }
+  },
+  "runtime": {
+    "title": "Escalonamento",
+    "description": "Execute aplicações nos servidores deste cluster.",
+    "setup": "Ativar escalonamento",
+    "oneControl": "Um servidor de controle. São necessários pelo menos três servidores para um plano de controle de alta disponibilidade.",
+    "threeControls": "Três servidores de controle mantêm a disponibilidade do cluster. Servidores adicionais entram como nós de trabalho.",
+    "requirements": "O OpenShip prepara os servidores, conecta-os e verifica o roteamento das aplicações. O progresso é salvo para que você possa sair e voltar.",
+    "readyHint": "Escolha este cluster nos controles de escalonamento de um projeto para implantar instâncias da aplicação em seus servidores.",
+    "privateConnections": "Regras de firewall privado necessárias",
+    "privateHint": "O OpenShip configura automaticamente os firewalls de host compatíveis. Se o provedor filtra a rede privada, permita estas portas de destino a partir dos endereços privados de origem listados. Não exponha estas portas à Internet.",
+    "remove": "Desativar escalonamento",
+    "removeDescription": "Desative o escalonamento e remova sua instalação deste cluster. Primeiro remova as aplicações implantadas no cluster e os volumes persistentes. O grupo de servidores, as aplicações Docker e a rede privada permanecem disponíveis.",
+    "details": "Detalhes da configuração",
+    "status": {
+      "setting_up": "Ativando escalonamento",
+      "ready": "Pronto para escalonar",
+      "failed": "O escalonamento precisa de atenção",
+      "interrupted": "Configuração interrompida — tente novamente para continuar",
+      "removing": "Desativando escalonamento",
+      "removed": "Escalonamento desativado",
+      "not_enabled": "Escalonamento não ativado",
+      "unknown": "Status do escalonamento indisponível"
+    },
+    "steps": {
+      "connect": "Conectar ao servidor",
+      "prerequisites": "Preparar servidor",
+      "inspect": "Verificar conexões",
+      "install": "Ativar escalonamento",
+      "join": "Conectar servidores",
+      "verify": "Verificar roteamento das aplicações",
+      "remove": "Remover configuração de escalonamento"
+    },
+    "requirementsDetails": "O OpenShip instala as ferramentas ausentes, configura o K3s pela rede privada e verifica o roteamento de serviços e o DNS. Requer Linux com systemd e firewall do host sem filtragem ou baseado em iptables.",
+    "technicalDetails": "Detalhes técnicos",
+    "technology": "Orquestrador",
+    "applicationNetwork": "Rede de pods",
+    "serviceNetwork": "Rede de serviços",
+    "lastChecked": "Última verificação",
+    "scaleProject": "Escolher um projeto"
   }
 }

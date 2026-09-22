@@ -94,7 +94,9 @@ interface BasicProjectData {
    * session — a run is part of the project's state, not something a panel fetches.
    */
   activeMigration?: ActiveMigration | null;
-  deployTarget?: "cloud" | "server" | "local";
+  deployTarget?: "cloud" | "server" | "local" | "cluster";
+  clusterId?: string | null;
+  clusterConfig?: import("@repo/core").ClusterWorkloadConfig | null;
   cloudWorkspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;
@@ -1125,6 +1127,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     <ProjectSettingsContext.Provider value={value}>{children}</ProjectSettingsContext.Provider>
   );
 };
+
+/** Service panels can also be opened from a server, outside the project route tree. */
+export const useOptionalProjectSettings = () => useContext(ProjectSettingsContext);
 
 export const useProjectSettings = () => {
   const context = useContext(ProjectSettingsContext);

@@ -121,7 +121,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   const { t } = useI18n();
   const brand = useBrandName();
   const { collapsed: desktopCollapsed, toggleCollapsed } = useSidebarCollapse(
-    pathname === "/scale" || pathname.startsWith("/scale/"),
+    pathname === "/scale" || pathname.startsWith("/scale/") || /^\/projects\/[^/]+\/topology(?:\/|$)/.test(pathname),
   );
   const collapsed = !mobileOpen && desktopCollapsed;
   const [loggingOut, setLoggingOut] = useState(false);

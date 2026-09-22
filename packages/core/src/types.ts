@@ -48,11 +48,12 @@ export type BuildStrategy = "server" | "local";
  *   "local"  → This machine (desktop/dev)
  *   "server" → User's remote server via SSH (selfhosted)
  *   "cloud"  → Oblien cloud workspace
+ *   "cluster" → Kubernetes workloads on a self-hosted server cluster
  */
-export type DeployTarget = "local" | "server" | "cloud";
+export type DeployTarget = "local" | "server" | "cloud" | "cluster";
 
 /**
- * A project's deploy target, DERIVED from its two durable bindings.
+ * A project's deploy target, derived from its durable infrastructure bindings.
  *
  * There is deliberately no `deployTarget` column — see the schema notes on
  * `project.cloudWorkspaceId` and `project.serverId`, which already determine this fact;
@@ -66,8 +67,10 @@ export type DeployTarget = "local" | "server" | "cloud";
 export function deriveProjectDeployTarget(project: {
   cloudWorkspaceId?: string | null;
   serverId?: string | null;
+  clusterId?: string | null;
 }): DeployTarget {
   if (project.cloudWorkspaceId) return "cloud";
+  if (project.clusterId) return "cluster";
   if (project.serverId) return "server";
   return "local";
 }

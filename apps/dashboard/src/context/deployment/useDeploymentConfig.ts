@@ -1458,7 +1458,7 @@ export function useDeploymentConfig() {
         // answer the server sends for a project bound to nothing that never deployed.
         const rawTarget = project.deployTarget;
         const savedTarget: DeployTarget | null =
-          rawTarget === "cloud" || rawTarget === "server" || rawTarget === "local"
+          rawTarget === "cloud" || rawTarget === "server" || rawTarget === "local" || rawTarget === "cluster"
             ? rawTarget
             : null;
         const savedServerId = typeof project.serverId === "string" ? project.serverId : null;

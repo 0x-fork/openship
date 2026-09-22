@@ -15,7 +15,7 @@ export interface AppDestination {
    * card for it (see below). Excluded rather than merely unused, so an install body
    * can't carry a value the API now rejects.
    */
-  deployTarget: Exclude<DeployTarget, "local">;
+  deployTarget: Exclude<DeployTarget, "local" | "cluster">;
   serverId?: string;
   /** Host of the selected server (sshHost) — lets the app wizard build a
    *  reachable `http://host:port` URL for a port-only (no-domain) install. */

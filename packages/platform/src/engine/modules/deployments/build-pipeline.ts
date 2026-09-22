@@ -460,6 +460,13 @@ async function reuseRetainedArtifact(opts: {
   }
 
   const refreshFrom = refreshAppDeploymentId(snapshot);
+  if (runtime.name === "kubernetes" && (refreshFrom || pinnedAppImage(snapshot))) {
+    const image = pinnedAppImage(snapshot);
+    if (!image || !/@sha256:[a-f0-9]{64}$/.test(image)) {
+      throw new Error("This cluster release has no immutable image to reuse. Redeploy it before applying replica or configuration changes.");
+    }
+    return reuse(image);
+  }
   if (refreshFrom) {
     if (runtime instanceof BareRuntime) {
       const release = await runtime.retainedReleaseArtifact(refreshFrom);
@@ -692,7 +699,7 @@ async function executeBuildAndDeploy(
       willRunServices,
       hasPrebuiltImage: Boolean(snapshot.releaseImageRef),
     });
-    if (runtimeModes.buildRuntimeMode === "docker") {
+    if (runtimeModes.buildRuntimeMode === "docker" && snapshot.deployTarget !== "cluster") {
       logger.log(
         willRunServices
           ? "→ Services require the Docker runtime — running this service deploy on Docker.\n"
@@ -713,6 +720,7 @@ async function executeBuildAndDeploy(
     );
 
     runtime = resolved.platform.runtime;
+    if (cancellationSignal) runtime.setOperationSignal?.(cancellationSignal);
     routing = resolved.platform.routing;
     ssl = resolved.platform.ssl;
     system = resolved.platform.system;
@@ -749,6 +757,7 @@ async function executeBuildAndDeploy(
             ? `static (build runtime: ${runtime.name}, served as files)`
             : workload === "worker"
               ? "worker (supervised container, no port, no route)"
+              : runtime.name === "kubernetes" ? "Kubernetes replicas"
               : resolved.runtimeMode === "docker"
                 ? "sandboxed (Docker container)"
                 : "direct (host process)"
@@ -1905,6 +1914,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
         // binds a fixed port → stop-first.
         canOverlap: !usesHostLoopback,
         ensureRuntimeReady: async () => {
+          if (runtime.name === "kubernetes") return;
           const system = phase.system;
           if (!system) return;
           await system.ensureFeature("deploy", (entry) =>
@@ -1912,6 +1922,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
           );
         },
         ensurePorts: async (cfg, promptUser) => {
+          if (runtime.name === "kubernetes") return;
           const executor = phase.targetExecutor;
           if (!executor) return;
           // A published container binds exactly ONE host port — the loopback pin.
@@ -2514,7 +2525,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     routing,
     usesManagedRouting,
     organizationId: dep.organizationId,
-    serverId: snapshot.serverId,
+    serverId: phase.serverId ?? undefined,
     // prevDep is intentionally NOT passed to runPostDeploySync anymore —
     // the RollbackOrchestrator below owns prev-artifact lifecycle now.
     // Keeping runPostDeploySync for managed-routing + obsolete-domain
@@ -2606,10 +2617,10 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // `metaPatch` is spread into deployment.meta (persisted) and read back for the
   // SSE payload in onSuccess, so both live + refresh see the same result.
   const metaPatch: Record<string, unknown> = {};
-  // Docker preparation resolves a registry tag to its immutable repo digest.
+  // Image preparation resolves a registry tag to its immutable repo digest.
   // Freeze that exact reference into the successful deployment so a rollback
   // can re-pull the same bytes even after local image retention expires.
-  if (snapshot.releaseImageRef && runtime.name === "docker" && buildResult.imageRef) {
+  if (snapshot.releaseImageRef && (runtime.name === "docker" || runtime.name === "kubernetes") && buildResult.imageRef) {
     metaPatch.releaseImageRef = buildResult.imageRef;
   }
   if (portCheck.length > 0) metaPatch.portCheck = portCheck;

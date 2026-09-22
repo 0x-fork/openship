@@ -5,6 +5,7 @@ import { hashStringToInt } from "../advisory-lock-factory";
 import {
   computeCluster,
   computeClusterMember,
+  clusterRuntime,
   serverCluster as privateNetwork,
   clusterMember as networkMember,
   clusterNetwork as networkConfig,
@@ -35,6 +36,24 @@ export async function assertNetworkDependencies(
     .from(computeCluster)
     .where(and(eq(computeCluster.organizationId, org), eq(computeCluster.networkId, networkId)));
   if (!users.length) return;
+  const [runtime] = await tx
+    .select({ id: clusterRuntime.id })
+    .from(clusterRuntime)
+    .where(
+      and(
+        inArray(
+          clusterRuntime.clusterId,
+          users.map((cluster) => cluster.id),
+        ),
+        ne(clusterRuntime.status, "removed"),
+      ),
+    );
+  if (runtime)
+    throw new AppError(
+      "This network supports an installed or unfinished cluster runtime. Remove that runtime before changing the network.",
+      409,
+      "NETWORK_IN_USE",
+    );
   if (!nextServerIds)
     throw new AppError(
       `This network is used by ${users.map((cluster) => cluster.name).join(", ")}. Change or remove those cluster references before deleting the network.`,
@@ -62,14 +81,31 @@ export function createComputeClusterRepo(db: Database) {
   const owned = (org: string, id: string) =>
     and(eq(computeCluster.organizationId, org), eq(computeCluster.id, id));
   async function read(tx: Database | DatabaseTransaction, org: string, id: string) {
-    const [row] = await tx.select().from(computeCluster).where(owned(org, id));
+    const [row] = await tx
+      .select({
+        cluster: computeCluster,
+        scaling: { status: clusterRuntime.status, verifiedAt: clusterRuntime.verifiedAt },
+      })
+      .from(computeCluster)
+      .leftJoin(
+        clusterRuntime,
+        and(
+          eq(clusterRuntime.clusterId, computeCluster.id),
+          eq(clusterRuntime.organizationId, org),
+        ),
+      )
+      .where(owned(org, id));
     if (!row) throw new NotFoundError("Cluster", id);
     const members = await tx
       .select({ serverId: computeClusterMember.serverId })
       .from(computeClusterMember)
       .where(eq(computeClusterMember.clusterId, id))
       .orderBy(computeClusterMember.serverId);
-    return { ...row, serverIds: members.map((member) => member.serverId) };
+    return {
+      ...row.cluster,
+      scaling: row.scaling,
+      serverIds: members.map((member) => member.serverId),
+    };
   }
   async function validate(
     tx: DatabaseTransaction,
@@ -143,15 +179,13 @@ export function createComputeClusterRepo(db: Database) {
   }
   async function write(tx: DatabaseTransaction, id: string, config: ComputeClusterConfig) {
     await tx.delete(computeClusterMember).where(eq(computeClusterMember.clusterId, id));
-    await tx
-      .insert(computeClusterMember)
-      .values(
-        config.serverIds.map((serverId) => ({
-          clusterId: id,
-          networkId: config.networkId,
-          serverId,
-        })),
-      );
+    await tx.insert(computeClusterMember).values(
+      config.serverIds.map((serverId) => ({
+        clusterId: id,
+        networkId: config.networkId,
+        serverId,
+      })),
+    );
   }
   return {
     /** Only associations of the authorized server; never exposes other network members. */
@@ -245,6 +279,26 @@ export function createComputeClusterRepo(db: Database) {
         if (!current) throw new NotFoundError("Cluster", id);
         if (current.revision !== revision)
           throw conflict("The cluster changed. Reload it before continuing.");
+        const [runtime] = await tx
+          .select({ id: clusterRuntime.id })
+          .from(clusterRuntime)
+          .where(and(eq(clusterRuntime.clusterId, id), ne(clusterRuntime.status, "removed")));
+        if (runtime) {
+          const members = await tx
+            .select({ serverId: computeClusterMember.serverId })
+            .from(computeClusterMember)
+            .where(eq(computeClusterMember.clusterId, id));
+          if (
+            current.networkId !== config.networkId ||
+            members.length !== config.serverIds.length ||
+            members.some((member) => !config.serverIds.includes(member.serverId))
+          )
+            throw new AppError(
+              "Remove the cluster runtime before changing its servers or private network.",
+              409,
+              "CLUSTER_RUNTIME_IN_USE",
+            );
+        }
         await validate(tx, org, config, id);
         await tx
           .update(computeCluster)
@@ -270,6 +324,17 @@ export function createComputeClusterRepo(db: Database) {
         if (!current) throw new NotFoundError("Cluster", id);
         if (current.revision !== revision)
           throw conflict("The cluster changed. Reload it before continuing.");
+        const [runtime] = await tx
+          .select()
+          .from(clusterRuntime)
+          .where(eq(clusterRuntime.clusterId, id));
+        if (runtime && runtime.status !== "removed")
+          throw new AppError(
+            "Remove the cluster runtime first so OpenShip can clean up its installation on every server.",
+            409,
+            "CLUSTER_RUNTIME_IN_USE",
+          );
+        if (runtime) await tx.delete(clusterRuntime).where(eq(clusterRuntime.id, runtime.id));
         await tx.delete(computeCluster).where(owned(org, id));
       });
     },

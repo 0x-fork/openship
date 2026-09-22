@@ -252,6 +252,78 @@
       "description": "Clear authorized build cache for the project.",
       "route": "POST /api/projects/:id/clear-build"
     },
+    "projects.getClusterWorkload": {
+      "page": "projects",
+      "section": "Cluster scaling",
+      "description": "Read the selected cluster, active release and observed replicas.",
+      "route": "GET /api/projects/:id/cluster"
+    },
+    "projects.setClusterTarget": {
+      "page": "projects",
+      "section": "Cluster scaling",
+      "description": "Save a ready self-hosted cluster target and stateless workload configuration. Requires fleet administration and the current project timestamp.",
+      "route": "PATCH /api/projects/:id/cluster"
+    },
+    "projects.scaleClusterWorkload": {
+      "page": "projects",
+      "section": "Cluster scaling",
+      "description": "Apply a replica count through a deployment using the active immutable image. Requires active deployment and project timestamp preconditions.",
+      "route": "POST /api/projects/:id/cluster/scale"
+    },
+    "projects.listClusterDatabases": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "List the project's operator-managed databases and saved observations. Available on self-hosted OpenShip.",
+      "route": "GET /api/projects/:id/cluster/databases"
+    },
+    "projects.getClusterDatabase": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Read saved database progress, or refresh the operator's instances, volumes and archive status with observe. Does not start or retry setup.",
+      "route": "POST /api/projects/:id/cluster/databases/inspect"
+    },
+    "projects.createClusterDatabase": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Create PostgreSQL or Redis on the project's ready server cluster with a stable request UUID. PostgreSQL can restore a completed archive into a new database. Requires fleet administration.",
+      "route": "POST /api/projects/:id/cluster/databases"
+    },
+    "projects.updateClusterDatabase": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Apply supported resource, PostgreSQL replica or backup settings with the database's current sequence. Engine changes and Redis resharding require a separate migration.",
+      "route": "PATCH /api/projects/:id/cluster/databases"
+    },
+    "projects.retryClusterDatabase": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Resume a failed or interrupted database operation from its saved intent. The previous controller is fenced and accepted operator resources are inspected before reuse.",
+      "route": "POST /api/projects/:id/cluster/databases/retry"
+    },
+    "projects.backupClusterDatabase": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Request a PostgreSQL archive at the configured S3 destination. The operator owns backup execution; retry reuses the accepted backup request.",
+      "route": "POST /api/projects/:id/cluster/databases/backup"
+    },
+    "projects.removeClusterDatabase": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Stop a disconnected database with name and sequence confirmation. deleteData=false retains persistent disks; true explicitly reclaims owned storage. S3 archives are kept.",
+      "route": "DELETE /api/projects/:id/cluster/databases"
+    },
+    "projects.connectClusterDatabase": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Save a private connection URL in the project environment without overwriting an existing variable. Set envKey to null to disconnect. Redeploy explicitly to apply connection changes.",
+      "route": "POST /api/projects/:id/cluster/databases/connect"
+    },
+    "projects.streamClusterDatabaseEvents": {
+      "page": "projects",
+      "section": "Cluster databases",
+      "description": "Subscribe to replayable database progress snapshots over SSE. Reconnection only reads saved state and never repeats a mutation.",
+      "route": "GET /api/projects/:id/cluster/databases/stream"
+    },
     "projects.getRollbackCapacity": {
       "page": "projects",
       "section": "Source and deployment",
@@ -1043,6 +1115,36 @@
       "section": "Compute clusters",
       "description": "Remove compute-cluster inventory at the current revision, retaining its servers and private network.",
       "route": "DELETE /api/system/compute-clusters/:id"
+    },
+    "servers.getClusterRuntime": {
+      "page": "servers",
+      "section": "Cluster runtime",
+      "description": "Read saved K3s setup, verification and cleanup progress; null before setup.",
+      "route": "GET /api/system/compute-clusters/:id/runtime"
+    },
+    "servers.setupClusterRuntime": {
+      "page": "servers",
+      "section": "Cluster runtime",
+      "description": "Start automated K3s setup with the compute-cluster revision and an idempotent request ID.",
+      "route": "POST /api/system/compute-clusters/:id/runtime"
+    },
+    "servers.retryClusterRuntime": {
+      "page": "servers",
+      "section": "Cluster runtime",
+      "description": "Resume failed or interrupted setup or removal using its current progress sequence.",
+      "route": "POST /api/system/compute-clusters/:id/runtime/retry"
+    },
+    "servers.removeClusterRuntime": {
+      "page": "servers",
+      "section": "Cluster runtime",
+      "description": "Remove the owned runtime after verifying an empty cluster, retaining Docker services and networking.",
+      "route": "DELETE /api/system/compute-clusters/:id/runtime"
+    },
+    "servers.clusterRuntimeEvents": {
+      "page": "servers",
+      "section": "Cluster runtime",
+      "description": "Subscribe to saved runtime progress through read-only, replayable SSE.",
+      "route": "GET /api/system/compute-clusters/:id/runtime/stream"
     },
     "servers.infrastructure": {
       "page": "servers",

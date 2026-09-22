@@ -1011,7 +1011,7 @@ export function pickPrimaryServiceId<S extends { id: string; exposed?: boolean |
  */
 export function resolveProjectAccess(input: {
   rows: ProjectDomainRow[] | null | undefined;
-  target: "local" | "server" | "cloud";
+  target: "local" | "server" | "cloud" | "cluster";
   port: number | null;
 }): ProjectAccess {
   const { rows, target, port } = input;

@@ -181,6 +181,10 @@ vi.mock("@repo/platform/engine/modules/deployments/rollback/index", () => ({
   onDeploymentReady: (...args: unknown[]) => mocks.onDeploymentReady(...args),
 }));
 
+vi.mock("@repo/platform/engine/modules/deployments/rollback/rollback-orchestrator", () => ({
+  reconcileProjectRetentionSafe: vi.fn(async () => undefined),
+}));
+
 vi.mock("@repo/platform/engine/lib/routing-domains", () => ({
   auditRoutedDomainTls: vi.fn(async () => []),
   buildProjectRouteDomains: vi.fn(() => []),
@@ -437,7 +441,8 @@ describe("single-app prebuilt release-image pipeline", () => {
     } as never);
   });
 
-  it("pulls the frozen image, skips every source-build path, deploys it as prebuilt, and freezes the digest", async () => {
+  it.each(["docker", "kubernetes"])("%s pulls the frozen image, skips source builds, and freezes the digest", async (runtimeName) => {
+    resolvedRuntime.name = runtimeName;
     await run();
     await vi.waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledTimes(1));
     await vi.waitFor(() =>
@@ -476,6 +481,18 @@ describe("single-app prebuilt release-image pipeline", () => {
         metaPatch: expect.objectContaining({ releaseImageRef: RESOLVED_IMAGE }),
       }),
     );
+  });
+
+  it("refuses a cluster refresh with a missing digest instead of starting a source build", async () => {
+    resolvedRuntime.name = "kubernetes";
+    await run(deployment({ meta: {
+      ...snapshot(), releaseImageRef: undefined, refreshAppDeploymentId: "old-deployment",
+      handoverAppImage: "ghcr.io/acme/app:latest",
+    } }));
+    await vi.waitFor(() => expect(mocks.reportPipelineError).toHaveBeenCalledTimes(1));
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.prepareImage).not.toHaveBeenCalled();
+    expect(mocks.deploy).not.toHaveBeenCalled();
   });
 
   it("does not execute a legacy queued preview against a production target (#195)", async () => {

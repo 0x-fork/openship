@@ -6,6 +6,7 @@ import { audit } from "../../lib/audit-emitter";
 import { assertNativeSourcePath } from "../../native/source-policy";
 import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { createProjectControls } from "./project-controls.operations";
+import { clusterDatabaseEvents } from "./cluster-database.operations";
 import { createProjectLocalDependencies } from "./project-local.operations";
 import { getProjectHome } from "./project-home.operations";
 import { subscribeProjectLogs, openProjectServerLogs } from "./project-logs.operations";
@@ -37,6 +38,7 @@ export const projectDependencies: ProjectDependencies = {
   subscribeRoutingRetry,
   openServerLogs: openProjectServerLogs,
   controls: createProjectControls(recordAudit),
+  databaseEvents: clusterDatabaseEvents,
   local: createProjectLocalDependencies(create),
   create,
   async ensure(ctx, input) {

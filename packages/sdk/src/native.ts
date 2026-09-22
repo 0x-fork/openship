@@ -280,10 +280,15 @@ function createAttachedShip<Assertion>({
           }
         },
       } satisfies DeploymentOperations);
-      const { streamRuntimeLogs, openServerLogStream, retryRoutingStream, ...projectResources } =
-        platform.projects;
+      const { streamRuntimeLogs, streamClusterDatabaseEvents, openServerLogStream, retryRoutingStream, ...projectResources } = platform.projects;
       const projects = Object.freeze({
         ...bindGroup(projectResources),
+        async *streamClusterDatabaseEvents(id, options = {}) {
+          const context = await resolveContext();
+          for await (const event of streamClusterDatabaseEvents(context, id, options)) {
+            await resolveContext(); yield event;
+          }
+        },
         async *retryRoutingStream(id, options = {}) {
           const settings = { ...options };
           const context = await resolveContext();
@@ -352,7 +357,7 @@ function createAttachedShip<Assertion>({
       } satisfies DomainOperations);
       const dns = bindGroup(platform.dns) satisfies DnsOperations;
       const credentials = bindGroup(platform.credentials) satisfies CredentialOperations;
-      const { openInstallStream, openInstallEvents, openMonitor, openContainerApplyStream, openContainerApplyEvents, openManagedNetworkPreparationEvents, openManagedNetworkOperationEvents, openClusterEvents, ...serverResources } = platform.servers;
+      const { openInstallStream, openInstallEvents, openMonitor, openContainerApplyStream, openContainerApplyEvents, openManagedNetworkPreparationEvents, openManagedNetworkOperationEvents, openClusterEvents, openClusterRuntimeEvents, ...serverResources } = platform.servers;
       const servers = Object.freeze({
         ...bindGroup(serverResources),
         async *managedNetworkPreparationEvents(id, options = {}) {
@@ -365,6 +370,10 @@ function createAttachedShip<Assertion>({
         },
         async *clusterEvents(options = {}) {
           const source = await openClusterEvents(await resolveContext(), { ...options });
+          for await (const event of source.data) { await resolveContext(); yield event; }
+        },
+        async *clusterRuntimeEvents(id, options = {}) {
+          const source = await openClusterRuntimeEvents(await resolveContext(), id, { ...options });
           for await (const event of source.data) { await resolveContext(); yield event; }
         },
         async *applyContainer(id, input, options = {}) {

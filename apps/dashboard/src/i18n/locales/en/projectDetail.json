@@ -144,7 +144,9 @@
 				"logs": "Logs",
 				"env": "Environment",
 				"settings": "Settings",
-				"backup": "Backup"
+				"backup": "Backup",
+				"domains": "Domains",
+				"volumes": "Volumes"
 			},
 			"status": {
 				"running": "Running",
@@ -225,7 +227,62 @@
 				"backupRunFailed": "Backup run failed"
 			},
 			"duplicateContainers": "Another container also matches this service: {names}",
-			"editInSettings": "Edit in settings"
+			"editInSettings": "Edit in settings",
+			"networking": {
+				"title": "Ports & domains",
+				"manageDomains": "Manage domains",
+				"hostBinding": "Host binding",
+				"paused": "Routing paused",
+				"managePort": "Manage domains for port {port}",
+				"addToPort": "Add domain for port {port}",
+				"manage": "Manage",
+				"noDomain": "No domain connected",
+				"tcpOnly": "Domains require HTTP over TCP.",
+				"noPorts": "No ports configured.",
+				"configurePorts": "Configure ports",
+				"service": "Service",
+				"selectService": "Select a service",
+				"containerPort": "Container port",
+				"routeChanged": "This route changed. Refresh and try again.",
+				"domainsDescription": "Domains connected to this service. Manage DNS and SSL here.",
+				"filterPort": "Filter by port",
+				"allPorts": "All ports",
+				"serviceUnavailable": "This service is no longer available.",
+				"enableRouting": "Enable domain routing",
+				"privateNetwork": "Private network",
+				"configure": "Configure",
+				"copyAddress": "Copy internal address",
+				"runtimeDetails": "Runtime details",
+				"copyValue": "Copy {label}",
+				"copyFailed": "Couldn’t copy to clipboard"
+			},
+			"storage": {
+				"description": "Persistent data mounted in this service.",
+				"backups": "Backups",
+				"edit": "Edit mounts",
+				"add": "Add volume",
+				"mountLabel": "Volume mount {n}",
+				"removeMount": "Remove mount {n}",
+				"editHint": "Use name:/container/path or /host/path:/container/path. Mount changes apply on the next deployment.",
+				"cancel": "Cancel",
+				"save": "Save mounts",
+				"mountCount": "Mounts: {count}",
+				"measuring": "Measuring…",
+				"usageUnavailable": "Usage unavailable",
+				"refresh": "Refresh usage",
+				"measureFailed": "Couldn’t measure usage. Use Refresh usage to retry.",
+				"readOnly": "Read only",
+				"emptyTitle": "No volumes configured",
+				"emptyDescription": "Add a volume to keep files across deployments.",
+				"backupLoadFailed": "Couldn’t load backup policies",
+				"loadingBackups": "Loading backups…",
+				"retry": "Try again",
+				"kinds": {
+					"named": "Named volume",
+					"bind": "Host directory",
+					"anonymous": "Anonymous volume"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "Name",

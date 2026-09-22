@@ -84,6 +84,41 @@ curl -X POST "$OPENSHIP_URL/api/projects" \
 [Deployments API](/docs/api/deployments) (`POST /api/deployments`) or `openship deploy`.
 </Callout>
 
+## Scale a stateless application on a cluster
+
+Self-hosted projects can target a [ready K3s server cluster](/docs/api/servers).
+Saving the target requires fleet administration. Choose a registry repository for source builds;
+cluster nodes pull immutable release images using the saved registry credentials.
+This currently supports a single stateless application or worker, without persistent mounts or a
+Compose stack. Database replication requires storage and an engine operator.
+
+```ts
+const current = await ship.projects.getClusterWorkload("proj_123");
+await ship.projects.setClusterTarget("proj_123", {
+  clusterId: "cluster_123",
+  config: { replicas: 3, imageRepository: "ghcr.io/acme/api" },
+  expectedUpdatedAt: current.updatedAt,
+  stateless: true,
+});
+// Deploy the project through the existing Deployments API.
+// After that release is active, change its replicas without rebuilding:
+const live = await ship.projects.getClusterWorkload("proj_123");
+if (live.activeDeploymentId && live.activeClusterId === live.clusterId) {
+  const scale = await ship.projects.scaleClusterWorkload("proj_123", {
+    replicas: 4,
+    expectedDeploymentId: live.activeDeploymentId,
+    expectedUpdatedAt: live.updatedAt,
+  });
+  console.log(scale.deploymentId); // Follow the normal deployment progress stream.
+}
+```
+
+Replica changes are configuration releases. They reuse the active image, wait for ready pods and
+use the existing update/rollback history. Allow capacity for the old and new releases together.
+`status` and `observedAt` describe the last observation; saved `config` describes future intent.
+OpenShip Edge currently enters through the first cluster control server. Automatic gateway
+failover, database operators and policy-driven autoscaling are separate delivery stages.
+
 ## Update a project
 
 The update body is a **partial** of the [create body](#create-a-project) — send only the fields you want
@@ -426,6 +461,28 @@ IDs.
 | Scan an allowed local source directory. | `projects.scanLocal(input)` | `POST /api/projects/scan`<br />`project:write` · Self-hosted |
 | Import an allowed local project. | `projects.importLocal(input)` | `POST /api/projects/import`<br />`project:write` · Self-hosted |
 | List discoverable local projects. | `projects.listLocal()` | `GET /api/projects/local`<br />`project:list` · Self-hosted |
+
+### Cluster scaling
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the selected cluster, active release and observed replicas. | `projects.getClusterWorkload(id)` | `GET /api/projects/:id/cluster`<br />`project:read` · Self-hosted |
+| Save a ready self-hosted cluster target and stateless workload configuration. Requires fleet administration and the current project timestamp. | `projects.setClusterTarget(id, input)` | `PATCH /api/projects/:id/cluster`<br />`project:write` · Self-hosted |
+| Apply a replica count through a deployment using the active immutable image. Requires active deployment and project timestamp preconditions. | `projects.scaleClusterWorkload(id, input)` | `POST /api/projects/:id/cluster/scale`<br />`project:write` · Self-hosted |
+
+### Cluster databases
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List the project's operator-managed databases and saved observations. Available on self-hosted OpenShip. | `projects.listClusterDatabases(id)` | `GET /api/projects/:id/cluster/databases`<br />`project:read` · Self-hosted |
+| Read saved database progress, or refresh the operator's instances, volumes and archive status with observe. Does not start or retry setup. | `projects.getClusterDatabase(id, input)` | `POST /api/projects/:id/cluster/databases/inspect`<br />`project:read` · Self-hosted |
+| Create PostgreSQL or Redis on the project's ready server cluster with a stable request UUID. PostgreSQL can restore a completed archive into a new database. Requires fleet administration. | `projects.createClusterDatabase(id, input)` | `POST /api/projects/:id/cluster/databases`<br />`project:write` · Self-hosted |
+| Apply supported resource, PostgreSQL replica or backup settings with the database's current sequence. Engine changes and Redis resharding require a separate migration. | `projects.updateClusterDatabase(id, input)` | `PATCH /api/projects/:id/cluster/databases`<br />`project:write` · Self-hosted |
+| Resume a failed or interrupted database operation from its saved intent. The previous controller is fenced and accepted operator resources are inspected before reuse. | `projects.retryClusterDatabase(id, input)` | `POST /api/projects/:id/cluster/databases/retry`<br />`project:write` · Self-hosted |
+| Request a PostgreSQL archive at the configured S3 destination. The operator owns backup execution; retry reuses the accepted backup request. | `projects.backupClusterDatabase(id, input)` | `POST /api/projects/:id/cluster/databases/backup`<br />`project:write` · Self-hosted |
+| Stop a disconnected database with name and sequence confirmation. deleteData=false retains persistent disks; true explicitly reclaims owned storage. S3 archives are kept. | `projects.removeClusterDatabase(id, input)` | `DELETE /api/projects/:id/cluster/databases`<br />`project:write` · Self-hosted |
+| Save a private connection URL in the project environment without overwriting an existing variable. Set envKey to null to disconnect. Redeploy explicitly to apply connection changes. | `projects.connectClusterDatabase(id, input)` | `POST /api/projects/:id/cluster/databases/connect`<br />`project:write` · Self-hosted |
+| Subscribe to replayable database progress snapshots over SSE. Reconnection only reads saved state and never repeats a mutation. | `projects.streamClusterDatabaseEvents(id, options?)` | `GET /api/projects/:id/cluster/databases/stream`<br />`project:read` · Self-hosted |
 
 ### Environments and settings
 

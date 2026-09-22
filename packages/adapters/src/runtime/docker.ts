@@ -4107,50 +4107,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // mutable tag (:latest/:1) rolls forward on an "update" deploy.
     const executor = this.connectionOptions?.executor;
     if (executor) {
-      // 10 min ceiling — large images over a slow link; still bounded so a
-      // genuinely stuck pull surfaces instead of hanging the whole migration.
-      const timeout = 10 * 60_000;
-      const auth = await this.connectionOptions?.resolveRegistryAuth?.(ref);
-      const config = auth ? dockerConfigJsonFor(auth) : null;
-      if (!config) {
-        // No Openship credential for this registry: the remote pulls with whatever it has
-        // of its own, which is the behaviour every existing install depends on.
-        await executor.exec(`docker pull ${sq(ref)}`, { timeout });
-        return;
-      }
-
-      // A remote pull shells out on the TARGET, so it reads that host's credentials — which
-      // is why a private image only worked if the operator had run `docker login` on every
-      // server by hand.
-      //
-      // WHY A FILE AND NOT AN API CALL: dockerode takes an `authconfig` and would need no
-      // file at all — and that is exactly what the local branch below does. It is not
-      // available here: over the SSH transport `modem.followProgress` never receives `end`
-      // and hangs forever (see this method's doc comment), so the CLI is the only usable
-      // transport remotely, and the CLI reads credentials from exactly one place — a
-      // `config.json` in the directory named by DOCKER_CONFIG. There is no env-var or
-      // file-descriptor form. `docker login` would also work and is worse: it persists the
-      // credential on a machine whose lifecycle Openship does not own.
-      //
-      // So: minimize the window instead. The secret goes in through `writeFile`, never argv
-      // (an argument is visible in `ps` to every user on that box for the life of the
-      // command). `mkdir -m 700` without `-p` creates the directory with its mode set
-      // ATOMICALLY and FAILS if the path already exists — no window where it is
-      // world-readable, and no chance of writing into a directory something else prepared.
-      // Cleanup runs on the command's own exit path AND in the finally below, which is what
-      // covers a timeout that kills the exec before it reaches its own `rm`.
-      const dir = `/tmp/openship-pull-${crypto.randomUUID()}`;
-      try {
-        await executor.exec(`mkdir -m 700 ${sq(dir)}`);
-        await executor.writeFile(`${dir}/config.json`, config);
-        await executor.exec(`chmod 600 ${sq(dir)}/config.json`);
-        await executor.exec(
-          `DOCKER_CONFIG=${sq(dir)} docker pull ${sq(ref)}; rc=$?; rm -rf ${sq(dir)}; exit $rc`,
-          { timeout },
-        );
-      } finally {
-        await executor.exec(`rm -rf ${sq(dir)}`).catch(() => {});
-      }
+      await this.runRemoteRegistryCommand("pull", ref);
       return;
     }
     // dockerode does not read `~/.docker/config.json` the way the CLI does, so this pull
@@ -4284,6 +4241,78 @@ export class DockerRuntime implements RuntimeAdapter {
       ? [target.slice(0, target.lastIndexOf(":")), target.slice(target.lastIndexOf(":") + 1)]
       : [target, undefined];
     await this.docker.getImage(source).tag({ repo, ...(tag ? { tag } : {}) });
+  }
+
+  /** The same bounded host path for pulls and pushes, with one disposable
+   * registry credential. Docker progress streams over SSH may never end. */
+  private async runRemoteRegistryCommand(action: "pull" | "push", ref: string, signal?: AbortSignal): Promise<string> {
+    const executor = this.connectionOptions!.executor!;
+    const auth = await this.connectionOptions?.resolveRegistryAuth?.(ref);
+    const config = auth ? dockerConfigJsonFor(auth) : null;
+    const dir = `/tmp/openship-${action}-${randomUUID()}`;
+    let ownsDirectory = false;
+    const run = async () => {
+      signal?.throwIfAborted();
+      const timeout = 10 * 60_000;
+      // Without a saved credential, preserve the target's own Docker login.
+      if (!config) return executor.exec(`docker ${action} ${sq(ref)}`, { timeout });
+      // Credentials go through file writes, never process arguments. Creation
+      // is exclusive and private; cleanup also runs after interruption.
+      await executor.exec(`mkdir -m 700 ${sq(dir)}`);
+      ownsDirectory = true;
+      await executor.writeFile(`${dir}/config.json`, config);
+      await executor.exec(`chmod 600 ${sq(dir)}/config.json`);
+      signal?.throwIfAborted();
+      return executor.exec(
+        `DOCKER_CONFIG=${sq(dir)} docker ${action} ${sq(ref)}; rc=$?; rm -rf ${sq(dir)}; exit $rc`,
+        { timeout },
+      );
+    };
+    try {
+      return signal && executor.runWithAbortSignal
+        ? await executor.runWithAbortSignal(signal, run)
+        : await run();
+    } finally {
+      if (ownsDirectory) {
+        const cleanup = () => executor.exec(`rm -rf ${sq(dir)}`, { timeout: 10_000 });
+        await (executor.runWithAbortSignal
+          ? executor.runWithAbortSignal(AbortSignal.timeout(10_000), cleanup)
+          : cleanup()).catch(() => {});
+      }
+    }
+  }
+
+  /** Publish a source build once; cluster nodes consume the immutable digest. */
+  async publishImage(source: string, target: string, signal?: AbortSignal): Promise<string> {
+    const bounded = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(10 * 60_000)]);
+    bounded.throwIfAborted();
+    await this.tagImage(source, target);
+    let publishedDigest: string | undefined;
+    if (this.connectionOptions?.executor) {
+      const output = await this.runRemoteRegistryCommand("push", target, bounded);
+      publishedDigest = /\bdigest:\s*(sha256:[a-f0-9]{64})\b/.exec(output)?.[1];
+    } else {
+      const authconfig = this.connectionOptions?.resolveRegistryAuth
+        ? await this.connectionOptions.resolveRegistryAuth(target)
+        : await resolveDockerAuth(target);
+      const stream = await this.docker.getImage(target).push({ ...(authconfig ? { authconfig } : {}), abortSignal: bounded }) as import("node:stream").Readable;
+      const abort = () => stream.destroy(new Error(bounded.reason?.name === "TimeoutError" ? "Image publication timed out" : "Image publication cancelled"));
+      bounded.addEventListener("abort", abort, { once: true });
+      if (bounded.aborted) abort();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          this.docker.modem.followProgress(stream, (error: Error | null) => error ? reject(error) : resolve(), (event: { error?: string; aux?: { Digest?: string } }) => {
+            if (event.aux?.Digest) publishedDigest = event.aux.Digest;
+          });
+        });
+      } finally { bounded.removeEventListener("abort", abort); stream.destroy(); }
+    }
+    bounded.throwIfAborted();
+    const repository = target.slice(0, target.lastIndexOf(":"));
+    const resolved = publishedDigest && /^sha256:[a-f0-9]{64}$/.test(publishedDigest)
+      ? `${repository}@${publishedDigest}` : await this.resolveImageDigest(target);
+    if (!resolved?.startsWith(`${repository}@sha256:`) || !/@sha256:[a-f0-9]{64}$/.test(resolved)) throw new Error("The registry did not confirm this release's image digest.");
+    return resolved;
   }
 
   /** Every named volume on the host. */

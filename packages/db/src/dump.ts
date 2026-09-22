@@ -76,7 +76,7 @@ export interface DumpOptions {
  * two cannot drift.
  */
 export const INSTANCE_SCOPED_REFS: Record<string, readonly string[]> = {
-  project: ["serverId"],
+  project: ["serverId", "clusterId"],
   backup_destination: ["serverId"],
   backup_policy: ["mailServerId"],
   backup_run: ["mailServerId"],
@@ -306,6 +306,8 @@ const TABLES: ReadonlyArray<TableSpec> = [
   // Infra — instance-only.
   { sqlName: "compute_cluster", table: schema.computeCluster, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
   { sqlName: "compute_cluster_member", table: schema.computeClusterMember, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  { sqlName: "cluster_runtime", table: schema.clusterRuntime, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
+  { sqlName: "cluster_database", table: schema.clusterDatabase, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
   { sqlName: "private_network", table: schema.serverCluster, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
   { sqlName: "managed_network_operation", table: schema.managedNetworkOperation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
   { sqlName: "managed_network_preparation", table: schema.managedNetworkPreparation, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true },
@@ -934,6 +936,8 @@ export interface EncryptedColumnSpec {
  * per-install), so it MUST be redacted on any cross-host move.
  */
 export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
+  { table: "cluster_database", column: "secretEncrypted" },
+  { table: "cluster_database", column: "envValueEncrypted" },
   { table: "user_settings", column: "cloudSessionToken" },
   { table: "user_settings", column: "cloneTokenEncrypted" },
   { table: "project", column: "cloneTokenEncrypted" },
