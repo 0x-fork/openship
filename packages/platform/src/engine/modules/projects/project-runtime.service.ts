@@ -470,17 +470,9 @@ async function retryLiveProjectRouting(
   // Live re-apply is best-effort, but its failure must NOT clear the warning.
   let applyOk = true;
   const routeWarnings: string[] = [];
-  // `reapplyProjectLiveRoutes` FIRST, `applyProjectRouting` second — the two cover
-  // different route shapes and retry has to heal all of them:
-  //   - reapply → the per-domain surface: a single app's port target OR a static
-  //     app's `/` served from a doc root (targetPath). `applyProjectRouting` is
-  //     composite-only (`planCompositeRoute` needs 1 static + 1 server), so on its
-  //     own it emitted NOTHING for a lone static app — the free URL 404'd forever
-  //     because retry never rewrote the vhost the failed deploy left unwritten.
-  //   - applyProjectRouting → layers the vercel composite overlay (`/api` → backend)
-  //     back on for a monorepo. A no-op otherwise, and registerRoute is
-  //     last-writer-wins per hostname, so running it after reapply can only add the
-  //     backend location, never drop the frontend reapply just wrote.
+  // Project-only port/static routes and service/topology routes share the same
+  // reconciler. The project pass defers fan-out hostnames; the topology pass
+  // publishes each hostname's complete configuration once.
   // `managedEdgeSyncedByCaller`: syncProjectManagedEdge below already covers every
   // managed hostname; letting reapply sync them too races its own follow-up (two
   // ACME challenges for one target, the second resetting the first's token).

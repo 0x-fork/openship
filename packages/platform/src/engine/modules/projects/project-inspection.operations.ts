@@ -2,7 +2,7 @@ import type { ProjectControlSchemas } from "@repo/contracts";
 import type { ResourceServices } from "../../../resource-operations";
 import type { ProjectDependencies } from "../../../projects";
 
-import { repos, type Domain } from "@repo/db";
+import { repos } from "@repo/db";
 import { resolveProjectVolumes } from "@repo/core";
 import { presentProject } from "../../../projects";
 import { authorization } from "../../lib/authorization";
@@ -13,6 +13,7 @@ import { maskDeploymentEnv } from "../../lib/secret-env";
 import { listProjectRouteRows, resolveProjectRouteState } from "../domains/project-route.service";
 import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { pickCanonicalDomainRow, resolveProjectAccess } from "../../lib/public-endpoints";
+import { withDomainDiagnostics } from "../domains/domain-diagnostics";
 
 export function createProjectInspectionOperations(
   recordAudit: ProjectDependencies["recordAudit"],
@@ -92,12 +93,7 @@ export function createProjectInspectionOperations(
       const rawDomains = await listProjectRouteRows(id);
       const routeState = await resolveProjectRouteState(project, { projectDomains: rawDomains });
       const publicEndpoints = routeState.publicEndpoints;
-      let domains: Array<
-        Domain & {
-          domain: string;
-          primary: boolean;
-        }
-      > = rawDomains.map((d) => ({
+      const domains = (await withDomainDiagnostics(project, rawDomains, serviceRows)).map((d) => ({
         ...d,
         domain: d.hostname,
         primary: d.isPrimary,

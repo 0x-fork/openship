@@ -5,6 +5,7 @@ vi.mock("@repo/db", () => ({
     domain: {
       update: vi.fn(),
       updateSsl: vi.fn(),
+      recordSslFailure: vi.fn(),
       markVerifiedActive: vi.fn(),
       findOrCreate: vi.fn(),
       findOrCreateWithStatus: vi.fn(),
@@ -589,7 +590,7 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
     const ssl = sslWith({
       domain: "app.example.com",
       verified: true,
-      expiresAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: new Date(Date.now() + 90 * 86_400_000).toISOString(),
       issuer: "Let's Encrypt",
     });
     const tracked = createTrackedSslProvider(
@@ -615,17 +616,15 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
     );
     const r = await tracked.provisionCert("app.example.com");
     expect(r.verified).toBe(false);
-    expect(repos.domain.updateSsl).toHaveBeenCalledWith(
+    expect(repos.domain.recordSslFailure).toHaveBeenCalledWith(
       "dom_1",
-      expect.objectContaining({
-        sslStatus: "error",
-        lastVerifyError: expect.stringContaining("DNS is not pointing here"),
-      }),
+      expect.stringContaining("DNS is not pointing here"),
+      true,
     );
     expect(repos.domain.markVerifiedActive).not.toHaveBeenCalled();
   });
 
-  it("keeps a VERIFIED domain's failed renewal at provisioning (auto-heal sweep), never error", async () => {
+  it("records a verified domain's failed issuance instead of leaving it provisioning", async () => {
     const ssl = sslWith({
       domain: "app.example.com",
       verified: false,
@@ -638,15 +637,12 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
       mapWith({ id: "dom_1", verified: true, sslStatus: "active" }),
     );
     await tracked.provisionCert("app.example.com");
-    expect(repos.domain.updateSsl).toHaveBeenCalledWith(
+    expect(repos.domain.recordSslFailure).toHaveBeenCalledWith(
       "dom_1",
-      expect.objectContaining({ sslStatus: "provisioning" }),
+      expect.stringContaining("No usable HTTPS certificate"),
+      true,
     );
-    // Must NOT drop a verified row out of the findPendingSsl sweep by writing error.
-    const wroteError = (repos.domain.updateSsl as any).mock.calls.some(
-      ([, patch]: [string, any]) => patch.sslStatus === "error",
-    );
-    expect(wroteError).toBe(false);
+    expect(repos.domain.updateSsl).not.toHaveBeenCalled();
   });
 
   it("writes nothing when TLS is handled elsewhere (not_local)", async () => {
@@ -664,6 +660,16 @@ describe("createTrackedSslProvider (deploy-time issuance)", () => {
     await tracked.provisionCert("app.example.com");
     expect(repos.domain.updateSsl).not.toHaveBeenCalled();
     expect(repos.domain.markVerifiedActive).not.toHaveBeenCalled();
+  });
+
+  it("does not replace a failed issuance with provisioning during a later read-only probe", async () => {
+    const tracked = createTrackedSslProvider(
+      sslWith({ verified: false, expiresAt: "", reason: "missing" }),
+      mapWith({ id: "dom_1", verified: true, sslStatus: "error" }),
+    );
+    await tracked.verifyCert("app.example.com");
+    expect(repos.domain.updateSsl).not.toHaveBeenCalled();
+    expect(repos.domain.recordSslFailure).not.toHaveBeenCalled();
   });
 });
 

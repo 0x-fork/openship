@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
   toast: vi.fn(),
   fetch: vi.fn(),
+  listDomains: vi.fn(),
+  verifySsl: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/context/ProjectSettingsContext", () => ({ useProjectSettings: () => mocks.settings }));
@@ -34,6 +36,7 @@ vi.mock("@/lib/api", async (original) => {
     ...actual,
     getApiBaseUrl: () => "http://localhost:4000/api/",
     projectsApi: { ...actual.projectsApi, getEdgeStatus: async () => ({ ready: true }) },
+    domainsApi: { ...actual.domainsApi, list: mocks.listDomains, verifySsl: mocks.verifySsl },
     deployApi: {
       ...actual.deployApi,
       checkPorts: async () => ({ data: [] }),
@@ -113,16 +116,15 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-async function render() {
-  await act(async () =>
-    root.render(
-      <I18nProvider>
-        <ModalProvider>
-          <DomainSettings />
-        </ModalProvider>
-      </I18nProvider>,
-    ),
+async function render(strict = false) {
+  const content = (
+    <I18nProvider>
+      <ModalProvider>
+        <DomainSettings />
+      </ModalProvider>
+    </I18nProvider>
   );
+  await act(async () => root.render(strict ? <StrictMode>{content}</StrictMode> : content));
 }
 function retryButtons() {
   return [...host.querySelectorAll("button")].filter(
@@ -137,8 +139,8 @@ async function emit(type: string, data: Record<string, unknown>, close = false) 
     if (close) stream.close();
   });
 }
-async function startRetry() {
-  await render();
+async function startRetry(strict = false) {
+  await render(strict);
   await act(async () => retryButtons().at(-1)!.click());
   await emit("session", {});
 }
@@ -159,7 +161,9 @@ describe("routing retry on the Domains page", () => {
         expect.objectContaining({ method: "POST" }),
       );
       await emit("log", { message: "api.example.com: route restored", level: "info" });
-      expect(document.body.textContent).toContain("api.example.com: route restored");
+      const log = host.querySelector('section[aria-label="Routing log"]');
+      expect(log?.textContent).toContain("api.example.com: route restored");
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
     },
   );
 
@@ -178,6 +182,29 @@ describe("routing retry on the Domains page", () => {
     expect(document.body.textContent).toContain("existing certificate reused");
     expect(mocks.invalidate).toHaveBeenCalledWith("project-a");
   });
+
+  it.each([false, true])(
+    "keeps one active repair across domain actions and allows a fresh retry after completion (StrictMode: %s)",
+    async (strict) => {
+      await startRetry(strict);
+      const requests = mocks.fetch.mock.calls.length;
+      await emit("log", { message: "Still checking the current routes", level: "info" });
+      await act(async () => {
+        for (const button of retryButtons()) button.click();
+      });
+      expect(mocks.fetch).toHaveBeenCalledTimes(requests);
+      expect(host.querySelector('section[aria-label="Routing log"]')?.textContent).toContain(
+        "Still checking the current routes",
+      );
+      expect((mocks.fetch.mock.calls.at(-1)![1] as RequestInit).signal?.aborted).toBe(false);
+
+      await emit("complete", { status: "completed" }, true);
+      await act(async () => retryButtons()[0]!.click());
+      expect(mocks.fetch.mock.calls.length).toBeGreaterThan(requests);
+      expect(host.textContent).not.toContain("Still checking the current routes");
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    },
+  );
 
   it("retains the real partial-failure log and refreshes the cards without claiming success", async () => {
     await startRetry();
@@ -228,5 +255,198 @@ describe("routing retry on the Domains page", () => {
       "http://localhost:4000/api/projects/project-a/routing/retry/stream",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+});
+
+const detailsCopy = baseDictionary.projectSettings.domains.diagnosis;
+function savedDomain(patch: Record<string, unknown> = {}) {
+  return {
+    id: "dom-api",
+    hostname: "api.example.com",
+    serviceId: "svc-api",
+    domainType: "custom",
+    verified: false,
+    status: "pending",
+    sslStatus: "none",
+    verifyAttempts: 0,
+    lastVerifyError: null,
+    lastCheckedAt: null,
+    diagnostics: {
+      state: "pending",
+      reason: "verification",
+      retryAction: "verify",
+      automaticRetry: "scheduled",
+      nextRetryAt: "2026-09-23T01:13:00.000Z",
+    },
+    ...patch,
+  };
+}
+async function openDomainDetails() {
+  const pill = host.querySelector<HTMLButtonElement>(`button[title="${detailsCopy.pillHint}"]`)!;
+  await act(async () => pill.click());
+  return host.querySelector<HTMLElement>(
+    `[role="region"][aria-label="${detailsCopy.title}: api.example.com"]`,
+  )!;
+}
+
+describe("domain status details", () => {
+  it("explains a genuinely pending check and its scheduled time", async () => {
+    mocks.settings.domainsData.domains = [savedDomain()];
+    await render();
+    const details = await openDomainDetails();
+    expect(details.textContent).toContain(detailsCopy.reasons.verification);
+    expect(details.querySelector("time")?.dateTime).toBe("2026-09-23T01:13:00.000Z");
+    expect(details.textContent).toContain(detailsCopy.nextCheck);
+    expect(details.querySelector("button")?.textContent).toContain(detailsCopy.retryNow);
+  });
+
+  it("shows the failed attempt and retries that domain inline, without starting a project routing repair", async () => {
+    mocks.settings.domainsData.domains = [
+      savedDomain({
+        status: "failed",
+        verifyAttempts: 1,
+        lastVerifyError: "The server refused the SSH connection",
+        lastCheckedAt: "2026-09-23T01:00:00.000Z",
+        diagnostics: { ...savedDomain().diagnostics, state: "failed" },
+      }),
+    ];
+    await render();
+    const details = await openDomainDetails();
+    expect(details.textContent).toContain("The server refused the SSH connection");
+    expect([...details.querySelectorAll("time")].map((time) => time.dateTime)).toEqual([
+      "2026-09-23T01:00:00.000Z",
+      "2026-09-23T01:13:00.000Z",
+    ]);
+    await act(async () => details.querySelector<HTMLButtonElement>("button")!.click());
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "http://localhost:4000/api/domains/dom-api/verify/stream",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(details.querySelector<HTMLButtonElement>("button")!.disabled).toBe(true);
+    await emit("log", { message: "SSH authentication failed", level: "error" });
+    await emit("complete", { status: "failed" }, true);
+    expect(mocks.invalidate).toHaveBeenCalledWith("project-a");
+    expect(host.querySelector('section[aria-label="Routing log"]')?.textContent).toContain(
+      "SSH authentication failed",
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(details.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
+  });
+
+  it("does not offer a retry for routes waiting for their first deployment", async () => {
+    mocks.settings.projectData.activeDeploymentId = null;
+    await render();
+    const details = await openDomainDetails();
+    expect(details.textContent).toContain(detailsCopy.reasons.deployment);
+    expect(details.querySelector("button")).toBeNull();
+    expect(retryButtons()).toHaveLength(0);
+  });
+
+  it("does not offer a routing retry for a paused service's missing record", async () => {
+    mocks.settings.servicesData.services[0].enabled = false;
+    await render();
+    const details = await openDomainDetails();
+    expect(details.textContent).toContain(detailsCopy.reasons.disabled);
+    expect(details.querySelector("button")).toBeNull();
+    // The project and the other two live services can still repair their routes.
+    expect(retryButtons()).toHaveLength(3);
+  });
+
+  it("explains disabled scheduling and keeps an explicit manual action", async () => {
+    mocks.settings.domainsData.domains = [
+      savedDomain({
+        diagnostics: {
+          ...savedDomain().diagnostics,
+          state: "waiting",
+          nextRetryAt: null,
+          automaticRetry: "disabled",
+        },
+      }),
+    ];
+    await render();
+    const details = await openDomainDetails();
+    expect(details.textContent).toContain(detailsCopy.automaticDisabled);
+    expect(details.querySelector("time")).toBeNull();
+    expect(details.querySelector("button")?.textContent).toContain(detailsCopy.retryNow);
+  });
+
+  it("offers a certificate recheck instead of ACME issuance for uploaded certificates", async () => {
+    mocks.settings.domainsData.domains = [
+      savedDomain({
+        verified: true,
+        sslStatus: "expired",
+        manualSsl: true,
+        diagnostics: {
+          state: "failed",
+          reason: "manual_certificate",
+          retryAction: "verify_ssl",
+          nextRetryAt: null,
+          automaticRetry: "not_applicable",
+        },
+      }),
+    ];
+    await render();
+    const details = await openDomainDetails();
+    expect(details.textContent).toContain(detailsCopy.reasons.manual_certificate);
+    expect(details.querySelector("button")?.textContent).toContain(
+      baseDictionary.projectSettings.domains.menu.recheckSsl,
+    );
+    expect(details.textContent).not.toContain(detailsCopy.retryNow);
+  });
+
+  it("does not claim a failed SSL recheck succeeded because its last known certificate is active", async () => {
+    mocks.settings.domainsData.domains = [
+      savedDomain({
+        verified: true,
+        sslStatus: "active",
+        manualSsl: true,
+        lastVerifyError: "Cannot reach the server",
+        diagnostics: {
+          state: "failed",
+          reason: "manual_certificate",
+          retryAction: "verify_ssl",
+          nextRetryAt: null,
+          automaticRetry: "not_applicable",
+        },
+      }),
+    ];
+    mocks.verifySsl.mockResolvedValue({
+      data: {
+        verified: false,
+        sslStatus: "active",
+        message: "Cannot read the certificate over SSH",
+      },
+    });
+    await render();
+    const details = await openDomainDetails();
+    await act(async () => details.querySelector<HTMLButtonElement>("button")!.click());
+    expect(mocks.toast).toHaveBeenCalledWith(
+      "Cannot read the certificate over SSH",
+      "error",
+      expect.any(String),
+    );
+    expect(mocks.toast.mock.calls.some(([, kind]) => kind === "success")).toBe(false);
+    expect(mocks.invalidate).toHaveBeenCalledWith("project-a");
+  });
+
+  it("refreshes scheduled checks without a page reload and keeps the last state on a failed read", async () => {
+    vi.useFakeTimers();
+    mocks.settings.domainsData.domains = [savedDomain()];
+    mocks.listDomains.mockRejectedValueOnce(new Error("offline"));
+    const active = savedDomain({
+      verified: true,
+      status: "active",
+      sslStatus: "active",
+      diagnostics: null,
+    });
+    mocks.listDomains.mockResolvedValueOnce({ data: [active] });
+    await render();
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(mocks.settings.updateDomains).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(mocks.listDomains).toHaveBeenCalledWith("project-a");
+    expect(mocks.settings.updateDomains).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "dom-api", verified: true, sslStatus: "active" }),
+    ]);
   });
 });

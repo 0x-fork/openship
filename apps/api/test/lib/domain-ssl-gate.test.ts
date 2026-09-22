@@ -121,7 +121,12 @@ beforeEach(() => {
   h.disposePlatform.mockClear();
   h.provisionCert.mockClear();
   h.renewCert.mockClear();
-  h.verifyCert.mockClear();
+  h.verifyCert.mockReset().mockImplementation(async (hostname) => ({
+    domain: hostname,
+    expiresAt: "",
+    issuer: "Operator",
+    verified: false,
+  }));
 });
 
 describe("tlsIssuedElsewhere", () => {
@@ -185,7 +190,13 @@ describe("manageDomainSsl — refuses to issue what it doesn't own", () => {
     domain("app.example.com");
     const res = await manageDomainSsl("app.example.com", { action: "provision" });
 
-    expect(h.provisionCert).toHaveBeenCalledWith("app.example.com");
+    expect(h.provisionCert).toHaveBeenCalledWith(
+      "app.example.com",
+      expect.objectContaining({
+        force: true,
+        challenge: "http-01",
+      }),
+    );
     expect(res.verified).toBe(true);
     expect(res.reason).toBe("issued");
     expect(h.updateSsl).toHaveBeenCalled();
@@ -195,6 +206,12 @@ describe("manageDomainSsl — refuses to issue what it doesn't own", () => {
     // Gating verify would break the UI's expiry readout for a BYO cert: the file
     // IS on disk, we just didn't issue it.
     domain("app.example.com", { manualSsl: true });
+    h.verifyCert.mockResolvedValueOnce({
+      domain: "app.example.com",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      issuer: "Operator",
+      verified: true,
+    });
     const res = await manageDomainSsl("app.example.com", { action: "verify" });
 
     expect(h.verifyCert).toHaveBeenCalledWith("app.example.com");

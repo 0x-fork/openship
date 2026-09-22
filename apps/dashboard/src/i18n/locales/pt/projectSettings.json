@@ -684,12 +684,13 @@
       "active": "Ativo",
       "failed": "Falhou",
       "removing": "A remover",
-      "pending": "Pendente"
+      "pending": "Pendente",
+      "waiting": "Aguardando"
     },
     "ssl": {
       "includedByHost": "Incluído pelo anfitrião",
       "active": "Ativo",
-      "provisioning": "A aprovisionar",
+      "provisioning": "Aguardando certificado",
       "expired": "Expirado",
       "error": "Erro",
       "inactive": "Inativo"
@@ -845,10 +846,27 @@
       "foreignProxyHint": "Outro proxy ocupa 80/443"
     },
     "diagnosis": {
-      "title": "Por que isso não está funcionando",
+      "title": "Detalhes do domínio",
       "noneYet": "Nenhuma verificação foi executada ainda, portanto não há resultado. Adicione os registros DNS exibidos e depois clique em Verificar.",
       "attempts": "{count} tentativa(s) com falha até agora.",
-      "pillHint": "Ver o motivo"
+      "pillHint": "Ver o motivo",
+      "lastChecked": "Última verificação:",
+      "nextCheck": "Próxima verificação agendada:",
+      "scheduleHint": "As verificações são executadas enquanto esta instância está online. Tarefas na fila podem atrasar o início.",
+      "automaticDisabled": "As verificações automáticas de domínios estão desativadas. Tente manualmente ou ative-as em Tarefas.",
+      "scheduleUnavailable": "O agendamento de verificações automáticas está indisponível. Você pode tentar manualmente.",
+      "retryNow": "Tentar novamente agora",
+      "checking": "Verificando…",
+      "reasons": {
+        "verification": "A verificação do domínio não foi concluída. Confira os registros DNS antes de tentar novamente.",
+        "certificate": "O HTTPS precisa ser verificado no servidor que hospeda o site. Um certificado existente será procurado antes de solicitar um novo.",
+        "deployment": "Esta rota aguarda uma implantação. Implante o projeto para aplicá-la.",
+        "disabled": "Este projeto ou serviço está desativado. Ative-o antes de verificar a rota.",
+        "removing": "Este domínio está sendo removido. Nenhuma verificação está agendada.",
+        "manual_certificate": "Este domínio usa um certificado enviado manualmente. Envie uma substituição válida e verifique-a. O Openship não o renova automaticamente.",
+        "managed_certificate": "O TLS é gerenciado pelo seu proxy externo ou pelo Openship Cloud. Confira a configuração desse provedor.",
+        "route_missing": "Esta rota configurada ainda não foi aplicada. Tente o roteamento novamente para aplicá-la. Nenhuma nova tentativa automática de roteamento está agendada."
+      }
     },
     "records": {
       "failed": "Não foi possível carregar os registros DNS deste domínio.",

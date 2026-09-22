@@ -824,12 +824,13 @@
       "active": "Aktif",
       "failed": "Başarısız",
       "removing": "Kaldırılıyor",
-      "pending": "Beklemede"
+      "pending": "Beklemede",
+      "waiting": "Bekliyor"
     },
     "ssl": {
       "includedByHost": "Barındırma hizmeti tarafından sağlanır",
       "active": "Aktif",
-      "provisioning": "Sağlanıyor",
+      "provisioning": "Sertifika bekleniyor",
       "expired": "Süresi Doldu",
       "error": "Hata",
       "inactive": "Pasif",
@@ -1032,10 +1033,27 @@
       "foreignProxyHint": "Başka bir proxy 80/443'ü kullanıyor"
     },
     "diagnosis": {
-      "title": "Bu neden çalışmıyor",
+      "title": "Alan adı ayrıntıları",
       "noneYet": "Henüz bir kontrol çalıştırılmadı, bu yüzden gösterilecek bir sonuç yok. Gösterilen DNS kayıtlarını ekleyin, ardından Doğrula'yı çalıştırın.",
       "attempts": "Şu ana kadar {count} başarısız deneme.",
-      "pillHint": "Nedenini göster"
+      "pillHint": "Nedenini göster",
+      "lastChecked": "Son kontrol:",
+      "nextCheck": "Sonraki planlanan kontrol:",
+      "scheduleHint": "Kontroller bu örnek çevrimiçiyken çalışır. Kuyruktaki işler başlangıcı geciktirebilir.",
+      "automaticDisabled": "Otomatik alan adı kontrolleri devre dışı. Elle yeniden deneyin veya Görevler bölümünden etkinleştirin.",
+      "scheduleUnavailable": "Otomatik kontrol zamanlaması kullanılamıyor. Elle yeniden deneyebilirsiniz.",
+      "retryNow": "Şimdi yeniden dene",
+      "checking": "Kontrol ediliyor…",
+      "reasons": {
+        "verification": "Alan adı doğrulaması tamamlanmadı. Yeniden denemeden önce DNS kayıtlarını kontrol edin.",
+        "certificate": "Siteyi sunan sunucuda HTTPS kontrol edilmeli. Yeniden deneme, yeni sertifika istemeden önce mevcut sertifikayı kontrol eder.",
+        "deployment": "Bu rota dağıtım bekliyor. Uygulamak için projeyi dağıtın.",
+        "disabled": "Bu proje veya hizmet devre dışı. Rotayı kontrol etmeden önce etkinleştirin.",
+        "removing": "Bu alan adı kaldırılıyor. Planlanmış doğrulama yok.",
+        "manual_certificate": "Bu alan adı yüklenmiş bir sertifika kullanıyor. Geçerli bir yenisini yükleyip tekrar kontrol edin. Openship bunu otomatik yenilemez.",
+        "managed_certificate": "TLS, harici vekil sunucunuz veya Openship Cloud tarafından yönetiliyor. Sağlayıcının yapılandırmasını kontrol edin.",
+        "route_missing": "Yapılandırılmış bu rota henüz uygulanmadı. Uygulamak için yönlendirmeyi yeniden deneyin. Otomatik yönlendirme denemesi planlanmamış."
+      }
     }
   },
   "serviceEnvironment": {

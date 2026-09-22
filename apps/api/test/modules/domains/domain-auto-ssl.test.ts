@@ -23,6 +23,10 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
+  createProvisionLock: () => ({ run: (work: () => Promise<unknown>) => work() }),
+}));
+
 vi.mock("@repo/platform/engine/lib/domain-ssl", () => ({
   manageDomainSsl: ssl.manageDomainSsl,
   tlsIssuedElsewhere: ssl.tlsIssuedElsewhere,
@@ -120,6 +124,28 @@ describe("automatic SSL completion", () => {
 
     expect(result.sslIssued).toBe(0);
     expect(result.sslRetrying).toBe(1);
+  });
+
+  it("counts an unsuccessful check of a retained active certificate as retrying", async () => {
+    domainRepo.findPendingSsl.mockResolvedValue([
+      {
+        id: "dom_expired",
+        projectId: "proj_1",
+        hostname: "expired.example.com",
+        domainType: "custom",
+        verified: true,
+        sslStatus: "active",
+        sslExpiresAt: new Date(Date.now() - 60_000),
+      },
+    ]);
+    ssl.manageDomainSsl.mockResolvedValue({
+      verified: false,
+      expiresAt: "",
+      reason: "read_error",
+    });
+    domainRepo.findById.mockResolvedValue({ id: "dom_expired", sslStatus: "active" });
+
+    expect(await verifyPendingDomains()).toMatchObject({ sslIssued: 0, sslRetrying: 1 });
   });
 
   it("keeps both sweep phases inside the caller's organization", async () => {

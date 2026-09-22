@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
+  recordSslFailure: vi.fn(),
   disposePlatform: vi.fn(),
   provisionCert: vi.fn(async (domain: string, _opts?: unknown) => ({
     domain,
@@ -43,6 +44,7 @@ vi.mock("@repo/db", () => ({
     domain: {
       findByHostname: vi.fn(async (hostname: string) => h.domains.get(hostname) ?? null),
       updateSsl: h.updateSsl,
+      recordSslFailure: h.recordSslFailure,
     },
     project: {
       findById: vi.fn(async (id: string) => ({
@@ -106,10 +108,16 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
   beforeEach(() => {
     h.domains.clear();
     h.updateSsl.mockClear();
+    h.recordSslFailure.mockClear();
     h.disposePlatform.mockClear();
     h.provisionCert.mockClear();
     h.renewCert.mockClear();
-    h.verifyCert.mockClear();
+    h.verifyCert.mockReset().mockResolvedValue({
+      domain: "app.example.com",
+      expiresAt: "",
+      issuer: "Let's Encrypt",
+      verified: false,
+    });
     h.dnsManagerResult = {
       status: "matched",
       manager: {
@@ -139,6 +147,24 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
     expect(calledOpts.challenge).toBe("dns-01");
     expect(calledOpts.dnsAuthHookScript).toContain("cloudflare.com/client/v4");
     expect(calledOpts.dnsCleanupHookScript).toContain("DELETE");
+  });
+
+  it("reuses a valid wildcard certificate without requiring DNS credentials for a new order", async () => {
+    h.dnsManagerResult = { status: "none" } as unknown as typeof h.dnsManagerResult;
+    domain("*.example.com", { sslChallenge: "dns-01" });
+    h.verifyCert.mockResolvedValueOnce({
+      domain: "*.example.com",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      issuer: "Let's Encrypt",
+      verified: true,
+    });
+    const result = await manageDomainSsl("*.example.com", { action: "provision" });
+    expect(result).toMatchObject({ verified: true, expiresAt: "2030-01-01T00:00:00.000Z" });
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.updateSsl).toHaveBeenCalledWith(
+      "dom_*.example.com",
+      expect.objectContaining({ sslStatus: "active" }),
+    );
   });
 
   it("automatically uses DNS-01 challenge for wildcard domains", async () => {
@@ -179,6 +205,10 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
       /requires a connected DNS provider.*Settings → DNS/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.recordSslFailure).toHaveBeenCalledWith(
+      "dom_*.example.com",
+      expect.stringMatching(/requires a connected DNS provider/),
+    );
   });
 
   it("fails when DNS provider credential was rejected", async () => {
@@ -193,6 +223,10 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
       /DNS provider credential rejected: Invalid token/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.recordSslFailure).toHaveBeenCalledWith(
+      "dom_app.example.com",
+      expect.stringContaining("DNS provider credential rejected: Invalid token"),
+    );
   });
 
   it("uses caller-supplied dnsAuthHook and dnsCleanupHook without querying provider", async () => {

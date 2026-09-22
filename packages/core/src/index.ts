@@ -19,6 +19,7 @@ export {
   registryForImage,
 } from "./image-ref";
 export * from "./system";
+export * from "./domain-retry";
 export * from "./utils";
 export * from "./errors";
 export * from "./service-routing";

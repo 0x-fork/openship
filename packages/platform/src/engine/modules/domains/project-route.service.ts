@@ -350,7 +350,8 @@ export async function reapplyProjectLiveRoutes(
     // Carries `proxy` (upload limit, timeouts) through to reconcileProjectRoutes,
     // so raising a limit applies on save instead of waiting for a redeploy.
     | "routingConfig"
-  >,
+  > &
+    Partial<Pick<Project, "compositeRoutes">>,
   previousHostnames: string[],
   opts: ReapplyProjectLiveRoutesOptions = {},
 ): Promise<void> {
@@ -377,6 +378,12 @@ export async function reapplyProjectLiveRoutes(
     ? [...allDomainRows].sort(comparePublicRouteRows)
     : normalizeProjectRouteRows(state.projectDomains);
   const currentHostnames = new Set(current.map((d) => d.hostname.toLowerCase()));
+  // The complete topology writer handles these hosts after this per-domain
+  // pass. Keep them in currentHostnames for removal/sync decisions, but never
+  // replace their path rules with a temporary root-only vhost.
+  const topologyHostnames = new Set(
+    project.compositeRoutes?.map((route) => route.hostname.toLowerCase()),
+  );
   // domainType isn't retained for a dropped row — infer managed vs custom from
   // the base-domain suffix so cloud teardown targets the right primitive.
   const removes: RouteRemove[] = previousHostnames
@@ -407,7 +414,9 @@ export async function reapplyProjectLiveRoutes(
   // Cloud: no upstream resolution — the workspace/page owns routing by port.
   if (isCloud) {
     const registers: RouteRegister[] = current
-      .filter((domain) => !domain.targetPath)
+      .filter(
+        (domain) => !domain.targetPath && !topologyHostnames.has(domain.hostname.toLowerCase()),
+      )
       .map((domain) => ({
         hostname: domain.hostname,
         port: domain.targetPort ?? project.port ?? undefined,
@@ -675,6 +684,7 @@ export async function reapplyProjectLiveRoutes(
     const routingFields = compileProjectRoutingFields(project.routingConfig);
 
     for (const domain of current) {
+      if (topologyHostnames.has(domain.hostname.toLowerCase())) continue;
       const redirectHost = resolveRouteRedirect(domain, liveHostnames);
       const common = {
         hostname: domain.hostname,

@@ -920,6 +920,26 @@ describe("reapplyProjectLiveRoutes multi-service project-level routes (issue #61
     ]);
   });
 
+  it("leaves a fan-out hostname to its complete topology writer without removing the existing route", async () => {
+    listByProject.mockResolvedValue([projectDomain(3000)]);
+    await reapplyProjectLiveRoutes(
+      {
+        ...project,
+        compositeRoutes: [
+          {
+            hostname: "app.example.com",
+            isCustomDomain: true,
+            rootServiceId: "svc-web",
+            locations: [{ pathPrefix: "/api/", serviceId: "svc-api" }],
+          },
+        ],
+      },
+      ["app.example.com"],
+    );
+    expect(reconcile.mock.calls.flatMap(([, opts]) => opts.registers ?? [])).toEqual([]);
+    expect(reconcile.mock.calls.flatMap(([, opts]) => opts.removes ?? [])).toEqual([]);
+  });
+
   it("reports an unmapped domain without using a stale project port, while applying mapped siblings (#879)", async () => {
     listByProject.mockResolvedValue([
       projectDomain(null),
