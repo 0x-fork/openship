@@ -157,6 +157,7 @@ describe("Settings GitHub device sign-in (#851)", () => {
         }),
     );
     await click("Sign in with GitHub");
+    await act(async () => window.dispatchEvent(new Event("github-sources-changed")));
     expectDeviceInstructions();
     await act(async () => resolveStatus({ state: disconnected }));
     expectDeviceInstructions();

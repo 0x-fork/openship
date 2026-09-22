@@ -68,7 +68,7 @@ export function GitHubConnection() {
   // GET /github/status here — the cloud round-trip for the App badge +
   // installations happens on THIS page only, never on a plain library browse.
   // Actions (connect/disconnect/connecting) still come from the shared context.
-  const { connecting, connect: ctxConnect, disconnect: ctxDisconnect, cliAction } = useGitHub();
+  const { connecting, connect, disconnect: ctxDisconnect, cliAction } = useGitHub();
   const { t } = useI18n();
   const router = useRouter();
 
@@ -92,27 +92,31 @@ export function GitHubConnection() {
   // the method list drops full-width below, instead of a w-full <details> that
   // wraps the toggle onto its own line under the button.
   const [showChangeMethod, setShowChangeMethod] = useState(false);
+  const statusRequest = useRef(0);
 
   const loadStatus = useCallback(async (force = false) => {
+    const request = ++statusRequest.current;
     setLoading(true);
     try {
       // Live (no TTL cache) but de-duplicated across concurrent callers (the
       // library App badge shares this in-flight request). `force` bypasses a
       // pre-mutation in-flight after connect/disconnect.
       const res = await githubApi.getStatusDeduped<any>(force);
+      if (request !== statusRequest.current) return;
       setState(res?.state ?? EMPTY_STATE);
       setAccounts(res?.accounts ?? []);
       setInstallUrl(res?.installUrl || null);
       setCapabilities((res?.capabilities as Capabilities | undefined) ?? null);
       setCustomSourcesConfigured(res?.customSourcesConfigured === true);
     } catch {
+      if (request !== statusRequest.current) return;
       setState(EMPTY_STATE);
       setAccounts([]);
       setInstallUrl(null);
       setCapabilities(null);
       setCustomSourcesConfigured(false);
     } finally {
-      setLoading(false);
+      if (request === statusRequest.current) setLoading(false);
     }
   }, []);
 
@@ -122,6 +126,9 @@ export function GitHubConnection() {
       .get()
       .then((r) => setForwardGit(!!r.forwardGitToServer))
       .catch(() => {});
+    return () => {
+      statusRequest.current++;
+    };
   }, [loadStatus]);
 
   useEffect(() => {
@@ -138,11 +145,8 @@ export function GitHubConnection() {
     previousActionRef.current = cliAction;
   }, [cliAction, loadStatus]);
 
-  // Connect/install opens a separate window (OAuth popup or the GitHub App
-  // install tab). The connect call returns as soon as that window opens, so
-  // the immediate loadStatus below is stale. Arm this flag on click and
-  // re-pull the card's own status when the settings window regains focus —
-  // i.e. when the connect window closes / the user comes back.
+  // Adding another account opens a GitHub settings tab. Re-read on return.
+  // Initial connection is owned by the provider and signals completion above.
   const pendingConnectRef = useRef(false);
   useEffect(() => {
     const repullIfPending = () => {
@@ -161,16 +165,7 @@ export function GitHubConnection() {
     };
   }, [loadStatus]);
 
-  // Re-fetch the App status after a connect/disconnect so the card reflects
-  // the change without depending on the gh-first library refresh.
-  const connect = useCallback(
-    async (source?: "oauth" | "cli") => {
-      pendingConnectRef.current = true; // re-pull when the connect window closes
-      await ctxConnect(source);
-      await loadStatus(true);
-    },
-    [ctxConnect, loadStatus],
-  );
+  // Disconnect is immediate; redirect/device completion is signalled separately.
   const disconnect = useCallback(
     async (source?: "oauth" | "cli" | "all") => {
       await ctxDisconnect(source);
@@ -366,7 +361,7 @@ export function GitHubConnection() {
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2">
-                {installUrl && (
+                {installUrl && hasInstallations && (
                   <a
                     href={installUrl}
                     target="_blank"
@@ -377,8 +372,23 @@ export function GitHubConnection() {
                     className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
                   >
                     <Download className="size-3.5" />
-                    {hasInstallations ? t.settings.github.addAccount : t.settings.github.installApp}
+                    {t.settings.github.addAccount}
                   </a>
+                )}
+                {installUrl && !hasInstallations && (
+                  <button
+                    type="button"
+                    disabled={connecting}
+                    onClick={() => void connect("oauth")}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    {connecting ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Download className="size-3.5" />
+                    )}
+                    {t.settings.github.installApp}
+                  </button>
                 )}
                 <a
                   href="https://github.com/settings/installations"

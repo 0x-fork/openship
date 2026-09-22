@@ -84,6 +84,9 @@ interface RepositoryListProps {
   onSelect?: (owner: string, repo: GitHubRepo) => void;
   /** GitHub App install URL - shown when connected but no installations */
   installUrl?: string | null;
+  /** Start a fresh, observed installation instead of using a page-load nonce. */
+  onInstall: () => void;
+  installing: boolean;
   /** Opt into server-side pagination (Library). Omit for client-side lists. */
   server?: RepoServerPagination;
 }
@@ -97,6 +100,8 @@ export function RepositoryList({
   loadingRepos,
   onSelect,
   installUrl,
+  onInstall,
+  installing,
   server,
 }: RepositoryListProps) {
   const { t } = useI18n();
@@ -272,15 +277,15 @@ export function RepositoryList({
               <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed mb-4">
                 {t.library.repositoryList.installDesc}
               </p>
-              <a
-                href={installUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-foreground text-background rounded-xl hover:bg-foreground/90 transition-colors"
+              <button
+                type="button"
+                onClick={onInstall}
+                disabled={installing}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-foreground text-background rounded-xl hover:bg-foreground/90 transition-colors disabled:opacity-50"
               >
                 <Github className="size-4" />
                 {t.library.repositoryList.installButton}
-              </a>
+              </button>
             </>
           ) : (
             /* Generic empty state */
