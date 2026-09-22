@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -35,7 +35,13 @@ import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
 import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
-import { useEdgeModal, useVerifyModal, useRoutingRetryModal } from "@/hooks/useSystemPrepareModal";
+import {
+  PrepareStreamContent,
+  useEdgeModal,
+  useVerifyModal,
+  useRoutingRetryModal,
+  type SystemPrepareOptions,
+} from "@/hooks/useSystemPrepareModal";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import {
@@ -304,7 +310,51 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   const freeNeedsCloud = () => requireCloud("managed-project-domain", { domain: baseDomain });
   const openEdgeModal = useEdgeModal();
   const openVerifyModal = useVerifyModal();
-  const openRoutingRetry = useRoutingRetryModal();
+  const [routingOperation, setRoutingOperation] = useState<{
+    id: number;
+    opts: SystemPrepareOptions;
+  } | null>(null);
+  const routingOperationRef = useRef<{ id: number; running: boolean } | null>(null);
+  const routingSequence = useRef(0);
+  const routingLogRef = useRef<HTMLElement>(null);
+  const presentRoutingRetry = useCallback((opts: SystemPrepareOptions) => {
+    // Every domain's Retry opens the same project operation. Repeated clicks
+    // keep its live stream and logs instead of queuing another repair.
+    if (!routingOperationRef.current?.running) {
+      const operation = { id: ++routingSequence.current, running: true };
+      let activeStreams = 0;
+      routingOperationRef.current = operation;
+      setRoutingOperation({
+        id: operation.id,
+        opts: {
+          ...opts,
+          onStart: () => {
+            activeStreams++;
+            operation.running = true;
+            opts.onStart?.();
+          },
+          onSettled: () => {
+            // StrictMode may finish an aborted stream after starting its
+            // replacement. Only the last settlement makes this operation idle.
+            operation.running = --activeStreams > 0;
+            opts.onSettled?.();
+          },
+        },
+      });
+    }
+    routingLogRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    return "project-routing-retry";
+  }, []);
+  const closeRoutingLog = useCallback(() => {
+    routingOperationRef.current = null;
+    setRoutingOperation(null);
+  }, []);
+  useEffect(closeRoutingLog, [id, closeRoutingLog]);
+  useEffect(() => {
+    if (routingOperation)
+      routingLogRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }, [routingOperation]);
+  const openRoutingRetry = useRoutingRetryModal(presentRoutingRetry);
   const retryRouting = () => openRoutingRetry(String(id));
 
   // Live edge health for the server (read-only probe). Drives the button state:
@@ -1917,6 +1967,20 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           />
         </div>
       ) : null}
+      {routingOperation && (
+        <section
+          ref={routingLogRef}
+          aria-label="Routing log"
+          className="rounded-2xl border border-border/50 bg-card"
+        >
+          <PrepareStreamContent
+            key={routingOperation.id}
+            opts={routingOperation.opts}
+            inline
+            onClose={closeRoutingLog}
+          />
+        </section>
+      )}
       {domainsData.isLoading ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {[0, 1].map((i) => (

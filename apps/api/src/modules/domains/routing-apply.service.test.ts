@@ -278,6 +278,24 @@ describe("applyProjectRouting — upstream resolution", () => {
     expect(reconcileProjectRoutes).not.toHaveBeenCalled();
   });
 
+  it("keeps a migrated domain's complete route when any path upstream is unavailable", async () => {
+    projectRepo.findById.mockResolvedValue({
+      ...project(),
+      compositeRoutes: [
+        {
+          hostname: "app.example.com",
+          isCustomDomain: true,
+          rootServiceId: "svc_1",
+          locations: [{ pathPrefix: "/api/", serviceId: "missing-service" }],
+        },
+      ],
+    });
+    const onWarning = vi.fn();
+    await applyProjectRouting("proj_1", { onWarning });
+    expect(onWarning).toHaveBeenCalledWith(expect.stringContaining("app.example.com/api/"));
+    expect(reconcileProjectRoutes).not.toHaveBeenCalled();
+  });
+
   /**
    * #506 regression guard. The row still carries a host port from an earlier
    * deploy, but the live container publishes nothing — the stored value must not
@@ -561,12 +579,9 @@ describe("applyProjectRouting — static frontend composite", () => {
     await applyProjectRouting("proj_1");
 
     const registers = emittedRegisters();
-    expect(registers).toHaveLength(2);
-    expect(registers[0]).toMatchObject({
-      hostname: "app.example.com",
-      staticRoot: RELEASE_DIR,
-    });
-    expect(registers[0].proxyLocations).toBeUndefined();
+    // Never publish a root-only intermediate route: it would briefly send /api
+    // to the frontend, and leave it there if the second write failed.
+    expect(registers).toHaveLength(1);
     const register = registers.at(-1);
     expect(register).toMatchObject({
       hostname: "app.example.com",
@@ -627,9 +642,7 @@ describe("applyProjectRouting — static frontend composite", () => {
 
     await applyProjectRouting("proj_1");
 
-    expect(emittedRegisters()).toMatchObject([
-      { hostname: "app.example.com", staticRoot: RELEASE_DIR },
-    ]);
+    expect(reconcileProjectRoutes).not.toHaveBeenCalled();
     const logged = warn.mock.calls.flat().join(" ");
     expect(logged).toMatch(/backend has no live upstream/);
     expect(logged).not.toMatch(/frontend has neither/);

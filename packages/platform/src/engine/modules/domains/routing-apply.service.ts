@@ -291,6 +291,10 @@ export async function applyProjectRouting(
     if (!composite) {
       const plan = planCompositeRoute(defs, { rewrites: project.routingConfig?.rewrites });
       if (plan) {
+        const frontendRoute = serviceRoutePlans.find(
+          ({ def }) => def.id === plan.frontendServiceId,
+        )?.route;
+        if (frontendRoute) blockedHostnames.add(frontendRoute.hostname.toLowerCase());
         const missing = [
           !resolveStaticRoot(plan.frontendServiceId) && !resolveTargetUrl(plan.frontendServiceId)
             ? "the frontend has neither a static root nor a live upstream"
@@ -330,6 +334,15 @@ export async function applyProjectRouting(
       return { ...reg, ...routingFields, ...(proxyLocations.length ? { proxyLocations } : {}) };
     });
 
+    // A refused topology must not fall back to the service's simpler vhost.
+    // Keep the currently served table until every configured path can resolve.
+    const completeFanoutHostnames = new Set(fanout.map((route) => route.hostname.toLowerCase()));
+    for (const route of fanoutRoutes) {
+      if (!completeFanoutHostnames.has(route.hostname.toLowerCase())) {
+        blockedHostnames.add(route.hostname.toLowerCase());
+      }
+    }
+
     const topologyRegisters = [...(composite ? [composite.register] : []), ...fanout].map(
       (register) => {
         const observedLoopbackPublishes = register.redirectHost
@@ -343,12 +356,17 @@ export async function applyProjectRouting(
           : register;
       },
     );
-    // Last-writer order is part of the routing contract. A composite/fan-out
-    // registration is richer than a service's base vhost, so it must overwrite
-    // the service register when they intentionally share a hostname.
-    const registers = [...serviceRegisters, ...topologyRegisters].filter(
-      (register) => !blockedHostnames.has(register.hostname.toLowerCase()),
-    );
+    // Resolve precedence BEFORE writing. Publishing the base vhost and then its
+    // topology exposes an incomplete table between reloads (or permanently if
+    // the second write fails). Each hostname gets one complete configuration.
+    const registers = [
+      ...new Map(
+        [...serviceRegisters, ...topologyRegisters].map((register) => [
+          register.hostname.toLowerCase(),
+          register,
+        ]),
+      ).values(),
+    ].filter((register) => !blockedHostnames.has(register.hostname.toLowerCase()));
     if (registers.length > 0) {
       await reconcileProjectRoutes(project, {
         onWarning: options.onWarning,

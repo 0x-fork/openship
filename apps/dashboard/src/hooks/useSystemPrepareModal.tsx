@@ -78,6 +78,8 @@ export interface SystemPrepareOptions {
   title?: string;
   /** Copy overrides for the non-prompt phases. */
   labels?: { working?: string; done?: string; failed?: string; close?: string };
+  /** Fired when the viewer starts an attempt, including an explicit Retry. */
+  onStart?: () => void;
   /** Fired once on successful completion. */
   onDone?: () => void;
   /** Refresh saved state after success, partial failure, or a disconnected viewer. */
@@ -217,6 +219,7 @@ export function PrepareStreamContent({
     // run aborts, the second run fetches fresh.
     const controller = new AbortController();
     terminalRef.current = false;
+    opts.onStart?.();
 
     // Read + dispatch the SSE frames off a streaming Response. Shared verbatim by
     // the POST (fresh run) and GET (re-attach) paths so both parse identically
@@ -602,8 +605,8 @@ export function useVerifyModal() {
 
 /** Routing repairs can include SSH and certificate work. Keep their progress
  * visible through the shared stream viewer instead of a short JSON timeout. */
-export function useRoutingRetryModal() {
-  const prepare = useSystemPrepareModal();
+export function useRoutingRetryModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
   const { t } = useI18n();
   return useCallback(
     (projectId: string): string =>

@@ -172,9 +172,9 @@ export function buildCompositeRegistration(input: {
  * the project's persisted `compositeRoutes` + a live-upstream resolver, produce
  * one `RouteRegister` per domain (root service at `/`, each extra path prefix
  * proxied to its service). PURE — callers supply the resolver (deploy loop from
- * `results[].ip`, routing API from `service_deployment.ip`). A route whose ROOT
- * upstream can't resolve is skipped; individual unresolvable path locations are
- * dropped (best-effort, never throws). Unlike `buildCompositeRegistration` this
+ * `results[].ip`, routing API from `service_deployment.ip`). A route with any
+ * unresolved upstream is skipped: replacing it with a partial table would send
+ * that path to the root service. Unlike `buildCompositeRegistration` this
  * expresses ARBITRARY multi-service fan-out, not the 1-static + 1-server shape.
  */
 type DomainOwners = ReadonlyMap<string, Pick<Domain, "serviceId">>;
@@ -214,6 +214,7 @@ export function buildDomainFanoutRegistrations(input: {
       continue;
     }
     const proxyLocations: RouteProxyLocation[] = [];
+    let complete = true;
     for (const loc of route.locations) {
       const url = input.resolveTargetUrl(loc.serviceId, loc.port);
       if (url) {
@@ -223,9 +224,13 @@ export function buildDomainFanoutRegistrations(input: {
           ...(loc.exact ? { exact: true } : {}),
         });
       } else {
-        input.onWarning?.(`${route.hostname}${loc.pathPrefix}: the service has no live upstream.`);
+        complete = false;
+        input.onWarning?.(
+          `${route.hostname}${loc.pathPrefix}: the service has no live upstream; its domain route was not replaced.`,
+        );
       }
     }
+    if (!complete) continue;
     out.push({
       hostname: route.hostname,
       isCustomDomain: route.isCustomDomain,

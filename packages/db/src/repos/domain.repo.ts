@@ -1,4 +1,4 @@
-import { eq, and, ne, lt, asc, inArray, sql } from "drizzle-orm";
+import { eq, and, ne, lt, asc, inArray, isNull, notExists, sql } from "drizzle-orm";
 import { ConflictError, generateId } from "@repo/core";
 import type { Database } from "../client";
 import { domain, orphanedResource, project, service } from "../schema";
@@ -108,6 +108,26 @@ export function createDomainRepo(db: Database) {
           and(
             eq(orphanedResource.resourceType, "route"),
             eq(orphanedResource.ref, row.hostname.toLowerCase()),
+            // Teardown checkpoints can survive a failed final project delete.
+            // GC defers those while the project is live: they must not prevent
+            // that SAME owner from restoring its domain row. Keep the checkpoint
+            // for eventual cleanup, and keep reserving the host against all other
+            // projects (including project-less domains and soft-deleted owners).
+            row.projectId
+              ? notExists(
+                  tx
+                    .select({ id: project.id })
+                    .from(project)
+                    .where(
+                      and(
+                        eq(project.id, row.projectId),
+                        eq(project.id, orphanedResource.projectId),
+                        isNull(project.deletedAt),
+                        eq(project.deletionInProgress, false),
+                      ),
+                    ),
+                )
+              : undefined,
           ),
         )
         .limit(1);
@@ -397,7 +417,11 @@ export function createDomainRepo(db: Database) {
       });
       if (existing) {
         // Promote to primary if caller wants it and it isn't already
-        if (data.isPrimary && !existing.isPrimary) {
+        if (
+          data.isPrimary &&
+          !existing.isPrimary &&
+          existing.projectId === (data.projectId ?? null)
+        ) {
           // projectId is nullable (webhook-owned rows have no project) — those
           // just get the flag, there are no siblings to demote.
           if (existing.projectId) await promotePrimary(existing.projectId, existing.id);
@@ -434,7 +458,11 @@ export function createDomainRepo(db: Database) {
             where: eq(domain.hostname, hostname),
           });
           if (raced) {
-            if (data.isPrimary && !raced.isPrimary) {
+            if (
+              data.isPrimary &&
+              !raced.isPrimary &&
+              raced.projectId === (data.projectId ?? null)
+            ) {
               if (raced.projectId) await promotePrimary(raced.projectId, raced.id);
               else {
                 await db

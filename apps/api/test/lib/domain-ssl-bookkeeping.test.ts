@@ -113,7 +113,13 @@ beforeEach(() => {
   h.updateSsl.mockReset();
   h.provisionCert.mockReset();
   h.renewCert.mockReset();
-  h.verifyCert.mockReset();
+  h.verifyCert.mockReset().mockResolvedValue({
+    domain: HOST,
+    expiresAt: "",
+    issuer: "certbot",
+    verified: false,
+    reason: "missing",
+  });
 });
 
 describe.each([
@@ -133,11 +139,19 @@ describe.each([
     // force skips the reuse pre-check, so verifyCert is reached only by recovery.
     run: () => provisionDomainCertForVerify(HOST, { force: true }),
   },
-])("$label — a cert that got issued is never left unrecorded", ({ failingSpy, run }) => {
+])("$label — a cert that got issued is never left unrecorded", ({ label, failingSpy, run }) => {
   it("records the expiry read off the edge when the step after issuance throws", async () => {
     domain();
     failingSpy().mockRejectedValue(POST_ISSUE_ERROR);
     onDisk(VALID_EXPIRY);
+    if (label === "manageDomainSsl(provision)")
+      h.verifyCert.mockResolvedValueOnce({
+        domain: HOST,
+        expiresAt: "",
+        issuer: "certbot",
+        verified: false,
+        reason: "missing",
+      });
 
     const result = await run();
 
@@ -185,7 +199,27 @@ describe.each([
 });
 
 describe("the happy path is untouched", () => {
-  it("persists a normal successful issuance without consulting the edge again", async () => {
+  it("repairs stale SSL metadata from the existing certificate without opening another ACME order", async () => {
+    domain();
+    onDisk(VALID_EXPIRY);
+    h.provisionCert.mockRejectedValue(new Error("An existing valid certificate must be reused"));
+    const log = vi.fn();
+
+    await expect(manageDomainSsl(HOST, { action: "provision", onLog: log })).resolves.toMatchObject(
+      { verified: true, expiresAt: VALID_EXPIRY },
+    );
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.updateSsl).toHaveBeenCalledWith(
+      "dom_1",
+      expect.objectContaining({
+        sslStatus: "active",
+        sslExpiresAt: new Date(VALID_EXPIRY),
+      }),
+    );
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("reusing it"));
+  });
+
+  it("checks for an existing certificate and persists a new issuance without another read", async () => {
     domain();
     h.provisionCert.mockResolvedValue({
       domain: HOST,
@@ -198,7 +232,7 @@ describe("the happy path is untouched", () => {
     const result = await manageDomainSsl(HOST, { action: "provision" });
 
     expect(result.reason).toBe("issued");
-    expect(h.verifyCert).not.toHaveBeenCalled();
+    expect(h.verifyCert).toHaveBeenCalledOnce();
     expect(h.updateSsl).toHaveBeenCalledWith("dom_1", {
       sslStatus: "active",
       sslIssuer: "R11",

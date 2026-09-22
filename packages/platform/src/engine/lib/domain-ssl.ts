@@ -442,13 +442,18 @@ async function resolveSslProvider(owner: SslOwner): Promise<ResolvedSslProvider>
         const ssl = await resolveSslOnly(meta, dep.organizationId);
         return { ssl, lockScope: meta.serverId ?? LOCAL_ACME_SCOPE };
       } catch (err) {
-        // Deploy target unresolvable — fall through to the host-anchored fallback.
-        // But say so with the real cause: for a REMOTE-target project (meta.serverId
-        // set) the fallbacks below act on a DIFFERENT box than the one whose edge
-        // serves the domain, so certbot/verify silently misfires there and the
-        // operator sees an inexplicable "no cert"/525 with nothing to trace it to.
-        // (For a single-box install the fallback resolves to the same local edge, so
-        // this is only noise there — hence a warn, not a throw.)
+        // An explicit deployment destination must never fall back to the API's
+        // certificate store. A connection failure says nothing about the certs
+        // on that server; preserve the cause and the last known domain state.
+        if (
+          meta.serverId ||
+          meta.deployTarget === "server" ||
+          meta.deployTarget === "cloud" ||
+          project.cloudWorkspaceId
+        ) {
+          throw err;
+        }
+        // Legacy local deployments may still use the host-anchored provider.
         console.warn(
           `[domain-ssl] could not resolve the deployment platform for ${owner.kind === "project" ? owner.project.id : "domain"}` +
             `${meta.serverId ? ` (server ${meta.serverId})` : ""} — falling back to the host edge: ${safeErrorMessage(err)}`,
@@ -666,9 +671,16 @@ async function manageAuthorizedDomainSsl(
     return notLocalResult(domainRecord.hostname);
   }
 
+  // Provision and Verify share the same read-before-issue gate and locks.
+  // Stale SSL metadata must not open a new order when a usable cert is already
+  // on the serving host, or require DNS credentials merely to rediscover it.
+  if (opts.action === "provision") {
+    return provisionAuthorizedDomainCert({ domainRecord, owner }, opts);
+  }
+
   const { ssl, lockScope } = await resolveSslProvider(owner);
-  // `verify` is a read-only cert inspection (no ACME) → no lock. `provision`/
-  // `renew` can open an ACME order, so serialize them per-hostname on the shared
+  // `verify` is a read-only cert inspection (no ACME) → no lock. The remaining
+  // `renew` action opens an ACME order, so serialize it per-hostname on the shared
   // issue lock — this is what stops the ssl:renew scheduler (which calls us with
   // action:"renew") from racing a manual Verify on the same domain — and then on
   // the per-box ACME lock, which stops it racing a DIFFERENT hostname for the
@@ -765,15 +777,6 @@ async function provisionAuthorizedDomainCert(
     domainRecord.sslChallenge === "dns-01" ||
     isWildcardHostname(domainRecord.hostname);
 
-  let dnsHooks: Awaited<ReturnType<typeof resolveDns01Hooks>> = {};
-  if (isDns) {
-    const orgId = owner.kind === "project" ? owner.project.organizationId : owner.organizationId;
-    dnsHooks = await resolveDns01Hooks(orgId, domainRecord, {
-      dnsAuthHook: opts.dnsAuthHook,
-      dnsCleanupHook: opts.dnsCleanupHook,
-    });
-  }
-
   // Serialize issuance per-hostname, and re-check the cert INSIDE the lock.
   // This closes the TOCTOU: two concurrent Verify hits (or Verify racing the
   // renewal scheduler) both queue on the lock; the first issues, and the second
@@ -798,6 +801,13 @@ async function provisionAuthorizedDomainCert(
             return existing;
           }
         }
+        const dnsHooks = isDns
+          ? await resolveDns01Hooks(
+              owner.kind === "project" ? owner.project.organizationId : owner.organizationId,
+              domainRecord,
+              opts,
+            )
+          : {};
         // Decided to issue (missing / near-expiry / forced): pass `force` so the
         // adapter runs certbot even when a stale cert file is present on disk —
         // otherwise its file-exists short-circuit would return the old cert and a

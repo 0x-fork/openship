@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
@@ -113,16 +113,15 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-async function render() {
-  await act(async () =>
-    root.render(
-      <I18nProvider>
-        <ModalProvider>
-          <DomainSettings />
-        </ModalProvider>
-      </I18nProvider>,
-    ),
+async function render(strict = false) {
+  const content = (
+    <I18nProvider>
+      <ModalProvider>
+        <DomainSettings />
+      </ModalProvider>
+    </I18nProvider>
   );
+  await act(async () => root.render(strict ? <StrictMode>{content}</StrictMode> : content));
 }
 function retryButtons() {
   return [...host.querySelectorAll("button")].filter(
@@ -137,8 +136,8 @@ async function emit(type: string, data: Record<string, unknown>, close = false) 
     if (close) stream.close();
   });
 }
-async function startRetry() {
-  await render();
+async function startRetry(strict = false) {
+  await render(strict);
   await act(async () => retryButtons().at(-1)!.click());
   await emit("session", {});
 }
@@ -159,7 +158,9 @@ describe("routing retry on the Domains page", () => {
         expect.objectContaining({ method: "POST" }),
       );
       await emit("log", { message: "api.example.com: route restored", level: "info" });
-      expect(document.body.textContent).toContain("api.example.com: route restored");
+      const log = host.querySelector('section[aria-label="Routing log"]');
+      expect(log?.textContent).toContain("api.example.com: route restored");
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
     },
   );
 
@@ -178,6 +179,29 @@ describe("routing retry on the Domains page", () => {
     expect(document.body.textContent).toContain("existing certificate reused");
     expect(mocks.invalidate).toHaveBeenCalledWith("project-a");
   });
+
+  it.each([false, true])(
+    "keeps one active repair across domain actions and allows a fresh retry after completion (StrictMode: %s)",
+    async (strict) => {
+      await startRetry(strict);
+      const requests = mocks.fetch.mock.calls.length;
+      await emit("log", { message: "Still checking the current routes", level: "info" });
+      await act(async () => {
+        for (const button of retryButtons()) button.click();
+      });
+      expect(mocks.fetch).toHaveBeenCalledTimes(requests);
+      expect(host.querySelector('section[aria-label="Routing log"]')?.textContent).toContain(
+        "Still checking the current routes",
+      );
+      expect((mocks.fetch.mock.calls.at(-1)![1] as RequestInit).signal?.aborted).toBe(false);
+
+      await emit("complete", { status: "completed" }, true);
+      await act(async () => retryButtons()[0]!.click());
+      expect(mocks.fetch.mock.calls.length).toBeGreaterThan(requests);
+      expect(host.textContent).not.toContain("Still checking the current routes");
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    },
+  );
 
   it("retains the real partial-failure log and refreshes the cards without claiming success", async () => {
     await startRetry();

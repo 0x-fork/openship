@@ -40,14 +40,26 @@ export function subscribeRoutingRetry(ctx: ExecutionContext, id: string): EventS
     void trackBackgroundWork(
       (async () => {
         try {
+          const loggedLines = new Set<string>();
           const result = await retryProjectRoutingOperation(ctx, id, (message) => {
+            for (const line of message.split("\n")) loggedLines.add(line.trim());
             emit("log", { type: "log", message, level: "info" });
           });
-          emit("log", {
-            type: "log",
-            message: result.warning ?? "Routing and domain checks completed.",
-            level: result.ok ? "info" : "error",
-          });
+          // The result aggregates errors already streamed while applying routes.
+          // Emit only unreported reasons; repeating the aggregate makes one
+          // failed write look like another failed pass after managed-edge sync.
+          const message = result.ok
+            ? "Routing and domain checks completed."
+            : result.warning
+                ?.split("\n")
+                .filter((line) => !loggedLines.has(line.trim()))
+                .join("\n");
+          if (message)
+            emit("log", {
+              type: "log",
+              message,
+              level: result.ok ? "info" : "error",
+            });
           emit("complete", { type: "complete", status: result.ok ? "completed" : "failed" });
         } catch (error) {
           emit("log", { type: "log", message: safeErrorMessage(error), level: "error" });
