@@ -684,12 +684,13 @@
       "active": "Activo",
       "failed": "Fallido",
       "removing": "Eliminando",
-      "pending": "Pendiente"
+      "pending": "Pendiente",
+      "waiting": "En espera"
     },
     "ssl": {
       "includedByHost": "Incluido por el host",
       "active": "Activo",
-      "provisioning": "Aprovisionando",
+      "provisioning": "Esperando certificado",
       "expired": "Caducado",
       "error": "Error",
       "inactive": "Inactivo"
@@ -845,10 +846,27 @@
       "foreignProxyHint": "Otro proxy ocupa 80/443"
     },
     "diagnosis": {
-      "title": "Por qué no funciona",
+      "title": "Detalles del dominio",
       "noneYet": "Aún no se ha ejecutado ninguna comprobación, así que no hay resultado. Añade los registros DNS mostrados y luego pulsa Verificar.",
       "attempts": "{count} intento(s) fallido(s) hasta ahora.",
-      "pillHint": "Ver el motivo"
+      "pillHint": "Ver el motivo",
+      "lastChecked": "Última comprobación:",
+      "nextCheck": "Próxima comprobación programada:",
+      "scheduleHint": "Las comprobaciones se ejecutan mientras esta instancia está conectada. Las tareas en cola pueden retrasar el inicio.",
+      "automaticDisabled": "Las comprobaciones automáticas de dominios están desactivadas. Reintenta manualmente o actívalas en Tareas.",
+      "scheduleUnavailable": "El horario de comprobación automática no está disponible. Puedes reintentar manualmente.",
+      "retryNow": "Reintentar ahora",
+      "checking": "Comprobando…",
+      "reasons": {
+        "verification": "La verificación del dominio no ha terminado. Revisa los registros DNS antes de reintentar.",
+        "certificate": "Hay que comprobar HTTPS en el servidor que aloja el sitio. Se buscará un certificado existente antes de solicitar uno nuevo.",
+        "deployment": "Esta ruta espera un despliegue. Despliega el proyecto para aplicarla.",
+        "disabled": "Este proyecto o servicio está desactivado. Actívalo antes de comprobar la ruta.",
+        "removing": "Este dominio se está eliminando. No hay ninguna verificación programada.",
+        "manual_certificate": "Este dominio usa un certificado subido manualmente. Sube un reemplazo válido y compruébalo. Openship no lo renueva automáticamente.",
+        "managed_certificate": "TLS lo gestiona tu proxy externo u Openship Cloud. Revisa la configuración de ese proveedor.",
+        "route_missing": "Esta ruta configurada aún no se ha aplicado. Reintenta el enrutamiento para aplicarla. No hay reintentos automáticos de enrutamiento programados."
+      }
     },
     "records": {
       "failed": "No se pudieron cargar los registros DNS de este dominio.",

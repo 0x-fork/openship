@@ -87,6 +87,11 @@ vi.mock("@repo/platform/engine/modules/analytics/analytics-config.service", () =
 
 import { retryProjectRoutingOperation } from "@repo/platform/engine/modules/projects/project-routing-retry.operations";
 import { manageDomainSsl } from "@repo/platform/engine/lib/domain-ssl";
+import {
+  getDomain,
+  verifyDomain,
+  verifyPendingDomains,
+} from "@repo/platform/engine/modules/domains/domain.service";
 
 const routes = [
   { name: "api", hostname: "api.example.com", port: 4010, ip: "10.0.0.2" },
@@ -305,4 +310,63 @@ it("repairs all three missing service domain records, reuses their real certific
   } finally {
     h.resolutionError = null;
   }
+});
+
+it("persists a failed check, honors backoff, and automatically recovers from the existing certificate", async () => {
+  await retryProjectRoutingOperation(context, "project");
+  const row = (await h.repos.domain.findByHostname(routes[0]!.hostname))!;
+  await h.repos.domain.update(row.id, {
+    status: "pending",
+    verified: false,
+    sslStatus: "none",
+    verifyAttempts: 0,
+    lastVerifyError: null,
+    createdAt: new Date(Date.now() - 30 * 60_000),
+    lastCheckedAt: null,
+  });
+  await h.repos.job.upsertSystem({
+    key: "domains:verify-pending",
+    label: "Domain verification",
+    defaultCron: "*/13 * * * *",
+  });
+
+  h.resolutionError = new Error("Cannot reach the deployment server over SSH");
+  try {
+    expect(await verifyDomain(context, row.id)).toMatchObject({ verified: false, attempts: 1 });
+    // Reads also repair the label for records saved by releases that kept
+    // completed failures pending, without resetting their existing backoff.
+    await h.repos.domain.update(row.id, { status: "pending" });
+    const failed = await getDomain(context, row.id);
+    expect(failed).toMatchObject({
+      status: "failed",
+      verifyAttempts: 1,
+      lastVerifyError: h.resolutionError.message,
+      diagnostics: {
+        state: "failed",
+        reason: "verification",
+        automaticRetry: "scheduled",
+        retryAction: "verify",
+      },
+    });
+    expect(new Date(failed.diagnostics!.nextRetryAt!).getTime()).toBeGreaterThan(
+      failed.lastCheckedAt!.getTime() + 15 * 60_000 - 1,
+    );
+    expect(await verifyPendingDomains()).toMatchObject({ total: 0 });
+    expect((await h.repos.domain.findById(row.id))?.verifyAttempts).toBe(1);
+  } finally {
+    h.resolutionError = null;
+  }
+
+  await h.repos.domain.update(row.id, { lastCheckedAt: new Date(Date.now() - 16 * 60_000) });
+  expect(await verifyPendingDomains()).toMatchObject({ verified: 1, failed: 0, total: 1 });
+  expect(await getDomain(context, row.id)).toMatchObject({
+    status: "active",
+    verified: true,
+    sslStatus: "active",
+    verifyAttempts: 0,
+    lastVerifyError: null,
+    diagnostics: null,
+  });
+  expect(issues).not.toHaveBeenCalled();
+  expect((await nginx.verifyCert(row.hostname)).verified).toBe(true);
 });

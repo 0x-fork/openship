@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
+  recordSslFailure: vi.fn(),
   disposePlatform: vi.fn(),
   provisionCert: vi.fn(async (domain: string, _opts?: unknown) => ({
     domain,
@@ -43,6 +44,7 @@ vi.mock("@repo/db", () => ({
     domain: {
       findByHostname: vi.fn(async (hostname: string) => h.domains.get(hostname) ?? null),
       updateSsl: h.updateSsl,
+      recordSslFailure: h.recordSslFailure,
     },
     project: {
       findById: vi.fn(async (id: string) => ({
@@ -106,6 +108,7 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
   beforeEach(() => {
     h.domains.clear();
     h.updateSsl.mockClear();
+    h.recordSslFailure.mockClear();
     h.disposePlatform.mockClear();
     h.provisionCert.mockClear();
     h.renewCert.mockClear();
@@ -202,6 +205,10 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
       /requires a connected DNS provider.*Settings → DNS/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.recordSslFailure).toHaveBeenCalledWith(
+      "dom_*.example.com",
+      expect.stringMatching(/requires a connected DNS provider/),
+    );
   });
 
   it("fails when DNS provider credential was rejected", async () => {
@@ -216,6 +223,10 @@ describe("DNS-01 ACME challenge support in domain-ssl", () => {
       /DNS provider credential rejected: Invalid token/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(h.recordSslFailure).toHaveBeenCalledWith(
+      "dom_app.example.com",
+      expect.stringContaining("DNS provider credential rejected: Invalid token"),
+    );
   });
 
   it("uses caller-supplied dnsAuthHook and dnsCleanupHook without querying provider", async () => {

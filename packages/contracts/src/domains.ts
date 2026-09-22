@@ -7,6 +7,29 @@ import type { ResourceOperations, ResourceOperationSchema, ScopedOperations } fr
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 const nullableNumber = Type.Union([Type.Number(), Type.Null()]);
 
+/** A failed check stays failed while waiting for its scheduled retry. */
+export const DomainDiagnosticsSchema = Type.Object({
+  state: Type.Union([Type.Literal("pending"), Type.Literal("failed"), Type.Literal("waiting")]),
+  reason: Type.Union([
+    Type.Literal("verification"),
+    Type.Literal("certificate"),
+    Type.Literal("deployment"),
+    Type.Literal("disabled"),
+    Type.Literal("removing"),
+    Type.Literal("manual_certificate"),
+    Type.Literal("managed_certificate"),
+  ]),
+  retryAction: Type.Union([Type.Literal("verify"), Type.Literal("verify_ssl"), Type.Null()]),
+  nextRetryAt: nullableString,
+  automaticRetry: Type.Union([
+    Type.Literal("scheduled"),
+    Type.Literal("disabled"),
+    Type.Literal("unavailable"),
+    Type.Literal("not_applicable"),
+  ]),
+});
+export type DomainDiagnostics = Static<typeof DomainDiagnosticsSchema>;
+
 /** Domain state contains verification guidance, never private certificate material. */
 export const DomainSchema = Type.Object({
   id: Type.String(), ownerType: Type.String(), projectId: nullableString,
@@ -19,6 +42,7 @@ export const DomainSchema = Type.Object({
   lastCheckedAt: nullableString, sslStatus: Type.String(), sslChallenge: Type.String(),
   sslIssuer: nullableString, sslExpiresAt: nullableString,
   createdAt: Type.String(), updatedAt: Type.String(),
+  diagnostics: Type.Optional(Type.Union([DomainDiagnosticsSchema, Type.Null()])),
 });
 export type Domain = Static<typeof DomainSchema>;
 
@@ -58,6 +82,7 @@ export type DomainVerification = Static<typeof DomainVerificationSchema>;
 export const DomainSslSchema = Type.Object({
   domain: Type.String(), sslStatus: Type.String(), expiresAt: Type.Optional(nullableString),
   issuer: Type.Optional(nullableString), verified: Type.Optional(Type.Boolean()),
+  message: Type.Optional(Type.String()),
 });
 export type DomainSsl = Static<typeof DomainSslSchema>;
 export const DomainDnsTargetSchema = Type.Object({

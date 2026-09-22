@@ -103,6 +103,24 @@ export function tlsIssuedElsewhere(domain: {
   return null;
 }
 
+/** Verification also finishes TLS when ownership is already proven. A retained
+ * active certificate with a failed last check is re-read before any new order. */
+export function needsDomainSslCheck(domain: {
+  domainType?: string | null;
+  externalIngress?: boolean | null;
+  manualSsl?: boolean | null;
+  sslStatus?: string | null;
+  sslExpiresAt?: Date | string | null;
+  lastVerifyError?: string | null;
+}): boolean {
+  return (
+    !tlsIssuedElsewhere(domain) &&
+    (domain.sslStatus !== "active" ||
+      !!domain.lastVerifyError ||
+      (!!domain.sslExpiresAt && new Date(domain.sslExpiresAt).getTime() <= Date.now()))
+  );
+}
+
 /** Operator-facing one-liner for {@link tlsIssuedElsewhere}. */
 export function describeTlsIssuedElsewhere(where: TlsIssuedElsewhere, hostname: string): string {
   switch (where) {
@@ -268,6 +286,7 @@ export function resolveSslPatch(
 ): { sslStatus: string; sslIssuer?: string; sslExpiresAt?: Date } | null {
   if (result.reason === "not_local") return null;
   if (result.verified && result.expiresAt) {
+    if (new Date(result.expiresAt).getTime() <= Date.now()) return { sslStatus: "error" };
     return {
       sslStatus: "active",
       sslIssuer: result.issuer,
@@ -297,7 +316,9 @@ async function persistSslResult(
   result: SslResult,
 ) {
   const patch = resolveSslPatch(currentStatus, result);
-  if (patch) await repos.domain.updateSsl(domainId, patch);
+  // A negative probe is not an issuance in progress. Its caller records the
+  // completed failure once, with its reason; only proof updates the certificate.
+  if (patch?.sslStatus === "active") await repos.domain.updateSsl(domainId, patch);
 }
 
 /**
@@ -647,9 +668,29 @@ export async function manageDomainSsl(
   hostname: string,
   opts: DomainSslOptions,
 ): Promise<SslResult> {
-  return withAuthorizedDomainRuntime(hostname, opts, (authorized) =>
-    manageAuthorizedDomainSsl(authorized, opts),
-  );
+  return withAuthorizedDomainRuntime(hostname, opts, async (authorized) => {
+    let result: SslResult;
+    try {
+      result = await manageAuthorizedDomainSsl(authorized, opts);
+    } catch (error) {
+      await repos.domain.recordSslFailure(authorized.domainRecord.id, safeErrorMessage(error));
+      throw error;
+    }
+    const expired = !!result.expiresAt && new Date(result.expiresAt).getTime() <= Date.now();
+    if (result.reason !== "not_local" && (!result.verified || !result.expiresAt || expired)) {
+      await repos.domain.recordSslFailure(
+        authorized.domainRecord.id,
+        expired
+          ? "The HTTPS certificate on the server has expired. Retry to renew it."
+          : result.reason === "read_error"
+            ? "The HTTPS certificate could not be read on the server. Check the server connection and retry."
+            : "No usable HTTPS certificate was found on the server. Check DNS and the certificate configuration, then retry.",
+        expired || result.reason === "missing" || result.reason === "invalid",
+      );
+      return { ...result, verified: false };
+    }
+    return result;
+  });
 }
 
 async function manageAuthorizedDomainSsl(

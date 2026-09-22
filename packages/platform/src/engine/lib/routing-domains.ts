@@ -637,7 +637,7 @@ export function createTrackedSslProvider(
     const domainRecord = domainByHostname.get(hostname.toLowerCase());
     if (domainRecord) {
       const patch = resolveSslPatch(domainRecord.sslStatus, result);
-      if (patch) await repos.domain.updateSsl(domainRecord.id, patch);
+      if (patch?.sslStatus === "active") await repos.domain.updateSsl(domainRecord.id, patch);
     }
     return result;
   };
@@ -702,13 +702,21 @@ export function createTrackedSslProvider(
       }
 
       if (result.reason === "read_error") {
+        await repos.domain.recordSslFailure(
+          domainRecord.id,
+          errorReason ?? "The HTTPS certificate could not be checked on the deployment server.",
+        );
         log?.(
           `Could not confirm SSL for ${host}; keeping its recorded certificate state.${errorReason ? ` ${errorReason}` : ""}`,
         );
         return result;
       }
 
-      if (result.verified && result.expiresAt) {
+      if (
+        result.verified &&
+        result.expiresAt &&
+        new Date(result.expiresAt).getTime() > Date.now()
+      ) {
         if (wasVerified) {
           const patch = resolveSslPatch(domainRecord.sslStatus, result);
           if (patch) await repos.domain.updateSsl(domainRecord.id, patch);
@@ -723,23 +731,11 @@ export function createTrackedSslProvider(
         return result;
       }
 
-      // Failure.
-      if (wasVerified) {
-        // Verified domain, transient issuance failure → keep it in the auto-heal
-        // sweep (findPendingSsl covers provisioning, not error).
-        const patch = resolveSslPatch(domainRecord.sslStatus, result);
-        if (patch) await repos.domain.updateSsl(domainRecord.id, patch);
-        log?.(`SSL for ${host} not renewed this deploy — will retry in the background.`);
-      } else {
-        const reason = errorReason ?? "certificate was not issued";
-        await repos.domain.updateSsl(domainRecord.id, {
-          sslStatus: "error",
-          lastVerifyError: reason,
-        });
-        log?.(
-          `SSL not issued for ${host} — marked Action Required (verify from the Domains tab once DNS points here). Reason: ${reason}`,
-        );
-      }
+      const reason = errorReason ?? "No usable HTTPS certificate was found on the server.";
+      await repos.domain.recordSslFailure(domainRecord.id, reason, true);
+      log?.(
+        `SSL check failed for ${host}: ${reason}. Retry from the domain details after correcting the cause.`,
+      );
       return result;
     });
   };

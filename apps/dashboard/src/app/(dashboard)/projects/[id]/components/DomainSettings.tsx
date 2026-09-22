@@ -29,6 +29,7 @@ import { getApiErrorMessage, projectsApi, deployApi, domainsApi, servicesApi, ty
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
+import type { DomainDiagnostics } from "@repo/contracts";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
@@ -130,7 +131,15 @@ interface DomainSummaryItem {
    * the operator could see that something broke but never what. Present = the
    * pills become pressable and open the diagnosis.
    */
-  diagnosis?: { message: string | null; attempts: number };
+  diagnosis?: DomainDiagnosis;
+}
+
+interface DomainDiagnosis extends Omit<DomainDiagnostics, "reason" | "retryAction"> {
+  reason: DomainDiagnostics["reason"] | "route_missing";
+  retryAction: DomainDiagnostics["retryAction"] | "retry_routing";
+  message: string | null;
+  attempts: number;
+  lastCheckedAt: string | null;
 }
 
 function toEditablePublicEndpoint(endpoint: any): PublicEndpoint {
@@ -200,22 +209,39 @@ const buildPublicEndpointPayload = validatedPublicEndpointPayload;
 /** Shared with the routing card so both resolve a hostname the same way. */
 const resolveProjectEndpointHostname = resolvePublicEndpointHostname;
 
-function resolveDomainStatus(domain: any, t: Dictionary): { label: string; tone: DomainTone } {
+function describeDomainStatus(
+  domain: any,
+  project: any,
+  t: Dictionary,
+  serviceEnabled = true,
+): Pick<DomainSummaryItem, "status" | "diagnosis"> {
   const s = t.projectSettings.domains.status;
-  if (domain?.verified) {
-    return { label: s.verified, tone: "success" };
-  }
-
-  switch (domain?.status) {
-    case "active":
-      return { label: s.active, tone: "success" };
-    case "failed":
-      return { label: s.failed, tone: "danger" };
-    case "removing":
-      return { label: s.removing, tone: "neutral" };
-    default:
-      return { label: s.pending, tone: "warning" };
-  }
+  const diagnosis = resolveDomainDiagnosis(domain, project);
+  if (!serviceEnabled)
+    return {
+      status: { label: t.projectDetail.services.detail.networking.paused, tone: "neutral" },
+      diagnosis: {
+        message: null,
+        attempts: 0,
+        lastCheckedAt: null,
+        state: "waiting",
+        reason: "disabled",
+        retryAction: null,
+        nextRetryAt: null,
+        automaticRetry: "not_applicable",
+      },
+    };
+  let status: DomainSummaryItem["status"];
+  if (domain?.status === "removing") status = { label: s.removing, tone: "neutral" };
+  else if (!domain?.verified && diagnosis?.state === "failed")
+    status = { label: s.failed, tone: "danger" };
+  else if (!domain?.verified && diagnosis?.state === "waiting")
+    status = { label: s.waiting, tone: "neutral" };
+  else if (domain?.verified) status = { label: s.verified, tone: "success" };
+  else if (diagnosis?.state === "pending") status = { label: s.pending, tone: "warning" };
+  else if (domain?.status === "active") status = { label: s.active, tone: "success" };
+  else status = { label: s.pending, tone: "warning" };
+  return { status, diagnosis };
 }
 
 /**
@@ -224,24 +250,53 @@ function resolveDomainStatus(domain: any, t: Dictionary): { label: string; tone:
  * Only returned for a row that is actually in a bad/incomplete state — a healthy
  * domain's pills stay plain text so a pressable pill always means "there's a
  * reason in here". `message` may be null when the row is merely awaiting its
- * first check (nothing has failed yet); the modal then explains the next step
+ * first check (nothing has failed yet); the details then explain the next step
  * instead of a failure.
  */
-function resolveDomainDiagnosis(
-  domain: any,
-): { message: string | null; attempts: number } | undefined {
-  if (!domain) return undefined;
+function resolveDomainDiagnosis(domain: any, project: any): DomainDiagnosis | undefined {
+  const metadata = {
+    message: typeof domain?.lastVerifyError === "string" ? domain.lastVerifyError : null,
+    attempts: typeof domain?.verifyAttempts === "number" ? domain.verifyAttempts : 0,
+    lastCheckedAt: typeof domain?.lastCheckedAt === "string" ? domain.lastCheckedAt : null,
+  };
+  if (!domain) {
+    const waiting = !project.activeDeploymentId || project.awaitingDecision;
+    return {
+      ...metadata,
+      state: waiting ? "waiting" : "failed",
+      reason: waiting ? "deployment" : "route_missing",
+      retryAction: waiting ? null : "retry_routing",
+      nextRetryAt: null,
+      automaticRetry: "not_applicable",
+    };
+  }
+  if (domain.diagnostics !== undefined)
+    return domain.diagnostics ? { ...domain.diagnostics, ...metadata } : undefined;
+  // Older servers do not expose their scheduler. Retain manual recovery without
+  // inventing a scheduled retry during a dashboard/server upgrade.
   const unhealthy =
     domain.verified === false ||
     domain.status === "pending" ||
     domain.status === "failed" ||
     domain.sslStatus === "error" ||
     domain.sslStatus === "expired" ||
-    domain.sslStatus === "provisioning";
+    domain.sslStatus === "provisioning" ||
+    (domain.verified && domain.sslStatus === "none");
   if (!unhealthy) return undefined;
   return {
-    message: typeof domain.lastVerifyError === "string" ? domain.lastVerifyError : null,
-    attempts: typeof domain.verifyAttempts === "number" ? domain.verifyAttempts : 0,
+    ...metadata,
+    state:
+      metadata.message ||
+      metadata.attempts > 0 ||
+      domain.status === "failed" ||
+      domain.sslStatus === "error" ||
+      domain.sslStatus === "expired"
+        ? "failed"
+        : "waiting",
+    reason: domain.verified ? "certificate" : "verification",
+    retryAction: domain.manualSsl ? "verify_ssl" : "verify",
+    nextRetryAt: null,
+    automaticRetry: "unavailable",
   };
 }
 
@@ -251,6 +306,9 @@ function resolveDomainSsl(hostname: string, domain: any, baseDomain: string, t: 
     return { label: s.includedByHost, tone: "success" };
   }
 
+  if (domain?.sslExpiresAt && new Date(domain.sslExpiresAt).getTime() <= Date.now()) {
+    return { label: s.expired, tone: "danger" };
+  }
   switch (domain?.sslStatus) {
     case "active":
       // Operator-supplied cert (BYO / Origin CA) — flag it so the user knows
@@ -309,10 +367,10 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   // capability (copy from the shared registry).
   const freeNeedsCloud = () => requireCloud("managed-project-domain", { domain: baseDomain });
   const openEdgeModal = useEdgeModal();
-  const openVerifyModal = useVerifyModal();
   const [routingOperation, setRoutingOperation] = useState<{
     id: number;
     opts: SystemPrepareOptions;
+    running: boolean;
   } | null>(null);
   const routingOperationRef = useRef<{ id: number; running: boolean } | null>(null);
   const routingSequence = useRef(0);
@@ -326,17 +384,24 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       routingOperationRef.current = operation;
       setRoutingOperation({
         id: operation.id,
+        running: true,
         opts: {
           ...opts,
           onStart: () => {
             activeStreams++;
             operation.running = true;
+            setRoutingOperation((current) =>
+              current?.id === operation.id ? { ...current, running: true } : current,
+            );
             opts.onStart?.();
           },
           onSettled: () => {
             // StrictMode may finish an aborted stream after starting its
             // replacement. Only the last settlement makes this operation idle.
             operation.running = --activeStreams > 0;
+            setRoutingOperation((current) =>
+              current?.id === operation.id ? { ...current, running: operation.running } : current,
+            );
             opts.onSettled?.();
           },
         },
@@ -355,7 +420,44 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       routingLogRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
   }, [routingOperation]);
   const openRoutingRetry = useRoutingRetryModal(presentRoutingRetry);
+  const openVerifyModal = useVerifyModal(presentRoutingRetry);
   const retryRouting = () => openRoutingRetry(String(id));
+
+  const automaticChecksPending = domainsData.domains.some(
+    (domain) => domain.diagnostics?.nextRetryAt,
+  );
+  useEffect(() => {
+    if (!automaticChecksPending) return;
+    let cancelled = false;
+    let reading = false;
+    const refresh = async () => {
+      if (reading || document.visibilityState === "hidden") return;
+      reading = true;
+      try {
+        const result = await domainsApi.list(String(id));
+        if (!cancelled)
+          updateDomains(
+            result.data.map((domain) => ({
+              ...domain,
+              domain: domain.hostname,
+              primary: domain.isPrimary,
+            })),
+          );
+      } catch {
+        // A failed status read preserves the last known state; it is not a
+        // failed verification and must not change the domain's status.
+      } finally {
+        reading = false;
+      }
+    };
+    const timer = setInterval(() => void refresh(), 30_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [id, automaticChecksPending, updateDomains]);
 
   // Live edge health for the server (read-only probe). Drives the button state:
   // "Edge ready" when OpenResty already owns 80/443, else "Set up edge".
@@ -594,9 +696,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           liveUrl: `https://${hostname}`,
           isPrimary: index === 0,
           needsVerify,
-          status: resolveDomainStatus(domain, t),
+          ...describeDomainStatus(domain, projectData, t),
           ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
-          diagnosis: resolveDomainDiagnosis(domain),
           // Read from the persisted ROW: a redirecting host still verifies and
           // certs like any other, so the card must say why it serves no content.
           redirectTo: typeof domain?.redirectTo === "string" ? domain.redirectTo : undefined,
@@ -605,7 +706,17 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         };
       })
       .filter((domain): domain is DomainSummaryItem => domain !== null);
-  }, [projectData.publicEndpoints, publicEndpoints, domainsData.domains, baseDomain, hasProjectServer, projectRuntimePort, t]);
+  }, [
+    projectData.publicEndpoints,
+    projectData.activeDeploymentId,
+    projectData.awaitingDecision,
+    publicEndpoints,
+    domainsData.domains,
+    baseDomain,
+    hasProjectServer,
+    projectRuntimePort,
+    t,
+  ]);
 
   const primaryProjectDomain = domainSummaries[0] ?? null;
 
@@ -990,18 +1101,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       const result = await domainsApi.verify(domainId);
 
       if (result.verified) {
-        // Optimistically flip the local row so the Pending pill becomes
-        // Verified without waiting for the next /info refetch. The next
-        // invalidateProjectCaches below catches the canonical state
-        // (including sslStatus transitions from the background provision).
-        const updatedDomains = domainsData.domains.map((d) =>
-          d.id === domainId
-            ? { ...d, verified: true, status: "active", sslStatus: result.sslStatus ?? d.sslStatus }
-            : d,
-        );
-        updateDomains(updatedDomains);
         setVerifyFailure((f) => (f?.domainId === domainId ? null : f));
-        invalidateProjectCaches(id);
         showToast(
           result.message || interpolate(t.projectSettings.domains.toast.verifiedSuccess, { hostname }),
           "success",
@@ -1031,6 +1131,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       );
     } finally {
       setVerifyingDomainId(null);
+      invalidateProjectCaches(id);
     }
   };
 
@@ -1042,8 +1143,12 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     if (selfHosted && !isCloudProject) {
       openVerifyModal(domainId, {
         hostname,
+        onStart: () => setVerifyingDomainId(domainId),
         onDone: () => {
           setVerifyFailure((f) => (f?.domainId === domainId ? null : f));
+        },
+        onSettled: () => {
+          setVerifyingDomainId(null);
           invalidateProjectCaches(id);
         },
       });
@@ -1162,9 +1267,6 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
       if (result.success) {
         showToast(interpolate(t.projectSettings.domains.toast.sslRenewed, { hostname }), "success");
-        // Pull the canonical sslExpiresAt off the DB row by re-fetching
-        // project info. The status pill flips on the next render.
-        invalidateProjectCaches(id);
       } else {
         showToast(
           result.message || result.error || interpolate(t.projectSettings.domains.toast.sslRenewFailed, { hostname }),
@@ -1184,6 +1286,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       );
     } finally {
       setRenewingHostname(null);
+      invalidateProjectCaches(id);
     }
   };
 
@@ -1196,21 +1299,21 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     try {
       const res = await domainsApi.verifySsl(domainId);
       const status = res?.data?.sslStatus;
-      if (status === "active") {
+      if (status === "active" && res.data.verified) {
         showToast(interpolate(t.projectSettings.domains.toast.sslVerified, { hostname }), "success", t.projectSettings.domains.toast.sslTitle);
       } else {
         showToast(
-          interpolate(t.projectSettings.domains.toast.sslNoCert, { hostname }),
+          res.data.message || interpolate(t.projectSettings.domains.toast.sslNoCert, { hostname }),
           "error",
           t.projectSettings.domains.toast.sslTitle,
         );
       }
-      invalidateProjectCaches(id);
     } catch (error) {
       console.error("Failed to recheck SSL:", error);
       showToast(getApiErrorMessage(error, interpolate(t.projectSettings.domains.toast.sslRecheckFailed, { hostname })), "error", t.projectSettings.domains.toast.sslTitle);
     } finally {
       setRecheckingDomainId(null);
+      invalidateProjectCaches(id);
     }
   };
 
@@ -1578,29 +1681,34 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         const hostname = resolvePublicEndpointHostname(endpoint, baseDomain);
         if (!hostname) return [];
         const candidate = domainRowsByHostname.get(hostname.toLowerCase());
-        const domain = candidate?.serviceId && candidate.serviceId !== service.id ? null : candidate;
-        return [{
-          service,
-          summary: {
-            id: `${service.id}:${hostname}`,
-            domainId: typeof domain?.id === "string" ? domain.id : undefined,
-            title: service.name,
-            hostname,
-            typeLabel: endpoint.domainType === "custom" ? t.projectSettings.domains.typeCustom : t.projectSettings.domains.typeFree,
-            mappedLabel: interpolate(t.projectSettings.domains.portLabel, { port: String(endpoint.port) }),
-            mappedPort: endpoint.port,
-            serviceId: service.id,
-            liveUrl: `https://${hostname}`,
-            isPrimary: domain?.isPrimary ?? false,
-            needsVerify: !!domain && domain.verified === false,
-            externalIngress: domain?.externalIngress === true,
-            status: !service.enabled || !service.exposed
-              ? { label: t.projectDetail.services.detail.networking.paused, tone: "neutral" as const }
-              : resolveDomainStatus(domain, t),
-            ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
-            diagnosis: resolveDomainDiagnosis(domain),
+        const domain =
+          candidate?.serviceId && candidate.serviceId !== service.id ? null : candidate;
+        return [
+          {
+            service,
+            summary: {
+              id: `${service.id}:${hostname}`,
+              domainId: typeof domain?.id === "string" ? domain.id : undefined,
+              title: service.name,
+              hostname,
+              typeLabel:
+                endpoint.domainType === "custom"
+                  ? t.projectSettings.domains.typeCustom
+                  : t.projectSettings.domains.typeFree,
+              mappedLabel: interpolate(t.projectSettings.domains.portLabel, {
+                port: String(endpoint.port),
+              }),
+              mappedPort: endpoint.port,
+              serviceId: service.id,
+              liveUrl: `https://${hostname}`,
+              isPrimary: domain?.isPrimary ?? false,
+              needsVerify: !!domain && domain.verified === false,
+              externalIngress: domain?.externalIngress === true,
+              ...describeDomainStatus(domain, projectData, t, service.enabled && service.exposed),
+              ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
+            },
           },
-        }];
+        ];
       }));
   })();
 
@@ -1638,7 +1746,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         isPrimary: domain?.isPrimary ?? false,
         needsVerify: domain?.verified === false,
         externalIngress: domain?.externalIngress === true,
-        status: resolveDomainStatus(domain, t),
+        ...describeDomainStatus(domain, projectData, t),
         ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
       }));
   })();
@@ -1753,7 +1861,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     // doesn't exist. Everything else on the card still applies.
     opts: { onEdit?: () => void; onSetPrimary?: () => void },
   ): React.ReactNode => {
-    const canVerify = item.needsVerify && !!item.domainId;
+    const canVerify =
+      item.needsVerify && !!item.domainId && item.diagnosis?.retryAction === "verify";
     // An SSL action (renew / recheck) lives in the ⋯ menu, but the menu closes the
     // instant it's clicked — so its spinner-label never gets a chance to show and
     // the operator sees nothing happen for the several seconds certbot takes. Mirror
@@ -1789,8 +1898,18 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             : t.projectSettings.domains.menu.rechecking
         }
         onVerify={canVerify ? () => startVerify(item.domainId!, item.hostname) : undefined}
+        onRetryDiagnosis={
+          item.diagnosis?.retryAction === "retry_routing"
+            ? retryRouting
+            : item.domainId && item.diagnosis?.retryAction === "verify"
+              ? () => startVerify(item.domainId!, item.hostname)
+              : item.domainId && item.diagnosis?.retryAction === "verify_ssl"
+                ? () => void handleRecheckSsl(item.domainId!, item.hostname)
+                : undefined
+        }
+        retryBusy={!!routingOperation?.running || !!verifyingDomainId || isRenewing || isRechecking}
         onRetryRouting={
-          projectData.activeDeploymentId && !projectData.awaitingDecision ? retryRouting : undefined
+          item.diagnosis?.retryAction === "retry_routing" ? retryRouting : undefined
         }
         verifying={!!verifyingDomainId && verifyingDomainId === item.domainId}
         verifyHint={verifyHintFor(item.domainId)}
@@ -2834,7 +2953,7 @@ function DiagnosablePill({
 }: {
   tone: DomainTone;
   label: string;
-  diagnosis?: { message: string | null; attempts: number };
+  diagnosis?: DomainDiagnosis;
   open: boolean;
   onToggle: () => void;
   t: Dictionary;
@@ -2863,6 +2982,8 @@ function DomainOverviewCard({
   sslActionLabel,
   onVerify,
   onRetryRouting,
+  onRetryDiagnosis,
+  retryBusy = false,
   verifying = false,
   verifyHint,
   loadRecords,
@@ -2882,6 +3003,8 @@ function DomainOverviewCard({
   sslActionLabel?: string;
   onVerify?: () => void;
   onRetryRouting?: () => void;
+  onRetryDiagnosis?: () => void;
+  retryBusy?: boolean;
   verifying?: boolean;
   /** Message naming the DNS record that still isn't resolving after a fail. */
   verifyHint?: string | null;
@@ -2895,9 +3018,9 @@ function DomainOverviewCard({
   /** Live static-output advisory — which of the three static-404 shapes this is. */
   outputHint?: OutputHint | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const d = t.projectSettings.domains;
-  const canVerify = domain.needsVerify && !!domain.domainId;
+  const canVerify = domain.needsVerify && !!domain.domainId && !!onVerify;
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
   const [records, setRecords] = useState<DnsRecord[] | null>(null);
@@ -3028,19 +3151,70 @@ function DomainOverviewCard({
             sits next to the pill that has the problem and stays open while the
             operator fixes DNS and re-checks. */}
         {diagnosisOpen && domain.diagnosis ? (
-          <div className="rounded-xl border border-danger/20 bg-danger-bg/40 p-3">
-            <p className="text-[12px] font-semibold text-foreground">
-              {d.diagnosis.title}
-            </p>
+          <div
+            className="rounded-xl border border-border/60 bg-muted/30 p-3"
+            role="region"
+            aria-label={`${d.diagnosis.title}: ${domain.hostname}`}
+          >
+            <p className="text-[12px] font-semibold text-foreground">{d.diagnosis.title}</p>
             <p className="mt-1.5 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted-foreground">
-              {domain.diagnosis.message?.trim() || d.diagnosis.noneYet}
+              {domain.diagnosis.message?.trim() || d.diagnosis.reasons[domain.diagnosis.reason]}
             </p>
+            {domain.diagnosis.message && domain.diagnosis.reason !== "verification" ? (
+              <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+                {d.diagnosis.reasons[domain.diagnosis.reason]}
+              </p>
+            ) : null}
+            {domain.diagnosis.lastCheckedAt ? (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {d.diagnosis.lastChecked}{" "}
+                <time dateTime={domain.diagnosis.lastCheckedAt}>
+                  {new Date(domain.diagnosis.lastCheckedAt).toLocaleString(locale)}
+                </time>
+              </p>
+            ) : null}
+            {domain.diagnosis.nextRetryAt ? (
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                {d.diagnosis.nextCheck}{" "}
+                <time dateTime={domain.diagnosis.nextRetryAt}>
+                  {new Date(domain.diagnosis.nextRetryAt).toLocaleString(locale)}
+                </time>
+                <span className="mt-1 block text-[11px]">{d.diagnosis.scheduleHint}</span>
+              </p>
+            ) : domain.diagnosis.automaticRetry === "disabled" ? (
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                {d.diagnosis.automaticDisabled}
+              </p>
+            ) : domain.diagnosis.automaticRetry === "unavailable" ? (
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                {d.diagnosis.scheduleUnavailable}
+              </p>
+            ) : null}
             {domain.diagnosis.attempts > 0 ? (
               <p className="mt-2 text-[11px] text-muted-foreground/80">
                 {interpolate(d.diagnosis.attempts, {
                   count: String(domain.diagnosis.attempts),
                 })}
               </p>
+            ) : null}
+            {onRetryDiagnosis ? (
+              <button
+                type="button"
+                onClick={onRetryDiagnosis}
+                disabled={retryBusy}
+                className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {retryBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                {retryBusy
+                  ? d.diagnosis.checking
+                  : domain.diagnosis.retryAction === "verify_ssl"
+                    ? d.menu.recheckSsl
+                    : d.diagnosis.retryNow}
+              </button>
             ) : null}
           </div>
         ) : null}
@@ -3089,7 +3263,7 @@ function DomainOverviewCard({
               <button
                 type="button"
                 onClick={onVerify}
-                disabled={verifying}
+                disabled={verifying || retryBusy}
                 className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {verifying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}

@@ -690,12 +690,13 @@
       "active": "Actif",
       "failed": "Échoué",
       "removing": "Suppression",
-      "pending": "En attente"
+      "pending": "En attente",
+      "waiting": "En attente"
     },
     "ssl": {
       "includedByHost": "Inclus par l'hôte",
       "active": "Actif",
-      "provisioning": "Provisionnement",
+      "provisioning": "En attente du certificat",
       "expired": "Expiré",
       "error": "Erreur",
       "inactive": "Inactif",
@@ -895,10 +896,27 @@
       "foreignProxyHint": "Un autre proxy occupe 80/443"
     },
     "diagnosis": {
-      "title": "Pourquoi cela ne fonctionne pas",
+      "title": "Détails du domaine",
       "noneYet": "Aucune vérification n'a encore été effectuée, il n'y a donc aucun résultat. Ajoutez les enregistrements DNS affichés, puis lancez Vérifier.",
       "attempts": "{count} tentative(s) échouée(s) à ce jour.",
-      "pillHint": "Afficher la raison"
+      "pillHint": "Afficher la raison",
+      "lastChecked": "Dernière vérification :",
+      "nextCheck": "Prochaine vérification planifiée :",
+      "scheduleHint": "Les vérifications fonctionnent tant que cette instance est en ligne. Les tâches en attente peuvent retarder le démarrage.",
+      "automaticDisabled": "Les vérifications automatiques des domaines sont désactivées. Réessayez manuellement ou activez-les dans Tâches.",
+      "scheduleUnavailable": "Le calendrier des vérifications automatiques est indisponible. Vous pouvez réessayer manuellement.",
+      "retryNow": "Réessayer maintenant",
+      "checking": "Vérification…",
+      "reasons": {
+        "verification": "La vérification du domaine n’est pas terminée. Vérifiez les enregistrements DNS avant de réessayer.",
+        "certificate": "HTTPS doit être vérifié sur le serveur qui héberge le site. Un certificat existant sera recherché avant d’en demander un nouveau.",
+        "deployment": "Cette route attend un déploiement. Déployez le projet pour l’appliquer.",
+        "disabled": "Ce projet ou service est désactivé. Activez-le avant de vérifier la route.",
+        "removing": "Ce domaine est en cours de suppression. Aucune vérification n’est planifiée.",
+        "manual_certificate": "Ce domaine utilise un certificat importé. Importez un certificat de remplacement valide, puis vérifiez-le. Openship ne le renouvelle pas automatiquement.",
+        "managed_certificate": "TLS est géré par votre proxy externe ou Openship Cloud. Vérifiez la configuration de ce fournisseur.",
+        "route_missing": "Cette route configurée n’a pas encore été appliquée. Réessayez le routage pour l’appliquer. Aucune nouvelle tentative automatique de routage n’est planifiée."
+      }
     }
   },
   "routeRules": {

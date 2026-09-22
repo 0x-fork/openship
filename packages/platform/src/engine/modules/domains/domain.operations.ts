@@ -13,7 +13,7 @@ import { platform } from "../../lib/platform-config";
 import { isLocalHostRow } from "../../lib/box-org";
 import { resolveEffectiveTarget, type DeploymentMeta } from "../../lib/deployment-runtime";
 import * as service from "./domain.service";
-import { manageDomainSsl, tlsIssuedElsewhere } from "../../lib/domain-ssl";
+import { manageDomainSsl, needsDomainSslCheck } from "../../lib/domain-ssl";
 import { resolveManagedHostname } from "../../lib/routing-domains";
 
 function record(ctx: ExecutionContext, id: string, eventType: string, after: unknown) {
@@ -33,7 +33,8 @@ async function targetServer(ctx: ExecutionContext, id?: string) {
 export async function domainExecution(ctx: ExecutionContext, id: string, verifying = false) {
   if (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true") return;
   const domain = await service.getDomain(ctx, id);
-  if (verifying && (domain.verified || domain.externalIngress)) return;
+  if (verifying && (domain.externalIngress || (domain.verified && !needsDomainSslCheck(domain))))
+    return;
   const project = domain.projectId ? await repos.project.findById(domain.projectId) : null;
   if (!project || project.organizationId !== ctx.organizationId) throw new NotFoundError("Domain", id);
   const deployment = project.activeDeploymentId ? await findActiveDeployment(project) : null;
@@ -96,7 +97,7 @@ export async function verifyProjectRoutingDomains(
       continue;
     if (row.serviceId && !services.some((s) => s.id === row.serviceId && s.enabled && s.exposed))
       continue;
-    if (row.verified && (row.sslStatus === "active" || tlsIssuedElsewhere(row))) continue;
+    if (row.verified && !needsDomainSslCheck(row)) continue;
     const log = (message: string) => onLog?.(`${row.hostname}: ${message}`);
     try {
       const context = await authorization.authorize(
@@ -113,13 +114,13 @@ export async function verifyProjectRoutingDomains(
         const result = await verify(context, row.id, {}, log);
         if (!result.verified) {
           warnings.push(
-            `${row.hostname}: ${result.message || "Domain verification is still pending. Use Verify to review DNS and HTTPS."}`,
+            `${row.hostname}: ${result.message || "Domain verification failed. Open the domain details to review DNS and HTTPS."}`,
           );
           continue;
         }
         current = await service.getDomain(context, row.id);
       }
-      if (current.sslStatus !== "active" && !tlsIssuedElsewhere(current)) {
+      if (needsDomainSslCheck(current)) {
         await domainExecution(context, row.id);
         log("Checking or provisioning the HTTPS certificate…");
         const result = await manageDomainSsl(row.hostname, {
@@ -128,8 +129,9 @@ export async function verifyProjectRoutingDomains(
           onLog: log,
         });
         if (result.reason !== "not_local" && (!result.verified || !result.expiresAt)) {
+          const failed = await repos.domain.findById(row.id);
           warnings.push(
-            `${row.hostname}: HTTPS is still pending. Use Verify or Recheck SSL in the domain card.`,
+            `${row.hostname}: ${failed?.lastVerifyError ?? "The HTTPS check failed. Open the domain details to retry."}`,
           );
           continue;
         }

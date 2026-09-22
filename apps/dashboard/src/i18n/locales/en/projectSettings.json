@@ -860,12 +860,13 @@
       "active": "Active",
       "failed": "Failed",
       "removing": "Removing",
-      "pending": "Pending"
+      "pending": "Pending",
+      "waiting": "Waiting"
     },
     "ssl": {
       "includedByHost": "Included by host",
       "active": "Active",
-      "provisioning": "Provisioning",
+      "provisioning": "Awaiting certificate",
       "expired": "Expired",
       "error": "Error",
       "inactive": "Inactive",
@@ -1068,10 +1069,27 @@
       "foreignProxyHint": "Another proxy holds 80/443"
     },
     "diagnosis": {
-      "title": "Why this isn't working",
+      "title": "Domain details",
       "noneYet": "No check has run yet, so there's no result to show. Add the DNS records shown for this domain, then run Verify.",
       "attempts": "{count} failed attempt(s) so far.",
-      "pillHint": "Show why"
+      "pillHint": "Show why",
+      "lastChecked": "Last check:",
+      "nextCheck": "Next scheduled check:",
+      "scheduleHint": "Checks run while this instance is online. Queued work can delay the start.",
+      "automaticDisabled": "Automatic domain checks are disabled. Retry manually or enable them in Jobs.",
+      "scheduleUnavailable": "The automatic check schedule is unavailable. You can retry manually.",
+      "retryNow": "Retry now",
+      "checking": "Checking…",
+      "reasons": {
+        "verification": "Domain verification has not completed. Check the DNS records before retrying.",
+        "certificate": "HTTPS needs checking on the serving server. Retrying checks for an existing certificate before requesting one.",
+        "deployment": "This route is waiting for a deployment. Deploy the project to apply it.",
+        "disabled": "This project or service is disabled. Enable it before checking the route.",
+        "removing": "This domain is being removed. No verification is scheduled.",
+        "manual_certificate": "This domain uses an uploaded certificate. Upload a valid replacement, then recheck it. Openship does not renew it automatically.",
+        "managed_certificate": "TLS is managed by your external proxy or Openship Cloud. Check that provider’s configuration.",
+        "route_missing": "This configured route has not been applied. Retry routing to apply it. No automatic routing retry is scheduled."
+      }
     }
   },
   "serviceEnvironment": {

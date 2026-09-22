@@ -27,6 +27,7 @@ import {
   isWildcardHostname,
   wwwSiblingHostname,
   SYSTEM,
+  DOMAIN_VERIFY_GRACE_MS,
 } from "@repo/core";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import { platform } from "../../lib/platform-config";
@@ -39,6 +40,7 @@ import {
   provisionDomainCertForVerify,
   verifyExistingCert,
   tlsIssuedElsewhere,
+  needsDomainSslCheck,
 } from "../../lib/domain-ssl";
 import { getRoutingBaseDomain, resolveServiceRouteEndpoints } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
@@ -81,13 +83,14 @@ import {
   type DnsProvisionResult,
 } from "../dns/dns-credential.service";
 import type { DnsRecordInput } from "../dns/types";
+import { withDomainDiagnostics } from "./domain-diagnostics";
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
 export async function listDomains(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-  return repos.domain.listByProject(projectId);
+  return withDomainDiagnostics(project, await repos.domain.listByProject(projectId));
 }
 
 /**
@@ -97,8 +100,8 @@ export async function listDomains(ctx: RequestContext, projectId: string) {
  * telling the operator to go and look.
  */
 export async function getDomain(ctx: RequestContext, domainId: string) {
-  const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
-  return domain;
+  const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
+  return (await withDomainDiagnostics(project, [domain]))[0]!;
 }
 
 // ─── Set primary ───────────────────────────────────────────────────────────────
@@ -603,17 +606,6 @@ export async function applyDomainDns(
  * .opsh.io stays the always-on fallback; the custom domain becomes the "real"
  * entry point for analytics + the "Visit" link. Shared by verify + cert-reuse.
  */
-async function promoteCustomDomainToPrimary(domain: Domain, domainId: string): Promise<void> {
-  if (domain.projectId && domain.domainType === "custom") {
-    const peers = await repos.domain.listByProject(domain.projectId);
-    const hasOtherCustomPrimary = peers.some(
-      (peer) => peer.id !== domainId && peer.isPrimary && peer.domainType === "custom",
-    );
-    if (!hasOtherCustomPrimary) await repos.domain.setPrimary(domain.projectId, domainId);
-  }
-}
-
-/** Should this row take primary? See {@link promoteCustomDomainToPrimary}. */
 async function shouldPromoteToPrimary(domain: Domain, domainId: string): Promise<boolean> {
   if (!domain.projectId || domain.domainType !== "custom") return false;
   const peers = await repos.domain.listByProject(domain.projectId);
@@ -631,14 +623,19 @@ async function shouldPromoteToPrimary(domain: Domain, domainId: string): Promise
 async function markDomainVerifiedActive(
   domain: Domain,
   domainId: string,
-  ssl: { issuer?: string; expiresAt?: string; manualSsl?: boolean },
+  ssl: {
+    issuer?: string;
+    expiresAt?: string;
+    manualSsl?: boolean;
+    sslStatus?: "active" | "external" | "provisioning";
+  },
 ): Promise<void> {
   const promote =
     (await shouldPromoteToPrimary(domain, domainId)) && domain.projectId
       ? { projectId: domain.projectId }
       : undefined;
   await repos.domain.markVerifiedActive(domainId, {
-    sslStatus: "active",
+    sslStatus: ssl.sslStatus ?? "active",
     ...(ssl.manualSsl ? { manualSsl: true } : {}),
     ...(ssl.issuer ? { sslIssuer: ssl.issuer } : {}),
     ...(ssl.expiresAt ? { sslExpiresAt: new Date(ssl.expiresAt) } : {}),
@@ -867,10 +864,49 @@ export async function verifyDomain(
   domainId: string,
   opts: { onLog?: (line: string) => void; force?: boolean } = {},
 ) {
-  const log = (line: string) => opts.onLog?.(line);
   const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
+  try {
+    return await checkDomain(ctx, domainId, domain, project, opts);
+  } catch (error) {
+    // The ordinary negative results below already persist their reason. This
+    // catches failures before those checks (for example resolving the server).
+    // Verified TLS failures are recorded once by manageDomainSsl.
+    if (!domain.verified) await repos.domain.recordVerifyFailure(domainId, safeErrorMessage(error));
+    throw error;
+  }
+}
+
+async function checkDomain(
+  ctx: RequestContext,
+  domainId: string,
+  domain: Domain,
+  project: Project,
+  opts: { onLog?: (line: string) => void; force?: boolean },
+) {
+  const log = (line: string) => opts.onLog?.(line);
 
   if (domain.verified) {
+    if (needsDomainSslCheck(domain)) {
+      log("Checking the server's certificate and completing HTTPS if needed…");
+      const result = await manageDomainSsl(domain.hostname, {
+        action: "provision",
+        projectId: project.id,
+        onLog: opts.onLog,
+      });
+      if (!result.verified || !result.expiresAt) {
+        const current = await repos.domain.findById(domainId);
+        throw new ValidationError(
+          current?.lastVerifyError ?? "HTTPS could not be verified on the serving host.",
+        );
+      }
+      return {
+        verified: true,
+        cnameVerified: true,
+        txtVerified: true,
+        message: "Domain verified — HTTPS certificate confirmed.",
+        sslStatus: "active",
+      };
+    }
     return {
       verified: true,
       cnameVerified: true,
@@ -882,8 +918,6 @@ export async function verifyDomain(
 
   const { target } = platform();
   const external = domain.externalIngress;
-
-  const promoteToPrimary = () => promoteCustomDomainToPrimary(domain, domainId);
 
   // ── Self-hosted: ACME-driven verification ─────────────────────────────────
   // The operator owns the box, so there's no ownership challenge to prove, and
@@ -900,9 +934,7 @@ export async function verifyDomain(
     // — and let their edge serve TLS.
     if (external) {
       log("External ingress — TLS handled upstream; marking verified without issuing a cert.");
-      await repos.domain.markVerified(domainId);
-      await promoteToPrimary();
-      await repos.domain.updateSsl(domainId, { sslStatus: "external" });
+      await markDomainVerifiedActive(domain, domainId, { sslStatus: "external" });
       return {
         verified: true,
         recordVerified: true,
@@ -1006,8 +1038,7 @@ export async function verifyDomain(
       });
       if (result.verified) {
         log("Certificate issued — marking the domain verified and SSL active.");
-        await repos.domain.markVerified(domainId);
-        await promoteToPrimary();
+        await markDomainVerifiedActive(domain, domainId, result);
         return {
           verified: true,
           recordVerified: true,
@@ -1059,12 +1090,12 @@ export async function verifyDomain(
   const txtOk = await verifyTxt(domain.hostname, token);
 
   if (routeOk && txtOk) {
-    await repos.domain.markVerified(domainId);
-    await promoteToPrimary();
+    await markDomainVerifiedActive(domain, domainId, {
+      sslStatus: external ? "external" : domain.sslStatus === "active" ? "active" : "provisioning",
+    });
 
     // Externally-managed ingress: TLS terminates upstream, so no certbot here.
     if (external) {
-      await repos.domain.updateSsl(domainId, { sslStatus: "external" });
       return {
         verified: true,
         cnameVerified: true,
@@ -1325,6 +1356,13 @@ export async function verifyDomainSsl(ctx: RequestContext, domainId: string) {
     expiresAt: updated?.sslExpiresAt ?? (result.expiresAt || null),
     issuer: updated?.sslIssuer ?? result.issuer,
     verified: result.verified,
+    ...(!result.verified
+      ? {
+          message:
+            updated?.lastVerifyError ??
+            "The HTTPS certificate could not be verified on the serving host.",
+        }
+      : {}),
   };
 }
 
@@ -1341,7 +1379,7 @@ export async function uploadDomainCert(ctx: RequestContext, domainId: string, ce
     projectId: domain.projectId ?? undefined,
   });
 
-  await repos.domain.update(domainId, {
+  await repos.domain.updateSsl(domainId, {
     manualSsl: true,
     sslStatus: "active",
     sslIssuer: "manual",
@@ -1383,39 +1421,6 @@ export interface PendingVerificationResult {
 }
 
 /**
- * Per-hostname retry backoff for the SSL phase, in memory.
- *
- * Let's Encrypt allows ~5 failures per hostname per hour; a flat 13-minute retry
- * burns that on a genuinely misconfigured domain and gets the whole account rate-
- * limited. Doubles 15m → 30m → 1h → 2h → 4h, capped at 6h, and keeps trying at that
- * cadence forever rather than giving up — the operator's DNS/firewall fix must heal
- * itself without another manual click.
- *
- * Deliberately NOT a DB column: an API restart clearing it is the behaviour we want
- * (a redeploy/restart is a strong signal something changed), and it avoids a
- * migration for state that is worthless after a few hours.
- */
-const sslRetryAt = new Map<string, { next: number; delayMs: number }>();
-const SSL_RETRY_MIN_MS = 15 * 60_000;
-const SSL_RETRY_MAX_MS = 6 * 60 * 60_000;
-
-function sslRetryDue(id: string): boolean {
-  const e = sslRetryAt.get(id);
-  return !e || Date.now() >= e.next;
-}
-
-function sslRetryScheduled(id: string): void {
-  const prev = sslRetryAt.get(id);
-  const delayMs = Math.min(prev ? prev.delayMs * 2 : SSL_RETRY_MIN_MS, SSL_RETRY_MAX_MS);
-  sslRetryAt.set(id, { next: Date.now() + delayMs, delayMs });
-}
-
-/** Issued (or externally handled) — stop backing off, so a re-break retries fast. */
-function sslRetryCleared(id: string): void {
-  sslRetryAt.delete(id);
-}
-
-/**
  * Phase 2 of the domain sweep: finish TLS for domains that are already verified but
  * never got a certificate.
  *
@@ -1435,11 +1440,7 @@ async function issuePendingSsl(
   let retrying = 0;
 
   for (const d of rows) {
-    if (tlsIssuedElsewhere(d)) {
-      sslRetryCleared(d.id);
-      continue;
-    }
-    if (!sslRetryDue(d.id)) continue;
+    if (tlsIssuedElsewhere(d)) continue;
 
     const project = await repos.project.findById(d.projectId).catch(() => null);
     if (!project?.organizationId) continue;
@@ -1454,14 +1455,11 @@ async function issuePendingSsl(
       const after = await repos.domain.findById(d.id).catch(() => null);
       if (after?.sslStatus === "active") {
         issued++;
-        sslRetryCleared(d.id);
       } else {
         retrying++;
-        sslRetryScheduled(d.id);
       }
     } catch {
       retrying++;
-      sslRetryScheduled(d.id);
     }
   }
 
@@ -1488,7 +1486,7 @@ export async function verifyPendingDomains(opts?: {
    */
   organizationId?: string;
 }, contextFor?: DomainBatchContext): Promise<PendingVerificationResult> {
-  const minAgeMinutes = opts?.minAgeMinutes ?? 10;
+  const minAgeMinutes = opts?.minAgeMinutes ?? DOMAIN_VERIFY_GRACE_MS / 60_000;
   const limit = opts?.limit ?? 50;
   const cutoff = new Date(Date.now() - minAgeMinutes * 60_000);
 
@@ -1539,10 +1537,10 @@ export async function verifyPendingDomains(opts?: {
         result.verified++;
         result.details.push({ hostname: domain.hostname, status: "verified" });
       } else {
-        result.stillPending++;
+        result.failed++;
         result.details.push({
           hostname: domain.hostname,
-          status: "still_pending",
+          status: "failed",
           message: verifyResult.message,
         });
       }

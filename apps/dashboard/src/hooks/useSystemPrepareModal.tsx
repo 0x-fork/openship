@@ -567,25 +567,39 @@ export function useSystemPrepareModal(present?: SystemPreparePresenter) {
 /** Self-hosted domain verify with LIVE certbot logs — streams the standalone
  *  HTTP-01 run. No prompt (verify never asks for consent), so no respondUrl.
  *  `openVerifyModal(domainId, { hostname, onDone })`. */
-export function useVerifyModal() {
-  const prepare = useSystemPrepareModal();
+export function useVerifyModal(present?: SystemPreparePresenter) {
+  const prepare = useSystemPrepareModal(present);
   return useCallback(
-    (domainId: string, opts?: { hostname?: string; onDone?: () => void }): string =>
+    (
+      domainId: string,
+      opts?: {
+        hostname?: string;
+        onStart?: () => void;
+        onDone?: () => void;
+        onSettled?: () => void;
+      },
+    ): string =>
       prepare({
         streamUrl: `domains/${domainId}/verify/stream`,
         title: opts?.hostname ? `Verify ${opts.hostname}` : "Verify domain",
         labels: {
-          working: "Verifying — issuing the certificate…",
-          done: "Verified — certificate issued and SSL active.",
+          working: "Checking the domain and its HTTPS certificate…",
+          done: "Domain verification completed.",
           failed: "Couldn't verify — see the log above for the exact reason.",
         },
         onDone: opts?.onDone,
+        onStart: opts?.onStart,
+        onSettled: opts?.onSettled,
         // A dropped stream doesn't mean a dropped verify: certbot may well have
         // finished and the row already say so. Read it instead of handing the
         // operator a "check the domain's status" they can't act on.
         resolveOutcome: async () => {
           const domain = (await domainsApi.get(domainId)).data;
-          if (domain.verified) {
+          if (
+            domain.verified &&
+            (domain.sslStatus === "active" || domain.sslStatus === "external") &&
+            !domain.lastVerifyError
+          ) {
             return {
               ok: true,
               message: `${domain.hostname} is verified (SSL ${domain.sslStatus ?? "unknown"}) — the connection dropped after the run finished.`,

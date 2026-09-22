@@ -684,12 +684,13 @@
       "active": "活跃",
       "failed": "失败",
       "removing": "移除中",
-      "pending": "待处理"
+      "pending": "待处理",
+      "waiting": "等待操作"
     },
     "ssl": {
       "includedByHost": "由主机提供",
       "active": "活跃",
-      "provisioning": "配置中",
+      "provisioning": "等待证书",
       "expired": "已过期",
       "error": "错误",
       "inactive": "未活跃"
@@ -845,10 +846,27 @@
       "foreignProxyHint": "另一个代理占用了 80/443"
     },
     "diagnosis": {
-      "title": "为什么无法正常工作",
+      "title": "域名详情",
       "noneYet": "尚未执行任何检查，因此没有可显示的结果。请添加此域名所需的 DNS 记录，然后运行“验证”。",
       "attempts": "目前已失败 {count} 次。",
-      "pillHint": "查看原因"
+      "pillHint": "查看原因",
+      "lastChecked": "上次检查：",
+      "nextCheck": "下次计划检查：",
+      "scheduleHint": "此实例在线时才会运行检查。排队中的任务可能推迟开始时间。",
+      "automaticDisabled": "域名自动检查已禁用。请手动重试，或在任务中启用。",
+      "scheduleUnavailable": "无法获取自动检查计划。你可以手动重试。",
+      "retryNow": "立即重试",
+      "checking": "正在检查…",
+      "reasons": {
+        "verification": "域名验证尚未完成。重试前请检查 DNS 记录。",
+        "certificate": "需要在提供站点的服务器上检查 HTTPS。重试时会先检查现有证书，再决定是否申请新证书。",
+        "deployment": "此路由正在等待部署。请部署项目以应用路由。",
+        "disabled": "此项目或服务已禁用。请先启用，再检查路由。",
+        "removing": "正在删除此域名，未安排验证。",
+        "manual_certificate": "此域名使用手动上传的证书。请上传有效的替代证书后重新检查。Openship 不会自动续期此证书。",
+        "managed_certificate": "TLS 由外部代理或 Openship Cloud 管理。请检查相应提供方的配置。",
+        "route_missing": "已配置的路由尚未应用。请重试路由操作以应用配置。目前没有安排路由自动重试。"
+      }
     },
     "records": {
       "failed": "无法加载此域名的 DNS 记录。",

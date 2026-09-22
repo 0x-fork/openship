@@ -57,6 +57,7 @@ vi.mock("@repo/platform/engine/lib/domain-ssl", async (original) => ({
 // Keep domain.service real: this exercises the same persisted Pending → Active
 // transition and certificate reuse that the interactive Verify operation uses.
 import { verifyProjectRoutingDomains } from "@repo/platform/engine/modules/domains/domain.operations";
+import { verifyDomain } from "@repo/platform/engine/modules/domains/domain.service";
 
 type Row = {
   id: string;
@@ -71,6 +72,7 @@ type Row = {
   isPrimary: boolean;
   externalIngress?: boolean;
   manualSsl?: boolean;
+  lastVerifyError?: string;
 };
 let rows: Row[];
 const context = {
@@ -133,7 +135,10 @@ beforeEach(() => {
     Object.assign(get(id), { verified: true, status: "active" }),
   );
   mocks.domain.updateSsl.mockImplementation(async (id, patch) => Object.assign(get(id), patch));
-  mocks.domain.recordVerifyFailure.mockResolvedValue(1);
+  mocks.domain.recordVerifyFailure.mockImplementation(async (id, message) => {
+    Object.assign(get(id), { status: "failed", lastVerifyError: message });
+    return 1;
+  });
   mocks.probe.mockResolvedValue(true);
   mocks.authorize.mockImplementation(async (ctx) => ctx);
   mocks.verifyCert.mockResolvedValue({ verified: true, issuer: "certbot", expiresAt });
@@ -171,7 +176,7 @@ describe("routing repair domain verification", () => {
     expect(mocks.verifyCert).toHaveBeenCalledTimes(3);
   });
 
-  it("keeps a failed domain pending, reports the real cause, and still verifies healthy siblings", async () => {
+  it("records a failed check, reports the real cause, and still verifies healthy siblings", async () => {
     mocks.verifyCert.mockImplementation(async (hostname) =>
       hostname.startsWith("api.")
         ? { verified: false, reason: "missing" }
@@ -184,7 +189,7 @@ describe("routing repair domain verification", () => {
     expect(warnings).toEqual([
       "api.example.com: HTTP challenge returned 404 from the origin proxy",
     ]);
-    expect(get("dom-api")).toMatchObject({ verified: false, status: "pending", sslStatus: "none" });
+    expect(get("dom-api")).toMatchObject({ verified: false, status: "failed", sslStatus: "none" });
     expect(get("dom-app")).toMatchObject({ verified: true, status: "active", sslStatus: "active" });
     expect(get("dom-web")).toMatchObject({ verified: true, status: "active", sslStatus: "active" });
     expect(mocks.domain.recordVerifyFailure).toHaveBeenCalledWith(
@@ -237,5 +242,38 @@ describe("routing repair domain verification", () => {
     expect(mocks.verifyCert).not.toHaveBeenCalled();
     expect(mocks.provisionCert).not.toHaveBeenCalled();
     expect(mocks.manageSsl).not.toHaveBeenCalled();
+  });
+
+  it.each(["none", "error"])(
+    "interactive verification completes HTTPS for an already verified domain with SSL %s",
+    async (sslStatus) => {
+      rows = [domain("api", 4010, { verified: true, status: "active", sslStatus })];
+      expect(await verifyDomain(context, "dom-api")).toMatchObject({
+        verified: true,
+        sslStatus: "active",
+      });
+      expect(mocks.manageSsl).toHaveBeenCalledWith(
+        "api.example.com",
+        expect.objectContaining({ action: "provision", projectId: "project-a" }),
+      );
+      expect(mocks.provisionCert).not.toHaveBeenCalled();
+      expect(mocks.domain.recordVerifyFailure).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports a failed interactive TLS check instead of returning Already verified", async () => {
+    const message = "Connection lost while reading the server's HTTPS certificate";
+    rows = [
+      domain("api", 4010, {
+        verified: true,
+        status: "active",
+        sslStatus: "error",
+        lastVerifyError: message,
+      }),
+    ];
+    mocks.manageSsl.mockResolvedValue({ verified: false, expiresAt: "", reason: "read_error" });
+    await expect(verifyDomain(context, "dom-api")).rejects.toThrow(message);
+    // The SSL primitive owns this failure; the verification wrapper must not count it twice.
+    expect(mocks.domain.recordVerifyFailure).not.toHaveBeenCalled();
   });
 });

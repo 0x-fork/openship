@@ -24,6 +24,7 @@ const NEAR_EXPIRY = new Date(Date.now() + 3 * 86_400_000).toISOString();
 const h = vi.hoisted(() => ({
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
+  recordSslFailure: vi.fn(),
   provisionCert: vi.fn(),
   renewCert: vi.fn(),
   verifyCert: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("@repo/db", () => ({
     domain: {
       findByHostname: vi.fn(async (hostname: string) => h.domains.get(hostname) ?? null),
       updateSsl: h.updateSsl,
+      recordSslFailure: h.recordSslFailure,
     },
     project: {
       findById: vi.fn(async (id: string) => ({
@@ -111,6 +113,7 @@ const POST_ISSUE_ERROR = new Error(
 beforeEach(() => {
   h.domains.clear();
   h.updateSsl.mockReset();
+  h.recordSslFailure.mockReset();
   h.provisionCert.mockReset();
   h.renewCert.mockReset();
   h.verifyCert.mockReset().mockResolvedValue({
