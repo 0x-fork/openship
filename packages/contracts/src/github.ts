@@ -85,7 +85,7 @@ export const GitHubDisconnectInput = Type.Object({ source: Type.Optional(Type.Un
 export const GitHubTokenInput = Type.Object({ token: Type.String({ minLength: 1, maxLength: 4096 }) });
 export const GitHubPollSchema = Type.Object({ status: Type.Union([Type.Literal("none"), Type.Literal("waiting"), Type.Literal("complete"), Type.Literal("error")]), error: optionalString });
 export const GitHubCollectionSchemas = {
-  getStatus: { action: "read", output: Type.Object({ ...connection, customSourcesConfigured: bool }) },
+  getStatus: { action: "read", input: Type.Object({ includeInstallUrl: Type.Optional(bool) }), optionalInput: true, output: Type.Object({ ...connection, customSourcesConfigured: bool }) },
   getHome: { action: "read", output: Type.Object({ ...connection, repos: Type.Array(GitHubRepositorySchema), errors: Type.Optional(Type.Record(Type.String(), Type.String())) }) },
   connect: { action: "write", input: GitHubConnectInput, optionalInput: true, output: Type.Union([
     Type.Object({ connected: Type.Literal(true) }),

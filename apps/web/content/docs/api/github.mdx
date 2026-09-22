@@ -281,7 +281,7 @@ does not exist). Confirm the repo appears in `GET /api/github/home` first.
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Read GitHub connection status. | `github.getStatus()` | `GET /api/github/status`<br />`github:read` |
+| Read GitHub connection status. | `github.getStatus(input?)` | `GET /api/github/status`<br />`github:read` |
 | Read the GitHub overview for the current identity. | `github.getHome()` | `GET /api/github/home`<br />`github:read` |
 | Start a supported GitHub connection flow. | `github.connect(input?)` | `POST /api/github/connect`<br />`github:write` |
 | Claim an authorized GitHub App installation. | `github.claimInstallation(input)` | `POST /api/github/installations/claim`<br />`github:write` · Self-hosted |

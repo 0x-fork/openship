@@ -198,6 +198,8 @@ export default function LibraryPage() {
               loading={loading}
               loadingRepos={libRepos.loading}
               installUrl={installUrl}
+              onInstall={() => void connect("oauth")}
+              installing={connecting}
               server={{
                 search: libRepos.search,
                 onSearch: libRepos.setSearch,
