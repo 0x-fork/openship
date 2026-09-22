@@ -5,7 +5,10 @@ import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 
 import * as schema from "./schema";
 import { EXCLUDED_TABLES, topoOrderedTables } from "./dump";
-import { PROJECT_TRANSFER_TABLES } from "./project-transfer";
+import {
+  PROJECT_TRANSFER_TABLES,
+  PROJECT_TRANSFER_UNSUPPORTED_TABLES,
+} from "./project-transfer";
 
 // Invariants over the dump catalogue itself. Pure — no DB, no fixtures — so they
 // run everywhere and cost nothing.
@@ -83,7 +86,7 @@ describe("dump catalogue: insert order", () => {
 });
 
 describe("dump catalogue: coverage", () => {
-  it("includes every durable project-owned child in project transfers", () => {
+  it("classifies every durable project-owned child for project transfers", () => {
     const owners = new Set([
       "project",
       "service",
@@ -100,6 +103,7 @@ describe("dump catalogue: coverage", () => {
         ([name, table]) =>
           fkParents(table, name).some((parent) => owners.has(parent)) &&
           !PROJECT_TRANSFER_TABLES.has(name) &&
+          !PROJECT_TRANSFER_UNSUPPORTED_TABLES[name] &&
           !EXCLUDED_TABLES[name] &&
           !sharedChildren.has(name),
       )

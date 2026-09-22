@@ -122,8 +122,9 @@ describe("a reused artifact is not on the failure reclaim list", () => {
       "utf8",
     );
     const refreshStart = src.indexOf("const refreshFrom = refreshAppDeploymentId(snapshot)");
+    // Skip the image declarations inside the Kubernetes and Docker refresh branches.
     const ordinaryPinStart = src.indexOf(
-      "const image = pinnedAppImage(snapshot)",
+      "\n  const image = pinnedAppImage(snapshot);",
       refreshStart + 1,
     );
     const refreshBranch = src.slice(refreshStart, ordinaryPinStart);

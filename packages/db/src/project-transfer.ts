@@ -1,6 +1,6 @@
 import { getTableColumns, inArray, sql } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
-import type { ExportSelection, TransferProject } from "@repo/core";
+import { AppError, type ExportSelection, type TransferProject } from "@repo/core";
 import { db, getDriver, type DatabaseTransaction } from "./client";
 import { DUMP_FORMAT_VERSION, topoOrderedTables, type DatabaseDump } from "./dump";
 
@@ -45,6 +45,12 @@ export const PROJECT_TRANSFER_TABLES = new Set([
   "audit_event",
   "edge_target_verification",
 ]);
+
+/** These project children require their instance's runtime ownership to travel with them. */
+export const PROJECT_TRANSFER_UNSUPPORTED_TABLES: Readonly<Record<string, string>> = {
+  cluster_database:
+    "Projects with cluster databases cannot be transferred individually yet. Use a whole-instance export to preserve cluster and database ownership.",
+};
 
 const specs = new Map(topoOrderedTables().map((spec) => [spec.sqlName, spec]));
 
@@ -241,6 +247,11 @@ export async function selectProjectTransfer(
     }
   }
   const projectIds = ids(tables.project!);
+  for (const [table, reason] of Object.entries(PROJECT_TRANSFER_UNSUPPORTED_TABLES)) {
+    if ((await read(table, "projectId", projectIds)).length) {
+      throw new AppError(reason, 409, "CLUSTER_TRANSFER_UNSUPPORTED");
+    }
+  }
   const projectSet = new Set(projectIds);
   const organizations = [...new Set(ids(tables.project!, "organizationId"))];
   await fetch("project_app", "id", ids(tables.project!, "groupId"));
