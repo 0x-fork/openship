@@ -1448,12 +1448,12 @@ async function issuePendingSsl(
     if (contextFor && !(await contextFor(d.id, "provision"))) continue;
 
     try {
-      await manageDomainSsl(d.hostname, {
+      const result = await manageDomainSsl(d.hostname, {
         action: "provision",
         projectId: d.projectId ?? undefined,
       });
       const after = await repos.domain.findById(d.id).catch(() => null);
-      if (after?.sslStatus === "active") {
+      if (result.verified && result.expiresAt && after?.sslStatus === "active") {
         issued++;
       } else {
         retrying++;
