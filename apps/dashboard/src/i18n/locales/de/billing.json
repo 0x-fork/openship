@@ -262,7 +262,10 @@
     "checking": "Dein Cloud-Tarif und Guthaben werden aktualisiert. Die Zahlung kann einen Moment dauern.",
     "active": "Dein Cloud-Tarif ist aktiv.",
     "pending": "Deine Zahlung wird möglicherweise noch verarbeitet. Aktualisiere diese Seite, um Tarif und Guthaben zu prüfen. Kontaktiere den Support, wenn eine abgeschlossene Zahlung fehlt.",
-    "support": "Support kontaktieren"
+    "support": "Support kontaktieren",
+    "failed": "Dieser Checkout wurde nicht abgeschlossen. Versuche es auf der Abrechnungsseite erneut.",
+    "reversed": "Diese Zahlung wurde erstattet oder angefochten. Prüfe dein Guthaben oder kontaktiere den Support.",
+    "topupComplete": "Deine zusätzlichen Credits wurden hinzugefügt."
   },
   "deployGate": {
     "title": "Tarif zum Bereitstellen auswählen",

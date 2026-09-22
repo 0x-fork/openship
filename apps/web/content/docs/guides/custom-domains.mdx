@@ -135,6 +135,20 @@ expire, so this is a one-time setup.
 
 </Steps>
 
+## Retry routing with logs
+
+For a deployed project, open **Domains** and choose **Retry routing** from the warning banner, the
+page action, or a domain's menu. This repairs the project's saved routes and checks pending domains
+and HTTPS. A domain card whose backing record is missing also offers **Retry routing** directly.
+
+The log viewer shows progress and the reason for any failure, including SSH connectivity and
+certificate errors. Working domains retain their state when another domain fails. After the attempt,
+the cards refresh from the server; the warning clears only when the checks succeed. Existing usable
+certificates are reused.
+
+Closing the viewer stops watching; an accepted repair continues on the server. If the connection
+drops before completion, the viewer reports an unknown outcome and keeps the logs it received.
+
 ## DNS setup, three ways
 
 Openship figures out which records you need based on where your project runs. You don't choose the first two —

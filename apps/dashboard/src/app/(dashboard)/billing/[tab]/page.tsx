@@ -50,12 +50,19 @@ export default async function BillingTabPage({
       notFound();
   } }
 
-  return <>
-    {(query.checkout === "success" || query.topup === "success") && <BillingCheckoutStatus
-      kind={query.topup === "success" ? "topup" : "subscription"}
-      expectedTier={typeof query.tier === "string" ? query.tier : undefined}
-      expectedInterval={query.interval === "monthly" || query.interval === "annual" ? query.interval : undefined}
-    />}
-    {renderTab()}
-  </>;
+  return (
+    <>
+      {(query.checkout === "success" || query.topup === "success") && (
+        <BillingCheckoutStatus
+          kind={query.topup === "success" ? "topup" : "subscription"}
+          checkoutId={typeof query.session_id === "string" ? query.session_id : undefined}
+          expectedTier={typeof query.tier === "string" ? query.tier : undefined}
+          expectedInterval={
+            query.interval === "monthly" || query.interval === "annual" ? query.interval : undefined
+          }
+        />
+      )}
+      {renderTab()}
+    </>
+  );
 }

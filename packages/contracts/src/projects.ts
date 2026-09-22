@@ -4,6 +4,7 @@ import type { TCreateProjectBody, TEnsureProjectBody, TUpdateProjectBody } from 
 import type { ProjectControlOperations } from "./project-controls";
 import type { ProjectLocalOperations } from "./project-local";
 import type { ProjectLogStreams } from "./project-logs";
+import type { ProjectRoutingStreams } from "./project-routing";
 
 const nullableString = () => Type.Union([Type.String(), Type.Null()]);
 /** Public project fields. Provider-specific diagnostics may accompany these fields. */
@@ -65,7 +66,12 @@ export const ListProjectsSchema = Type.Object({
 export type ListProjectsInput = Static<typeof ListProjectsSchema>;
 export interface ProjectPage { data: Project[]; total: number; page: number; perPage: number }
 export interface EnsureProjectResult { success: boolean; project_id: string; created: boolean }
-export interface ProjectOperations extends ProjectControlOperations, ProjectLocalOperations, ProjectLogStreams {
+export interface ProjectOperations
+  extends
+    ProjectControlOperations,
+    ProjectLocalOperations,
+    ProjectLogStreams,
+    ProjectRoutingStreams {
   getHome(): Promise<ProjectHome>;
   create(input: CreateProjectInput): Promise<Project>;
   ensure(input: EnsureProjectInput): Promise<EnsureProjectResult>;

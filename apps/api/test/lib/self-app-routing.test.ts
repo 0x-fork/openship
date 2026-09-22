@@ -17,7 +17,7 @@ import {
 const repair = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 // Stop at host execution for the transport test; repository reads, resource
 // authorization and the instance-role decision remain real.
-vi.mock("@repo/platform/engine/modules/projects/project.service", async (original) => ({
+vi.mock("@repo/platform/engine/modules/projects/project-runtime.service", async (original) => ({
   ...(await original<object>()),
   retryProjectRouting: repair,
 }));
@@ -85,11 +85,30 @@ describe("self-app route repair authorization (#879)", () => {
       });
       for (const client of [native, remote]) {
         expect(await client.projects.retryRouting(project.id)).toEqual({ ok: true });
-        expect(repair).toHaveBeenLastCalledWith(project.id, ctx.organizationId, {
-          isSelfApp: admin,
-        });
+        expect(repair).toHaveBeenLastCalledWith(
+          project.id,
+          ctx.organizationId,
+          expect.objectContaining({
+            isSelfApp: admin,
+            verifyDomains: expect.any(Function),
+          }),
+        );
+        const events = [];
+        for await (const event of client.projects.retryRoutingStream(project.id))
+          events.push(event);
+        expect(events.map((event) => event.event)).toEqual(["session", "log", "complete"]);
+        expect(JSON.parse(events.at(-1)!.data).status).toBe("completed");
+        expect(repair).toHaveBeenLastCalledWith(
+          project.id,
+          ctx.organizationId,
+          expect.objectContaining({
+            isSelfApp: admin,
+            onLog: expect.any(Function),
+            verifyDomains: expect.any(Function),
+          }),
+        );
       }
-      expect(repair).toHaveBeenCalledTimes(2);
+      expect(repair).toHaveBeenCalledTimes(4);
     },
   );
 

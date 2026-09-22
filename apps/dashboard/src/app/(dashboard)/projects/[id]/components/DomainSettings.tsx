@@ -35,7 +35,7 @@ import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
 import { AutoDnsPanel } from "@/components/shared/AutoDnsPanel";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
-import { useEdgeModal, useVerifyModal } from "@/hooks/useSystemPrepareModal";
+import { useEdgeModal, useVerifyModal, useRoutingRetryModal } from "@/hooks/useSystemPrepareModal";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import {
@@ -304,6 +304,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   const freeNeedsCloud = () => requireCloud("managed-project-domain", { domain: baseDomain });
   const openEdgeModal = useEdgeModal();
   const openVerifyModal = useVerifyModal();
+  const openRoutingRetry = useRoutingRetryModal();
+  const retryRouting = () => openRoutingRetry(String(id));
 
   // Live edge health for the server (read-only probe). Drives the button state:
   // "Edge ready" when OpenResty already owns 80/443, else "Set up edge".
@@ -1717,14 +1719,29 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       onSetPrimary: opts.onSetPrimary,
       isSettingPrimary: settingPrimaryId === item.id,
     });
+    if (projectData.activeDeploymentId && !projectData.awaitingDecision) {
+      menuActions.push({
+        id: "retry-routing",
+        label: t.projects.routingRetry.retry,
+        icon: <RefreshCw className="size-4" />,
+        onClick: retryRouting,
+      });
+    }
     return (
       <DomainOverviewCard
         key={item.id}
         domain={item}
         menuActions={menuActions}
         sslActionBusy={isRenewing || isRechecking}
-        sslActionLabel={isRenewing ? t.projectSettings.domains.menu.renewing : t.projectSettings.domains.menu.rechecking}
+        sslActionLabel={
+          isRenewing
+            ? t.projectSettings.domains.menu.renewing
+            : t.projectSettings.domains.menu.rechecking
+        }
         onVerify={canVerify ? () => startVerify(item.domainId!, item.hostname) : undefined}
+        onRetryRouting={
+          projectData.activeDeploymentId && !projectData.awaitingDecision ? retryRouting : undefined
+        }
         verifying={!!verifyingDomainId && verifyingDomainId === item.domainId}
         verifyHint={verifyHintFor(item.domainId)}
         autoOpenRecords={!!item.domainId && verifyFailure?.domainId === item.domainId}
@@ -1890,7 +1907,16 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         </div>
       )}
       {/* Routes are live-but-unsynced — first, above the domains it's about. */}
-      <RoutingUnsyncedCallout />
+      <RoutingUnsyncedCallout onRetry={retryRouting} />
+      {projectData.activeDeploymentId && !projectData.awaitingDecision && !projectData.routingUnsynced ? (
+        <div className="flex justify-end">
+          <ActionButton
+            label={t.projects.routingRetry.retry}
+            icon={RefreshCw}
+            onClick={retryRouting}
+          />
+        </div>
+      ) : null}
       {domainsData.isLoading ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {[0, 1].map((i) => (
@@ -2772,6 +2798,7 @@ function DomainOverviewCard({
   sslActionBusy = false,
   sslActionLabel,
   onVerify,
+  onRetryRouting,
   verifying = false,
   verifyHint,
   loadRecords,
@@ -2790,6 +2817,7 @@ function DomainOverviewCard({
   /** Label for the in-flight SSL action ("Renewing…" / "Rechecking…"). */
   sslActionLabel?: string;
   onVerify?: () => void;
+  onRetryRouting?: () => void;
   verifying?: boolean;
   /** Message naming the DNS record that still isn't resolving after a fail. */
   verifyHint?: string | null;
@@ -2978,6 +3006,17 @@ function DomainOverviewCard({
                   : interpolate(d.outputHint.body, { path: outputHint.path })}
             </span>
           </div>
+        ) : null}
+
+        {!domain.domainId && onRetryRouting ? (
+          <button
+            type="button"
+            onClick={onRetryRouting}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground"
+          >
+            <RefreshCw className="size-3.5" />
+            {t.projects.routingRetry.retry}
+          </button>
         ) : null}
 
         {canVerify ? (

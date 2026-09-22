@@ -2,6 +2,7 @@ import "../mail/_setup-env";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
+const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn() }));
 const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn(), updateStatus: vi.fn() }));
 const domainRepo = vi.hoisted(() => ({ listByProject: vi.fn(), update: vi.fn() }));
 
@@ -19,7 +20,13 @@ vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
   return {
     ...actual,
-    repos: { ...actual.repos, project: projectRepo, deployment: deploymentRepo, domain: domainRepo },
+    repos: {
+      ...actual.repos,
+      project: projectRepo,
+      service: serviceRepo,
+      deployment: deploymentRepo,
+      domain: domainRepo,
+    },
   };
 });
 
@@ -97,6 +104,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     });
     deploymentRepo.updateStatus.mockResolvedValue(undefined);
     domainRepo.listByProject.mockResolvedValue([]);
+    serviceRepo.listByProject.mockResolvedValue([]);
     domainRepo.update.mockResolvedValue(undefined);
     applyProjectRouting.mockResolvedValue(undefined);
     reapplyProjectLiveRoutes.mockResolvedValue(undefined);
@@ -129,6 +137,76 @@ describe("retryProjectRouting — safe self-heal", () => {
       [],
       { managedEdgeSyncedByCaller: true, onWarning: expect.any(Function) },
     );
+  });
+
+  it("does not report success or touch routing when the active deployment is missing", async () => {
+    deploymentRepo.findById.mockResolvedValue(undefined);
+    const verifyDomains = vi.fn();
+    expect(await retryProjectRouting("proj_1", "org_1", { verifyDomains })).toEqual({
+      ok: false,
+      warning: expect.stringContaining("no active deployment"),
+    });
+    expect(verifyDomains).not.toHaveBeenCalled();
+    expect(reapplyProjectLiveRoutes).not.toHaveBeenCalled();
+    expect(applyProjectRouting).not.toHaveBeenCalled();
+  });
+
+  it("restores the edge even when service route settings have no domain rows yet", async () => {
+    serviceRepo.listByProject.mockResolvedValue([{ id: "api", enabled: true, exposed: true }]);
+    const onLog = vi.fn();
+    const result = await retryProjectRouting("proj_1", "org_1", { onLog });
+    expect(result).toEqual({ ok: true });
+    expect(reconcileServerEdge).toHaveBeenCalledOnce();
+    expect(onLog).toHaveBeenCalledWith(expect.stringContaining("edge proxy"));
+  });
+
+  it("keeps the warning until domain and HTTPS checks finish, then preserves a partial failure", async () => {
+    const existingWarning = { edgeUnsynced: true, deployWarning: "old routing failure" };
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_1",
+      projectId: "proj_1",
+      organizationId: "org_1",
+      status: "ready",
+      meta: { ...existingWarning, serverId: "srv_1", deployTarget: "server" },
+    });
+    const verifyDomains = vi.fn(async () => {
+      expect(deploymentRepo.updateStatus).not.toHaveBeenCalled();
+      return ["api.example.com: DNS verification is still pending"];
+    });
+    expect(await retryProjectRouting("proj_1", "org_1", { verifyDomains })).toEqual({
+      ok: false,
+      warning: "api.example.com: DNS verification is still pending",
+    });
+    expect(verifyDomains).toHaveBeenCalledOnce();
+    expect(deploymentRepo.updateStatus).toHaveBeenCalledExactlyOnceWith("dep_1", "ready", {
+      meta: expect.objectContaining({
+        edgeUnsynced: true,
+        deployWarning: "api.example.com: DNS verification is still pending",
+      }),
+    });
+  });
+
+  it("clears the warning only after successful domain checks", async () => {
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_1",
+      projectId: "proj_1",
+      organizationId: "org_1",
+      status: "ready",
+      meta: {
+        edgeUnsynced: true,
+        deployWarning: "pending",
+        serverId: "srv_1",
+        deployTarget: "server",
+      },
+    });
+    const verifyDomains = vi.fn(async () => {
+      expect(deploymentRepo.updateStatus).not.toHaveBeenCalled();
+      return [];
+    });
+    expect(await retryProjectRouting("proj_1", "org_1", { verifyDomains })).toEqual({ ok: true });
+    expect(deploymentRepo.updateStatus).toHaveBeenCalledExactlyOnceWith("dep_1", "ready", {
+      meta: { serverId: "srv_1", deployTarget: "server" },
+    });
   });
 
   it("keeps a skipped domain's diagnosis visible even when the edge itself is healthy (#879)", async () => {

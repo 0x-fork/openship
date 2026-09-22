@@ -1,5 +1,10 @@
 import { repos, type Domain, type Project, type Service } from "@repo/db";
-import type { RoutedDomainInput, SslProvider, SslResult } from "@repo/adapters";
+import {
+  isRemoteConnectionError,
+  type RoutedDomainInput,
+  type SslProvider,
+  type SslResult,
+} from "@repo/adapters";
 import { SYSTEM, ConflictError, resolveServiceHostnameLabel, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
 import { env } from "../config/env";
 import { serviceKind } from "./deployable-service";
@@ -670,7 +675,19 @@ export function createTrackedSslProvider(
         );
       } catch (err) {
         errorReason = safeErrorMessage(err);
-        result = { domain: host, expiresAt: "", issuer: "", verified: false, reason: "missing" };
+        const unknown: SslResult = {
+          domain: host,
+          expiresAt: "",
+          issuer: "",
+          verified: false,
+          reason: "read_error",
+        };
+        // A failed command says nothing about a certificate already on disk.
+        // After a failed renewal, keep a usable old certificate; if the transport
+        // itself failed, preserve the last known state until it can be checked.
+        result = isRemoteConnectionError(err)
+          ? unknown
+          : await ssl.verifyCert(host).catch(() => unknown);
       }
 
       // No row in the map (route-minted after the map was built) — nothing to
@@ -681,6 +698,13 @@ export function createTrackedSslProvider(
       // never write "error".
       if (result.reason === "not_local") {
         log?.(`SSL for ${host} is handled elsewhere — no certificate issued here.`);
+        return result;
+      }
+
+      if (result.reason === "read_error") {
+        log?.(
+          `Could not confirm SSL for ${host}; keeping its recorded certificate state.${errorReason ? ` ${errorReason}` : ""}`,
+        );
         return result;
       }
 
@@ -891,35 +915,18 @@ export function withEnsuredDomainRecord(
 }
 
 /**
- * Routed hostnames whose TLS is OURS to terminate but which hold no live
- * certificate — as `"<hostname>: <reason>"` warning strings, the shape the
- * pipelines' route warnings already use.
- *
- * The deploy rule is "never fail on domains, but try, and mark action-required
- * when it didn't work". The trying half is `provisionSsl`; this is the marking
- * half, and it was missing entirely: `registerRoute` SUCCEEDS without a
- * certificate (the edge installs a bootstrap self-signed cert so a routed host
- * always has a :443 listener — see bootstrap-tls-listener), and the issuance
- * failure inside `registerResolvedRoutes` is deliberately caught and only LOGGED.
- * So a domain could come out of a deploy routed, serving a self-signed cert over
- * HTTPS, with a green deployment and nothing anywhere saying so.
- *
- * Deliberately narrow, so this can't cry wolf:
- *  - `terminatesTlsLocally` excludes managed *.opsh.io hosts (Cloud's edge
- *    terminates) and externalIngress hosts (an upstream LB/tunnel does).
- *  - `sslStatus === "active"` excludes both a certbot cert and an operator's
- *    uploaded one, so a manual-SSL host that already has its cert is silent.
- *  - a route with no row (`domainByHostname` miss) is skipped — nothing was
- *    recorded to make a claim about.
+ * Routes that need a certificate check: TLS terminates on this server and the
+ * stored record doesn't confirm an active certificate. Registration can succeed
+ * with only the edge's bootstrap certificate, so routing success isn't enough.
+ * Managed/external TLS, active certificates, and unrecorded domains are excluded.
  */
-export function collectUncertifiedRouteWarnings(
+function uncertifiedRouteDomains(
   routes: PlannedRouteDomain[],
   domainByHostname: Map<string, Domain>,
-  /** Hostnames already reported as UNROUTED. Excluded so one host can't be
-   *  described twice, contradictorily — see `auditRoutedDomainTls`. */
+  /** Hosts with a routing error already reported by this deploy. */
   skipHostnames?: ReadonlySet<string>,
-): string[] {
-  const warnings: string[] = [];
+): Domain[] {
+  const domains: Domain[] = [];
   const seen = new Set<string>();
   for (const route of routes) {
     if (!route.terminatesTlsLocally) continue;
@@ -930,16 +937,20 @@ export function collectUncertifiedRouteWarnings(
     // means TLS is terminated upstream and recorded as such. Neither is pending.
     if (!record || record.sslStatus === "active" || record.sslStatus === "external") continue;
     seen.add(key);
-    warnings.push(
-      `${route.hostname}: ${
-        record.lastVerifyError ??
-        (record.verified
-          ? "no HTTPS certificate yet"
-          : "DNS is not pointing at this server yet, so no HTTPS certificate could be issued")
-      }`,
-    );
+    domains.push(record);
   }
-  return warnings;
+  return domains;
+}
+
+export function collectUncertifiedRouteWarnings(
+  routes: PlannedRouteDomain[],
+  domainByHostname: Map<string, Domain>,
+  skipHostnames?: ReadonlySet<string>,
+): string[] {
+  return uncertifiedRouteDomains(routes, domainByHostname, skipHostnames).map(
+    (record) =>
+      `${record.hostname}: ${record.lastVerifyError ?? "no usable HTTPS certificate was found on this server"}`,
+  );
 }
 
 /**
@@ -961,8 +972,7 @@ export function routeWarningHostnames(warnings: readonly string[]): Set<string> 
 }
 
 /**
- * "These routes exist — is each one actually serving HTTPS?" Both pipelines' whole
- * TLS audit, in one place.
+ * Both pipelines' final certificate audit, using the shared SSL state transitions.
  *
  * Rows are re-read rather than taken from the deploy's `domainByHostname`: issuance
  * writes cert status straight to the DB (`createTrackedSslProvider` →
@@ -970,38 +980,66 @@ export function routeWarningHostnames(warnings: readonly string[]): Set<string> 
  * judging from it would report the PRE-deploy state and call a domain that just
  * went Live uncertified.
  *
- * `routeWarnings` are the failures already reported as UNROUTED. They are excluded,
- * because a host whose vhost never got written has no certificate either — and
- * telling the operator both "isn't routed" and "is routed but has no HTTPS" about
- * the same hostname is two contradictory instructions for one problem.
+ * Hosts already in `routeWarnings` are excluded: a failed route update can leave
+ * the old route serving, and we shouldn't add a second, speculative TLS warning.
  *
- * Best-effort by construction: the deploy is over and the workloads are up; this
- * only decides whether to attach a warning. A failed read means no warning, never a
- * failed deploy.
+ * Non-active records are checked against the DEPLOY TARGET before claiming its
+ * certificate is missing. A previous connection failure can leave stale metadata
+ * even though that target still has a usable certificate. An unreadable target
+ * is reported as unconfirmed, without changing the last known certificate state.
+ * The supplied provider is already bound to this deployment, which may not yet
+ * be the project's active deployment.
  */
 export async function auditRoutedDomainTls(opts: {
   projectId: string;
   routes: PlannedRouteDomain[];
   routeWarnings: readonly string[];
+  ssl?: SslProvider;
   /** Emitted once per pending host, so the reason is in the deploy log too. */
   log: (message: string) => void;
 }): Promise<string[]> {
   const { projectId, routes, routeWarnings, log } = opts;
   if (routes.length === 0) return [];
-  const pending = await repos.domain
-    .listByProject(projectId)
-    .then((rows) =>
-      collectUncertifiedRouteWarnings(
-        routes,
-        new Map(rows.map((row) => [row.hostname.toLowerCase(), row])),
-        routeWarningHostnames(routeWarnings),
-      ),
-    )
-    .catch(() => [] as string[]);
+  const rows = await repos.domain.listByProject(projectId).catch(() => null);
+  if (!rows) return [];
+  const domainByHostname = new Map(rows.map((row) => [row.hostname.toLowerCase(), row]));
+  const skipped = routeWarningHostnames(routeWarnings);
+  const unconfirmed: string[] = [];
+  for (const record of uncertifiedRouteDomains(routes, domainByHostname, skipped)) {
+    const host = record.hostname.toLowerCase();
+    try {
+      const result = await opts.ssl?.verifyCert(host);
+      if (result?.reason === "not_local") {
+        domainByHostname.delete(host);
+      } else if (result?.verified && result.expiresAt) {
+        // Only a usable certificate reconciles the issuance path's state.
+        // A negative audit must retain its error/provisioning and retry policy.
+        const patch = resolveSslPatch(record.sslStatus, result);
+        if (patch) await repos.domain.updateSsl(record.id, patch);
+        domainByHostname.delete(host);
+      } else if (result?.reason === "invalid") {
+        domainByHostname.set(host, {
+          ...record,
+          lastVerifyError: "the server's existing certificate is invalid or expired",
+        });
+      } else if (result?.reason !== "missing") {
+        domainByHostname.delete(host);
+        unconfirmed.push(
+          `${host}: the HTTPS certificate could not be checked on the deployment target`,
+        );
+      }
+    } catch (error) {
+      domainByHostname.delete(host);
+      unconfirmed.push(`${host}: HTTPS status could not be confirmed: ${safeErrorMessage(error)}`);
+    }
+  }
+  const pending = [
+    ...collectUncertifiedRouteWarnings(routes, domainByHostname, skipped),
+    ...unconfirmed,
+  ];
   for (const detail of pending) {
     log(
-      `Domain routed without HTTPS — ${detail}. Point its DNS at this server, then ` +
-        `Verify from the Domains tab.`,
+      `HTTPS needs attention — ${detail}. Review the certificate status and Verify from the Domains tab.`,
     );
   }
   return pending;

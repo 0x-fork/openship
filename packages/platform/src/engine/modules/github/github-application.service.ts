@@ -40,14 +40,21 @@ function repoKey(r: { full_name?: string; owner?: string; name?: string }) {
  * library home (getUserHome). No `mode` field: the global platform mode is
  * `env.CLOUD_MODE` (backend) / `selfHosted` (frontend's PlatformContext).
  */
-export async function getStatus(ctx: ExecutionContext) {
+export async function getStatus(
+  ctx: ExecutionContext,
+  input?: Parameters<GitHubOperations["getStatus"]>[0],
+) {
   const source = await createGitHubSource(ctx);
   // The Settings card owns the "Install App" affordance, so the install URL is
   // resolved HERE (cloud round-trip in cloud-app mode), alongside the real App
   // status + installs. Members still only see App accounts they're granted.
   const [{ state, accounts }, install, customSourcesConfigured] = await Promise.all([
     source.getConnectionStatus(),
-    source.resolveInstallUrl(),
+    // Completion probes read the existing connection. Minting another install
+    // nonce on each poll would create unused flows and another Cloud request.
+    input?.includeInstallUrl === false
+      ? { url: "", cloudUnreachable: false }
+      : source.resolveInstallUrl(),
     hasConfiguredGitHubSource(ctx.organizationId).catch(() => false),
   ]);
   const allowedAccounts = await filterAllowedAccounts(ctx, accounts, (a) => a.login);
@@ -136,6 +143,18 @@ const CLOUD_UNREACHABLE_CONNECT = {
   message:
     "Openship Cloud is unreachable, so GitHub can't be connected right now. GitHub connection runs through Openship Cloud — reconnect it in Settings or check your network, then try again.",
 } as const;
+
+async function installationRedirect(ctx: ExecutionContext) {
+  const install = await githubAuth.resolveInstallUrl(ctx);
+  if (install.cloudUnreachable) throw responseError(CLOUD_UNREACHABLE_CONNECT, 503);
+  return {
+    connected: false as const,
+    flow: "redirect" as const,
+    url: install.url,
+    state: install.state,
+    step: "install" as const,
+  };
+}
 
 /** POST /github/connect - Normalized connection flow.
  *
@@ -243,23 +262,13 @@ export async function connect(ctx: ExecutionContext, input: NonNullable<Paramete
     // Step 2: OAuth done. Check if installations already exist.
     if (status.connected) {
       const installations = await githubAuth.getUserInstallations(ctx, status);
-      if (installations.length > 0 && source !== "oauth") {
+      if (installations.length > 0) {
         return { connected: true };
       }
     }
 
     // Step 2 continued: no installations yet → return install URL.
-    const install = await githubAuth.resolveInstallUrl(ctx);
-    if (install.cloudUnreachable) {
-      throw responseError(CLOUD_UNREACHABLE_CONNECT, 503);
-    }
-    return {
-      connected: false,
-      flow: "redirect" as const,
-      url: install.url,
-      state: install.state,
-      step: "install" as const,
-    };
+    return installationRedirect(ctx);
   }
 
   // Clicking Connect always means "I want to be connected" - clear any
@@ -298,6 +307,7 @@ export async function connect(ctx: ExecutionContext, input: NonNullable<Paramete
       return {
         connected: false,
         flow: "redirect" as const,
+        step: mode === "app" ? "install" : "oauth",
         ...(redirectUrl ? { url: redirectUrl } : {}),
       };
     }
@@ -305,12 +315,7 @@ export async function connect(ctx: ExecutionContext, input: NonNullable<Paramete
     if (installations.length > 0) {
       return { connected: true };
     }
-    const { url } = await githubAuth.resolveInstallUrl(ctx);
-    return {
-      connected: false,
-      flow: "redirect" as const,
-      url,
-    };
+    return installationRedirect(ctx);
   }
 
   // ── Already connected? ─────────────────────────────────────
@@ -334,12 +339,7 @@ export async function connect(ctx: ExecutionContext, input: NonNullable<Paramete
       return { connected: true };
     }
 
-    const { url } = await githubAuth.resolveInstallUrl(ctx);
-    return {
-      connected: false,
-      flow: "redirect" as const,
-      url,
-    };
+    return installationRedirect(ctx);
   }
 
   // ── CLI: no token yet ──────────────────────────────────────
@@ -409,6 +409,7 @@ export async function connect(ctx: ExecutionContext, input: NonNullable<Paramete
   return {
     connected: false,
     flow: "redirect" as const,
+    step: mode === "app" ? "install" : "oauth",
     ...(redirectUrl ? { url: redirectUrl } : {}),
   };
 }

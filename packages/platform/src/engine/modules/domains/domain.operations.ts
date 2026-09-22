@@ -13,6 +13,8 @@ import { platform } from "../../lib/platform-config";
 import { isLocalHostRow } from "../../lib/box-org";
 import { resolveEffectiveTarget, type DeploymentMeta } from "../../lib/deployment-runtime";
 import * as service from "./domain.service";
+import { manageDomainSsl, tlsIssuedElsewhere } from "../../lib/domain-ssl";
+import { resolveManagedHostname } from "../../lib/routing-domains";
 
 function record(ctx: ExecutionContext, id: string, eventType: string, after: unknown) {
   audit.recordAsync(operationAuditContext(ctx), { eventType, resourceType: "domain", resourceId: id, after });
@@ -71,6 +73,75 @@ async function verify(ctx: ExecutionContext, id: string, input: { force?: boolea
     payload: { message: result.message ?? "Domain verification failed", cnameVerified: result.cnameVerified, txtVerified: result.txtVerified },
   });
   return result;
+}
+
+/** Finish the domain checks after a live routing repair. Reuse the interactive
+ * authorization, verification and certificate paths, including native policy. */
+export async function verifyProjectRoutingDomains(
+  ctx: ExecutionContext,
+  projectId: string,
+  onLog?: (line: string) => void,
+): Promise<string[]> {
+  const rows = await service.listDomains(ctx, projectId);
+  const services = rows.some((row) => row.serviceId)
+    ? await repos.service.listByProject(projectId)
+    : [];
+  const warnings: string[] = [];
+  for (const row of rows) {
+    if (
+      row.domainType === "free" ||
+      resolveManagedHostname(row.hostname).isManaged ||
+      row.status === "removing"
+    )
+      continue;
+    if (row.serviceId && !services.some((s) => s.id === row.serviceId && s.enabled && s.exposed))
+      continue;
+    if (row.verified && (row.sslStatus === "active" || tlsIssuedElsewhere(row))) continue;
+    const log = (message: string) => onLog?.(`${row.hostname}: ${message}`);
+    try {
+      const context = await authorization.authorize(
+        { ...ctx, scopeMode: "fixed" },
+        {
+          resourceType: "domain",
+          resourceId: row.id,
+          action: "write",
+        },
+      );
+      let current = row;
+      if (!row.verified) {
+        log("Checking domain verification and HTTPS…");
+        const result = await verify(context, row.id, {}, log);
+        if (!result.verified) {
+          warnings.push(
+            `${row.hostname}: ${result.message || "Domain verification is still pending. Use Verify to review DNS and HTTPS."}`,
+          );
+          continue;
+        }
+        current = await service.getDomain(context, row.id);
+      }
+      if (current.sslStatus !== "active" && !tlsIssuedElsewhere(current)) {
+        await domainExecution(context, row.id);
+        log("Checking or provisioning the HTTPS certificate…");
+        const result = await manageDomainSsl(row.hostname, {
+          action: "provision",
+          projectId,
+          onLog: log,
+        });
+        if (result.reason !== "not_local" && (!result.verified || !result.expiresAt)) {
+          warnings.push(
+            `${row.hostname}: HTTPS is still pending. Use Verify or Recheck SSL in the domain card.`,
+          );
+          continue;
+        }
+      }
+      log("Domain verification and HTTPS checks completed.");
+    } catch (error) {
+      const message = `${row.hostname}: ${safeErrorMessage(error)}`;
+      onLog?.(message);
+      warnings.push(message);
+    }
+  }
+  return warnings;
 }
 
 export const domainDependencies: DomainDependencies = {

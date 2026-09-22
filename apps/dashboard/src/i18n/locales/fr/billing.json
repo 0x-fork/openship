@@ -262,7 +262,10 @@
     "checking": "Actualisation de votre offre Cloud et de votre solde. Le traitement du paiement peut prendre un instant.",
     "active": "Votre offre Cloud est active.",
     "pending": "Votre paiement est peut-être encore en cours de traitement. Actualisez cette page pour vérifier votre offre et votre solde. Contactez l’assistance si un paiement effectué manque.",
-    "support": "Contacter l’assistance"
+    "support": "Contacter l’assistance",
+    "failed": "Ce paiement n’a pas été finalisé. Retournez à la facturation pour réessayer.",
+    "reversed": "Ce paiement a été remboursé ou contesté. Vérifiez votre solde ou contactez l’assistance.",
+    "topupComplete": "Vos crédits supplémentaires ont été ajoutés."
   },
   "deployGate": {
     "title": "Choisir une offre pour déployer",

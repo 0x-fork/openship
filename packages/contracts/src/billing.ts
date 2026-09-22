@@ -50,6 +50,21 @@ export const BillingSubscriptionSchema = Type.Object({
   currentPeriod,
   cancelAtPeriodEnd: Type.Boolean(), canceledAt: stringOrNull,
 });
+export const BillingCheckoutStatusSchema = Type.Object({
+  id: Type.String(),
+  kind: Type.Union([Type.Literal("subscription"), Type.Literal("topup")]),
+  status: Type.Union(["open", "complete", "expired"].map((value) => Type.Literal(value))),
+  paymentStatus: Type.Union(
+    ["paid", "unpaid", "no_payment_required"].map((value) => Type.Literal(value)),
+  ),
+  fulfillmentStatus: Type.Union(
+    ["pending", "completed", "partially_refunded", "refunded", "disputed", "expired", "failed"].map(
+      (value) => Type.Literal(value),
+    ),
+  ),
+  fulfilled: Type.Boolean(),
+  creditsGranted: Type.Number(),
+});
 export const BillingStateSchema = Type.Object({
   tier, status: Type.String(), currentPeriod,
   balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull, unlimited: Type.Optional(Type.Boolean()) }),
@@ -75,6 +90,14 @@ export const BillingPublicSchemas = {
   listPlans: { action: "read", input: Type.Object({ locale: Type.Optional(Type.String({ maxLength: 512 })) }), optionalInput: true, output: BillingPlansSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BillingOperationSchemas = {
+  getCheckout: {
+    action: "read",
+    input: Type.Object(
+      { checkoutId: Type.String({ pattern: "^cs_[A-Za-z0-9_]+$", maxLength: 255 }) },
+      { additionalProperties: false },
+    ),
+    output: BillingCheckoutStatusSchema,
+  },
   getState: { action: "read", output: BillingStateSchema },
   getResources: { action: "read", output: BillingResourcesSchema },
   getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
@@ -98,6 +121,7 @@ export const BillingOperationSchemas = {
 export type BillingState = Static<typeof BillingStateSchema>;
 export type BillingResources = Static<typeof BillingResourcesSchema>;
 export type BillingSubscription = Static<typeof BillingSubscriptionSchema>;
+export type BillingCheckoutStatus = Static<typeof BillingCheckoutStatusSchema>;
 export type BillingCreditPack = Static<typeof BillingCreditPackSchema>;
 export type BillingPlans = Static<typeof BillingPlansSchema>;
 export interface BillingOperations extends ScopedOperations<typeof BillingPublicSchemas>, ScopedOperations<typeof BillingOperationSchemas> {}

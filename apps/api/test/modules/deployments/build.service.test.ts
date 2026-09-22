@@ -1197,32 +1197,47 @@ describe("triggerDeployment", () => {
     },
   );
 
-  it.each([null, "poisoned"])("requires review for a %s cached Compose value even on code-only webhooks (#893)", async (baseline) => {
-    const parsed = {
-      ...composeServices[0], environment: { MY_VAR: "B" },
-      environmentTemplates: { MY_VAR: "${MY_VAR}" },
-      advanced: { ...composeServices[0].advanced, environmentTemplateKeys: ["MY_VAR"] },
-    };
-    const state = installStatefulComposeRepo({
-      ...parsed, environmentTemplates: undefined, projectId: "project-1",
-      environment: { MY_VAR: "cached-private-value" },
-      importedSpec: baseline ? toComposeSpec(parsed) : null, driftSpec: null,
-    });
-    repos.project.findById.mockResolvedValue(baseProject({
-      composePath: "compose.yml", localPath: null,
-      gitOwner: "acme", gitRepo: "app", gitProvider: "github", gitUrl: "https://github.com/acme/app.git",
-    }));
-    resolveProjectInfo.mockResolvedValueOnce({ services: [parsed] });
-    const error = await triggerDeployment(ctx, {
-      projectId: "project-1", branch: "main", trigger: "webhook", changedPaths: ["src/index.ts"],
-    }).catch((error: unknown) => error);
-    expect(error).toMatchObject({ statusCode: 409, message: expect.stringContaining("MY_VAR") });
-    expect((error as Error).message).not.toContain("cached-private-value");
-    expect(state.stored().environment).toEqual({ MY_VAR: "cached-private-value" });
-    expect(state.stored().driftSpec).toEqual(toComposeSpec(parsed));
-    expect(repos.deployment.create).not.toHaveBeenCalled();
-    expect(kickoffBuild).not.toHaveBeenCalled();
-  });
+  it.each([null, "poisoned"])(
+    "preserves a %s legacy Compose value without blocking code-only webhooks (#893)",
+    async (baseline) => {
+      const parsed = {
+        ...composeServices[0],
+        environment: { MY_VAR: "B" },
+        environmentTemplates: { MY_VAR: "${MY_VAR}" },
+        advanced: { ...composeServices[0].advanced, environmentTemplateKeys: ["MY_VAR"] },
+      };
+      const state = installStatefulComposeRepo({
+        ...parsed,
+        environmentTemplates: undefined,
+        projectId: "project-1",
+        environment: { MY_VAR: "cached-private-value" },
+        importedSpec: baseline ? toComposeSpec(parsed) : null,
+        driftSpec: null,
+      });
+      repos.project.findById.mockResolvedValue(
+        baseProject({
+          composePath: "compose.yml",
+          localPath: null,
+          gitOwner: "acme",
+          gitRepo: "app",
+          gitProvider: "github",
+          gitUrl: "https://github.com/acme/app.git",
+        }),
+      );
+      resolveProjectInfo.mockResolvedValueOnce({ services: [parsed] });
+      await triggerDeployment(ctx, {
+        projectId: "project-1",
+        branch: "main",
+        trigger: "webhook",
+        changedPaths: ["src/index.ts"],
+      });
+      expect(state.stored().environment).toEqual({ MY_VAR: "cached-private-value" });
+      expect(state.stored().advanced?.environmentOverrideKeys).toContain("MY_VAR");
+      expect(state.stored().driftSpec).toBeNull();
+      expect(repos.deployment.create).toHaveBeenCalled();
+      expect(kickoffBuild).toHaveBeenCalled();
+    },
+  );
 
   it("keeps critical env through trigger reconciliation when a later preflight blocks deploy", async () => {
     const state = installStatefulComposeRepo(criticalApiService());
@@ -1261,12 +1276,12 @@ describe("triggerDeployment", () => {
       }),
     ).rejects.toThrow("blocked after compose reconciliation");
 
-    // The actual stored row remains deployable even though reconciliation ran
-    // and the deployment failed AFTER it. Only the proposed spec is staged as
-    // drift for an explicit operator decision.
+    // Source changes apply before preflight, but a failed deployment cannot
+    // erase the configuration needed by the next attempt.
     expect(state.stored().environment).toEqual(criticalApiEnvironment);
-    expect(state.stored().importedSpec).toEqual(criticalApiService().importedSpec);
-    expect(state.stored().driftSpec).toEqual(toComposeSpec(proposed));
+    expect(state.stored().image).toBe("example/api:2");
+    expect(state.stored().importedSpec).toEqual(toComposeSpec(proposed));
+    expect(state.stored().driftSpec).toBeNull();
     expect(runPreflightChecks).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -1812,7 +1827,8 @@ describe("redeployBuildSession environment snapshot", () => {
     await redeployBuildSession(ctx, "dep-old");
 
     expect(state.stored().environment).toEqual(criticalApiEnvironment);
-    expect(state.stored().driftSpec).toEqual(toComposeSpec(proposed));
+    expect(state.stored().driftSpec).toBeNull();
+    expect(state.stored().image).toBe("example/api:2");
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({
         commitSha: "new-sha",
@@ -2109,7 +2125,15 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
     const captured = repos.deployment.create.mock.calls.at(-1)?.[0]?.envVars;
     expect(decrypt(captured.SERVER_URL)).toBe("https://override.example.com");
-    expect(repos.project.mergeEnvVars).not.toHaveBeenCalled();
+    expect(repos.project.mergeEnvVars).toHaveBeenCalledExactlyOnceWith(
+      "project-1",
+      "production",
+      [expect.objectContaining({ key: "SERVER_URL" })],
+      [],
+    );
+    expect(decrypt(repos.project.mergeEnvVars.mock.calls[0][2][0].value)).toBe(
+      "https://override.example.com",
+    );
   });
 
   it("recovers only explicitly imported root .env keys from the trusted source scan", async () => {
@@ -2335,12 +2359,50 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     const captured = repos.deployment.create.mock.calls.at(-1)?.[0]?.envVars;
     expect(decrypt(captured.AUTH_SECRET)).toBe("runtime-secret");
     expect(decrypt(captured.PUBLIC_SETTING)).toBe("new-value");
-    expect(repos.project.bulkSetEnvVars).toHaveBeenCalledWith(
+    expect(repos.project.mergeEnvVars).toHaveBeenCalledWith(
       "project-1",
       "production",
       expect.arrayContaining([
         expect.objectContaining({ key: "AUTH_SECRET", value: storedSecret, isSecret: true }),
       ]),
+      [],
+    );
+  });
+
+  it("keeps saved project values in the deployment and storage when the caller submits only one changed key", async () => {
+    const uploadSessionId = seedSession();
+    const saved = encrypt("saved-credential");
+    repos.project.listEnvVars.mockResolvedValue([
+      {
+        key: "DATABASE_CREDENTIAL",
+        value: saved,
+        isSecret: true,
+        environment: "production",
+        serviceId: null,
+      },
+      {
+        key: "LOG_LEVEL",
+        value: encrypt("info"),
+        isSecret: false,
+        environment: "production",
+        serviceId: null,
+      },
+    ]);
+    await requestBuildAccess(ctx, {
+      projectId: "project-1",
+      uploadSessionId,
+      environment: "production",
+      envVars: { LOG_LEVEL: "debug" },
+    });
+    const captured = repos.deployment.create.mock.calls.at(-1)?.[0]?.envVars;
+    expect(decrypt(captured.DATABASE_CREDENTIAL)).toBe("saved-credential");
+    expect(decrypt(captured.LOG_LEVEL)).toBe("debug");
+    expect(repos.project.bulkSetEnvVars).not.toHaveBeenCalled();
+    expect(repos.project.mergeEnvVars).toHaveBeenCalledWith(
+      "project-1",
+      "production",
+      [expect.objectContaining({ key: "LOG_LEVEL" })],
+      [],
     );
   });
 
@@ -2431,6 +2493,43 @@ describe("requestBuildAccess — folder-upload compose services", () => {
       requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId }, { handoverImages }),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(repos.deployment.create).not.toHaveBeenCalled();
+  });
+
+  it("preserves saved service variables omitted by a partial deployment form", async () => {
+    const uploadSessionId = seedSession();
+    repos.service.listByProject.mockResolvedValue([
+      {
+        ...scannedServices[0],
+        id: "svc-api",
+        projectId: "project-1",
+        kind: "compose",
+        enabled: true,
+        environment: {
+          TOKEN: "saved-service-secret",
+          NODE_ENV: "production",
+          URL: "${ORIGIN}/api",
+        },
+        advanced: { environmentTemplateKeys: ["URL"], environmentOverrideKeys: ["TOKEN"] },
+      },
+    ]);
+    await requestBuildAccess(ctx, {
+      projectId: "project-1",
+      uploadSessionId,
+      services: [{ ...scannedServices[0], environment: { NODE_ENV: "staging" } }] as any,
+    });
+    const persisted = repos.service.syncFromCompose.mock.calls.at(-1)?.[1]?.[0];
+    expect(persisted.environment).toEqual({
+      TOKEN: "saved-service-secret",
+      NODE_ENV: "staging",
+      URL: "${ORIGIN}/api",
+    });
+    expect(persisted.advanced).toMatchObject({
+      environmentTemplateKeys: ["URL"],
+      environmentOverrideKeys: ["TOKEN"],
+    });
+    expect(
+      repos.deployment.create.mock.calls.at(-1)?.[0]?.meta.composeServices[0].environment,
+    ).toEqual(persisted.environment);
   });
 
   // #336: the wizard sees env masked, so a deploy request can echo "••••••••".

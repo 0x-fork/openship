@@ -130,6 +130,7 @@ export interface DomainSslOptions {
   dnsAuthHook?: string;
   /** Optional custom DNS cleanup hook command/script */
   dnsCleanupHook?: string;
+  onLog?: (message: string) => void;
 }
 
 /** The lock scope for the box the API itself runs on. */
@@ -262,7 +263,7 @@ async function withAuthorizedDomainRuntime<T>(
  *   - cert genuinely missing → "provisioning" (still being issued)
  */
 export function resolveSslPatch(
-  currentStatus: string | null | undefined,
+  _currentStatus: string | null | undefined,
   result: SslResult,
 ): { sslStatus: string; sslIssuer?: string; sslExpiresAt?: Date } | null {
   if (result.reason === "not_local") return null;
@@ -273,7 +274,7 @@ export function resolveSslPatch(
       sslExpiresAt: new Date(result.expiresAt),
     };
   }
-  if (result.reason === "read_error" && currentStatus === "active") {
+  if (result.reason === "read_error") {
     return null;
   }
   return { sslStatus: "provisioning", sslIssuer: result.issuer };
@@ -693,6 +694,7 @@ async function manageAuthorizedDomainSsl(
   }
 
   const provOpts: ProvisionCertOptions = {
+    ...(opts.onLog ? { onLog: opts.onLog } : {}),
     ...(opts.action === "renew" ? { force: true } : {}),
     ...(isDns ? { challenge: "dns-01" } : opts.challenge ? { challenge: opts.challenge } : {}),
     ...dnsHooks,

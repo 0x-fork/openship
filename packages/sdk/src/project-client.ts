@@ -140,6 +140,13 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
     async *streamClusterDatabaseEvents(id, options = {}) {
       yield* http.events(path(id) + "/cluster/databases/stream", { signal: options.signal });
     },
+    async *retryRoutingStream(value, options = {}) {
+      const id = parseInput(ResourceIdSchema, value);
+      yield* http.events(http.url(`${path(id)}/routing/retry/stream`).href, {
+        method: "POST",
+        signal: options.signal,
+      });
+    },
     async *streamRuntimeLogs(id, command = {}, options = {}) {
       const input = parseInput(RuntimeLogsInputSchema, command);
       const url = http.url(path(id) + "/logs/stream");

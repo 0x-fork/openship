@@ -423,8 +423,14 @@
     "projects.retryRouting": {
       "page": "projects",
       "section": "Routing and monitoring",
-      "description": "Retry applying the project’s routing configuration.",
+      "description": "Repair project routing and verify pending domains and HTTPS.",
       "route": "POST /api/projects/:id/routing/retry"
+    },
+    "projects.retryRoutingStream": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Repair routing with live logs and a terminal success or failure event.",
+      "route": "POST /api/projects/:id/routing/retry/stream"
     },
     "projects.runtimeLogs": {
       "page": "projects",
@@ -693,7 +699,7 @@
     "services.acceptDrift": {
       "page": "services",
       "section": "Operations",
-      "description": "Accept the source version of a detected configuration drift.",
+      "description": "Accept a legacy source review while preserving saved environment values.",
       "route": "POST /api/projects/:id/services/:serviceId/drift/accept"
     },
     "services.keepDrift": {
@@ -1703,6 +1709,12 @@
       "section": "Operations",
       "description": "Read current billing state.",
       "route": "GET /api/billing/state"
+    },
+    "billing.getCheckout": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Verify a checkout and its credit delivery for this organization.",
+      "route": "GET /api/billing/checkout"
     },
     "billing.getResources": {
       "page": "billing",

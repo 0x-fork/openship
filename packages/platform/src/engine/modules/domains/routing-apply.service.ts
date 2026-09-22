@@ -36,7 +36,12 @@ import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import { resolveServicePort } from "../../lib/deployable-service";
 import { isArtifactRef } from "../../lib/container-ref";
-import { buildProjectRouteDomains, buildServiceRouteDomain, buildServiceRouteDomains } from "../../lib/routing-domains";
+import {
+  buildProjectRouteDomains,
+  buildServiceRouteDomain,
+  buildServiceRouteDomains,
+  ensureRouteDomainRecord,
+} from "../../lib/routing-domains";
 import { pickProjectPortOwner } from "../../lib/project-service-upstream";
 import { resolveRouteRedirect } from "../../lib/domain-redirect";
 import {
@@ -53,7 +58,7 @@ import {
 
 export async function applyProjectRouting(
   projectId: string,
-  options: { onWarning?: (message: string) => void } = {},
+  options: { onWarning?: (message: string) => void; onLog?: (message: string) => void } = {},
 ): Promise<void> {
   const warn = (message: string) => {
     console.warn(message);
@@ -105,6 +110,7 @@ export async function applyProjectRouting(
       const observed = observedLoopbackPublishFromUrl({
         targetUrl,
         serviceId,
+        containerId: rowByService.get(serviceId)?.containerId,
         containerPort,
       });
       if (!observed || !targetUrl) return;
@@ -124,7 +130,7 @@ export async function applyProjectRouting(
     // and service edits. A strategy-only project save must rewrite these vhosts
     // too; otherwise an unchanged Compose service can be carried forever behind
     // the old topology.
-    const serviceRoutePlans = defs
+    const plannedServiceRoutes = defs
       .filter((def) => def.enabled)
       .flatMap((def) =>
         buildServiceRouteDomains({
@@ -135,6 +141,20 @@ export async function applyProjectRouting(
           domainByHostname,
         }).map((route) => ({ def, route })),
       );
+    const serviceRoutePlans: typeof plannedServiceRoutes = [];
+    const blockedHostnames = new Set<string>();
+    for (const plan of plannedServiceRoutes) {
+      try {
+        // A route needs a durable owner and verification row as well as a
+        // vhost. Repair old service-only imports through the deploy planner's
+        // same ownership check, without claiming another project's hostname.
+        await ensureRouteDomainRecord({ projectId, route: plan.route, domainByHostname });
+        serviceRoutePlans.push(plan);
+      } catch (error) {
+        blockedHostnames.add(plan.route.hostname.toLowerCase());
+        warn(`${plan.route.hostname}: ${safeErrorMessage(error)}`);
+      }
+    }
     const liveServiceHostnames = serviceRoutePlans.map(({ route }) => route.hostname);
 
     // One live-upstream inventory, shared by service routes, the vercel
@@ -226,6 +246,7 @@ export async function applyProjectRouting(
         ? observedLoopbackPublishFromUrl({
             targetUrl,
             serviceId: def.id,
+            containerId: rowByService.get(def.id)?.containerId,
             containerPort: route.targetPort,
           })
         : null;
@@ -325,12 +346,16 @@ export async function applyProjectRouting(
     // Last-writer order is part of the routing contract. A composite/fan-out
     // registration is richer than a service's base vhost, so it must overwrite
     // the service register when they intentionally share a hostname.
-    const registers = [...serviceRegisters, ...topologyRegisters];
+    const registers = [...serviceRegisters, ...topologyRegisters].filter(
+      (register) => !blockedHostnames.has(register.hostname.toLowerCase()),
+    );
     if (registers.length > 0) {
       await reconcileProjectRoutes(project, {
         onWarning: options.onWarning,
+        onLog: options.onLog,
         deployment,
         routing,
+        runtime,
         hostPortTarget: resolved.hostPortTarget,
         ...(resolved.platform.executor
           ? { edgeProxy: edgeProxyFor(resolved.platform.executor, "openresty", { ours: true }) }

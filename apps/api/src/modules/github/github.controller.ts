@@ -11,8 +11,12 @@ const ops = () => getPlatformKernel().github;
 const call = (c: Context) => operationContext(c);
 const repo = (c: Context) => ({ owner: c.req.param("owner")!, repo: c.req.param("repo")! });
 export async function getStatus(c: Context) {
-  
-  const data = await operationData(c, ops().getStatus(call(c)));
+  const data = await operationData(
+    c,
+    ops().getStatus(call(c), {
+      includeInstallUrl: c.req.query("includeInstallUrl") !== "false",
+    }),
+  );
   return c.json(data, 200);
 }
 export async function getHome(c: Context) {

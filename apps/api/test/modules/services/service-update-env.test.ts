@@ -276,7 +276,7 @@ describe("inline environment ownership and Compose recovery (#893)", () => {
   });
 
   it("accepts the source once and uses every subsequent project value with existing precedence", async () => {
-    const stored = stateful();
+    const stored = stateful({ environment: { MY_VAR: "${MY_VAR}" } });
     await acceptServiceDrift(ctx, project.id, "svc_inventar");
     for (const value of ["B", "C"]) {
       const layers = {
@@ -291,6 +291,37 @@ describe("inline environment ownership and Compose recovery (#893)", () => {
         .toBe("release-value");
     }
     expect((stored() as any).driftSpec).toBeNull();
+  });
+
+  it("accepts repo changes without erasing the only saved credential or other environment keys", async () => {
+    const stored = stateful({
+      environment: { MY_VAR: "saved-credential", EXTRA: "saved-extra" },
+      driftSpec: toComposeSpec({
+        image: "inventar:next",
+        environmentTemplates: { MY_VAR: "${MY_VAR:?required}" },
+      }),
+    });
+    await acceptServiceDrift(ctx, project.id, "svc_inventar");
+    expect(stored()).toMatchObject({
+      image: "inventar:next",
+      environment: { MY_VAR: "saved-credential", EXTRA: "saved-extra" },
+      driftSpec: null,
+    });
+    const layers = {
+      project: {},
+      frozen: {},
+      service: {},
+      inline: stored().environment,
+      templateKeys: (stored() as any).advanced.environmentTemplateKeys,
+    };
+    const merged = mergeServiceDeployEnv(layers, false);
+    expect(merged.env).toMatchObject({ MY_VAR: "saved-credential", EXTRA: "saved-extra" });
+    expect(merged.missingRequired).toEqual([]);
+    expect(projectRepo.bulkSetEnvVars).not.toHaveBeenCalled();
+    expect(
+      mergeServiceDeployEnv({ ...layers, service: { MY_VAR: "scoped-override" } }, false).env
+        .MY_VAR,
+    ).toBe("scoped-override");
   });
 
   it("keeps a reviewed cached value as an explicit literal override", async () => {

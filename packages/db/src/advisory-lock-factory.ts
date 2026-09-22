@@ -1,8 +1,22 @@
-import type { Pool } from "pg";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { Pool, PoolClient } from "pg";
 import type { Driver } from "./connection";
 
 export interface AdvisoryLockHandle {
   release(): Promise<void>;
+}
+
+interface LockSession {
+  client: PoolClient;
+  tails: Map<number, Promise<void>>;
+  error?: Error;
+}
+
+interface LockFrame {
+  session: LockSession;
+  keys: ReadonlySet<number>;
+  children: Set<Promise<unknown>>;
+  active: boolean;
 }
 
 export function hashStringToInt(input: string): number {
@@ -23,13 +37,15 @@ export function createAdvisoryLocks(options: {
   poolMax?: number;
 }) {
   const { getDriver, getPgPool } = options;
-
+  const currentFrame = new AsyncLocalStorage<LockFrame>();
 
   /**
    * Long-lived session locks use the same pg Pool as Drizzle. Without a separate
    * admission limit, `pool.max` concurrent locks can each enter a callback that
    * then waits forever for one more connection. Keep one pool slot reserved for
-   * ordinary queries. PGlite never enters this gate.
+   * ordinary queries. Nested callback locks share their parent's connection and
+   * permit; otherwise every admitted quota check can stall waiting for a second
+   * permit to verify billing. PGlite never enters this gate.
    */
   const MAX_POSTGRES_LOCK_CLIENTS = Math.max(1, (options.poolMax ?? 20) - 1);
   let postgresLockClients = 0;
@@ -67,6 +83,73 @@ export function createAdvisoryLocks(options: {
     return err instanceof Error ? err : new Error(String(err));
   }
 
+  function runInSession<T>(
+    session: LockSession,
+    parent: LockFrame | undefined,
+    scopeKey: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const key = hashStringToInt(scopeKey);
+    const inherited = parent?.keys.has(key) ?? false;
+    const run = async () => {
+      if (session.error) throw session.error;
+      if (!inherited) {
+        try {
+          await session.client.query("SELECT pg_advisory_lock($1)", [key]);
+        } catch (err) {
+          session.error = errorForPool(err);
+          throw err;
+        }
+      }
+      const frame: LockFrame = {
+        session,
+        keys: new Set([...(parent?.keys ?? []), key]),
+        children: new Set(),
+        active: true,
+      };
+      try {
+        return await currentFrame.run(frame, fn);
+      } finally {
+        frame.active = false;
+        // Promise.all can reject while another nested callback is still running.
+        // Keep its ancestor locks and connection until every started child exits.
+        await Promise.allSettled(frame.children);
+        if (!inherited) {
+          try {
+            const result = await session.client.query<{ pg_advisory_unlock: boolean }>(
+              "SELECT pg_advisory_unlock($1)", [key],
+            );
+            if (result.rows[0]?.pg_advisory_unlock !== true) {
+              throw new Error(`Postgres advisory lock ${scopeKey} was not owned during release`);
+            }
+          } catch (err) {
+            session.error = errorForPool(err);
+            throw err;
+          }
+        }
+      }
+    };
+
+    // Postgres session locks are reentrant. Parallel siblings are not nested
+    // owners of each other's key, so serialize those callbacks explicitly.
+    const result = inherited ? run() : (session.tails.get(key) ?? Promise.resolve()).then(run);
+    if (!inherited) {
+      const tail = result.then(() => {}, () => {});
+      session.tails.set(key, tail);
+      void tail.then(() => {
+        if (session.tails.get(key) === tail) session.tails.delete(key);
+      });
+    }
+    if (parent) {
+      parent.children.add(result);
+      void result.then(
+        () => parent.children.delete(result),
+        () => parent.children.delete(result),
+      );
+    }
+    return result;
+  }
+
   /**
    * 31-bit signed-positive int hash of a string identity, for Postgres advisory
    * lock keys. `pg_advisory_lock` takes a bigint; hashing a string identity down
@@ -79,9 +162,9 @@ export function createAdvisoryLocks(options: {
   /**
    * Run `fn` while holding a Postgres SESSION-level advisory lock keyed by
    * `scopeKey`, serializing it across every process/replica sharing the database.
-   * The lock is held on a dedicated pooled connection for the whole of `fn` and
-   * released in `finally` (session-level, not xact-scoped, because callers may run
-   * long — e.g. provisioning a server).
+   * The outer callback owns one pooled connection; awaited nested callbacks use
+   * that same session. Each scope is unlocked in `finally` (session-level, not
+   * xact-scoped, because callers may run long — e.g. provisioning a server).
    *
    * On the PGlite driver (single embedded process — desktop/dev) there is nothing
    * to coordinate across processes, so this is a passthrough; callers still layer
@@ -92,8 +175,10 @@ export function createAdvisoryLocks(options: {
       return fn();
     }
 
+    const parent = currentFrame.getStore();
+    if (parent?.active) return runInSession(parent.session, parent, scopeKey, fn);
+
     const releasePermit = await acquirePostgresLockPermit();
-    const key = hashStringToInt(scopeKey);
     let client;
     try {
       client = await getPgPool().connect();
@@ -101,32 +186,13 @@ export function createAdvisoryLocks(options: {
       releasePermit();
       throw err;
     }
-    let clientError: Error | undefined;
+    const session: LockSession = { client, tails: new Map() };
     try {
-      try {
-        await client.query("SELECT pg_advisory_lock($1)", [key]);
-      } catch (err) {
-        clientError = errorForPool(err);
-        throw err;
-      }
-      try {
-        return await fn();
-      } finally {
-        try {
-          const result = await client.query<{ pg_advisory_unlock: boolean }>(
-            "SELECT pg_advisory_unlock($1)",
-            [key],
-          );
-          if (result.rows[0]?.pg_advisory_unlock !== true) {
-            throw new Error(`Postgres advisory lock ${scopeKey} was not owned during release`);
-          }
-        } catch (err) {
-          clientError = errorForPool(err);
-          throw err;
-        }
-      }
+      const result = await runInSession(session, undefined, scopeKey, fn);
+      if (session.error) throw session.error;
+      return result;
     } finally {
-      client.release(clientError);
+      client.release(session.error);
       releasePermit();
     }
   }

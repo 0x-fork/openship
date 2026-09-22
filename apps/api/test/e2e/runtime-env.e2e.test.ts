@@ -210,4 +210,24 @@ describeDockerE2E("secret environment through the real deployment pipeline (#801
     expect(deployment.deployment.id).toBeTruthy();
     await checkContainer(deployment.deployment.id, ORIGINAL);
   }, 240_000);
+
+  it("redeploys a partial environment form without deleting saved secrets from the store, build, or container", async () => {
+    const ctx = buildBackgroundContext({
+      organizationId: owner.organizationId,
+      userId: owner.userId,
+    });
+    const result = await builds.requestBuildAccess(ctx, {
+      projectId: project.id,
+      publicEndpoints: [],
+      envVars: { PUBLIC_VALUE: ORIGINAL.PUBLIC_VALUE, ADDED_BY_FORM: "new value" },
+    });
+    await checkContainer(result.deployment_id, ORIGINAL);
+    const stored = await repos.project.listEnvVars(project.id, "production", null);
+    const values = Object.fromEntries(stored.map((row) => [row.key, decrypt(row.value)]));
+    expect(values).toEqual({ ...ORIGINAL, ADDED_BY_FORM: "new value" });
+    const active = (await repos.deployment.findById(result.deployment_id))!;
+    expect((await runtime.docker.getContainer(active.containerId!).inspect()).Config.Env).toContain(
+      "ADDED_BY_FORM=new value",
+    );
+  }, 240_000);
 });

@@ -1,22 +1,47 @@
 /** Organization-scoped billing operations. Oblien is the Cloud payment authority. */
 
 import type { ExecutionContext } from "../../../context";
-import { ValidationError, normalizeBillingCreditPacks, type BillingOperations } from "@repo/contracts";
+import {
+  BillingPlansSchema,
+  ValidationError,
+  normalizeBillingCreditPacks,
+  parseInput,
+  type BillingOperations,
+} from "@repo/contracts";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
-import { FREE_DOMAIN_SUFFIX } from "@repo/core";
+import { AppError, FREE_DOMAIN_SUFFIX, cloudRuntimeTarget } from "@repo/core";
+import { env } from "../../config/env";
 import { getFreeSubdomainUsage, listFreeSubdomains } from "@repo/platform/engine/lib/plan-guard";
 import * as billingService from "@repo/platform/engine/modules/billing/billing.service";
 import * as billingRepository from "@repo/platform/engine/modules/billing/billing.repository";
 import { getNamespaceUsage } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
-import { getCloudBillingCatalog, presentCloudPlans } from "./billing-catalog";
+import { presentCloudPlans } from "./billing-catalog";
 import { getBillingResources } from "./billing-resources.service";
 
 /* ---------- Plans (public) ---------- */
 
 /** Public on every installation: a linked local dashboard must show Cloud's
- * actual prices too. Outside SaaS, the public provider read sends no credentials. */
+ * actual prices too. Outside SaaS, read Openship's public catalog without credentials. */
 export async function listPlans(input: NonNullable<Parameters<BillingOperations["listPlans"]>[0]>) {
-  return presentCloudPlans(await getCloudBillingCatalog(), input.locale);
+  if (env.CLOUD_MODE) return presentCloudPlans(input.locale);
+  const url = new URL("/api/billing/plans", cloudRuntimeTarget.api);
+  if (input.locale) url.searchParams.set("locale", input.locale);
+  try {
+    const response = await fetch(url, {
+      credentials: "omit",
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error("Cloud catalog unavailable");
+    const payload = (await response.json()) as { data?: unknown };
+    return parseInput(BillingPlansSchema, payload.data);
+  } catch {
+    throw new AppError(
+      "Openship Cloud prices are temporarily unavailable. Please retry.",
+      503,
+      "BILLING_CATALOG_UNAVAILABLE",
+    );
+  }
 }
 
 /* ---------- Billing state (dashboard overview) ---------- */
@@ -24,6 +49,10 @@ export async function listPlans(input: NonNullable<Parameters<BillingOperations[
 export async function getState(ctx: ExecutionContext) {
   const state = await billingRepository.getBillingState(ctx.organizationId);
   return state;
+}
+
+export async function getCheckout(ctx: ExecutionContext, input: { checkoutId: string }) {
+  return billingService.getCheckoutStatus(ctx.organizationId, input.checkoutId);
 }
 
 export async function getResources(ctx: ExecutionContext) {
@@ -68,7 +97,7 @@ export async function createTopup(ctx: ExecutionContext, input: NonNullable<Para
   return { checkoutUrl };
 }
 
-/** Provider credit packs; never fall back to historical Stripe price IDs. */
+/** Openship's credit packs; prices and credits come from the same server catalog. */
 export async function listTopupPacks(_ctx: ExecutionContext) {
   return normalizeBillingCreditPacks(await billingService.listActiveCreditPacks());
 }

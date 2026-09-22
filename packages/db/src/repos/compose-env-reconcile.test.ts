@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import type { Database } from "../client";
 import {
   createServiceRepo,
-  removedComposeEnvironmentKeys,
   toComposeSpec,
   type ParsedComposeService,
   type Service,
@@ -54,11 +53,14 @@ function existingService(overrides: Partial<Service> = {}) {
  * at the end; a write that only looked safe in its payload must also leave the
  * final stored row safe.
  */
-function harness(initial = existingService()) {
+function harness(initial = existingService(), hasScopedEnvironment = false) {
   let stored = structuredClone(initial);
   const writes: Array<Record<string, unknown>> = [];
   const db = {
-    query: { service: { findMany: async () => [stored] } },
+    query: {
+      service: { findMany: async () => [stored] },
+      envVar: { findFirst: async () => (hasScopedEnvironment ? { id: "env_saved" } : undefined) },
+    },
     update: () => ({
       set: (data: Record<string, unknown>) => ({
         where: async () => {
@@ -76,29 +78,6 @@ function harness(initial = existingService()) {
 }
 
 describe("Compose environment deletion safety", () => {
-  it("detects only removed keys, not additions or value rotations", () => {
-    expect(
-      removedComposeEnvironmentKeys(
-        toComposeSpec({ environment: fullEnvironment }),
-        toComposeSpec({
-          environment: {
-            ...fullEnvironment,
-            BETTER_AUTH_SECRET: "rotated",
-            NEW_KEY: "added",
-          },
-        }),
-      ),
-    ).toEqual([]);
-
-    const { SMTP_HOST: _removed, ...withoutSmtp } = fullEnvironment;
-    expect(
-      removedComposeEnvironmentKeys(
-        toComposeSpec({ environment: fullEnvironment }),
-        toComposeSpec({ environment: withoutSmtp }),
-      ),
-    ).toEqual(["SMTP_HOST"]);
-  });
-
   it("preserves every stored value when an untouched service loses some repo keys", async () => {
     const h = harness();
     const proposed = {
@@ -111,10 +90,10 @@ describe("Compose environment deletion safety", () => {
 
     const result = await h.repo.reconcileFromCompose("proj_1", [proposed]);
 
-    expect(result.driftedNames).toEqual(["api"]);
+    expect(result.driftedNames).toEqual([]);
     expect(h.stored().environment).toEqual(fullEnvironment);
-    expect(h.stored().importedSpec).toEqual(existingService().importedSpec);
-    expect(h.stored().driftSpec).toEqual(toComposeSpec(proposed));
+    expect(h.stored().importedSpec).toEqual(toComposeSpec(proposed));
+    expect(h.stored().driftSpec).toBeNull();
   });
 
   it("preserves every stored value when the repo removes the entire environment block", async () => {
@@ -129,10 +108,10 @@ describe("Compose environment deletion safety", () => {
     await h.repo.reconcileFromCompose("proj_1", [proposed]);
 
     expect(h.stored().environment).toEqual(fullEnvironment);
-    expect(h.stored().driftSpec).toEqual(toComposeSpec(proposed));
+    expect(h.stored().driftSpec).toBeNull();
   });
 
-  it("does not smuggle unrelated image, port, or volume changes through with a deletion", async () => {
+  it("applies unrelated image, port, and volume changes while retaining omitted values", async () => {
     const h = harness();
     const proposed = {
       name: "api",
@@ -145,11 +124,11 @@ describe("Compose environment deletion safety", () => {
     await h.repo.reconcileFromCompose("proj_1", [proposed]);
 
     expect(h.stored()).toMatchObject({
-      image: "example/api:1",
-      ports: ["4000"],
-      volumes: ["api_data:/data"],
+      image: "example/api:2",
+      ports: ["5000"],
+      volumes: ["new_data:/data"],
       environment: fullEnvironment,
-      driftSpec: toComposeSpec(proposed),
+      driftSpec: null,
     });
   });
 
@@ -168,10 +147,10 @@ describe("Compose environment deletion safety", () => {
     await h.repo.reconcileFromCompose("proj_1", [proposed]);
 
     expect(h.stored().environment).toEqual(editedEnvironment);
-    expect(h.stored().driftSpec).toEqual(toComposeSpec(proposed));
+    expect(h.stored().driftSpec).toBeNull();
   });
 
-  it("does not churn the row when the same destructive drift is already pending", async () => {
+  it("clears an old approval banner once without churning subsequent refreshes", async () => {
     const proposed: ParsedComposeService = {
       name: "api",
       image: "example/api:1",
@@ -183,8 +162,10 @@ describe("Compose environment deletion safety", () => {
 
     const result = await h.repo.reconcileFromCompose("proj_1", [proposed]);
 
-    expect(result.driftedNames).toEqual(["api"]);
-    expect(h.writes).toHaveLength(0);
+    expect(result.driftedNames).toEqual([]);
+    await h.repo.reconcileFromCompose("proj_1", [proposed]);
+    expect(h.writes).toHaveLength(1);
+    expect(h.stored().driftSpec).toBeNull();
     expect(h.stored().environment).toEqual(fullEnvironment);
   });
 
@@ -236,19 +217,25 @@ describe("Compose cached environment recovery (#893)", () => {
     environment: { MY_VAR: value },
     environmentTemplates: { MY_VAR: "${MY_VAR}" },
   });
-  const row = (overrides: Partial<Service> = {}) => existingService({
-    ports: [], volumes: [], environment: { MY_VAR: "A" }, importedSpec: null, ...overrides,
-  });
+  const row = (overrides: Partial<Service> = {}) =>
+    existingService({
+      ports: [],
+      volumes: [],
+      environment: { MY_VAR: "A" },
+      importedSpec: null,
+      ...overrides,
+    });
 
-  it("keeps an ambiguous cached value reviewable across repeated refreshes", async () => {
+  it("preserves an ambiguous legacy value as an override across repeated refreshes", async () => {
     const h = harness(row());
     for (const value of ["B", "C"]) {
       const result = await h.repo.reconcileFromCompose("proj_1", [source(value)]);
-      expect(result.unresolvedEnvironment).toEqual([{ name: "api", keys: ["MY_VAR"] }]);
-      expect(result.driftedNames).toEqual(["api"]);
+      expect(result.unresolvedEnvironment).toEqual([]);
+      expect(result.driftedNames).toEqual([]);
       expect(h.stored().environment).toEqual({ MY_VAR: "A" });
-      expect(h.stored().importedSpec).toBeNull();
-      expect(h.stored().driftSpec).toEqual(toComposeSpec(source(value)));
+      expect(h.stored().advanced?.environmentOverrideKeys).toEqual(["MY_VAR"]);
+      expect(h.stored().importedSpec).toEqual(toComposeSpec(source(value)));
+      expect(h.stored().driftSpec).toBeNull();
     }
   });
 
@@ -279,54 +266,220 @@ describe("Compose cached environment recovery (#893)", () => {
     expect((await h.repo.reconcileFromCompose("proj_1", [source("C")])).unresolvedEnvironment).toEqual([]);
   });
 
-  it("detects an already-poisoned baseline without rewriting the same pending drift", async () => {
-    const h = harness(row({
-      advanced: { environmentTemplateKeys: ["MY_VAR"] },
-      importedSpec: toComposeSpec(source()),
-    }));
+  it("repairs an already-poisoned baseline once without losing its value", async () => {
+    const h = harness(
+      row({
+        advanced: { environmentTemplateKeys: ["MY_VAR"] },
+        importedSpec: toComposeSpec(source()),
+      }),
+    );
     for (let i = 0; i < 2; i++) {
-      expect((await h.repo.reconcileFromCompose("proj_1", [source()])).unresolvedEnvironment)
-        .toEqual([{ name: "api", keys: ["MY_VAR"] }]);
+      expect(
+        (await h.repo.reconcileFromCompose("proj_1", [source()])).unresolvedEnvironment,
+      ).toEqual([]);
       expect(h.stored().environment).toEqual({ MY_VAR: "A" });
     }
     expect(h.writes).toHaveLength(1);
   });
 
-  it("still blocks ambiguous legacy values when the repo changes another field", async () => {
-    const h = harness(row({
-      advanced: { environmentTemplateKeys: ["MY_VAR"] },
-      importedSpec: toComposeSpec(source()),
-    }));
+  it("applies other repo fields while preserving ambiguous legacy values", async () => {
+    const h = harness(
+      row({
+        advanced: { environmentTemplateKeys: ["MY_VAR"] },
+        importedSpec: toComposeSpec(source()),
+      }),
+    );
     const proposed = { ...source(), image: "example/api:2" };
     const result = await h.repo.reconcileFromCompose("proj_1", [proposed]);
-    expect(result.unresolvedEnvironment).toEqual([{ name: "api", keys: ["MY_VAR"] }]);
-    expect(h.stored().image).toBe("example/api:1");
-    expect(h.stored().driftSpec).toEqual(toComposeSpec(proposed));
+    expect(result.unresolvedEnvironment).toEqual([]);
+    expect(h.stored().image).toBe("example/api:2");
+    expect(h.stored().driftSpec).toBeNull();
   });
 
-  it("does not let one explicit edit claim another cached value", async () => {
-    const h = harness(row({
-      environment: { MY_VAR: "A", PINNED: "manual" },
-      advanced: { environmentOverrideKeys: ["PINNED"] },
-    }));
-    const result = await h.repo.reconcileFromCompose("proj_1", [{
-      ...source(), environment: { MY_VAR: "B", PINNED: "new" },
-      environmentTemplates: { MY_VAR: "${MY_VAR}", PINNED: "${PINNED}" },
-    }]);
-    expect(result.unresolvedEnvironment).toEqual([{ name: "api", keys: ["MY_VAR"] }]);
+  it("preserves both explicit edits and legacy values without an approval gate", async () => {
+    const h = harness(
+      row({
+        environment: { MY_VAR: "A", PINNED: "manual" },
+        advanced: { environmentOverrideKeys: ["PINNED"] },
+      }),
+    );
+    const result = await h.repo.reconcileFromCompose("proj_1", [
+      {
+        ...source(),
+        environment: { MY_VAR: "B", PINNED: "new" },
+        environmentTemplates: { MY_VAR: "${MY_VAR}", PINNED: "${PINNED}" },
+      },
+    ]);
+    expect(result.unresolvedEnvironment).toEqual([]);
     expect(h.stored().environment).toEqual({ MY_VAR: "A", PINNED: "manual" });
   });
 
   it("retains explicit deletions and known kept templates on later refreshes", async () => {
     const environments: Record<string, string>[] = [{}, { MY_VAR: "${OLD_VAR}" }];
     for (const environment of environments) {
-      const h = harness(row({
-        environment, importedSpec: toComposeSpec(source()),
-        advanced: { environmentOverrideKeys: ["MY_VAR"], environmentTemplateKeys: ["MY_VAR"] },
-      }));
-      expect((await h.repo.reconcileFromCompose("proj_1", [source()])).unresolvedEnvironment).toEqual([]);
+      const h = harness(
+        row({
+          environment,
+          importedSpec: toComposeSpec(source()),
+          advanced: { environmentOverrideKeys: ["MY_VAR"], environmentTemplateKeys: ["MY_VAR"] },
+        }),
+      );
+      expect(
+        (await h.repo.reconcileFromCompose("proj_1", [source()])).unresolvedEnvironment,
+      ).toEqual([]);
       expect(h.stored().environment).toEqual(environment);
-      expect(h.stored().advanced?.environmentTemplateKeys).toEqual(["MY_VAR"]);
+      expect(h.stored().advanced?.environmentTemplateKeys).toEqual(Object.keys(environment));
     }
+  });
+});
+
+describe("independent Compose updates", () => {
+  it("preserves a literal build argument pin when its template marker was explicitly cleared", async () => {
+    const base = toComposeSpec({
+      buildArgs: { TARGET: "$HOME", RELEASE: "1" },
+      advanced: { buildArgTemplateKeys: ["TARGET"] },
+    });
+    const h = harness(
+      existingService({ ...base, importedSpec: base, advanced: { buildArgTemplateKeys: [] } }),
+    );
+    await h.repo.reconcileFromCompose("proj_1", [
+      {
+        name: "api",
+        buildArgs: { TARGET: "${NEW_HOME}", RELEASE: "2" },
+        advanced: { buildArgTemplateKeys: ["TARGET"] },
+      },
+    ]);
+    expect(h.stored().buildArgs).toEqual({ TARGET: "$HOME", RELEASE: "2" });
+    expect(h.stored().advanced?.buildArgTemplateKeys).toEqual([]);
+  });
+  it.each(["inline", "scoped"])(
+    "does not cascade-delete %s environment when a service is omitted upstream",
+    async (scope) => {
+      const base = toComposeSpec({ environment: scope === "inline" ? { TOKEN: "saved" } : {} });
+      const h = harness(existingService({ ...base, importedSpec: base }), scope === "scoped");
+      const result = await h.repo.reconcileFromCompose("proj_1", []);
+      expect(result.services).toHaveLength(1);
+      expect(h.writes).toEqual([]);
+      expect(h.stored().environment).toEqual(base.environment);
+    },
+  );
+  it("updates repo values and build args while preserving explicit overrides and UI settings", async () => {
+    const base = toComposeSpec({
+      image: "example/api:1",
+      environment: { TOKEN: "repo-token", LOG_LEVEL: "info" },
+      buildArgs: { CHANNEL: "stable", VERSION: "1" },
+      advanced: { resources: { cpuCores: 1, memoryMb: 512 } },
+    });
+    const h = harness(
+      existingService({
+        ...base,
+        importedSpec: base,
+        environment: { TOKEN: "saved-token", LOG_LEVEL: "info", EXTRA: "saved-extra" },
+        buildArgs: { CHANNEL: "private", VERSION: "1" },
+        advanced: {
+          ...base.advanced,
+          environmentOverrideKeys: ["TOKEN"],
+          resources: { cpuCores: 2, memoryMb: 512 },
+          readiness: { enabled: true },
+        },
+      }),
+    );
+    const next = {
+      name: "api",
+      image: "example/api:2",
+      environment: { TOKEN: "new-repo-token", LOG_LEVEL: "debug", ADDED: "new" },
+      buildArgs: { CHANNEL: "upstream", VERSION: "2" },
+      advanced: { resources: { cpuCores: 3, memoryMb: 1024 } },
+    };
+    for (let i = 0; i < 2; i++) {
+      expect((await h.repo.reconcileFromCompose("proj_1", [next])).driftedNames).toEqual([]);
+      expect(h.stored()).toMatchObject({
+        image: "example/api:2",
+        environment: {
+          TOKEN: "saved-token",
+          LOG_LEVEL: "debug",
+          EXTRA: "saved-extra",
+          ADDED: "new",
+        },
+        buildArgs: { CHANNEL: "private", VERSION: "2" },
+        advanced: {
+          resources: { cpuCores: 2, memoryMb: 1024 },
+          readiness: { enabled: true },
+        },
+        importedSpec: toComposeSpec(next),
+        driftSpec: null,
+      });
+    }
+    expect(h.writes).toHaveLength(1);
+  });
+
+  it.each(["", "partial-token="])(
+    "retains the only saved value when the new source resolves to %j",
+    async (preview) => {
+      const base = toComposeSpec({ image: "example/api:1", environment: { TOKEN: "saved-token" } });
+      const h = harness(existingService({ ...base, importedSpec: base }));
+      const next = {
+        name: "api",
+        image: "example/api:2",
+        environment: { TOKEN: preview, NEW_VALUE: "" },
+        environmentTemplates: { TOKEN: "${TOKEN:?required}", NEW_VALUE: "${NEW_VALUE:?required}" },
+        environmentMeta: { TOKEN: { required: true }, NEW_VALUE: { required: true } },
+      };
+      await h.repo.reconcileFromCompose("proj_1", [next]);
+      expect(h.stored()).toMatchObject({
+        image: "example/api:2",
+        environment: { TOKEN: "saved-token", NEW_VALUE: "${NEW_VALUE:?required}" },
+        advanced: { environmentOverrideKeys: ["TOKEN"], environmentTemplateKeys: ["NEW_VALUE"] },
+        driftSpec: null,
+      });
+    },
+  );
+
+  it("does not erase an existing value when the source changes it to an empty literal", async () => {
+    const base = toComposeSpec({ environment: { TOKEN: "saved-token", LOG_LEVEL: "info" } });
+    const h = harness(existingService({ ...base, importedSpec: base }));
+    await h.repo.reconcileFromCompose("proj_1", [
+      {
+        name: "api",
+        environment: { TOKEN: "", LOG_LEVEL: "debug" },
+      },
+    ]);
+    expect(h.stored().environment).toEqual({ TOKEN: "saved-token", LOG_LEVEL: "debug" });
+  });
+
+  it("keeps image and command overrides with their provenance while updating other fields", async () => {
+    const base = toComposeSpec({
+      image: "example/api:1",
+      commandArgv: ["run", "old"],
+      ports: ["3000"],
+      advanced: { imageTemplate: { expression: "example/api:${TAG}", unresolvedVariables: [] } },
+    });
+    const h = harness(
+      existingService({
+        ...base,
+        importedSpec: base,
+        image: "private/api:pinned",
+        commandArgv: ["run", "custom"],
+        advanced: {},
+      }),
+    );
+    await h.repo.reconcileFromCompose("proj_1", [
+      {
+        name: "api",
+        image: "example/api:2",
+        ports: ["4000"],
+        command: "run new",
+        advanced: {
+          imageTemplate: { expression: "example/api:${NEW_TAG}", unresolvedVariables: [] },
+        },
+      },
+    ]);
+    expect(h.stored()).toMatchObject({
+      image: "private/api:pinned",
+      command: null,
+      commandArgv: ["run", "custom"],
+      ports: ["4000"],
+    });
+    expect(h.stored().advanced).not.toHaveProperty("imageTemplate");
   });
 });

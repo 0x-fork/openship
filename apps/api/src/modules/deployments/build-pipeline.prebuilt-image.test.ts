@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   prepareTargetPinnedHostPorts: vi.fn(),
   allocateAndReservePinnedHostPort: vi.fn(),
   reserveTargetPinnedHostPort: vi.fn(),
+  reserveVerifiedTargetPinnedHostPort: vi.fn(),
   convergeTargetHostPortClaims: vi.fn(),
   convergeTargetHostPortClaimsUnlocked: vi.fn(),
   withHostPortTargetLock: vi.fn((_target, fn: () => unknown) => fn()),
@@ -231,6 +232,8 @@ vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   releaseNewPinnedHostPortClaims: vi.fn(async () => 0),
   findOwnedPinnedHostPort: vi.fn(() => undefined),
   reserveTargetPinnedHostPort: (...args: unknown[]) => mocks.reserveTargetPinnedHostPort(...args),
+  reserveVerifiedTargetPinnedHostPort: (...args: unknown[]) =>
+    mocks.reserveVerifiedTargetPinnedHostPort(...args),
   convergeTargetHostPortClaims: (...args: unknown[]) => mocks.convergeTargetHostPortClaims(...args),
   convergeTargetHostPortClaimsUnlocked: (...args: unknown[]) =>
     mocks.convergeTargetHostPortClaimsUnlocked(...args),
@@ -401,6 +404,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     mocks.prepareTargetPinnedHostPorts.mockResolvedValue([]);
     mocks.allocateAndReservePinnedHostPort.mockImplementation(allocatePinnedHostPort);
     mocks.reserveTargetPinnedHostPort.mockImplementation(async (_target, claim) => claim);
+    mocks.reserveVerifiedTargetPinnedHostPort.mockImplementation(async (_target, claim) => claim);
     mocks.convergeTargetHostPortClaims.mockResolvedValue({ released: 0, retained: [] });
     mocks.convergeTargetHostPortClaimsUnlocked.mockResolvedValue({ released: 0, retained: [] });
 
@@ -654,7 +658,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     await run(deployment(), { routeStrategy: "loopback-port" });
     await vi.waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledTimes(1));
 
-    expect(mocks.reserveTargetPinnedHostPort).toHaveBeenCalledWith(
+    expect(mocks.reserveVerifiedTargetPinnedHostPort).toHaveBeenCalledWith(
       { targetKey: "local", legacyTargetKeys: [], stable: true },
       {
         projectId: "project-1",
@@ -662,9 +666,10 @@ describe("single-app prebuilt release-image pipeline", () => {
         containerPort: 8080,
         port: 30_000,
       },
+      expect.any(Function),
     );
     expect(mocks.allocateAndReservePinnedHostPort.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.reserveTargetPinnedHostPort.mock.invocationCallOrder[0]!,
+      mocks.reserveVerifiedTargetPinnedHostPort.mock.invocationCallOrder[0]!,
     );
   });
 

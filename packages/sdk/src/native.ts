@@ -280,13 +280,21 @@ function createAttachedShip<Assertion>({
           }
         },
       } satisfies DeploymentOperations);
-      const { streamRuntimeLogs, streamClusterDatabaseEvents, openServerLogStream, ...projectResources } = platform.projects;
+      const { streamRuntimeLogs, streamClusterDatabaseEvents, openServerLogStream, retryRoutingStream, ...projectResources } = platform.projects;
       const projects = Object.freeze({
         ...bindGroup(projectResources),
         async *streamClusterDatabaseEvents(id, options = {}) {
           const context = await resolveContext();
           for await (const event of streamClusterDatabaseEvents(context, id, options)) {
             await resolveContext(); yield event;
+          }
+        },
+        async *retryRoutingStream(id, options = {}) {
+          const settings = { ...options };
+          const context = await resolveContext();
+          for await (const event of retryRoutingStream(context, id, settings)) {
+            await resolveContext();
+            yield event;
           }
         },
         async *streamRuntimeLogs(id, input = {}, options = {}) {

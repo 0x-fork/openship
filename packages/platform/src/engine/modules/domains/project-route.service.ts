@@ -291,6 +291,7 @@ export interface ReapplyProjectLiveRoutesOptions {
 
   /** Report skipped routes to a repair action as well as the server log. */
   onWarning?: (message: string) => void;
+  onLog?: (message: string) => void;
 
   /**
    * The caller runs its own managed-edge (`*.opsh.io`) sync, so skip the one below.
@@ -414,7 +415,12 @@ export async function reapplyProjectLiveRoutes(
         // legacy null `domainType` row still resolves the right cloud primitive.
         isCustomDomain: !managedHostnameToSlug(domain.hostname),
       }));
-    await reconcileProjectRoutes(project, { registers, removes, onWarning: opts.onWarning });
+    await reconcileProjectRoutes(project, {
+      registers,
+      removes,
+      onWarning: opts.onWarning,
+      onLog: opts.onLog,
+    });
     return;
   }
 
@@ -517,6 +523,7 @@ export async function reapplyProjectLiveRoutes(
       );
       await reconcileProjectRoutes(project, {
         onWarning: opts.onWarning,
+        onLog: opts.onLog,
         routing,
         hostPortTarget: resolved.hostPortTarget,
         ...(resolved.platform.executor
@@ -545,6 +552,7 @@ export async function reapplyProjectLiveRoutes(
       // reads the container's published host port LIVE; bare / no-host-port fall back
       // to the container IP (or 127.0.0.1 bare).
       let url: string | null = null;
+      let containerId = primaryContainerId ?? undefined;
       let owner: { serviceId: string | null; containerPort: number } = {
         serviceId:
           liveRows.find((row) => row.containerId === primaryContainerId)?.serviceId ?? null,
@@ -571,6 +579,9 @@ export async function reapplyProjectLiveRoutes(
               `at ${serviceResolved.url} (port ${port}, matched by ${serviceResolved.owner.via})`,
           );
           url = serviceResolved.url;
+          containerId =
+            serviceUpstreams.rowByService.get(serviceResolved.owner.serviceId)?.containerId ??
+            undefined;
           owner = {
             serviceId: serviceResolved.owner.serviceId,
             containerPort: serviceResolved.owner.containerPort,
@@ -614,6 +625,7 @@ export async function reapplyProjectLiveRoutes(
       }
       const observed = observedLoopbackPublishFromUrl({
         targetUrl: url,
+        containerId,
         serviceId: owner.serviceId,
         containerPort: owner.containerPort,
       });
@@ -737,7 +749,9 @@ export async function reapplyProjectLiveRoutes(
     // webhookDomain inside reconcileProjectRoutes.
     await reconcileProjectRoutes(project, {
       onWarning: opts.onWarning,
+      onLog: opts.onLog,
       routing,
+      runtime,
       hostPortTarget: resolved.hostPortTarget,
       ...(resolved.platform.executor
         ? { edgeProxy: edgeProxyFor(resolved.platform.executor, "openresty", { ours: true }) }

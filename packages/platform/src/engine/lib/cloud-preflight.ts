@@ -103,7 +103,7 @@ export async function runCloudPreflight(
 
   const result: CloudPreflightData = {
     runtime: runtimeError
-      ? { ok: false, message: `Cannot connect to cloud runtime: ${runtimeError}` }
+      ? { ok: false, message: `Cloud deployment check failed: ${runtimeError}` }
       : { ok: true },
   };
 

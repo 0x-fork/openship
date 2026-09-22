@@ -2327,6 +2327,8 @@ export function ServerMigrationWizard({
                         })
                       }
                       installUrl={github.installUrl}
+                      onInstall={() => void github.connect("oauth")}
+                      installing={github.connecting}
                     />
                   </div>
                 ) : (

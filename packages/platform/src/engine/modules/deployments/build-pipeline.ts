@@ -1788,7 +1788,8 @@ function buildDeployEnvironment(
       await reserveResolvedLoopbackRoutes({
         target: phase.hostPortTarget,
         projectId: project.id,
-        routes: [{ targetUrl, serviceId: null, containerPort: port }],
+        runtime,
+        routes: [{ targetUrl, serviceId: null, containerId: id, containerPort: port }],
       });
       return targetUrl;
     },
@@ -2643,16 +2644,14 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // + the Domains-tab dot instead of failing an otherwise-good deploy. Cleared
   // by Retry routing / the next clean deploy.
   const routeIssues = [...domainClaimWarnings, ...(deployResult.routeWarnings ?? [])];
-  // Routed, but is it serving HTTPS? `registerRoute` succeeds without a certificate
-  // (the edge keeps a bootstrap self-signed cert on :443) and the issuance failure
-  // inside registerResolvedRoutes is caught and only logged — so a domain could
-  // finish a green deploy routed, serving a self-signed cert, with nothing saying
-  // so. One shared auditor with the compose pipeline; `routeIssues` is passed so a
-  // host already reported as UNROUTED isn't also reported as uncertified.
+  // Check uncertain certificate records against this deploy's target. Routing
+  // can succeed with only a bootstrap certificate; an SSH failure can also leave
+  // a working certificate's metadata stale. The shared auditor distinguishes them.
   const tlsPending = await auditRoutedDomainTls({
     projectId: project.id,
     routes: routableDomains,
     routeWarnings: routeIssues,
+    ssl,
     log: (message) => logger.log(`${message}\n`, "warn"),
   });
   if (routeIssues.length || tlsPending.length) {

@@ -51,6 +51,7 @@ import type { HostPortTargetIdentity } from "./host-port-target";
 import {
   loopbackHostPortFromUrl,
   reserveObservedLoopbackPublishes,
+  type ObservedHostPortRuntime,
   type ObservedLoopbackPublish,
 } from "../modules/deployments/observed-host-port-claims";
 import {
@@ -134,6 +135,8 @@ export async function reconcileProjectRoutes(
     deployment?: Deployment | null;
     /** Pre-resolved self-hosted routing (avoids a second resolveDeploymentRuntime). */
     routing?: Platform["routing"];
+    /** Runtime on the same physical target, for live quarantine ownership proof. */
+    runtime?: ObservedHostPortRuntime;
     /** Required alongside pre-resolved routing when a register dials loopback. */
     hostPortTarget?: HostPortTargetIdentity | null;
     /** Strict inventory for a pre-resolved routing target. */
@@ -142,6 +145,7 @@ export async function reconcileProjectRoutes(
     removes?: RouteRemove[];
     /** Repair actions surface best-effort failures without rolling back saved routes. */
     onWarning?: (message: string) => void;
+    onLog?: (message: string) => void;
   },
 ): Promise<void> {
   const warn = (message: string) => {
@@ -162,6 +166,7 @@ export async function reconcileProjectRoutes(
         port: r.port,
         isCustomDomain: r.isCustomDomain,
       });
+      opts.onLog?.(`Applied route ${r.hostname}.`);
     }
     return;
   }
@@ -301,6 +306,7 @@ export async function reconcileProjectRoutes(
         await reserveObservedLoopbackPublishes({
           target: loopbackGuard.target,
           projectId: project.id,
+          runtime: resolved?.platform.runtime ?? opts.runtime,
           publishes: loopbackGuard.publishes,
         });
       }
@@ -359,6 +365,7 @@ export async function reconcileProjectRoutes(
             ...(r.trailingSlash === undefined ? {} : { trailingSlash: r.trailingSlash }),
             ...(r.redirectHost ? { redirectHost: r.redirectHost } : {}),
           });
+          opts.onLog?.(`Applied route ${r.hostname} → ${r.staticRoot ?? r.targetUrl}.`);
           successfulPublishes.push(...(loopbackPublishesByRegister.get(r) ?? []));
         } catch (err) {
           warn(

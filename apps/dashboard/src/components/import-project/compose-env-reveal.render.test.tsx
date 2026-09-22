@@ -5,6 +5,7 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { DEFAULT_CONFIG, type DeploymentConfig } from "@/context/deployment/types";
 import type EnvironmentVariables from "./EnvironmentVariables";
 import ComposeServices from "./ComposeServices";
+import { baseDictionary } from "@/i18n";
 
 type EditorProps = ComponentProps<typeof EnvironmentVariables>;
 const h = vi.hoisted(() => ({
@@ -45,13 +46,54 @@ beforeEach(() => {
 });
 
 function render() {
-  const html = renderToStaticMarkup(<I18nProvider><ComposeServices /></I18nProvider>);
-  const editor = h.editors.find(props => props.envVars?.some(row => row.key === "POSTGRES_PASSWORD"));
+  h.editors.length = 0;
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ComposeServices />
+    </I18nProvider>,
+  );
+  const editor = h.editors.find((props) =>
+    props.envVars?.some((row) => row.key === "POSTGRES_PASSWORD"),
+  );
   expect(editor).toBeDefined();
   return { html, editor: editor! };
 }
 
 describe("shared Compose environment editor", () => {
+  it.each(["", "https://api.example.com/?token="])(
+    "clears missing badges after filling an unresolved preview (%s) and restores them when emptied",
+    (preview) => {
+      const service = h.config.services[0]!;
+      service.environment.POSTGRES_PASSWORD = preview;
+      service.environmentMeta = {
+        POSTGRES_PASSWORD: {
+          source: preview ? "interpolated" : "missing",
+          required: true,
+          resolvedValue: preview,
+          expression: "${CREDENTIAL:?required}",
+        },
+      };
+      h.update.mockImplementation((patch) => {
+        h.config = { ...h.config, ...patch };
+      });
+      const label = baseDictionary.importProject.environmentVariables.resolution.needsValue;
+      const initial = render();
+      expect(initial.html).toContain(label);
+      expect(initial.html).toContain("1 missing");
+      initial.editor.onEnvVarsChange!([
+        { key: "POSTGRES_PASSWORD", value: "entered-value", visible: true },
+      ]);
+
+      const filled = render();
+      expect(filled.html).not.toContain(label);
+      expect(filled.html).not.toContain("1 missing");
+      expect(h.config.services[0]!.environment.POSTGRES_PASSWORD).toBe("entered-value");
+
+      filled.editor.onEnvVarsChange!([{ key: "POSTGRES_PASSWORD", value: "", visible: true }]);
+      expect(render().html).toContain(label);
+    },
+  );
+
   it.each(["git", "local", "upload"])("shows %s scan values immediately without a reveal lookup", source => {
     if (source === "local") h.config.localPath = "/work/app";
     if (source === "upload") h.config.uploadSessionId = "upload-session";

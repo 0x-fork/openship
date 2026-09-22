@@ -363,6 +363,8 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
               loadingRepos={github.loadingRepos}
               onSelect={handleLinkRepo}
               installUrl={github.installUrl}
+              onInstall={() => void github.connect("oauth")}
+              installing={github.connecting}
             />
           </div>
         </Modal>

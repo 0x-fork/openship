@@ -37,6 +37,7 @@ import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import EnvironmentVariables from "./EnvironmentVariables";
+import { isEnvironmentValueMissing } from "./environment-resolution";
 import BuildSettings from "./BuildSettings";
 import { cn } from "@/lib/utils";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -77,9 +78,8 @@ const envRecordsEqual = (a: Record<string, string>, b: Record<string, string>) =
 };
 
 const missingEnvCount = (service: ComposeServiceInfo) =>
-  Object.entries(service.environmentMeta ?? {}).filter(
-    ([key, meta]) =>
-      meta.required || (meta.source === "missing" && !service.environment[key]),
+  Object.entries(service.environmentMeta ?? {}).filter(([key, meta]) =>
+    isEnvironmentValueMissing(meta, service.environment[key]),
   ).length;
 
 const portDisplay = (port: string) => parseContainerPort(port) || port;

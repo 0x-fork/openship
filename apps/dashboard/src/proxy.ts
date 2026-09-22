@@ -16,6 +16,10 @@ const PUBLIC_ROUTES = [
   // without a session or the middleware turns the useful error back into a
   // silent login redirect.
   "/auth/error",
+  // Callback pages report OAuth errors or call the authenticated API to finish
+  // installation. They must render even if the popup has no dashboard cookie;
+  // redirecting to login loses the callback query and leaves the opener waiting.
+  "/auth/callback/",
   "/authorize",
   "/onboarding",
   // The MCP OAuth consent page. It must reach its own render even without a

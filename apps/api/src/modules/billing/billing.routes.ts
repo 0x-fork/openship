@@ -43,6 +43,7 @@ const r = secureRouter(billingSaasRoutes, {
 });
 
 r.use("/state", authMiddleware);
+r.use("/checkout", authMiddleware);
 r.use("/subscription", authMiddleware);
 r.use("/topup", authMiddleware);
 r.use("/topup-packs", authMiddleware);
@@ -56,6 +57,11 @@ r.use("/allowances", authMiddleware);
 
 /* ---------- Dashboard state snapshot ---------- */
 r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true }, billingController.getState);
+r.get(
+  "/checkout",
+  { tag: "billing:read", authorizationHandledByOperation: true },
+  billingController.getCheckout,
+);
 
 /* ---------- Raw metered usage (Oblien usageUnits proxy) ---------- */
 // Powers the dashboard usage chart. Reads only — no Stripe / Oblien

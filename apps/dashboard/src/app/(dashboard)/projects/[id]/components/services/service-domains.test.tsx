@@ -19,7 +19,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: 
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: mocks.toast }) }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ baseDomain: "opsh.test", selfHosted: true }) }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: true, requireCloud: mocks.cloud }), useDefaultDomainType: () => "custom" }));
-vi.mock("@/hooks/useSystemPrepareModal", () => ({ useEdgeModal: () => mocks.edge, useVerifyModal: () => mocks.verifyModal }));
+vi.mock("@/hooks/useSystemPrepareModal", () => ({ useEdgeModal: () => mocks.edge, useVerifyModal: () => mocks.verifyModal, useRoutingRetryModal: () => vi.fn() }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: mocks.invalidate }));
 vi.mock("@/hooks/useLocalhostForward", () => ({ useLocalhostForward: () => ({ canForward: false }) }));
 vi.mock("../RoutingUnsyncedCallout", () => ({ RoutingUnsyncedCallout: () => null }));

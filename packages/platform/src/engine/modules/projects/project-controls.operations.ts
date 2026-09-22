@@ -15,6 +15,7 @@ import { createProjectTransferOperations } from "./project-transfer.operations";
 import { appProjectOperations } from "../apps/app.operations";
 import { createProjectClusterOperations } from "./project-cluster.operations";
 import { createClusterDatabaseOperations } from "./cluster-database.operations";
+import { retryProjectRoutingOperation } from "./project-routing-retry.operations";
 
 /** Existing services, with the controller's audit/presentation duties shared by all callers. */
 export function createProjectControls(
@@ -137,15 +138,7 @@ export function createProjectControls(
       updated(ctx, id, { action: "disabled" });
       return data;
     },
-    async retryRouting(ctx, id) {
-      const { canRouteSelfApp } = await import("../../lib/self-app-routing");
-      const isSelfApp = await canRouteSelfApp(ctx, id);
-      const data = await (
-        await service()
-      ).retryProjectRouting(id, ctx.organizationId, { isSelfApp });
-      if (data.ok) updated(ctx, id, { action: "routing_retried" });
-      return data;
-    },
+    retryRouting: retryProjectRoutingOperation,
     async runtimeLogs(ctx, id, input) {
       return (await service()).getRuntimeLogs(id, ctx.organizationId, input?.tail);
     },

@@ -448,9 +448,11 @@ if (env.CLOUD_MODE) {
     .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
 
   if (env.CLOUD_MODE) {
-    void import("@repo/platform/engine/modules/billing/billing-catalog")
-      .then(({ getCloudBillingCatalog }) => getCloudBillingCatalog({ fresh: true }))
-      .catch((error) => console.error("[boot] Oblien billing catalog unavailable:", error));
+    void import("@repo/platform/engine/lib/oblien-client")
+      .then(({ getOblienBillingApi }) => getOblienBillingApi().assertResellerSupport())
+      .catch((error) =>
+        console.error("[boot] Oblien reseller billing contract unavailable:", error),
+      );
   }
 
   // Self-hosted only: backfill per-project GitHub webhook secrets for

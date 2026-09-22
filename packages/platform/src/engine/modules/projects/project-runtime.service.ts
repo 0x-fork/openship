@@ -371,14 +371,22 @@ async function startOne(runtime: RuntimeAdapter, containerId: string): Promise<v
  * Best-effort throughout; returns the failure instead of throwing so the UI can
  * re-surface the same guidance.
  */
+export interface RetryProjectRoutingOptions {
+  isSelfApp?: boolean;
+  onLog?: (message: string) => void;
+  /** Supplied by the operation boundary so domain checks retain authorization. */
+  verifyDomains?: () => Promise<string[]>;
+}
+
 export async function retryProjectRouting(
   projectId: string,
   organizationId: string,
-  options: { isSelfApp?: boolean } = {},
+  options: RetryProjectRoutingOptions = {},
 ): Promise<{ ok: boolean; warning?: string }> {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
+  options.onLog?.("Waiting for exclusive access to the project's routing…");
   const result = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
     // The first read above is the authorization boundary; this second assertion
     // protects the callback if ownership changed while it waited for teardown.
@@ -397,40 +405,58 @@ export async function retryProjectRouting(
 async function retryLiveProjectRouting(
   p: ProjectRow,
   organizationId: string,
-  options: { isSelfApp?: boolean },
+  options: RetryProjectRoutingOptions,
 ): Promise<{ ok: boolean; warning?: string }> {
   const projectId = p.id;
+  const log = (message: string) => options.onLog?.(message);
+  const dep = await findActiveDeployment(p);
+  if (!dep) {
+    return {
+      ok: false,
+      warning:
+        "There is no active deployment to route. Deploy the project before retrying routing.",
+    };
+  }
+  const finish = async () => {
+    const warnings = (await options.verifyDomains?.()) ?? [];
+    const fresh = p.activeDeploymentId ? await findActiveDeployment(p) : null;
+    if (warnings.length) {
+      const warning = warnings.join("\n");
+      await markRoutingWarning(fresh, warning);
+      return { ok: false, warning };
+    }
+    await clearRoutingWarning(fresh);
+    return { ok: true };
+  };
 
   // Cloud manages its own ingress — there is no server edge to repair here.
   if (p.cloudWorkspaceId) {
-    const dep = p.activeDeploymentId ? await findActiveDeployment(p) : null;
-    if (!(dep?.meta as { cloudDockerWorkspace?: unknown } | null)?.cloudDockerWorkspace) return { ok: true };
+    if (!(dep?.meta as { cloudDockerWorkspace?: unknown } | null)?.cloudDockerWorkspace)
+      return finish();
     const warnings: string[] = [];
-    await applyProjectRouting(projectId, { onWarning: message => warnings.push(message) });
+    log("Applying cloud routes…");
+    await applyProjectRouting(projectId, {
+      onLog: options.onLog,
+      onWarning: (message) => warnings.push(message),
+    });
     if (warnings.length) {
       const warning = warnings.join("\n");
       await markRoutingWarning(dep, warning);
       return { ok: false, warning };
     }
-    if (dep) {
-      const meta = { ...(dep.meta as Record<string, unknown> ?? {}) };
-      delete meta.edgeUnsynced;
-      delete meta.deployWarning;
-      await repos.deployment.updateStatus(dep.id, dep.status, { meta });
-    }
-    return { ok: true };
+    return finish();
   }
 
-  const dep = p.activeDeploymentId ? await findActiveDeployment(p) : null;
-
-  await repairDeploymentServerBinding(p, dep).catch(() => {});
+  log("Resolving the deployment server…");
+  await repairDeploymentServerBinding(p, dep);
 
   const serverId = p.serverId ?? (dep?.meta as { serverId?: string } | null)?.serverId ?? undefined;
 
   // Route application reaches into openship-edge. Reconcile it BEFORE any route
   // read/write so a stopped or missing container is revived rather than leaving
   // docker exec/config reload calls to sit until the request timeout (#693).
-  const edgeRecoveryWarning = await recoverProjectEdge(p, dep);
+  log("Checking and restoring the server's edge proxy…");
+  const edgeRecoveryWarning = await recoverProjectEdge(p, dep, options.onLog);
   if (edgeRecoveryWarning) {
     const fresh = p.activeDeploymentId
       ? await findActiveDeployment(p)
@@ -461,23 +487,30 @@ async function retryLiveProjectRouting(
   const onWarning = (message: string) => {
     applyOk = false;
     routeWarnings.push(message);
+    log(message);
   };
+  log("Applying the project's current routes…");
   await reapplyProjectLiveRoutes(p, [], {
-    ...options,
+    ...(options.isSelfApp !== undefined ? { isSelfApp: options.isSelfApp } : {}),
+    ...(options.onLog ? { onLog: options.onLog } : {}),
     managedEdgeSyncedByCaller: true,
     onWarning,
   }).catch((error) => {
     applyOk = false;
     routeWarnings.push(safeErrorMessage(error));
   });
-  await applyProjectRouting(projectId, { onWarning }).catch((error) =>
-    onWarning(safeErrorMessage(error)),
-  );
+  await applyProjectRouting(projectId, {
+    onWarning,
+    ...(options.onLog ? { onLog: options.onLog } : {}),
+  }).catch((error) => onWarning(safeErrorMessage(error)));
 
-  // Reconciles *.opsh.io and clears the warning on its own success (including the
-  // no-managed-domains case). syncProjectManagedEdge re-reads the deployment, so
-  // it sees the serverId we just repaired.
-  const { ok, failures } = await syncProjectManagedEdge(p, organizationId);
+  // Reconcile managed hosts, retaining the warning until route and domain checks
+  // also succeed. This re-reads the deployment's repaired server binding.
+  log("Synchronizing managed domains…");
+  const { ok, failures } = await syncProjectManagedEdge(p, organizationId, {
+    markOnFailure: true,
+    clearOnSuccess: false,
+  });
   if (!ok) return { ok: false, warning: edgeUnsyncedWarning(failures, "retry") };
 
   if (!applyOk) {
@@ -496,6 +529,7 @@ async function retryLiveProjectRouting(
   // vhost write, answers the cloud-side sync fine, and serves nothing — so this
   // action reported "Live" while all of the project's URLs were dead, which is the
   // opposite of what the operator pressed it to find out.
+  log("Checking that the edge proxy is serving routes…");
   const edgeWarning = await edgeServingWarning(p, serverId);
   if (edgeWarning) {
     const fresh = p.activeDeploymentId
@@ -504,7 +538,7 @@ async function retryLiveProjectRouting(
     await markRoutingWarning(fresh, edgeWarning).catch(() => {});
     return { ok: false, warning: edgeWarning };
   }
-  return { ok: true };
+  return finish();
 }
 
 /**
@@ -515,10 +549,16 @@ async function retryLiveProjectRouting(
 async function recoverProjectEdge(
   project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
   dep: Awaited<ReturnType<typeof repos.deployment.findById>> | null,
+  onLog?: (message: string) => void,
 ): Promise<string | null> {
   if (!dep) return null;
   const domains = await repos.domain.listByProject(project.id).catch(() => []);
-  if (domains.length === 0) return null;
+  // A legacy service may have route settings but no domain row yet. The route
+  // repair below creates that row, so an empty list cannot skip edge recovery.
+  if (domains.length === 0) {
+    const services = await repos.service.listByProject(project.id);
+    if (!services.some((service) => service.enabled && service.exposed)) return null;
+  }
 
   try {
     return await withDeploymentPlatform(dep, async ({ executor, effectiveTarget }) => {
@@ -527,7 +567,9 @@ async function recoverProjectEdge(
         return "Couldn't retry routing because the deployment target has no host executor.";
       }
 
-      const recovery = await reconcileServerEdge(executor, { onLog: () => {} });
+      const recovery = await reconcileServerEdge(executor, {
+        onLog: (entry) => onLog?.(entry.message),
+      });
       if (recovery.error) {
         return `Couldn't restore the edge before retrying routing: ${recovery.error}`;
       }
@@ -657,7 +699,7 @@ async function restoreCustomPortsFromEdge(
 export async function syncProjectManagedEdge(
   project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
   organizationId: string,
-  opts: { markOnFailure?: boolean } = {},
+  opts: { markOnFailure?: boolean; clearOnSuccess?: boolean } = {},
 ): Promise<{ ok: boolean; failures: string[] }> {
   const dep = project.activeDeploymentId
     ? await findActiveDeployment(project)
@@ -671,7 +713,7 @@ export async function syncProjectManagedEdge(
 
   // No free .opsh.io routes → nothing to sync; treat as resolved.
   if (targets.length === 0) {
-    await clearRoutingWarning(dep);
+    if (opts.clearOnSuccess !== false) await clearRoutingWarning(dep);
     return { ok: true, failures: [] };
   }
 
@@ -683,7 +725,7 @@ export async function syncProjectManagedEdge(
     return { ok: false, failures };
   }
 
-  await clearRoutingWarning(dep);
+  if (opts.clearOnSuccess !== false) await clearRoutingWarning(dep);
   return { ok: true, failures: [] };
 }
 

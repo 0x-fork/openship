@@ -2,7 +2,7 @@
  * Oblien Mode B owns charges, grants, renewals, quotas and suspension.
  * Openship only reads that authority and mirrors application permissions.
  */
-import { AppError, safeErrorMessage, type PlanTierId } from "@repo/core";
+import { AppError, safeErrorMessage, type PlanTierId, type PlanLimits } from "@repo/core";
 import { repos } from "@repo/db";
 import type { NamespaceUsageUnits } from "@repo/adapters";
 import { env } from "../../config/env";
@@ -10,7 +10,7 @@ import { getOblienBillingApi, getOblienClient } from "../../lib/oblien-client";
 import { assertOblienEntitlementMatchesSubscription, type OblienEntitlement, type OblienSubscription } from "../../lib/oblien-billing-api";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { syncCloudResourceLimits } from "../../lib/cloud-resource-limits";
-import { openshipTier } from "./billing-catalog";
+import { subscriptionPlan } from "./billing-catalog";
 import { fromOblienCredits } from "./billing-credit-units";
 
 export { toOblienCredits, fromOblienCredits } from "./billing-credit-units";
@@ -55,6 +55,7 @@ export interface SyncedCloudEntitlement {
   entitlement: OblienEntitlement;
   subscription: OblienSubscription;
   tier: PlanTierId;
+  limits: PlanLimits;
   drift: EntitlementDrift;
 }
 
@@ -84,17 +85,21 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
     const [entitlement, state] = await Promise.all([
       billing.getEntitlement(org.oblienNamespace), billing.getSubscription(org.oblienNamespace),
     ]);
-    const tier = openshipTier(entitlement.tierId);
     // A provider may echo the requested namespace while falling back to the
     // API-key owner's tier/period. Verify the namespace's subscription before
     // mirroring paid access or issuing a customer token.
     assertOblienEntitlementMatchesSubscription(entitlement, state.subscription);
+    const { tier, limits, resourceLimits } = subscriptionPlan(
+      state.subscription,
+      organizationId,
+      org.oblienNamespace,
+    );
     // Positive entitlements must have provider-enforced resource ceilings before
     // issuing a token or allowing another deployment. Exhausted/suspended
     // customers can still obtain management access to stop/delete resources.
     // Reading billing or opening checkout requires no resource-policy write.
     if (options.syncResourceLimits !== false && entitlement.status === "active" && tier !== "free") {
-      await syncCloudResourceLimits(org.oblienNamespace, tier);
+      await syncCloudResourceLimits(org.oblienNamespace, tier, resourceLimits);
     }
     const currentPeriodStart = entitlement.periodStart ? new Date(entitlement.periodStart) : null;
     const currentPeriodEnd = entitlement.periodEnd ? new Date(entitlement.periodEnd) : null;
@@ -108,7 +113,10 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
       });
     }
     return {
-      entitlement, subscription: state.subscription, tier,
+      entitlement,
+      subscription: state.subscription,
+      tier,
+      limits,
       drift: {
         quotaMissing: entitlement.quota.limit === null && tier !== "enterprise",
         statusWas: org.subscriptionStatus, statusNow: entitlement.status, changed,
