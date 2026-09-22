@@ -1128,6 +1128,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   );
 };
 
+/** Service panels can also be opened from a server, outside the project route tree. */
+export const useOptionalProjectSettings = () => useContext(ProjectSettingsContext);
+
 export const useProjectSettings = () => {
   const context = useContext(ProjectSettingsContext);
   if (context === undefined) {

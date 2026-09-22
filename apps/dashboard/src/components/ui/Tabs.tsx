@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useLayoutEffect, useRef } from "react";
 
 export interface TabDef<K extends string = string> {
   key: K;
@@ -24,6 +24,7 @@ interface TabsProps<K extends string> {
   value: K;
   onChange: (key: K) => void;
   className?: string;
+  size?: "sm" | "md";
 }
 
 /**
@@ -32,14 +33,40 @@ interface TabsProps<K extends string> {
  * `px-4 py-2.5` items, `bg-primary` active underline). Controlled: the caller
  * owns the active `value`.
  */
-export function Tabs<K extends string>({ tabs, value, onChange, className = "" }: TabsProps<K>) {
+export function Tabs<K extends string>({ tabs, value, onChange, className = "", size = "md" }: TabsProps<K>) {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    const active = activeRef.current;
+    if (!strip || !active) return;
+    // Shortcuts can select a tab outside the visible strip. Scroll only this
+    // row, preserving the page's vertical position, including in RTL layouts.
+    const revealActive = () => {
+      const bounds = strip.getBoundingClientRect();
+      const tab = active.getBoundingClientRect();
+      const delta = tab.left < bounds.left ? tab.left - bounds.left
+        : tab.right > bounds.right ? tab.right - bounds.right : 0;
+      if (delta) strip.scrollBy({ left: delta });
+    };
+    revealActive();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(revealActive);
+    observer.observe(strip);
+    observer.observe(active);
+    return () => observer.disconnect();
+  }, [value, size]);
+
+  const captureActive = (element: HTMLElement | null) => { activeRef.current = element; };
+
   return (
-    <div className={`flex items-center gap-1 overflow-x-auto border-b border-border/50 scrollbar-hide ${className}`}>
+    <div ref={stripRef} className={`flex items-center gap-1 overflow-x-auto border-b border-border/50 scrollbar-hide ${className}`}>
       {tabs
         .filter((tab) => !tab.hidden)
         .map(({ key, label, icon: Icon, href, count }) => {
           const active = key === value;
-          const className = `relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2.5 text-sm font-medium transition-colors ${
+          const className = `relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap py-2.5 font-medium transition-colors ${size === "sm" ? "px-3 text-[13px]" : "px-4 text-sm"} ${
             active ? "text-foreground" : "text-muted-foreground hover:text-foreground/70"
           }`;
           const inner = (
@@ -56,18 +83,19 @@ export function Tabs<K extends string>({ tabs, value, onChange, className = "" }
                 </span>
               )}
               {active && (
-                // Inset by the item's own `px-4`, so the underline is exactly as
+                // Match the item's horizontal padding, so the underline is as
                 // wide as the label it marks. That also puts the FIRST tab's
                 // underline on the container's content edge instead of a padding
                 // box's worth to the left of it — inside a card, an indicator that
                 // starts left of every other left edge reads as a misalignment.
-                <span className="absolute bottom-0 start-4 end-4 h-0.5 rounded-full bg-primary" />
+                <span className={`absolute bottom-0 h-0.5 rounded-full bg-primary ${size === "sm" ? "start-3 end-3" : "start-4 end-4"}`} />
               )}
             </>
           );
           return href ? (
             <a
               key={key}
+              ref={active ? captureActive : undefined}
               href={href}
               aria-current={active ? "page" : undefined}
               className={className}
@@ -82,7 +110,7 @@ export function Tabs<K extends string>({ tabs, value, onChange, className = "" }
               {inner}
             </a>
           ) : (
-            <button key={key} type="button" onClick={() => onChange(key)} className={className}>
+            <button key={key} ref={active ? captureActive : undefined} type="button" onClick={() => onChange(key)} className={className}>
               {inner}
             </button>
           );

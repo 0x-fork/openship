@@ -144,7 +144,9 @@
 				"logs": "Günlükler",
 				"env": "Ortam",
 				"settings": "Ayarlar",
-				"backup": "Yedekleme"
+				"backup": "Yedekleme",
+				"domains": "Alan adları",
+				"volumes": "Birimler"
 			},
 			"status": {
 				"running": "Çalışıyor",
@@ -225,7 +227,62 @@
 				"backupRunFailed": "Yedekleme işlemi başarısız oldu"
 			},
 			"duplicateContainers": "Bu servisle eşleşen başka bir konteyner var: {names}",
-			"editInSettings": "Ayarlarda düzenle"
+			"editInSettings": "Ayarlarda düzenle",
+			"networking": {
+				"title": "Portlar ve alan adları",
+				"manageDomains": "Alan adlarını yönet",
+				"hostBinding": "Ana makine bağlantısı",
+				"paused": "Yönlendirme duraklatıldı",
+				"managePort": "{port} portunun alan adlarını yönet",
+				"addToPort": "{port} portuna alan adı ekle",
+				"manage": "Yönet",
+				"noDomain": "Bağlı alan adı yok",
+				"tcpOnly": "Alan adları TCP üzerinden HTTP gerektirir.",
+				"noPorts": "Yapılandırılmış port yok.",
+				"configurePorts": "Portları yapılandır",
+				"service": "Servis",
+				"selectService": "Bir servis seçin",
+				"containerPort": "Konteyner portu",
+				"routeChanged": "Bu rota değişti. Sayfayı yenileyip tekrar deneyin.",
+				"domainsDescription": "Bu servise bağlı alan adları. DNS ve SSL ayarlarını buradan yönetin.",
+				"filterPort": "Porta göre filtrele",
+				"allPorts": "Tüm portlar",
+				"serviceUnavailable": "Bu servis artık kullanılamıyor.",
+				"enableRouting": "Alan adı yönlendirmesini etkinleştir",
+				"privateNetwork": "Özel ağ",
+				"configure": "Yapılandır",
+				"copyAddress": "Dahili adresi kopyala",
+				"runtimeDetails": "Çalışma zamanı ayrıntıları",
+				"copyValue": "{label} kopyala",
+				"copyFailed": "Panoya kopyalanamadı"
+			},
+			"storage": {
+				"description": "Bu servise bağlanan kalıcı veriler.",
+				"backups": "Yedekler",
+				"edit": "Bağlamaları düzenle",
+				"add": "Birim ekle",
+				"mountLabel": "Birim bağlaması {n}",
+				"removeMount": "{n} numaralı bağlamayı kaldır",
+				"editHint": "name:/container/path veya /host/path:/container/path kullanın. Değişiklikler bir sonraki dağıtımda uygulanır.",
+				"cancel": "İptal",
+				"save": "Bağlamaları kaydet",
+				"mountCount": "Bağlamalar: {count}",
+				"measuring": "Ölçülüyor…",
+				"usageUnavailable": "Kullanım bilgisi yok",
+				"refresh": "Kullanımı yenile",
+				"measureFailed": "Kullanım ölçülemedi. Yeniden denemek için Kullanımı yenile düğmesine basın.",
+				"readOnly": "Salt okunur",
+				"emptyTitle": "Yapılandırılmış birim yok",
+				"emptyDescription": "Dağıtımlar arasında dosyaları korumak için birim ekleyin.",
+				"backupLoadFailed": "Yedekleme politikaları yüklenemedi",
+				"loadingBackups": "Yedekler yükleniyor…",
+				"retry": "Tekrar dene",
+				"kinds": {
+					"named": "Adlandırılmış birim",
+					"bind": "Ana makine dizini",
+					"anonymous": "Adsız birim"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "Ad",

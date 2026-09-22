@@ -141,7 +141,9 @@
 				"logs": "Registros",
 				"env": "Entorno",
 				"settings": "Configuración",
-				"backup": "Copia de seguridad"
+				"backup": "Copia de seguridad",
+				"domains": "Dominios",
+				"volumes": "Volúmenes"
 			},
 			"status": {
 				"running": "En ejecución",
@@ -218,7 +220,62 @@
 				"backupRunFailed": "La ejecución de la copia de seguridad falló"
 			},
 			"duplicateContainers": "Otro contenedor también coincide con este servicio: {names}",
-			"editInSettings": "Editar en ajustes"
+			"editInSettings": "Editar en ajustes",
+			"networking": {
+				"title": "Puertos y dominios",
+				"manageDomains": "Gestionar dominios",
+				"hostBinding": "Vinculación del host",
+				"paused": "Enrutamiento pausado",
+				"managePort": "Gestionar dominios del puerto {port}",
+				"addToPort": "Añadir dominio al puerto {port}",
+				"manage": "Gestionar",
+				"noDomain": "Ningún dominio conectado",
+				"tcpOnly": "Los dominios requieren HTTP sobre TCP.",
+				"noPorts": "No hay puertos configurados.",
+				"configurePorts": "Configurar puertos",
+				"service": "Servicio",
+				"selectService": "Selecciona un servicio",
+				"containerPort": "Puerto del contenedor",
+				"routeChanged": "Esta ruta ha cambiado. Actualiza la página e inténtalo de nuevo.",
+				"domainsDescription": "Dominios conectados a este servicio. Gestiona aquí DNS y SSL.",
+				"filterPort": "Filtrar por puerto",
+				"allPorts": "Todos los puertos",
+				"serviceUnavailable": "Este servicio ya no está disponible.",
+				"enableRouting": "Activar enrutamiento de dominios",
+				"privateNetwork": "Red privada",
+				"configure": "Configurar",
+				"copyAddress": "Copiar dirección interna",
+				"runtimeDetails": "Detalles de ejecución",
+				"copyValue": "Copiar {label}",
+				"copyFailed": "No se pudo copiar al portapapeles"
+			},
+			"storage": {
+				"description": "Datos persistentes montados en este servicio.",
+				"backups": "Copias de seguridad",
+				"edit": "Editar montajes",
+				"add": "Añadir volumen",
+				"mountLabel": "Montaje de volumen {n}",
+				"removeMount": "Eliminar montaje {n}",
+				"editHint": "Usa name:/container/path o /host/path:/container/path. Los cambios se aplican en el próximo despliegue.",
+				"cancel": "Cancelar",
+				"save": "Guardar montajes",
+				"mountCount": "Montajes: {count}",
+				"measuring": "Midiendo…",
+				"usageUnavailable": "Uso no disponible",
+				"refresh": "Actualizar uso",
+				"measureFailed": "No se pudo medir el uso. Pulsa Actualizar uso para reintentarlo.",
+				"readOnly": "Solo lectura",
+				"emptyTitle": "No hay volúmenes configurados",
+				"emptyDescription": "Añade un volumen para conservar archivos entre despliegues.",
+				"backupLoadFailed": "No se pudieron cargar las políticas de copias de seguridad",
+				"loadingBackups": "Cargando copias de seguridad…",
+				"retry": "Volver a intentar",
+				"kinds": {
+					"named": "Volumen con nombre",
+					"bind": "Directorio del host",
+					"anonymous": "Volumen anónimo"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "Nombre",

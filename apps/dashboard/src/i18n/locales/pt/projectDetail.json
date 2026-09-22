@@ -141,7 +141,9 @@
 				"logs": "Logs",
 				"env": "Ambiente",
 				"settings": "Configurações",
-				"backup": "Backup"
+				"backup": "Backup",
+				"domains": "Domínios",
+				"volumes": "Volumes"
 			},
 			"status": {
 				"running": "Em execução",
@@ -218,7 +220,62 @@
 				"backupRunFailed": "Falha na execução do backup"
 			},
 			"duplicateContainers": "Outro contêiner também corresponde a este serviço: {names}",
-			"editInSettings": "Editar nas configurações"
+			"editInSettings": "Editar nas configurações",
+			"networking": {
+				"title": "Portas e domínios",
+				"manageDomains": "Gerenciar domínios",
+				"hostBinding": "Vínculo do host",
+				"paused": "Roteamento pausado",
+				"managePort": "Gerenciar domínios da porta {port}",
+				"addToPort": "Adicionar domínio à porta {port}",
+				"manage": "Gerenciar",
+				"noDomain": "Nenhum domínio conectado",
+				"tcpOnly": "Domínios exigem HTTP sobre TCP.",
+				"noPorts": "Nenhuma porta configurada.",
+				"configurePorts": "Configurar portas",
+				"service": "Serviço",
+				"selectService": "Selecione um serviço",
+				"containerPort": "Porta do contêiner",
+				"routeChanged": "Esta rota mudou. Atualize a página e tente novamente.",
+				"domainsDescription": "Domínios conectados a este serviço. Gerencie DNS e SSL aqui.",
+				"filterPort": "Filtrar por porta",
+				"allPorts": "Todas as portas",
+				"serviceUnavailable": "Este serviço não está mais disponível.",
+				"enableRouting": "Ativar roteamento de domínios",
+				"privateNetwork": "Rede privada",
+				"configure": "Configurar",
+				"copyAddress": "Copiar endereço interno",
+				"runtimeDetails": "Detalhes de execução",
+				"copyValue": "Copiar {label}",
+				"copyFailed": "Não foi possível copiar para a área de transferência"
+			},
+			"storage": {
+				"description": "Dados persistentes montados neste serviço.",
+				"backups": "Backups",
+				"edit": "Editar montagens",
+				"add": "Adicionar volume",
+				"mountLabel": "Montagem de volume {n}",
+				"removeMount": "Remover montagem {n}",
+				"editHint": "Use name:/container/path ou /host/path:/container/path. As alterações são aplicadas na próxima implantação.",
+				"cancel": "Cancelar",
+				"save": "Salvar montagens",
+				"mountCount": "Montagens: {count}",
+				"measuring": "Medindo…",
+				"usageUnavailable": "Uso indisponível",
+				"refresh": "Atualizar uso",
+				"measureFailed": "Não foi possível medir o uso. Clique em Atualizar uso para tentar novamente.",
+				"readOnly": "Somente leitura",
+				"emptyTitle": "Nenhum volume configurado",
+				"emptyDescription": "Adicione um volume para manter arquivos entre implantações.",
+				"backupLoadFailed": "Não foi possível carregar as políticas de backup",
+				"loadingBackups": "Carregando backups…",
+				"retry": "Tentar novamente",
+				"kinds": {
+					"named": "Volume nomeado",
+					"bind": "Diretório do host",
+					"anonymous": "Volume anônimo"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "Nome",

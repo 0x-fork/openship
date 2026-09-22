@@ -141,7 +141,9 @@
 				"logs": "日志",
 				"env": "环境",
 				"settings": "设置",
-				"backup": "备份"
+				"backup": "备份",
+				"domains": "域名",
+				"volumes": "存储卷"
 			},
 			"status": {
 				"running": "运行中",
@@ -218,7 +220,62 @@
 				"backupRunFailed": "备份运行失败"
 			},
 			"duplicateContainers": "另一个容器也匹配此服务：{names}",
-			"editInSettings": "在设置中编辑"
+			"editInSettings": "在设置中编辑",
+			"networking": {
+				"title": "端口与域名",
+				"manageDomains": "管理域名",
+				"hostBinding": "主机绑定",
+				"paused": "路由已暂停",
+				"managePort": "管理端口 {port} 的域名",
+				"addToPort": "为端口 {port} 添加域名",
+				"manage": "管理",
+				"noDomain": "未连接域名",
+				"tcpOnly": "域名需要通过 TCP 提供 HTTP 服务。",
+				"noPorts": "尚未配置端口。",
+				"configurePorts": "配置端口",
+				"service": "服务",
+				"selectService": "选择服务",
+				"containerPort": "容器端口",
+				"routeChanged": "此路由已更改。请刷新后重试。",
+				"domainsDescription": "连接到此服务的域名。在这里管理 DNS 和 SSL。",
+				"filterPort": "按端口筛选",
+				"allPorts": "所有端口",
+				"serviceUnavailable": "此服务已不可用。",
+				"enableRouting": "启用域名路由",
+				"privateNetwork": "私有网络",
+				"configure": "配置",
+				"copyAddress": "复制内部地址",
+				"runtimeDetails": "运行详情",
+				"copyValue": "复制{label}",
+				"copyFailed": "无法复制到剪贴板"
+			},
+			"storage": {
+				"description": "挂载到此服务的持久化数据。",
+				"backups": "备份",
+				"edit": "编辑挂载",
+				"add": "添加存储卷",
+				"mountLabel": "存储卷挂载 {n}",
+				"removeMount": "移除挂载 {n}",
+				"editHint": "使用 name:/container/path 或 /host/path:/container/path。挂载更改将在下次部署时生效。",
+				"cancel": "取消",
+				"save": "保存挂载",
+				"mountCount": "挂载数：{count}",
+				"measuring": "正在测量…",
+				"usageUnavailable": "使用量不可用",
+				"refresh": "刷新使用量",
+				"measureFailed": "无法测量使用量。请点击“刷新使用量”重试。",
+				"readOnly": "只读",
+				"emptyTitle": "尚未配置存储卷",
+				"emptyDescription": "添加存储卷以在多次部署之间保留文件。",
+				"backupLoadFailed": "无法加载备份策略",
+				"loadingBackups": "正在加载备份…",
+				"retry": "重试",
+				"kinds": {
+					"named": "命名存储卷",
+					"bind": "主机目录",
+					"anonymous": "匿名存储卷"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "名称",

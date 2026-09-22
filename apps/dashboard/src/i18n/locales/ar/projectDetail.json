@@ -141,7 +141,9 @@
 				"logs": "السجلات",
 				"env": "البيئة",
 				"settings": "الإعدادات",
-				"backup": "النسخ الاحتياطي"
+				"backup": "النسخ الاحتياطي",
+				"domains": "النطاقات",
+				"volumes": "وحدات التخزين"
 			},
 			"status": {
 				"running": "قيد التشغيل",
@@ -218,7 +220,62 @@
 				"backupRunFailed": "فشلت عملية النسخ الاحتياطي"
 			},
 			"duplicateContainers": "توجد حاوية أخرى مطابقة لهذه الخدمة: {names}",
-			"editInSettings": "تعديل في الإعدادات"
+			"editInSettings": "تعديل في الإعدادات",
+			"networking": {
+				"title": "المنافذ والنطاقات",
+				"manageDomains": "إدارة النطاقات",
+				"hostBinding": "ربط المضيف",
+				"paused": "التوجيه متوقف مؤقتًا",
+				"managePort": "إدارة نطاقات المنفذ {port}",
+				"addToPort": "إضافة نطاق للمنفذ {port}",
+				"manage": "إدارة",
+				"noDomain": "لا يوجد نطاق متصل",
+				"tcpOnly": "تتطلب النطاقات خدمة HTTP عبر TCP.",
+				"noPorts": "لم يتم إعداد أي منافذ.",
+				"configurePorts": "إعداد المنافذ",
+				"service": "الخدمة",
+				"selectService": "اختر خدمة",
+				"containerPort": "منفذ الحاوية",
+				"routeChanged": "تغير هذا المسار. حدّث الصفحة وحاول مجددًا.",
+				"domainsDescription": "النطاقات المتصلة بهذه الخدمة. يمكنك إدارة DNS وSSL هنا.",
+				"filterPort": "تصفية حسب المنفذ",
+				"allPorts": "جميع المنافذ",
+				"serviceUnavailable": "هذه الخدمة لم تعد متاحة.",
+				"enableRouting": "تفعيل توجيه النطاقات",
+				"privateNetwork": "الشبكة الخاصة",
+				"configure": "إعداد",
+				"copyAddress": "نسخ العنوان الداخلي",
+				"runtimeDetails": "تفاصيل التشغيل",
+				"copyValue": "نسخ {label}",
+				"copyFailed": "تعذر النسخ إلى الحافظة"
+			},
+			"storage": {
+				"description": "البيانات الدائمة المرتبطة بهذه الخدمة.",
+				"backups": "النسخ الاحتياطية",
+				"edit": "تعديل نقاط الربط",
+				"add": "إضافة وحدة تخزين",
+				"mountLabel": "نقطة ربط التخزين {n}",
+				"removeMount": "إزالة نقطة الربط {n}",
+				"editHint": "استخدم name:/container/path أو /host/path:/container/path. تُطبّق تغييرات الربط عند النشر التالي.",
+				"cancel": "إلغاء",
+				"save": "حفظ نقاط الربط",
+				"mountCount": "نقاط التحميل: {count}",
+				"measuring": "جارٍ القياس…",
+				"usageUnavailable": "بيانات الاستخدام غير متاحة",
+				"refresh": "تحديث الاستخدام",
+				"measureFailed": "تعذر قياس الاستخدام. اضغط تحديث الاستخدام للمحاولة مجددًا.",
+				"readOnly": "للقراءة فقط",
+				"emptyTitle": "لا توجد وحدات تخزين معدّة",
+				"emptyDescription": "أضف وحدة تخزين للاحتفاظ بالملفات بين عمليات النشر.",
+				"backupLoadFailed": "تعذر تحميل سياسات النسخ الاحتياطي",
+				"loadingBackups": "جارٍ تحميل النسخ الاحتياطية…",
+				"retry": "حاول مجددًا",
+				"kinds": {
+					"named": "وحدة تخزين مسماة",
+					"bind": "مجلد على المضيف",
+					"anonymous": "وحدة تخزين بدون اسم"
+				}
+			}
 		},
 		"settingsForm": {
 			"name": "الاسم",
