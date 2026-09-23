@@ -7,13 +7,21 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n } from "@/components/i18n-provider";
 import WarningCallout from "@/components/shared/WarningCallout";
 
-export const RoutingUnsyncedCallout = ({ onRetry }: { onRetry: () => void }) => {
+export const RoutingUnsyncedCallout = ({
+  onRetry,
+  retrying = false,
+}: {
+  onRetry: () => void;
+  retrying?: boolean;
+}) => {
   const { projectData } = useProjectSettings();
   const { t } = useI18n();
 
   // A pending partial-failure decision outranks this: that release hasn't been
   // accepted yet, so its routes aren't the thing to fix first.
-  if (!projectData?.routingUnsynced || projectData.awaitingDecision) return null;
+  // The inline operation owns progress while running. Keep the saved failure
+  // until the server refreshes it, but don't display that stale result mid-repair.
+  if (retrying || !projectData?.routingUnsynced || projectData.awaitingDecision) return null;
 
   return (
     <WarningCallout

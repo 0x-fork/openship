@@ -7,7 +7,12 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { eq } from "drizzle-orm";
 import { createRepositories, schema, type Repositories } from "@repo/db/factory";
 import { createEncryption } from "@repo/db/encryption";
-import { NginxProvider, OPENRESTY_DEFAULT_PATHS, type RootChecked } from "@repo/adapters";
+import {
+  DockerRuntime,
+  NginxProvider,
+  OPENRESTY_DEFAULT_PATHS,
+  type RootChecked,
+} from "@repo/adapters";
 import type { ExecutionContext } from "@repo/platform";
 import type { ResolvedDeploymentPlatform } from "@repo/platform/engine/lib/deployment-runtime";
 import { makeTestCert } from "../../../../../packages/adapters/src/system/proxy/test-certs";
@@ -29,6 +34,7 @@ vi.mock("@repo/db", async (original) => ({
   // PGlite is a single process; retain the real keyed mutex around its
   // advisory-lock passthrough so overlapping sweeps exercise production locking.
   withAdvisoryLock: async <T>(_key: string, work: () => Promise<T>) => work(),
+  tryAcquireAdvisoryLock: async () => ({ release: async () => {} }),
 }));
 vi.mock("@repo/platform/engine/lib/platform-config", () => ({
   platform: () => ({ target: h.target, runtime: { name: "docker", verifyDomain: h.cloudVerify } }),
@@ -81,7 +87,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async (original) => ({
 vi.mock("@repo/adapters", async (original) => ({
   ...(await original<typeof import("@repo/adapters")>()),
   edgeProxy: async () => ({}),
-  edgeProxyFor: () => ({}),
+  edgeProxyFor: () => ({ listLoopbackUpstreamPortsStrict: async () => new Set<number>() }),
   checkEdge: async () => ({ name: "edge", healthy: true }),
 }));
 vi.mock("@repo/platform/engine/modules/route-rules/route-rule.service", () => ({
@@ -93,6 +99,9 @@ vi.mock("@repo/platform/engine/modules/analytics/analytics-config.service", () =
 
 import { retryProjectRoutingOperation } from "@repo/platform/engine/modules/projects/project-routing-retry.operations";
 import { manageDomainSsl } from "@repo/platform/engine/lib/domain-ssl";
+import { runOrphanSweep } from "@repo/platform/engine/modules/projects/orphan-gc-schedule";
+import { recoverProjectRouteCleanup } from "@repo/platform/engine/lib/project-route-recovery";
+import { connectionHostPortTargetKey } from "@repo/platform/engine/lib/host-port-target";
 import {
   getDomain,
   verifyDomain,
@@ -473,5 +482,249 @@ it("completes cloud ownership before the SSL phase without launching a duplicate
   } finally {
     h.target = "local";
     h.resolutionError = null;
+  }
+});
+
+it.each(["container-ip", "loopback-port"] as const)(
+  "recovers recreated-project routes and preserves the reused network (%s)",
+  async (strategy) => {
+    const db = drizzle(client, { schema });
+    await db.delete(schema.domain).where(eq(schema.domain.projectId, "project"));
+    await db.delete(schema.orphanedResource);
+    await db
+      .update(schema.project)
+      .set({ routeStrategy: strategy })
+      .where(eq(schema.project.id, "project"));
+    const targetKey = `host:${"a".repeat(64)}` as const;
+    // Older checkpoints may record the SSH-locator fingerprint, while the new
+    // resolver can read a stable machine id. Both must identify this same target.
+    const cleanupTarget =
+      strategy === "loopback-port"
+        ? connectionHostPortTargetKey({ sshHost: "192.0.2.5" })
+        : targetKey;
+    for (const route of routes) {
+      await h.repos.orphanedResource.create({
+        organizationId: "org",
+        projectId: "deleted-project",
+        serverId: "remote-server",
+        targetKey: cleanupTarget,
+        resourceType: "route",
+        ref: route.hostname,
+        runtimeMode: "docker",
+      });
+    }
+    await h.repos.orphanedResource.create({
+      organizationId: "org",
+      projectId: "deleted-project",
+      serverId: "remote-server",
+      targetKey: cleanupTarget,
+      resourceType: "network",
+      ref: "stack",
+      runtimeMode: "docker",
+    });
+    const previousRuntime = h.resolved.platform.runtime;
+    const publishedPorts = [20_000, 20_002, 20_011];
+    const removeNetwork = vi.fn().mockRejectedValue(new Error("network has active endpoints"));
+    let inspectionStarted!: () => void;
+    let finishInspection!: () => void;
+    const inspecting = new Promise<void>((resolve) => {
+      inspectionStarted = resolve;
+    });
+    const inspection = new Promise<void>((resolve) => {
+      finishInspection = resolve;
+    });
+    h.resolved.hostPortTarget = {
+      targetKey,
+      legacyTargetKeys: ["server:remote-server"],
+      stable: true,
+    };
+    h.resolved.platform.runtime = Object.assign(
+      Object.create(DockerRuntime.prototype),
+      previousRuntime,
+      {
+        getContainerInfo: async (id: string) => {
+          const index = routes.findIndex((route) => `container-${route.name}` === id);
+          return index < 0
+            ? { containerId: id, status: "missing" }
+            : {
+                containerId: id,
+                status: "running",
+                ip: routes[index]!.ip,
+                hostPortByContainerPort: { [routes[index]!.port]: publishedPorts[index] },
+              };
+        },
+        inspectContainer: async (id: string) => {
+          inspectionStarted();
+          await inspection;
+          return { id, labels: { "openship.project": "project" }, networks: ["openship-stack"] };
+        },
+        removeNetwork,
+      },
+    );
+    const removeRoute = vi.spyOn(nginx, "removeRoute");
+    writes.mockClear();
+    const logs: string[] = [];
+    try {
+      const repair = retryProjectRoutingOperation(context, "project", (line) => logs.push(line));
+      await inspecting;
+      // A sweep queued during recovery must read its worklist after the handoff,
+      // never destroy resources from a stale pre-recovery snapshot.
+      const sweep = runOrphanSweep();
+      finishInspection();
+      expect(await repair).toEqual({ ok: true });
+      await expect(sweep).resolves.toEqual({ reclaimed: 0, deferred: 0 });
+      const domains = await h.repos.domain.listByProject("project");
+      expect(domains).toHaveLength(3);
+      for (const route of routes) {
+        expect(domains.find((row) => row.hostname === route.hostname)).toMatchObject({
+          projectId: "project",
+          serviceId: `service-${route.name}`,
+          targetPort: route.port,
+          status: "active",
+          verified: true,
+          sslStatus: "active",
+        });
+        expect(
+          writes.mock.calls.filter(([config]) => config.domain === route.hostname),
+        ).toHaveLength(1);
+        expect(
+          writes.mock.calls.find(([config]) => config.domain === route.hostname)?.[0].targetUrl,
+        ).toBe(
+          strategy === "loopback-port"
+            ? `http://127.0.0.1:${publishedPorts[routes.indexOf(route)]}`
+            : `http://${route.ip}:${route.port}`,
+        );
+        expect((await nginx.verifyCert(route.hostname)).verified).toBe(true);
+      }
+      expect(await h.repos.orphanedResource.listByProject("deleted-project")).toEqual([]);
+      if (strategy === "loopback-port") {
+        const claims = await h.repos.hostPortClaim.listHostPortClaims(targetKey);
+        for (const [index, route] of routes.entries()) {
+          expect(claims).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                port: publishedPorts[index],
+                projectId: "project",
+                serviceId: `service-${route.name}`,
+                containerPort: route.port,
+              }),
+            ]),
+          );
+        }
+      }
+      expect((await h.repos.deployment.findById("deployment"))?.meta).not.toHaveProperty(
+        "edgeUnsynced",
+      );
+      expect(logs.join("\n")).not.toContain("being cleaned up");
+      await expect(runOrphanSweep()).resolves.toEqual({ reclaimed: 0, deferred: 0 });
+      expect(removeRoute).not.toHaveBeenCalled();
+      expect(removeNetwork).not.toHaveBeenCalled();
+      expect(issues).not.toHaveBeenCalled();
+      expect(await retryProjectRoutingOperation(context, "project")).toEqual({ ok: true });
+    } finally {
+      finishInspection();
+      h.resolved.platform.runtime = previousRuntime;
+      removeRoute.mockRestore();
+      await db
+        .update(schema.project)
+        .set({ routeStrategy: "container-ip" })
+        .where(eq(schema.project.id, "project"));
+    }
+  },
+);
+
+it.each([
+  "another organization",
+  "another target",
+  "live predecessor",
+  "soft-deleted predecessor",
+  "unfinished workload cleanup",
+  "unconfirmed network",
+  "missing target identity",
+  "another target reservation",
+] as const)("keeps cleanup reservations when recovery encounters %s", async (scenario) => {
+  const db = drizzle(client, { schema });
+  const hostname = routes[0]!.hostname;
+  await db.delete(schema.domain).where(eq(schema.domain.hostname, hostname));
+  const targetKey = `host:${"a".repeat(64)}` as const;
+  const otherTarget = `host:${"b".repeat(64)}` as const;
+  await db
+    .insert(schema.organization)
+    .values({ id: "other-org", name: "Other", slug: "other", createdAt: new Date() })
+    .onConflictDoNothing();
+  if (scenario === "live predecessor" || scenario === "soft-deleted predecessor") {
+    await db.insert(schema.project).values({
+      id: "predecessor",
+      organizationId: "org",
+      groupId: "group",
+      name: "Previous",
+      slug: "previous",
+      environmentSlug: "previous",
+      deletedAt: scenario === "soft-deleted predecessor" ? new Date() : null,
+    });
+  }
+  const base = {
+    organizationId: scenario === "another organization" ? "other-org" : "org",
+    projectId: "predecessor",
+    serverId: "remote-server",
+    runtimeMode: "docker",
+    targetKey:
+      scenario === "another target"
+        ? otherTarget
+        : scenario === "missing target identity"
+          ? null
+          : targetKey,
+  };
+  await h.repos.orphanedResource.create({ ...base, resourceType: "route", ref: hostname });
+  await h.repos.orphanedResource.create({ ...base, resourceType: "network", ref: "stack" });
+  if (scenario === "unfinished workload cleanup") {
+    await h.repos.orphanedResource.create({
+      ...base,
+      resourceType: "container",
+      ref: "previous-container",
+    });
+  }
+  if (scenario === "another target reservation") {
+    await h.repos.orphanedResource.create({
+      ...base,
+      resourceType: "route",
+      ref: hostname,
+      targetKey: otherTarget,
+    });
+  }
+  const before = await h.repos.orphanedResource.listByProject("predecessor");
+  const previousRuntime = h.resolved.platform.runtime;
+  h.resolved.hostPortTarget = {
+    targetKey,
+    legacyTargetKeys: ["server:remote-server"],
+    stable: true,
+  };
+  h.resolved.platform.runtime = Object.assign(
+    Object.create(DockerRuntime.prototype),
+    previousRuntime,
+    {
+      inspectContainer: async () => ({
+        networks: scenario === "unconfirmed network" ? [] : ["openship-stack"],
+      }),
+    },
+  );
+  try {
+    await recoverProjectRouteCleanup({
+      project: (await h.repos.project.findById("project"))!,
+      deployment: (await h.repos.deployment.findById("deployment"))!,
+      resolved: h.resolved,
+      hostnames: [hostname],
+    });
+    expect(await h.repos.orphanedResource.listByProject("predecessor")).toEqual(before);
+    await expect(h.repos.domain.create({ projectId: "project", hostname })).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(await h.repos.domain.findByHostname(hostname)).toBeUndefined();
+  } finally {
+    h.resolved.platform.runtime = previousRuntime;
+    await db
+      .delete(schema.orphanedResource)
+      .where(eq(schema.orphanedResource.projectId, "predecessor"));
+    await db.delete(schema.project).where(eq(schema.project.id, "predecessor"));
   }
 });

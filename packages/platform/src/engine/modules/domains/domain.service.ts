@@ -71,8 +71,8 @@ import {
   normalizeRedirect,
 } from "../../lib/domain-redirect";
 import type { TAddDomainBody } from "@repo/contracts";
-import { edgeProxy, readEdgeFile, validateCertFor } from "@repo/adapters";
-import type { AdoptedCert, CloudRuntime, CommandExecutor, ManualCert } from "@repo/adapters";
+import { certbotLineageDirs, edgeProxy, readEdgeFile, validateCertFor } from "@repo/adapters";
+import type { AdoptedCert, CloudRuntime, ManualCert } from "@repo/adapters";
 // Concrete modules, not the `../dns` barrel: importing a barrel that reaches a
 // routes file mounts the HTTP route table as a side effect of importing a service.
 import {
@@ -827,29 +827,6 @@ export async function reuseServerCertForDomain(
     console.error(`[DOMAIN] cert reuse failed for ${domainId}:`, safeErrorMessage(err));
     return false;
   }
-}
-
-/**
- * Certbot lineage directories that could hold this hostname's cert, best first.
- *
- * Certbot names a lineage after the first domain in it, and on re-issue with a
- * changed name set it creates a SIBLING — `example.com-0001` — leaving the original
- * behind. Only checking `live/<host>` therefore misses the live cert on any box
- * that's had its domain set edited, and the reuse silently fell through to ACME.
- * The glob is sorted descending so the newest lineage is tried first.
- */
-async function certbotLineageDirs(exec: CommandExecutor, hostname: string): Promise<string[]> {
-  const base = `/etc/letsencrypt/live/${hostname}`;
-  const listing = await exec
-    .exec(`ls -1d ${base} ${base}-[0-9][0-9][0-9][0-9] 2>/dev/null`)
-    .catch(() => "");
-  const dirs = listing
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith(base))
-    .sort()
-    .reverse();
-  return dirs.length > 0 ? dirs : [base];
 }
 
 // ─── Verify ──────────────────────────────────────────────────────────────────

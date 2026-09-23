@@ -147,6 +147,52 @@ async function startRetry(strict = false) {
 
 describe("routing retry on the Domains page", () => {
   it.each([false, true])(
+    "disables repair controls and replaces stale warning content while routing runs (warning: %s)",
+    async (routingUnsynced) => {
+      mocks.settings.projectData.routingUnsynced = routingUnsynced;
+      mocks.settings.projectData.routingWarning = "Previous cleanup failure";
+      await startRetry();
+      expect(host.textContent).not.toContain("Previous cleanup failure");
+      for (const button of retryButtons()) expect(button.disabled).toBe(true);
+      const progressButton = [...host.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === retryCopy.retrying,
+      );
+      expect(progressButton?.disabled).toBe(true);
+      const close = host.querySelector<HTMLButtonElement>(
+        'button[aria-label="Close operation log"]',
+      );
+      expect(close?.disabled).toBe(true);
+      const requests = mocks.fetch.mock.calls.length;
+      await act(async () => close?.click());
+      expect(host.querySelector('section[aria-label="Routing log"]')).not.toBeNull();
+      expect(mocks.fetch).toHaveBeenCalledTimes(requests);
+      await emit("complete", { status: "failed" }, true);
+      expect(retryButtons().every((button) => !button.disabled)).toBe(true);
+      expect(close?.disabled).toBe(false);
+      if (routingUnsynced) expect(host.textContent).toContain("Previous cleanup failure");
+    },
+  );
+
+  it("clears a completed repair's stale banner immediately and preserves other project edits", async () => {
+    mocks.settings.projectData.routingUnsynced = true;
+    mocks.settings.projectData.routingWarning = "Previous cleanup failure";
+    mocks.settings.setProjectData.mockImplementation(
+      (update: (current: Record<string, unknown>) => Record<string, unknown>) => {
+        mocks.settings.projectData = update(mocks.settings.projectData);
+      },
+    );
+    await startRetry();
+    mocks.settings.projectData.name = "Edited during repair";
+    await emit("complete", { status: "completed" }, true);
+    expect(host.textContent).not.toContain(retryCopy.title);
+    expect(host.textContent).not.toContain("Previous cleanup failure");
+    expect(mocks.settings.projectData.name).toBe("Edited during repair");
+    expect(mocks.settings.projectData.routingUnsynced).toBe(false);
+    expect(mocks.invalidate).toHaveBeenCalledWith("project-a");
+    expect(retryButtons().every((button) => !button.disabled)).toBe(true);
+  });
+
+  it.each([false, true])(
     "offers one project repair action and one per missing record (warning: %s)",
     async (routingUnsynced) => {
       mocks.settings.projectData.routingUnsynced = routingUnsynced;

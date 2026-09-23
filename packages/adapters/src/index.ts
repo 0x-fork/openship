@@ -348,6 +348,7 @@ export type {
   CertCandidate,
 } from "./system/proxy/api";
 export { validateCertFor, readDeclaredPair, isSafeCertPath } from "./system/proxy/cert-material";
+export { certbotLineageDirs } from "./system/proxy/certbot-lineages";
 
 export type { SetupState, SetupStateStore, ComponentState } from "./system/state";
 export { FileStateStore } from "./system/state";

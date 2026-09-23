@@ -18,7 +18,7 @@ import {
   type ProxySettings,
 } from "@repo/core";
 import { scanOpenshipEdge } from "../system/proxy/import/nginx";
-import { makeTestCert } from "../system/proxy/test-certs";
+import { makeTestCert, makeTestRenewalConf } from "../system/proxy/test-certs";
 import { compileVercelRouting } from "./vercel-routing";
 import {
   OPENRESTY_DEFAULT_PATHS,
@@ -176,6 +176,12 @@ function makeExecutor(
       if (command.includes(PATHS.confPath)) return PATHS.confPath;
       return "";
     }
+    const certLink = command.match(
+      /^readlink '\/etc\/letsencrypt\/live\/([^/]+)\/(cert|chain|fullchain|privkey)\.pem'/,
+    );
+    if (certLink && files.has(`/etc/letsencrypt/renewal/${certLink[1]}.conf`)) {
+      return `../../archive/${certLink[1]}/${certLink[2]}1.pem`;
+    }
     if (command === "cat /proc/321/cgroup 2>/dev/null") {
       if (opts.unreadableMasterCgroup) throw new Error("permission denied");
       return "0::/system.slice/openship-openresty.service";
@@ -257,7 +263,9 @@ function makeExecutor(
     },
     exists: async (p: string) =>
       files.has(p) ||
-      (opts.certDomains ?? []).some((d) => p.startsWith(`/etc/letsencrypt/live/${d}/`)),
+      (opts.certDomains ?? []).some(
+        (d) => p === `/etc/letsencrypt/live/${d}` || p.startsWith(`/etc/letsencrypt/live/${d}/`),
+      ),
     mkdir: async () => {},
     rm: async (p: string) => {
       removed.push(p);
@@ -1060,7 +1068,7 @@ describe("NginxProvider config generation", () => {
     // which `renew` holds no account for after the operator changed CAs.
     files.set(
       "/etc/letsencrypt/renewal/app.example.com.conf",
-      "[renewalparams]\nserver = https://acme-v02.api.letsencrypt.org/directory\n",
+      makeTestRenewalConf("/etc/letsencrypt/live", "app.example.com"),
     );
     await nginx.renewCert("app.example.com").catch(() => undefined);
     const certonly = calls.find((c) => c.includes("certonly"));
@@ -1077,7 +1085,11 @@ describe("NginxProvider config generation", () => {
     });
     files.set(
       "/etc/letsencrypt/renewal/app.example.com.conf",
-      "[renewalparams]\nserver = https://acme.example.test/directory\n",
+      makeTestRenewalConf(
+        "/etc/letsencrypt/live",
+        "app.example.com",
+        "https://acme.example.test/directory",
+      ),
     );
     await nginx.renewCert("app.example.com").catch(() => undefined);
     const renew = calls.find((c) => c.startsWith("certbot ") && c.includes("'renew'"));
@@ -1097,7 +1109,7 @@ describe("NginxProvider config generation", () => {
     // so the PLAIN renew path runs — the one with no redacting catch of its own.
     files.set(
       "/etc/letsencrypt/renewal/app.example.com.conf",
-      "[renewalparams]\nserver = https://acme-v02.api.letsencrypt.org/directory\n",
+      makeTestRenewalConf("/etc/letsencrypt/live", "app.example.com"),
     );
     let error: Error | undefined;
     try {
@@ -2092,6 +2104,10 @@ describe("re-registering a route leaves no stale rules", () => {
     files.delete(`${SITES}/app-example-com.route.json`);
     // certbot "succeeds" and the cert appears on disk.
     opts.certDomains!.push("app.example.com");
+    files.set(
+      "/etc/letsencrypt/renewal/app.example.com.conf",
+      makeTestRenewalConf("/etc/letsencrypt/live", "app.example.com"),
+    );
     // ensureIssued still fails in the fake (no real cert to read), which is AFTER
     // the re-register we care about.
     await nginx.provisionCert("app.example.com", { force: true }).catch(() => undefined);

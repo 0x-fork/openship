@@ -74,7 +74,7 @@ import { reuseServerCertForDomain } from "@repo/platform/engine/modules/domains/
 /**
  * Fake executor: `exists` answers the container markers from `container` and file
  * existence from `files`; `readFile` returns contents or throws; `exec` answers the
- * certbot-lineage `ls -1d` probe by listing the lineage dirs present in `files`.
+ * certificate-store `ls -1` probe by listing the lineage dirs present in `files`.
  */
 function fakeExecutor(files: Record<string, string>, container = false): CommandExecutor {
   return {
@@ -85,11 +85,11 @@ function fakeExecutor(files: Record<string, string>, container = false): Command
       throw new Error(`ENOENT: ${p}`);
     },
     exec: async (cmd: string) => {
-      if (!cmd.startsWith("ls -1d")) return "";
+      if (!cmd.startsWith("ls -1 ")) return "";
       const dirs = new Set(
         Object.keys(files)
           .filter((p) => p.startsWith("/etc/letsencrypt/live/"))
-          .map((p) => p.replace(/\/[^/]+$/, "")),
+          .map((p) => p.slice("/etc/letsencrypt/live/".length).split("/")[0]),
       );
       return [...dirs].join("\n");
     },
