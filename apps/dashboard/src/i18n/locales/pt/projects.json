@@ -339,6 +339,7 @@
     "requestFailed": "O pedido falhou"
   },
   "serviceStatus": {
+    "checking": "A verificar…",
     "running": "Em execução",
     "stopped": "Parado",
     "disabled": "Desativado",

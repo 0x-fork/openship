@@ -6,6 +6,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useServiceEnvironmentApply } from "@/hooks/useServiceEnvironmentApply";
+import { getServiceStatus, ServiceStatusBadge } from "@/components/services/ServiceStatusBadge";
 import {
   serviceKind,
   serviceUsesDeployPipeline,
@@ -74,6 +75,8 @@ const SERVICE_TABS = SERVICE_TAB_DEFS.map((t) => t.key);
 interface ServiceDetailPanelProps {
   service: Service;
   container?: ServiceContainer;
+  /** An outstanding runtime read, distinct from a confirmed stopped service. */
+  containerChecking?: boolean;
   projectId: string;
   projectSlugBase: string;
   /** Tab to open on mount (from the URL: /services/[id]/[tab]). */
@@ -103,6 +106,7 @@ interface ServiceDetailPanelProps {
 export function ServiceDetailPanel({
   service,
   container,
+  containerChecking,
   projectId,
   projectSlugBase,
   initialTab,
@@ -132,7 +136,7 @@ export function ServiceDetailPanel({
   const [redeploying, setRedeploying] = useState(false);
   const applyingEnvironment = environmentApply.applyingServiceId !== null;
   const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment;
-  const status = container?.status ?? (service.enabled ? "stopped" : "disabled");
+  const status = getServiceStatus(service, container, containerChecking);
 
   // Desktop-only "Open": SSH-forward this service's published host port onto
   // localhost and open it — the same affordance the project card offers. Hidden
@@ -582,7 +586,7 @@ export function ServiceDetailPanel({
           ) : (
             <h2 className="text-xl font-semibold tracking-tight text-foreground">{service.name}</h2>
           )}
-          <StatusBadge status={status} />
+          <ServiceStatusBadge status={status} />
         </div>
         <div className="flex min-w-0 items-center gap-3">
           {service.enabled && (
@@ -696,7 +700,11 @@ export function ServiceDetailPanel({
           </div>
         ) : (
           <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/10 text-[12px] text-muted-foreground">
-            {t.projectDetail.services.detail.startShellHint}
+            {status === "checking" || status === "unknown" ? (
+              <ServiceStatusBadge status={status} />
+            ) : (
+              t.projectDetail.services.detail.startShellHint
+            )}
           </div>
         ))}
 
@@ -778,7 +786,8 @@ export function ServiceDetailPanel({
                   // inline (its own container / Oblien workspace). No build page,
                   // no redeploy. A source-built service (no image) can't launch
                   // this way — it shows Redeploy (below) instead of Start.
-                  canStartWithoutBuild && (
+                  canStartWithoutBuild &&
+                  ["stopped", "failed", "disabled"].includes(status) && (
                     <ActionButton
                       icon={Play}
                       label={
@@ -1006,49 +1015,6 @@ function SectionHeader({
         <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>
       )}
     </div>
-  );
-}
-
-// Hollow status ring + colored label, reusing the Servers view's calmer
-// treatment (border-*-solid dot + text-*) instead of a loud filled pill.
-function StatusBadge({ status }: { status: string }) {
-  const { t } = useI18n();
-  const labels = t.projectDetail.services.detail.status;
-  const map: Record<string, { ring: string; text: string; label: string }> = {
-    running: { ring: "border-success-solid", text: "text-success", label: labels.running },
-    starting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
-      label: labels.starting,
-    },
-    restarting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
-      label: labels.restarting,
-    },
-    failed: { ring: "border-danger-solid", text: "text-danger", label: labels.failed },
-    stopped: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
-      label: labels.stopped,
-    },
-    disabled: {
-      ring: "border-muted-foreground/30",
-      text: "text-muted-foreground/60",
-      label: labels.disabled,
-    },
-    unknown: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
-      label: labels.unknown,
-    },
-  };
-  const s = map[status] ?? map.stopped;
-  return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.text}`}>
-      <span className={`size-2.5 rounded-full border-2 ${s.ring}`} />
-      {s.label}
-    </span>
   );
 }
 

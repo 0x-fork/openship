@@ -339,6 +339,7 @@
     "requestFailed": "فشل الطلب"
   },
   "serviceStatus": {
+    "checking": "جارٍ التحقق…",
     "running": "قيد التشغيل",
     "stopped": "متوقف",
     "disabled": "معطّل",

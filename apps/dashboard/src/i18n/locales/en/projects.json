@@ -396,6 +396,7 @@
     "requestFailed": "Request failed"
   },
   "serviceStatus": {
+    "checking": "Checking…",
     "running": "Running",
     "stopped": "Stopped",
     "disabled": "Disabled",

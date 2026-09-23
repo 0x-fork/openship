@@ -339,6 +339,7 @@
     "requestFailed": "İstek başarısız oldu"
   },
   "serviceStatus": {
+    "checking": "Kontrol ediliyor…",
     "running": "Çalışıyor",
     "stopped": "Durduruldu",
     "disabled": "Pasif",
