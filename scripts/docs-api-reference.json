@@ -708,10 +708,22 @@
       "description": "Keep the current configuration when resolving drift.",
       "route": "POST /api/projects/:id/services/:serviceId/drift/keep"
     },
+    "services.getEnvironment": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Read the effective saved service environment and optionally compare it with Docker.",
+      "route": "GET /api/projects/:id/services/:serviceId/environment"
+    },
+    "services.mergeEnvVars": {
+      "page": "services",
+      "section": "Operations",
+      "description": "Save named service overrides without replacing unrelated values.",
+      "route": "PATCH /api/projects/:id/services/:serviceId/env"
+    },
     "services.listEnvVars": {
       "page": "services",
       "section": "Operations",
-      "description": "Read service environment variables with masked secrets.",
+      "description": "Read service environment overrides with masked secrets.",
       "route": "GET /api/projects/:id/services/:serviceId/env"
     },
     "services.setEnvVars": {
