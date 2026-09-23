@@ -176,6 +176,12 @@ function makeExecutor(
       if (command.includes(PATHS.confPath)) return PATHS.confPath;
       return "";
     }
+    const certLink = command.match(
+      /^readlink '\/etc\/letsencrypt\/live\/([^/]+)\/(fullchain|privkey)\.pem'/,
+    );
+    if (certLink && files.has(`/etc/letsencrypt/renewal/${certLink[1]}.conf`)) {
+      return `../../archive/${certLink[1]}/${certLink[2]}1.pem`;
+    }
     if (command === "cat /proc/321/cgroup 2>/dev/null") {
       if (opts.unreadableMasterCgroup) throw new Error("permission denied");
       return "0::/system.slice/openship-openresty.service";
