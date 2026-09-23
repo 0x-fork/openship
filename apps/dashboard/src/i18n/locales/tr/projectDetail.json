@@ -176,6 +176,37 @@
 			"dependsOn": "Şuna Bağlı",
 			"startShellHint": "Bir kabuk (shell) açmak için servisi başlatın.",
 			"saveEnvironment": "Ortamı kaydet",
+			"environmentState": {
+				"description": "Openship üzerinde kaydedildi. Hizmetin özel değerleri, Compose ve paylaşılan proje değerlerinden önceliklidir. Devralınan bir değeri düzenlemek bu hizmet için özel bir değer oluşturur.",
+				"sources": {
+					"service": "Hizmete özel değer",
+					"compose": "Compose",
+					"project": "Paylaşılan proje değişkeni",
+					"generated": "Hizmet varsayılanı"
+				},
+				"loading": "Kaydedilmiş ortam yükleniyor…",
+				"loadFailed": "Kaydedilmiş ortam yüklenemedi. Değişkenleriniz değiştirilmedi.",
+				"checkFailed": "Çalışan hizmetle karşılaştırılamadı. Kaydedilmiş değişkenler kullanılabilir durumda.",
+				"checking": "Çalışan hizmetle karşılaştırılıyor…",
+				"check": "Çalışan hizmeti kontrol et",
+				"reload": "Ortamı yeniden yükle",
+				"removeOverride": "Özel değeri kaldır (yerini devralınan bir değer alabilir)",
+				"removeAtSource": "Devralınan değişkenleri Compose veya proje ayarlarından kaldırın. Değeri değiştirmek için burada hizmete özel bir değer belirleyin.",
+				"status": {
+					"unchecked": "Çalışan ortam henüz kontrol edilmedi.",
+					"synced": "Çalışan hizmet kaydedilmiş ortamla eşleşiyor.",
+					"pending": "Kaydedilmiş şu ortam değişiklikleri çalışan hizmete henüz uygulanmadı:",
+					"unavailable": "Çalışan ortam kontrol edilemedi.",
+					"not-deployed": "Bu değişkenler hizmet dağıtıldığında kullanılacak.",
+					"unsupported": "Kaydedilmiş ortamı uygulamak için bu hizmeti yeniden dağıtın."
+				},
+				"recoveryHint": "Çalışan kapsayıcıda Openship üzerinde kaydedilmemiş değişkenler var. Bunları korumak istiyorsanız uygulamadan önce kurtarın:",
+				"recover": "Çalışan hizmetten kurtar",
+				"removeRuntime": "Bu değişkenleri kurtarmadan uygula ve çalışan hizmetten kaldır.",
+				"recovered": "Çalışan hizmetten kurtarıldı — henüz kaydedilmedi",
+				"recoveredHint": "Kurtarılan değerler incelemeye hazır. Openship üzerinde tutmak için kaydedin.",
+				"recoveryFailed": "Değişkenler çalışan hizmetten kurtarılamadı. Kaydedilmiş değişkenler değiştirilmedi."
+			},
 			"environmentApply": {
 				"title": "Ortam değişikliklerini uygula",
         "applying": "Değişiklikler uygulanıyor…",
