@@ -317,7 +317,7 @@
       "successful": "部署成功",
       "deploying": "正在部署……"
     },
-    "visitSite": "访问站点",
+    "openSite": "打开网站",
     "warningTitle": "部署已完成，但部分服务仍需处理。",
     "productionLogs": "生产日志",
     "buildTerminal": "构建终端",
@@ -327,7 +327,7 @@
     "stopDeployment": "停止部署",
     "redeploy": "重新部署",
     "goToProject": "前往项目",
-    "openDashboard": "打开仪表盘",
+    "openProject": "打开项目",
     "edit": "编辑",
     "status": {
       "cancelled": "已取消",

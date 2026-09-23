@@ -320,7 +320,7 @@
       "successful": "Déploiement réussi",
       "deploying": "Déploiement..."
     },
-    "visitSite": "Visiter le site",
+    "openSite": "Ouvrir le site",
     "warningTitle": "Le déploiement est terminé, mais certains services nécessitent encore votre attention.",
     "productionLogs": "Journaux de production",
     "buildTerminal": "Terminal de compilation",
@@ -330,7 +330,7 @@
     "stopDeployment": "Arrêter le déploiement",
     "redeploy": "Redéployer",
     "goToProject": "Aller au projet",
-    "openDashboard": "Ouvrir le tableau de bord",
+    "openProject": "Ouvrir le projet",
     "edit": "Modifier",
     "status": {
       "cancelled": "Annulé",

@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   CheckCircle2,
   XCircle,
-  ExternalLink,
   Loader2,
   Clock,
   Server,
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 import type { Terminal } from "@xterm/xterm";
 import BuildTerminal from "./BuildTerminal";
+import { DeploymentConfigurationAction, DeploymentSuccessActions } from "./DeploymentActions";
 import { PortAdvisoryModal } from "./PortAdvisoryModal";
 import { PromptDetails } from "./PromptDetails";
 import { describeBuildStrategy } from "./deploy-target-label";
@@ -28,7 +28,6 @@ import { useDeployment } from "@/context/DeploymentContext";
 import { getPublicEndpointHosts, workloadOf } from "@/context/deployment/types";
 import { resolveBuildElapsedMs } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
-import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useTheme } from "@/components/theme-provider";
 import { useModal } from "@/context/ModalContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -76,7 +75,6 @@ function DetailRow({
 
 const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy }) => {
   const { config, state, terminalRef, onTerminalReady, stopDeployment, respondToPrompt, steps, deploymentStatus } = useDeployment();
-  const { baseDomain } = usePlatform();
   const { resolvedTheme } = useTheme();
   const { showModal, hideModal } = useModal();
   const { t } = useI18n();
@@ -137,26 +135,12 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
     });
   }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
 
-  // The host to OPEN, or none. Never composed from the project name — that host
-  // doesn't exist, and this one is behind the primary "Visit Site" button.
-  const domain = getPublicEndpointHosts(config.publicEndpoints, baseDomain)[0] ?? "";
-
   const handleTerminalReady = useCallback((terminal: Terminal) => {
     if (terminalRef) {
       terminalRef.current = terminal;
     }
     onTerminalReady();
   }, [terminalRef, onTerminalReady]);
-
-  const handleViewDashboard = () => {
-    if (!state.projectId) return;
-    // Backstop: drop the cached project info at the point of NAVIGATION, whichever
-    // path observed the deploy finishing. Without it, opening the project while a
-    // deploy was still running cached the pre-deploy DRAFT, and this button then
-    // landed on "Ready to deploy" beside an already-Deployed release.
-    invalidateProjectCaches(state.projectId);
-    router.push(`/projects/${state.projectId}`);
-  };
 
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
 
@@ -165,9 +149,9 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
       {/* Header */}
       <div className="bg-background">
         <div className="py-5 relative">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="min-w-0">
                 <h1 className="text-xl font-semibold text-foreground">
                   {deploymentStatus === "cancelled"
                     ? dp.title.cancelled
@@ -180,26 +164,15 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                         : dp.title.deploying}
                 </h1>
                 <div className="flex items-center gap-2 mb-1">
-                  <p className="text-sm text-muted-foreground mt-0.5">
+                  <p className="text-sm text-muted-foreground mt-0.5 break-all">
                     {config.owner}/{config.repo}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Visit Site only. "View dashboard" used to sit here too, duplicating
-                the primary "Open Dashboard" button in the details column below —
-                same handler, same destination, two buttons one screen apart. */}
-            {deploymentStatus === "ready" && !!domain && (
-              <button
-                onClick={() => window.open(`https://${domain}`, "_blank", "noopener,noreferrer")}
-                className="flex items-center gap-2 text-primary-foreground font-medium transition-all duration-300 bg-primary rounded-xl px-4 py-2 text-sm hover:bg-primary/90 shadow-md hover:shadow-lg"
-              >
-                {dp.visitSite}
-                {/* lucide, not a hashed PNG — the previous asset silently resolved
-                    to nothing, so the button rendered with no icon at all. */}
-                <ExternalLink className="size-4" />
-              </button>
+            {deploymentStatus === "ready" && (
+              <DeploymentConfigurationAction className="self-start sm:shrink-0" />
             )}
 
           </div>
@@ -394,12 +367,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                   )}
                 </div>
               ) : (deploymentStatus === "ready") ? (
-                <button
-                  onClick={handleViewDashboard}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl transition-all font-medium text-sm hover:bg-primary/90"
-                >
-                  {dp.openDashboard}
-                </button>
+                <DeploymentSuccessActions />
               ) : null}
             </div>
 

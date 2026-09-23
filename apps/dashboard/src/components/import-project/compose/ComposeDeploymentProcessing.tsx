@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, CheckCircle2, XCircle, SlidersHorizontal } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 import ComposeSidebar from "./ComposeSidebar";
 import BuildTerminal from "../BuildTerminal";
+import { DeploymentConfigurationAction, DeploymentSuccessActions } from "../DeploymentActions";
 import { PortAdvisoryModal } from "../PortAdvisoryModal";
 import { PromptDetails } from "../PromptDetails";
 import { generateIcon } from "@/utils/icons";
@@ -16,10 +17,8 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/components/theme-provider";
 import { deployApi } from "@/lib/api";
-import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { composeServiceTally } from "@/context/deployment/types";
 import type { DeploymentStatus, ServiceDeployStatus } from "@/context/deployment/types";
-import { encodeRepoSlug, encodeLocalSlug } from "@/utils/repoSlug";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -287,28 +286,6 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
     setDecisionModalOpen(true);
   }, [showDecision, state.deploymentId]);
 
-  const handleViewDashboard = () => {
-    if (!state.projectId) return;
-    // See DeploymentProcessing: invalidate at the navigation point so a stale
-    // draft snapshot can't outlive the deploy that replaced it.
-    invalidateProjectCaches(state.projectId);
-    router.push(`/projects/${state.projectId}`);
-  };
-
-  // Re-open the deploy wizard rehydrated from THIS project's saved config
-  // (mode=config → initializeFromProject: no repo re-clone/re-detect). Same
-  // "Edit" the project Runtime page uses — the single place the full config
-  // (services, build, target, …) is edited. Deploy info is already stored, so
-  // there's nothing to re-fetch from the repo.
-  const handleEditConfig = () => {
-    const projectId = state.projectId || config.projectId;
-    if (!projectId) return;
-    const slug = config.localPath
-      ? encodeLocalSlug(config.localPath)
-      : encodeRepoSlug(config.owner, config.repo);
-    router.push(`/deploy/${slug}?projectId=${projectId}&mode=config`);
-  };
-
   // ── Title ──────────────────────────────────────────────────────────────
   const title =
     deploymentStatus === "cancelled"
@@ -327,12 +304,12 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
     <div className="min-h-screen bg-background max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="py-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
             {/* Sits on the PAGE, not a card — `bg-muted` (4%) over light's #f9f9f9
                 still reads; `/50` would not. Borderless, same rule as the chips
                 inside the panel below. */}
-            <div className="flex bg-muted rounded-xl w-12 h-12 justify-center items-center">
+            <div className="flex shrink-0 bg-muted rounded-xl w-12 h-12 justify-center items-center">
               {deploymentStatus === "failed" || deploymentStatus === "cancelled" ? (
                 <XCircle className="w-6 h-6 text-destructive" />
               ) : deploymentStatus === "ready" ? (
@@ -341,9 +318,9 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
                 <Loader2 className="w-6 h-6 text-primary animate-spin" />
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-xl font-semibold text-foreground">{title}</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <p className="text-sm text-muted-foreground mt-0.5 break-all">
                 {config.owner}/{config.repo}
                 {total > 0 && (
                   <span className="ms-2 text-xs">
@@ -354,10 +331,9 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
             </div>
           </div>
 
-          {/* No header dashboard button: the details column below already has the
-              primary "Open Dashboard" on the same screen, wired to this exact
-              handler. Two buttons for one destination — same duplication the
-              single-app DeploymentProcessing header had. */}
+          {deploymentStatus === "ready" && (
+            <DeploymentConfigurationAction className="self-start sm:shrink-0" />
+          )}
         </div>
       </div>
 
@@ -487,22 +463,9 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
                     {cd.redeploy}
                   </button>
                 )}
-                {deploymentStatus === "ready" && (
-                  <button
-                    onClick={handleViewDashboard}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium text-sm hover:bg-primary/90 transition-all"
-                  >
-                    {cd.openDashboard}
-                  </button>
-                )}
-                {state.projectId && (
-                  <button
-                    onClick={handleEditConfig}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm border border-border/60 bg-muted/40 text-foreground hover:bg-muted/70 transition-all"
-                  >
-                    <SlidersHorizontal className="h-4 w-4" />
-                    {cd.editConfiguration}
-                  </button>
+                {deploymentStatus === "ready" && <DeploymentSuccessActions />}
+                {deploymentStatus !== "ready" && (
+                  <DeploymentConfigurationAction className="w-full" />
                 )}
               </>
             )}

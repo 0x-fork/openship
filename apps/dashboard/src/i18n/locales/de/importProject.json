@@ -317,7 +317,7 @@
       "successful": "Bereitstellung erfolgreich",
       "deploying": "Wird bereitgestellt..."
     },
-    "visitSite": "Website besuchen",
+    "openSite": "Website öffnen",
     "warningTitle": "Bereitstellung abgeschlossen, aber einige Services benötigen noch Aufmerksamkeit.",
     "productionLogs": "Produktionsprotokolle",
     "buildTerminal": "Build-Terminal",
@@ -327,7 +327,7 @@
     "stopDeployment": "Bereitstellung stoppen",
     "redeploy": "Erneut bereitstellen",
     "goToProject": "Zum Projekt",
-    "openDashboard": "Dashboard öffnen",
+    "openProject": "Projekt öffnen",
     "edit": "Bearbeiten",
     "status": {
       "cancelled": "Abgebrochen",

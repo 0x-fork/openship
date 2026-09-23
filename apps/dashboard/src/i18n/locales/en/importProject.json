@@ -333,7 +333,7 @@
       "successful": "Deployment Successful",
       "deploying": "Deploying..."
     },
-    "visitSite": "Visit Site",
+    "openSite": "Open site",
     "warningTitle": "Deployment finished, but some services still need attention.",
     "productionLogs": "Production Logs",
     "buildTerminal": "Build Terminal",
@@ -343,7 +343,7 @@
     "stopDeployment": "Stop Deployment",
     "redeploy": "Redeploy",
     "goToProject": "Go to project",
-    "openDashboard": "Open Dashboard",
+    "openProject": "Open project",
     "edit": "Edit",
     "status": {
       "cancelled": "Cancelled",
