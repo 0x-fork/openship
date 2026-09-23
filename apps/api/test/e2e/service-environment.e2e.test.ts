@@ -69,16 +69,35 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
     await runtime.docker.createVolume({ Name: volumeName });
     volumes.add(volumeName);
     original = await runtime.docker.createContainer({
-      name: `openship-${project.slug}-api`, Image: imageTag, Hostname: "api",
-      Env: ["VALUE=old", "REMOVE=old", "TOKEN=unchanged-secret", "PORT=3000"],
-      Cmd: ["sh", "-c", '[ "$FAIL_START" != "1" ] || exit 9; mkdir -p /www; printf "%s" "$VALUE" > /www/index.html; trap \'echo stopped >> /data/stops; exit 0\' TERM; httpd -f -p 3000 -h /www & wait "$!"'],
-      Labels: { "openship.project": project.id, "openship.service": service.name, "openship.deployment": deployment.id },
+      name: `openship-${project.slug}-api`,
+      Image: imageTag,
+      Hostname: "api",
+      Env: [
+        "VALUE=old",
+        "REMOVE=old",
+        "TOKEN=unchanged-secret",
+        "PORT=3000",
+        "RECOVER_ME=daemon-only",
+      ],
+      Cmd: [
+        "sh",
+        "-c",
+        '[ "$FAIL_START" != "1" ] || exit 9; mkdir -p /www; printf "%s" "$VALUE" > /www/index.html; trap \'echo stopped >> /data/stops; exit 0\' TERM; httpd -f -p 3000 -h /www & wait "$!"',
+      ],
+      Labels: {
+        "openship.project": project.id,
+        "openship.service": service.name,
+        "openship.deployment": deployment.id,
+      },
       Volumes: { "/cache": {} },
       ExposedPorts: { "3000/tcp": {} },
       HostConfig: {
-        NetworkMode: network.id, Binds: [`${volumeName}:/data`],
+        NetworkMode: network.id,
+        Binds: [`${volumeName}:/data`],
         PortBindings: { "3000/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }] },
-        Memory: 128 * 1024 ** 2, NanoCpus: 500_000_000, RestartPolicy: { Name: "unless-stopped" },
+        Memory: 128 * 1024 ** 2,
+        NanoCpus: 500_000_000,
+        RestartPolicy: { Name: "unless-stopped" },
       },
       NetworkingConfig: { EndpointsConfig: { [network.id]: { Aliases: ["api", "api-alias"] } } },
     });
@@ -117,6 +136,55 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
     if (imageTag) await runtime.docker.getImage(imageTag).remove().catch(() => {});
     vi.restoreAllMocks();
     await runtime?.dispose();
+  });
+
+  it("reads saved Compose values and recovers missing daemon variables without replacing the container or overriding saved secrets", async () => {
+    const saved = await client.services.getEnvironment(project.id, service.id);
+    expect(saved.variables.find((row) => row.key === "INLINE")).toMatchObject({
+      source: "compose",
+      value: ENV_MASK,
+    });
+    const inspected = await client.services.getEnvironment(project.id, service.id, {
+      inspectRuntime: true,
+    });
+    expect(inspected.status).toBe("pending");
+    expect(inspected.changedKeys).toEqual(["INLINE", "RECOVER_ME"]);
+    expect(inspected.recoverableKeys).toEqual(["RECOVER_ME"]);
+    const recovered = await client.services.revealEnv(project.id, service.id, {
+      source: "runtime",
+      containerId: inspected.containerId,
+      keys: ["RECOVER_ME", "TOKEN", "PATH"],
+    });
+    expect(recovered).toEqual({ RECOVER_ME: "daemon-only" });
+    expect(
+      (await repos.project.listEnvVars(project.id, "production", service.id)).some(
+        (row) => row.key === "RECOVER_ME",
+      ),
+    ).toBe(false);
+    await expect(
+      client.services.revealEnv(project.id, service.id, {
+        source: "runtime",
+        containerId: "old-container",
+        keys: ["RECOVER_ME"],
+      }),
+    ).rejects.toMatchObject({ code: "ENVIRONMENT_RUNTIME_CHANGED" });
+    await client.services.mergeEnvVars(project.id, service.id, {
+      environment: "production",
+      deletes: [],
+      upserts: [
+        { key: "RECOVER_ME", sourceId: null, value: recovered.RECOVER_ME!, isSecret: true },
+      ],
+    });
+    const stored = await client.services.getEnvironment(project.id, service.id, {
+      inspectRuntime: true,
+    });
+    expect(stored.recoverableKeys).toEqual([]);
+    expect(stored.changedKeys).toEqual(["INLINE"]);
+    expect(stored.variables.find((row) => row.key === "RECOVER_ME")).toMatchObject({
+      source: "service",
+      value: ENV_MASK,
+    });
+    expect((await original.inspect()).State.StartedAt).toBe(before.State.StartedAt);
   });
 
   it("applies saved env with a missing local build tag, preserving data, networking, limits and sibling uptime", async () => {
@@ -159,6 +227,9 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
     await expect(resolveStaleEnvKeysForService(project, "production", service.id)).resolves.toEqual([]);
     await expect(resolveStaleEnvKeysForService(project, "production", sibling.id)).resolves.toEqual(["SHARED"]);
     await expect(original.inspect()).rejects.toMatchObject({ statusCode: 404 });
+    expect(
+      await client.services.getEnvironment(project.id, service.id, { inspectRuntime: true }),
+    ).toMatchObject({ status: "synced", changedKeys: [], recoverableKeys: [] });
   });
 
   it("holds deployment admission until the new service identity is committed", async () => {
@@ -289,5 +360,58 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
     );
     expect(await exec(probe, ["wget", "-qO-", "http://api-alias:3000"])).toBe("new");
     expect(await exec(current, ["cat", "/data/keep"])).toBe("persistent");
+  });
+
+  it("detects deletions and changes by actual values, including when the last override was deleted", async () => {
+    const initial = await client.services.getEnvironment(project.id, service.id, {
+      inspectRuntime: true,
+    });
+    expect(initial.status).toBe("synced");
+    const savedRows = await repos.project.listEnvVars(project.id, "production", service.id);
+    const value = savedRows.find((row) => row.key === "VALUE")!;
+    await client.services.mergeEnvVars(project.id, service.id, {
+      environment: "production",
+      deletes: [],
+      upserts: [
+        { key: "VALUE", sourceId: value.id, value: "new" },
+        { key: "PATH", sourceId: null, value: "/this/must/not/replace/the/image/path" },
+      ],
+    });
+    const unchanged = await client.services.getEnvironment(project.id, service.id, {
+      inspectRuntime: true,
+    });
+    expect(unchanged.status).toBe("synced");
+    await expect(client.services.restart(project.id, service.id)).resolves.toMatchObject({ success: true, containerId: unchanged.containerId });
+    // Remove the Compose dependency on TOKEN so deleting the last override is valid.
+    await repos.service.update(service.id, {
+      environment: { VALUE: "new" },
+      advanced: { environmentTemplateKeys: [] },
+    });
+    const overrides = await repos.project.listEnvVars(project.id, "production", service.id);
+    await client.services.mergeEnvVars(project.id, service.id, {
+      environment: "production",
+      upserts: [],
+      deletes: overrides.map((row) => ({ key: row.key, sourceId: row.id })),
+    });
+    const pending = await client.services.getEnvironment(project.id, service.id, {
+      inspectRuntime: true,
+    });
+    expect(pending.status).toBe("pending");
+    expect(pending.changedKeys).toContain("TOKEN");
+    expect(pending.variables.some((row) => row.source === "service")).toBe(false);
+    await expect(client.services.restart(project.id, service.id)).rejects.toMatchObject({ code: "SERVICE_CONFIG_STALE" });
+    const applied = await client.services.applyEnvironment(project.id, service.id);
+    const after = await runtime.docker.getContainer(applied.containerId).inspect();
+    expect(after.Config.Env.some((entry) => entry.startsWith("TOKEN="))).toBe(false);
+    expect(after.Config.Env.find((entry) => entry.startsWith("PATH="))).toBe(
+      before.Config.Env.find((entry) => entry.startsWith("PATH=")),
+    );
+    expect(
+      await client.services.getEnvironment(project.id, service.id, { inspectRuntime: true }),
+    ).toMatchObject({ status: "synced", changedKeys: [] });
+    expect(await exec(probe, ["wget", "-qO-", "http://api-alias:3000"])).toBe("new");
+    expect(
+      await exec(runtime.docker.getContainer(applied.containerId), ["cat", "/data/keep"]),
+    ).toBe("persistent");
   });
 });

@@ -9,6 +9,11 @@ import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
 import { sshManager } from "../../lib/ssh-manager";
 import * as service from "./service.service";
 import { applyServiceEnvironment } from "./service-environment";
+import {
+  getServiceEnvironment,
+  mergeServiceEnvVars,
+  revealEffectiveServiceEnvironment,
+} from "./service-environment-state";
 
 function record(
   ctx: ExecutionContext,
@@ -128,6 +133,19 @@ export const serviceDependencies: ServiceDependencies = {
     },
     listEnvVars: (ctx, projectId, id, input) =>
       run(() => service.listServiceEnvVars(ctx, projectId, id, input?.environment)),
+    getEnvironment: (ctx, projectId, id, input) =>
+      run(() => getServiceEnvironment(ctx, projectId, id, input)),
+    async mergeEnvVars(ctx, projectId, id, input) {
+      const result = await run(() => mergeServiceEnvVars(ctx, projectId, id, input));
+      record(ctx, id, "write", {
+        operation: "env.merge",
+        projectId,
+        environment: input.environment,
+        keys: input.upserts.map((row) => row.key),
+        deletedKeys: input.deletes.map((row) => row.key),
+      });
+      return result;
+    },
     async setEnvVars(ctx, projectId, id, input) {
       const result = await run(() => service.setServiceEnvVars(ctx, projectId, id, input));
       record(ctx, id, "write", {
@@ -141,9 +159,14 @@ export const serviceDependencies: ServiceDependencies = {
     async revealEnv(ctx, projectId, id, input) {
       const keys = parseRevealKeys(input.keys);
       const stored = await run(() =>
-        input.environment
-          ? service.revealServiceEnvVars(ctx, projectId, id, input.environment)
-          : service.revealServiceEnv(ctx, projectId, id),
+        input.source
+          ? revealEffectiveServiceEnvironment(ctx, projectId, id, {
+              ...input,
+              source: input.source,
+            })
+          : input.environment
+            ? service.revealServiceEnvVars(ctx, projectId, id, input.environment)
+            : service.revealServiceEnv(ctx, projectId, id),
       );
       const result = pickRevealed(stored, keys);
       record(ctx, id, "write", { projectId, revealedEnvKeys: Object.keys(result) });

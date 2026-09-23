@@ -25,6 +25,7 @@ import { AgentExecBody } from "@repo/contracts";
 import {
   CreateServiceBody,
   SetServiceEnvVarsBody,
+  MergeServiceEnvVarsBody,
   SyncServicesBody,
   UpdateServiceBody,
 } from "@repo/contracts";
@@ -185,6 +186,32 @@ r.post("/:serviceId/apply-env", {
 }, cloudProjectProxy, ctrl.applyEnvironment);
 
 /* ─── Service environment variables ─────────────────────────────────────── */
+r.get(
+  "/:serviceId/environment",
+  {
+    tag: "project:service:read",
+    mcp: {
+      description:
+        "Read the effective saved environment for a service, including Compose and shared project values. Optionally compare it with its deployed container. Secrets are masked.",
+    },
+  },
+  cloudProjectProxy,
+  ctrl.getEnvironment,
+);
+r.patch(
+  "/:serviceId/env",
+  {
+    tag: "project:service:write",
+    auditHandledByOperation: true,
+    body: MergeServiceEnvVarsBody,
+    mcp: {
+      description:
+        "Save only the named service environment overrides. Preserve other variables; source IDs reject stale edits.",
+    },
+  },
+  cloudProjectProxy,
+  ctrl.mergeEnvVars,
+);
 r.get(
   "/:serviceId/env",
   { tag: "project:service:read", mcp: { description: "List a service's environment variables." } },

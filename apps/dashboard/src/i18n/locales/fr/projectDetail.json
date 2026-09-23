@@ -172,6 +172,37 @@
 			"dependsOn": "Dépend de",
 			"startShellHint": "Démarrez le service pour ouvrir un shell.",
 			"saveEnvironment": "Enregistrer l'environnement",
+			"environmentState": {
+				"description": "Enregistrées dans Openship. Les valeurs personnalisées du service priment sur Compose et les valeurs partagées du projet. Modifier une valeur héritée crée une valeur personnalisée pour ce service.",
+				"sources": {
+					"service": "Valeur personnalisée du service",
+					"compose": "Compose",
+					"project": "Variable partagée du projet",
+					"generated": "Valeur par défaut du service"
+				},
+				"loading": "Chargement de l’environnement enregistré…",
+				"loadFailed": "Impossible de charger l’environnement enregistré. Vos variables n’ont pas été modifiées.",
+				"checkFailed": "Impossible de comparer avec le service en cours d’exécution. Les variables enregistrées restent disponibles.",
+				"checking": "Comparaison avec le service en cours d’exécution…",
+				"check": "Vérifier le service en cours d’exécution",
+				"reload": "Recharger l’environnement",
+				"removeOverride": "Supprimer la valeur personnalisée (une valeur héritée peut la remplacer)",
+				"removeAtSource": "Supprimez les variables héritées dans Compose ou les paramètres du projet. Définissez ici une valeur personnalisée pour ce service.",
+				"status": {
+					"unchecked": "L’environnement en cours d’exécution n’a pas encore été vérifié.",
+					"synced": "Le service en cours d’exécution correspond à l’environnement enregistré.",
+					"pending": "Ces modifications enregistrées n’ont pas encore été appliquées au service en cours d’exécution :",
+					"unavailable": "Impossible de vérifier l’environnement en cours d’exécution.",
+					"not-deployed": "Ces variables seront utilisées lors du déploiement de ce service.",
+					"unsupported": "Redéployez ce service pour appliquer son environnement enregistré."
+				},
+				"recoveryHint": "Le conteneur en cours d’exécution contient des variables non enregistrées dans Openship. Récupérez-les avant l’application si vous souhaitez les conserver :",
+				"recover": "Récupérer depuis le service en cours d’exécution",
+				"removeRuntime": "Appliquer sans récupérer ces variables et les supprimer du service en cours d’exécution.",
+				"recovered": "Récupérées depuis le service en cours d’exécution — pas encore enregistrées",
+				"recoveredHint": "Les valeurs récupérées sont prêtes à être vérifiées. Enregistrez-les pour les conserver dans Openship.",
+				"recoveryFailed": "Impossible de récupérer les variables du service en cours d’exécution. Les variables enregistrées n’ont pas été modifiées."
+			},
 			"environmentApply": {
 				"title": "Appliquer les modifications d’environnement",
         "applying": "Application des modifications…",

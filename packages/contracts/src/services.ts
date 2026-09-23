@@ -10,6 +10,12 @@ import { AgentExecBody } from "./exec";
 import { EnvironmentScopeSchema } from "./environment-scope";
 import { EnvRevealKeysSchema } from "./env-reveal";
 import { EnvironmentVariableSchema } from "./project-controls";
+import {
+  ServiceEnvironmentInputSchema,
+  ServiceEnvironmentSchema,
+  MergeServiceEnvVarsBody,
+} from "./service-environment";
+export * from "./service-environment";
 import { LogEntrySchema, type DeploymentEvent } from "./deployment-resources";
 import type {
   ChildResourceOperations,
@@ -132,6 +138,8 @@ export const RevealServiceEnvSchema = Type.Object(
   {
     keys: EnvRevealKeysSchema,
     environment: Type.Optional(EnvironmentScopeSchema),
+    source: Type.Optional(Type.Union([Type.Literal("effective"), Type.Literal("runtime")])),
+    containerId: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 );
@@ -162,6 +170,17 @@ export const ServiceResourceSchemas = {
     input: SetServiceEnvVarsBody,
     output: Type.Object({ success: Type.Literal(true), count: Type.Integer() }),
   },
+  getEnvironment: {
+    action: "read",
+    input: ServiceEnvironmentInputSchema,
+    optionalInput: true,
+    output: ServiceEnvironmentSchema,
+  },
+  mergeEnvVars: {
+    action: "write",
+    input: MergeServiceEnvVarsBody,
+    output: Type.Object({ success: Type.Literal(true) }),
+  },
   revealEnv: {
     action: "write",
     input: RevealServiceEnvSchema,
@@ -179,8 +198,10 @@ export const ServiceResourceSchemas = {
   applyEnvironment: {
     action: "write",
     output: Type.Object({
-      success: Type.Literal(true), containerId: Type.String(),
-      ip: Type.Optional(Type.String()), warning: Type.Optional(Type.String()),
+      success: Type.Literal(true),
+      containerId: Type.String(),
+      ip: Type.Optional(Type.String()),
+      warning: Type.Optional(Type.String()),
     }),
   },
   runtimeLogs: {

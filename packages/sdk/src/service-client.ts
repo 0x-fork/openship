@@ -44,6 +44,12 @@ export function createRemoteServiceOperations(http: HttpClient): ServiceOperatio
       },
       listEnvVars: { method: "GET", path: (p, id) => `${service(p, id)}/env`, envelope: "vars" },
       setEnvVars: { method: "PUT", path: (p, id) => `${service(p, id)}/env` },
+      getEnvironment: {
+        method: "GET",
+        path: (p, id) => `${service(p, id)}/environment`,
+        envelope: "environment",
+      },
+      mergeEnvVars: { method: "PATCH", path: (p, id) => `${service(p, id)}/env` },
       revealEnv: {
         method: "POST",
         path: (p, id) => `${service(p, id)}/env-reveal`,

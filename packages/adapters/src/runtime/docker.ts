@@ -4061,11 +4061,12 @@ export class DockerRuntime implements RuntimeAdapter {
   /** The image's baked-in default env (Config.Env). Discovery subtracts these
    *  from a container's env so only user-set vars are imported, not the dozen
    *  defaults a base image (postgres, node, …) ships with. [] if unavailable. */
-  async inspectImageEnv(ref: string): Promise<string[]> {
+  async inspectImageEnv(ref: string, options?: { required?: boolean }): Promise<string[]> {
     try {
       const data = await this.docker.getImage(ref).inspect();
       return data.Config?.Env ?? [];
-    } catch {
+    } catch (error) {
+      if (options?.required) throw error;
       return [];
     }
   }

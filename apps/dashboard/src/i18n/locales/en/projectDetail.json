@@ -176,6 +176,37 @@
 			"dependsOn": "Depends On",
 			"startShellHint": "Start the service to open a shell.",
 			"saveEnvironment": "Save environment",
+			"environmentState": {
+				"description": "Saved in Openship. Service overrides take precedence over Compose and shared project values. Editing an inherited value creates an override for this service.",
+				"sources": {
+					"service": "Service override",
+					"compose": "Compose",
+					"project": "Shared project variable",
+					"generated": "Service default"
+				},
+				"loading": "Loading saved environment…",
+				"loadFailed": "Could not load the saved environment. Your variables have not been changed.",
+				"checkFailed": "Could not compare with the running service. Saved variables are still available.",
+				"checking": "Comparing with the running service…",
+				"check": "Check running service",
+				"reload": "Reload environment",
+				"removeOverride": "Remove override (an inherited value may take its place)",
+				"removeAtSource": "Remove inherited variables in Compose or project settings. Set a service override here to change the value.",
+				"status": {
+					"unchecked": "The running environment has not been checked.",
+					"synced": "The running service matches the saved environment.",
+					"pending": "These saved environment changes have not been applied to the running service:",
+					"unavailable": "The running environment could not be checked.",
+					"not-deployed": "These variables will be used when this service is deployed.",
+					"unsupported": "Redeploy this service to apply its saved environment."
+				},
+				"recoveryHint": "The running container has variables that are not saved in Openship. Recover them before applying if you want to keep them:",
+				"recover": "Recover from running service",
+				"removeRuntime": "Apply without recovering these variables; remove them from the running service.",
+				"recovered": "Recovered from running service — not saved yet",
+				"recoveredHint": "Recovered values are ready for review. Save to keep them in Openship.",
+				"recoveryFailed": "Could not recover variables from the running service. Saved variables have not been changed."
+			},
 			"environmentApply": {
 				"title": "Apply environment changes",
         "applying": "Applying changes…",

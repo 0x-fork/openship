@@ -594,3 +594,4 @@ export { k3sTools, k3sFirewallScript, type K3sHostContext, type K3sHostInspectio
 export * from "./cluster/kubernetes-api";
 export * from "./cluster/database";
 export * from "./runtime/kubernetes";
+export { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime/runtime-env";

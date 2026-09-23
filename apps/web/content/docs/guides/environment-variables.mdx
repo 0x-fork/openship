@@ -137,6 +137,17 @@ file is only used after you choose **Import .env**.
 
 ## Service overrides and credential rotation
 
+Open **Services → select a service → Environment** to see its effective saved
+variables. The list includes Compose values, shared project variables and explicit
+service overrides, with a source label on each row. Openship stores these values;
+the list remains available when the deployment server is offline.
+
+Editing an inherited value creates an override for that service. Saving changes
+only the rows you edited; it does not copy the other inherited values into
+overrides. Removing an override restores the inherited value, if one exists.
+Remove inherited keys at their Compose or project source. Conflicting edits from
+another session are rejected before anything is saved.
+
 On a normal service deployment, the highest-priority value wins in this order:
 
 1. A service-scoped variable from its environment editor.
@@ -170,8 +181,9 @@ Openship keeps variables **per environment**, so your test setup and your live s
 build can point at a test database while `production` points at the real one). The three environments are
 `production`, `preview`, and `development`.
 
-The dashboard editor manages your **production** values. To set values for `preview` or `development`, use
-the CLI (below) with the `--environment` flag.
+The project editor manages **production** values. A service's Environment tab uses
+its active deployment's environment, or production before the first deployment.
+The CLI also supports `preview` and `development` through `--environment`.
 
 These are variable sets within a project. Runtime isolation comes from selecting a separate
 non-production project environment and deploying its project ID. Passing `--env preview` against
@@ -208,7 +220,17 @@ and shows completion after the service starts. This is a dedicated service actio
 build session. Docker gets a graceful stop, and the replacement retains the existing
 ports, project network address, volumes, commands, and resource limits. If startup
 fails, Openship restores the previous container and leaves the changes pending.
-The info icon contains details about variable precedence, build arguments, and shared project values.
+The toolbar offers Apply only when a comparison with the deployed container finds
+saved changes, including removed variables. **Check running service** refreshes
+that comparison. An unavailable server is reported as an unknown state, while the
+saved variables remain editable.
+
+For an older or migrated service, Docker may still hold variables that were never
+saved in Openship. **Recover from running service** reads those missing values
+from that service's container, excluding image defaults, and adds them to the
+editor for review. Press **Save** to store them encrypted in Openship. Recovery
+never overwrites an already saved value. Before applying, recover these values or
+explicitly choose to remove them from the running service.
 
 This action supports Docker services on a server or an Openship Cloud Docker
 workspace. Legacy cloud workspaces and adopted containers on Docker's default bridge

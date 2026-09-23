@@ -169,6 +169,37 @@
 			"dependsOn": "Depende de",
 			"startShellHint": "Inicie o serviço para abrir um shell.",
 			"saveEnvironment": "Salvar ambiente",
+			"environmentState": {
+				"description": "Guardadas no Openship. As substituições do serviço têm prioridade sobre o Compose e os valores partilhados do projeto. Editar um valor herdado cria uma substituição para este serviço.",
+				"sources": {
+					"service": "Substituição do serviço",
+					"compose": "Compose",
+					"project": "Variável partilhada do projeto",
+					"generated": "Valor predefinido do serviço"
+				},
+				"loading": "A carregar o ambiente guardado…",
+				"loadFailed": "Não foi possível carregar o ambiente guardado. As suas variáveis não foram alteradas.",
+				"checkFailed": "Não foi possível comparar com o serviço em execução. As variáveis guardadas continuam disponíveis.",
+				"checking": "A comparar com o serviço em execução…",
+				"check": "Verificar serviço em execução",
+				"reload": "Recarregar ambiente",
+				"removeOverride": "Remover substituição (um valor herdado pode substituí-la)",
+				"removeAtSource": "Remova as variáveis herdadas no Compose ou nas definições do projeto. Defina aqui uma substituição do serviço para alterar o valor.",
+				"status": {
+					"unchecked": "O ambiente em execução ainda não foi verificado.",
+					"synced": "O serviço em execução corresponde ao ambiente guardado.",
+					"pending": "Estas alterações guardadas ainda não foram aplicadas ao serviço em execução:",
+					"unavailable": "Não foi possível verificar o ambiente em execução.",
+					"not-deployed": "Estas variáveis serão usadas quando este serviço for implementado.",
+					"unsupported": "Volte a implementar este serviço para aplicar o ambiente guardado."
+				},
+				"recoveryHint": "O contentor em execução tem variáveis que não estão guardadas no Openship. Recupere-as antes de aplicar se quiser mantê-las:",
+				"recover": "Recuperar do serviço em execução",
+				"removeRuntime": "Aplicar sem recuperar estas variáveis; removê-las do serviço em execução.",
+				"recovered": "Recuperadas do serviço em execução — ainda não guardadas",
+				"recoveredHint": "Os valores recuperados estão prontos para revisão. Guarde para os manter no Openship.",
+				"recoveryFailed": "Não foi possível recuperar as variáveis do serviço em execução. As variáveis guardadas não foram alteradas."
+			},
 			"environmentApply": {
 				"title": "Aplicar alterações de ambiente",
         "applying": "Aplicando alterações…",

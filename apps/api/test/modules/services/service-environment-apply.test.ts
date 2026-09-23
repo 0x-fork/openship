@@ -8,13 +8,23 @@ const h = vi.hoisted(() => ({
   resolveRuntime: vi.fn(), liveContainer: vi.fn(), cloud: { CLOUD_MODE: false },
   plan: vi.fn(), quota: vi.fn(), limits: vi.fn(),
 }));
-vi.mock("@repo/db", async original => ({
-  ...await original<typeof import("@repo/db")>(),
+vi.mock("@repo/db", async (original) => ({
+  ...(await original<typeof import("@repo/db")>()),
   withAdvisoryLock: async (_key: string, run: () => Promise<unknown>) => run(),
   repos: {
-    project: { findById: h.project, getEnvMap: h.env },
-    service: { listByProject: h.services, listByDeployment: h.rows, recordEnvironmentApply: h.record },
-    deployment: { findById: h.deployment, listInFlightByProject: h.inFlight, create: h.createDeployment, createBuildSession: h.createBuildSession },
+    project: { findById: h.project, listEnvVars: h.env },
+    service: {
+      findById: async () => (await h.services())[0],
+      listByProject: h.services,
+      listByDeployment: h.rows,
+      recordEnvironmentApply: h.record,
+    },
+    deployment: {
+      findById: h.deployment,
+      listInFlightByProject: h.inFlight,
+      create: h.createDeployment,
+      createBuildSession: h.createBuildSession,
+    },
   },
 }));
 vi.mock("@repo/platform/engine/config/env", async original => ({
@@ -53,9 +63,13 @@ beforeEach(async () => {
   h.deployment.mockResolvedValue(deployment);
   h.rows.mockResolvedValue([row]);
   h.inFlight.mockResolvedValue([]);
-  h.env.mockImplementation(async (_project, _environment, serviceId) => serviceId === null
-    ? { SHARED: "new shared", OVERRIDE: "project" }
-    : { TOKEN: "private saved value", OVERRIDE: "service", EMPTY: "" });
+  h.env.mockImplementation(async (_project, _environment, serviceId) =>
+    Object.entries(
+      serviceId === null
+        ? { SHARED: "new shared", OVERRIDE: "project" }
+        : { TOKEN: "private saved value", OVERRIDE: "service", EMPTY: "" },
+    ).map(([key, value]) => ({ key, value, id: `env-${key}` })),
+  );
   h.liveContainer.mockResolvedValue("old-api");
   h.record.mockResolvedValue(undefined);
   h.plan.mockResolvedValue(undefined);
@@ -95,7 +109,10 @@ describe("apply service environment operation", () => {
 
   it("timestamps the captured env before a concurrent save can happen", async () => {
     const captures: Date[] = [];
-    h.env.mockImplementation(async () => { captures.push(new Date()); return {}; });
+    h.env.mockImplementation(async () => {
+      captures.push(new Date());
+      return [];
+    });
     await applyServiceEnvironment(ctx, "p1", "api");
     const cutoff = h.record.mock.calls[0]![0].appliedAt as Date;
     expect(captures.every(at => at >= cutoff)).toBe(true);

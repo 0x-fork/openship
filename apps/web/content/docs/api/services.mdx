@@ -245,12 +245,47 @@ running containers across the whole stack.
 
 ## Environment variables
 
-`GET .../env` lists a service's env vars (secret values masked). `PUT .../env` **replaces** the full set for
-one environment — send every var you want to keep.
+`GET .../environment` returns the effective saved configuration: shared project
+values, Compose values and service overrides. Each row has a source, and secrets
+are masked. It defaults to the active deployment's environment, or production
+before the first deployment. Add `inspectRuntime=true` to compare with the owned
+Docker container; a failed inspection leaves the saved variables in the response.
+
+```ts
+const state = await ship.services.getEnvironment("proj_123", "svc_456", {
+  inspectRuntime: true,
+});
+console.log(state.status, state.changedKeys);
+```
+
+Use `PATCH .../env` for partial edits. Send only changed overrides in `upserts`,
+and explicit removals in `deletes`. Existing overrides require their `sourceId`
+from the read; `null` means creating an override. Stale IDs return
+`ENVIRONMENT_CHANGED` without applying the request.
+
+```ts
+const currentEnvironment = await ship.services.getEnvironment("proj_123", "svc_456");
+await ship.services.mergeEnvVars("proj_123", "svc_456", {
+  environment: currentEnvironment.environment,
+  upserts: [{
+    key: "LOG_LEVEL",
+    value: "info",
+    sourceId: currentEnvironment.variables.find(row => row.key === "LOG_LEVEL")?.sourceId ?? null,
+  }],
+  deletes: [],
+});
+```
+
+`GET .../env` lists only service override rows (secret values masked).
+`PUT .../env` **replaces** those overrides for one environment — send every
+override you want to keep. Neither endpoint represents the inherited Compose or
+shared project layers.
 
 ```
 GET /api/projects/:id/services/:serviceId/env
 PUT /api/projects/:id/services/:serviceId/env
+GET /api/projects/:id/services/:serviceId/environment
+PATCH /api/projects/:id/services/:serviceId/env
 ```
 
 <Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
@@ -291,11 +326,18 @@ curl -X PUT "$OPENSHIP_URL/api/projects/proj_123/services/svc_456/env" \
 />
 
 <Callout title="PUT replaces, it doesn't merge" type="warn">
-`PUT .../env` overwrites the environment's variable set with exactly what you send. Fetch the current vars
-with `GET .../env` first if you only mean to change one — anything you omit is removed.
+`PUT .../env` overwrites the service override set with exactly what you send.
+Use `PATCH .../env` when changing individual values so unrelated overrides remain intact.
 </Callout>
 
 ### Reveal environment values
+
+Add `source: "effective"` to reveal named values from the complete saved view.
+For recovery, use `source: "runtime"` with the `containerId` returned by runtime
+inspection and names from `recoverableKeys`. Recovery excludes image defaults
+and keys already saved in Openship. It returns values without persisting them;
+save the selected recovered values with `mergeEnvVars`. A changed container
+returns `ENVIRONMENT_RUNTIME_CHANGED`.
 
 The dashboard uses one environment editor. Imported Compose values are visible immediately; **Demo mode**
 blurs them like IP addresses. Saved values start masked, and clicking a row's eye reveals only that value.
@@ -375,7 +417,9 @@ organization. List the project's services with `GET /api/projects/:id/services` 
 | Remove a service and its selected resources. | `services.remove(parentId, id)` | `DELETE /api/projects/:id/services/:serviceId`<br />`project:service:admin` |
 | Accept a legacy source review while preserving saved environment values. | `services.acceptDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/accept`<br />`project:service:write` |
 | Keep the current configuration when resolving drift. | `services.keepDrift(parentId, id)` | `POST /api/projects/:id/services/:serviceId/drift/keep`<br />`project:service:write` |
-| Read service environment variables with masked secrets. | `services.listEnvVars(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/env`<br />`project:service:read` |
+| Read the effective saved service environment and optionally compare it with Docker. | `services.getEnvironment(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/environment`<br />`project:service:read` |
+| Save named service overrides without replacing unrelated values. | `services.mergeEnvVars(parentId, id, input)` | `PATCH /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |
+| Read service environment overrides with masked secrets. | `services.listEnvVars(parentId, id, input?)` | `GET /api/projects/:id/services/:serviceId/env`<br />`project:service:read` |
 | Apply service environment variable changes. | `services.setEnvVars(parentId, id, input)` | `PUT /api/projects/:id/services/:serviceId/env`<br />`project:service:write` |
 | Reveal authorized service environment values. | `services.revealEnv(parentId, id, input)` | `POST /api/projects/:id/services/:serviceId/env-reveal`<br />`project:service:write` |
 | Apply saved runtime environment by replacing the service container using its current image, without a build. | `services.applyEnvironment(parentId, id)` | `POST /api/projects/:id/services/:serviceId/apply-env`<br />`project:service:write` |

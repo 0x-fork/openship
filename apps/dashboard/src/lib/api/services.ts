@@ -1,6 +1,11 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { ComposeAdvanced, ComposeAdvancedPatch } from "@repo/core";
+import type {
+  ServiceEnvironment,
+  ServiceEnvironmentInput,
+  MergeServiceEnvVarsInput,
+} from "@repo/contracts";
 
 export type { ComposeAdvanced, ComposeAdvancedPatch, ComposeHealthcheck, OpenshipReadiness } from "@repo/core";
 
@@ -252,11 +257,7 @@ export const servicesApi = {
    * keep the ServiceEditorModal payload shape uniform between create
    * and edit without sprouting kind-omitting branches all over.
    */
-  update: (
-    projectId: string | number,
-    serviceId: string,
-    data: Partial<ServiceInput>,
-  ) => {
+  update: (projectId: string | number, serviceId: string, data: Partial<ServiceInput>) => {
     // Strip `kind` defensively. The backend validator rejects unknown
     // and disallowed keys (additionalProperties:false on UpdateServiceBody),
     // but stripping client-side keeps a uniform payload shape between
@@ -290,6 +291,24 @@ export const servicesApi = {
       `${endpoints.services.envGet(projectId, serviceId)}${environment ? `?environment=${environment}` : ""}`,
     ),
 
+  getEnvironment: (
+    projectId: string | number,
+    serviceId: string,
+    input: ServiceEnvironmentInput = {},
+  ) => {
+    const query = new URLSearchParams();
+    if (input.environment) query.set("environment", input.environment);
+    if (input.inspectRuntime !== undefined)
+      query.set("inspectRuntime", String(input.inspectRuntime));
+    return api.get<{ success: boolean; environment: ServiceEnvironment }>(
+      `${endpoints.services.environment(projectId, serviceId)}?${query}`,
+      { timeout: 30_000 },
+    );
+  },
+
+  mergeEnv: (projectId: string | number, serviceId: string, input: MergeServiceEnvVarsInput) =>
+    api.patch<{ success: boolean }>(endpoints.services.envSet(projectId, serviceId), input),
+
   /** Real values for named keys only. Pass environment for service-scoped
    * env_var rows; omit it for compose-inline values. */
   revealEnv: (
@@ -297,10 +316,11 @@ export const servicesApi = {
     serviceId: string,
     keys: string[],
     environment?: "production" | "preview" | "development",
+    options?: { source: "effective" | "runtime"; containerId?: string },
   ) =>
     api.post<{ success: boolean; environment: Record<string, string> }>(
       endpoints.services.envReveal(projectId, serviceId),
-      { keys, ...(environment ? { environment } : {}) },
+      { keys, ...(environment ? { environment } : {}), ...options },
     ),
 
   /** Set environment variables for a service */
@@ -338,7 +358,9 @@ export const servicesApi = {
   /** Apply saved runtime env and wait for the service replacement to start. */
   applyEnvironment: (projectId: string | number, serviceId: string) =>
     api.post<{ success: boolean; containerId: string; warning?: string }>(
-      endpoints.services.applyEnvironment(projectId, serviceId), undefined, { timeout: 120_000 },
+      endpoints.services.applyEnvironment(projectId, serviceId),
+      undefined,
+      { timeout: 120_000 },
     ),
 
   /** Accept the pending upstream compose change (apply repo values, clear drift) */

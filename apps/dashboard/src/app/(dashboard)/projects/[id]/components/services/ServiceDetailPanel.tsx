@@ -6,7 +6,6 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useServiceEnvironmentApply } from "@/hooks/useServiceEnvironmentApply";
-import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import {
   serviceKind,
   serviceUsesDeployPipeline,
@@ -14,11 +13,9 @@ import {
   servicesApi,
   type Service,
   type ServiceContainer,
-  type ServiceEnvVar,
   type ServiceInput,
 } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
-import { looksLikeSecretKey } from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import {
   Play,
@@ -48,9 +45,8 @@ import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/button";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { ServiceSettingsForm } from "./ServiceSettingsForm";
-import { ServiceEnvironmentScope } from "./ServiceEnvironmentScope";
+import { ServiceEnvironmentPanel } from "./ServiceEnvironmentPanel";
 import { TerminalLogs } from "../logs/TerminalLogs";
-import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { endpoints } from "@/lib/api/endpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
@@ -73,34 +69,6 @@ const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
   { key: "settings", label: "Settings" },
 ];
 const SERVICE_TABS = SERVICE_TAB_DEFS.map((t) => t.key);
-const SERVICE_ENVIRONMENT = "production" as const;
-
-type EnvRow = {
-  sourceId?: string;
-  key: string;
-  value: string;
-  visible: boolean;
-  isSecret?: boolean;
-};
-const envRowsFromVars = (vars: ServiceEnvVar[]): EnvRow[] =>
-  vars.map((v) => ({
-    sourceId: v.id,
-    key: v.key,
-    value: v.value,
-    visible: !v.isSecret,
-    isSecret: v.isSecret,
-  }));
-const comparableEnvRows = (rows: EnvRow[]) =>
-  rows
-    .map((row) => ({
-      sourceId: row.sourceId,
-      key: row.key.trim(),
-      value: row.value,
-      isSecret: row.isSecret ?? looksLikeSecretKey(row.key),
-    }))
-    .filter((row) => row.key)
-    .sort((a, b) => a.key.localeCompare(b.key));
-
 /* ── Props ──────────────────────────────────────────────────────────── */
 
 interface ServiceDetailPanelProps {
@@ -148,7 +116,6 @@ export function ServiceDetailPanel({
   deepLink = true,
   onSwitchService,
 }: ServiceDetailPanelProps) {
-  const revealEnv = useServiceEnvReveal(projectId, service.id, SERVICE_ENVIRONMENT);
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
   const showCloudPricing = useCloudDeployPricing();
@@ -164,10 +131,6 @@ export function ServiceDetailPanel({
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
   const applyingEnvironment = environmentApply.applyingServiceId !== null;
-  // The API resolves and validates the current deployment. A live container is
-  // enough to offer Apply while the panel's parent metadata is still loading.
-  const hasEnvironmentTarget = Boolean(activeDeploymentId || container?.containerId);
-  const canApplyEnvironment = hasEnvironmentTarget && service.enabled;
   const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment;
   const status = container?.status ?? (service.enabled ? "stopped" : "disabled");
 
@@ -211,6 +174,11 @@ export function ServiceDetailPanel({
   const [activeTab, setActiveTab] = useState<ServiceTab>(() =>
     SERVICE_TABS.includes(initialTab as ServiceTab) ? (initialTab as ServiceTab) : "overview",
   );
+  const [environmentVisited, setEnvironmentVisited] = useState(initialTab === "env");
+  const [envDirty, setEnvDirty] = useState(false);
+  useEffect(() => {
+    if (activeTab === "env") setEnvironmentVisited(true);
+  }, [activeTab]);
   const [domainIntent, setDomainIntent] = useState<ServiceDomainIntent>({});
   const changeTab = (tab: ServiceTab) => {
     setActiveTab(tab);
@@ -241,75 +209,6 @@ export function ServiceDetailPanel({
         : activeTab;
     if (onSwitchService) onSwitchService(targetId, targetTab);
     else router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
-  };
-
-  // Compose inline env is the imported/default layer. This editor owns only
-  // service-scoped env_var rows, which deploy after compose and survive reparse.
-  const [envRows, setEnvRows] = useState<EnvRow[]>([]);
-  const [savedEnvRows, setSavedEnvRows] = useState<EnvRow[]>([]);
-  const [envLoading, setEnvLoading] = useState(true);
-  const [envSaving, setEnvSaving] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    setEnvLoading(true);
-    servicesApi
-      .getEnv(projectId, service.id, SERVICE_ENVIRONMENT)
-      .then((result) => {
-        if (cancelled) return;
-        const rows = envRowsFromVars(result.vars ?? []);
-        setEnvRows(rows);
-        setSavedEnvRows(rows);
-      })
-      .catch((err) => {
-        if (!cancelled)
-          showToast(
-            err instanceof Error
-              ? err.message
-              : t.projectDetail.services.detail.toast.envSaveFailed,
-            "error",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setEnvLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, service.id, showToast, t.projectDetail.services.detail.toast.envSaveFailed]);
-  const envDirty = useMemo(
-    () =>
-      JSON.stringify(comparableEnvRows(envRows)) !==
-      JSON.stringify(comparableEnvRows(savedEnvRows)),
-    [envRows, savedEnvRows],
-  );
-  const applyEnvironmentHint = !service.enabled
-    ? t.projectDetail.services.detail.toast.enableBeforeRedeploy
-    : !hasEnvironmentTarget
-      ? t.projectDetail.services.detail.toast.deployFirstRedeploy
-      : envDirty
-        ? t.projectDetail.services.detail.environmentApply.saveFirst
-        : t.projectDetail.services.detail.environmentApply.hint;
-  const handleSaveEnv = async () => {
-    setEnvSaving(true);
-    try {
-      const result = await servicesApi.setEnv(projectId, service.id, {
-        environment: SERVICE_ENVIRONMENT,
-        vars: comparableEnvRows(envRows),
-      });
-      if (!result.success) throw new Error(t.projectDetail.services.detail.toast.envSaveFailed);
-      const refreshed = await servicesApi.getEnv(projectId, service.id, SERVICE_ENVIRONMENT);
-      const rows = envRowsFromVars(refreshed.vars ?? []);
-      setEnvRows(rows);
-      setSavedEnvRows(rows);
-      showToast(t.projectDetail.services.detail.toast.envUpdated, "success", service.name);
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : t.projectDetail.services.detail.toast.envSaveFailed,
-        "error",
-      );
-    } finally {
-      setEnvSaving(false);
-    }
   };
 
   // ── Terminal section state ──────────────────────────────────────────
@@ -816,63 +715,17 @@ export function ServiceDetailPanel({
         </div>
       )}
 
-      {/* ── Environment (editable) ─────────────────────────────── */}
-      {activeTab === "env" && (
-        <div className="space-y-5">
-          {/* No extra padding here — EnvironmentVariables (borderless) brings its
-              own px-5/py-4, so a wrapper p-6 would double it. */}
-          <div className="bg-card rounded-2xl border border-border/50">
-            <div className="flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <ServiceEnvironmentScope projectId={projectId} keys={envRows.map(row => row.key)} />
-                <h3 className="text-sm font-medium text-foreground">{t.importProject.environmentVariables.title}</h3>
-              </div>
-              <div className="ms-auto flex max-w-full flex-wrap items-center justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSaveEnv}
-                  aria-label={t.projectDetail.services.detail.saveEnvironment}
-                  disabled={envLoading || envSaving || applyingEnvironment || !envDirty}
-                  className="h-auto min-h-8 max-w-full whitespace-normal py-1.5"
-                >
-                  {envSaving ? <Loader2 className="animate-spin" /> : <Save />}
-                  {t.projectSettings.settingSection.save}
-                </Button>
-                <span className="max-w-full" title={applyEnvironmentHint}>
-                  <Button
-                    size="sm"
-                    onClick={() => void environmentApply.apply(service)}
-                    disabled={!canApplyEnvironment || envLoading || envSaving || envDirty || serviceOperationBusy}
-                    title={applyEnvironmentHint}
-                    className="h-auto min-h-8 max-w-full whitespace-normal py-1.5"
-                  >
-                    {applyingEnvironment ? <Loader2 className="animate-spin" /> : <RotateCw />}
-                    {applyingEnvironment
-                      ? t.projectDetail.services.detail.environmentApply.applying
-                      : t.projectDetail.services.detail.environmentApply.title}
-                  </Button>
-                </span>
-              </div>
-            </div>
-            <EnvironmentVariables
-              mode="settings"
-              hideTitle
-              envVars={envRows}
-              onEnvVarsChange={setEnvRows}
-              isEditingMode={true}
-              setIsEditingMode={() => {
-                /* always editing in the Env tab */
-              }}
-              showSettingsActions={false}
-              showSecretToggle={true}
-              // #336: env values arrive masked; reveal only the keys the operator
-              // actually opens (the endpoint is write-gated, so read-only members
-              // can't reveal at all).
-              onReveal={revealEnv}
-              borderless
-            />
-          </div>
+      {(activeTab === "env" || environmentVisited) && (
+        <div hidden={activeTab !== "env"}>
+          <ServiceEnvironmentPanel
+            key={`${projectId}:${service.id}`}
+            projectId={projectId}
+            service={service}
+            applying={applyingEnvironment}
+            operationBusy={serviceOperationBusy}
+            onDirtyChange={setEnvDirty}
+            onApply={() => environmentApply.apply(service)}
+          />
         </div>
       )}
 
