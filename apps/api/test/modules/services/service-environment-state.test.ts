@@ -2,13 +2,22 @@ import { repos, seedOwner, installFakeRunner } from "../jobs/_harness";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { ENV_MASK } from "@repo/core";
+import { DockerRuntime } from "@repo/adapters";
 import { OpenshipClient } from "@repo/sdk/client";
 import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
 import * as deploymentRuntime from "@repo/platform/engine/lib/deployment-runtime";
+import * as edgeTarget from "@repo/platform/engine/lib/edge-target";
+import * as serverTarget from "@repo/platform/engine/lib/server-target";
 import { serviceRoutes } from "../../../src/modules/services/service.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
-import { seedDeployment, seedProject, seedService, setActive } from "../../helpers/seed";
+import {
+  seedDeployment,
+  seedProject,
+  seedService,
+  seedServiceDeployment,
+  setActive,
+} from "../../helpers/seed";
 
 installFakeRunner();
 const app = new Hono()
@@ -95,6 +104,69 @@ describe("effective service environment through HTTP, SDK and real storage", () 
     });
   });
 
+  it.each(["docker", "cloud"])(
+    "resolves port-only public URLs on the %s deployment target",
+    async (target) => {
+      const stack = await seedProject(owner.orgId, {
+        framework: "docker-compose",
+        runtimeMode: "docker",
+      });
+      const api = await seedService(stack.id, {
+        name: "api",
+        environment: { BACKEND_ORIGIN: "{{publicUrl:backend:8080}}" },
+      });
+      await seedService(stack.id, { name: "backend", exposed: false, ports: ["8080:8080"] });
+      const deployment = await seedDeployment(stack);
+      await setActive(stack.id, deployment.id);
+      await seedServiceDeployment(deployment.id, api, { containerId: "current-api" });
+      const runtime = await DockerRuntime.create({
+        dockerSocketPath: "/tmp/openship-test-absent.sock",
+      });
+      Object.defineProperty(runtime, "name", { value: target });
+      vi.spyOn(runtime, "supports").mockReturnValue(false);
+      vi.spyOn(runtime, "dispose").mockResolvedValue(undefined);
+      vi.spyOn(runtime, "inspectContainer").mockResolvedValue({
+        id: "current-api",
+        name: "api",
+        image: "test-image",
+        imageId: "sha256:test-image",
+        state: "running",
+        env: ["BACKEND_ORIGIN=http://203.0.113.5:8080"],
+        labels: { "openship.project": stack.id, "openship.service": "api" },
+        networks: [],
+        mounts: [],
+        ports: [],
+      });
+      vi.spyOn(runtime, "inspectImageEnv").mockResolvedValue([]);
+      vi.mocked(deploymentRuntime.resolveDeploymentRuntimeForRead).mockResolvedValue({
+        runtime,
+        serverId: null,
+        hostPortTarget: null,
+      });
+      vi.spyOn(serverTarget, "resolveServerHost").mockResolvedValue(null);
+      const edge = vi
+        .spyOn(edgeTarget, "resolveEdgeTargetHost")
+        .mockResolvedValue({ host: "203.0.113.5" });
+
+      const state = await client.services.getEnvironment(stack.id, api.id, {
+        inspectRuntime: true,
+      });
+      expect(state.variables).toEqual([
+        expect.objectContaining({ key: "BACKEND_ORIGIN", value: ENV_MASK, source: "compose" }),
+      ]);
+      if (target === "cloud") {
+        // The control server's reachable port is not a Cloud workspace's public URL.
+        expect(state).toMatchObject({
+          status: "unavailable",
+          message: "Public URLs are missing for environment variables: BACKEND_ORIGIN",
+        });
+        expect(edge).not.toHaveBeenCalled();
+      } else {
+        expect(state).toMatchObject({ status: "synced", changedKeys: [] });
+      }
+    },
+  );
+
   it("saves only deliberate edits, retaining ciphertext, row identity and other scopes", async () => {
     await client.services.setEnvVars(project.id, service.id, {
       environment: "production",
@@ -126,10 +198,13 @@ describe("effective service environment through HTTP, SDK and real storage", () 
     const self = await seedProject(owner.orgId, { isControlPlane: true });
     const api = await seedService(self.id, { name: "api" });
     await client.services.mergeEnvVars(self.id, api.id, {
-      environment: "production", deletes: [],
+      environment: "production",
+      deletes: [],
       upserts: [{ sourceId: null, key: "SETTING", value: "saved" }],
     });
-    expect(await client.services.revealEnv(self.id, api.id, { source: "effective", keys: ["SETTING"] })).toEqual({ SETTING: "saved" });
+    expect(
+      await client.services.revealEnv(self.id, api.id, { source: "effective", keys: ["SETTING"] }),
+    ).toEqual({ SETTING: "saved" });
   });
 
   it("keeps concurrent edits to different variables and rejects stale writes and deletes", async () => {

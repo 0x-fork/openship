@@ -63,7 +63,9 @@ It is replaced by behavior tests through the actual component and API/storage pa
   as an empty environment; failed runtime inspection never claims synchronization.
 - Pending status compares values against the owned container and its immutable
   image defaults, including additions and deletions. Apply follows the same runtime
-  exclusion rules as deployment.
+  exclusion rules as deployment. Inspection also keeps the deployment's runtime
+  identity: a Cloud workspace's public URL cannot fall back to the control server's
+  published port.
 - Restart uses that comparison too: changing secret visibility cannot create a
   false pending warning, and removing a variable is detected even after its row is
   gone. Timestamp hints remain a fallback for runtimes without inspection.

@@ -218,6 +218,7 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
       // Use migration's provenance rules; image defaults are not recovered as overrides.
       recoverable: toDiscoveredService(detail, undefined, imageEnv).env,
       serverId,
+      cloudRuntime: runtime.name === "cloud",
     };
   } finally {
     disposeRuntime(runtime);
@@ -239,7 +240,10 @@ export async function getServiceEnvironment(
     view.recoverableKeys = Object.keys(live.recoverable ?? {})
       .filter((key) => !Object.hasOwn(saved.merged.env, key))
       .sort();
-    const desired = await resolveServiceRuntimeEnvironment(ctx, saved, { serverId: live.serverId });
+    const desired = await resolveServiceRuntimeEnvironment(ctx, saved, {
+      serverId: live.serverId,
+      cloudRuntime: live.cloudRuntime,
+    });
     const expected = { ...live.image, ...desired };
     view.changedKeys = [...new Set([...Object.keys(expected), ...Object.keys(live.current)])]
       .filter((key) => expected[key] !== live.current[key])
