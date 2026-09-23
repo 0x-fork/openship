@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
@@ -334,19 +334,31 @@ export function ServiceDetailPanel({
   // ── Backup section state ────────────────────────────────────────────
   const [backupPolicy, setBackupPolicy] = useState<BackupPolicy | null>(null);
   const [backupEditorOpen, setBackupEditorOpen] = useState(false);
+  const [backupAfterSave, setBackupAfterSave] = useState(false);
   const [activeBackupRunId, setActiveBackupRunId] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupRevision, setBackupRevision] = useState(0);
   const [backupRunning, setBackupRunning] = useState(false);
-  const backupVisible = activeTab === "backup" && supportsBackup;
+  const backupScope = `${projectId}:${service.id}`;
+  const backupScopeRef = useRef<string | null>(backupScope);
+  const backupRequestRef = useRef<object | null>(null);
+  const backupVisible = (activeTab === "backup" || activeTab === "volumes") && supportsBackup;
 
   useEffect(() => {
+    backupScopeRef.current = backupScope;
     setBackupPolicy(null);
     setActiveBackupRunId(null);
     setBackupEditorOpen(false);
+    setBackupAfterSave(false);
     setBackupError(null);
-  }, [service.id]);
+    setBackupRunning(false);
+    backupRequestRef.current = null;
+    return () => {
+      backupScopeRef.current = null;
+      backupRequestRef.current = null;
+    };
+  }, [backupScope]);
 
   useEffect(() => {
     if (!backupVisible) return;
@@ -373,18 +385,59 @@ export function ServiceDetailPanel({
     setBackupRevision((value) => value + 1);
   };
 
-  const handleBackupNow = async (): Promise<void> => {
-    if (!backupPolicy || backupRunning) return;
+  const handleBackupNow = async (policy = backupPolicy): Promise<void> => {
+    if (
+      !policy ||
+      policy.serviceId !== service.id ||
+      backupScopeRef.current !== backupScope ||
+      backupRequestRef.current
+    )
+      return;
+    const request = {};
+    backupRequestRef.current = request;
     setBackupRunning(true);
     try {
-      const res = await backupsApi.runNow(backupPolicy.id);
-      setActiveBackupRunId(res.data.runId);
+      const res = await backupsApi.runNow(policy.id);
+      if (backupRequestRef.current === request) setActiveBackupRunId(res.data.runId);
     } catch (err) {
-      showToast(getApiErrorMessage(err, t.projectDetail.services.detail.toast.backupRunFailed), "error");
+      if (backupRequestRef.current === request)
+        showToast(
+          getApiErrorMessage(err, t.projectDetail.services.detail.toast.backupRunFailed),
+          "error",
+        );
     } finally {
-      setBackupRunning(false);
+      if (backupRequestRef.current === request) {
+        backupRequestRef.current = null;
+        setBackupRunning(false);
+      }
     }
   };
+
+  const handleVolumeBackup = () => {
+    if (backupLoading || backupError) return;
+    if (backupPolicy) void handleBackupNow();
+    else {
+      setBackupAfterSave(true);
+      setBackupEditorOpen(true);
+    }
+  };
+
+  const backupFeedback =
+    activeBackupRunId || backupError ? (
+      <>
+        {activeBackupRunId && <BackupRunCard runId={activeBackupRunId} />}
+        {backupError && (
+          <div className="space-y-3">
+            <p role="alert" className="text-sm text-danger">
+              {backupError}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void reloadBackupPolicy()}>
+              {t.projectDetail.services.detail.storage.retry}
+            </Button>
+          </div>
+        )}
+      </>
+    ) : null;
 
   // Null when the service has no route: it is reachable on its port, and the
   // derived `<project>-<service>` host this used to print never existed.
@@ -681,6 +734,7 @@ export function ServiceDetailPanel({
       <Tabs
         className="border-b-0"
         size="sm"
+        fullWidth
         tabs={SERVICE_TAB_DEFS.map((def) => ({
           ...def,
           label: t.projectDetail.services.detail.tabs[def.key],
@@ -722,7 +776,9 @@ export function ServiceDetailPanel({
           projectId={projectId}
           deployTarget={deployTarget}
           onSave={(volumes) => handleUpdateService({ volumes })}
-          onBackups={supportsBackup ? () => changeTab("backup") : undefined}
+          onBackup={supportsBackup ? handleVolumeBackup : undefined}
+          backupBusy={backupLoading || backupRunning || !!backupError}
+          backupFeedback={supportsBackup ? backupFeedback : undefined}
         />
       )}
 
@@ -957,44 +1013,56 @@ export function ServiceDetailPanel({
             icon={DatabaseBackup}
           />
           <div className="space-y-3">
-            {activeBackupRunId && <BackupRunCard runId={activeBackupRunId} />}
+            {backupFeedback}
 
             {backupLoading ? (
-              <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t.projectDetail.services.detail.storage.loadingBackups}</div>
-            ) : backupError ? (
-              <div className="space-y-3">
-                <p role="alert" className="text-sm text-danger">{backupError}</p>
-                <Button variant="outline" size="sm" onClick={() => void reloadBackupPolicy()}>{t.projectDetail.services.detail.storage.retry}</Button>
+              <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                {t.projectDetail.services.detail.storage.loadingBackups}
               </div>
-            ) : <div className="flex flex-wrap items-center gap-2">
-              {backupPolicy ? (
-                <>
-                  <button
-                    onClick={() => void handleBackupNow()}
-                    disabled={backupRunning}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                  >
-                    {backupRunning ? <Loader2 className="size-4 animate-spin" /> : <PlayCircle className="size-4" />}
-                    {t.projectDetail.services.detail.backupNow}
-                  </button>
-                  <button
-                    onClick={() => setBackupEditorOpen(true)}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
-                  >
-                    <Settings className="size-4" />
-                    {t.projectDetail.services.detail.editPolicy}
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => setBackupEditorOpen(true)}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
-                >
-                  <Plus className="size-4" />
-                  {t.projectDetail.services.detail.createPolicy}
-                </button>
-              )}
-            </div>}
+            ) : (
+              !backupError && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {backupPolicy ? (
+                    <>
+                      <button
+                        onClick={() => void handleBackupNow()}
+                        disabled={backupRunning}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                      >
+                        {backupRunning ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <PlayCircle className="size-4" />
+                        )}
+                        {t.projectDetail.services.detail.backupNow}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setBackupAfterSave(false);
+                          setBackupEditorOpen(true);
+                        }}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                      >
+                        <Settings className="size-4" />
+                        {t.projectDetail.services.detail.editPolicy}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setBackupAfterSave(false);
+                        setBackupEditorOpen(true);
+                      }}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-foreground/[0.06] px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+                    >
+                      <Plus className="size-4" />
+                      {t.projectDetail.services.detail.createPolicy}
+                    </button>
+                  )}
+                </div>
+              )
+            )}
           </div>
         </div>
       )}
@@ -1006,10 +1074,16 @@ export function ServiceDetailPanel({
           serviceName={service.name}
           serviceImage={service.image}
           existing={backupPolicy}
+          submitLabel={
+            backupAfterSave ? t.projectDetail.services.detail.storage.saveAndBackup : undefined
+          }
           onClose={() => setBackupEditorOpen(false)}
-          onSaved={async () => {
+          onSaved={async (policy) => {
+            if (backupScopeRef.current !== backupScope) return;
             setBackupEditorOpen(false);
+            setBackupPolicy(policy);
             await reloadBackupPolicy();
+            if (backupAfterSave) await handleBackupNow(policy);
           }}
         />
       )}

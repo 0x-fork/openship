@@ -251,15 +251,15 @@
 			},
 			"storage": {
 				"description": "Persistente Daten, die in diesem Dienst eingebunden sind.",
-				"backups": "Backups",
-				"edit": "Einbindungen bearbeiten",
+				"backups": "Jetzt sichern",
+				"edit": "Volumes bearbeiten",
 				"add": "Volume hinzufügen",
-				"mountLabel": "Volume-Einbindung {n}",
-				"removeMount": "Einbindung {n} entfernen",
-				"editHint": "Verwende name:/container/path oder /host/path:/container/path. Änderungen gelten ab dem nächsten Deployment.",
+				"mountLabel": "Volume Nr. {n}",
+				"removeMount": "Volume {n} entfernen",
+				"editHint": "Volume-Änderungen werden beim nächsten Deployment übernommen.",
 				"cancel": "Abbrechen",
-				"save": "Einbindungen speichern",
-				"mountCount": "Einbindungen: {count}",
+				"save": "Volumes speichern",
+				"mountCount": "Anzahl der Volumes: {count}",
 				"measuring": "Wird gemessen…",
 				"usageUnavailable": "Nutzung nicht verfügbar",
 				"refresh": "Nutzung aktualisieren",
@@ -274,7 +274,15 @@
 					"named": "Benanntes Volume",
 					"bind": "Host-Verzeichnis",
 					"anonymous": "Anonymes Volume"
-				}
+				},
+				"hostLabel": "Auf dem Host",
+				"hostHint": "Ein Ordner auf dem Deployment-Server oder der Name eines gespeicherten Volumes. Leer lassen für automatisch verwalteten Speicher.",
+				"serviceLabel": "Innerhalb des Dienstes",
+				"serviceHint": "Der Pfad, unter dem dieser Dienst die Dateien liest und schreibt.",
+				"automaticStorage": "Automatisch verwaltet",
+				"invalidMount": "Der Pfad innerhalb des Dienstes muss mit / beginnen. Pfade und Volume-Namen dürfen kein : enthalten.",
+				"mountTooLong": "Jeder Volume-Eintrag darf höchstens 500 Zeichen enthalten.",
+				"saveAndBackup": "Speichern und sichern"
 			}
 		},
 		"settingsForm": {

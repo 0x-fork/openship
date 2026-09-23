@@ -23,6 +23,7 @@ export * from "./domain-retry";
 export * from "./utils";
 export * from "./errors";
 export * from "./service-routing";
+export * from "./volume-spec";
 export * from "./source-access";
 export * from "./edge-orphans";
 export * from "./service-status";

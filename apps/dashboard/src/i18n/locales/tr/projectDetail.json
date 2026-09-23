@@ -258,15 +258,15 @@
 			},
 			"storage": {
 				"description": "Bu servise bağlanan kalıcı veriler.",
-				"backups": "Yedekler",
-				"edit": "Bağlamaları düzenle",
+				"backups": "Şimdi yedekle",
+				"edit": "Birimleri düzenle",
 				"add": "Birim ekle",
-				"mountLabel": "Birim bağlaması {n}",
-				"removeMount": "{n} numaralı bağlamayı kaldır",
-				"editHint": "name:/container/path veya /host/path:/container/path kullanın. Değişiklikler bir sonraki dağıtımda uygulanır.",
+				"mountLabel": "Birim {n}",
+				"removeMount": "Birim {n} kaldır",
+				"editHint": "Birim değişiklikleri sonraki dağıtımda uygulanır.",
 				"cancel": "İptal",
-				"save": "Bağlamaları kaydet",
-				"mountCount": "Bağlamalar: {count}",
+				"save": "Birimleri kaydet",
+				"mountCount": "Birimler: {count}",
 				"measuring": "Ölçülüyor…",
 				"usageUnavailable": "Kullanım bilgisi yok",
 				"refresh": "Kullanımı yenile",
@@ -281,7 +281,15 @@
 					"named": "Adlandırılmış birim",
 					"bind": "Ana makine dizini",
 					"anonymous": "Adsız birim"
-				}
+				},
+				"hostLabel": "Ana sunucuda",
+				"hostHint": "Dağıtım sunucusundaki bir klasör veya kayıtlı bir birimin adı. Otomatik depolama için boş bırakın.",
+				"serviceLabel": "Servisin içinde",
+				"serviceHint": "Bu servisin dosyaları okuyup yazdığı yol.",
+				"automaticStorage": "Otomatik yönetilir",
+				"invalidMount": "Servis içinde / ile başlayan bir yol girin. Yollar ve birim adları : içeremez.",
+				"mountTooLong": "Her birim girdisi en fazla 500 karakter olmalıdır.",
+				"saveAndBackup": "Kaydet ve yedekle"
 			}
 		},
 		"settingsForm": {

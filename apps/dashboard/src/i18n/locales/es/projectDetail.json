@@ -251,15 +251,15 @@
 			},
 			"storage": {
 				"description": "Datos persistentes montados en este servicio.",
-				"backups": "Copias de seguridad",
-				"edit": "Editar montajes",
+				"backups": "Crear copia ahora",
+				"edit": "Editar volúmenes",
 				"add": "Añadir volumen",
-				"mountLabel": "Montaje de volumen {n}",
-				"removeMount": "Eliminar montaje {n}",
-				"editHint": "Usa name:/container/path o /host/path:/container/path. Los cambios se aplican en el próximo despliegue.",
+				"mountLabel": "Volumen {n}",
+				"removeMount": "Eliminar volumen {n}",
+				"editHint": "Los cambios de volúmenes se aplican en el próximo despliegue.",
 				"cancel": "Cancelar",
-				"save": "Guardar montajes",
-				"mountCount": "Montajes: {count}",
+				"save": "Guardar volúmenes",
+				"mountCount": "Volúmenes: {count}",
 				"measuring": "Midiendo…",
 				"usageUnavailable": "Uso no disponible",
 				"refresh": "Actualizar uso",
@@ -274,7 +274,15 @@
 					"named": "Volumen con nombre",
 					"bind": "Directorio del host",
 					"anonymous": "Volumen anónimo"
-				}
+				},
+				"hostLabel": "En el servidor",
+				"hostHint": "Una carpeta del servidor de despliegue o el nombre de un volumen guardado. Déjalo vacío para usar almacenamiento automático.",
+				"serviceLabel": "Dentro del servicio",
+				"serviceHint": "La ruta donde este servicio lee y escribe estos archivos.",
+				"automaticStorage": "Gestionado automáticamente",
+				"invalidMount": "Introduce una ruta que empiece por / dentro del servicio. Las rutas y los nombres de volúmenes no pueden contener :.",
+				"mountTooLong": "Cada entrada de volumen debe tener 500 caracteres o menos.",
+				"saveAndBackup": "Guardar y crear copia"
 			}
 		},
 		"settingsForm": {

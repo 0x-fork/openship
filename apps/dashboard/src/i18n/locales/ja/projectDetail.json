@@ -251,15 +251,15 @@
 			},
 			"storage": {
 				"description": "このサービスにマウントされた永続データです。",
-				"backups": "バックアップ",
-				"edit": "マウントを編集",
+				"backups": "今すぐバックアップ",
+				"edit": "ボリュームを編集",
 				"add": "ボリュームを追加",
-				"mountLabel": "ボリュームマウント {n}",
-				"removeMount": "マウント {n} を削除",
-				"editHint": "name:/container/path または /host/path:/container/path を指定してください。マウントの変更は次のデプロイで適用されます。",
+				"mountLabel": "ボリューム {n}",
+				"removeMount": "ボリューム {n} を削除",
+				"editHint": "ボリュームの変更は次回のデプロイ時に適用されます。",
 				"cancel": "キャンセル",
-				"save": "マウントを保存",
-				"mountCount": "マウント数: {count}",
+				"save": "ボリュームを保存",
+				"mountCount": "ボリューム数: {count}",
 				"measuring": "計測中…",
 				"usageUnavailable": "使用量を取得できません",
 				"refresh": "使用量を更新",
@@ -274,7 +274,15 @@
 					"named": "名前付きボリューム",
 					"bind": "ホストのディレクトリ",
 					"anonymous": "匿名ボリューム"
-				}
+				},
+				"hostLabel": "ホスト上の場所",
+				"hostHint": "デプロイ先サーバーのフォルダー、または保存済みボリュームの名前です。空欄の場合はストレージが自動管理されます。",
+				"serviceLabel": "サービス内の場所",
+				"serviceHint": "このサービスがファイルを読み書きするパスです。",
+				"automaticStorage": "自動管理",
+				"invalidMount": "サービス内のパスは / で始めてください。パスとボリューム名に : は使用できません。",
+				"mountTooLong": "各ボリュームの設定は500文字以内にしてください。",
+				"saveAndBackup": "保存してバックアップ"
 			}
 		},
 		"settingsForm": {

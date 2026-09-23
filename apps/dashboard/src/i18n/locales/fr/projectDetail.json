@@ -258,15 +258,15 @@
 			},
 			"storage": {
 				"description": "Données persistantes montées dans ce service.",
-				"backups": "Sauvegardes",
-				"edit": "Modifier les montages",
+				"backups": "Sauvegarder maintenant",
+				"edit": "Modifier les volumes",
 				"add": "Ajouter un volume",
-				"mountLabel": "Montage du volume {n}",
-				"removeMount": "Supprimer le montage {n}",
-				"editHint": "Utilisez name:/container/path ou /host/path:/container/path. Les modifications s’appliquent au prochain déploiement.",
+				"mountLabel": "Volume n° {n}",
+				"removeMount": "Supprimer le volume {n}",
+				"editHint": "Les modifications des volumes seront appliquées au prochain déploiement.",
 				"cancel": "Annuler",
-				"save": "Enregistrer les montages",
-				"mountCount": "Montages : {count}",
+				"save": "Enregistrer les volumes",
+				"mountCount": "Volumes : {count}",
 				"measuring": "Mesure en cours…",
 				"usageUnavailable": "Utilisation indisponible",
 				"refresh": "Actualiser l’utilisation",
@@ -281,7 +281,15 @@
 					"named": "Volume nommé",
 					"bind": "Dossier de l’hôte",
 					"anonymous": "Volume anonyme"
-				}
+				},
+				"hostLabel": "Sur le serveur hôte",
+				"hostHint": "Un dossier sur le serveur de déploiement ou le nom d’un volume enregistré. Laissez vide pour un stockage automatique.",
+				"serviceLabel": "Dans le service",
+				"serviceHint": "Le chemin où ce service lit et écrit ces fichiers.",
+				"automaticStorage": "Géré automatiquement",
+				"invalidMount": "Saisissez un chemin commençant par / dans le service. Les chemins et noms de volumes ne peuvent pas contenir :.",
+				"mountTooLong": "Chaque entrée de volume doit comporter au maximum 500 caractères.",
+				"saveAndBackup": "Enregistrer et sauvegarder"
 			}
 		},
 		"settingsForm": {
