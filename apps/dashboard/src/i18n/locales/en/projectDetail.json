@@ -258,15 +258,15 @@
 			},
 			"storage": {
 				"description": "Persistent data mounted in this service.",
-				"backups": "Backups",
-				"edit": "Edit mounts",
+				"backups": "Back up now",
+				"edit": "Edit volumes",
 				"add": "Add volume",
-				"mountLabel": "Volume mount {n}",
-				"removeMount": "Remove mount {n}",
-				"editHint": "Use name:/container/path or /host/path:/container/path. Mount changes apply on the next deployment.",
+				"mountLabel": "Volume {n}",
+				"removeMount": "Remove volume {n}",
+				"editHint": "Volume changes apply on the next deployment.",
 				"cancel": "Cancel",
-				"save": "Save mounts",
-				"mountCount": "Mounts: {count}",
+				"save": "Save volumes",
+				"mountCount": "Volumes: {count}",
 				"measuring": "Measuring…",
 				"usageUnavailable": "Usage unavailable",
 				"refresh": "Refresh usage",
@@ -281,7 +281,15 @@
 					"named": "Named volume",
 					"bind": "Host directory",
 					"anonymous": "Anonymous volume"
-				}
+				},
+				"hostLabel": "On the host",
+				"hostHint": "A folder on the deployment server or a saved volume name. Leave blank for automatic storage.",
+				"serviceLabel": "Inside the service",
+				"serviceHint": "The path where this service reads and writes these files.",
+				"automaticStorage": "Managed automatically",
+				"invalidMount": "Enter a path starting with / inside the service. Paths and volume names cannot contain :.",
+				"mountTooLong": "Each volume entry must be 500 characters or fewer.",
+				"saveAndBackup": "Save and back up"
 			}
 		},
 		"settingsForm": {

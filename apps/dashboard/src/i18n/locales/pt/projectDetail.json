@@ -251,15 +251,15 @@
 			},
 			"storage": {
 				"description": "Dados persistentes montados neste serviço.",
-				"backups": "Backups",
-				"edit": "Editar montagens",
+				"backups": "Fazer backup agora",
+				"edit": "Editar volumes",
 				"add": "Adicionar volume",
-				"mountLabel": "Montagem de volume {n}",
-				"removeMount": "Remover montagem {n}",
-				"editHint": "Use name:/container/path ou /host/path:/container/path. As alterações são aplicadas na próxima implantação.",
+				"mountLabel": "Volume nº {n}",
+				"removeMount": "Remover volume {n}",
+				"editHint": "As alterações nos volumes serão aplicadas na próxima implantação.",
 				"cancel": "Cancelar",
-				"save": "Salvar montagens",
-				"mountCount": "Montagens: {count}",
+				"save": "Salvar volumes",
+				"mountCount": "Total de volumes: {count}",
 				"measuring": "Medindo…",
 				"usageUnavailable": "Uso indisponível",
 				"refresh": "Atualizar uso",
@@ -274,7 +274,15 @@
 					"named": "Volume nomeado",
 					"bind": "Diretório do host",
 					"anonymous": "Volume anônimo"
-				}
+				},
+				"hostLabel": "No servidor",
+				"hostHint": "Uma pasta no servidor de implantação ou o nome de um volume salvo. Deixe em branco para armazenamento automático.",
+				"serviceLabel": "Dentro do serviço",
+				"serviceHint": "O caminho onde este serviço lê e grava esses arquivos.",
+				"automaticStorage": "Gerenciado automaticamente",
+				"invalidMount": "Informe um caminho que comece com / dentro do serviço. Caminhos e nomes de volumes não podem conter :.",
+				"mountTooLong": "Cada entrada de volume deve ter no máximo 500 caracteres.",
+				"saveAndBackup": "Salvar e fazer backup"
 			}
 		},
 		"settingsForm": {

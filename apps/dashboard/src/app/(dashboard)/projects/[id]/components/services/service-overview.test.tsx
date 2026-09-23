@@ -9,6 +9,7 @@ import { ServiceDetailPanel } from "./ServiceDetailPanel";
 
 const mocks = vi.hoisted(() => ({
   volumes: vi.fn(), getEnv: vi.fn(), update: vi.fn(), policies: vi.fn(), backup: vi.fn(),
+  createPolicy: vi.fn(), destinations: vi.fn(),
   refresh: vi.fn(), push: vi.fn(), toast: vi.fn(), domainProps: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
@@ -27,7 +28,11 @@ vi.mock("@/lib/api/services", async (original) => {
 });
 vi.mock("@/lib/api", async (original) => {
   const actual = await original<typeof import("@/lib/api")>();
-  return { ...actual, backupsApi: { ...actual.backupsApi, listPolicies: mocks.policies, runNow: mocks.backup } };
+  return {
+    ...actual,
+    backupsApi: { ...actual.backupsApi, listPolicies: mocks.policies, runNow: mocks.backup, createPolicy: mocks.createPolicy },
+    backupDestinationsApi: { ...actual.backupDestinationsApi, list: mocks.destinations },
+  };
 });
 
 type Props = ComponentProps<typeof ServiceDetailPanel>;
@@ -40,6 +45,14 @@ const service: Props["service"] = {
   domain: null, customDomain: "api.example.com", domainType: "custom", sortOrder: 0,
 };
 const copy = baseDictionary.projectDetail.services.detail;
+const policy = {
+  id: "policy-selected",
+  serviceId: "svc-api",
+  destinationId: "dest-1",
+  payloadKind: "auto",
+  payloadConfig: {},
+  enabled: true,
+};
 const measured = { measurable: true, partial: false, totalBytes: 2048, volumes: [
   { raw: service.volumes![0], source: "data", target: "/app/data", kind: "named", readOnly: false, bytes: 2048 },
 ] };
@@ -54,6 +67,8 @@ beforeEach(() => {
   mocks.update.mockResolvedValue({ success: true });
   mocks.policies.mockResolvedValue({ data: [] });
   mocks.backup.mockResolvedValue({ data: { runId: "run-selected-service" } });
+  mocks.createPolicy.mockResolvedValue({ data: policy });
+  mocks.destinations.mockResolvedValue({ data: [{ id: "dest-1", name: "Backup server", kind: "local", isDefault: true }] });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -78,13 +93,15 @@ function button(label: string) {
   return found!;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
-async function editMount(n: number, value: string) {
-  const element = host.querySelector<HTMLInputElement>(`input[aria-label="${interpolate(copy.storage.mountLabel, { n: String(n) })}"]`)!;
+async function editMount(n: number, side: "host" | "service", value: string) {
+  const label = `${interpolate(copy.storage.mountLabel, { n: String(n) })}: ${side === "host" ? copy.storage.hostLabel : copy.storage.serviceLabel}`;
+  const element = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
   expect(element).not.toBeNull();
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  return element;
 }
 
 describe("service overview and volumes", () => {
@@ -142,26 +159,161 @@ describe("service overview and volumes", () => {
     await render("volumes");
     await click(copy.storage.edit);
     await click(copy.storage.add);
-    await editMount(2, "./config:/app/config:ro,cached");
-    await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await editMount(2, "host", "./config");
+    await editMount(2, "service", "/app/config");
+    await act(async () =>
+      host
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
     expect(mocks.update).toHaveBeenCalledExactlyOnceWith("project-stack", "svc-api", {
-      volumes: ["data:/app/data:rw,cached", "./config:/app/config:ro,cached"],
+      volumes: ["data:/app/data:rw,cached", "./config:/app/config"],
     });
     expect(mocks.refresh).toHaveBeenCalledOnce();
   });
 
-  it("opens this service's backup policy from Volumes and runs that policy", async () => {
-    mocks.policies.mockResolvedValue({ data: [
-      { id: "policy-other", serviceId: "svc-other", payloadKind: "volume" },
-      { id: "policy-selected", serviceId: "svc-api", payloadKind: "volume" },
-    ] });
+  it("starts this service's backup directly from Volumes and shows progress there", async () => {
+    mocks.policies.mockResolvedValue({
+      data: [
+        { id: "policy-other", serviceId: "svc-other", payloadKind: "volume" },
+        { id: "policy-selected", serviceId: "svc-api", payloadKind: "volume" },
+      ],
+    });
     await render("volumes");
     await click(copy.storage.backups);
     expect(mocks.policies).toHaveBeenCalledExactlyOnceWith("project-stack");
-    await click(copy.backupNow);
     expect(mocks.backup).toHaveBeenCalledExactlyOnceWith("policy-selected");
     expect(host.textContent).toContain("run-selected-service");
+    expect(host.textContent).toContain(copy.storage.description);
+    expect(mocks.push).not.toHaveBeenCalled();
   });
+
+  it("sets up a missing backup and starts it without leaving Volumes", async () => {
+    await render("volumes");
+    await click(copy.storage.backups);
+    expect(document.body.textContent).toContain(
+      baseDictionary.widgets.backup.policyEditor.createTitle,
+    );
+    expect(mocks.backup).not.toHaveBeenCalled();
+
+    mocks.policies.mockResolvedValue({ data: [policy] });
+    await click(copy.storage.saveAndBackup);
+    expect(mocks.createPolicy).toHaveBeenCalledExactlyOnceWith(
+      "project-stack",
+      expect.objectContaining({
+        serviceId: "svc-api",
+        destinationId: "dest-1",
+        payloadKind: "auto",
+      }),
+    );
+    expect(mocks.backup).toHaveBeenCalledExactlyOnceWith("policy-selected");
+    expect(host.textContent).toContain("run-selected-service");
+    expect(host.textContent).toContain(copy.storage.description);
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it("admits only one backup request when the shortcut is clicked twice", async () => {
+    mocks.policies.mockResolvedValue({ data: [policy] });
+    let finish!: (value: unknown) => void;
+    mocks.backup.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await render("volumes");
+    const shortcut = button(copy.storage.backups);
+    await act(async () => {
+      shortcut.click();
+      shortcut.click();
+    });
+    expect(mocks.backup).toHaveBeenCalledExactlyOnceWith("policy-selected");
+    expect(shortcut.disabled).toBe(true);
+    await act(async () => finish({ data: { runId: "run-selected-service" } }));
+    expect(host.textContent).toContain("run-selected-service");
+    expect(shortcut.disabled).toBe(false);
+  });
+
+  it("keeps a failed policy lookup in Volumes and lets the user retry it", async () => {
+    mocks.policies.mockRejectedValueOnce(new Error("Backup settings are unavailable"));
+    await render("volumes");
+    expect(host.textContent).toContain("Backup settings are unavailable");
+    expect(button(copy.storage.backups).disabled).toBe(true);
+    expect(mocks.createPolicy).not.toHaveBeenCalled();
+    mocks.policies.mockResolvedValue({ data: [policy] });
+    await click(copy.storage.retry);
+    await click(copy.storage.backups);
+    expect(mocks.backup).toHaveBeenCalledExactlyOnceWith("policy-selected");
+    expect(host.textContent).not.toContain("Backup settings are unavailable");
+  });
+
+  it("does not show a previous service's backup response after switching services", async () => {
+    mocks.policies.mockResolvedValue({ data: [policy] });
+    let finish!: (value: unknown) => void;
+    mocks.backup.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await render("volumes");
+    await click(copy.storage.backups);
+    await render("volumes", { service: { ...service, id: "svc-other" } });
+    await act(async () => finish({ data: { runId: "old-service-backup" } }));
+    expect(host.textContent).not.toContain("old-service-backup");
+  });
+
+  it("does not start a backup from a setup form after switching services", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.createPolicy.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await render("volumes");
+    await click(copy.storage.backups);
+    await click(copy.storage.saveAndBackup);
+    expect(mocks.createPolicy).toHaveBeenCalledOnce();
+    await render("volumes", { service: { ...service, id: "svc-other" } });
+    await act(async () => finish({ data: policy }));
+    expect(mocks.backup).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain("run-selected-service");
+  });
+
+  it("preserves anonymous storage and non-access options when editing a path or read-only access", async () => {
+    await render("volumes", {
+      service: { ...service, volumes: ["/cache:ro", "data:/data:ro,z,cached"] },
+    });
+    await click(copy.storage.edit);
+    await editMount(1, "service", "/cache/new");
+    const readOnlyLabel = `${interpolate(copy.storage.mountLabel, { n: "2" })}: ${copy.storage.readOnly}`;
+    await act(async () =>
+      host.querySelector<HTMLInputElement>(`input[aria-label="${readOnlyLabel}"]`)!.click(),
+    );
+    await act(async () =>
+      host
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith("project-stack", "svc-api", {
+      volumes: ["/cache/new:ro", "data:/data:z,cached"],
+    });
+  });
+
+  it.each(["relative/path", ""])(
+    "rejects the service path %j without replacing saved mounts",
+    async (target) => {
+      await render("volumes", { service: { ...service, volumes: ["/data"] } });
+      await click(copy.storage.edit);
+      const input = await editMount(1, "service", target);
+      await act(async () =>
+        host
+          .querySelector("form")!
+          .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+      );
+      expect(host.textContent).toContain(copy.storage.invalidMount);
+      expect(mocks.update).not.toHaveBeenCalled();
+      expect(input.value).toBe(target);
+    },
+  );
 
   it("does not overwrite mounts when saving the separate Settings tab", async () => {
     await render("settings");
@@ -180,7 +332,8 @@ describe("service overview and volumes", () => {
     ] });
     await render("volumes", { service: { ...service, id: "svc-other", volumes: ["other:/data"] } });
     await act(async () => finish(measured));
-    expect(host.textContent).toContain("other:/data");
+    expect(host.textContent).toContain("other");
+    expect(host.textContent).toContain("/data");
     expect(host.textContent).toContain("100 B");
     expect(host.textContent).not.toContain("2 KB");
   });

@@ -48,8 +48,9 @@ interface Props {
    *  the user sees what "Auto" will do. The backend stays the source of truth. */
   serviceImage?: string | null;
   existing?: BackupPolicy | null;
+  submitLabel?: string;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (policy: BackupPolicy) => void | Promise<void>;
 }
 
 /**
@@ -170,6 +171,7 @@ export function PolicyEditor({
   serviceName,
   serviceImage,
   existing,
+  submitLabel,
   onClose,
   onSaved,
 }: Props): React.JSX.Element {
@@ -439,9 +441,10 @@ export function PolicyEditor({
         postHook: postHook.trim() || cleared,
         enabled,
       };
-      if (existing) await backupsApi.updatePolicy(existing.id, payload);
-      else await backupsApi.createPolicy(projectId, payload);
-      onSaved();
+      const saved = existing
+        ? await backupsApi.updatePolicy(existing.id, payload)
+        : await backupsApi.createPolicy(projectId, payload);
+      await onSaved(saved.data);
     } catch (err) {
       window.alert(getApiErrorMessage(err, w.failedSave));
     } finally {
@@ -453,8 +456,8 @@ export function PolicyEditor({
     if (!existing || !window.confirm(w.rotateConfirm)) return;
     setBusy(true);
     try {
-      await backupsApi.updatePolicy(existing.id, { rotateWebhookToken: true });
-      onSaved();
+      const saved = await backupsApi.updatePolicy(existing.id, { rotateWebhookToken: true });
+      await onSaved(saved.data);
     } catch (err) {
       window.alert(getApiErrorMessage(err, w.failedRotate));
     } finally {
@@ -810,7 +813,7 @@ export function PolicyEditor({
             disabled={busy || !destinationId}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {busy ? w.saving : existing ? w.saveChanges : w.createPolicy}
+            {busy ? w.saving : submitLabel ?? (existing ? w.saveChanges : w.createPolicy)}
           </button>
         </div>
       </div>

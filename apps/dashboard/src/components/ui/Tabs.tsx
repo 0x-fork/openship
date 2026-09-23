@@ -25,6 +25,7 @@ interface TabsProps<K extends string> {
   onChange: (key: K) => void;
   className?: string;
   size?: "sm" | "md";
+  fullWidth?: boolean;
 }
 
 /**
@@ -33,7 +34,14 @@ interface TabsProps<K extends string> {
  * `px-4 py-2.5` items, `bg-primary` active underline). Controlled: the caller
  * owns the active `value`.
  */
-export function Tabs<K extends string>({ tabs, value, onChange, className = "", size = "md" }: TabsProps<K>) {
+export function Tabs<K extends string>({
+  tabs,
+  value,
+  onChange,
+  className = "",
+  size = "md",
+  fullWidth = false,
+}: TabsProps<K>) {
   const stripRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLElement | null>(null);
 
@@ -56,7 +64,7 @@ export function Tabs<K extends string>({ tabs, value, onChange, className = "", 
     observer.observe(strip);
     observer.observe(active);
     return () => observer.disconnect();
-  }, [value, size]);
+  }, [value, size, fullWidth]);
 
   const captureActive = (element: HTMLElement | null) => { activeRef.current = element; };
 
@@ -66,7 +74,7 @@ export function Tabs<K extends string>({ tabs, value, onChange, className = "", 
         .filter((tab) => !tab.hidden)
         .map(({ key, label, icon: Icon, href, count }) => {
           const active = key === value;
-          const className = `relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap py-2.5 font-medium transition-colors ${size === "sm" ? "px-3 text-[13px]" : "px-4 text-sm"} ${
+          const className = `relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap py-2.5 font-medium transition-colors ${fullWidth ? "grow basis-0 justify-center" : ""} ${size === "sm" ? "px-3 text-[13px]" : "px-4 text-sm"} ${
             active ? "text-foreground" : "text-muted-foreground hover:text-foreground/70"
           }`;
           const inner = (
