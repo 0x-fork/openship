@@ -22,6 +22,8 @@ const projectRepo = vi.hoisted(() => ({
   listEnvVarChangeMeta: vi.fn(),
 }));
 const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
+const environmentState = vi.hoisted(() => vi.fn());
+vi.mock("@repo/platform/engine/modules/services/service-environment-state", () => ({ getServiceEnvironment: environmentState }));
 const serviceRepo = vi.hoisted(() => ({
   listByProject: vi.fn(),
   listByDeployment: vi.fn(),
@@ -91,6 +93,7 @@ const service = { id: "svc_web", projectId: "proj_1", name: "web", enabled: true
 
 beforeEach(() => {
   vi.clearAllMocks();
+  environmentState.mockResolvedValue({ status: "unsupported", changedKeys: [] });
   projectRepo.findById.mockResolvedValue(project);
   deploymentRepo.findById.mockResolvedValue({ ...deployment, createdAt: ANCHOR });
   serviceRepo.listByProject.mockResolvedValue([service]);
@@ -106,6 +109,19 @@ beforeEach(() => {
 });
 
 describe("GH-615 restart refuses to silently drop pending env changes", () => {
+  it("allows restart after a metadata-only save when Docker already has the saved values", async () => {
+    projectRepo.listEnvVarChangeMeta.mockResolvedValue([{ serviceId: "svc_web", key: "TOKEN", updatedAt: AFTER_ANCHOR }]);
+    environmentState.mockResolvedValue({ status: "synced", changedKeys: [] });
+    await expect(restartServiceContainer(ctx, "proj_1", "svc_web")).resolves.toEqual({ containerId: "c_live_1" });
+    expect(mockRuntime.restart).toHaveBeenCalledWith("c_live_1");
+  });
+
+  it("refuses restart for an actually removed variable even though no row timestamp remains", async () => {
+    environmentState.mockResolvedValue({ status: "pending", changedKeys: ["REMOVED_TOKEN"] });
+    await expect(restartServiceContainer(ctx, "proj_1", "svc_web")).rejects.toMatchObject({ code: "SERVICE_CONFIG_STALE", staleEnvKeys: ["REMOVED_TOKEN"] });
+    expect(mockRuntime.restart).not.toHaveBeenCalled();
+  });
+
   it("bounces the container when nothing is pending", async () => {
     projectRepo.listEnvVarChangeMeta.mockResolvedValue([
       { serviceId: "svc_web", key: "API_ENDPOINT", updatedAt: BEFORE_ANCHOR },

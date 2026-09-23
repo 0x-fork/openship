@@ -122,6 +122,16 @@ describe("effective service environment through HTTP, SDK and real storage", () 
     expect((await repos.project.listEnvVars(project.id, "production", null)).length).toBe(3);
   });
 
+  it("keeps saved configuration editable for the control-plane service", async () => {
+    const self = await seedProject(owner.orgId, { isControlPlane: true });
+    const api = await seedService(self.id, { name: "api" });
+    await client.services.mergeEnvVars(self.id, api.id, {
+      environment: "production", deletes: [],
+      upserts: [{ sourceId: null, key: "SETTING", value: "saved" }],
+    });
+    expect(await client.services.revealEnv(self.id, api.id, { source: "effective", keys: ["SETTING"] })).toEqual({ SETTING: "saved" });
+  });
+
   it("keeps concurrent edits to different variables and rejects stale writes and deletes", async () => {
     await client.services.setEnvVars(project.id, service.id, {
       environment: "production",

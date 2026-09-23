@@ -130,6 +130,8 @@ import type {
 } from "@repo/contracts";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { assertServiceAccess } from "./service-access";
+import { getServiceEnvironment } from "./service-environment-state";
+import { parseOptionalEnvironmentScope } from "@repo/contracts";
 
 /** Cap how long the HTTP path waits for the SSH edge re-register. The underlying
  *  operation keeps the project runtime lock until it really settles, so a slow
@@ -2311,9 +2313,8 @@ async function restartServiceContainerUnlocked(
 ) {
   await assertNotControlPlaneById(projectId);
 
-  // Checked BEFORE resolving a container: this is DB-only, so the honest answer
-  // costs no transport — resolving first would allocate an SSH bridge only to
-  // abandon it on the throw path.
+  // Match the Environment tab's actual value comparison. A timestamp alone
+  // mistakes secret-visibility edits for runtime changes and misses deletions.
   if (!opts?.force) {
     const project = await repos.project.findById(projectId);
     assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
@@ -2322,7 +2323,14 @@ async function restartServiceContainerUnlocked(
       : null;
     const service = (await repos.service.listByProject(projectId)).find((s) => s.id === serviceId);
     if (dep && service) {
-      const staleEnvKeys = await resolveStaleEnvKeysForService(project, dep.environment, serviceId);
+      const environment = await getServiceEnvironment(ctx, projectId, serviceId, {
+        environment: parseOptionalEnvironmentScope(dep.environment), inspectRuntime: true,
+      });
+      // Keep the historical guard for runtimes that cannot report container
+      // environment. Never override a successful live comparison with timestamps.
+      const staleEnvKeys = environment.status === "synced" ? []
+        : environment.status === "pending" ? environment.changedKeys
+        : await resolveStaleEnvKeysForService(project, dep.environment, serviceId);
       if (staleEnvKeys.length > 0) {
         // Channel-neutral on purpose: this message is rendered in a dashboard
         // toast, a CLI stderr line, and an MCP tool result. It names both routes

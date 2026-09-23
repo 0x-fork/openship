@@ -381,6 +381,7 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
       inspectRuntime: true,
     });
     expect(unchanged.status).toBe("synced");
+    await expect(client.services.restart(project.id, service.id)).resolves.toMatchObject({ success: true, containerId: unchanged.containerId });
     // Remove the Compose dependency on TOKEN so deleting the last override is valid.
     await repos.service.update(service.id, {
       environment: { VALUE: "new" },
@@ -398,6 +399,7 @@ describeDockerE2E("service environment apply through the HTTP API and real Docke
     expect(pending.status).toBe("pending");
     expect(pending.changedKeys).toContain("TOKEN");
     expect(pending.variables.some((row) => row.source === "service")).toBe(false);
+    await expect(client.services.restart(project.id, service.id)).rejects.toMatchObject({ code: "SERVICE_CONFIG_STALE" });
     const applied = await client.services.applyEnvironment(project.id, service.id);
     const after = await runtime.docker.getContainer(applied.containerId).inspect();
     expect(after.Config.Env.some((entry) => entry.startsWith("TOKEN="))).toBe(false);

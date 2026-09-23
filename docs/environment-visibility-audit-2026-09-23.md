@@ -55,6 +55,9 @@ It is replaced by behavior tests through the actual component and API/storage pa
 - Pending status compares values against the owned container and its immutable
   image defaults, including additions and deletions. Apply follows the same runtime
   exclusion rules as deployment.
+- Restart uses that comparison too: changing secret visibility cannot create a
+  false pending warning, and removing a variable is detected even after its row is
+  gone. Timestamp hints remain a fallback for runtimes without inspection.
 - Explicit recovery uses migration's Docker environment provenance rules. It reads
   only the service's current container, excludes image defaults, preserves saved
   values, and requires Save before recovered values become control-plane state.
@@ -73,7 +76,10 @@ without replacement, changed and removed values, Compose updates, retained secre
 image identity, sibling uptime, ports, networks and volumes, plus rollback after
 failed startup or bookkeeping. Runtime checks use an isolated local daemon.
 
-The reported live service was checked read-only: 35 saved variables and a matching
-running environment. No production service was restarted or redeployed by this
+All five services in the reported live project were checked read-only: the API
+has 35 saved variables, PostgreSQL/dashboard/web have three each, and Redis has
+none. All five match their running environments. A real browser check also
+confirmed 35 API rows, no false empty message, and no unnecessary Apply action.
+No production service was restarted or redeployed by this
 environment investigation. Exact final verification commands and counts are in the
 pull request.

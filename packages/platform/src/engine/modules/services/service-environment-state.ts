@@ -19,7 +19,6 @@ import { findActiveDeployment } from "../../lib/active-deployment";
 import { disposeRuntime, resolveDeploymentRuntimeForRead } from "../../lib/deployment-runtime";
 import { decryptEnvMap, encrypt } from "../../lib/encryption";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
-import { assertNotControlPlane } from "../../lib/resource-access";
 import { mergeServiceDeployEnv } from "../deployments/compose/service-env-layers";
 import {
   buildServicePublicUrlMap,
@@ -293,7 +292,6 @@ export async function mergeServiceEnvVars(
 ) {
   return withProjectRuntimeLock(projectId, async () => {
     const saved = await loadServiceEnvironment(ctx, projectId, serviceId, input.environment);
-    assertNotControlPlane(saved.project);
     if (saved.project.deletionInProgress)
       throw new AppError("This project is being deleted.", 409, "PROJECT_DELETING");
     const byId = new Map(saved.serviceRows.map((row) => [row.id, row]));

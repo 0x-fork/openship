@@ -233,6 +233,21 @@ describe("service environment apply", () => {
     expect(mocks.mergeEnv).not.toHaveBeenCalled();
   });
 
+  it("does not put the previous service's values into a new service when a save finishes late", async () => {
+    await render();
+    await editFlag("true");
+    let finishSave!: (value: unknown) => void;
+    mocks.mergeEnv.mockReturnValue(new Promise(resolve => { finishSave = resolve; }));
+    await click(copy.saveEnvironment);
+    mocks.getEnvironment.mockResolvedValue(environmentState([{ id: "worker-key", key: "WORKER_ENV", value: "worker", isSecret: false }], "synced"));
+    await render("env", { service: { ...service, id: "svc-worker", name: "worker" } });
+    await act(async () => finishSave({ success: true }));
+    const keys = [...host.querySelectorAll('input[placeholder="KEY"]')].map(input => (input as HTMLInputElement).value);
+    expect(keys).toEqual(["WORKER_ENV"]);
+    expect(button(copy.saveEnvironment).disabled).toBe(true);
+    expect(mocks.mergeEnv.mock.calls[0]!.slice(0, 2)).toEqual(["project-stack", "svc-api"]);
+  });
+
   it("shows saved values while Docker is offline and allows editing without claiming they are applied", async () => {
     mocks.getEnvironment.mockImplementation(async (_project, _service, input) => {
       if (input?.inspectRuntime) throw new Error("SSH unavailable");
