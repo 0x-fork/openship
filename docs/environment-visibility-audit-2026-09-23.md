@@ -39,6 +39,15 @@ diagnostics), `d3c79e31` (snapshot retention), #911 (deployment domain warnings)
 service environment list's ownership or its overrides-only query. #925 is a
 separate routing/certificate repair and does not cause this failure.
 
+Older open environment proposals were compared with the current implementation as
+well. Their pull requests remain open; this audit does not merge or close them.
+
+| Open proposal                                       | Comparison with current main                                                                                                                                                                                                                                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#803](https://github.com/oblien/openship/pull/803) | Preserves project secrets when saving deployment configuration. Main already uses a shared partial project-environment diff with preserved secret values. This proposal does not add the missing effective service read.                                                  |
+| [#681](https://github.com/oblien/openship/pull/681) | Proposes service environment Apply through a refresh deployment. Main now has a dedicated service Apply operation; the repair keeps that operation and compares saved values with the running container before offering it.                                               |
+| [#677](https://github.com/oblien/openship/pull/677) | Adds provenance for unresolved embedded Compose variables in the earlier API parser. The current shared engine parser preserves that metadata and stores dynamic templates for deployment-time resolution. It does not address the service editor's overrides-only query. |
+
 The earlier source-string “storage ownership” test asserted that the editor used
 the override endpoints. It could pass while every saved Compose value was hidden.
 It is replaced by behavior tests through the actual component and API/storage path.
