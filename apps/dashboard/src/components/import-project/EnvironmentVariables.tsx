@@ -33,8 +33,12 @@ import { isEnvironmentValueMissing, type EnvironmentVariableMeta } from "./envir
 // a save round-trips it and the backend restores the stored secret; "show
 // values" reveals real values into a display-only overlay; editing a revealed
 // row replaces the sentinel with the typed value.
-type EnvironmentVariableRow = EnvironmentVariable & {
+export type EnvironmentVariableRow = EnvironmentVariable & {
   sourceId?: string;
+  originLabel?: string;
+  keyReadOnly?: boolean;
+  removalDisabled?: boolean;
+  removalLabel?: string;
 };
 
 interface EnvironmentVariablesPropsOptional {
@@ -124,7 +128,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     throw new Error("EnvironmentVariables in deploy mode must be used within DeploymentProvider");
   }
 
-  const currentEnvVars =
+  const currentEnvVars: EnvironmentVariableRow[] =
     mode === "settings" ? (externalEnvVars ?? []) : (deployment?.config.envVars ?? []);
 
   const updateEnvVars =
@@ -144,6 +148,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
 
   const removeEnvVar = useCallback(
     (index: number) => {
+      if (currentEnvVars[index]?.removalDisabled) return;
       const newEnvVars = currentEnvVars.filter((_, i) => i !== index);
       updateEnvVars(newEnvVars);
     },
@@ -884,6 +889,9 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
             const isSecret = env.isSecret ?? looksLikeSecretKey(env.key);
             return (
               <div key={index} data-env-index={index} className="space-y-1.5">
+                {env.originLabel && (
+                  <div className="text-[11px] text-muted-foreground">{env.originLabel}</div>
+                )}
                 {resolution && (
                   <div
                     className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium ${resolution.badgeClass}`}
@@ -898,7 +906,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                     value={env.key}
                     onChange={(e) => handleKeyChange(index, e.target.value)}
                     placeholder="KEY"
-                    readOnly={!isEditingMode}
+                    readOnly={!isEditingMode || env.keyReadOnly}
                     className={`w-full min-w-0 flex-none px-3.5 py-2.5 border border-border/50 rounded-lg text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all sm:w-auto sm:flex-1 ${
                       !isEditingMode ? "cursor-default bg-muted/20" : "bg-muted/30"
                     } ${inputStateClass}`}
@@ -919,7 +927,11 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                         onClick={() => void toggleEnvVisibility(index)}
                         disabled={revealingKeys.has(env.key)}
                         aria-busy={revealingKeys.has(env.key)}
-                        aria-label={showAsText ? t.projectSettings.envVars.hideValue : t.projectSettings.envVars.showValue}
+                        aria-label={
+                          showAsText
+                            ? t.projectSettings.envVars.hideValue
+                            : t.projectSettings.envVars.showValue
+                        }
                         className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors disabled:opacity-40"
                         type="button"
                       >
@@ -962,9 +974,10 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   {showEditControls && isEditingMode && (
                     <button
                       onClick={() => removeEnvVar(index)}
-                      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 hover:text-danger hover:bg-danger-bg transition-colors"
+                      disabled={env.removalDisabled}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 hover:text-danger hover:bg-danger-bg transition-colors disabled:opacity-30 disabled:pointer-events-none"
                       type="button"
-                      title={ev.delete}
+                      title={env.removalLabel ?? ev.delete}
                     >
                       <Trash2 className="size-3.5" />
                     </button>

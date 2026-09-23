@@ -81,6 +81,38 @@ export async function listEnvVars(c: Context) {
   return c.json({ success: true, vars: data });
 }
 
+export async function getEnvironment(c: Context) {
+  const inspect = c.req.query("inspectRuntime");
+  const data = await result(
+    c,
+    operations().getEnvironment(operationContext(c), param(c, "id"), param(c, "serviceId"), {
+      environment: c.req.query("environment") || undefined,
+      inspectRuntime:
+        inspect === undefined
+          ? undefined
+          : inspect === "true"
+            ? true
+            : inspect === "false"
+              ? false
+              : inspect,
+    } as Parameters<ReturnType<typeof operations>["getEnvironment"]>[3]),
+  );
+  return c.json({ success: true, environment: data });
+}
+
+export async function mergeEnvVars(c: Context) {
+  const data = await result(
+    c,
+    operations().mergeEnvVars(
+      operationContext(c),
+      param(c, "id"),
+      param(c, "serviceId"),
+      await c.req.json(),
+    ),
+  );
+  return c.json(data);
+}
+
 export async function setEnvVars(c: Context) {
   const data = await result(
     c,

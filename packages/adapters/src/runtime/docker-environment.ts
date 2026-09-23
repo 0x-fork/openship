@@ -2,6 +2,7 @@ import type Dockerode from "dockerode";
 import { AppError, isValidEnvKey, safeErrorMessage } from "@repo/core";
 import { randomUUID } from "node:crypto";
 import { isRuntimeNotFoundError } from "../system/errors";
+import { splitRuntimeEnv } from "./runtime-env";
 
 export interface DockerEnvironmentResult {
   containerId: string;
@@ -109,7 +110,7 @@ export async function applyDockerEnvironment(
     ...(sharedNetwork ? {} : { Hostname: hostname }),
     name,
     Image: before.Image,
-    Env: Object.entries(environment).map(([key, value]) => `${key}=${value}`),
+    Env: splitRuntimeEnv(environment).entries.map(([key, value]) => `${key}=${value}`),
     HostConfig: hostConfig,
     ...(Object.keys(endpointSettings).length > 0
       ? { NetworkingConfig: { EndpointsConfig: endpointSettings } }

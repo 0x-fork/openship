@@ -129,6 +129,7 @@ import type {
   TSetServiceEnvVarsBody,
 } from "@repo/contracts";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
+import { assertServiceAccess } from "./service-access";
 
 /** Cap how long the HTTP path waits for the SSH edge re-register. The underlying
  *  operation keeps the project runtime lock until it really settles, so a slow
@@ -136,17 +137,6 @@ import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../li
 const ROUTE_EDGE_APPLY_TIMEOUT_MS = 6000;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Verify a service exists and belongs to a project in the given org */
-async function assertServiceAccess(ctx: RequestContext, projectId: string, serviceId: string) {
-  const project = await repos.project.findById(projectId);
-  assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-  const svc = await repos.service.findById(serviceId);
-  if (!svc || svc.projectId !== projectId) {
-    throw new Error("service-not-found");
-  }
-  return { project, svc };
-}
 
 const trimOrNull = (value?: string | null) => {
   const trimmed = value?.trim();
@@ -1353,6 +1343,17 @@ export async function listServiceEnvVars(
 }
 
 export async function setServiceEnvVars(
+  ctx: RequestContext,
+  projectId: string,
+  serviceId: string,
+  data: TSetServiceEnvVarsBody,
+) {
+  return withProjectRuntimeLock(projectId, () =>
+    setServiceEnvVarsUnlocked(ctx, projectId, serviceId, data),
+  );
+}
+
+async function setServiceEnvVarsUnlocked(
   ctx: RequestContext,
   projectId: string,
   serviceId: string,

@@ -117,6 +117,8 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/logs/stream`,
     envGet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
+    environment: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/environment`,
     envSet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
     // #336: POST { keys } — real (unmasked) values for the named keys only.
