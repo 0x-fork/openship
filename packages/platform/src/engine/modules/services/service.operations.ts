@@ -194,11 +194,7 @@ export const serviceDependencies: ServiceDependencies = {
     },
     async applyEnvironment(ctx, projectId, id) {
       const result = await run(() => applyServiceEnvironment(ctx, projectId, id));
-      record(ctx, id, "write", {
-        operation: "env.apply",
-        projectId,
-        containerId: result.containerId,
-      });
+      record(ctx, id, "write", { operation: "env.apply", projectId, containerId: result.containerId });
       return result;
     },
     runtimeLogs: (ctx, projectId, id, input) =>

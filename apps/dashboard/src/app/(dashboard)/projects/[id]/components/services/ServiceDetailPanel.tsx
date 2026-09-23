@@ -548,12 +548,7 @@ export function ServiceDetailPanel({
 
   return (
     <div className="space-y-5">
-      <UseInProjectModal
-        open={shareOpen}
-        onClose={() => setShareOpen(false)}
-        sourceProjectId={projectId}
-        sourceServiceId={service.id}
-      />
+      <UseInProjectModal open={shareOpen} onClose={() => setShareOpen(false)} sourceProjectId={projectId} sourceServiceId={service.id} />
       {/* ── Heading (simple, no card) ──────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex items-center gap-2.5">
@@ -591,13 +586,9 @@ export function ServiceDetailPanel({
         </div>
         <div className="flex min-w-0 items-center gap-3">
           {service.enabled && (
-            <button
-              type="button"
-              onClick={() => setShareOpen(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50"
-            >
-              <PlugZap className="size-3.5" />
-              {t.projects.connections.useInProject}
+            <button type="button" onClick={() => setShareOpen(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/50">
+              <PlugZap className="size-3.5" />{t.projects.connections.useInProject}
             </button>
           )}
           {canOpenLocal && (
@@ -647,12 +638,8 @@ export function ServiceDetailPanel({
           ...def,
           label: t.projectDetail.services.detail.tabs[def.key],
           href: deepLink ? `/projects/${projectId}/services/${service.id}/${def.key}` : undefined,
-          ...(def.key === "volumes" && service.volumes?.length
-            ? { count: service.volumes.length }
-            : {}),
-          ...(def.key === "domains" && configuredServiceEndpoints(service).length
-            ? { count: configuredServiceEndpoints(service).length }
-            : {}),
+          ...(def.key === "volumes" && service.volumes?.length ? { count: service.volumes.length } : {}),
+          ...(def.key === "domains" && configuredServiceEndpoints(service).length ? { count: configuredServiceEndpoints(service).length } : {}),
           ...(def.key === "backup" ? { hidden: !supportsBackup } : {}),
         }))}
         value={activeTab}
@@ -667,10 +654,7 @@ export function ServiceDetailPanel({
           projectId={projectId}
           deployTarget={deployTarget}
           onSettings={() => changeTab("settings")}
-          onDomains={(intent) => {
-            setDomainIntent(intent);
-            changeTab("domains");
-          }}
+          onDomains={(intent) => { setDomainIntent(intent); changeTab("domains"); }}
         />
       )}
 
@@ -877,9 +861,7 @@ export function ServiceDetailPanel({
             subtitle={
               !backupLoading && !backupError && backupPolicy
                 ? `${backupPolicy.payloadKind} · ${backupPolicy.cronExpression ? interpolate(t.projectDetail.services.detail.backupSubtitle.cron, { expr: backupPolicy.cronExpression }) : t.projectDetail.services.detail.backupSubtitle.manualOnly}${backupPolicy.triggerOnPreDeploy ? ` · ${t.projectDetail.services.detail.backupSubtitle.preDeploy}` : ""}${backupPolicy.webhookToken ? ` · ${t.projectDetail.services.detail.backupSubtitle.webhook}` : ""}`
-                : !backupLoading && !backupError
-                  ? t.projectDetail.services.detail.backupSubtitle.none
-                  : undefined
+                : !backupLoading && !backupError ? t.projectDetail.services.detail.backupSubtitle.none : undefined
             }
             icon={DatabaseBackup}
           />

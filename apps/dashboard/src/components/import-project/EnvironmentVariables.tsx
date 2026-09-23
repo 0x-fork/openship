@@ -927,11 +927,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                         onClick={() => void toggleEnvVisibility(index)}
                         disabled={revealingKeys.has(env.key)}
                         aria-busy={revealingKeys.has(env.key)}
-                        aria-label={
-                          showAsText
-                            ? t.projectSettings.envVars.hideValue
-                            : t.projectSettings.envVars.showValue
-                        }
+                        aria-label={showAsText ? t.projectSettings.envVars.hideValue : t.projectSettings.envVars.showValue}
                         className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors disabled:opacity-40"
                         type="button"
                       >
