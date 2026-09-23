@@ -339,6 +339,7 @@
     "requestFailed": "リクエストに失敗しました"
   },
   "serviceStatus": {
+    "checking": "確認中…",
     "running": "実行中",
     "stopped": "停止中",
     "disabled": "無効",

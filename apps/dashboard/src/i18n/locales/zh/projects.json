@@ -339,6 +339,7 @@
     "requestFailed": "请求失败"
   },
   "serviceStatus": {
+    "checking": "检查中…",
     "running": "运行中",
     "stopped": "已停止",
     "disabled": "已禁用",

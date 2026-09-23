@@ -339,6 +339,7 @@
     "requestFailed": "Échec de la requête"
   },
   "serviceStatus": {
+    "checking": "Vérification…",
     "running": "En cours d'exécution",
     "stopped": "Arrêté",
     "disabled": "Désactivé",

@@ -1,17 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { serviceKind, serviceCanStartWithoutBuild, servicesApi, sortServicesByPublicFirst, type Service, type ServiceContainer, type ServiceInput } from "@/lib/api/services";
 import { ServiceIcon } from "@/components/services/ServiceIcon";
+import { getServiceStatus, ServiceStatusBadge } from "@/components/services/ServiceStatusBadge";
 import { getApiErrorMessage, isAbortError } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
 import { internalServiceAddress, effectiveServiceAlias, type ComposeAdvanced } from "@repo/core";
 import { serviceDisplayUrl } from "@/utils/route-display";
 import { useRouter } from "next/navigation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import type { Dictionary } from "@/i18n";
 import {
   Layers,
   RefreshCw,
@@ -49,9 +49,17 @@ export const ServicesTab = () => {
   const { t } = useI18n();
   const router = useRouter();
 
-  const [containers, setContainers] = useState<ServiceContainer[]>([]);
-  const [containersLoading, setContainersLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<{
+    projectId: string;
+    containers: ServiceContainer[] | null;
+    loading: boolean;
+    error: string | null;
+  }>({ projectId: id, containers: null, loading: true, error: null });
+  const runtimeRequest = useRef(0);
+  const currentRuntime = runtime.projectId === id ? runtime : null;
+  const containers = currentRuntime?.containers ?? null;
+  const containersLoading = currentRuntime?.loading ?? true;
+  const error = currentRuntime?.error ?? null;
   const [createOpen, setCreateOpen] = useState(false);
   const [driftBusy, setDriftBusy] = useState<string | null>(null);
 
@@ -63,7 +71,7 @@ export const ServicesTab = () => {
   // Skeleton only when there is nothing to show. containersLoading flips on
   // every refetch (and every remount of this tab), so OR-ing it raw flashed
   // the full-tab skeleton on every action and tab switch (#666) — rows render
-  // fine without container data (status falls back per service).
+  // fine while their runtime status is checked separately.
   const loading =
     servicesData.isLoading || (containersLoading && services.length === 0);
   const projectSlugBase = projectData.slug || projectData.name || "project";
@@ -71,15 +79,19 @@ export const ServicesTab = () => {
   const hasProjectId = Boolean(id && id !== "undefined");
 
   const fetchData = useCallback(async () => {
+    const request = ++runtimeRequest.current;
     if (!hasProjectId) {
-      setContainers([]);
-      setContainersLoading(false);
+      setRuntime({ projectId: id, containers: null, loading: false, error: null });
       return;
     }
 
+    setRuntime((previous) => ({
+      projectId: id,
+      containers: previous.projectId === id ? previous.containers : null,
+      loading: true,
+      error: null,
+    }));
     try {
-      setContainersLoading(true);
-      setError(null);
       // allSettled, not all: with `all`, a rejection from the SECOND promise once
       // the first has already rejected is orphaned, and an unhandled rejection
       // surfaces as a bare runtime error overlay instead of this component's
@@ -89,23 +101,37 @@ export const ServicesTab = () => {
         refreshServices(),
         servicesApi.containers(id),
       ]);
+      if (request !== runtimeRequest.current) return;
       if (containersResult.status === "rejected") throw containersResult.reason;
       const ctRes = containersResult.value;
-      if (ctRes.success) setContainers(ctRes.containers ?? []);
+      if (!ctRes.success) throw new Error(t.projects.services.failedLoad);
+      setRuntime({
+        projectId: id,
+        containers: ctRes.containers ?? [],
+        loading: false,
+        error: null,
+      });
     } catch (e) {
+      if (request !== runtimeRequest.current) return;
       // An aborted request's message is "signal is aborted without reason" —
       // useless to a user, so fall back to the generic copy for it.
-      setError(!isAbortError(e) && e instanceof Error ? e.message : t.projects.services.failedLoad);
-    } finally {
-      setContainersLoading(false);
+      setRuntime({
+        projectId: id,
+        containers: null,
+        loading: false,
+        error: !isAbortError(e) && e instanceof Error ? e.message : t.projects.services.failedLoad,
+      });
     }
-  }, [hasProjectId, id, refreshServices]);
+  }, [hasProjectId, id, refreshServices, t.projects.services.failedLoad]);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
+    return () => {
+      runtimeRequest.current += 1;
+    };
   }, [fetchData]);
 
-  const containerFor = (serviceId: string) => containers.find((c) => c.serviceId === serviceId);
+  const containerFor = (serviceId: string) => containers?.find((c) => c.serviceId === serviceId);
 
   const selectedService = services.find((s) => s.id === selectedId);
 
@@ -388,6 +414,16 @@ export const ServicesTab = () => {
     );
   }
 
+  const errorNotice = failure && (
+    <div className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/[0.06] px-3 py-2 text-xs text-danger">
+      <AlertCircle className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1">{failure}</span>
+      <button onClick={fetchData} className="font-medium underline underline-offset-2">
+        {t.projects.services.retry}
+      </button>
+    </div>
+  );
+
   /* ── Service list + detail panel ───────────────────────────────── */
   if (selectedService) {
     return (
@@ -410,12 +446,14 @@ export const ServicesTab = () => {
           </button>
         </div>
 
+        {errorNotice}
         <ServiceDetailPanel
           // Key by service id so switching services (via the header switcher)
           // remounts on the tab carried in the URL, with per-service state fresh.
           key={selectedService.id}
           service={selectedService}
           container={containerFor(selectedService.id)}
+          containerChecking={containersLoading}
           projectId={id}
           projectSlugBase={projectSlugBase}
           initialTab={slug?.[2]}
@@ -543,23 +581,12 @@ export const ServicesTab = () => {
         </div>
       )}
 
-      {failure && (
-        <div className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger/[0.06] px-3 py-2 text-xs text-danger">
-          <AlertCircle className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1">{failure}</span>
-          <button
-            onClick={fetchData}
-            className="font-medium underline underline-offset-2"
-          >
-            {t.projects.services.retry}
-          </button>
-        </div>
-      )}
+      {errorNotice}
 
       <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/30 overflow-hidden">
         {services.map((svc) => {
           const ct = containerFor(svc.id);
-          const status = ct?.status ?? (svc.enabled ? "stopped" : "disabled");
+          const status = getServiceStatus(svc, ct, containersLoading);
           const resolvedUrl = resolveServiceUrl(svc);
           const isMonorepo = serviceKind(svc) === "monorepo";
 
@@ -656,7 +683,7 @@ export const ServicesTab = () => {
               </div>
 
               <div className="flex items-center gap-3 shrink-0">
-                <StatusBadge status={status} t={t} />
+                <ServiceStatusBadge status={status} />
                 <ChevronRight className="size-4 text-muted-foreground/50 rtl:rotate-180" />
               </div>
             </button>
@@ -686,58 +713,3 @@ export const ServicesTab = () => {
     </div>
   );
 };
-
-/* ── Status Badge ───────────────────────────────────────────────────── */
-
-// Hollow status ring + colored label — the same calmer treatment as the service
-// detail panel and the Servers view, rather than a filled pill per row. `ring`
-// is a BORDER on an empty circle, not a solid pip.
-function StatusBadge({ status, t }: { status: string; t: Dictionary }) {
-  const map: Record<string, { ring: string; text: string; label: string }> = {
-    running: {
-      ring: "border-success-solid",
-      text: "text-success",
-      label: t.projects.serviceStatus.running,
-    },
-    stopped: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
-      label: t.projects.serviceStatus.stopped,
-    },
-    disabled: {
-      ring: "border-muted-foreground/30",
-      text: "text-muted-foreground/60",
-      label: t.projects.serviceStatus.disabled,
-    },
-    failed: {
-      ring: "border-danger-solid",
-      text: "text-danger",
-      label: t.projects.serviceStatus.failed,
-    },
-    starting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
-      label: t.projects.serviceStatus.starting,
-    },
-    // A bouncing container is NOT running — it used to render green, which hid
-    // whole stacks in a crash loop.
-    restarting: {
-      ring: "border-warning-solid animate-pulse",
-      text: "text-warning",
-      label: t.projects.serviceStatus.restarting,
-    },
-    // The host couldn't be reached — say so instead of echoing a stale status.
-    unknown: {
-      ring: "border-muted-foreground/40",
-      text: "text-muted-foreground",
-      label: t.projects.serviceStatus.unknown,
-    },
-  };
-  const s = map[status] ?? map.stopped;
-  return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.text}`}>
-      <span className={`size-2.5 rounded-full border-2 ${s.ring}`} />
-      {s.label}
-    </span>
-  );
-}

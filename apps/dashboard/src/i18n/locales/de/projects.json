@@ -339,6 +339,7 @@
     "requestFailed": "Anfrage fehlgeschlagen"
   },
   "serviceStatus": {
+    "checking": "Prüfung…",
     "running": "Läuft",
     "stopped": "Gestoppt",
     "disabled": "Deaktiviert",

@@ -339,6 +339,7 @@
     "requestFailed": "La solicitud falló"
   },
   "serviceStatus": {
+    "checking": "Comprobando…",
     "running": "En ejecución",
     "stopped": "Detenido",
     "disabled": "Deshabilitado",
