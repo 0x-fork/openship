@@ -116,11 +116,11 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-async function render(strict = false) {
+async function render(strict = false, serviceScope?: { serviceId: string }) {
   const content = (
     <I18nProvider>
       <ModalProvider>
-        <DomainSettings />
+        <DomainSettings serviceScope={serviceScope} />
       </ModalProvider>
     </I18nProvider>
   );
@@ -147,6 +147,49 @@ async function startRetry(strict = false) {
 
 describe("routing retry on the Domains page", () => {
   it.each([false, true])(
+    "keeps routing retry in the domain menu when routing is healthy (service view: %s)",
+    async (serviceView) => {
+      mocks.settings.domainsData.domains = names.map((name) =>
+        savedDomain({
+          id: `dom-${name}`,
+          hostname: `${name}.example.com`,
+          serviceId: `svc-${name}`,
+          verified: true,
+          status: "active",
+          sslStatus: "active",
+          diagnostics: null,
+        }),
+      );
+      await render(false, serviceView ? { serviceId: "svc-api" } : undefined);
+      expect(retryButtons()).toHaveLength(0);
+      expect(host.textContent).not.toContain(retryCopy.title);
+
+      const menu = host.querySelector<HTMLButtonElement>(
+        `button[aria-label="${baseDictionary.projectDetail.services.detail.networking.manage} api.example.com"]`,
+      )!;
+      await act(async () => menu.click());
+      expect(retryButtons()).toHaveLength(1);
+      await act(async () => retryButtons()[0]!.click());
+      await emit("session", {});
+      expect(mocks.fetch).toHaveBeenCalledExactlyOnceWith(
+        "http://localhost:4000/api/projects/project-a/routing/retry/stream",
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(host.querySelector('section[aria-label="Routing log"]')?.textContent).toContain(
+        retryCopy.retrying,
+      );
+
+      await act(async () => menu.click());
+      expect(retryButtons()).toHaveLength(1);
+      expect(retryButtons()[0].disabled).toBe(true);
+      await act(async () => retryButtons()[0].click());
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+      await emit("complete", { status: "completed" }, true);
+      expect(retryButtons()[0].disabled).toBe(false);
+    },
+  );
+
+  it.each([false, true])(
     "disables repair controls and replaces stale warning content while routing runs (warning: %s)",
     async (routingUnsynced) => {
       mocks.settings.projectData.routingUnsynced = routingUnsynced;
@@ -154,10 +197,9 @@ describe("routing retry on the Domains page", () => {
       await startRetry();
       expect(host.textContent).not.toContain("Previous cleanup failure");
       for (const button of retryButtons()) expect(button.disabled).toBe(true);
-      const progressButton = [...host.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === retryCopy.retrying,
+      expect(host.querySelector('section[aria-label="Routing log"]')?.textContent).toContain(
+        retryCopy.retrying,
       );
-      expect(progressButton?.disabled).toBe(true);
       const close = host.querySelector<HTMLButtonElement>(
         'button[aria-label="Close operation log"]',
       );
@@ -193,14 +235,14 @@ describe("routing retry on the Domains page", () => {
   });
 
   it.each([false, true])(
-    "offers one project repair action and one per missing record (warning: %s)",
+    "offers repair on missing records and a project action only for a routing warning (warning: %s)",
     async (routingUnsynced) => {
       mocks.settings.projectData.routingUnsynced = routingUnsynced;
       await render();
       expect(host.textContent?.includes(retryCopy.title)).toBe(routingUnsynced);
       for (const name of names) expect(host.textContent).toContain(`${name}.example.com`);
-      // One project action plus an action on each of the three otherwise stuck cards.
-      expect(retryButtons()).toHaveLength(4);
+      // The warning adds a project action; missing records have their own repair controls.
+      expect(retryButtons()).toHaveLength(routingUnsynced ? 4 : 3);
       await act(async () => retryButtons()[1]!.click());
       expect(mocks.fetch).toHaveBeenCalledWith(
         "http://localhost:4000/api/projects/project-a/routing/retry/stream",
@@ -291,11 +333,11 @@ describe("routing retry on the Domains page", () => {
       (button) => button.textContent?.trim() === baseDictionary.projectSettings.domains.menu.verify,
     );
     expect(verifyButtons).toHaveLength(3);
-    expect(retryButtons()).toHaveLength(1);
+    expect(retryButtons()).toHaveLength(0);
     // Repair is also available from a persisted row's menu, independent of
     // whether it is still pending, has an SSL error, or was previously verified.
     await act(async () => host.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
-    expect(retryButtons()).toHaveLength(2);
+    expect(retryButtons()).toHaveLength(1);
     await act(async () => retryButtons().at(-1)!.click());
     expect(mocks.fetch).toHaveBeenCalledWith(
       "http://localhost:4000/api/projects/project-a/routing/retry/stream",
@@ -394,8 +436,8 @@ describe("domain status details", () => {
     const details = await openDomainDetails();
     expect(details.textContent).toContain(detailsCopy.reasons.disabled);
     expect(details.querySelector("button")).toBeNull();
-    // The project and the other two live services can still repair their routes.
-    expect(retryButtons()).toHaveLength(3);
+    // The other two live services can still repair their routes.
+    expect(retryButtons()).toHaveLength(2);
   });
 
   it("explains disabled scheduling and keeps an explicit manual action", async () => {
