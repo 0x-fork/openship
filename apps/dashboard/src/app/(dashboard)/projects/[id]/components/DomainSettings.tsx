@@ -2086,23 +2086,6 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       )}
       {/* Routes are live-but-unsynced — first, above the domains it's about. */}
       <RoutingUnsyncedCallout onRetry={retryRouting} retrying={!!routingOperation?.running} />
-      {projectData.activeDeploymentId &&
-      !projectData.awaitingDecision &&
-      (!projectData.routingUnsynced || routingOperation?.running) ? (
-        <div className="flex justify-end">
-          <ActionButton
-            label={
-              routingOperation?.running
-                ? t.projects.routingRetry.retrying
-                : t.projects.routingRetry.retry
-            }
-            icon={RefreshCw}
-            onClick={retryRouting}
-            disabled={!!routingOperation?.running}
-            spinning={!!routingOperation?.running}
-          />
-        </div>
-      ) : null}
       {routingOperation && (
         <section
           ref={routingLogRef}
