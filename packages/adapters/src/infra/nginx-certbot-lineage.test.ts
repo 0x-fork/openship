@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { RootChecked } from "../system/privilege";
-import { makeTestCert, type TestCert } from "../system/proxy/test-certs";
+import { makeTestCert, makeTestRenewalConf, type TestCert } from "../system/proxy/test-certs";
 import { NginxProvider } from "./nginx";
 import { OPENRESTY_DEFAULT_PATHS } from "./openresty-lua";
 
@@ -67,28 +67,31 @@ async function setup() {
     .mockResolvedValue(undefined);
   const old = makeTestCert([DOMAIN], { days: 10 });
   const renewed = makeTestCert([DOMAIN], { days: 90 });
+  const versions = new Map<string, number>();
 
   async function put(name: string, pair: TestCert, tracked = false) {
     const dir = join(certDir, name);
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "fullchain.pem"), pair.certPem);
-    await writeFile(join(dir, "privkey.pem"), pair.keyPem, { mode: 0o600 });
     if (tracked) {
+      const version = (versions.get(name) ?? 0) + 1;
+      versions.set(name, version);
       const archive = join(root, "archive", name);
       await mkdir(archive, { recursive: true });
       for (const [file, content] of [
+        ["cert", pair.certPem],
+        ["chain", ""],
         ["fullchain", pair.certPem],
         ["privkey", pair.keyPem],
       ]) {
-        await writeFile(join(archive, `${file}1.pem`), content, { mode: 0o600 });
-        await rm(join(dir, `${file}.pem`));
-        await symlink(`../../archive/${name}/${file}1.pem`, join(dir, `${file}.pem`));
+        await writeFile(join(archive, `${file}${version}.pem`), content, { mode: 0o600 });
+        await rm(join(dir, `${file}.pem`), { force: true });
+        await symlink(`../../archive/${name}/${file}${version}.pem`, join(dir, `${file}.pem`));
       }
       await mkdir(join(root, "renewal"), { recursive: true });
-      await writeFile(
-        join(root, "renewal", `${name}.conf`),
-        "server = https://acme-v02.api.letsencrypt.org/directory\n",
-      );
+      await writeFile(join(root, "renewal", `${name}.conf`), makeTestRenewalConf(certDir, name));
+    } else {
+      await writeFile(join(dir, "fullchain.pem"), pair.certPem);
+      await writeFile(join(dir, "privkey.pem"), pair.keyPem, { mode: 0o600 });
     }
     return dir;
   }
@@ -99,6 +102,7 @@ async function setup() {
   commands.length = 0;
   return {
     nginx,
+    root,
     commands,
     certDir,
     reload,
@@ -113,6 +117,80 @@ async function setup() {
 }
 
 describe("Certbot renewal after adopting a certificate", () => {
+  test.each([false, true])(
+    "renews an import on the first attempt using an unused name (leftover names: %s)",
+    async (leftovers) => {
+      const s = await setup();
+      const occupied = new Set([DOMAIN]);
+      if (leftovers) {
+        const archive = join(s.root, "archive", `${DOMAIN}-0001`);
+        await mkdir(archive, { recursive: true });
+        await writeFile(join(archive, "cert1.pem"), s.old.certPem);
+        await mkdir(join(s.root, "renewal"), { recursive: true });
+        await writeFile(join(s.root, "renewal", `${DOMAIN}-0002.conf`), "broken record\n");
+        await symlink("missing-directory", join(s.certDir, `${DOMAIN}-0003`));
+        for (const suffix of ["0001", "0002", "0003"]) occupied.add(`${DOMAIN}-${suffix}`);
+      }
+      s.certbot(async (command) => {
+        const name = command.match(/'--cert-name' '([^']+)'/)![1]!;
+        // Certbot chooses its suffix from renewal/*.conf. An occupied live or
+        // archive directory alone instead fails storage after the ACME order.
+        if (occupied.has(name)) throw new Error(`live directory exists for ${name}`);
+        expect(await s.served()).toBe(s.old.certPem);
+        const dir = await s.put(name, s.renewed, true);
+        return `Certificate is saved at: ${dir}/fullchain.pem\n`;
+      });
+
+      const result = await s.nginx.renewCert(DOMAIN);
+
+      expect(result.expiresAt).toBe(
+        new X509Certificate(s.renewed.certPem).validToDate.toISOString(),
+      );
+      expect(await s.served()).toBe(s.renewed.certPem);
+      const issued = await readlink(join(s.certDir, DOMAIN, "fullchain.pem"));
+      expect(issued).toBe(
+        join(s.certDir, `${DOMAIN}-${leftovers ? "0004" : "0001"}`, "fullchain.pem"),
+      );
+      expect(s.commands.filter((command) => command.startsWith("certbot "))).toHaveLength(1);
+    },
+  );
+
+  test.each([
+    "missing-cert",
+    "dangling-chain",
+    "incomplete-record",
+    "wrong-record-path",
+    "missing-authenticator",
+  ])("uses the healthy lineage when a newer certificate has a %s", async (damage) => {
+    const s = await setup();
+    const healthy = `${DOMAIN}-0001`;
+    const broken = `${DOMAIN}-0002`;
+    await s.put(healthy, s.renewed, true);
+    const dir = await s.put(broken, makeTestCert([DOMAIN], { days: 180 }), true);
+    const confPath = join(s.root, "renewal", `${broken}.conf`);
+    if (damage === "missing-cert") await rm(join(dir, "cert.pem"));
+    else if (damage === "dangling-chain") await rm(join(s.root, "archive", broken, "chain1.pem"));
+    else {
+      const conf = await readFile(confPath, "utf8");
+      await writeFile(
+        confPath,
+        damage === "incomplete-record"
+          ? "[renewalparams]\nserver = https://acme-v02.api.letsencrypt.org/directory\n"
+          : damage === "wrong-record-path"
+            ? conf.replace(`cert = ${dir}/cert.pem`, `cert = ${s.certDir}/${healthy}/cert.pem`)
+            : conf.replace("authenticator = standalone\n", ""),
+      );
+    }
+
+    const result = await s.nginx.renewCert(DOMAIN);
+
+    expect(result.expiresAt).toBe(new X509Certificate(s.renewed.certPem).validToDate.toISOString());
+    expect(await s.served()).toBe(s.renewed.certPem);
+    expect(s.commands.filter((command) => command.startsWith("certbot "))).toEqual([
+      `certbot 'renew' '--cert-name' '${healthy}' '--non-interactive'`,
+    ]);
+  });
+
   test("serves and reports the issued sibling lineage instead of the old imported pair", async () => {
     const s = await setup();
     s.certbot(async () => {
@@ -133,6 +211,14 @@ describe("Certbot renewal after adopting a certificate", () => {
   test("recovers an already-issued sibling and renews its actual name without a forced reissue", async () => {
     const s = await setup();
     await s.put(`${DOMAIN}-0001`, s.renewed, true);
+    // ConfigObj also writes quoted values and inline comments, e.g. for custom paths.
+    const confPath = join(s.root, "renewal", `${DOMAIN}-0001.conf`);
+    const conf = await readFile(confPath, "utf8");
+    await writeFile(
+      confPath,
+      conf.replace(/^(\w+) = (.+)$/gm, '$1 = "$2" # saved by Certbot') +
+        `post_hook = '''sh -c 'printf "%s" "certificate renewed"'\n# a multiline hook\n'''\n`,
+    );
 
     const result = await s.nginx.renewCert(DOMAIN);
 

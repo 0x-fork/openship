@@ -75,7 +75,11 @@ import { sq } from "../system/local-shell";
 import type { RootChecked } from "../system/privilege";
 import { edgeDownExplanation } from "../system/edge-exec-error";
 import { BOOTSTRAP_CERT_SEGMENT, validateCertFor } from "../system/proxy/cert-material";
-import { certbotLineageDirs, isCertbotLineageName } from "../system/proxy/certbot-lineages";
+import {
+  certbotLineageDirs,
+  isCertbotLineageName,
+  parseCertbotRenewalConfig,
+} from "../system/proxy/certbot-lineages";
 import {
   probeStaticOutput,
   type OutputProbeResult,
@@ -2461,7 +2465,8 @@ ${serveLocation}
       return this.readCertInfo(domain);
     }
 
-    const lineage = (await this.findCertbotLineage(domain)) ?? domain;
+    const lineage =
+      (await this.findCertbotLineage(domain)) ?? (await this.unusedCertbotLineageName(domain));
 
     // Defense-in-depth: only pass acmeEmail when it's a plausible address.
     // (_exec now shell-quotes every arg, but a garbage/injection-shaped value
@@ -2551,10 +2556,9 @@ ${serveLocation}
       if (generatedDnsHooks) await this._rm(generatedDnsHooks.dir).catch(() => undefined);
     }
 
-    // An imported pair can occupy live/<domain> without a renewal config. Certbot
-    // then writes <domain>-0001 even though --cert-name requested <domain>. Locate
-    // that result, validate the real PEM pair, and connect the served path to the
-    // managed lineage so subsequent renewals also reach OpenResty.
+    // An imported pair keeps its served path while Certbot issues into a free
+    // lineage. Follow the reported result and link the validated PEM pair so
+    // subsequent renewals of that lineage also reach OpenResty.
     const reportedPath = certonlyOut
       .match(/^Certificate is saved at:\s*(.+\/fullchain\.pem)\s*$/m)?.[1]
       ?.trim();
@@ -2710,14 +2714,43 @@ ${serveLocation}
   }
 
   private async hasCertbotLineage(domain: string): Promise<boolean> {
-    if (!(await this._exists(this.renewalConfPath(domain)))) return false;
-    // Importing a PEM pair can leave an old renewal record behind while replacing
-    // its live symlinks with ordinary files. Certbot rejects that broken lineage;
-    // the record alone is not evidence that this certificate can be renewed.
-    for (const name of ["fullchain.pem", "privkey.pem"]) {
-      if (!(await this._readlink(join(this.certDir, domain, name)))) return false;
+    const record = parseCertbotRenewalConfig(
+      await this._readFile(this.renewalConfPath(domain)).catch(() => ""),
+    );
+    if (!record) return false;
+    const archive = record.archiveDir ?? join(dirname(this.certDir), "archive", domain);
+    if (!edgePath.isAbsolute(archive)) return false;
+    // Certbot requires all four file references and live archive links. A usable
+    // served PEM pair alone cannot prove its renewal record survived an import.
+    for (const [kind, file] of Object.entries(record.files)) {
+      const expected = join(this.certDir, domain, `${kind}.pem`);
+      if (!edgePath.isAbsolute(file) || edgePath.normalize(file) !== expected) return false;
+      const link = await this._readlink(expected);
+      if (!link || !(await this._exists(expected))) return false;
+      const target = edgePath.resolve(dirname(expected), link);
+      if (
+        dirname(target) !== edgePath.normalize(archive) ||
+        !new RegExp(`^${kind}[0-9]+\\.pem$`).test(edgePath.basename(target))
+      )
+        return false;
     }
     return true;
+  }
+
+  private async unusedCertbotLineageName(domain: string): Promise<string> {
+    // Certbot picks unique names from renewal/*.conf, then fails if live/ or
+    // archive/ is already occupied. Check all three before spending an ACME order.
+    for (let suffix = 0; ; suffix++) {
+      const name = suffix ? `${domain}-${String(suffix).padStart(4, "0")}` : domain;
+      const occupied = await Promise.all(
+        [
+          join(this.certDir, name),
+          join(dirname(this.certDir), "archive", name),
+          this.renewalConfPath(name),
+        ].map(async (path) => (await this._exists(path)) || !!(await this._readlink(path))),
+      );
+      if (!occupied.some(Boolean)) return name;
+    }
   }
 
   private async findCertbotLineage(domain: string): Promise<string | null> {
@@ -2800,7 +2833,7 @@ ${serveLocation}
     } catch {
       return true;
     }
-    const recorded = conf.match(/^\s*server\s*=\s*(\S+)\s*$/m)?.[1];
+    const recorded = parseCertbotRenewalConfig(conf)?.server;
     if (!recorded) return true;
     const effective = this.acmeDirectoryUrl ?? LETSENCRYPT_PRODUCTION_DIRECTORY;
     return recorded === effective;
