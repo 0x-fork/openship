@@ -33,6 +33,7 @@ import {
   type ResolvedDeploymentPlatform,
 } from "../../lib/deployment-runtime";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
+import { recoverProjectRouteCleanup } from "../../lib/project-route-recovery";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import { resolveServicePort } from "../../lib/deployable-service";
 import { isArtifactRef } from "../../lib/container-ref";
@@ -143,6 +144,16 @@ export async function applyProjectRouting(
       );
     const serviceRoutePlans: typeof plannedServiceRoutes = [];
     const blockedHostnames = new Set<string>();
+    await recoverProjectRouteCleanup({
+      project,
+      deployment,
+      resolved,
+      hostnames: [
+        ...domainRows.map((row) => row.hostname),
+        ...plannedServiceRoutes.map(({ route }) => route.hostname),
+      ],
+      onLog: options.onLog,
+    });
     for (const plan of plannedServiceRoutes) {
       try {
         // A route needs a durable owner and verification row as well as a

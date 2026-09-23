@@ -132,10 +132,12 @@ export function PrepareStreamContent({
   opts,
   onClose,
   inline = false,
+  closeDisabled = false,
 }: {
   opts: SystemPrepareOptions;
   onClose: () => void;
   inline?: boolean;
+  closeDisabled?: boolean;
 }) {
   const [logs, setLogs] = useState<Array<{ message: string; level: string }>>([]);
   const [steps, setSteps] = useState<StreamStep[]>([]);
@@ -453,7 +455,8 @@ export function PrepareStreamContent({
             type="button"
             onClick={onClose}
             aria-label="Close operation log"
-            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            disabled={closeDisabled}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X className="size-4" />
           </button>
@@ -623,7 +626,7 @@ export function useRoutingRetryModal(present?: SystemPreparePresenter) {
   const prepare = useSystemPrepareModal(present);
   const { t } = useI18n();
   return useCallback(
-    (projectId: string): string =>
+    (projectId: string, opts?: Pick<SystemPrepareOptions, "onDone">): string =>
       prepare({
         streamUrl: `projects/${encodeURIComponent(projectId)}/routing/retry/stream`,
         title: t.projects.routingRetry.retry,
@@ -632,6 +635,7 @@ export function useRoutingRetryModal(present?: SystemPreparePresenter) {
           done: t.projects.routingRetry.success,
           failed: t.projects.routingRetry.failed,
         },
+        onDone: opts?.onDone,
         onSettled: () => invalidateProjectCaches(projectId),
         // A dropped stream has no terminal result. Refresh the cards, but do not
         // infer success from an old warning flag while the repair may still run.

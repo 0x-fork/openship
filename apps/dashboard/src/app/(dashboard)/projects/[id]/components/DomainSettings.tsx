@@ -421,7 +421,15 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   }, [routingOperation]);
   const openRoutingRetry = useRoutingRetryModal(presentRoutingRetry);
   const openVerifyModal = useVerifyModal(presentRoutingRetry);
-  const retryRouting = () => openRoutingRetry(String(id));
+  const retryRouting = () =>
+    openRoutingRetry(String(id), {
+      onDone: () =>
+        setProjectData((current) =>
+          current.id === id && current.activeDeploymentId === projectData.activeDeploymentId
+            ? { ...current, routingUnsynced: false, routingWarning: undefined }
+            : current,
+        ),
+    });
 
   const automaticChecksPending = domainsData.domains.some(
     (domain) => domain.diagnostics?.nextRetryAt,
@@ -1884,6 +1892,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         label: t.projects.routingRetry.retry,
         icon: <RefreshCw className="size-4" />,
         onClick: retryRouting,
+        disabled: !!routingOperation?.running,
       });
     }
     return (
@@ -2076,13 +2085,21 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         </div>
       )}
       {/* Routes are live-but-unsynced — first, above the domains it's about. */}
-      <RoutingUnsyncedCallout onRetry={retryRouting} />
-      {projectData.activeDeploymentId && !projectData.awaitingDecision && !projectData.routingUnsynced ? (
+      <RoutingUnsyncedCallout onRetry={retryRouting} retrying={!!routingOperation?.running} />
+      {projectData.activeDeploymentId &&
+      !projectData.awaitingDecision &&
+      (!projectData.routingUnsynced || routingOperation?.running) ? (
         <div className="flex justify-end">
           <ActionButton
-            label={t.projects.routingRetry.retry}
+            label={
+              routingOperation?.running
+                ? t.projects.routingRetry.retrying
+                : t.projects.routingRetry.retry
+            }
             icon={RefreshCw}
             onClick={retryRouting}
+            disabled={!!routingOperation?.running}
+            spinning={!!routingOperation?.running}
           />
         </div>
       ) : null}
@@ -2097,6 +2114,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             opts={routingOperation.opts}
             inline
             onClose={closeRoutingLog}
+            closeDisabled={routingOperation.running}
           />
         </section>
       )}
@@ -3250,7 +3268,8 @@ function DomainOverviewCard({
           <button
             type="button"
             onClick={onRetryRouting}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground"
+            disabled={retryBusy}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[13px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw className="size-3.5" />
             {t.projects.routingRetry.retry}

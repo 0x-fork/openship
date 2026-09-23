@@ -28,6 +28,8 @@ import { disposePlatform, resolveDeploymentPlatform } from "@repo/platform/engin
 import { convergeTargetHostPortClaims } from "@repo/platform/engine/modules/deployments/pinned-host-ports";
 import { releaseManagedHostnames } from "@repo/platform/engine/lib/managed-edge-proxy";
 import { connectionHostPortTargetKey } from "@repo/platform/engine/lib/host-port-target";
+import { ORPHAN_CLEANUP_LOCK } from "../../lib/orphan-cleanup-lock";
+import { withKeyedMutex } from "../../lib/provision-lock";
 
 interface ProjectTargetSweepPayload {
   slug: string;
@@ -423,16 +425,17 @@ let sweepInProgress = false;
 export async function runOrphanSweep(): Promise<{ reclaimed: number; deferred: number }> {
   if (sweepInProgress) return { reclaimed: 0, deferred: 0 };
   sweepInProgress = true;
-  let lock: Awaited<ReturnType<typeof tryAcquireAdvisoryLock>> = null;
   try {
-    lock = await tryAcquireAdvisoryLock("projects:orphan-gc");
-    if (!lock) return { reclaimed: 0, deferred: 0 };
-    return await runOrphanSweepLocked();
+    return await withKeyedMutex(ORPHAN_CLEANUP_LOCK, async () => {
+      const lock = await tryAcquireAdvisoryLock(ORPHAN_CLEANUP_LOCK);
+      if (!lock) return { reclaimed: 0, deferred: 0 };
+      try {
+        return await runOrphanSweepLocked();
+      } finally {
+        await lock.release();
+      }
+    });
   } finally {
-    try {
-      await lock?.release();
-    } finally {
-      sweepInProgress = false;
-    }
+    sweepInProgress = false;
   }
 }
