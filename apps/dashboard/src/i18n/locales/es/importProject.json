@@ -317,7 +317,7 @@
       "successful": "Despliegue exitoso",
       "deploying": "Desplegando..."
     },
-    "visitSite": "Visitar el sitio",
+    "openSite": "Abrir sitio",
     "warningTitle": "El despliegue finalizó, pero algunos servicios aún necesitan atención.",
     "productionLogs": "Registros de producción",
     "buildTerminal": "Terminal de compilación",
@@ -327,7 +327,7 @@
     "stopDeployment": "Detener despliegue",
     "redeploy": "Redesplegar",
     "goToProject": "Ir al proyecto",
-    "openDashboard": "Abrir panel",
+    "openProject": "Abrir proyecto",
     "edit": "Editar",
     "status": {
       "cancelled": "Cancelado",

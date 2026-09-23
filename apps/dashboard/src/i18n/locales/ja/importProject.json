@@ -317,7 +317,7 @@
       "successful": "デプロイに成功しました",
       "deploying": "デプロイ中..."
     },
-    "visitSite": "サイトを開く",
+    "openSite": "サイトを開く",
     "warningTitle": "デプロイは完了しましたが、一部のサービスに対応が必要です。",
     "productionLogs": "本番ログ",
     "buildTerminal": "ビルドターミナル",
@@ -327,7 +327,7 @@
     "stopDeployment": "デプロイを停止",
     "redeploy": "再デプロイ",
     "goToProject": "プロジェクトへ移動",
-    "openDashboard": "ダッシュボードを開く",
+    "openProject": "プロジェクトを開く",
     "edit": "編集",
     "status": {
       "cancelled": "キャンセル済み",

@@ -333,7 +333,7 @@
       "successful": "Dağıtım Başarılı",
       "deploying": "Dağıtılıyor..."
     },
-    "visitSite": "Siteyi Ziyaret Et",
+    "openSite": "Siteyi aç",
     "warningTitle": "Dağıtım tamamlandı ancak bazı servisler hâlâ müdahale gerektiriyor.",
     "productionLogs": "Canlı ortam günlükleri",
     "buildTerminal": "Derleme Terminali",
@@ -343,7 +343,7 @@
     "stopDeployment": "Dağıtımı Durdur",
     "redeploy": "Yeniden Dağıt",
     "goToProject": "Projeye git",
-    "openDashboard": "Paneli Aç",
+    "openProject": "Projeyi aç",
     "edit": "Düzenle",
     "status": {
       "cancelled": "İptal Edildi",

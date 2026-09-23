@@ -320,7 +320,7 @@
       "successful": "تم النشر بنجاح",
       "deploying": "جارٍ النشر..."
     },
-    "visitSite": "زيارة الموقع",
+    "openSite": "فتح الموقع",
     "warningTitle": "انتهى النشر، لكن بعض الخدمات لا تزال تحتاج إلى انتباه.",
     "productionLogs": "سجلات الإنتاج",
     "buildTerminal": "طرفية البناء",
@@ -330,7 +330,7 @@
     "stopDeployment": "إيقاف النشر",
     "redeploy": "إعادة النشر",
     "goToProject": "الذهاب إلى المشروع",
-    "openDashboard": "فتح لوحة التحكم",
+    "openProject": "فتح المشروع",
     "edit": "تعديل",
     "status": {
       "cancelled": "ملغى",

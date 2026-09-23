@@ -317,7 +317,7 @@
       "successful": "Implantação Bem-sucedida",
       "deploying": "Implantando..."
     },
-    "visitSite": "Visitar Site",
+    "openSite": "Abrir site",
     "warningTitle": "A implantação foi concluída, mas alguns serviços ainda precisam de atenção.",
     "productionLogs": "Logs de Produção",
     "buildTerminal": "Terminal de Build",
@@ -327,7 +327,7 @@
     "stopDeployment": "Parar Implantação",
     "redeploy": "Reimplantar",
     "goToProject": "Ir para o projeto",
-    "openDashboard": "Abrir Dashboard",
+    "openProject": "Abrir projeto",
     "edit": "Editar",
     "status": {
       "cancelled": "Cancelada",
