@@ -58,19 +58,24 @@ describe("shared-file verification policy", () => {
         expect(job.spec.backoffLimit).toBeLessThanOrEqual(2);
         expect(job.spec.activeDeadlineSeconds).toBeLessThanOrEqual(300);
         expect(job.spec.template.spec.restartPolicy).toBe("Never");
+        const exitRule = (code: number | null) =>
+          job.spec.podFailurePolicy.rules.find((rule: any) => {
+            const match = rule.onExitCodes;
+            if (match?.containerName !== "check") return false;
+            return match.operator === "In"
+              ? match.values.includes(code)
+              : !match.values.includes(code);
+          });
+        // A killed or never-started container is counted against the finite
+        // replacement budget, not ignored and not a false file mismatch.
+        expect(exitRule(137)).toBeUndefined();
+        expect(exitRule(143)).toBeUndefined();
         for (const result of [corrupt, missing]) {
           expect(result.error).toBeUndefined();
           expect(result.status).not.toBe(0);
           // Kubernetes uses the first matching rule. A real checker error
           // must end the Job, rather than consume the pod replacement budget.
-          const rule = job.spec.podFailurePolicy.rules.find((rule: any) => {
-            const match = rule.onExitCodes;
-            if (match?.containerName !== "check") return false;
-            return match.operator === "In"
-              ? match.values.includes(result.status)
-              : !match.values.includes(result.status);
-          });
-          expect(rule?.action).toBe("FailJob");
+          expect(exitRule(result.status)?.action).toBe("FailJob");
         }
       }
     } finally {

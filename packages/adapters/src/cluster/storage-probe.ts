@@ -74,15 +74,17 @@ export class StorageProbe {
           spec: {
             // Storage recovery can delete an unstarted pod to remount its
             // volume. Allow bounded replacement of this disposable check,
-            // while any nonzero checker exit fails the Job without retrying
-            // a real write/read failure. Native backup/import jobs stay separate.
+            // including Kubernetes' synthetic exit 137 for a deleted container
+            // that never started. Process termination counts toward the retry
+            // budget; ordinary checker errors fail immediately. Native backup
+            // and import jobs stay separate.
             backoffLimit: 2,
             activeDeadlineSeconds: 300,
             podFailurePolicy: {
               rules: [
                 {
                   action: "FailJob",
-                  onExitCodes: { containerName: "check", operator: "NotIn", values: [0] },
+                  onExitCodes: { containerName: "check", operator: "NotIn", values: [0, 137, 143] },
                 },
               ],
             },
