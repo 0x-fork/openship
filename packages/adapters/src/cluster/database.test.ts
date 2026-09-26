@@ -141,7 +141,7 @@ describe("operator database manifests", () => {
     expect(
       manifest.spec.redisLeader.affinity.podAntiAffinity
         .requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels,
-    ).toEqual({ "openship.io/database": "db" });
+    ).toEqual({ "openship.io/database": "db", redis_setup_type: "cluster" });
     expect(manifest.spec.redisFollower.affinity).toEqual(manifest.spec.redisLeader.affinity);
   });
   it("does not describe standalone Redis as a sharded cluster", () => {

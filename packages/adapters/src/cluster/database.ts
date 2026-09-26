@@ -354,7 +354,14 @@ export class ClusterDatabaseAdapter {
       podAntiAffinity: {
         requiredDuringSchedulingIgnoredDuringExecution: [
           {
-            labelSelector: { matchLabels: { [managed]: this.target.id } },
+            labelSelector: {
+              // Backups and verification Jobs share database ownership, but
+              // must be able to run alongside its data pods on a full cluster.
+              matchLabels: {
+                [managed]: this.target.id,
+                redis_setup_type: c.mode === "cluster" ? "cluster" : "standalone",
+              },
+            },
             topologyKey: "kubernetes.io/hostname",
           },
         ],
