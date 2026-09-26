@@ -72,8 +72,20 @@ export class StorageProbe {
           kind: "Job",
           metadata: { name: `check-${index}`, namespace: this.namespace, labels: this.labels },
           spec: {
-            backoffLimit: 0,
+            // Storage recovery can delete an unstarted pod to remount its
+            // volume. Allow bounded replacement of this disposable check,
+            // while any nonzero checker exit fails the Job without retrying
+            // a real write/read failure. Native backup/import jobs stay separate.
+            backoffLimit: 2,
             activeDeadlineSeconds: 300,
+            podFailurePolicy: {
+              rules: [
+                {
+                  action: "FailJob",
+                  onExitCodes: { containerName: "check", operator: "NotIn", values: [0] },
+                },
+              ],
+            },
             template: {
               metadata: { labels: this.labels },
               spec: {

@@ -4,6 +4,13 @@ import { clusterObject, waitForClusterResource } from "./database-addons";
 import { KubernetesApiError, type KubernetesApi, type KubernetesObject } from "./kubernetes-api";
 import { kubernetesPodIssue } from "./kubernetes-health";
 
+function terminalCondition(job: KubernetesObject, type: "Complete" | "Failed") {
+  return job.status?.conditions?.find(
+    (condition: { type: string; status: string }) =>
+      condition.type === type && condition.status === "True",
+  );
+}
+
 /** Reconcile a bounded native job. Only an explicitly failed job can be replaced;
  * a lost response is inspected on retry, never blindly replayed. */
 export async function runClusterJob(
@@ -39,7 +46,10 @@ export async function runClusterJob(
   let current = await clusterObject(api, path, signal);
   if (current) {
     assertOwned(current);
-    if (current.metadata.deletionTimestamp || (current.status?.failed && options.retryFailed)) {
+    if (
+      current.metadata.deletionTimestamp ||
+      (terminalCondition(current, "Failed") && options.retryFailed)
+    ) {
       if (!current.metadata.deletionTimestamp) {
         await fence();
         await api.request(
@@ -88,7 +98,11 @@ export async function runClusterJob(
         lastIssue = issue;
         await options.log?.(issue);
       }
-      if (!observed.status?.succeeded && !observed.status?.failed) return null;
+      // Pod counters are cumulative, not a Job result. A replacement can be
+      // running after a failed pod, and one success need not complete a Job.
+      // Wait for the controller's terminal condition before accepting or retrying.
+      const failure = terminalCondition(observed, "Failed");
+      if (!terminalCondition(observed, "Complete") && !failure) return null;
       let output = "";
       for (const pod of pods.items) {
         if (!pod.metadata.ownerReferences?.some((owner) => owner.uid === uid)) continue;
@@ -105,9 +119,16 @@ export async function runClusterJob(
             throw error;
         }
       }
-      if (!observed.status?.succeeded)
+      if (failure)
         throw new Error(
-          `The cluster task failed. ${output.trim() || issue || observed.status?.conditions?.find((c: any) => c.type === "Failed")?.message || "Inspect the saved task and retry."}`,
+          `The cluster task failed. ${
+            [
+              [failure.reason, failure.message].filter(Boolean).join(": "),
+              output.trim() || issue || lastIssue,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "Inspect the saved task and retry."
+          }`,
         );
       return { job: observed, output };
     },

@@ -476,10 +476,16 @@ describeDockerE2E.sequential("stateful scaling through real Linux hosts", () => 
           pods[0].metadata.name!,
           "--",
           "df",
-          "-k",
+          // POSIX output keeps long NFS export names on the same line as
+          // their capacity. Without -P the next line's second field is Used.
+          "-Pk",
           "/app/uploads",
         );
-        return Number(output.trim().split("\n").at(-1)!.trim().split(/\s+/)[1]);
+        const row = output.trim().split("\n").at(-1)!.trim().split(/\s+/);
+        const blocks = Number(row[1]);
+        if (row.length !== 6 || !Number.isFinite(blocks) || blocks <= 0)
+          throw new Error(`Unexpected filesystem capacity output: ${output.trim()}`);
+        return blocks;
       },
       (blocks) => blocks > 1.5 * 1024 ** 2,
       300_000,
