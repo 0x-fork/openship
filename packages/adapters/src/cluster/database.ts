@@ -376,6 +376,10 @@ export class ClusterDatabaseAdapter {
         kubernetesConfig: {
           image: DATABASE_IMAGES.redis,
           imagePullPolicy: "IfNotPresent",
+          // The operator copies CR annotations into its pod templates. Keep
+          // OpenShip's stale-operation fence on the CR without rolling every
+          // existing data pod while a partition resize is in progress.
+          ignoreAnnotations: ["openship.io/generation"],
           resources,
           redisSecret: { name: "credentials", key: "password" },
           persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain", whenScaled: "Retain" },

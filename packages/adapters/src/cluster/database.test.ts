@@ -134,6 +134,7 @@ describe("operator database manifests", () => {
       persistenceEnabled: true,
       storage: { keepAfterDelete: true, nodeConfVolume: true },
       kubernetesConfig: {
+        ignoreAnnotations: ["openship.io/generation"],
         persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain", whenScaled: "Retain" },
       },
     });

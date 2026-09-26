@@ -603,6 +603,8 @@ done
         'i=0; while [ "$i" -lt 128 ]; do redis-cli -c -h "$REDIS_HOST" SET "acceptance:$i" "value:$i" >/dev/null; i=$((i+1)); done; redis-cli -c -h "$REDIS_HOST" SET acceptance:expires expiring PX 86400000',
       );
       for (const instances of [4, 3]) {
+        const dataPodsPath = `/api/v1/namespaces/${clusterDatabaseNamespace(redis.id)}/pods?labelSelector=${encodeURIComponent(`openship.io/database=${redis.id},redis_setup_type=cluster`)}`;
+        const before = await lab.api.request<{ items: KubernetesObject[] }>("GET", dataPodsPath);
         redis = await finish(
           await client.projects.updateClusterDatabase(project.id, {
             databaseId: redis.id,
@@ -611,6 +613,20 @@ done
             confirmRedisRebalance: true,
           }),
         );
+        const after = await lab.api.request<{ items: KubernetesObject[] }>("GET", dataPodsPath);
+        const remaining = after.items.filter((pod) => !pod.metadata.deletionTimestamp);
+        expect(remaining).toHaveLength(instances * 2);
+        // Changing the partition count must retain the existing data instances.
+        // A management annotation must not trigger parallel leader/follower
+        // rollouts while the operator is moving slots between servers.
+        for (const pod of before.items) {
+          const ordinal = Number(pod.metadata.name!.split("-").at(-1));
+          if (ordinal < instances)
+            expect(
+              remaining.find((current) => current.metadata.name === pod.metadata.name)?.metadata
+                .uid,
+            ).toBe(pod.metadata.uid);
+        }
         expect(
           await query(
             redis,
