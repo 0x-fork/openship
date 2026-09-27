@@ -18,16 +18,25 @@ export function CloudHomePlanCard({ state }: { state: BillingState | null }) {
   }
 
   return (
-    <section aria-label={copy.label} className="overflow-hidden rounded-2xl bg-card p-5">
-      <p className="text-sm font-medium text-foreground/80">{copy.label}</p>
-      <CloudPlanIllustration className="mx-auto my-1 w-52" />
-      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+    <section
+      aria-label={copy.label}
+      className="overflow-hidden rounded-2xl bg-card p-5"
+      style={{ backgroundImage: "radial-gradient(ellipse at 100% 0%, color-mix(in oklab, var(--th-btn-accent-to) 7%, transparent), transparent 65%)" }}
+    >
+      <p className="text-sm font-medium text-muted-foreground">{copy.label}</p>
+      <CloudPlanIllustration className="mx-auto mb-3 mt-2 w-48" />
+      <h2 className="text-lg font-medium tracking-tight text-foreground/85">
         {copy.title}
       </h2>
       <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
         {copy.description}
       </p>
-      <Button asChild className="mt-5 h-10 w-full">
+      <Button
+        asChild
+        variant="secondary"
+        className="mt-4 h-10 w-full text-foreground/80 hover:brightness-105"
+        style={{ background: "linear-gradient(110deg, color-mix(in oklab, var(--th-btn-accent-from) 14%, var(--th-card-on-page)), color-mix(in oklab, var(--th-btn-accent-to) 10%, var(--th-card-on-page)))" }}
+      >
         <Link href="/billing/plans">
           {copy.viewPlans}
           <Icon name="arrow-right" className="size-4 rtl:rotate-180" aria-hidden="true" />
