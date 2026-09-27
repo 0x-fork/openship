@@ -90,6 +90,14 @@
     "billingUnavailable": "Purchases are not available for this account yet.",
     "replacementNotice": "Changing your plan or billing interval starts a new cycle at the full selected price after payment. There is no automatic proration."
   },
+  "complimentary": {
+    "label": "Complimentary · No charge",
+    "untilRevoked": "Active until revoked",
+    "expiresOn": "Available until {date}",
+    "creditsRenewOn": "Credits renew on {date}",
+    "changeViaSupport": "Support manages changes to your complimentary plan.",
+    "topupsUnavailable": "Extra usage for your complimentary plan is managed by support."
+  },
   "pricing": {
     "custom": "Custom",
     "comingSoon": "Coming soon",

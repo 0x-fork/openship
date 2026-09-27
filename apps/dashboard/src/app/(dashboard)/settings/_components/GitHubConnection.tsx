@@ -234,10 +234,12 @@ export function GitHubConnection() {
   // the rest behind a disclosure.
   const ghConnected = state.sources.ghCli.available;
   const ghLogin = state.sources.ghCli.login;
-  const anyConnected = appConnected || ghConnected;
-  // Which one is doing the work. `primary` is the backend's own resolution, so
-  // the badge can't disagree with what clones actually use.
+  const personalToken = state.sources.personalToken;
+  const anyConnected = appConnected || ghConnected || personalToken?.connected;
+  // The backend selects the browsing identity. Clone credentials also depend
+  // on the repository, build target and any project or server overrides.
   const activeIsGh = state.primary === "gh-cli";
+  const activeIsPersonal = state.primary === "personal-token";
   // Name the identity by how it was connected. "gh CLI" is only correct for a
   // credential probed off the host's own gh login.
   const ghMethod = state.sources.ghCli.method ?? "host-cli";
@@ -297,13 +299,24 @@ export function GitHubConnection() {
           ? t.settings.github.checkingConnection
           : anyConnected
             ? interpolate(t.settings.github.activeVia, {
-                method: activeIsGh ? ghMethodLabel : t.settings.github.methodApp,
+                method: activeIsPersonal ? t.settings.github.methodToken : activeIsGh ? ghMethodLabel : t.settings.github.methodApp,
               })
             : t.settings.github.pickMethod
       }
       iconBg="bg-foreground/5"
       iconColor="text-foreground"
     >
+      {!loading && personalToken?.problem && (
+        <div className="mb-4">
+          <CredentialProblem
+            problem={personalToken.problem}
+            methodLabel={t.settings.github.methodToken}
+            manageUrl="https://github.com/settings/tokens"
+            manageLabel={t.settings.github.manageTokensOnGithub}
+            onRecheck={() => void loadStatus(true)}
+          />
+        </div>
+      )}
       {cliAction ? (
         /* A login is in flight. It's the only actionable thing on the card, so it
            replaces the chooser entirely instead of appearing underneath it. */
@@ -326,7 +339,16 @@ export function GitHubConnection() {
       ) : anyConnected ? (
         <div className="space-y-4">
           {credentialProblem}
-          {/* The identity that is actually authorizing clones, first. */}
+          {/* Connected identities, with the primary browsing identity marked. */}
+          {personalToken?.connected && (
+            <ActiveIdentity
+              icon="key"
+              label={personalToken.login ? `@${personalToken.login}` : t.settings.github.methodToken}
+              avatarUrl={personalToken.avatarUrl}
+              method={t.settings.github.methodToken}
+              active={activeIsPersonal}
+            />
+          )}
           {ghConnected && (
             <div className="space-y-2">
               <ActiveIdentity
@@ -339,7 +361,7 @@ export function GitHubConnection() {
                 // isDesktop). Self-hosted remote builds use their own credentials.
                 forwardEnabled={isDesktop ? forwardGit : undefined}
                 remoteNeedsOwnCredential={!isDesktop}
-                onManageForward={() => router.push("/settings?tab=tokens")}
+                onManageForward={() => router.push("/settings?tab=git")}
               />
               {!ghProblem && tokenActions}
             </div>
@@ -351,7 +373,7 @@ export function GitHubConnection() {
                 icon={"github"}
                 label={appLogin ? `@${appLogin}` : t.settings.github.methodApp}
                 method={t.settings.github.methodApp}
-                active={!activeIsGh}
+                active={state.primary === "openship-app"}
               />
               {/* Installations the App can actually deploy from. */}
               {hasInstallations && (

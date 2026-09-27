@@ -1,10 +1,31 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { createShip, OperationError, type OwnedShip, type VerifiedIdentity } from "../src/native";
+
+// The engine owns a real worker, so a fetch mock in this test's thread would not
+// reach GitHub validation. Preload only the provider fixture inside each worker.
+vi.mock("node:worker_threads", async (original) => {
+  const actual = await original<typeof import("node:worker_threads")>();
+  return {
+    ...actual,
+    Worker: class extends actual.Worker {
+      constructor(filename: string | URL, options: import("node:worker_threads").WorkerOptions = {}) {
+        super(filename, {
+          ...options,
+          execArgv: [
+            ...(options.execArgv ?? []),
+            "--import",
+            new URL("./fixtures/github-fetch.mjs", import.meta.url).href,
+          ],
+        });
+      }
+    },
+  };
+});
 
 const execute = promisify(execFile);
 const key = "native-integration-test-persistent-key-32-bytes";
@@ -201,6 +222,8 @@ describe("owned native platform on Node", () => {
       expect(await scope.notifications.testChannel(inbox.channel.id)).toEqual({ ok: true, verified: true });
       const subscription = await scope.notifications.upsertSubscription({ category: "deploy.failed", channelId: inbox.channel.id, enabled: true });
       await scope.settings.setCloneCredentials({ token: "persistent-private-token", asDefault: true });
+      await expect(scope.settings.setCloneCredentials({ token: "rejected-token" }))
+        .rejects.toMatchObject({ statusCode: 400, code: "VALIDATION_ERROR" });
       await scope.settings.setTransferPreferences({ transferMode: "direct", transferCompression: "zstd" });
       expect(await scope.updates.list()).toEqual([]);
       expect(await scope.updates.scan()).toEqual({ scanned: 0, supported: 0 });
@@ -227,6 +250,7 @@ describe("owned native platform on Node", () => {
       await expect(scope.notifications.removeChannel(inbox.channel.id)).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
       identity = { user: bob.user, sessionId: "bob" };
       const other = await ship.scope({ identity: "verified", organizationId: bob.personalOrganizationId });
+      expect((await other.settings.get()).cloneToken.hasToken).toBe(false);
       expect(await other.notifications.listChannels()).toEqual([]);
       await expect(other.notifications.testChannel(created.channel.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
     } finally { await ship?.close(); await rm(directory, { recursive: true, force: true }); }

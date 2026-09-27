@@ -98,7 +98,7 @@ export async function getHome(ctx: ExecutionContext) {
   // local. Only the App/cloud library path resolves it (as before).
   let installUrl = "";
   let cloudUnreachable = false;
-  if (data.state.primary !== "gh-cli") {
+  if (data.state.primary !== "gh-cli" && data.state.primary !== "personal-token") {
     const r = await source.resolveInstallUrl();
     installUrl = r.url;
     cloudUnreachable = r.cloudUnreachable ?? false;

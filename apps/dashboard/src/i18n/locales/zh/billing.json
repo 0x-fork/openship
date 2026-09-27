@@ -90,6 +90,14 @@
     "changeViaSupport": "请联系支持以更改当前订阅。",
     "billingUnavailable": "此账户暂时无法购买。"
   },
+  "complimentary": {
+    "label": "赠送套餐 · 免费",
+    "untilRevoked": "在撤销前持续有效",
+    "expiresOn": "可用至{date}",
+    "creditsRenewOn": "{date}重置额度",
+    "changeViaSupport": "赠送套餐的变更由客服处理。",
+    "topupsUnavailable": "赠送套餐的额外用量由客服处理。"
+  },
   "pricing": {
     "custom": "定制",
     "mostPopular": "最受欢迎",

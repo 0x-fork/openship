@@ -90,6 +90,14 @@
     "changeViaSupport": "Kontaktiere den Support, um dein aktuelles Abonnement zu ändern.",
     "billingUnavailable": "Käufe sind für dieses Konto noch nicht verfügbar."
   },
+  "complimentary": {
+    "label": "Kostenlos · Keine Gebühren",
+    "untilRevoked": "Aktiv bis zum Widerruf",
+    "expiresOn": "Verfügbar bis {date}",
+    "creditsRenewOn": "Guthaben wird am {date} erneuert",
+    "changeViaSupport": "Der Support verwaltet Änderungen an deinem kostenlosen Tarif.",
+    "topupsUnavailable": "Der Support verwaltet zusätzliche Nutzung für deinen kostenlosen Tarif."
+  },
   "pricing": {
     "custom": "Individuell",
     "mostPopular": "Am beliebtesten",

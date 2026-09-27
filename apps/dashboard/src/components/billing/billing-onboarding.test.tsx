@@ -15,10 +15,12 @@ import { BillingResourceUsage } from "./BillingResourceUsage";
 import { ResourceMeter } from "./ResourceMeter";
 import { BillingTopups } from "./BillingTopups";
 import { BillingUsage } from "./BillingUsage";
+import { CloudPlanPicker } from "./CloudPlanPicker";
 import type { ApiPlan } from "./PricingCards";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import("@/lib/api/client")>(), api: { get: mocks.get, post: mocks.post } }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const copy = baseDictionary.billing;
 const free: BillingState = {
@@ -36,14 +38,28 @@ const hobby: ApiPlan = {
   price: { monthly: 1500, annual: 15000 }, listPrice: { monthly: 1500 }, effectivePrice: { monthly: 1500 }, campaign: null,
   monthlyCredits: 1_234_000, annualCredits: 14_555_000, limits: PLANS.starter.limits, features: ["Email support"], support: "",
 };
+const scale: ApiPlan = {
+  ...hobby, id: "team", name: "Scale", price: { monthly: 9900, annual: 99000 },
+  monthlyCredits: 15_000_000, limits: PLANS.team.limits,
+};
 const payload = { data: { locale: "en", annual: { enabled: true, monthsFree: 0 }, ui: pricingUi("en"), plans: [
-  { ...hobby, id: "pro", name: "Pro", price: { monthly: 2900, annual: 29000 } }, hobby,
+  { ...hobby, id: "pro", name: "Pro", price: { monthly: 2900, annual: 29000 } }, hobby, scale,
 ] } };
 const paid: BillingState = {
   ...free, tier: "starter", status: "active", plan: hobby, overQuota: false,
   subscription: { tier: "starter", status: "active", interval: "monthly", currentPeriod: { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" }, cancelAtPeriodEnd: false, canceledAt: null },
   balance: { total: 900_000, quotaLimit: 1_200_000, quotaUsed: 300_000, quotaRemaining: 900_000, unlimited: false },
   capacity: { projects: { used: 1, max: 10 }, buildMinutes: { used: 5, max: 3000 }, services: { used: 1, max: 3 } },
+};
+const complimentary: BillingState = {
+  ...paid, tier: "team", subscription: null,
+  plan: { ...scale, price: { monthly: 0, annual: null }, effectivePrice: { monthly: 0 }, listPrice: { monthly: 0 } },
+  complimentary: { id: "grant-scale", expiresAt: null },
+  currentPeriod: { start: "2026-09-27T09:35:06Z", end: "2026-10-27T09:35:06Z" },
+  monthlyCreditLimit: 15_000_000,
+  balance: { total: 15_000_000, quotaLimit: 15_000_000, quotaUsed: 0, quotaRemaining: 15_000_000, unlimited: false },
+  capabilities: { portal: false, cancellation: false, subscriptionChange: false },
+  topups: { available: false, status: "unavailable" },
 };
 let root: Root;
 let container: HTMLDivElement;
@@ -156,6 +172,60 @@ describe("Cloud billing before the first subscription", () => {
     expect(container.textContent).toContain(copy.pricing.currentPlan);
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, status: "canceled" } }} />);
     expect(button("Subscribe to Hobby").disabled).toBe(false);
+  });
+});
+
+describe("complimentary Cloud plans", () => {
+  it.each(["active", "credit_exhausted"])("shows the current Scale grant without a paid subscription when %s", async status => {
+    await render(<BillingSidebar state={{ ...complimentary, status }} />);
+    expect(container.querySelector("h2")?.textContent).toBe("Scale");
+    expect(visibleText()).toContain(copy.pricing.currentPlan);
+    expect(visibleText()).toContain(copy.complimentary.label);
+    expect(visibleText()).toContain(copy.complimentary.untilRevoked);
+    expect(visibleText()).toContain("Credits renew on Oct 27, 2026");
+    expect(container.textContent).toContain("15,000 credits / billing cycle");
+    expect(container.textContent).not.toContain(copy.subscription.billedMonthly);
+    expect(container.textContent).not.toContain(copy.onboarding.offerDescription);
+    expect(container.querySelector("button")).toBeNull();
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("shows the grant expiry without promising credits after it ends", async () => {
+    await render(<BillingSidebar state={{ ...complimentary, complimentary: { id: "grant-scale", expiresAt: "2026-10-10T12:00:00Z" } }} />);
+    expect(visibleText()).toContain("Available until Oct 10, 2026");
+    expect(visibleText()).not.toContain(copy.complimentary.untilRevoked);
+    expect(visibleText()).not.toContain("Credits renew on");
+  });
+
+  it("marks the grant as current in plan comparison while keeping checkout disabled", async () => {
+    await render(<CloudPlanPicker
+      currentPlan={complimentary.tier}
+      subscription={complimentary.subscription}
+      complimentary={complimentary.complimentary}
+      billingEnabled
+      canChangeSubscription={false}
+    />);
+    const currentCard = () => [...container.querySelectorAll("h3")].find(heading => heading.textContent === "Scale")!.parentElement!.parentElement!;
+    expect(currentCard().textContent).toContain(copy.pricing.currentPlan);
+    expect(currentCard().querySelector("button")).toBeNull();
+    expect(container.textContent).toContain(copy.complimentary.changeViaSupport);
+    expect(container.textContent).not.toContain(copy.plansRoute.changeViaSupport);
+    const choose = button("Choose Hobby");
+    expect(choose.disabled).toBe(true);
+    await act(async () => choose.click());
+    expect(mocks.post).not.toHaveBeenCalled();
+    await act(async () => button(copy.pricing.annual).click());
+    expect(currentCard().textContent).toContain(copy.pricing.currentPlan);
+  });
+
+  it("explains complimentary top-up availability without asking for another subscription", async () => {
+    await render(<BillingTopups state={complimentary} />);
+    expect(container.textContent).toContain(copy.complimentary.topupsUnavailable);
+    expect(container.querySelector('a[href="mailto:support@openship.io"]')).not.toBeNull();
+    expect(container.textContent).not.toContain(copy.onboarding.topupsTitle);
+    expect(container.textContent).not.toContain(copy.plansRoute.changeViaSupport);
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 });
 

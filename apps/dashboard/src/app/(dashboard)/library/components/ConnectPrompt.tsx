@@ -256,7 +256,7 @@ export function ConnectPrompt({
                 the per-server deploy keys, so one destination covers it. */}
             {(can("token") || can("ssh-key")) && (
             <button
-              onClick={() => router.push("/settings?tab=tokens")}
+              onClick={() => router.push("/settings?tab=git")}
               className="group rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary/40 hover:bg-primary/[0.02] text-start"
             >
               <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
@@ -298,7 +298,7 @@ export function ConnectPrompt({
 
         <div className="mt-7">
           <Link
-            href="/settings"
+            href="/settings?tab=git"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             <UiIcon name="settings" className="size-3.5" />

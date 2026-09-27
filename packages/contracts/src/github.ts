@@ -33,7 +33,7 @@ export const GitHubRepositorySchema = Type.Unsafe<MappedRepository>(Type.Object(
   html_url: Type.String(), private: bool, visibility: Type.String(), default_branch: Type.String(),
   language: nullableString, size: Type.Number(), forks: Type.Number(), watchers: Type.Number(), stars: Type.Number(),
   license: Type.Unknown(), created_at: Type.String(), updated_at: Type.String(), pushed_at: Type.String(),
-  source: Type.Optional(Type.Union([Type.Literal("app"), Type.Literal("cli"), Type.Literal("both")])),
+  source: Type.Optional(Type.Union([Type.Literal("app"), Type.Literal("cli"), Type.Literal("both"), Type.Literal("token")])),
 }));
 export const GitHubAccountSchema = Type.Unsafe<MappedAccount>(Type.Object({
   login: Type.String(), id: Type.Number(), avatar_url: Type.String(), type: Type.String(), source: optionalString,
@@ -42,8 +42,9 @@ export const GitHubStateSchema = Type.Unsafe<GitHubConnectionState>(Type.Object(
   sources: Type.Object({
     openshipApp: Type.Object({ connected: bool, login: optionalString, avatarUrl: optionalString, hasInstallations: Type.Optional(bool) }),
     ghCli: Type.Object({ available: bool, login: optionalString, avatarUrl: optionalString, method: optionalString, problem: optionalString, checkedAt: optionalString }),
+    personalToken: Type.Optional(Type.Object({ connected: bool, login: optionalString, avatarUrl: optionalString, problem: optionalString })),
   }),
-  primary: Type.Union([Type.Literal("openship-app"), Type.Literal("gh-cli"), Type.Null()]),
+  primary: Type.Union([Type.Literal("openship-app"), Type.Literal("gh-cli"), Type.Literal("personal-token"), Type.Null()]),
 }));
 const methodKind = Type.Union([Type.Literal("device"), Type.Literal("token"), Type.Literal("app"), Type.Literal("ssh-key"), Type.Literal("forwarding")]);
 export const GitHubCapabilitiesSchema = Type.Object({

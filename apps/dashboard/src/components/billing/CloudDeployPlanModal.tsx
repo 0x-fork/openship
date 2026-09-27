@@ -126,6 +126,7 @@ export function CloudDeployPlanModal({ restriction, onClose }: {
           {showPlans && <CloudPlanPicker
             currentPlan={state.tier}
             subscription={state.subscription}
+            complimentary={state.complimentary}
             billingEnabled={state.billing?.enabled === true}
             canChangeSubscription={state.capabilities?.subscriptionChange === true}
             preserveProject

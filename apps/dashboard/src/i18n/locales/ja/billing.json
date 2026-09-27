@@ -90,6 +90,14 @@
     "changeViaSupport": "現在のサブスクリプションを変更するにはサポートにお問い合わせください。",
     "billingUnavailable": "このアカウントではまだ購入できません。"
   },
+  "complimentary": {
+    "label": "無償提供プラン · 料金なし",
+    "untilRevoked": "取り消されるまで有効",
+    "expiresOn": "{date}まで利用可能",
+    "creditsRenewOn": "{date}にクレジットを更新",
+    "changeViaSupport": "無償提供プランの変更はサポートが対応します。",
+    "topupsUnavailable": "無償提供プランの追加利用はサポートが対応します。"
+  },
   "pricing": {
     "custom": "カスタム",
     "mostPopular": "一番人気",

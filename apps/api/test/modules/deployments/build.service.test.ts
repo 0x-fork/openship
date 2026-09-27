@@ -758,6 +758,124 @@ describe("triggerDeployment", () => {
     );
   });
 
+  it.each(
+    ["manual", "webhook", "build-access", "redeploy"].flatMap((entry) =>
+      ["github", "local"].map((source) => ({ entry, source })),
+    ),
+  )("deploys an app with an attached database via $entry from $source (#959)", async ({ entry, source }) => {
+    const project = baseProject({
+      framework: source === "github" ? "vite" : "node",
+      composePath: null,
+      localPath: source === "local" ? "/srv/app" : null,
+      gitProvider: source,
+      gitOwner: source === "github" ? "acme" : null,
+      gitRepo: source === "github" ? "app" : null,
+      gitUrl: source === "github" ? "https://github.com/acme/app.git" : null,
+    });
+    const services = [
+      { id: "svc-app", name: "app", kind: "monorepo", enabled: true, rootDirectory: "./" },
+      {
+        id: "svc-db", name: "postgres", kind: "compose", enabled: true,
+        image: "postgres:16-alpine", build: null, importedSpec: null,
+        environment: { POSTGRES_PASSWORD: "saved-production-password" },
+        volumes: ["postgres_data:/var/lib/postgresql/data"],
+      },
+    ];
+    repos.project.findById.mockResolvedValue(project);
+    repos.service.listByProject.mockResolvedValue(services);
+    repos.project.getEnvMap.mockResolvedValue({ SHARED: encrypt("production") });
+    // This is the real scan result for an app whose repo also contains a
+    // local-development Compose file (covered by prepare.service.test.ts).
+    resolveProjectInfo.mockResolvedValue({
+      stack: project.framework,
+      projectType: "app",
+      services: source === "local" ? [] : undefined,
+      openshipEnv: { SHARED: "repository-default", FROM_REPO: "source-default" },
+    });
+    syncProjectRouteState.mockResolvedValue({ publicEndpoints: [] });
+
+    if (entry === "redeploy") {
+      repos.deployment.findById.mockResolvedValue({
+        id: "dep-old", projectId: project.id, organizationId: project.organizationId,
+        branch: "main", environment: "production", commitSha: "old-sha",
+        meta: releaseSnapshot({ framework: project.framework as string }),
+      });
+      await redeployBuildSession(ctx, "dep-old", { useExistingCommit: true });
+    } else {
+      const actualPipeline = await vi.importActual<
+        typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+      >("@repo/platform/engine/modules/deployments/build-pipeline");
+      resolveServicePipelineMode.mockImplementationOnce(actualPipeline.resolveServicePipelineMode);
+
+      if (entry === "build-access") {
+        await requestBuildAccess(ctx, { projectId: project.id });
+      } else {
+        await triggerDeployment(ctx, {
+          projectId: project.id,
+          branch: "main",
+          commitSha: "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5",
+          ...(entry === "webhook" ? { trigger: "webhook" as const, changedPaths: ["src/main.ts"] } : {}),
+        });
+      }
+    }
+
+    expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
+    expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
+    expect(repos.deployment.create).toHaveBeenCalledOnce();
+    const deployment = repos.deployment.create.mock.calls[0][0];
+    expect(deployment.meta.composeServices).toEqual([
+      expect.objectContaining({ name: "app", kind: "monorepo", rootDirectory: "./" }),
+      expect.objectContaining({
+        name: "postgres", image: services[1].image,
+        environment: services[1].environment, volumes: services[1].volumes,
+      }),
+    ]);
+    expect(decrypt(deployment.envVars.SHARED)).toBe("production");
+    expect(decrypt(deployment.envVars.FROM_REPO)).toBe("source-default");
+    expect(kickoffBuild).toHaveBeenCalledOnce();
+  });
+
+  it.each(["compose-path", "compose-framework", "imported-baseline", "detected-services"])(
+    "still rejects an empty source required by %s (#959)", async (source) => {
+      repos.project.findById.mockResolvedValue(baseProject({
+        framework: source === "compose-framework" ? "docker-compose" : "vite",
+        composePath: source === "compose-path" ? "compose.yml" : null,
+      }));
+      repos.service.listByProject.mockResolvedValue(source === "compose-path" ? [] : [{
+        ...composeServices[0],
+        importedSpec: source === "imported-baseline" ? toComposeSpec(composeServices[0]) : null,
+      }]);
+      resolveProjectInfo.mockResolvedValue({
+        projectType: source === "detected-services" ? "services" : "app",
+        services: [],
+      });
+
+      await expect(triggerDeployment(ctx, { projectId: "project-1" })).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining("contains no services"),
+      });
+      expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
+      expect(repos.deployment.create).not.toHaveBeenCalled();
+      expect(kickoffBuild).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { framework: "node", importedSpec: toComposeSpec(composeServices[0]) },
+    { framework: "unknown", importedSpec: null },
+  ])("keeps source reconciliation for $framework service projects (#959)", async ({ framework, importedSpec }) => {
+    repos.project.findById.mockResolvedValue(baseProject({ framework, composePath: null }));
+    repos.service.listByProject.mockResolvedValue([{ ...composeServices[0], importedSpec }]);
+    // Native openship.json services retain their detected framework. Migrated
+    // projects can start with an unknown framework and no imported baseline.
+    resolveProjectInfo.mockResolvedValue({ projectType: "services", services: composeServices });
+
+    await triggerDeployment(ctx, { projectId: "project-1" });
+
+    expect(repos.service.reconcileFromCompose).toHaveBeenCalledWith("project-1", composeServices);
+    expect(kickoffBuild).toHaveBeenCalledOnce();
+  });
+
   it("reconciles a code-only webhook when a persisted image expression depends on env", async () => {
     repos.project.findById.mockResolvedValue(
       baseProject({
