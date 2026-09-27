@@ -58,7 +58,7 @@ describe("isolated Cloud browser analytics", () => {
     configureCloudAnalytics(config, null, false);
     capture();
     const anonymousId = body().anonymousId;
-    expect(fetcher.mock.calls[0]?.[0]).toBe("https://api.openship.io/api/cloud/analytics");
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://api.openship.io/api/cloud/telemetry");
     expect(body().expectedUserId).toBeNull();
     configureCloudAnalytics(config, "user-a", false);
     capture();

@@ -44,7 +44,8 @@ preview with its own PostHog project, never with the production token.
 
 ## Data boundary and identity
 
-- Browser events go to the first-party `/api/cloud/analytics` endpoint. Only
+- Browser events go to the first-party `/api/cloud/telemetry` endpoint. The
+  existing `/api/cloud/analytics` relay continues to serve customer traffic data. Only
   enumerated screen names, checkout interactions, bounded campaign labels and
   referrer hostnames are accepted. No full URL, query string, document title,
   DOM text, IP, repository name, service environment, log, token or terminal data

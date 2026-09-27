@@ -62,7 +62,14 @@ let received: Array<{
   }>;
 }>;
 let status = 200;
-const app = new Hono().route("/api/cloud/analytics", cloudAnalyticsRoutes);
+const app = new Hono()
+  .route("/api/cloud/telemetry", cloudAnalyticsRoutes)
+  .post("/api/cloud/analytics", (c) => {
+    // A connected client's existing traffic relay is registered after telemetry
+    // in app.ts. Its bearer request must reach its own authentication/handler.
+    if (c.req.header("authorization") !== "Bearer cloud-session") return c.body(null, 401);
+    return c.json({ data: { requests: 42 } });
+  });
 const visitor: CloudBrowserCapture = {
   id: "11111111-1111-4111-a111-111111111111",
   anonymousId: "22222222-2222-4222-a222-222222222222",
@@ -75,7 +82,7 @@ const request = (
   origin = config.dashboardOrigin,
   extra: Record<string, string> = {},
 ) =>
-  app.request("/api/cloud/analytics", {
+  app.request("/api/cloud/telemetry", {
     method: "POST",
     headers: { "Content-Type": "application/json", origin, ...extra },
     body: JSON.stringify(body),
@@ -130,6 +137,19 @@ afterAll(async () => {
 });
 
 describe("Cloud product analytics through HTTP, SQL outbox, and capture receiver", () => {
+  it.each([false, true])("preserves the traffic analytics relay when telemetry is enabled: %s", async (enabled) => {
+    h.config = enabled ? config : null;
+    const response = await app.request("/api/cloud/analytics", {
+      method: "POST",
+      headers: { Authorization: "Bearer cloud-session", "Content-Type": "application/json" },
+      body: JSON.stringify({ operation: "requests", domain: "app.example.com" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { requests: 42 } });
+    expect(h.session).not.toHaveBeenCalled();
+    expect(await rows()).toHaveLength(0);
+  });
+
   it("links an anonymous launch visit to the authenticated user without sending credentials or URLs", async () => {
     expect((await request(visitor)).status).toBe(204);
     h.session.mockResolvedValue({

@@ -306,7 +306,7 @@ setupWebSocket(app);
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
   const { cloudAnalyticsRoutes } = await import("./modules/cloud-analytics/cloud-analytics.routes");
-  app.route("/api/cloud/analytics", cloudAnalyticsRoutes);
+  app.route("/api/cloud/telemetry", cloudAnalyticsRoutes);
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
   app.route("/api/cloud", cloudSaasRoutes);
 

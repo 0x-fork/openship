@@ -157,7 +157,7 @@ export function trackCloudEvent(data: CloudBrowserEvent): void {
     };
     // First-party, explicit events only. This integration loads no PostHog browser
     // SDK, DOM autocapture, replay, IP lookup, or third-party browser script.
-    void fetch(`${getRestApiBaseUrl().replace(/\/+$/, "")}/cloud/analytics`, {
+    void fetch(`${getRestApiBaseUrl().replace(/\/+$/, "")}/cloud/telemetry`, {
       method: "POST",
       credentials: "include",
       keepalive: true,

@@ -6,21 +6,28 @@ import { auth } from "@repo/platform/engine/lib/auth";
 import { getCloudAnalyticsConfig } from "@repo/platform/engine/modules/cloud-analytics/config";
 import { cloudAnalytics } from "@repo/platform/engine/modules/cloud-analytics/index";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
-import { rateLimiterFor } from "../../middleware/rate-limiter";
+import { secureRouter } from "../../lib/secure-router";
 
 // Deliberately not an SDK/MCP operation. Public browser telemetry is optional,
 // Cloud-only, origin-bound, and cannot assert identities or business outcomes.
-export const cloudAnalyticsRoutes = new Hono();
-cloudAnalyticsRoutes.use("*", async (c, next) => {
+const r = secureRouter(new Hono(), {
+  module: "cloud-analytics",
+  basePath: "/api/cloud/telemetry",
+});
+r.use("*", async (c, next) => {
   const config = getCloudAnalyticsConfig();
   if (!config) return c.body(null, 404);
   if (c.req.header("origin") !== config.dashboardOrigin || c.req.header("authorization"))
     return c.body(null, 403);
   await next();
 });
-cloudAnalyticsRoutes.post(
+r.public(
+  "post",
   "/",
-  rateLimiterFor("default-anon"),
+  {
+    reason:
+      "Optional hosted dashboard product telemetry; validates the exact Origin and associates only verified cookie sessions. Not an SDK/MCP operation.",
+  },
   bodyLimit({ maxSize: 4_096 }),
   async (c) => {
     let body: unknown;
@@ -49,3 +56,5 @@ cloudAnalyticsRoutes.post(
     return c.body(null, 204);
   },
 );
+
+export const cloudAnalyticsRoutes = r.hono;
