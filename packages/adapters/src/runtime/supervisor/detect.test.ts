@@ -68,7 +68,7 @@ describe("bare process supervisor privileges", () => {
       env: {},
     });
     const unit = host.writeFile.mock.calls.find(([, content]) => content.includes("[Service]"))!;
-    expect(unit[1]).toContain('User="deploy"\n');
+    expect(unit[1]).toContain("User=deploy\n");
     expect(host.mkdir).toHaveBeenCalledWith("/tmp/workloads/.artifacts");
     expect(host.writeFile).toHaveBeenCalledWith(
       "/tmp/workloads/.artifacts/dep-sudo.path",

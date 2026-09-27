@@ -104,13 +104,16 @@ export class SystemdSupervisor implements ProcessSupervisor {
       .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
       .map(([k, v]) => `Environment="${k}=${escapeSystemdEnvValue(v)}"`)
       .join("\n");
+    // User= takes the literal login from id -un, not a quoted word list like
+    // Environment=. Quotes would become part of the account name (217/USER).
+    const userLine = this.user ? `\nUser=${this.user.replaceAll("%", "%%")}` : "";
 
     return `[Unit]
 Description=Openship deployment ${opts.deploymentId}
 After=network.target
 
 [Service]
-Type=exec${this.user ? `\nUser="${escapeSystemdEnvValue(this.user)}"` : ""}
+Type=exec${userLine}
 WorkingDirectory=${opts.workDir}
 ExecStart=/bin/sh -lc ${sq(opts.startCommand)}
 ${envLines}
