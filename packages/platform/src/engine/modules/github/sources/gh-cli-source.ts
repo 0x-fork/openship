@@ -50,7 +50,10 @@ export class GhCliSource {
   /** Every repo the gh user can see (owner + collaborator + org member). */
   async listAllRepos(): Promise<MappedRepository[]> {
     const raw = await listLocalGhRepos(this.userId);
-    return mapRepositories(Array.isArray(raw) ? (raw as GitHubRepository[]) : []);
+    return mapRepositories(Array.isArray(raw) ? (raw as GitHubRepository[]) : []).map((repo) => ({
+      ...repo,
+      source: "cli",
+    }));
   }
 
   /** Repos for a specific owner, filtered from the affiliation list. */

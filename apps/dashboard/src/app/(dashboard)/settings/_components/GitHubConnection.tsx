@@ -236,8 +236,8 @@ export function GitHubConnection() {
   const ghLogin = state.sources.ghCli.login;
   const personalToken = state.sources.personalToken;
   const anyConnected = appConnected || ghConnected || personalToken?.connected;
-  // Which one is doing the work. `primary` is the backend's own resolution, so
-  // the badge can't disagree with what clones actually use.
+  // The backend selects the browsing identity. Clone credentials also depend
+  // on the repository, build target and any project or server overrides.
   const activeIsGh = state.primary === "gh-cli";
   const activeIsPersonal = state.primary === "personal-token";
   // Name the identity by how it was connected. "gh CLI" is only correct for a
@@ -339,7 +339,7 @@ export function GitHubConnection() {
       ) : anyConnected ? (
         <div className="space-y-4">
           {credentialProblem}
-          {/* The identity that is actually authorizing clones, first. */}
+          {/* Connected identities, with the primary browsing identity marked. */}
           {personalToken?.connected && (
             <ActiveIdentity
               icon="key"

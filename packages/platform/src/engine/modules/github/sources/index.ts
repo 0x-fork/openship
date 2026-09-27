@@ -32,7 +32,7 @@ async function withPersonalToken(ctx: RequestContext, source: GitHubSource): Pro
 }
 
 export async function createGitHubSource(ctx: RequestContext): Promise<GitHubSource> {
-  // SaaS: the App service only. Zero gh, no merge, no cloud mode-probe.
+  // SaaS: user credentials only. No host identity or cloud mode-probe.
   if (env.CLOUD_MODE) {
     const { GitHubAppSource } = await import("@repo/platform/engine/modules/github/sources/app-source");
     return withPersonalToken(ctx, new GitHubAppSource(ctx, "app"));

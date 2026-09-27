@@ -5,7 +5,7 @@ import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { repos } from "@repo/db";
 import { randomBytes } from "node:crypto";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
-import { inspectPatScope, classifyPatScope } from "../github/github.service";
+import { inspectPatScope, classifyPatScope } from "../github/github.pat";
 import {
   getBuildMode,
   getDeployDefaults,

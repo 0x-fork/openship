@@ -33,6 +33,10 @@ function timeAgo(dateStr: string, tr: TimeStrings): string {
   return interpolate(tr.monthsAgo, { n: String(Math.floor(days / 30)) });
 }
 
+function getOwnerLogin(owner: GitHubRepo["owner"]): string {
+  return typeof owner === "string" ? owner : owner.login;
+}
+
 /* ── Component ────────────────────────────────────────────────────── */
 
 interface Account {
@@ -112,7 +116,12 @@ export function RepositoryList({
     if (!Array.isArray(repos)) return [];
     // Server mode: `repos` is already the searched/sorted/sliced page.
     if (server) return repos;
-    let list = repos;
+    // Home can merge repositories from several App, CLI and personal-token owners.
+    let list = selectedOwner
+      ? repos.filter((repo) =>
+          getOwnerLogin(repo.owner).toLowerCase() === selectedOwner.toLowerCase(),
+        )
+      : repos;
 
     if (search) {
       const q = search.toLowerCase();
@@ -133,7 +142,7 @@ export function RepositoryList({
     });
 
     return list;
-  }, [repos, search, visibility, sortBy, server]);
+  }, [repos, selectedOwner, search, visibility, sortBy, server]);
 
   // Footer count: authoritative server count (search/visibility-scoped) in
   // server mode, else the locally-filtered length.
@@ -143,9 +152,6 @@ export function RepositoryList({
     const slug = encodeRepoSlug(ownerLogin, repoName);
     router.push(`/deploy/${slug}`);
   };
-
-  const getOwnerLogin = (owner: { login: string } | string): string =>
-    typeof owner === "string" ? owner : owner.login;
 
   return (
     <div className="bg-card rounded-2xl border border-border/50">
