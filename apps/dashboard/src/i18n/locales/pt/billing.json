@@ -90,6 +90,14 @@
     "changeViaSupport": "Entre em contato com o suporte para alterar sua assinatura atual.",
     "billingUnavailable": "As compras ainda não estão disponíveis para esta conta."
   },
+  "complimentary": {
+    "label": "Plano de cortesia · Sem cobrança",
+    "untilRevoked": "Ativo até ser revogado",
+    "expiresOn": "Disponível até {date}",
+    "creditsRenewOn": "Os créditos são renovados em {date}",
+    "changeViaSupport": "O suporte gerencia alterações no seu plano de cortesia.",
+    "topupsUnavailable": "O suporte gerencia o uso adicional do seu plano de cortesia."
+  },
   "pricing": {
     "custom": "Personalizado",
     "mostPopular": "Mais popular",

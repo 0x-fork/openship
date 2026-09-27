@@ -90,6 +90,14 @@
     "changeViaSupport": "Mevcut aboneliğinizi değiştirmek için destekle iletişime geçin.",
     "billingUnavailable": "Bu hesap için satın alma henüz kullanılamıyor."
   },
+  "complimentary": {
+    "label": "Ücretsiz plan · Ücret alınmaz",
+    "untilRevoked": "İptal edilene kadar etkin",
+    "expiresOn": "{date} tarihine kadar kullanılabilir",
+    "creditsRenewOn": "Krediler {date} tarihinde yenilenir",
+    "changeViaSupport": "Ücretsiz planınızdaki değişiklikleri destek ekibi yönetir.",
+    "topupsUnavailable": "Ücretsiz planınızdaki ek kullanımı destek ekibi yönetir."
+  },
   "pricing": {
     "custom": "Özel",
     "comingSoon": "Yakında",

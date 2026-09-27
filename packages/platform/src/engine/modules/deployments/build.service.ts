@@ -776,12 +776,11 @@ function sameComposeBuildSource(a: DeployableService[], b: DeployableService[]):
 
 /**
  * Re-parse the project's current docker-compose source and 3-way reconcile it against the
- * stored service rows (repos.service.reconcileFromCompose): services the user
- * hasn't edited auto-update to the repo; edited services are preserved and flagged
- * (`driftSpec`) for review. Existing rows reconcile best-effort. Bootstrapping an
- * explicitly compose-shaped project is strict: a bad/empty declared file must
- * block instead of silently falling through to the generic single-app builder.
- * Non-compose projects are unchanged. GitHub and local-path sources converge on
+ * stored service rows (repos.service.reconcileFromCompose): source-owned fields
+ * follow the repo while explicit service overrides are preserved. Declared or
+ * previously imported Compose sources must remain valid before deployment.
+ * Independently attached services do not require Compose in an app's repository.
+ * GitHub and local-path sources converge on
  * resolveProjectInfo, so deploy has one parser and one 3-way merge policy.
  *
  * `changedPaths` (webhook only) is an optimization: when we have a definite,
@@ -896,6 +895,15 @@ async function reconcileComposeSource(
         });
     const services = info.services ?? [];
     if (services.length === 0) {
+      // `kind: compose` also represents independently added image services.
+      // An app scan can legitimately have no Compose services (#959). Keep its
+      // source env, leave the attached services alone, and require a nonempty
+      // source only when the project, scan, or imported baseline declares one.
+      const expectsComposeServices =
+        isMultiServiceProject(project) ||
+        info.projectType === "services" ||
+        composeRows.some((service) => service.kind === "compose" && service.importedSpec != null);
+      if (!expectsComposeServices) return info;
       throw new ComposeConfigurationError(
         `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
       );

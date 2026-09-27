@@ -2,7 +2,7 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
-import type { BillingSubscription, BillingResources, BillingCheckoutStatus } from "@repo/contracts";
+import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingState as BillingStateContract } from "@repo/contracts";
 export type { BillingResources } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
@@ -34,6 +34,7 @@ export interface BillingState {
   };
   plan?: ApiPlan | null;
   subscription?: BillingSubscription | null;
+  complimentary?: BillingStateContract["complimentary"];
   capabilities?: { portal: boolean; cancellation: boolean; resumption?: boolean; subscriptionChange: boolean };
   /** Included milli-credits: zero without a plan; null for unknown or custom allowances. */
   monthlyCreditLimit: number | null;

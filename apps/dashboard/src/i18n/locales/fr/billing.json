@@ -90,6 +90,14 @@
     "changeViaSupport": "Contactez l’assistance pour modifier votre abonnement actuel.",
     "billingUnavailable": "Les achats ne sont pas encore disponibles pour ce compte."
   },
+  "complimentary": {
+    "label": "Offert · Sans frais",
+    "untilRevoked": "Actif jusqu’à révocation",
+    "expiresOn": "Disponible jusqu’au {date}",
+    "creditsRenewOn": "Crédits renouvelés le {date}",
+    "changeViaSupport": "Le support gère les modifications de votre forfait offert.",
+    "topupsUnavailable": "Le support gère l’usage supplémentaire de votre forfait offert."
+  },
   "pricing": {
     "custom": "Personnalisé",
     "mostPopular": "Le plus populaire",

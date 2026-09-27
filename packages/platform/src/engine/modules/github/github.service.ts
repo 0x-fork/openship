@@ -218,34 +218,43 @@ export { mapRepositories };
 // ─── Repository operations ───────────────────────────────────────────────────
 
 /**
- * Fetch repos for a user/org via personal OAuth token (desktop/self-hosted mode).
- * Works without a GitHub App installation.
+ * List repositories accessible to a user credential, including organizations
+ * and collaborator-owned repositories. Keep one paginated implementation for
+ * personal-token and legacy OAuth browsing.
  */
+export async function listUserRepositories(
+  ctx: RequestContext,
+  /** Already resolved by tokenFor; pins every page to the same identity. */
+  token?: string,
+): Promise<GitHubRepository[]> {
+  const collected = new Map<number | string, GitHubRepository>();
+  const perPage = 100;
+  for (let page = 1; page <= 50; page++) {
+    const request = {
+      url: "https://api.github.com/user/repos",
+      params: {
+        per_page: perPage,
+        page,
+        sort: "updated",
+        affiliation: "owner,collaborator,organization_member",
+      },
+    };
+    const data = token
+      ? await ghFetch<GitHubRepository[]>(token, request)
+      : await githubFetch<GitHubRepository[]>({ ctx, ...request, credential: ["user-oauth"] });
+    const batch = Array.isArray(data) ? data : [];
+    for (const repo of batch) collected.set(repo.id ?? repo.full_name.toLowerCase(), repo);
+    if (batch.length < perPage) break;
+  }
+  return [...collected.values()];
+}
+
 export async function listUserOwnedRepos(
   ctx: RequestContext,
   owner?: string,
 ): Promise<MappedRepository[]> {
-  if (!owner) {
-    // User's own repos
-    const data = await githubFetch<GitHubRepository[]>({
-      ctx,
-      url: "https://api.github.com/user/repos",
-      params: {
-        per_page: 100,
-        sort: "updated",
-        affiliation: "owner,collaborator,organization_member",
-      },
-    });
-    return mapRepositories(Array.isArray(data) ? data : []);
-  }
-
-  // Org repos
-  const data = await githubFetch<GitHubRepository[]>({
-    ctx,
-    url: `https://api.github.com/orgs/${encodeURIComponent(owner)}/repos`,
-    params: { type: "all", per_page: 100 },
-  });
-  return mapRepositories(Array.isArray(data) ? data : []);
+  const repos = mapRepositories(await listUserRepositories(ctx));
+  return owner ? repos.filter((r) => r.owner.toLowerCase() === owner.toLowerCase()) : repos;
 }
 
 /**

@@ -8,6 +8,8 @@ import { resolveApiNavigationUrl } from "@/lib/api/urls";
 import { openAuthWindow } from "@/utils/authWindow";
 import { useToast } from "@/context/ToastContext";
 import { consumeGitHubConnectError, githubConnectErrorMessage } from "@/lib/github-connect-error";
+import type { GitHubConnectionState, MappedAccount, MappedRepository } from "@repo/contracts";
+export type { GitHubConnectionState } from "@repo/contracts";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -24,7 +26,7 @@ export interface GitHubAccount {
    *  - "app" → real GitHub App installation
    *  - "cli" → gh CLI org membership (local-only)
    */
-  source?: "app" | "cli";
+  source?: MappedAccount["source"];
 }
 
 export interface GitHubRepo {
@@ -43,52 +45,16 @@ export interface GitHubRepo {
   owner: { login: string; avatar_url: string } | string;
   html_url?: string;
   /**
-   * Where this repo was sourced from (cloud-app mode only):
+   * Where this repo was sourced from:
    *   - "app"  → covered by a GitHub App installation. Deployable
    *              anywhere (local + remote) via short-lived install tokens.
    *   - "cli"  → seen by the local gh CLI but NOT covered by an App
    *              installation. Local builds only — remote deploys are
    *              refused by clone-auth (GITHUB_APP_INSTALLATION_REQUIRED).
    *   - "both" → visible via both sources. Same capabilities as "app".
-   * Undefined for SaaS mode + legacy code paths (App is the only source).
+   *   - "token" → the user's personal token (local and remote builds).
    */
-  source?: "app" | "cli" | "both";
-}
-
-/**
- * Canonical GitHub connection state from the backend. Mirrors
- * `GitHubConnectionState` in apps/api/src/modules/github/github.types.ts —
- * the single source of truth for "is GitHub connected? which source is
- * primary?". No `mode` field: the global platform mode lives in
- * PlatformContext (`selfHosted`).
- */
-export interface GitHubConnectionState {
-  sources: {
-    openshipApp: {
-      connected: boolean;
-      login?: string;
-      avatarUrl?: string;
-      hasInstallations?: boolean;
-    };
-    ghCli: {
-      available: boolean;
-      login?: string;
-      avatarUrl?: string;
-      /** How it was connected — "host-cli" (probed off the host's gh login),
-       *  "device" (browser sign-in) or "token" (pasted PAT). Drives the label and
-       *  the first-run consent prompt; absent on older API responses. Also set
-       *  when `available` is false but a credential exists (see `problem`). */
-      method?: "host-cli" | "device" | "token";
-      /** A credential IS stored but can't be used: "rejected" (GitHub returned
-       *  401/403 — revoked, expired, scope removed) or "unreachable" (no answer
-       *  from GitHub, so the credential may be fine). Absent when nothing is
-       *  connected at all — that's the plain connect case, not a fault. */
-      problem?: "rejected" | "unreachable";
-      /** ISO timestamp of the last verify against GitHub. */
-      checkedAt?: string;
-    };
-  };
-  primary: "openship-app" | "gh-cli" | null;
+  source?: MappedRepository["source"];
 }
 
 interface GitHubContextValue {
@@ -192,6 +158,24 @@ const EMPTY_STATE: GitHubConnectionState = {
   primary: null,
 };
 
+function primaryLogin(state: GitHubConnectionState): string {
+  if (state.primary === "personal-token") return state.sources.personalToken?.login ?? "";
+  if (state.primary === "gh-cli") return state.sources.ghCli.login ?? "";
+  return state.sources.openshipApp.login ?? "";
+}
+
+function availableOwner(current: string, login: string, accounts: GitHubAccount[], repos: GitHubRepo[]): string {
+  const ownersWithRepos = new Set(repos.map((r) =>
+    (typeof r.owner === "string" ? r.owner : r.owner?.login)?.toLowerCase(),
+  ));
+  return accounts.find((a) => a.login.toLowerCase() === current.toLowerCase())?.login
+    ?? accounts.find((a) => a.login.toLowerCase() === login.toLowerCase() && ownersWithRepos.has(a.login.toLowerCase()))?.login
+    ?? accounts.find((a) => ownersWithRepos.has(a.login.toLowerCase()))?.login
+    ?? accounts.find((a) => a.login.toLowerCase() === login.toLowerCase())?.login
+    ?? accounts[0]?.login
+    ?? login;
+}
+
 // OAuth grants and installation nonces are already bounded server-side. This
 // client deadline is a UX guard: a callback that cannot close its window must
 // never leave every GitHub connect button disabled forever.
@@ -210,12 +194,8 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
 
   const [cliAction, setCliAction] = useState<CliAction | null>(null);
   const [accounts, setAccounts] = useState<GitHubAccount[]>(initialData?.accounts || []);
-  const [userLogin, setUserLogin] = useState(
-    initialData?.state?.sources?.openshipApp?.login ||
-      initialData?.state?.sources?.ghCli?.login ||
-      "",
-  );
-  const [selectedOwner, setSelectedOwnerState] = useState(userLogin);
+  const [userLogin, setUserLogin] = useState(primaryLogin(initialData?.state ?? EMPTY_STATE));
+  const [selectedOwner, setSelectedOwnerState] = useState(() => availableOwner("", userLogin, initialData?.accounts ?? [], initialData?.repos ?? []));
   const [repos, setRepos] = useState<GitHubRepo[]>(initialData?.repos || []);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [installUrl, setInstallUrl] = useState<string | null>(initialData?.installUrl || null);
@@ -231,6 +211,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   // dedup is load-bearing for the SaaS request rate.
   const inflightRefresh = useRef<Promise<void> | null>(null);
   const refreshRequest = useRef(0);
+  const repoRequest = useRef(0);
   // A state update does not synchronously disable every connect trigger. Guard
   // the operation itself so a double click cannot mint two OAuth/install flows.
   const connectInFlight = useRef(false);
@@ -245,6 +226,8 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   const refresh = useCallback(async (force = false) => {
     if (!force && inflightRefresh.current) return inflightRefresh.current;
     const request = ++refreshRequest.current;
+    ++repoRequest.current;
+    setLoadingRepos(false);
     const work = (async () => {
       // refresh() runs after every connect / disconnect / device-flow completion,
       // so drop the cached /github/status verdict here — the Settings card and
@@ -264,16 +247,15 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
 
         if (nextState.primary !== null) {
           setAccounts(res.accounts ?? []);
-          const primaryLogin =
-            nextState.sources.openshipApp.login ?? nextState.sources.ghCli.login ?? "";
-          setUserLogin(primaryLogin);
-          if (!selectedOwner && primaryLogin) {
-            setSelectedOwnerState(primaryLogin);
-          }
+          const login = primaryLogin(nextState);
+          setUserLogin(login);
+          setSelectedOwnerState((current) => availableOwner(current, login, res.accounts ?? [], res.repos ?? []));
           setRepos(res.repos ?? []);
         } else {
           setAccounts([]);
           setRepos([]);
+          setUserLogin("");
+          setSelectedOwnerState("");
         }
 
         // Surface partial-failure diagnostics from the server. The request
@@ -315,6 +297,12 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
     initRef.current = true;
     refresh();
   }, [refresh, initialData]);
+
+  useEffect(() => {
+    const onSourcesChanged = () => void refresh(true);
+    window.addEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
+    return () => window.removeEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
+  }, [refresh]);
 
   /* ── Connect GitHub ─────────────────────────────────────────── */
   const connect = useCallback(
@@ -362,7 +350,6 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         // Settings owns an App-specific snapshot; the library's gh-first home
         // response cannot refresh it. Notify every source consumer on completion.
         window.dispatchEvent(new Event(GITHUB_SOURCES_CHANGED_EVENT));
-        void refresh(true);
       };
       const finishCallbackError = () => {
         const linkError = consumeGitHubConnectError();
@@ -599,6 +586,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   const fetchReposForOwner = useCallback(
     async (owner: string) => {
       if (!owner || !connected) return;
+      const request = ++repoRequest.current;
       setLoadingRepos(true);
       try {
         // Backend is mode-aware - handles cloud (installation) vs desktop
@@ -606,8 +594,10 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         // don't need here; this context feeds the client-side pickers). A non-2xx
         // (e.g. "not connected") throws ApiError and is handled by the catch.
         const res = await githubApi.getUserRepos(owner);
+        if (request !== repoRequest.current) return;
         setRepos((res?.data ?? []) as GitHubRepo[]);
       } catch (err) {
+        if (request !== repoRequest.current) return;
         setRepos([]);
         if (isAbortError(err) || isNetworkError(err)) {
           setLoadingRepos(false);
@@ -615,7 +605,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         }
         showToast(getApiErrorMessage(err, "Couldn't load repositories"), "error", "GitHub");
       } finally {
-        setLoadingRepos(false);
+        if (request === repoRequest.current) setLoadingRepos(false);
       }
     },
     [connected, showToast],

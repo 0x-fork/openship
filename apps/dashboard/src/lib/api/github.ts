@@ -125,6 +125,12 @@ function invalidateStatus(): void {
   statusInflight = null;
 }
 
+/** Notify every GitHub consumer only after a credential/source mutation commits. */
+export function notifyGitHubSourcesChanged(): void {
+  invalidateStatus();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(GITHUB_SOURCES_CHANGED_EVENT));
+}
+
 /* ------------------------------------------------------------------ */
 /*  GitHub Integration API                                            */
 /* ------------------------------------------------------------------ */
