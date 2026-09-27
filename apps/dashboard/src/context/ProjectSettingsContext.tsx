@@ -30,6 +30,8 @@ import {
 } from "./project-environments";
 import { beginServicesFetch, failServicesFetch } from "./services-fetch-state";
 
+type AvailableProjectUpdate = Extract<ProjectUpdateStatus, { supported: true }>;
+
 interface ProjectDomain {
   domain: string;
   primary?: boolean;
@@ -244,8 +246,10 @@ interface ProjectSettingsContextType {
   // success. Synchronous to make that contract explicit.
   updateProjectData: (updates: Partial<BasicProjectData>) => void;
   /** A confirmed source update that is not already deploying. */
-  availableUpdate: ProjectUpdateStatus | null;
-  refreshAvailableUpdate: () => Promise<void>;
+  availableUpdate: AvailableProjectUpdate | null;
+  updateStatus: ProjectUpdateStatus | null;
+  updateStatusLoading: boolean;
+  refreshUpdateStatus: () => Promise<void>;
 
   // Domains
   domainsData: DomainsData;
@@ -482,6 +486,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   const [updateResult, setUpdateResult] = useState<{
     key: string;
     data: ProjectUpdateStatus | null;
+    loading: boolean;
   } | null>(null);
   const updateRequestRef = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const currentUpdateKeyRef = useRef(updateKey);
@@ -493,9 +498,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     return () => { updateMountedRef.current = false; };
   }, []);
 
-  const refreshAvailableUpdate = useCallback((): Promise<void> => {
+  const refreshUpdateStatus = useCallback((): Promise<void> => {
     if (!updateKey) return Promise.resolve();
-    // The page and a newly mounted Deployments tab can ask at the same time.
+    // The page and newly mounted Deployments/Source tabs can ask at the same time.
     // Share the in-flight request; later tab visits still get a fresh check.
     if (updateRequestRef.current?.key === updateKey) return updateRequestRef.current.promise;
     const promise = projectsApi.getCommitStatus(id)
@@ -506,21 +511,28 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           updateRequestRef.current?.promise !== promise) return;
         setUpdateResult({
           key: updateKey,
-          data: data?.supported && data.behind && !data.latestInProgress
-            ? { ...data, mode: data.mode ?? "commit" }
-            : null,
+          data,
+          loading: false,
         });
       })
       .finally(() => {
         if (updateRequestRef.current?.promise === promise) updateRequestRef.current = null;
       });
     updateRequestRef.current = { key: updateKey, promise };
+    setUpdateResult((previous) => ({
+      key: updateKey,
+      data: previous?.key === updateKey ? previous.data : null,
+      loading: true,
+    }));
     return promise;
   }, [id, updateKey]);
 
-  useEffect(() => { void refreshAvailableUpdate(); }, [refreshAvailableUpdate]);
+  useEffect(() => { void refreshUpdateStatus(); }, [refreshUpdateStatus]);
 
-  const availableUpdate = updateResult?.key === updateKey ? updateResult.data : null;
+  const updateStatus = updateResult?.key === updateKey ? updateResult.data : null;
+  const updateStatusLoading = !!updateKey && (updateResult?.key !== updateKey || updateResult.loading);
+  const availableUpdate = updateStatus?.supported && updateStatus.behind && !updateStatus.latestInProgress
+    ? updateStatus : null;
 
   const buildData = useMemo<BuildData>(
     () => ({
@@ -1091,7 +1103,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       setProjectData,
       updateProjectData,
       availableUpdate,
-      refreshAvailableUpdate,
+      updateStatus,
+      updateStatusLoading,
+      refreshUpdateStatus,
 
       domainsData,
       updateDomains,
@@ -1143,7 +1157,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     [
       projectData,
       availableUpdate,
-      refreshAvailableUpdate,
+      updateStatus,
+      updateStatusLoading,
+      refreshUpdateStatus,
       domainsData,
       updateDomains,
       environmentData,

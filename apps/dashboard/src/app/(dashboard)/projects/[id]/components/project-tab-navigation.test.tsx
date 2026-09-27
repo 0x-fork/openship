@@ -6,6 +6,7 @@ import { baseDictionary } from "@/i18n";
 import { ProjectSettingsProvider, useProjectSettings } from "@/context/ProjectSettingsContext";
 import { ProjectMobileTabs, ProjectSidebar } from "./ProjectSidebar";
 import { ProjectTabSections } from "./ProjectTabSections";
+import { ReleaseImageSourceSettings } from "./ReleaseImageSourceSettings";
 import type { ProjectUpdateStatus } from "@/lib/api/projects";
 
 const platform = vi.hoisted(() => ({ selfHosted: true, commitStatus: vi.fn() }));
@@ -14,6 +15,7 @@ vi.mock("@/lib/api", () => ({
   projectsApi: { getCommitStatus: platform.commitStatus },
   servicesApi: { list: async () => ({ services: [] }) },
 }));
+vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({
   useProjectInfo: () => ({ isLoading: false }),
   PROJECT_INFO_NOT_FOUND: "missing",
@@ -34,12 +36,14 @@ vi.mock("@/components/i18n-provider", () => ({
 let root: Root;
 let host: HTMLDivElement;
 let settings: ReturnType<typeof useProjectSettings>;
+let showReleaseSource = false;
 
 function Navigation() {
   settings = useProjectSettings();
   const { activeTab } = settings;
   return (
     <>
+      {showReleaseSource && <ReleaseImageSourceSettings />}
       <div data-layout="desktop">
         <ProjectSidebar />
       </div>
@@ -102,6 +106,7 @@ function expectSelected(group: string, section: string, hasSections = true) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   platform.selfHosted = true;
+  showReleaseSource = false;
   platform.commitStatus.mockReset().mockResolvedValue({ data: { supported: false } });
   host = document.createElement("div");
   document.body.append(host);
@@ -211,6 +216,10 @@ describe("merged project navigation", () => {
 });
 
 describe("project update indicator", () => {
+  const commit: ProjectUpdateStatus = {
+    supported: true, mode: "commit", behind: true, latestInProgress: false,
+    branch: "main", latestSha: "latest", latestMessage: null, deployedSha: "previous",
+  };
   const indicatorLabel = baseDictionary.projectSettings.appSource.updateAvailable;
   const indicators = () => host.querySelectorAll(`[role="img"][aria-label="${indicatorLabel}"]`);
 
@@ -256,7 +265,7 @@ describe("project update indicator", () => {
     { gitBranch: "production" },
     { releaseSource: { mode: "github" as const, repo: "example/app" } },
   ])("clears the previous result while checking changed deployment/source state: %j", async (change) => {
-    platform.commitStatus.mockResolvedValueOnce({ data: { supported: true, behind: true } });
+    platform.commitStatus.mockResolvedValueOnce({ data: commit });
     await render("overview");
     expect(indicators()).toHaveLength(2);
 
@@ -265,7 +274,7 @@ describe("project update indicator", () => {
     await act(async () => settings.setProjectData((project) => ({ ...project, ...change })));
     expect(indicators()).toHaveLength(0);
     expect(platform.commitStatus).toHaveBeenCalledTimes(2);
-    await act(async () => resolve({ data: { supported: true, behind: false } }));
+    await act(async () => resolve({ data: { ...commit, behind: false } }));
     expect(indicators()).toHaveLength(0);
   });
 
@@ -275,7 +284,7 @@ describe("project update indicator", () => {
     await render("overview");
     await render("overview", "server", { id: "other" });
     expect(platform.commitStatus).toHaveBeenLastCalledWith("other");
-    await act(async () => resolve({ data: { supported: true, behind: true } }));
+    await act(async () => resolve({ data: commit }));
     expect(indicators()).toHaveLength(0);
   });
 
@@ -283,16 +292,16 @@ describe("project update indicator", () => {
     let resolve!: (value: { data: ProjectUpdateStatus }) => void;
     platform.commitStatus.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
     await render("overview");
-    const first = settings.refreshAvailableUpdate();
-    const second = settings.refreshAvailableUpdate();
+    const first = settings.refreshUpdateStatus();
+    const second = settings.refreshUpdateStatus();
     expect(first).toBe(second);
     expect(platform.commitStatus).toHaveBeenCalledOnce();
     await act(async () => {
-      resolve({ data: { supported: true, behind: true } });
+      resolve({ data: commit });
       await first;
     });
     expect(indicators()).toHaveLength(2);
-    await act(async () => settings.refreshAvailableUpdate());
+    await act(async () => settings.refreshUpdateStatus());
     expect(platform.commitStatus).toHaveBeenCalledTimes(2);
     expect(indicators()).toHaveLength(0);
   });
@@ -302,5 +311,19 @@ describe("project update indicator", () => {
     await render("overview");
     expect(indicators()).toHaveLength(0);
     expectSelected("Overview", "overview", false);
+  });
+
+  it("shares the release check with source settings even when the deployed version is current", async () => {
+    showReleaseSource = true;
+    platform.commitStatus.mockResolvedValue({ data: {
+      supported: true, mode: "release", behind: false, latestInProgress: false,
+      currentVersion: "1.2.3", latestVersion: "1.2.3", pinned: false,
+    } satisfies ProjectUpdateStatus });
+    await render("source", "server", {
+      releaseSource: { mode: "github", repo: "example/app", artifactKind: "image", imageTemplate: "ghcr.io/example/app:{tag}" },
+    });
+    expect(platform.commitStatus).toHaveBeenCalledExactlyOnceWith("project");
+    expect(indicators()).toHaveLength(0);
+    expect(host.textContent).toContain("1.2.3");
   });
 });

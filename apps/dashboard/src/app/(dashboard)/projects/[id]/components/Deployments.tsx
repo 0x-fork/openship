@@ -31,7 +31,7 @@ export const Deployments = () => {
     hasMultipleServices,
     domainsData,
     availableUpdate,
-    refreshAvailableUpdate,
+    refreshUpdateStatus,
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
@@ -44,7 +44,7 @@ export const Deployments = () => {
   // itself via the CLI — redeploy/self-update controls would only 403, so hide them.
   const isSelfApp = projectData?.appTemplateId === "openship";
 
-  React.useEffect(() => { void refreshAvailableUpdate(); }, [refreshAvailableUpdate]);
+  React.useEffect(() => { void refreshUpdateStatus(); }, [refreshUpdateStatus]);
 
   /**
    * A deploy blocked on something the operator can clear — today a port already

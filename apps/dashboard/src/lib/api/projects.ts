@@ -9,7 +9,7 @@ import type {
   WorkloadType,
   DeploymentHistoryQuery,
 } from "@repo/core";
-import type { DeploymentPage, RollbackCapacity } from "@repo/contracts";
+import type { DeploymentPage, ProjectControlOperations, RollbackCapacity } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type { ReleaseImageSource } from "../release-image-source";
 import {
@@ -22,28 +22,7 @@ import {
 /* ------------------------------------------------------------------ */
 
 /** Source drift computed by the engine's shared update service. */
-export interface ProjectUpdateStatus {
-  supported: boolean;
-  mode?: "commit" | "release" | "image";
-  behind?: boolean;
-  /** The latest commit/version is already building or deploying. */
-  latestInProgress?: boolean;
-  branch?: string;
-  latestSha?: string | null;
-  latestMessage?: string | null;
-  deployedSha?: string | null;
-  latestVersion?: string | null;
-  currentVersion?: string | null;
-  pinned?: boolean;
-  services?: Array<{
-    serviceId: string;
-    name: string;
-    ref: string;
-    deployedDigest: string | null;
-    latestDigest: string | null;
-    behind: boolean;
-  }>;
-}
+export type ProjectUpdateStatus = Awaited<ReturnType<ProjectControlOperations["getCommitStatus"]>>;
 
 /**
  * One thing waiting on a human. Mirrors `PendingAction` in the API's

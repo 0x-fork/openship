@@ -78,7 +78,7 @@ let context: {
   refreshServices: ReturnType<typeof vi.fn>;
   setActiveTab: typeof mocks.setActiveTab;
   availableUpdate: ProjectUpdateStatus | null;
-  refreshAvailableUpdate: typeof mocks.refreshUpdate;
+  refreshUpdateStatus: typeof mocks.refreshUpdate;
 };
 
 beforeEach(() => {
@@ -96,7 +96,7 @@ beforeEach(() => {
     refreshServices: vi.fn().mockResolvedValue([service]),
     setActiveTab: mocks.setActiveTab,
     availableUpdate: null,
-    refreshAvailableUpdate: mocks.refreshUpdate,
+    refreshUpdateStatus: mocks.refreshUpdate,
   };
   mocks.context.mockImplementation(() => context);
   mocks.trigger.mockResolvedValue({ data: { deploymentId: "deployment" } });
@@ -131,8 +131,10 @@ it.each(["project", "new-commit"])(
     context.availableUpdate = {
       supported: true,
       behind: true,
+      latestInProgress: false,
       mode: "commit",
       latestSha: "803526d",
+      latestMessage: null,
       deployedSha: "1d4bfc0",
       branch: "main",
     };
@@ -158,7 +160,7 @@ it.each(["project", "new-commit"])(
 
 it("shows the shared release update and clears the banner when that result clears", async () => {
   context.availableUpdate = {
-    supported: true, mode: "release", behind: true, currentVersion: "1.0.0", latestVersion: "1.1.0",
+    supported: true, mode: "release", behind: true, latestInProgress: false, pinned: false, currentVersion: "1.0.0", latestVersion: "1.1.0",
   };
   await act(async () => root.render(<Deployments />));
   expect(mocks.refreshUpdate).toHaveBeenCalledOnce();
@@ -171,7 +173,7 @@ it("shows the shared release update and clears the banner when that result clear
 
 it("makes a detected image update actionable through the shared update operation", async () => {
   context.availableUpdate = {
-    supported: true, mode: "image", behind: true,
+    supported: true, mode: "image", behind: true, latestInProgress: false,
     services: [
       { serviceId: "redis", name: "redis", ref: "redis:7", deployedDigest: "old", latestDigest: "new", behind: true },
       { serviceId: "db", name: "db", ref: "postgres:16", deployedDigest: "same", latestDigest: "same", behind: false },
