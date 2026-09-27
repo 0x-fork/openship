@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { db, repos, schema } from "@repo/db";
 import {
   k3sTools,
+  installDocker,
   DockerRuntime,
   KubernetesRuntime,
   patchKubernetesObject,
@@ -256,22 +257,12 @@ describeDockerE2E.sequential("stateful scaling through real Linux hosts", () => 
   it("enables scaling over SSH while preserving an existing Docker application", async () => {
     // A fresh host without Docker cannot reproduce #960. Use a real daemon on
     // one member, including its built-in host/none networks with no IPAM ranges.
-    await lab.exec(0, ["apt-get", "update"], 180);
-    await lab.exec(
-      0,
-      [
-        "env",
-        "DEBIAN_FRONTEND=noninteractive",
-        "apt-get",
-        "install",
-        "-y",
-        "--no-install-recommends",
-        "docker.io",
-        "curl",
-      ],
-      300,
+    const { resolveServerExecutor } = await import("@repo/platform/engine/lib/deployment-runtime");
+    const { executor } = await resolveServerExecutor(lab.nodes[0]!.id, org.organizationId);
+    const docker = await installDocker(executor, (entry) =>
+      console.info(`[stateful-e2e:docker] ${entry.message}`),
     );
-    await lab.exec(0, ["systemctl", "start", "docker"]);
+    expect(docker.success, docker.error).toBe(true);
     // Occupy the range a clean cluster would choose to exercise conflict detection.
     const dockerSubnet = allocateClusterRuntimeRanges(lab.networkCidrs).podCidr;
     await lab.exec(0, [
