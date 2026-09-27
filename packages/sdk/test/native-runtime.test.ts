@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -844,6 +845,74 @@ describe("owned native platform on Node", () => {
       await rm(directory, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it("serves a native HTTP app, immediately redeploys a directory with updated env, and stops it on deletion", async () => {
+    const listener = createServer();
+    await new Promise<void>((resolve, reject) => {
+      listener.once("error", reject);
+      listener.listen(0, "127.0.0.1", resolve);
+    });
+    const port = (listener.address() as import("node:net").AddressInfo).port;
+    await new Promise<void>((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
+
+    const directory = await mkdtemp(join(tmpdir(), "openship-native-http-"));
+    const source = join(directory, "source");
+    await mkdir(source);
+    let identity: VerifiedIdentity | null = null;
+    const ship = await createShip({
+      instanceId: "http-app", stateDirectory: directory, storage: { driver: "pglite", dataDir: "memory://" },
+      encryptionKey: key, runtime: "bare", routing: "none", administration: true,
+      policy: { allowHostExecution: true, sourceRoots: [source] },
+      identity: { resolve: async () => identity },
+    });
+    let cleanup: (() => Promise<void>) | undefined;
+    try {
+      const mapped = await ship.operator!.ensureIdentity({ issuer: "host", subject: "http-owner", email: "http@example.test" });
+      identity = { user: mapped.user, sessionId: "http-session" };
+      await ship.start();
+      const scope = await ship.scope({ identity: "verified", organizationId: mapped.personalOrganizationId });
+      const files = (version: number) => ({
+        "package.json": JSON.stringify({ name: "native-http-app", private: true, type: "module", scripts: { start: "node server.mjs" } }),
+        "openship.json": JSON.stringify({ runtime: "bare", workload: "web", port, installCommand: "", buildCommand: "", startCommand: "node server.mjs" }),
+        "server.mjs": [
+          'import { createServer } from "node:http";',
+          `const server = createServer((_req, res) => res.end(JSON.stringify({ version: ${version}, value: process.env.SDK_TEST_VALUE ?? null })));`,
+          `server.listen(Number(process.env.PORT || ${port}), "127.0.0.1");`,
+          'process.on("SIGTERM", () => server.close(() => process.exit(0)));',
+        ].join("\n"),
+      });
+      const first = await scope.deploy({ name: "native-http-app", source: { type: "files", files: files(1) } });
+      const projectId = first.project_id;
+      cleanup = async () => { expect(await scope.projects.remove(projectId)).toMatchObject({ ok: true }); };
+      const wait = async (deploymentId: string) => {
+        const outcome = await scope.deployment(deploymentId).wait({ timeoutMs: 30_000, pollIntervalMs: 50 });
+        expect(outcome, JSON.stringify(await scope.deployments.logs(deploymentId))).toMatchObject({ success: true, status: "ready" });
+      };
+      const url = `http://127.0.0.1:${port}`;
+      const checkHttp = async (version: number, value: string | null) => {
+        const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ version, value });
+      };
+
+      await wait(first.deployment_id);
+      await checkHttp(1, null);
+      await scope.projects.mergeEnvVars(projectId, {
+        environment: "production", upserts: [{ key: "SDK_TEST_VALUE", value: "directory-v2", isSecret: false }], deletes: [],
+      });
+      for (const [path, content] of Object.entries(files(2))) await writeFile(join(source, path), content);
+      const second = await scope.deploy({ name: "native-http-app", projectId, source: { type: "directory", path: source } });
+      await wait(second.deployment_id);
+      await checkHttp(2, "directory-v2");
+      expect((await scope.deployments.list({ projectId })).total).toBe(2);
+      await cleanup();
+      cleanup = undefined;
+      await expect(fetch(url, { signal: AbortSignal.timeout(2000) })).rejects.toThrow();
+    } finally {
+      try { await cleanup?.(); }
+      finally { await ship.close(); await rm(directory, { recursive: true, force: true }); }
+    }
+  }, 90_000);
 
   it("deploys generated code through the real pipeline and keeps artifacts inside its owned directory", async () => {
     const directory = await mkdtemp(join(tmpdir(), "openship-generated-test-"));

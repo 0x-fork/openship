@@ -35,6 +35,7 @@ import { categoryForEventType, findCategory } from "./notification-categories";
 import { fireJobTriggers } from "../modules/jobs/job-events";
 import { trackBackgroundWork } from "./background-work";
 import { canReceiveNotification } from "./notification-access";
+import { observeCloudNotification } from "../modules/cloud-analytics/lifecycle";
 
 export interface NotificationEmitInput {
   organizationId: string;
@@ -152,6 +153,7 @@ export const notification = {
    * enqueuing in the request path.
    */
   emit(input: NotificationEmitInput): void {
+    observeCloudNotification(input);
     // Custom jobs can also be TRIGGERED by an event (cheap no-op when unarmed).
     fireJobTriggers(input.eventType, input.organizationId);
     void trackBackgroundWork(dispatch(input).catch((err) => {
@@ -168,6 +170,7 @@ export const notification = {
    * the notification is itself an incident).
    */
   async emitSync(input: NotificationEmitInput): Promise<void> {
+    observeCloudNotification(input);
     fireJobTriggers(input.eventType, input.organizationId);
     await dispatch(input);
   },

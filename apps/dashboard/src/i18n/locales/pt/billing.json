@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "Pronto para lançar?",
+    "plansAndBilling": "Planos e faturação",
+    "description": "Builds e alojamento geridos, com espaço para crescer.",
+    "manageDescription": "O seu plano, utilização e faturação num só lugar.",
+    "purchasesUnavailable": "Novas subscrições estão indisponíveis de momento.",
+    "viewPlans": "Explorar planos"
+  },
+  "welcome": {
+    "eyebrow": "Está tudo pronto",
+    "title": "Boas-vindas ao {name}",
+    "description": "O seu plano Cloud está ativo. Vamos pô-lo a trabalhar.",
+    "dismiss": "Fechar boas-vindas",
+    "openProjects": "Abrir projetos",
+    "viewPlan": "Ver o meu plano"
+  },
   "capacity": {
     "title": "Capacidade e uso",
     "subtitle": "Capacidade incluída no seu plano e quanto você usou. Os números ao vivo são sincronizados do Openship Cloud.",

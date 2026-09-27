@@ -1,4 +1,6 @@
 import { createClusterStorageRepo } from "./cluster-storage.repo";
+import { createCloudAnalyticsRepo } from "./cloud-analytics.repo";
+export { createCloudAnalyticsRepo, type CloudAnalyticsRepo, type CloudAnalyticsOutboxInput, type CloudAnalyticsOutboxEvent, type CloudAnalyticsCheckout } from "./cloud-analytics.repo";
 export { createClusterStorageRepo, type ClusterStorageRecord } from "./cluster-storage.repo";
 export { createUserRepo, type User, type NewUser } from "./user.repo";
 export {
@@ -447,6 +449,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     billingAnniversaryGrant: createBillingAnniversaryGrantRepo(db),
     billingUsageSnapshot: createBillingUsageSnapshotRepo(db),
     billingPlanGrant: createBillingPlanGrantRepo(db),
+    cloudAnalytics: createCloudAnalyticsRepo(db),
   } as const;
 }
 

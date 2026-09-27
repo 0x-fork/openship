@@ -8,7 +8,7 @@ import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
 import type { ApiPlan } from "./PricingCards";
 
 /** Lead with enforced project and resource allowances; keep metering details available. */
-export function PlanResources({ plan, interval = "monthly" }: { plan: ApiPlan; interval?: "monthly" | "annual" }) {
+export function PlanResources({ plan, interval = "monthly", compact = false }: { plan: ApiPlan; interval?: "monthly" | "annual"; compact?: boolean }) {
   const { t, locale } = useI18n();
   const copy = t.billing.resourcesGuide;
   if (plan.id === "free") return <p className="text-xs leading-relaxed text-muted-foreground">{copy.setupHint}</p>;
@@ -22,6 +22,18 @@ export function PlanResources({ plan, interval = "monthly" }: { plan: ApiPlan; i
     { Icon: "cpu" as const, label: copy.machine, value: spec ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}` : copy.unlimited },
     ...(plan.edge ? [{ Icon: "globe" as const, label: t.billing.resourceOverview.bandwidth, value: plan.edge.bandwidthGb === null ? copy.unlimited : interpolate(t.billing.resourceOverview.bandwidthPerMonth, { amount: count(plan.edge.bandwidthGb) }) }] : []),
   ];
+  if (compact) {
+    return (
+      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {facts.slice(0, 3).map(({ label, value }) => (
+          <div key={label} className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 p-3 sm:block">
+            <dt className="text-sm text-muted-foreground">{label}</dt>
+            <dd className="text-sm font-semibold tabular-nums text-foreground sm:mt-2"><bdi>{value}</bdi></dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
   return (
     <div className="border-t border-border/40 py-4">
       <dl className="space-y-4">

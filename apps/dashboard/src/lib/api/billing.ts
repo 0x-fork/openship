@@ -3,6 +3,7 @@ import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
 import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingState as BillingStateContract } from "@repo/contracts";
+import { trackCloudEvent } from "../cloud-analytics";
 export type { BillingResources } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
@@ -242,6 +243,7 @@ export const billingApi = {
     planTierId: SubscriptionPlanTierId,
     interval: SubscriptionInterval,
   ): Promise<{ checkoutUrl: string }> => {
+    trackCloudEvent({ event: "cloud_checkout_clicked", properties: { kind: "subscription", surface: "billing" } });
     const res = await api.post<Envelope<{ checkoutUrl: string }>>(
       endpoints.billing.subscription,
       { planTierId, interval, idempotencyKey: crypto.randomUUID() },
@@ -253,6 +255,7 @@ export const billingApi = {
    * Start an Oblien-hosted top-up. Oblien applies credits after payment.
    */
   createTopupCheckout: async (packId: string): Promise<{ checkoutUrl: string }> => {
+    trackCloudEvent({ event: "cloud_checkout_clicked", properties: { kind: "topup", surface: "billing" } });
     const res = await api.post<Envelope<{ checkoutUrl: string }>>(
       endpoints.billing.topup,
       { packId, idempotencyKey: crypto.randomUUID() },

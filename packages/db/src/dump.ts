@@ -756,6 +756,9 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  cloud_analytics_event: "Cloud-only telemetry delivery and deduplication; never migrate into a local installation",
+  cloud_analytics_checkout: "Cloud-only analytics checkout correlation",
+  cloud_analytics_workspace: "Cloud-only analytics subscription snapshots",
   platform_instance: "the receiving installation retains its own identity and encryption-key binding",
   // Ephemeral / in-flight — re-created on demand, meaningless on another host.
   build_session: "in-flight build state; a migration never resumes a build mid-flight",

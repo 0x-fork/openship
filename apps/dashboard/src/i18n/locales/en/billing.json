@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "Ready to ship?",
+    "plansAndBilling": "Plans & billing",
+    "description": "Managed builds and hosting, with room to grow.",
+    "manageDescription": "Your plan, usage, and billing in one place.",
+    "purchasesUnavailable": "New subscriptions are currently unavailable.",
+    "viewPlans": "Explore plans"
+  },
+  "welcome": {
+    "eyebrow": "You're all set",
+    "title": "Welcome to {name}",
+    "description": "Your Cloud plan is active. Let's put it to work.",
+    "dismiss": "Close welcome",
+    "openProjects": "Open projects",
+    "viewPlan": "View my plan"
+  },
   "capacity": {
     "title": "Capacity & usage",
     "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from Openship Cloud.",

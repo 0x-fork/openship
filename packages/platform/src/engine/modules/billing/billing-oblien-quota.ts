@@ -108,6 +108,8 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
         planTierId: tier, subscriptionStatus: entitlement.status, currentPeriodStart, currentPeriodEnd,
       });
     }
+    const { observeCloudSubscription } = await import("../cloud-analytics/billing");
+    await observeCloudSubscription(organizationId, { tier, subscription, grant });
     return {
       entitlement,
       subscription,

@@ -21,6 +21,30 @@ import {
 /*  Projects API                                                      */
 /* ------------------------------------------------------------------ */
 
+/** Source drift computed by the engine's shared update service. */
+export interface ProjectUpdateStatus {
+  supported: boolean;
+  mode?: "commit" | "release" | "image";
+  behind?: boolean;
+  /** The latest commit/version is already building or deploying. */
+  latestInProgress?: boolean;
+  branch?: string;
+  latestSha?: string | null;
+  latestMessage?: string | null;
+  deployedSha?: string | null;
+  latestVersion?: string | null;
+  currentVersion?: string | null;
+  pinned?: boolean;
+  services?: Array<{
+    serviceId: string;
+    name: string;
+    ref: string;
+    deployedDigest: string | null;
+    latestDigest: string | null;
+    behind: boolean;
+  }>;
+}
+
 /**
  * One thing waiting on a human. Mirrors `PendingAction` in the API's
  * pending-actions.service — the item carries its own resolutions, so the UI
@@ -486,28 +510,9 @@ export const projectsApi = {
   unbindObjectStorage: (id: string | number) =>
     api.delete<{ data: { removed: boolean } }>(endpoints.projects.storage(id)),
 
-  /** Source-drift status for the "project outdated" banner. `mode` discriminates:
-   *  "commit" (git HEAD vs deployed sha) or "release" (newest advertised version
-   *  vs the deployed release version). */
+  /** Source drift for a project's update indicator and deployment banner. */
   getCommitStatus: (id: string | number) =>
-    api.get<{
-      data: {
-        supported: boolean;
-        mode?: "commit" | "release";
-        behind?: boolean;
-        /** True when the latest commit/version is already building/deploying. */
-        latestInProgress?: boolean;
-        /* commit mode */
-        branch?: string;
-        latestSha?: string | null;
-        latestMessage?: string | null;
-        deployedSha?: string | null;
-        /* release mode */
-        latestVersion?: string | null;
-        currentVersion?: string | null;
-        pinned?: boolean;
-      };
-    }>(`projects/${id}/commit-status`),
+    api.get<{ data: ProjectUpdateStatus }>(`projects/${id}/commit-status`),
 
   /** Enable or disable a project */
   toggle: (id: string | number, enable: boolean) =>

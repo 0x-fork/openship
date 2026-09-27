@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { projectsApi } from "@/lib/api";
@@ -45,9 +45,10 @@ import { useAttentionFeed } from "@/hooks/useAttentionFeed";
 
 interface DashboardHomeClientProps {
   initialData?: any;
+  planCard?: ReactNode;
 }
 
-export default function DashboardHomeClient({ initialData }: DashboardHomeClientProps) {
+export default function DashboardHomeClient({ initialData, planCard }: DashboardHomeClientProps) {
   const { user } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
@@ -199,7 +200,8 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
 
           {/* ── RIGHT COLUMN (Sticky) ──────────────────────────────── */}
           <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-            
+            {planCard}
+
             {/* The column yields to attention one card at a time, least urgent first:
                 one alert panel takes the Activity overview's space, a second takes the
                 Apps card's. Nothing is lost — lifetime deploy counts live under

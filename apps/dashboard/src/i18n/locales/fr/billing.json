@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "Prêt à lancer ?",
+    "plansAndBilling": "Offres et facturation",
+    "description": "Builds et hébergement gérés, avec de la place pour grandir.",
+    "manageDescription": "Votre offre, votre utilisation et votre facturation au même endroit.",
+    "purchasesUnavailable": "Les nouveaux abonnements sont indisponibles pour le moment.",
+    "viewPlans": "Découvrir les offres"
+  },
+  "welcome": {
+    "eyebrow": "Tout est prêt",
+    "title": "Bienvenue sur {name}",
+    "description": "Votre offre Cloud est active. À vous de jouer.",
+    "dismiss": "Fermer le message de bienvenue",
+    "openProjects": "Ouvrir les projets",
+    "viewPlan": "Voir mon offre"
+  },
   "capacity": {
     "title": "Capacité et utilisation",
     "subtitle": "Capacité incluse dans votre forfait et ce que vous avez utilisé. Les chiffres en direct se synchronisent depuis Openship Cloud.",

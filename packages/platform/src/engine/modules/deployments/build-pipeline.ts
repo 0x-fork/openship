@@ -1315,6 +1315,7 @@ async function executeBuildAndDeploy(
     // target lock; inferring that again inside the phase risks a nested lock when
     // a restored release changes the effective serve mode.
     const hostPortTargetLockHeld =
+      usesManagedRouting &&
       deployRouting.deployMode === "server" &&
       resolved.effectiveTarget !== "cloud" &&
       usesHostLoopbackUpstream(resolveRouteStrategy(project.routeStrategy), runtime);
@@ -2109,7 +2110,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     Pick<AllocatedPinnedHostPort, "claim" | "previousClaim" | "claimWasCreated">
   > = [];
   const needsHostLoopbackClaim =
-    usesHostLoopback && !isStaticFileServe && !isWorker && phase.effectiveTarget !== "cloud";
+    usesManagedRouting && usesHostLoopback && !isStaticFileServe && !isWorker && phase.effectiveTarget !== "cloud";
   if (needsHostLoopbackClaim && (!phase.hostPortTarget || !phase.targetExecutor)) {
     throw new Error("Cannot inspect routed host ports without a physical target executor");
   }

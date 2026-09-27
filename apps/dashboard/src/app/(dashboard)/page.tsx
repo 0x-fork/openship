@@ -1,7 +1,18 @@
+import { Suspense } from "react";
 import { MailConsole } from "./emails/_components/mail-console";
 import { serverApi } from "@/lib/server/api";
+import { getDeploymentInfoOrNull } from "@/lib/server/session";
 import { resolveRequestProductView } from "@/lib/server/product-view";
+import { CloudHomePlanCard, CloudHomePlanCardSkeleton } from "@/components/billing/CloudHomePlanCard";
+import { getBillingPageState } from "./billing/_components/billing-state";
 import DashboardHomeClient from "./DashboardHomeClient";
+
+async function HomePlanCard() {
+  const result = await getBillingPageState();
+  // A workspace member without billing access should not see a purchase prompt.
+  if (result.kind === "unavailable" && result.reason === "billing-forbidden") return null;
+  return <CloudHomePlanCard state={result.kind === "ok" ? result.state : null} />;
+}
 
 /**
  * The dashboard home, per product view.
@@ -25,7 +36,8 @@ import DashboardHomeClient from "./DashboardHomeClient";
  * box whose rail has no projects page.
  */
 export default async function DashboardHome() {
-  if ((await resolveRequestProductView()) === "mail") {
+  const deploymentInfo = await getDeploymentInfoOrNull();
+  if ((await resolveRequestProductView(deploymentInfo)) === "mail") {
     return <MailConsole />;
   }
 
@@ -38,5 +50,15 @@ export default async function DashboardHome() {
     console.error("Failed to fetch initial dashboard data", error);
   }
 
-  return <DashboardHomeClient initialData={initialData} />;
+  const hostedCloud = deploymentInfo?.selfHosted === false && deploymentInfo.deployMode !== "desktop";
+  return (
+    <DashboardHomeClient
+      initialData={initialData}
+      planCard={hostedCloud ? (
+        <Suspense fallback={<CloudHomePlanCardSkeleton />}>
+          <HomePlanCard />
+        </Suspense>
+      ) : null}
+    />
+  );
 }

@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "准备好上线了吗？",
+    "plansAndBilling": "套餐与账单",
+    "description": "托管构建与部署，助力项目持续成长。",
+    "manageDescription": "在一处查看套餐、用量和账单。",
+    "purchasesUnavailable": "目前暂不支持新订阅。",
+    "viewPlans": "浏览套餐"
+  },
+  "welcome": {
+    "eyebrow": "一切就绪",
+    "title": "欢迎使用 {name}",
+    "description": "你的 Cloud 套餐已生效，开始使用吧。",
+    "dismiss": "关闭欢迎窗口",
+    "openProjects": "打开项目",
+    "viewPlan": "查看我的套餐"
+  },
   "capacity": {
     "title": "容量与用量",
     "subtitle": "您套餐包含的容量以及已用量。实时数据从 Openship Cloud 同步。",

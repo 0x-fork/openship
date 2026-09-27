@@ -16,6 +16,7 @@ import { ResourceMeter } from "./ResourceMeter";
 import { BillingTopups } from "./BillingTopups";
 import { BillingUsage } from "./BillingUsage";
 import { CloudPlanPicker } from "./CloudPlanPicker";
+import { CloudHomePlanCard } from "./CloudHomePlanCard";
 import type { ApiPlan } from "./PricingCards";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -172,6 +173,55 @@ describe("Cloud billing before the first subscription", () => {
     expect(container.textContent).toContain(copy.pricing.currentPlan);
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, status: "canceled" } }} />);
     expect(button("Subscribe to Hobby").disabled).toBe(false);
+  });
+});
+
+describe("Cloud home plan card", () => {
+  it("gives a new workspace a direct plan comparison without another catalog or checkout request", async () => {
+    await render(<CloudHomePlanCard state={free} />);
+    expect(container.textContent).toContain(copy.home.title);
+    expect(container.querySelector('a[href="/billing/plans"]')?.textContent).toContain(copy.home.viewPlans);
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it("replaces the offer with the verified current plan and billing access", async () => {
+    await render(<CloudHomePlanCard state={free} />);
+    await render(<CloudHomePlanCard state={paid} />);
+    expect(container.querySelector("h2")?.textContent).toBe("Hobby");
+    expect(container.textContent).toContain(copy.sidebar.statuses.active);
+    expect(container.querySelector('a[href="/billing/overview"]')).not.toBeNull();
+    expect(container.textContent).not.toContain(copy.home.title);
+    expect(container.querySelector('a[href="/billing/plans"]')).toBeNull();
+  });
+
+  it("recognizes complimentary access without prompting for another subscription", async () => {
+    await render(<CloudHomePlanCard state={complimentary} />);
+    expect(container.querySelector("h2")?.textContent).toBe("Scale");
+    expect(container.textContent).toContain(copy.complimentary.label);
+    expect(container.querySelector('a[href="/billing/overview"]')).not.toBeNull();
+    expect(container.textContent).not.toContain(copy.home.title);
+  });
+
+  it("does not advertise an available subscription while purchases are disabled", async () => {
+    await render(<CloudHomePlanCard state={{ ...free, billing: { enabled: false } }} />);
+    expect(container.textContent).toContain(copy.home.purchasesUnavailable);
+    expect(container.textContent).not.toContain(copy.home.title);
+    expect(container.querySelector('a[href="/billing/plans"]')).not.toBeNull();
+  });
+
+  it("does not invent a free or active plan when billing is unavailable", async () => {
+    await render(<CloudHomePlanCard state={null} />);
+    expect(container.textContent).toContain(copy.home.plansAndBilling);
+    expect(container.textContent).not.toContain(copy.sidebar.statuses.active);
+    expect(container.textContent).not.toContain(copy.home.title);
+    expect(container.querySelector('a[href="/billing/overview"]')).not.toBeNull();
+  });
+
+  it("shows the actual paused status and sends the customer to billing", async () => {
+    await render(<CloudHomePlanCard state={{ ...paid, status: "credit_exhausted" }} />);
+    expect(container.textContent).toContain(copy.sidebar.statuses.credit_exhausted);
+    expect(container.querySelector('a[href="/billing/overview"]')).not.toBeNull();
   });
 });
 

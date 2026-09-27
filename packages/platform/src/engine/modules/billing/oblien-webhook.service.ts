@@ -20,6 +20,7 @@ import {
 } from "@repo/platform/engine/modules/billing/oblien-webhook-crypto";
 
 import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
+import { observeVerifiedBillingEvent } from "../cloud-analytics/billing";
 
 const ROUTED_EVENT_TYPES = new Set<string>(OBLIEN_WEBHOOK_EVENTS);
 
@@ -301,7 +302,10 @@ export async function handleOblienWebhook(
       const [existing] = await db.select({ processedAt: schema.oblienWebhookEvent.processedAt })
         .from(schema.oblienWebhookEvent)
         .where(eq(schema.oblienWebhookEvent.oblienEventId, eventId)).limit(1);
-      if (existing?.processedAt) return;
+      if (existing?.processedAt) {
+        await observeVerifiedBillingEvent(orgId, eventType, payload.data, payload.timestamp);
+        return;
+      }
       // Every relevant notification refreshes provider truth. In particular,
       // old payment/suspension events cannot revert a newer paid entitlement.
       const { entitlement } = await sync();
@@ -321,6 +325,7 @@ export async function handleOblienWebhook(
           break;
       }
       // Stamp only after the mirror succeeds. A failed read remains retryable.
+      await observeVerifiedBillingEvent(orgId, eventType, payload.data, payload.timestamp);
       await upsertWebhookEventProcessed(db, eventId, eventType);
     });
   } catch (error) {
