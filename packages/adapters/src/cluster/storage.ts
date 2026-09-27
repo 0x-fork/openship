@@ -480,11 +480,15 @@ export class ClusterStorageAdapter {
       undefined,
       this.signal,
     );
-    const ownedClasses = classes.items.filter(
-      (object) =>
-        object.provisioner === "driver.longhorn.io" &&
-        object.metadata.labels?.["openship.io/addon"] === "longhorn",
-    );
+    const ownedClasses = classes.items
+      .filter(
+        (object) =>
+          object.provisioner === "driver.longhorn.io" &&
+          object.metadata.labels?.["openship.io/addon"] === "longhorn",
+      )
+      // List entries can omit their type. This endpoint identifies them as
+      // StorageClasses, so restore that identity before resolving cleanup URLs.
+      .map((object) => ({ ...object, apiVersion: "storage.k8s.io/v1", kind: "StorageClass" }));
     for (const object of [...install, ...uninstall, ...ownedClasses].filter(
       (o) => !o.metadata.namespace && o.kind !== "Namespace",
     )) {

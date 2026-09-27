@@ -44,7 +44,11 @@ function setup() {
   const request = vi.fn(async (method: string, path: string, body?: any) => {
     if (method === "GET") {
       if (path.startsWith("/apis/storage.k8s.io/v1/storageclasses?"))
-        return { items: [shared, local, custom] };
+        // Kubernetes list entries omit apiVersion/kind; the enclosing list
+        // defines their type, unlike a singular resource GET.
+        return {
+          items: [shared, local, custom].map(({ apiVersion, kind, ...object }) => object),
+        };
       if (path === "/api/v1/persistentvolumeclaims" || path === "/api/v1/persistentvolumes")
         return { items: [] };
       const found = objects.get(path);
