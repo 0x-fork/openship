@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "Yayına hazır mısınız?",
+    "plansAndBilling": "Planlar ve faturalandırma",
+    "description": "Büyümeye alan tanıyan, yönetilen derlemeler ve barındırma.",
+    "manageDescription": "Planınız, kullanımınız ve faturalarınız tek bir yerde.",
+    "purchasesUnavailable": "Yeni abonelikler şu anda kullanılamıyor.",
+    "viewPlans": "Planları keşfet"
+  },
+  "welcome": {
+    "eyebrow": "Her şey hazır",
+    "title": "{name} planına hoş geldiniz",
+    "description": "Cloud planınız etkin. Şimdi kullanmaya başlayabilirsiniz.",
+    "dismiss": "Karşılama penceresini kapat",
+    "openProjects": "Projeleri aç",
+    "viewPlan": "Planımı görüntüle"
+  },
   "capacity": {
     "title": "Kapasite ve Kullanım",
     "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler Openship Cloud'dan senkronize edilir.",

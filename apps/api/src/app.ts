@@ -305,6 +305,8 @@ setupWebSocket(app);
 
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
+  const { cloudAnalyticsRoutes } = await import("./modules/cloud-analytics/cloud-analytics.routes");
+  app.route("/api/cloud/telemetry", cloudAnalyticsRoutes);
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
   app.route("/api/cloud", cloudSaasRoutes);
 
@@ -452,6 +454,9 @@ if (env.CLOUD_MODE) {
     .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
 
   if (env.CLOUD_MODE) {
+    void import("@repo/platform/engine/modules/cloud-analytics/index")
+      .then(({ startCloudAnalytics }) => startCloudAnalytics())
+      .catch(() => console.warn("[cloud-analytics] Background delivery could not start."));
     void import("@repo/platform/engine/lib/oblien-client")
       .then(({ getOblienBillingApi }) => getOblienBillingApi().assertResellerSupport())
       .catch((error) =>

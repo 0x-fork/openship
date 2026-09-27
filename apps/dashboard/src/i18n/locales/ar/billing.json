@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "جاهز للانطلاق؟",
+    "plansAndBilling": "الخطط والفوترة",
+    "description": "بناء واستضافة مُدارة، مع مساحة للنمو.",
+    "manageDescription": "خطتك واستخدامك وفواتيرك في مكان واحد.",
+    "purchasesUnavailable": "الاشتراكات الجديدة غير متاحة حاليًا.",
+    "viewPlans": "استعرض الخطط"
+  },
+  "welcome": {
+    "eyebrow": "كل شيء جاهز",
+    "title": "مرحبًا بك في {name}",
+    "description": "خطتك السحابية مفعّلة. حان وقت الانطلاق.",
+    "dismiss": "إغلاق الترحيب",
+    "openProjects": "فتح المشاريع",
+    "viewPlan": "عرض خطتي"
+  },
   "capacity": {
     "title": "السعة والاستخدام",
     "subtitle": "السعة المضمّنة في خطتك ومقدار ما استخدمته. تتم مزامنة الأرقام الحية من Openship Cloud.",

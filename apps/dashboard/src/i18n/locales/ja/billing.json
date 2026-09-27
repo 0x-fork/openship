@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "公開の準備はできましたか？",
+    "plansAndBilling": "プランと請求",
+    "description": "ビルドとホスティングの管理を任せて、成長に集中。",
+    "manageDescription": "プラン、使用状況、請求をまとめて確認。",
+    "purchasesUnavailable": "現在、新規サブスクリプションは受け付けていません。",
+    "viewPlans": "プランを見る"
+  },
+  "welcome": {
+    "eyebrow": "準備が整いました",
+    "title": "{name} へようこそ",
+    "description": "Cloud プランが有効になりました。さっそく使ってみましょう。",
+    "dismiss": "ウェルカム画面を閉じる",
+    "openProjects": "プロジェクトを開く",
+    "viewPlan": "自分のプランを見る"
+  },
   "capacity": {
     "title": "容量と使用状況",
     "subtitle": "プランに含まれる容量と使用量です。ライブの数値は Openship Cloud から同期されます。",

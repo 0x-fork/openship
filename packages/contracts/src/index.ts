@@ -89,3 +89,4 @@ export * from "./cluster-storage";
 export * from "./project-cluster";
 export * from "./cluster-database";
 export * from "./mail-inputs";
+export * from "./cloud-analytics";

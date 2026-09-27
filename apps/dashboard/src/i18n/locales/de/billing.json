@@ -1,4 +1,21 @@
 {
+  "home": {
+    "label": "Openship Cloud",
+    "title": "Bereit zum Start?",
+    "plansAndBilling": "Tarife und Abrechnung",
+    "description": "Verwaltete Builds und Hosting, mit Platz zum Wachsen.",
+    "manageDescription": "Tarif, Nutzung und Abrechnung an einem Ort.",
+    "purchasesUnavailable": "Neue Abonnements sind derzeit nicht verfügbar.",
+    "viewPlans": "Tarife entdecken"
+  },
+  "welcome": {
+    "eyebrow": "Alles bereit",
+    "title": "Willkommen bei {name}",
+    "description": "Dein Cloud-Tarif ist aktiv. Legen wir los.",
+    "dismiss": "Willkommensmeldung schließen",
+    "openProjects": "Projekte öffnen",
+    "viewPlan": "Meinen Tarif ansehen"
+  },
   "capacity": {
     "title": "Kapazität & Nutzung",
     "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus Openship Cloud synchronisiert.",

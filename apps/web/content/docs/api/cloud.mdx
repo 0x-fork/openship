@@ -61,8 +61,8 @@ on top of the `cloud:admin` tag. A non-owner with a `cloud:admin` grant still ge
 
 Present only in cloud mode (`CLOUD_MODE`) — i.e. these run on Openship Cloud, not on your self-hosted box.
 All tenant-scoped operations forward to Oblien through the **caller's namespace token**; Oblien enforces the
-namespace boundary natively, so there is no SaaS-side ownership ledger. The `public` routes carry no session
-— they are reached by browser redirects and authenticated by a signed, single-use token in the URL.
+namespace boundary natively, so there is no SaaS-side ownership ledger. The public handoff routes are
+reached by browser redirects and authenticated by a signed, single-use token in the URL.
 
 
 <Callout title="These are mostly internal">
@@ -139,6 +139,21 @@ POST /api/cloud/analytics
     params: { type: 'Record<string, unknown>', description: 'Operation-specific query parameters passed through to Oblien.' },
   }}
 />
+
+### Dashboard product telemetry
+
+```
+POST /api/cloud/telemetry
+```
+
+This optional, first-party endpoint accepts only allowlisted dashboard page and checkout-navigation
+events. It is separate from the customer traffic analytics relay above and is not an SDK or MCP
+operation. It returns `404` unless production Cloud telemetry is explicitly configured.
+
+Requests must come from the configured dashboard Origin, use the browser's cookie session when
+signed in, and omit bearer authorization. The server verifies the current session before associating
+events with a user or organization. Browser events cannot report payments or other business outcomes;
+unrecognized properties and bodies larger than 4 KiB are rejected.
 
 ### Pages
 
@@ -278,6 +293,7 @@ from the dashboard.
 | --- | --- |
 | The connected cloud account (name, email, avatar). | `GET /api/cloud/account`<br />`cloud:read` |
 | Proxy Oblien analytics for a hostname in the caller's namespace. | `POST /api/cloud/analytics`<br />`cloud:write` |
+| Capture optional hosted dashboard product events with exact-origin and verified cookie identity checks. | `POST /api/cloud/telemetry`<br />`Handler authentication` |
 | Consent page mints a one-time handoff code (cookie session checked inline). | `POST /api/cloud/connect-authorize`<br />`Handler authentication` |
 | Complete the connect popup: exchange the PKCE code and store the cloud bearer. | `POST /api/cloud/connect-finalize`<br />`cloud:admin` · Self-hosted |
 | Validate connect params, then 302 to the dashboard consent page. | `GET /api/cloud/connect-handoff`<br />`Handler authentication` |
