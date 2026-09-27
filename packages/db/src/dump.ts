@@ -1381,6 +1381,27 @@ export function assertActiveDeploymentOwnership(tables: DatabaseDump["tables"]):
   }
 }
 
+const LEGACY_NETWORK_TABLES: Record<string, string> = {
+  server_cluster: "private_network",
+  cluster_network: "private_network_config",
+  cluster_member: "network_member",
+};
+
+/** File imports must never silently discard data from a newer schema. */
+export function assertDumpSchemaCompatible(dump: DatabaseDump): void {
+  for (const [name, rows] of Object.entries(dump.tables)) {
+    const table = TABLE_BY_SQL_NAME.get(LEGACY_NETWORK_TABLES[name] ?? name);
+    if (!table) {
+      throw new Error(`This export contains an unsupported table (${name}). Update the destination before importing.`);
+    }
+    const columns = new Set(Object.keys(getTableColumns(table)));
+    const unknown = new Set(rows.flatMap((row) => Object.keys(row).filter((key) => !columns.has(key))));
+    if (unknown.size) {
+      throw new Error(`This export contains unsupported fields in ${name}: ${[...unknown].join(", ")}. Update the destination before importing.`);
+    }
+  }
+}
+
 /**
  * Restore using a caller-owned transaction. This is the composition point for
  * workflows that must commit follow-up writes (for example credential
@@ -1399,9 +1420,8 @@ export async function restoreSubgraphInTransaction(
 
   // Older instance archives used the original network aggregate's cluster names.
   // Row property names and approved journal payloads are unchanged.
-  const legacyNetworks: Record<string, string> = { server_cluster: "private_network", cluster_network: "private_network_config", cluster_member: "network_member" };
   const tables = { ...dump.tables };
-  for (const [legacy, current] of Object.entries(legacyNetworks)) {
+  for (const [legacy, current] of Object.entries(LEGACY_NETWORK_TABLES)) {
     if (!tables[legacy]?.length) continue;
     if (tables[current]?.length) throw new Error(`Archive contains both ${legacy} and ${current}.`);
     tables[current] = tables[legacy];

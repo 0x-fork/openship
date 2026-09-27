@@ -43,14 +43,10 @@ export function ExportPanel({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [passphrase, setPassphrase] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [downloaded, setDownloaded] = useState<{ filename: string; manifest?: TransferManifest } | null>(null);
   const downloadLock = useRef(false);
   const selectionKey = JSON.stringify({ ...selection, history: ALL_HISTORY, includeSecrets: true });
   const validSelection = selection.scope !== "projects" || !!selection.projectIds?.length;
-  const needsPassword = selection.scope !== "projects" && selection.includeSecrets !== false;
-  const mismatch = needsPassword && !!passphrase && passphrase !== confirm;
   const selectedRows = preview
     ? preview.core + selection.history.reduce((sum, category) => sum + preview.history[category], 0)
     : null;
@@ -93,19 +89,13 @@ export function ExportPanel({
 
   const patch = (value: Partial<ExportSelection>) =>
     setSelection((current) => ({ ...current, ...value }));
-  const generatePassword = () => {
-    const bytes = crypto.getRandomValues(new Uint8Array(24));
-    const value = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-    setPassphrase(value);
-    setConfirm(value);
-  };
   const download = async () => {
-    if (downloadLock.current || loading || !preview || !validSelection || mismatch || (needsPassword && !passphrase)) return;
+    if (downloadLock.current || loading || !preview || !validSelection) return;
     downloadLock.current = true;
     setBusy(true);
     setError("");
     try {
-      const file = await dataTransferApi.export(needsPassword ? passphrase : undefined, selection);
+      const file = await dataTransferApi.export(undefined, selection);
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(file)], { type: "application/json" }),
       );
@@ -138,7 +128,7 @@ export function ExportPanel({
     <button
       type="button"
       className={transferButtonClass}
-      disabled={busy || loading || !preview || !validSelection || (needsPassword && (!passphrase || mismatch))}
+      disabled={busy || loading || !preview || !validSelection}
       onClick={() => void download()}
     >
       {busy ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="download" className="size-4" />}
@@ -168,8 +158,8 @@ export function ExportPanel({
         {downloadResult || (
           <>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Includes all environments, services, deployment history, connections, domains,
-              backup settings, environment values, and keys. The JSON file is unencrypted and
+              Includes all environments, services, deployment history, analytics, connections,
+              domains, backup settings, environment values, and keys. The JSON file is unencrypted and
               imports without a password.
             </p>
             <p className="text-xs leading-relaxed text-muted-foreground">
@@ -192,9 +182,9 @@ export function ExportPanel({
   return (
     <div className="space-y-4">
       <p className="text-sm leading-relaxed text-muted-foreground">
-        Export project configuration, environments, deployments, service connections, and
-        credentials for another control plane. Workloads on the same server can keep their existing
-        target bindings.
+        Export the control plane, including stored environment values, server keys,
+        credentials, configuration, and history. The JSON file is unencrypted and needs no
+        password. Workloads on the same servers keep their existing target bindings.
       </p>
       <label className="block space-y-1 text-sm font-medium text-foreground">
         Export scope
@@ -266,9 +256,7 @@ export function ExportPanel({
       )}
       <TransferOption
         label="Environment values, keys, and credentials"
-        description={selection.scope === "projects"
-          ? "Included as readable JSON, with inline Compose configuration and secret files stored in metadata."
-          : "Includes inline Compose configuration and secret files stored in metadata. Protected with the transfer password below."}
+        description="Included as readable JSON, with server keys, inline Compose configuration, and secret files stored in metadata."
         checked={selection.includeSecrets !== false}
         onChange={(includeSecrets) => patch({ includeSecrets })}
         disabled={busy}
@@ -320,65 +308,6 @@ export function ExportPanel({
         </p>
       )}
       {validSelection && <TransferWarnings warnings={preview?.manifest?.warnings ?? []} />}
-      {needsPassword && (
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Save this password separately. The destination needs it to restore environment values
-            and credentials.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium text-foreground">
-              Transfer password
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={passphrase}
-                onChange={(event) => setPassphrase(event.target.value)}
-                className={transferInputClass}
-                disabled={busy}
-              />
-            </label>
-            <label className="space-y-1 text-xs font-medium text-foreground">
-              Confirm password
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={confirm}
-                onChange={(event) => setConfirm(event.target.value)}
-                className={transferInputClass}
-                disabled={busy}
-              />
-            </label>
-          </div>
-          {mismatch && <p className="text-xs text-danger">The passwords do not match.</p>}
-          <div className="flex gap-4 text-xs">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={generatePassword}
-              className="text-primary"
-            >
-              Generate password
-            </button>
-            <button
-              type="button"
-              disabled={!passphrase || busy}
-              className="inline-flex items-center gap-1 text-primary disabled:opacity-50"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(passphrase);
-                  showToast("Transfer password copied.", "success");
-                } catch {
-                  setError("Could not copy the password. Copy it manually before exporting.");
-                }
-              }}
-            >
-              <UiIcon name="clipboard" className="size-3" />
-              Copy password
-            </button>
-          </div>
-        </div>
-      )}
       {downloadResult}
       {errorMessage}
       {downloadButton}

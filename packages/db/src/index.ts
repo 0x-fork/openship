@@ -39,6 +39,7 @@ export {
   restoreSubgraph,
   restoreSubgraphInTransaction,
   assertActiveDeploymentOwnership,
+  assertDumpSchemaCompatible,
   deleteProjectSubgraph,
   dumpDatabase,
   restoreDatabase,

@@ -667,9 +667,24 @@ describe("secret-codec round-trips (extract → seal → decrypt)", () => {
     expect(decrypt(sealedCell.hmacSecret as string)).toBe("sig");
   });
 
-  it("returns null for empty/absent cells", () => {
-    expect(extractPlaintext(spec("scalar", "value"), "id1", null)).toBeNull();
-    expect(extractPlaintext(spec("scalar", "value"), "id1", "")).toBeNull();
+  it.each(["scalar", "enc1", "plaintext", "map", "notification-config", "json"] as const)(
+    "preserves explicit clears while leaving absent %s columns untouched",
+    (scheme) => {
+      const column = spec(scheme, "value");
+      expect(extractPlaintext(column, "id1", undefined)).toBeNull();
+      const cleared = extractPlaintext(column, "id1", null);
+      expect(cleared).not.toBeNull();
+      expect(sealForInstance(column, cleared!, { old: "stale" })).toBeNull();
+    },
+  );
+
+  it("restores empty values instead of keeping destination credentials", () => {
+    const scalar = spec("scalar", "value");
+    expect(decrypt(sealForInstance(scalar, extractPlaintext(scalar, "id1", "")!) as string)).toBe("");
+    const credential = spec("enc1", "sshPassword");
+    expect(sealForInstance(credential, extractPlaintext(credential, "id1", "")!)).toBe("");
+    const map = spec("map", "envVars");
+    expect(sealForInstance(map, extractPlaintext(map, "id1", {})!)).toEqual({});
   });
 });
 

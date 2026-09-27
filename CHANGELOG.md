@@ -3,6 +3,19 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
+## Unreleased
+
+### Fixed
+
+- Instance and project exports include plaintext environment values, server keys
+  and credentials by default, without an export password. Imports still read
+  older encrypted archives and encrypt credentials with the destination's key.
+- Instance imports preserve the archive's scope and default to full replacement
+  after confirmation. Project overwrite removes destination-only records in
+  selected categories and applies cleared credentials atomically.
+- Project exports retain overview analytics for normalized hostnames, including
+  `www` domains. New imports reject unsupported fields before changing any data.
+
 ## 0.8.0
 
 Scale applications, PostgreSQL and Redis across your own servers, connect those

@@ -67,7 +67,7 @@ export function transferSecretsRequirePassphrase(secrets: TransferSecrets | null
   return !!secrets && !isPlaintextSecrets(secrets);
 }
 
-/** Read plain project values or unlock a legacy/password-protected bundle. */
+/** Read plaintext exports or unlock a legacy password-protected bundle. */
 export function openTransferSecrets(
   secrets: TransferSecrets | null,
   passphrase?: string,
