@@ -3,15 +3,15 @@ import { MailConsole } from "./emails/_components/mail-console";
 import { serverApi } from "@/lib/server/api";
 import { getDeploymentInfoOrNull } from "@/lib/server/session";
 import { resolveRequestProductView } from "@/lib/server/product-view";
-import { CloudHomePlanCard, CloudHomePlanCardSkeleton } from "@/components/billing/CloudHomePlanCard";
+import { CloudHomePlanCard } from "@/components/billing/CloudHomePlanCard";
 import { getBillingPageState } from "./billing/_components/billing-state";
 import DashboardHomeClient from "./DashboardHomeClient";
 
 async function HomePlanCard() {
   const result = await getBillingPageState();
-  // A workspace member without billing access should not see a purchase prompt.
-  if (result.kind === "unavailable" && result.reason === "billing-forbidden") return null;
-  return <CloudHomePlanCard state={result.kind === "ok" ? result.state : null} />;
+  // Show an offer only after billing confirms this workspace's eligibility.
+  if (result.kind !== "ok") return null;
+  return <CloudHomePlanCard state={result.state} />;
 }
 
 /**
@@ -55,7 +55,7 @@ export default async function DashboardHome() {
     <DashboardHomeClient
       initialData={initialData}
       planCard={hostedCloud ? (
-        <Suspense fallback={<CloudHomePlanCardSkeleton />}>
+        <Suspense fallback={null}>
           <HomePlanCard />
         </Suspense>
       ) : null}

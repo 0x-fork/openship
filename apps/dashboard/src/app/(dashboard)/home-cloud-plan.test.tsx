@@ -48,6 +48,7 @@ describe("home Cloud billing boundary", () => {
     mocks.billing.mockResolvedValue({ kind: "ok", state });
     const page = await DashboardHome();
     expect(page.props.initialData).toEqual({ projects: [] });
+    expect(page.props.planCard.props.fallback).toBeNull();
     expect(mocks.billing).not.toHaveBeenCalled();
     const slot = page.props.planCard.props.children;
     const card = await slot.type();
@@ -63,10 +64,10 @@ describe("home Cloud billing boundary", () => {
     expect(await slot.type()).toBeNull();
   });
 
-  it("offers billing navigation without guessing a plan during a provider outage", async () => {
+  it("hides the card when billing cannot confirm that this is a new customer", async () => {
     mocks.billing.mockResolvedValue({ kind: "unavailable", reason: "billing-unreachable" });
     const page = await DashboardHome();
     const slot = page.props.planCard.props.children;
-    expect((await slot.type()).props.state).toBeNull();
+    expect(await slot.type()).toBeNull();
   });
 });

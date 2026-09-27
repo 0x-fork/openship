@@ -12,6 +12,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import type { BillingState } from "@/lib/api/billing";
 import { PlanResources } from "./PlanResources";
+import { CloudPlanIllustration } from "./CloudPlanIllustration";
 
 function readAcknowledged(key: string): string[] {
   try {
@@ -110,39 +111,33 @@ function WelcomeContent({ state, onClose }: { state: BillingState; onClose: () =
         size="icon"
         aria-label={copy.dismiss}
         onClick={onClose}
-        className="absolute end-4 top-4"
+        className="absolute end-4 top-4 z-10"
       >
         <Icon name="close" className="size-4" aria-hidden="true" />
       </Button>
-      <div
-        className="relative mb-5 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"
-        aria-hidden="true"
-      >
-        <Icon name="rocket" className="size-7" />
-        <span className="absolute -bottom-1 -end-1 flex size-6 items-center justify-center rounded-full bg-card text-success">
-          <Icon name="check-circle" className="size-5" />
-        </span>
+      <CloudPlanIllustration subscribed className="mx-auto mb-4" />
+      <div className="text-center">
+        <p className="inline-flex rounded-full bg-success/10 px-3 py-1 text-sm font-medium text-success">{copy.eyebrow}</p>
+        <h2 id={titleId} className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
+          {interpolate(copy.title, { name: plan?.name ?? PLANS[state.tier].name })}
+        </h2>
+        <p id={descriptionId} className="mx-auto mt-3 max-w-sm text-sm leading-6 text-muted-foreground">
+          {copy.description}
+        </p>
       </div>
-      <p className="text-sm font-medium text-success">{copy.eyebrow}</p>
-      <h2 id={titleId} className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-        {interpolate(copy.title, { name: plan?.name ?? PLANS[state.tier].name })}
-      </h2>
-      <p id={descriptionId} className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        {copy.description}
-      </p>
       {plan && (
         <div className="mt-6">
           <PlanResources plan={plan} interval={state.subscription?.interval} compact />
         </div>
       )}
-      <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-        <Button asChild className="sm:flex-1">
+      <div className="mt-6 flex flex-col gap-2">
+        <Button asChild className="h-11 w-full">
           <Link href={hasNoProjects ? "/library" : "/projects"} onClick={onClose}>
             {hasNoProjects ? t.billing.onboarding.stepDeploy : copy.openProjects}
             <Icon name="arrow-right" className="size-4 rtl:rotate-180" aria-hidden="true" />
           </Link>
         </Button>
-        <Button asChild variant="secondary" className="sm:flex-1">
+        <Button asChild variant="ghost" className="h-10 w-full text-muted-foreground">
           <Link href="/billing/overview" onClick={onClose}>
             {copy.viewPlan}
           </Link>
