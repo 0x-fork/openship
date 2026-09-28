@@ -66,9 +66,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
-  // `dns` is still accepted, though the DNS tab is gone: AutoDnsPanel deep-links to
-  // `/settings?tab=dns` in two places (and a render test pins that string), and a value
-  // missing from this list silently falls back to "general".
+  // Keep old DNS bookmarks working now that tokens live in Credentials.
   const allowedTabs: SettingsTabId[] = ["general", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
   const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
   // DNS credentials moved into Credentials — one screen for every third-party secret

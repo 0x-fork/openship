@@ -90,7 +90,7 @@ its deadline and **Certificate logs**.
 
 | State or message | What to do |
 |---|---|
-| No DNS provider connected | Connect Cloudflare in **Settings → DNS**, or choose **Manual TXT** and generate a TXT record. |
+| No DNS provider connected | Choose **Connect a DNS provider** in the DNS panel (also available in **Settings → Credentials**), or choose **Manual TXT** and generate a TXT record. |
 | TXT record not visible | Compare both name and value. If the provider appends your zone name, enter only the relative part. Keep other TXT values, allow propagation, then **Check TXT & enable HTTPS**. |
 | Connection interrupted | Reopen the panel or use **Refresh status**. An accepted operation continues on the server; the saved attempt can resume after a restart. |
 | TXT challenge expired or CA order invalid | Cancel the old attempt if needed and start again. Publish the new value; remove only the previous attempt's value. |

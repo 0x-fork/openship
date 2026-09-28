@@ -14,7 +14,11 @@ export function useDialogFocus(onClose: () => void) {
   }, []);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.defaultPrevented) return;
     if (event.key === "Escape") {
+      // Let an open picker handle Escape first, including when its menu is
+      // portaled outside the dialog. A second Escape closes this dialog.
+      if (dialog.current?.querySelector('[aria-haspopup][aria-expanded="true"]')) return;
       event.preventDefault();
       event.stopPropagation();
       onClose();
