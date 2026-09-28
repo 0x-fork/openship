@@ -97,3 +97,34 @@ describe("Cloud custom-domain certificates", () => {
     expect(pages.renewSSL).not.toHaveBeenCalled();
   });
 });
+
+describe("Cloud workspace certificate bindings", () => {
+  let domains: { get: ReturnType<typeof vi.fn>; renewSSL: ReturnType<typeof vi.fn> };
+  let client: Oblien;
+  beforeEach(() => {
+    domains = {
+      get: vi.fn(async () => ({ customDomain: hostname, sslStatus: "active", sslExpiry: expiry })),
+      renewSSL: vi.fn(),
+    };
+    routes.mockResolvedValue({ data: [{ hostname, namespace: "ns-one", owner_type: "workspace", owner_id: "ws-one", is_custom: 1 }] });
+    client = { domain: { routes }, pages, workspace: vi.fn(() => ({ domains })) } as unknown as Oblien;
+    provider = new CloudInfraProvider(client, { namespace: "ns-one" });
+  });
+
+  it("verifies the certificate bound to the requested workspace hostname", async () => {
+    await expect(provider.verifyCert(hostname)).resolves.toMatchObject({ verified: true, expiresAt: expiry });
+    expect(domains.renewSSL).not.toHaveBeenCalled();
+  });
+
+  it.each(["verifyCert", "renewCert"] as const)("%s rejects a replacement hostname before reading or renewing its certificate", async (operation) => {
+    domains.get.mockResolvedValue({ customDomain: "replacement.example.com", sslStatus: "active", sslExpiry: expiry });
+    await expect(provider[operation](hostname)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_CHANGED", statusCode: 409 });
+    expect(domains.renewSSL).not.toHaveBeenCalled();
+  });
+
+  it("does not accept a certificate for a different Docker workspace in the same namespace", async () => {
+    provider = new CloudInfraProvider(client, { namespace: "ns-one", dockerWorkspaceId: "ws-other" });
+    await expect(provider.renewCert(hostname)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_NOT_CONNECTED" });
+    expect(domains.renewSSL).not.toHaveBeenCalled();
+  });
+});

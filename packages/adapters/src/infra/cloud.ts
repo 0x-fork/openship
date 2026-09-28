@@ -21,6 +21,12 @@ const disconnected = () => new AppError(
   409, "CLOUD_DOMAIN_NOT_CONNECTED",
 );
 
+function checkDomainBinding(bound: string | null | undefined, domain: string): void {
+  if (typeof bound !== "string" || normalizeHostname(bound) !== normalizeHostname(domain)) {
+    throw new AppError("The Cloud domain binding changed. Refresh Domains & Routes and retry.", 409, "CLOUD_DOMAIN_CHANGED");
+  }
+}
+
 /** Routing and certificates are provider-owned; no host proxy or certbot here. */
 export class CloudInfraProvider implements RoutingProvider, SslProvider {
   readonly certificateManagement = "provider" as const;
@@ -48,11 +54,16 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
 
   private async pageDomain(slug: string, domain: string): Promise<PageDomainInfo> {
     const { domain: info } = await this.pages.getDomain(slug) as { domain: PageDomainInfo | null };
-    const bound = info?.customDomain ?? info?.domain;
-    if (typeof bound !== "string" || normalizeHostname(bound) !== normalizeHostname(domain)) {
-      throw new AppError("The Cloud domain binding changed. Refresh Domains & Routes and retry.", 409, "CLOUD_DOMAIN_CHANGED");
-    }
+    checkDomainBinding(info?.customDomain ?? info?.domain, domain);
     return info!;
+  }
+
+  private async workspaceDomain(workspaceId: string, domain: string) {
+    if (this.options.dockerWorkspaceId && workspaceId !== this.options.dockerWorkspaceId) throw disconnected();
+    const domains = this.client.workspace(workspaceId).domains;
+    const info = await domains.get();
+    checkDomainBinding(info?.customDomain, domain);
+    return { domains, info: info! };
   }
 
   private async certificatePage(domain: string) {
@@ -137,14 +148,11 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       return;
     }
     if (owner.owner_type !== "workspace") throw new Error("Cloud route is owned by an unsupported resource type");
-    const ws = this.client.workspace(owner.owner_id);
     if (owner.is_custom) {
-      const current = await ws.domains.get();
-      if (current?.customDomain.toLowerCase() !== domain.toLowerCase()) {
-        throw new Error("Cloud domain changed while removing its route; retry the operation");
-      }
-      await ws.domains.disconnect();
+      const { domains } = await this.workspaceDomain(owner.owner_id, domain);
+      await domains.disconnect();
     } else {
+      const ws = this.client.workspace(owner.owner_id);
       const ports = await ws.publicAccess.list();
       let removed = false;
       for (const exposed of ports) {
@@ -179,8 +187,8 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       return this.certificate(domain, info.ssl?.status ?? info.sslStatus, info.ssl?.expiresAt ?? info.sslExpiry);
     }
     if (owner.owner_type !== "workspace") throw new Error("Certificate is owned by an unsupported cloud resource");
-    const info = await this.client.workspace(owner.owner_id).domains.get();
-    return this.certificate(domain, info?.sslStatus, info?.sslExpiry);
+    const { info } = await this.workspaceDomain(owner.owner_id, domain);
+    return this.certificate(domain, info.sslStatus, info.sslExpiry);
   }
 
   async provisionCert(domain: string, opts?: ProvisionCertOptions): Promise<SslResult> {
@@ -198,7 +206,10 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       await this.pageDomain(page.slug, domain);
       await this.pages.renewSSL(page.slug);
     }
-    else if (owner.owner_type === "workspace") await this.client.workspace(owner.owner_id).domains.renewSSL();
+    else if (owner.owner_type === "workspace") {
+      const { domains } = await this.workspaceDomain(owner.owner_id, domain);
+      await domains.renewSSL();
+    }
     else throw new Error("Certificate is owned by an unsupported cloud resource");
     const result = await this.verifyCert(domain);
     return result.verified ? { ...result, reason: "renewed" } : result;
