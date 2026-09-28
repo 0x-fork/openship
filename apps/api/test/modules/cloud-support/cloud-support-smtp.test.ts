@@ -168,7 +168,8 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
   state.url = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
   ({ POST: post } = await import("../../../../web/src/app/api/contact/route"));
-});
+  // Cold PostgreSQL WASM startup and route transforms contend with the full API suite.
+}, 30_000);
 beforeEach(async () => {
   await client.exec("TRUNCATE cloud_support_ticket CASCADE");
   delivered.length = 0;

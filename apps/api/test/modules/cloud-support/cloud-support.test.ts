@@ -83,7 +83,8 @@ beforeAll(async () => {
     ),
   );
   app.route("/api/cloud/support", cloudSupportRoutes);
-});
+  // Cold PostgreSQL WASM startup and route transforms contend with the full API suite.
+}, 30_000);
 beforeEach(async () => {
   state.env.CLOUD_MODE = true;
   await client.exec("TRUNCATE cloud_support_ticket CASCADE");
