@@ -245,7 +245,7 @@ export default function AppInstallPage() {
   const { t, locale } = useI18n();
   const w = t.projectSettings.appInstall;
   const { showToast } = useToast();
-  const { baseDomain, deployMode, selfHosted } = usePlatform();
+  const { baseDomain, deployMode } = usePlatform();
   // Desktop mode → the "open on localhost / forward the port" hints are relevant
   // (a VPS is already public; a local app is already localhost).
   const isDesktop = deployMode === "desktop";
@@ -1062,11 +1062,11 @@ export default function AppInstallPage() {
         }
       };
 
-      // Pre-deploy DNS gate (self-hosted custom domain): surface the records to add
+      // Pre-deploy DNS gate (custom domains): surface the records to add
       // or auto-configure BEFORE the deploy so DNS is pointed when the first-deploy
       // SSL attempt runs.
       const pendingDnsTargets = appInstallDnsTargets(routes ?? []);
-      if (selfHosted && pendingDnsTargets.length > 0) {
+      if (pendingDnsTargets.length > 0) {
         const projectInfo = await projectsApi.getInfo(pid).catch(() => null);
         const domainRows = Array.isArray(projectInfo?.data?.project?.domains)
           ? projectInfo.data.project.domains
@@ -1091,7 +1091,9 @@ export default function AppInstallPage() {
                 }}
               />
             ),
+            width: "100%",
             maxWidth: "560px",
+            showCloseButton: false,
           });
           return;
         }
