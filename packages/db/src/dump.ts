@@ -756,6 +756,8 @@ const TABLES: ReadonlyArray<TableSpec> = [
  * whole-instance export that claims to carry "every migration-managed table".
  */
 export const EXCLUDED_TABLES: Record<string, string> = {
+  cloud_support_ticket: "Private Cloud support requests; never export one customer's correspondence to another installation",
+  cloud_support_message: "Private Cloud support correspondence and mail delivery state",
   cloud_analytics_event: "Cloud-only telemetry delivery and deduplication; never migrate into a local installation",
   cloud_analytics_checkout: "Cloud-only analytics checkout correlation",
   cloud_analytics_workspace: "Cloud-only analytics subscription snapshots",
