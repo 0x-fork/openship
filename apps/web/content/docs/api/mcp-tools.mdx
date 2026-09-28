@@ -622,6 +622,12 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/cloud/resource-proxy` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `GET /api/cloud/route-registry` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/send-invitation` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/support` | Public Cloud support intake, including customers who cannot sign in. Only returns a receipt; no ticket data can be read anonymously. |
+| `GET /api/cloud/support/tickets` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `GET /api/cloud/support/tickets/:id` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `PATCH /api/cloud/support/tickets/:id` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `POST /api/cloud/support/tickets/:id/replies` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `POST /api/cloud/support/tickets/:id/retry` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
 | `POST /api/cloud/teardown-project` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/telemetry` | Optional hosted dashboard product telemetry; validates the exact Origin and associates only verified cookie sessions. Not an SDK/MCP operation. |
 | `POST /api/cloud/token` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
