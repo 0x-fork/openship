@@ -1,4 +1,7 @@
 {
+  "appInstall": {
+    "exposeTitle": "Dominios y enrutamiento"
+  },
   "settingSection": {
     "edit": "Editar",
     "save": "Guardar",

@@ -109,6 +109,7 @@
     "unmanaged": "Bu uygulamanın henüz yapılandırılabilir bir ayarı yok."
   },
   "appInstall": {
+    "exposeTitle": "Alan adları ve yönlendirme",
     "install": "Kur",
     "installing": "Kuruluyor…",
     "advanced": "Gelişmiş dağıtım seçenekleri",

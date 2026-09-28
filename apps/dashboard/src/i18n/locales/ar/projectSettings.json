@@ -1,4 +1,7 @@
 {
+  "appInstall": {
+    "exposeTitle": "النطاقات والتوجيه"
+  },
   "settingSection": {
     "edit": "تعديل",
     "save": "حفظ",

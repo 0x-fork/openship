@@ -1,4 +1,7 @@
 {
+  "appInstall": {
+    "exposeTitle": "域名与路由"
+  },
   "settingSection": {
     "edit": "编辑",
     "save": "保存",

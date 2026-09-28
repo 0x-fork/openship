@@ -26,7 +26,7 @@
  */
 
 import type { ComposeHealthcheck } from "./types";
-import type { AppManagement, AppSettingGroup } from "./app-settings";
+import type { AppInstallLayout, AppManagement, AppSettingGroup } from "./app-settings";
 import type { AppMinResources } from "./resources";
 import { resolveServiceHostnameLabel } from "./service-routing";
 import catalog from "./apps/catalog.json";
@@ -325,10 +325,11 @@ export interface AppEndpoint {
   kind: "http" | "tcp";
   /** Must be reachable for the app to be usable (default true). */
   required?: boolean;
-  /** Declared reachability intent — a DB defaults to internal, a UI to public. */
+  /** Declared reachability intent — defaults to public for HTTP and internal for TCP. */
   scope?: "public" | "internal" | "local";
-  /** Pre-selected exposure mode in the install wizard. Else the wizard's own
-   *  default: http → domain when Cloud is connected, port otherwise; tcp → publish. */
+  /** Pre-selected routing mode, constrained by allowedModes. Otherwise public HTTP
+   *  uses a domain, local/internal HTTP uses a port, and TCP stays internal unless
+   *  scope is public. These defaults do not depend on the deployment target. */
   defaultMode?: EndpointMode;
   /** Restrict the exposure choices offered (else all valid for the kind). */
   allowedModes?: readonly EndpointMode[];
@@ -424,6 +425,8 @@ export interface AppTemplate {
   flowHref?: string;
   /** Curated day-2 settings surfaced after install (see app-settings.ts). */
   settings?: readonly AppSettingGroup[];
+  /** Optional install-form grouping and columns. Omit for the default separate name card. */
+  installLayout?: AppInstallLayout;
   /**
    * How the installed app is managed. Omit → derived: "schema" when `settings`
    * exist, else none (raw project tabs only). Set explicitly for apps with a

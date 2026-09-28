@@ -242,6 +242,7 @@ const settingField = z.object({
   patternError: z.string().optional(),
   default: z.string().optional(),
   placeholder: z.string().optional(),
+  fullWidth: z.boolean().optional(),
   secret: z.boolean().optional(),
   trueValue: z.string().optional(),
   falseValue: z.string().optional(),
@@ -263,7 +264,13 @@ const settingGroup = z.object({
   id: z.string(),
   label: z.string(),
   description: z.string().optional(),
+  columns: z.union([z.literal(1), z.literal(2)]).optional(),
   fields: z.array(settingField),
+});
+
+const installLayout = z.object({
+  settings: z.enum(["single", "split", "grouped"]),
+  columns: z.union([z.literal(1), z.literal(2)]).optional(),
 });
 
 const management = z.union([
@@ -284,6 +291,7 @@ export const appTemplateSchema = z.object({
   configFields: z.array(configField).optional(),
   flowHref: z.string().optional(),
   settings: z.array(settingGroup).optional(),
+  installLayout: installLayout.optional(),
   management: management.optional(),
   prepare: z.array(prepareStep).optional(),
   connection: connection.optional(),
