@@ -112,6 +112,31 @@ fresh TXT value, or switch to **Automatic provider** for unattended renewal. See
    space or a missing character will fail the match.
 3. Save, wait for propagation, and click **Verify** again.
 
+Cloudflare represents TXT content with surrounding double quotes, for example
+`"ownership-token"`. Automatic DNS setup writes this form and repairs older
+unquoted values when you apply the DNS plan again. The quotes delimit the DNS
+string; they are not extra characters in the ownership token. Openship accepts
+quoted resolver answers and joins chunks within a single TXT record.
+
+## Cloud DNS is correct, but the certificate check fails
+
+Openship Cloud gets its certificate status from the Cloud provider. Connecting
+Cloudflare automates DNS records; it does not move Cloud certificate issuance to
+the Openship API server. A Cloudflare certificate notification alone does not
+confirm the origin's certificate or the application's route.
+
+If the response contains `CLOUD_DOMAIN_NOT_CONNECTED`, the provider has no route
+for this domain and project. Check the service mapping in **Domains & Routes**,
+retry routing, then verify HTTPS. `CLOUD_DOMAIN_CHANGED` means the binding changed
+during the operation; refresh the domain details before retrying. Openship does
+not adopt another project's route to repair this condition.
+
+Older Cloud adapters could throw `undefined is not an object` while reading
+`info?.ssl.status`, even after the provider issued a certificate. Update the
+Openship API to a version that accepts both flat and nested provider SSL status
+responses, then use **Recheck SSL**. Rechecking reads the existing certificate
+and does not request another one.
+
 <Callout title="Already verified?" type="info">
 If you re-run Verify on a domain that's already done, Openship simply replies **"Already verified"** and
 changes nothing — that's expected, not an error.
