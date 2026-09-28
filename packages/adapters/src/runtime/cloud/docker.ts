@@ -92,11 +92,32 @@ export class CloudDockerRuntime extends DockerRuntime {
       assertDockerWorkspaceOwner(info, this.options.namespace);
       if (!isDockerWorkspaceRunning(info)) throw new Error("The project's Docker workspace is stopped. Start a service or deploy to resume it.");
       const runtime = await this.workspaceRuntime();
+      let healthFailure = "Runtime proxy health did not return the expected bridge version";
       const ready = async () => {
         try {
           const response = await runtime.proxy(CLOUD_DOCKER_BRIDGE_PORT).fetch("/health", { signal: AbortSignal.timeout(5000), redirect: "error" });
-          return response.ok && await response.text() === CLOUD_DOCKER_BRIDGE_VERSION;
-        } catch { return false; }
+          if ([404, 405, 501].includes(response.status)) {
+            // The proxy is a provider capability, not the Python workload.
+            // Reinstalling/restarting a healthy bridge cannot repair its absence.
+            await response.body?.cancel().catch(() => {});
+            throw new AppError(
+              `The Cloud provider's Runtime proxy is unavailable (HTTP ${response.status}). The provider must enable authenticated HTTP and WebSocket proxy support for this workspace before deployment can continue.`,
+              502, "CLOUD_RUNTIME_PROXY_UNAVAILABLE",
+            );
+          }
+          healthFailure = response.ok
+            ? "Runtime proxy health did not return the expected bridge version"
+            : `Runtime proxy health returned HTTP ${response.status}`;
+          if (!response.ok) {
+            await response.body?.cancel().catch(() => {});
+            return false;
+          }
+          return await response.text() === CLOUD_DOCKER_BRIDGE_VERSION;
+        } catch (error) {
+          if (error instanceof AppError) throw error;
+          healthFailure = "Runtime proxy health request failed or timed out";
+          return false;
+        }
       };
       if (await ready()) return;
       await this.executor.exec("docker info --format '{{.ServerVersion}}'", { timeout: 60_000 });
@@ -131,8 +152,10 @@ export class CloudDockerRuntime extends DockerRuntime {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
       const failed = (await workspace.workloads.list({ name: BRIDGE_WORKLOAD })).find(item => item.name === BRIDGE_WORKLOAD);
-      const diagnosis = failed ? await workspace.workloads.logs(failed.id).catch(() => null) : null;
-      throw new Error(`The workspace Docker connection did not become ready${diagnosis ? `: ${JSON.stringify(diagnosis).slice(-1500)}` : ""}`);
+      const diagnosis = failed ? await workspace.workloads.logs(failed.id, { signal: AbortSignal.timeout(5000) }).catch(() => null) : null;
+      const logTail = typeof diagnosis?.logs === "string" ? diagnosis.logs.trim().slice(-1500) : "";
+      const state = String(failed?.state ?? failed?.status ?? "unknown").slice(0, 40);
+      throw new Error(`The workspace Docker connection did not become ready. ${healthFailure}. Bridge state: ${state}.${logTail ? ` Bridge logs: ${logTail}` : " No bridge errors were recorded."}`);
     };
     return this.bridgePromise ??= (this.options.bridgeLock ? this.options.bridgeLock.run(initialize) : initialize())
       .catch(error => { this.bridgePromise = undefined; throw error; });

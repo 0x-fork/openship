@@ -79,6 +79,40 @@ beforeEach(async () => {
 });
 afterEach(async () => { await runtime?.dispose(); vi.restoreAllMocks(); });
 describe("containers on one Oblien Docker workspace", () => {
+  it("reports a missing provider proxy immediately without reinstalling or restarting the bridge", async () => {
+    ws.runtime.mockResolvedValue({ proxy: () => ({ fetch: async () => new Response("404 page not found", { status: 404 }) }) });
+    ws.workloads = { list: vi.fn(), create: vi.fn(), stop: vi.fn(), start: vi.fn() };
+    await expect(runtime["ensureBridge"]()).rejects.toMatchObject({
+      code: "CLOUD_RUNTIME_PROXY_UNAVAILABLE", statusCode: 502,
+      message: expect.stringContaining("HTTP 404"),
+    });
+    expect(runtime.executor.writeFile).not.toHaveBeenCalled();
+    expect(ws.workloads.list).not.toHaveBeenCalled();
+    expect(ws.restart).not.toHaveBeenCalled();
+    expect(ws.delete).not.toHaveBeenCalled();
+    ws.runtime.mockResolvedValue({ proxy: () => ({ fetch: async () => new Response(CLOUD_DOCKER_BRIDGE_VERSION) }) });
+    await expect(runtime["ensureBridge"]()).resolves.toBeUndefined();
+    expect(runtime.executor.writeFile).not.toHaveBeenCalled();
+  });
+  it("reports the failed health check instead of the provider's successful log-fetch envelope", async () => {
+    vi.useFakeTimers();
+    ws.runtime.mockResolvedValue({ proxy: () => ({ fetch: async () => new Response("bad gateway", { status: 502 }) }) });
+    ws.workloads = {
+      list: vi.fn(async () => [{ id: "bridge-a", name: "openship-docker-api-v1", state: "running" }]),
+      stop: vi.fn(), start: vi.fn(),
+      logs: vi.fn(async () => ({ logs: "", success: true, _serverId: "node2" })),
+    };
+    try {
+      const result = runtime["ensureBridge"]().catch(error => error as Error);
+      await vi.advanceTimersByTimeAsync(61_000);
+      const error = await result;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain("HTTP 502");
+      expect((error as Error).message).toContain("Bridge state: running");
+      expect((error as Error).message).not.toContain('"success"');
+      expect((error as Error).message).not.toContain("_serverId");
+    } finally { vi.useRealTimers(); }
+  });
   it("applies environment inside the existing workspace without replacing or restarting the VM", async () => {
     const apply = vi.spyOn(DockerRuntime.prototype, "applyEnvironment").mockResolvedValue({ containerId: "replacement-a" });
     const options = { projectId: "project-a", serviceName: "api", onReplaced: vi.fn() };
