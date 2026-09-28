@@ -169,7 +169,7 @@
     "routeCustomDesc": "Point a domain you own at this app.",
     "routeDomainLabel": "Domain",
     "routeDomainDesc": "Reach it on a domain — a free subdomain or your own.",
-    "exposeTitle": "Exposure",
+    "exposeTitle": "Domains & routing",
     "httpBadge": "Web",
     "tcpBadge": "Database",
     "tcpPublishLabel": "Publish port",

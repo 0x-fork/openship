@@ -1,4 +1,7 @@
 {
+  "appInstall": {
+    "exposeTitle": "ドメインとルーティング"
+  },
   "settingSection": {
     "edit": "編集",
     "save": "保存",

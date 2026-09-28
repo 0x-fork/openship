@@ -62,6 +62,7 @@ autocomplete field names rather than typing them from memory.
     configFields: { type: 'AppConfigField[]', description: 'Machine-generated or derived env. Never rendered as a form input.' },
     flowHref: { type: 'string', description: 'For kind:"flow" — internal route of the bespoke wizard. Must start with "/".' },
     settings: { type: 'AppSettingGroup[]', description: 'The curated settings form, and the install wizard inputs.' },
+    installLayout: { type: '{ settings: "single" | "split" | "grouped", columns?: 1 | 2 }', description: 'Optional install-form grouping and responsive field columns. See Form layout.' },
     management: { type: 'object', description: 'Override how the installed app is managed. See Management.' },
     prepare: { type: 'PrepareStep[]', description: 'Commands run inside a service container after start.' },
     connection: { type: 'object', description: 'The post-install Connection card. See Connection.' },
@@ -217,6 +218,7 @@ Groups:
     id: { type: 'string', description: 'Stable group id.', required: true },
     label: { type: 'string', description: 'Group heading.', required: true },
     description: { type: 'string', description: 'Group help text.' },
+    columns: { type: '1 | 2', description: 'Field columns when space allows. Applies to installed settings and grouped installs; narrow containers always stack.' },
     fields: { type: 'AppSettingField[]', description: 'The fields in this group.', required: true },
   }}
 />
@@ -240,6 +242,7 @@ Fields:
     patternError: { type: 'string', description: 'Message shown when pattern fails.' },
     default: { type: 'string', description: 'Prefilled value.' },
     placeholder: { type: 'string', description: 'Input placeholder.' },
+    fullWidth: { type: 'boolean', description: 'Span the whole row in a two-column form.' },
     secret: { type: 'boolean', description: 'Store encrypted and mask on display.' },
     trueValue: { type: 'string', description: 'For type:"boolean" — env value written when on (e.g. "1", "yes").' },
     falseValue: { type: 'string', description: 'For type:"boolean" — env value written when off.' },
@@ -250,6 +253,41 @@ Fields:
     showIf: { type: '{ field, service?, equals?, truthy? }', description: 'Conditional visibility. equals or truthy only — no expressions.' },
   }}
 />
+
+### Form layout
+
+The catalog controls grouping and field widths. The dashboard supplies the controls, spacing,
+colors, and responsive behavior through the same form renderer used for installed app settings.
+Fields remain defined once in `settings`; only fields with `installStep: true` appear at install.
+
+For a compact install such as Convex, add this at the top level:
+
+```json
+{
+  "installLayout": {
+    "settings": "split"
+  }
+}
+```
+
+`split` puts the editable project name and install fields in two adjacent cards, stacking them
+when the available width is too small. Field labels identify each input without an extra card
+heading. This suits small forms such as Convex's Name and Instance name.
+
+`single` combines the name and install fields in one card. `grouped` keeps a separate name card
+and renders each visible settings group with its label and description. Empty groups are omitted.
+Without `installLayout`, the existing separate name card and single vertical settings card remain.
+When reopening a draft, its project name stays hidden and the remaining settings use the full width.
+
+`columns` defaults to `1`. Set it to `2` for fields that fit side by side; the form stacks them
+when its available width is too small, including when dashboard navigation takes more room.
+In grouped mode, a group's own `columns` overrides the install default. That group setting also
+applies after installation. Set `fullWidth: true` on a field such as a long textarea to span both
+columns. Field order follows the catalog; conditional and advanced visibility still apply.
+
+These optional hints are returned in the catalog API for consumers to render. They do not change
+environment values, required-field validation, or routing, and older clients can ignore them.
+Use these supported hints rather than CSS classes or executable layout expressions in catalog JSON.
 
 ## Connection
 
@@ -331,8 +369,20 @@ pre-run database initialization use [`files`](#files) to write into
 
 ## Endpoints
 
-What the install wizard asks you about — how to ship each port. Omit `endpoints` entirely and
-Openship derives one `http` endpoint per exposed service.
+What the install wizard asks you about — how to reach each port. Omit `endpoints` entirely and
+Openship derives one public `http` endpoint per declared route of each exposed service.
+
+Defaults follow the app's intended use on every deployment target:
+
+- Public HTTP endpoints, such as dashboards and APIs, start with **Domain** routing.
+- Raw TCP endpoints, such as databases, start **Internal only** unless their `scope` is `public`.
+- An explicit `defaultMode` overrides these defaults within `allowedModes`. Use it for choices
+  such as a port-only API. Local or internal HTTP endpoints default to port-only access.
+
+A Cloud connection only selects the domain provider: a managed free domain when connected,
+or a custom domain when disconnected. It does not switch a public UI to port-only routing.
+Custom domains still need a hostname and DNS setup. Users can choose another allowed mode;
+saved draft choices take precedence over fresh-install defaults.
 
 <TypeTable
   type={{
@@ -341,8 +391,8 @@ Openship derives one `http` endpoint per exposed service.
     label: { type: 'string', description: 'How the wizard names this endpoint.', required: true },
     kind: { type: '"http" | "tcp"', description: 'http is domain-routable; tcp is a raw port such as a database, with no domain.', required: true },
     required: { type: 'boolean', description: 'The user must choose an exposure for it.' },
-    scope: { type: '"public" | "internal" | "local"', description: 'Declares reachability intent.' },
-    defaultMode: { type: '"domain" | "port" | "publish" | "internal"', description: 'Preselected exposure.' },
+    scope: { type: '"public" | "internal" | "local"', description: 'Declares reachability intent. Defaults to public for HTTP and internal for TCP.' },
+    defaultMode: { type: '"domain" | "port" | "publish" | "internal"', description: 'Preselected routing mode, constrained by allowedModes. Independent of the deployment target.' },
     allowedModes: { type: 'string[]', description: 'Restrict which exposures are offered.' },
   }}
 />
