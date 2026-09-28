@@ -40,6 +40,7 @@ import { InstanceInfo } from "./_components/InstanceInfo";
 import { UntrackedEdgeRoutes } from "./_components/UntrackedEdgeRoutes";
 import { LanguageSetting } from "./_components/LanguageSetting";
 import { PreferencesSetting } from "./_components/PreferencesSetting";
+import { PasskeysSetting } from "./_components/PasskeysSetting";
 import { ProductViewSetting } from "./_components/ProductViewSetting";
 import { MailModeSetting } from "./_components/MailModeSetting";
 import { UpdatesTab } from "./_components/UpdatesTab";
@@ -143,6 +144,7 @@ function SettingsPageInner() {
               {/* Per-user shell: full platform vs Openship Mail's mail-only rail.
                   Renders nothing on the SaaS. */}
               <ProductViewSetting />
+              <PasskeysSetting />
               <PreferencesSetting />
             </>
           )}

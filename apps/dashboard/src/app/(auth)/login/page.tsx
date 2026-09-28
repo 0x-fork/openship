@@ -58,10 +58,20 @@ function LoginPageInner() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
 
   const callbackError = searchParams.get("error");
 
   const postLoginUrl = getPostAuthRedirect(searchParams);
+
+  useEffect(() => {
+    setPasskeySupported(typeof window !== "undefined" && "PublicKeyCredential" in window);
+  }, []);
+
+  function completeSignIn() {
+    if (postLoginUrl) window.location.href = postLoginUrl;
+    else router.push("/");
+  }
 
   // Zero-auth mode has no form — the page exists only to bounce the browser at
   // desktop-login. Decide that BEFORE navigating, so a browser the server will
@@ -108,16 +118,30 @@ function LoginPageInner() {
       // *starts* the client transition, and the dashboard takes a moment to
       // render. Keeping the button in its loading state until this page unmounts
       // avoids the dead "idle button, no navigation yet" gap.
-      if (postLoginUrl) {
-        window.location.href = postLoginUrl;
-      } else {
-        router.push("/");
-      }
+      completeSignIn();
     } catch (err) {
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
       setLoading(false); // stayed on the page — re-enable the form
+    }
+  }
+
+  async function handlePasskeySignIn() {
+    setLoading(true);
+    try {
+      const result = await signIn.passkey();
+      if (result.error) {
+        toast("error", result.error.message ?? "Passkey sign-in failed.");
+        setLoading(false);
+        return;
+      }
+      completeSignIn();
+    } catch (err) {
+      toast("error", isNetworkError(err)
+        ? t.auth.errors.serverUnreachable
+        : "Passkey sign-in failed.");
+      setLoading(false);
     }
   }
 
@@ -308,6 +332,26 @@ function LoginPageInner() {
           {loading ? t.auth.login.submitting : t.auth.login.submit}
         </Button>
       </form>
+
+      {passkeySupported && (
+        <>
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            <span>or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loading}
+            className="w-full"
+            onClick={() => void handlePasskeySignIn()}
+          >
+            <UiIcon name="key" className="size-4" />
+            Sign in with a passkey
+          </Button>
+        </>
+      )}
 
       {/* Whatever the SERVER says it has credentials for. It used to be
           `!selfHosted &&` — a stand-in for "are any providers configured?" that

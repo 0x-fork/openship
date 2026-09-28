@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import { organizationClient, emailOTPClient } from "better-auth/client/plugins";
+import { passkeyClient } from "@better-auth/passkey/client";
 import { getAuthBaseUrl } from "@/lib/api/urls";
 
 /**
@@ -21,7 +22,7 @@ export const authClient = createAuthClient({
       delay: 0,
     },
   },
-  plugins: [organizationClient(), emailOTPClient()],
+  plugins: [organizationClient(), emailOTPClient(), passkeyClient()],
 });
 
 export const {

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, index } from "drizzle-orm/pg-core";
 
 // ─── Better Auth core tables ─────────────────────────────────────────────────
 // These tables are required by Better Auth. Column names must match exactly.
@@ -55,3 +55,28 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Better Auth passkey plugin. The credential material here is public WebAuthn
+// data; the private key never leaves the user's authenticator.
+export const passkey = pgTable(
+  "passkey",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("public_key").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credentialID: text("credential_id").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("device_type").notNull(),
+    backedUp: boolean("backed_up").notNull(),
+    transports: text("transports"),
+    createdAt: timestamp("created_at").defaultNow(),
+    aaguid: text("aaguid"),
+  },
+  (table) => [
+    index("passkey_user_id_idx").on(table.userId),
+    index("passkey_credential_id_idx").on(table.credentialID),
+  ],
+);
