@@ -429,5 +429,18 @@
     "currentPeriod": "当前账单周期",
     "viewUsage": "查看详细用量",
     "bandwidthPerMonth": "{amount} GB / 月"
+  },
+  "creditAlert": {
+    "lowTitle": "Cloud 额度即将用完",
+    "lowDescription": "您已使用配额的 {percent}%，其中包括购买的额度。还剩 {credits} 点额度。",
+    "graceTitle": "正在使用宽限额度",
+    "graceDescription": "您的付费额度已用完。新工作负载被阻止前，还剩 {credits} 点宽限额度。",
+    "exhaustedTitle": "Cloud 额度已用完",
+    "exhaustedDescription": "添加额度或付费配额续期前，将阻止新工作负载。请打开账单页面查看可用选项。",
+    "buyCredits": "购买更多额度",
+    "openBilling": "打开账单",
+    "close": "知道了",
+    "opening": "正在打开此提醒所属组织的账单…",
+    "wrongOrganization": "您的账户无法使用此账单链接。请使用属于提醒中组织的账户登录。"
   }
 }

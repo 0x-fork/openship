@@ -18,6 +18,7 @@ export type { BillingResources } from "@repo/contracts";
  * Period dates arrive over JSON as ISO strings (not `Date`).
  */
 export interface BillingState {
+  creditAlert?: BillingStateContract["creditAlert"];
   tier: PlanTierId;
   status: string;
   currentPeriod: {

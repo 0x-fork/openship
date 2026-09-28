@@ -11,7 +11,7 @@ import {
   type PlanTierId,
   type CreditPackDefinition,
 } from "@repo/core";
-import { entitlementQuota, syncOblienEntitlement } from "./billing-oblien-quota";
+import { entitlementQuota, syncOblienEntitlement, fromOblienCredits } from "./billing-oblien-quota";
 import { cloudPlan, complimentaryCloudPlan } from "./billing-catalog";
 import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { ensureNamespace } from "../../lib/openship-cloud";
@@ -107,6 +107,17 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
 
   return {
     tier,
+    creditAlert: entitlement.quota.alert ? {
+      namespace: entitlement.namespace,
+      state: entitlement.quota.alert.state,
+      percent: entitlement.quota.alert.percent,
+      threshold: entitlement.quota.alert.threshold,
+      thresholds: entitlement.quota.alert.thresholds,
+      // Keep the dashboard contract in milli-credits, just like balance.
+      limit: entitlement.quota.alert.limit === null ? null : fromOblienCredits(entitlement.quota.alert.limit),
+      remaining: entitlement.quota.alert.remaining === null ? null : fromOblienCredits(entitlement.quota.alert.remaining),
+      balance: entitlement.quota.alert.balance === null ? null : fromOblienCredits(entitlement.quota.alert.balance),
+    } : null,
     status: entitlement.status,
     plan,
     subscription,

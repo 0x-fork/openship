@@ -429,5 +429,18 @@
     "currentPeriod": "現在の請求期間",
     "viewUsage": "使用量の詳細を見る",
     "bandwidthPerMonth": "{amount} GB / 月"
+  },
+  "creditAlert": {
+    "lowTitle": "Cloud クレジットが残りわずかです",
+    "lowDescription": "購入したクレジットを含む割り当ての {percent}% を使用しました。残りは {credits} クレジットです。",
+    "graceTitle": "猶予クレジットを使用しています",
+    "graceDescription": "支払い済みのクレジットを使い切りました。新しいワークロードが制限されるまで、猶予クレジットは残り {credits} です。",
+    "exhaustedTitle": "Cloud クレジットを使い切りました",
+    "exhaustedDescription": "クレジットを追加するか、支払い済みの割り当てが更新されるまで、新しいワークロードは制限されます。請求画面で選択肢をご確認ください。",
+    "buyCredits": "クレジットを追加購入",
+    "openBilling": "請求画面を開く",
+    "close": "確認しました",
+    "opening": "この通知の組織の請求画面を開いています…",
+    "wrongOrganization": "このアカウントではこの請求リンクを利用できません。通知に記載された組織のアカウントでログインしてください。"
   }
 }

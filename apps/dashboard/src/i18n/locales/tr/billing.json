@@ -429,5 +429,18 @@
     "currentPeriod": "Geçerli fatura dönemi",
     "viewUsage": "Ayrıntılı kullanımı görüntüle",
     "bandwidthPerMonth": "{amount} GB / ay"
+  },
+  "creditAlert": {
+    "lowTitle": "Cloud kredileri azalıyor",
+    "lowDescription": "Satın alınan krediler dahil kotanızın %{percent} kadarını kullandınız. {credits} kredi kaldı.",
+    "graceTitle": "Ek tolerans kredilerini kullanıyorsunuz",
+    "graceDescription": "Ücretli kredileriniz tükendi. Yeni iş yükleri engellenmeden önce {credits} tolerans kredisi kaldı.",
+    "exhaustedTitle": "Cloud kredileri tükendi",
+    "exhaustedDescription": "Kredi eklenene veya ücretli kotanız yenilenene kadar yeni iş yükleri engellenir. Seçeneklerinizi görmek için faturalamayı açın.",
+    "buyCredits": "Daha fazla kredi al",
+    "openBilling": "Faturalamayı aç",
+    "close": "Anladım",
+    "opening": "Bu uyarıdaki kuruluşun faturalama sayfası açılıyor…",
+    "wrongOrganization": "Bu faturalama bağlantısı hesabınız için kullanılamıyor. Uyarıdaki kuruluşa ait bir hesapla oturum açın."
   }
 }

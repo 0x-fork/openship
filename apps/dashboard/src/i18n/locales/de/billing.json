@@ -429,5 +429,18 @@
     "currentPeriod": "Aktueller Abrechnungszeitraum",
     "viewUsage": "Verbrauchsdetails ansehen",
     "bandwidthPerMonth": "{amount} GB / Monat"
+  },
+  "creditAlert": {
+    "lowTitle": "Cloud-Guthaben wird knapp",
+    "lowDescription": "Du hast {percent}% deines Kontingents einschließlich gekaufter Credits verbraucht. Es bleiben {credits} Credits.",
+    "graceTitle": "Du nutzt den Kulanzrahmen",
+    "graceDescription": "Deine bezahlten Credits sind aufgebraucht. Es bleiben {credits} Kulanz-Credits, bevor neue Workloads gesperrt werden.",
+    "exhaustedTitle": "Cloud-Guthaben aufgebraucht",
+    "exhaustedDescription": "Neue Workloads sind gesperrt, bis Credits hinzugefügt werden oder dein bezahltes Kontingent erneuert wird. Öffne die Abrechnung, um deine Optionen zu sehen.",
+    "buyCredits": "Weitere Credits kaufen",
+    "openBilling": "Abrechnung öffnen",
+    "close": "Verstanden",
+    "opening": "Die Abrechnung für die Organisation dieser Meldung wird geöffnet…",
+    "wrongOrganization": "Dieser Abrechnungslink ist für dein Konto nicht verfügbar. Melde dich mit einem Konto an, das zur Organisation dieser Meldung gehört."
   }
 }
