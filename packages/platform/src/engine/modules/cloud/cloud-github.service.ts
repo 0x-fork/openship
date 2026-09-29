@@ -16,14 +16,17 @@
 
 import crypto from "node:crypto";
 import { auth, COOKIE_PREFIX } from "../../lib/auth";
-import { cloudRuntimeTarget } from "../../config/env";
+import { cloudRuntimeTarget, env } from "../../config/env";
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import * as githubAuth from "../github/github.auth";
 import { createEphemeralStore } from "../../lib/ephemeral-store";
 import { buildBackgroundContext } from "../../lib/background-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
-import { verifyGitHubInstallationForUser } from "../github/github.installation-verification";
+import {
+  listGitHubInstallationsForUser,
+  verifyGitHubInstallationForUser,
+} from "../github/github.installation-verification";
 
 // ─── OAuth bridge store (shared between handoff + bridge handlers) ──────────
 //
@@ -223,9 +226,79 @@ export async function buildOrgScopedInstallUrl(
     organizationId,
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
   });
-  const baseUrl = githubAuth.getInstallUrl();
-  const url = `${baseUrl}?state=${encodeURIComponent(state)}`;
-  return { url, state };
+  // GitHub sends an already-installed App to its settings page without a setup
+  // callback. Start on Openship so the user can explicitly claim that existing
+  // installation instead of getting stuck waiting for another GitHub install.
+  const url = new URL("/api/cloud/github/install-callback", cloudRuntimeTarget.api);
+  url.search = new URLSearchParams({ flow: "select", state }).toString();
+  return { url: url.toString(), state };
+}
+
+export type GithubInstallSelectionResult =
+  | {
+      kind: "ready";
+      state: string;
+      workspaceName: string;
+      installUrl: string;
+      installations: Array<{ id: number; login: string; type: "User" | "Organization" }>;
+    }
+  | { kind: "missing-params" }
+  | { kind: "state-expired" }
+  | { kind: "forbidden"; message: string }
+  | { kind: "failed"; error: string };
+
+/** Offer existing installations without importing them into a workspace.
+ * Selection uses the same one-shot, user/workspace-bound callback as a new
+ * GitHub install; the claim re-verifies access after the user makes a choice. */
+export async function getGithubInstallSelection(
+  state: string | undefined,
+): Promise<GithubInstallSelectionResult> {
+  if (!state) return { kind: "missing-params" };
+  try {
+    const binding = await repos.githubInstallState.find(state);
+    if (!binding?.organizationId || binding.sourceId || binding.flow !== "install") {
+      return { kind: "state-expired" };
+    }
+    const membership = await repos.member.find(binding.organizationId, binding.userId);
+    if (!membership) {
+      await repos.githubInstallState.remove(state);
+      return {
+        kind: "forbidden",
+        message: "You no longer have access to the Openship workspace that started this install.",
+      };
+    }
+    const workspace = await repos.organization.findById(binding.organizationId);
+    if (!workspace) return { kind: "state-expired" };
+
+    const appId = Number(env.GITHUB_APP_ID);
+    if (!Number.isSafeInteger(appId) || appId <= 0) {
+      throw new Error("The Openship GitHub App is not configured.");
+    }
+    const available = await listGitHubInstallationsForUser(binding.userId);
+    if (!available) {
+      return {
+        kind: "forbidden",
+        message: "GitHub authorization is missing. Start the connection again from Openship.",
+      };
+    }
+    const installUrl = new URL(githubAuth.getInstallUrl());
+    installUrl.searchParams.set("state", state);
+    return {
+      kind: "ready",
+      state,
+      workspaceName: workspace.name,
+      installUrl: installUrl.toString(),
+      installations: available
+        .filter((installation) => installation.app_id === appId && !installation.suspended_at)
+        .map((installation) => ({
+          id: installation.id,
+          login: installation.account.login,
+          type: installation.account.type,
+        })),
+    };
+  } catch (error) {
+    return { kind: "failed", error: safeErrorMessage(error) };
+  }
 }
 
 // ─── Install callback: state-based attribution ───────────────────────────────
