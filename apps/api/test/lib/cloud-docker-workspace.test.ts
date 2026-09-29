@@ -123,6 +123,94 @@ describe("Cloud Docker provisioning and retry", () => {
     expect(h.discard).toHaveBeenCalledWith(project.id, project.organizationId, "stable-key");
     expect(binding).toBeUndefined();
   });
+  it("can retry a smaller allocation after a definitive namespace capacity rejection", async () => {
+    const oversized = { ...input, resources: { ...resources, cpuCores: 5 } };
+    h.create.mockImplementation(async (request) => {
+      if (request.config.cpus > 4) {
+        throw Object.assign(new Error("namespace permits 4 vCPU"), {
+          status: 409,
+          code: "NAMESPACE_LIMIT_REACHED",
+        });
+      }
+      return { id: "workspace-a", namespace: "namespace-a" };
+    });
+    await expect(ensureCloudDockerWorkspace(oversized)).rejects.toMatchObject({
+      code: "NAMESPACE_LIMIT_REACHED",
+    });
+    await expect(ensureCloudDockerWorkspace(input)).resolves.toEqual({
+      projectId: "project-a",
+      workspaceId: "workspace-a",
+    });
+    expect(h.create.mock.calls.map(([request]) => request.config.cpus)).toEqual([5, 2]);
+    expect(binding?.state).toBe("ready");
+  });
+  it("repairs an older rejected reservation in the same retry after its resources were corrected", async () => {
+    binding = {
+      projectId: project.id,
+      namespace: "namespace-a",
+      image: "oblien/docker:29",
+      resources: { ...resources, cpuCores: 5 },
+      provisionKey: "old-rejected-key",
+      workspaceId: null,
+      state: "provisioning",
+    };
+    h.create.mockImplementation(async (request) => {
+      if (request.config.cpus > 4) {
+        throw Object.assign(new Error("namespace permits 4 vCPU"), {
+          status: 409,
+          code: "NAMESPACE_LIMIT_REACHED",
+        });
+      }
+      return { id: "workspace-a", namespace: "namespace-a" };
+    });
+    await expect(ensureCloudDockerWorkspace(input)).resolves.toEqual({
+      projectId: "project-a",
+      workspaceId: "workspace-a",
+    });
+    expect(h.create.mock.calls.map(([request]) => request.config.cpus)).toEqual([5, 2]);
+    expect(h.create.mock.calls.map(([request]) => request.idempotency_key)).toEqual([
+      "old-rejected-key",
+      "stable-key",
+    ]);
+    expect(h.attach).toHaveBeenCalledOnce();
+  });
+  it("stops after the corrected allocation is also refused", async () => {
+    binding = {
+      projectId: project.id,
+      namespace: "namespace-a",
+      image: "oblien/docker:29",
+      resources: { ...resources, cpuCores: 5 },
+      provisionKey: "old-rejected-key",
+      workspaceId: null,
+      state: "provisioning",
+    };
+    h.create.mockRejectedValue(
+      Object.assign(new Error("namespace capacity still full"), {
+        status: 409,
+        code: "NAMESPACE_LIMIT_REACHED",
+      }),
+    );
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toMatchObject({
+      code: "NAMESPACE_LIMIT_REACHED",
+    });
+    expect(h.create).toHaveBeenCalledTimes(2);
+    expect(h.attach).not.toHaveBeenCalled();
+    expect(binding).toBeUndefined();
+  });
+  it("preserves the exact reservation for an ambiguous 409 conflict", async () => {
+    h.create.mockRejectedValueOnce(
+      Object.assign(new Error("creation already in progress"), {
+        status: 409,
+        code: "CREATE_IN_PROGRESS",
+      }),
+    );
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toMatchObject({
+      code: "CREATE_IN_PROGRESS",
+    });
+    await ensureCloudDockerWorkspace({ ...input, resources: { ...resources, memoryMb: 8192 } });
+    expect(h.create.mock.calls[1]![0]).toEqual(h.create.mock.calls[0]![0]);
+    expect(h.discard).not.toHaveBeenCalled();
+  });
   it("applies a larger allocation and restores only previously running containers", async () => {
     await ensureCloudDockerWorkspace(input);
     h.exec.mockResolvedValueOnce("abcdef123456\r\n123456abcdef\r\n");

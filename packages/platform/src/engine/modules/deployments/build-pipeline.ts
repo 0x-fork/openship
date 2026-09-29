@@ -214,6 +214,13 @@ export async function resolveServicePipelineMode(
     return { useSingleAppPipeline: true, useServicePipeline: false, servicePreflightServices: [] };
   }
 
+  // A failed catalog install can reach this path directly from Retry. Seed only
+  // missing draft profiles before reading/finalizing the next snapshot; an
+  // explicit or restored service snapshot must keep its original allocation.
+  if (project.appTemplateId && !project.activeDeploymentId && !snapshot.composeServices?.length) {
+    const { ensureDraftAppResourceDefaults } = await import("../apps/app-resource-defaults");
+    await ensureDraftAppResourceDefaults(project);
+  }
   const [servicePreflightServices, useServicePipeline] = await Promise.all([
     resolveProjectServicePreflightServices(project.id, snapshot.composeServices),
     shouldUseProjectServicePipeline(project, snapshot.composeServices),

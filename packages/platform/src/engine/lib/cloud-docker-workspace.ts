@@ -196,33 +196,84 @@ export async function ensureCloudDockerWorkspace(input: {
     if (!credentials) throw new AppError("Connect Openship Cloud before deploying", 503, "CLOUD_NOT_CONNECTED");
     const { namespace, token } = credentials;
     const client = new Oblien({ token, baseUrl: env.OBLIEN_API_URL });
-    const binding = existing ?? await repos.cloudDockerWorkspace.reserve({
-      projectId: input.projectId, namespace, image: CLOUD_DOCKER_IMAGE, resources: input.resources,
-    }, input.organizationId);
-    if (binding.namespace !== namespace) throw new Error("Cloud workspace namespace binding does not match this project");
+    let binding =
+      existing ??
+      (await repos.cloudDockerWorkspace.reserve(
+        {
+          projectId: input.projectId,
+          namespace,
+          image: CLOUD_DOCKER_IMAGE,
+          resources: input.resources,
+        },
+        input.organizationId,
+      ));
+    if (binding.namespace !== namespace)
+      throw new Error("Cloud workspace namespace binding does not match this project");
     let workspaceId = binding.workspaceId;
     if (!workspaceId) {
       if (project.cloudWorkspaceId) throw new Error("An existing native workspace must be migrated before enabling Docker");
-      input.signal?.throwIfAborted();
-      const workspace = await client.workspaces.create({
-        name: `Openship Compose ${input.projectId}`,
-        slug: workspaceSlug(input.projectId),
-        namespace, image: binding.image, mode: "temporary",
-        wait_ready: false, idempotency_key: binding.provisionKey,
-        config: {
-          cpus: binding.resources.cpuCores, memory_mb: binding.resources.memoryMb,
-          disk_size_mb: binding.resources.diskMb, wait_for_init: true,
-          ttl: "1h", ttl_action: "remove", remove_on_exit: false,
-          network_config: { allow_internet: true, public_ingress: false },
-        },
-      }).catch(async error => {
-        // These responses definitively reject creation. A timeout, a conflict,
-        // or a provider outage can still have created a VM and must keep its key.
-        if ([400, 401, 402, 403, 404, 422].includes(Number((error as { status?: number }).status))) {
-          await repos.cloudDockerWorkspace.discardUncreated(input.projectId, input.organizationId, binding.provisionKey);
+      let workspace: Awaited<ReturnType<typeof client.workspaces.create>>;
+      for (let attempt = 0; ; attempt++) {
+        input.signal?.throwIfAborted();
+        try {
+          workspace = await client.workspaces.create({
+            name: `Openship Compose ${input.projectId}`,
+            slug: workspaceSlug(input.projectId),
+            namespace,
+            image: binding.image,
+            mode: "temporary",
+            wait_ready: false,
+            idempotency_key: binding.provisionKey,
+            config: {
+              cpus: binding.resources.cpuCores,
+              memory_mb: binding.resources.memoryMb,
+              disk_size_mb: binding.resources.diskMb,
+              wait_for_init: true,
+              ttl: "1h",
+              ttl_action: "remove",
+              remove_on_exit: false,
+              network_config: { allow_internet: true, public_ingress: false },
+            },
+          });
+          break;
+        } catch (error) {
+          // Namespace admission rejects before a VM is created. Retaining its
+          // oversized request would make a corrected retry repeat the same failure.
+          // Other conflicts and uncertain responses must keep their idempotency key.
+          const refusal = error as { status?: number; code?: string } | null;
+          const status = Number(refusal?.status);
+          const rejectedCapacity = status === 409 && refusal?.code === "NAMESPACE_LIMIT_REACHED";
+          if (rejectedCapacity || [400, 401, 402, 403, 404, 422].includes(status)) {
+            await repos.cloudDockerWorkspace.discardUncreated(
+              input.projectId,
+              input.organizationId,
+              binding.provisionKey,
+            );
+          }
+          const changed = (["cpuCores", "memoryMb", "diskMb"] as const).some(
+            (key) => binding.resources[key] !== input.resources[key],
+          );
+          if (!rejectedCapacity || !changed || attempt !== 0) throw error;
+          input.signal?.throwIfAborted();
+          binding = await repos.cloudDockerWorkspace.reserve(
+            {
+              projectId: input.projectId,
+              namespace,
+              image: CLOUD_DOCKER_IMAGE,
+              resources: input.resources,
+            },
+            input.organizationId,
+          );
+          if (binding.namespace !== namespace || binding.workspaceId) {
+            throw new Error(
+              "Cloud workspace reservation changed. Retry after provisioning settles.",
+            );
+          }
+          input.onProgress?.(
+            "Retrying the rejected workspace allocation with the updated resource settings.\n",
+          );
         }
-        throw error;
-      });
+      }
       if (!workspace.id || workspace.namespace !== namespace) throw new Error("Oblien returned an unexpected workspace namespace");
       workspaceId = workspace.id;
       // Complete this write even when cancellation arrived during POST. Teardown

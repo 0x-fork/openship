@@ -27,7 +27,7 @@
 
 import type { ComposeHealthcheck } from "./types";
 import type { AppInstallLayout, AppManagement, AppSettingGroup } from "./app-settings";
-import type { AppMinResources } from "./resources";
+import type { AppMinResources, ResourceValues } from "./resources";
 import { resolveServiceHostnameLabel } from "./service-routing";
 import catalog from "./apps/catalog.json";
 
@@ -72,6 +72,9 @@ export interface TemplateServiceSpec {
   name: string;
   /** Upstream image to pull. Exactly one of `image`/`build` per service. */
   image?: string;
+  /** Initial container limits. Cloud sums the profile into the project's VM.
+   * Existing explicit settings are retained when an unfinished install is retried. */
+  resources?: Readonly<ResourceValues>;
   /** Inline build context — build instead of pull. Mutually exclusive with `image`. */
   build?: TemplateServiceBuild;
   /** Port mappings, compose syntax (e.g. "8080:80"). */

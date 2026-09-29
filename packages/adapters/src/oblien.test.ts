@@ -38,6 +38,141 @@ describe("Oblien SDK transport", () => {
     const error = await new Oblien({ token: "test" }).workspaces.get("ws-b").catch(error => error);
     expect(error.message).not.toContain("private-secret"); expect(error.details).toBeUndefined(); expect(error.status).toBe(403);
   });
+  it("keeps safe namespace allocation diagnostics and the request ID in deploy errors", async () => {
+    const requestId = "5d66e628-76c5-4a15-93c7-0eaa02f21097";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            error: "NAMESPACE_LIMIT_REACHED",
+            message: "private-account-data",
+            requestId,
+            details: {
+              resource: "cpus",
+              requested: 5,
+              effectiveLimit: 4,
+              unit: "private-secret",
+              enforcementScope: "namespace",
+              namespace: "private-namespace",
+              token: "private-secret",
+            },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    const error = await new Oblien({ token: "test" }).workspaces
+      .create({ wait_ready: false })
+      .catch((error) => error);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "NAMESPACE_LIMIT_REACHED",
+      requestId,
+      details: {
+        resource: "cpus",
+        requested: 5,
+        effectiveLimit: 4,
+        unit: "vCPU",
+        enforcementScope: "namespace",
+      },
+    });
+    expect(error.message).toContain("5 vCPU");
+    expect(error.message).toContain("4 vCPU");
+    expect(error.message).toContain("per workspace");
+    expect(error.message).toContain(requestId);
+    expect(JSON.stringify(error)).not.toContain("private-");
+  });
+  it("distinguishes the namespace allocation pool from a single workspace limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            code: "NAMESPACE_LIMIT_REACHED",
+            details: {
+              violations: [
+                {
+                  resource: "memory_mb",
+                  requested: 8192,
+                  effectiveLimit: 16384,
+                  currentUsage: 12288,
+                  enforcementScope: "namespace_allocated_pool",
+                },
+                {
+                  resource: "cpus",
+                  requested: 2,
+                  effectiveLimit: 32,
+                  currentUsage: 31,
+                  enforcementScope: "account_pool",
+                },
+              ],
+            },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    const error = await new Oblien({ token: "test" }).workspaces
+      .create({ wait_ready: false })
+      .catch((error) => error);
+    expect(error.details.violations).toEqual([
+      {
+        resource: "memory_mb",
+        requested: 8192,
+        effectiveLimit: 16384,
+        currentUsage: 12288,
+        enforcementScope: "namespace_allocated_pool",
+        unit: "MB",
+      },
+    ]);
+    expect(error.message).toContain("namespace total");
+    expect(error.message).toContain("12288 MB");
+    expect(JSON.stringify(error)).not.toContain("account_pool");
+  });
+  it("does not reflect malformed diagnostics, request IDs or provider messages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            code: "NAMESPACE_LIMIT_REACHED",
+            requestId: "private-token",
+            message: "private-secret",
+            details: {
+              violations: [
+                {
+                  resource: "cpus",
+                  requested: "private-secret",
+                  effectiveLimit: 4,
+                  enforcementScope: "namespace",
+                },
+                {
+                  resource: "memory_mb",
+                  requested: -1,
+                  effectiveLimit: 1024,
+                  enforcementScope: "namespace",
+                },
+                {
+                  resource: "private-secret",
+                  requested: 1,
+                  effectiveLimit: 2,
+                  enforcementScope: "namespace",
+                },
+              ],
+            },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    const error = await new Oblien({ token: "test" }).workspaces
+      .create({ wait_ready: false })
+      .catch((error) => error);
+    expect(error.details).toBeUndefined();
+    expect(error.requestId).toBeUndefined();
+    expect(error.message).not.toContain("private-");
+  });
   it.each([
     ["plan_limit_exceeded", "provider account's resource capacity"],
     ["namespace_limit_exceeded", "provider account has reached its namespace limit"],

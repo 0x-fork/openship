@@ -36,6 +36,7 @@ vi.mock("@repo/db", () => ({
     },
     service: {
       listByProject: listServicesMock,
+      seedDraftAppResourceDefaults: async () => [],
     },
     customAppTemplate: {
       findByAppId: async () => undefined,
@@ -66,6 +67,7 @@ import {
   type InstallAppRoute,
 } from "@repo/platform/engine/modules/apps/app-install.service";
 import { buildPublicUrlLookup, getAppTemplate, servicePortPairs } from "@repo/core";
+import { cloudDockerResources } from "@repo/platform/engine/lib/cloud-docker-workspace";
 import {
   mergeServiceRoutingPatch,
   type StoredServiceRouting,
@@ -110,6 +112,19 @@ beforeEach(() => {
 });
 
 describe("app install — routing comes from the operator's choice", () => {
+  it("installs Supabase into the existing 4-vCPU Cloud ceiling with its published RAM and disk requirements", async () => {
+    await installApp(ctx, { templateId: "supabase" });
+    const services = createServiceMock.mock.calls.map((call) => ({
+      resources: call[2].advanced?.resources,
+    }));
+    expect(services).toHaveLength(9);
+    const host = cloudDockerResources({ services });
+    expect(host.cpuCores).toBeLessThanOrEqual(4);
+    expect(host.memoryMb).toBeGreaterThanOrEqual(8192);
+    expect(host.memoryMb).toBeLessThanOrEqual(12288);
+    expect(host.diskMb).toBeGreaterThanOrEqual(40960);
+    expect(host.diskMb).toBeLessThanOrEqual(65536);
+  });
   it("persists a custom domain and NO free route for the chosen endpoint", async () => {
     await install([
       { service: "backend", port: 3210, mode: "custom", customDomain: "API.Example.com" },

@@ -31,6 +31,7 @@ import {
   type TemplateServiceBuild,
 } from "@repo/core";
 import { getRuntimeCatalog, getTemplateForOrg, listOrgCustomApps } from "./catalog-source";
+import { ensureDraftAppResourceDefaults } from "./app-resource-defaults";
 import { repos } from "@repo/db";
 import { env } from "../../config/index";
 import { decrypt, encrypt } from "../../lib/encryption";
@@ -722,6 +723,7 @@ export async function installApp(
       commandArgv: svc.commandArgv ? [...svc.commandArgv] : undefined,
       restart: svc.restart,
       advanced: {
+        ...(svc.resources ? { resources: { ...svc.resources } } : {}),
         ...(svc.healthcheck ? { healthcheck: svc.healthcheck } : {}),
         ...(filesByService.get(svc.name)?.length
           ? { files: filesByService.get(svc.name) }
@@ -768,6 +770,15 @@ export async function installApp(
   // whole production scope, so anything backfilled first would be wiped. This is what
   // makes the installer's guarantee unconditional rather than "if the first attempt ran
   // to completion".
+  await ensureDraftAppResourceDefaults(
+    {
+      ...project,
+      organizationId: ctx.organizationId,
+      appTemplateId: template.id,
+      activeDeploymentId: null,
+    },
+    template,
+  );
   await ensureGeneratedAppSecrets(project.id, template);
 
   return { kind: "template", projectId: project.id, slug: project.slug };

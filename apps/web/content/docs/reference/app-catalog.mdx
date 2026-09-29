@@ -96,6 +96,7 @@ name, never an IP or a localhost address.
   type={{
     name: { type: 'string', description: 'Service name, and its hostname on the project network.', required: true },
     image: { type: 'string', description: 'Prebuilt image to pull. Pin a version — unpinned tags are rejected in review. Exactly one of image | build per service.' },
+    resources: { type: '{ cpuCores, memoryMb, diskMb }', description: 'Initial editable service limits: CPU at least 0.25, whole MB of RAM at least 128, and whole MB of disk at least 64. All three fields are required when supplied.' },
     build: { type: 'ServiceBuild', description: 'Inline Docker build context — for a service Openship must BUILD rather than pull. Mutually exclusive with image. See Building an image.' },
     ports: { type: 'string[]', description: 'Compose-style port strings, e.g. ["2368:2368"].' },
     exposedPort: { type: 'number', description: 'The container port that receives the public route.' },
@@ -110,6 +111,27 @@ name, never an IP or a localhost address.
     command: { type: 'string', description: 'Override the container command.' },
   }}
 />
+
+### Service resource defaults
+
+Declare `resources` for stacks whose components need different sizes. The installer
+saves each profile as the service's normal resource settings. Reopening or retrying
+a failed install fills missing profiles in one transaction and preserves explicit
+settings, files, environment and secrets. Catalog updates do not resize already
+deployed apps or change frozen deployment snapshots.
+
+On Cloud, enabled services share a workspace. Its CPU is the rounded-up sum of the
+service limits, RAM includes 512 MB for Docker and the OS, and disk uses the largest
+service disk request with an 8-GB floor. Source builds reserve additional resources.
+Oblien enforces the namespace's per-workspace and total limits; a template cannot
+raise them or grant credits.
+
+Supabase's profile requests a 4-vCPU, 8-GB RAM, 40-GB disk workspace, following its
+[published system requirements](https://supabase.com/docs/guides/self-hosting/docker#system-requirements).
+With the current retail catalog it fits Team's per-workspace limits. Existing
+allocations, a stricter saved offer or explicit service overrides can still require
+a different allocation. Deploy an API version with resource-profile support before
+relying on a catalog update; older installers ignore this optional field.
 
 ## Building an image
 
