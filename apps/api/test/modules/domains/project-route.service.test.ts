@@ -111,6 +111,63 @@ beforeEach(() => {
   deregisterManagedEdge.mockReset().mockResolvedValue({ failures: [] });
 });
 
+describe("provider-managed native Cloud routes", () => {
+  it("updates and removes through the Cloud provider without a public-server edge registration", async () => {
+    const project = {
+      id: "project-1",
+      slug: "app",
+      port: 3000,
+      organizationId: "org-1",
+      cloudWorkspaceId: null,
+      activeDeploymentId: "deployment-1",
+      webhookDomain: null,
+    } as Parameters<typeof reapplyProjectLiveRoutes>[0];
+    findDeployment.mockReset().mockResolvedValue({
+      id: "deployment-1",
+      projectId: project.id,
+      organizationId: project.organizationId,
+      containerId: "workspace-one",
+      meta: { deployTarget: "cloud", workspaceId: "workspace-one" },
+    });
+    listByProject
+      .mockReset()
+      .mockResolvedValue([
+        domainRow({ id: "current", hostname: "app.opsh.io", targetPort: 3000, domainType: "free" }),
+      ]);
+    resolveRuntime.mockReset().mockResolvedValue({
+      routing: { provider: "cloud" },
+      effectiveTarget: "cloud",
+      serverId: null,
+      runtime: {
+        name: "cloud",
+        supports: () => true,
+        getContainerIp: async () => "10.103.0.9",
+        getContainerInfo: async () => ({
+          containerId: "workspace-one",
+          status: "running",
+          ip: "10.103.0.9",
+        }),
+      },
+    });
+    reconcile.mockReset().mockResolvedValue(undefined);
+
+    await reapplyProjectLiveRoutes(project, ["previous.opsh.io"]);
+
+    expect(reconcile).toHaveBeenCalledWith(
+      project,
+      expect.objectContaining({
+        routing: { provider: "cloud" },
+        registers: [
+          expect.objectContaining({ hostname: "app.opsh.io", targetUrl: "http://10.103.0.9:3000" }),
+        ],
+        removes: [{ hostname: "previous.opsh.io", isCustomDomain: false }],
+      }),
+    );
+    expect(syncManagedEdge).not.toHaveBeenCalled();
+    expect(deregisterManagedEdge).not.toHaveBeenCalled();
+  });
+});
+
 describe("shouldRefuseLoopbackRoute", () => {
   it("refuses a tenant project's public route to the dashboard port on loopback", () => {
     expect(shouldRefuseLoopbackRoute("127.0.0.1", 3001, { isSelfApp: false })).toBe(true);

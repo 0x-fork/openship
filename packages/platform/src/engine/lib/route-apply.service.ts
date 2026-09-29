@@ -6,8 +6,7 @@
  * consistently, and the webhook-proxy + best-effort semantics live in one place
  * rather than being copy-pasted per caller:
  *   - cloud project      → the runtime's page/workspace primitives
- *                          (cloud-route.service; the CloudInfraProvider routing
- *                          stub is a no-op).
+ *                          (cloud-route.service / CloudInfraProvider).
  *   - self-hosted target → the DEPLOYMENT'S OWN routing provider (the local box,
  *                          or a remote server/sandbox over SSH) resolved via
  *                          resolveDeploymentRuntime — never the global

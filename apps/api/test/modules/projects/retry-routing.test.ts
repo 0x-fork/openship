@@ -57,7 +57,10 @@ vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   reapplyProjectLiveRoutes,
 }));
 
-import { retryProjectRouting } from "@repo/platform/engine/modules/projects/project-runtime.service";
+import {
+  retryProjectRouting,
+  syncProjectManagedEdge,
+} from "@repo/platform/engine/modules/projects/project-runtime.service";
 
 // A clearly-custom hostname (never under any routing base domain) so
 // syncProjectManagedEdge finds zero managed targets and just clears the warning.
@@ -420,5 +423,102 @@ describe("retryProjectRouting — safe self-heal", () => {
       meta: expect.objectContaining({ edgeUnsynced: true, deployWarning: "Cloud route could not be applied" }),
     }));
     expect(withExecutor).not.toHaveBeenCalled();
+  });
+
+  it("does not register a provider-hosted workspace as a public self-hosted edge target", async () => {
+    projectRepo.findById.mockResolvedValue({
+      id: "proj_1",
+      organizationId: "org_1",
+      cloudWorkspaceId: null,
+      serverId: null,
+      activeDeploymentId: "dep_1",
+    });
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_1",
+      projectId: "proj_1",
+      organizationId: "org_1",
+      status: "ready",
+      containerId: "workspace-one",
+      meta: {
+        deployTarget: "cloud",
+        workspaceId: "workspace-one",
+        edgeUnsynced: true,
+        deployWarning: "old failure",
+      },
+    });
+    domainRepo.listByProject.mockResolvedValue([
+      nulledCustomRow({ hostname: "app.opsh.io", domainType: "free", targetPort: 3000 }),
+    ]);
+    withDeploymentPlatform.mockImplementation(async (_dep, work) =>
+      work({ effectiveTarget: "cloud" }),
+    );
+    const verifyDomains = vi.fn(async () => []);
+
+    expect(await retryProjectRouting("proj_1", "org_1", { verifyDomains })).toEqual({ ok: true });
+    expect(reapplyProjectLiveRoutes).toHaveBeenCalledOnce();
+    expect(syncManagedEdgeRoutes).not.toHaveBeenCalled();
+    expect(reconcileServerEdge).not.toHaveBeenCalled();
+    expect(withExecutor).not.toHaveBeenCalled();
+    expect(verifyDomains).toHaveBeenCalledOnce();
+  });
+
+  it("uses the Docker deployment binding even if the project workspace column is empty", async () => {
+    projectRepo.findById.mockResolvedValue({
+      id: "proj_1",
+      organizationId: "org_1",
+      cloudWorkspaceId: null,
+      activeDeploymentId: "dep_1",
+    });
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_1",
+      projectId: "proj_1",
+      organizationId: "org_1",
+      status: "ready",
+      meta: {
+        deployTarget: "cloud",
+        cloudDockerWorkspace: { projectId: "proj_1", workspaceId: "ws_1" },
+      },
+    });
+    withDeploymentPlatform.mockImplementation(async (_dep, work) =>
+      work({ effectiveTarget: "cloud" }),
+    );
+
+    expect(await retryProjectRouting("proj_1", "org_1")).toEqual({ ok: true });
+    expect(applyProjectRouting).toHaveBeenCalledOnce();
+    expect(reapplyProjectLiveRoutes).not.toHaveBeenCalled();
+    expect(syncManagedEdgeRoutes).not.toHaveBeenCalled();
+    expect(withExecutor).not.toHaveBeenCalled();
+  });
+
+  it("does not register a public server or clear a provider warning after a direct Cloud domain edit", async () => {
+    const project = {
+      id: "proj_1",
+      organizationId: "org_1",
+      cloudWorkspaceId: null,
+      activeDeploymentId: "dep_1",
+    };
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_1",
+      projectId: "proj_1",
+      organizationId: "org_1",
+      status: "ready",
+      meta: { deployTarget: "cloud", edgeUnsynced: true, deployWarning: "Provider update failed" },
+    });
+    domainRepo.listByProject.mockResolvedValue([
+      nulledCustomRow({ hostname: "app.opsh.io", domainType: "free", targetPort: 3000 }),
+    ]);
+    withDeploymentPlatform.mockImplementation(async (_dep, work) =>
+      work({ effectiveTarget: "cloud" }),
+    );
+
+    expect(
+      await syncProjectManagedEdge(
+        project as Parameters<typeof syncProjectManagedEdge>[0],
+        "org_1",
+        { markOnFailure: true },
+      ),
+    ).toEqual({ ok: true, failures: [] });
+    expect(syncManagedEdgeRoutes).not.toHaveBeenCalled();
+    expect(deploymentRepo.updateStatus).not.toHaveBeenCalled();
   });
 });

@@ -394,27 +394,6 @@ export async function reapplyProjectLiveRoutes(
     .filter((h) => !currentHostnames.has(h.toLowerCase()))
     .map((hostname) => ({ hostname, isCustomDomain: !managedHostnameToSlug(hostname) }));
 
-  // Self-hosted: a dropped free (*.opsh.io) hostname leaves a stale slug→target
-  // route on Openship Cloud's edge. Deregister it (best-effort) so the freed
-  // slug is reusable and the old URL stops resolving. Cloud projects route their
-  // managed subdomain INTERNALLY (page/workspace), reconciled by the cloud
-  // branch below — so this teardown is self-hosted only.
-  if (!isCloud) {
-    const droppedSlugs = removes
-      .map((r) => managedHostnameToSlug(r.hostname))
-      .filter((s): s is string => !!s);
-    if (droppedSlugs.length > 0) {
-      const result = await deregisterManagedEdgeRoutes(droppedSlugs, {
-        organizationId: project.organizationId,
-      }).catch(() => null);
-      if (result && result.failures.length > 0) {
-        warn(
-          `[project-route] ${project.slug}: managed edge deregister failed for ${result.failures.join(", ")}`,
-        );
-      }
-    }
-  }
-
   // Cloud: no upstream resolution — the workspace/page owns routing by port.
   if (isCloud) {
     const registers: RouteRegister[] = current
@@ -457,6 +436,26 @@ export async function reapplyProjectLiveRoutes(
   const { routing, runtime } = resolved.platform;
   const { effectiveTarget, serverId } = resolved;
   try {
+    // A Cloud deployment can have an empty project.cloudWorkspaceId. Its
+    // workspace/page ingress still belongs to the provider, not to a public
+    // self-hosted server. Use the same resolved target as the route writer for
+    // BOTH sides of managed-edge registration (add and remove).
+    if (effectiveTarget !== "cloud") {
+      const droppedSlugs = removes
+        .map((r) => managedHostnameToSlug(r.hostname))
+        .filter((s): s is string => !!s);
+      if (droppedSlugs.length > 0) {
+        const result = await deregisterManagedEdgeRoutes(droppedSlugs, {
+          organizationId: project.organizationId,
+        }).catch(() => null);
+        if (result && result.failures.length > 0) {
+          warn(
+            `[project-route] ${project.slug}: managed edge deregister failed for ${result.failures.join(", ")}`,
+          );
+        }
+      }
+    }
+
     // Register the managed (*.opsh.io) hostnames that are NEW in this edit on
     // Openship Cloud's edge — the "add" half. Oblien's edge has NO route EDIT
     // (only sync + deregister), so a slug change is drop-old (deregistered above)
@@ -470,7 +469,7 @@ export async function reapplyProjectLiveRoutes(
     // recreate it without any surviving project/orphan record.
     const previouslyPresent = new Set(previousHostnames.map((h) => h.toLowerCase()));
     const syncAddedManagedEdge = async () => {
-      if (opts.managedEdgeSyncedByCaller) return;
+      if (effectiveTarget === "cloud" || opts.managedEdgeSyncedByCaller) return;
       // NOT filtered by target kind. The edge route is `<slug>.opsh.io` → this
       // server's :80; what the vhost then does with the request — proxy to a
       // container or serve files — is decided locally and is none of Cloud's

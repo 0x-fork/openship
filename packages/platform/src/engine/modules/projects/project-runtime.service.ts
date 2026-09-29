@@ -430,7 +430,10 @@ async function retryLiveProjectRouting(
   };
 
   // Cloud manages its own ingress — there is no server edge to repair here.
-  if (p.cloudWorkspaceId) {
+  if (
+    p.cloudWorkspaceId ||
+    (dep.meta as { cloudDockerWorkspace?: unknown } | null)?.cloudDockerWorkspace
+  ) {
     if (!(dep?.meta as { cloudDockerWorkspace?: unknown } | null)?.cloudDockerWorkspace)
       return finish();
     const warnings: string[] = [];
@@ -447,25 +450,31 @@ async function retryLiveProjectRouting(
     return finish();
   }
 
-  log("Resolving the deployment server…");
-  await repairDeploymentServerBinding(p, dep);
+  const cloudTarget = await withDeploymentPlatform(
+    dep,
+    async ({ effectiveTarget }) => effectiveTarget === "cloud",
+  );
+  const serverId = cloudTarget
+    ? undefined
+    : (p.serverId ?? (dep?.meta as { serverId?: string } | null)?.serverId ?? undefined);
 
-  const serverId = p.serverId ?? (dep?.meta as { serverId?: string } | null)?.serverId ?? undefined;
+  if (!cloudTarget) {
+    log("Resolving the deployment server…");
+    await repairDeploymentServerBinding(p, dep);
 
-  // Route application reaches into openship-edge. Reconcile it BEFORE any route
-  // read/write so a stopped or missing container is revived rather than leaving
-  // docker exec/config reload calls to sit until the request timeout (#693).
-  log("Checking and restoring the server's edge proxy…");
-  const edgeRecoveryWarning = await recoverProjectEdge(p, dep, options.onLog);
-  if (edgeRecoveryWarning) {
-    const fresh = p.activeDeploymentId
-      ? await findActiveDeployment(p)
-      : null;
-    await markRoutingWarning(fresh, edgeRecoveryWarning).catch(() => {});
-    return { ok: false, warning: edgeRecoveryWarning };
+    // Route application reaches into openship-edge. Reconcile it BEFORE any route
+    // read/write so a stopped or missing container is revived rather than leaving
+    // docker exec/config reload calls to sit until the request timeout (#693).
+    log("Checking and restoring the server's edge proxy…");
+    const edgeRecoveryWarning = await recoverProjectEdge(p, dep, options.onLog);
+    if (edgeRecoveryWarning) {
+      const fresh = p.activeDeploymentId ? await findActiveDeployment(p) : null;
+      await markRoutingWarning(fresh, edgeRecoveryWarning).catch(() => {});
+      return { ok: false, warning: edgeRecoveryWarning };
+    }
+
+    await restoreCustomPortsFromEdge(p, serverId).catch(() => {});
   }
-
-  await restoreCustomPortsFromEdge(p, serverId).catch(() => {});
 
   // Live re-apply is best-effort, but its failure must NOT clear the warning.
   let applyOk = true;
@@ -481,7 +490,7 @@ async function retryLiveProjectRouting(
     routeWarnings.push(message);
     log(message);
   };
-  log("Applying the project's current routes…");
+  log(cloudTarget ? "Applying cloud routes…" : "Applying the project's current routes…");
   await reapplyProjectLiveRoutes(p, [], {
     ...(options.isSelfApp !== undefined ? { isSelfApp: options.isSelfApp } : {}),
     ...(options.onLog ? { onLog: options.onLog } : {}),
@@ -498,12 +507,14 @@ async function retryLiveProjectRouting(
 
   // Reconcile managed hosts, retaining the warning until route and domain checks
   // also succeed. This re-reads the deployment's repaired server binding.
-  log("Synchronizing managed domains…");
-  const { ok, failures } = await syncProjectManagedEdge(p, organizationId, {
-    markOnFailure: true,
-    clearOnSuccess: false,
-  });
-  if (!ok) return { ok: false, warning: edgeUnsyncedWarning(failures, "retry") };
+  if (!cloudTarget) {
+    log("Synchronizing managed domains…");
+    const { ok, failures } = await syncProjectManagedEdge(p, organizationId, {
+      markOnFailure: true,
+      clearOnSuccess: false,
+    });
+    if (!ok) return { ok: false, warning: edgeUnsyncedWarning(failures, "retry") };
+  }
 
   if (!applyOk) {
     const warning = routeWarnings.length
@@ -515,6 +526,8 @@ async function retryLiveProjectRouting(
     await markRoutingWarning(fresh, warning).catch(() => {});
     return { ok: false, warning };
   }
+
+  if (cloudTarget) return finish();
 
   // Last: every step above writes CONFIGURATION, and a written route is not a served
   // one. An edge crash-looping on `bind() … Address already in use` accepts every
@@ -693,9 +706,20 @@ export async function syncProjectManagedEdge(
   organizationId: string,
   opts: { markOnFailure?: boolean; clearOnSuccess?: boolean } = {},
 ): Promise<{ ok: boolean; failures: string[] }> {
-  const dep = project.activeDeploymentId
-    ? await findActiveDeployment(project)
-    : null;
+  const dep = project.activeDeploymentId ? await findActiveDeployment(project) : null;
+  // This helper is also called directly after domain/project edits. Cloud
+  // ingress never needs a second edge proxy pointing at the SaaS API server.
+  // Leave warning clearance to the provider route apply + domain verification.
+  if (
+    project.cloudWorkspaceId ||
+    (dep &&
+      (await withDeploymentPlatform(
+        dep,
+        async ({ effectiveTarget }) => effectiveTarget === "cloud",
+      )))
+  ) {
+    return { ok: true, failures: [] };
+  }
   const serverId = (dep?.meta as { serverId?: string } | null)?.serverId ?? undefined;
 
   const targets = (await repos.domain.listByProject(project.id))
