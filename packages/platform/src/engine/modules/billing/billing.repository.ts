@@ -17,6 +17,7 @@ import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-s
 import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
 import { env } from "@repo/platform/engine/config/env";
+import { readCloudCapacity } from "../../lib/cloud-resource-limits";
 
 const {
   billingCustomer,
@@ -93,15 +94,16 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
   // falling back to a rolling 30 days) — which, now that build minutes are
   // actually enforced, would have shown a user "3 of 15 used" while a different
   // window refused their deploy. One window, one number, one source.
-  const [buildMinutes, freeSubdomains, servicesUsed, projectsUsed] = await Promise.all([
+  const [buildMinutes, freeSubdomains, servicesUsed, projectsUsed, providerCapacity] = await Promise.all([
     getBuildMinuteUsage(orgId, { tier, limits: planLimitsForTier }),
     getFreeSubdomainUsage(orgId, { tier, limits: planLimitsForTier }),
-    // Running services = Oblien workspaces, the ceiling customers feel most.
+    // Several services may share one Docker workspace.
     repos.service.countRunningForOrg(orgId).catch(() => null),
     repos.projectGroup
       .listByOrganization(orgId, { page: 1, perPage: 1 })
       .then((r) => r.total)
       .catch(() => null),
+    readCloudCapacity(entitlement.namespace).catch(() => ({})),
   ]);
   const buildTimeMinutes = buildMinutes.usedMinutes;
 
@@ -158,13 +160,9 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
      * never showed them approaching. `max: null` = unlimited on this tier.
      */
     capacity: {
+      ...providerCapacity,
       routes: { used: freeSubdomains.used, max: freeSubdomains.limit },
       buildMinutes: { used: buildMinutes.usedMinutes, max: tier === "free" ? 0 : buildMinutes.limitMinutes },
-      // Both of these have a REAL used count, unlike the vCPU/RAM/disk meters
-      // that were declared here and never populated (four permanently empty rows
-      // the dashboard rendered as "Syncing from cloud" forever). Per-service
-      // machine size is deliberately NOT a meter: Oblien's ceilings are
-      // per-workspace, so there is no pool to fill.
       services: { used: servicesUsed, max: planLimitsForTier.runningServices },
       projects: { used: projectsUsed, max: planLimitsForTier.maxProjects },
     },

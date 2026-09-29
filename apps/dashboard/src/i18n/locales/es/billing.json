@@ -331,7 +331,7 @@
     "creditsPerCycle": "{amount} créditos / ciclo de facturación",
     "buildTime": "Tiempo de compilación",
     "buildMinutes": "{amount} min / mes",
-    "buildHint": "Tiempo dedicado a compilar tu código. Una compilación de 5 minutos consume 5 minutos de tu cuota mensual.",
+    "buildHint": "Las compilaciones consumen la asignación compartida según los recursos que utilizan. Solo se aplica un límite de tiempo independiente si está incluido en tu plan guardado.",
     "apps": "Servicios activos",
     "appsHint": "Aplicaciones, bases de datos y procesos en ejecución al mismo tiempo. Cada servicio Compose activo cuenta para este límite.",
     "machine": "CPU y memoria por servicio",
@@ -345,7 +345,7 @@
     "setupOnly": "Requiere suscripción",
     "setupHint": "Elige un plan de Cloud para crear proyectos, compilar código y ejecutar apps.",
     "includedTitle": "Tus recursos",
-    "limitsHint": "Proyectos, servicios en ejecución y tiempo de compilación mensual de tu plan.",
+    "limitsHint": "Proyectos, servicios en ejecución y cualquier límite de tiempo de compilación incluido en tu plan.",
     "balanceRule": "Las apps se pausan al agotarse la cuota de uso. Añade más uso para continuar o mejora el plan para aumentar los límites de recursos.",
     "reset": "La cuota de compilación se renueva el {date}",
     "cpuHint": "Procesamiento utilizado a lo largo del tiempo. 1 vCPU durante 1 hora equivale a 1 vCPU-hora.",
@@ -365,7 +365,12 @@
     "usageIncluded": "Incluye una cuota de uso compartida",
     "usageSummary": "Las compilaciones y las apps en ejecución comparten una cuota de uso. Las máquinas más grandes y los tiempos de ejecución más largos consumen más.",
     "usageDetails": "Detalles de uso",
-    "usagePercent": "{percent}% utilizado"
+    "usagePercent": "{percent}% utilizado",
+    "poolHint": "Compartido por todos los espacios, incluidos los detenidos y los cambios pendientes.",
+    "creditUnitsHint": "Los créditos miden consumo de recursos, no minutos. CPU, memoria, actividad de disco y transferencia tienen tarifas propias.",
+    "topupCapacityHint": "Las recargas añaden créditos de uso. Mejora el plan para ampliar CPU, RAM o almacenamiento.",
+    "poolTitle": "Capacidad compartida",
+    "poolCapacity": "{cpu} vCPU · {ram} GB de RAM · {disk} GB de disco"
   },
   "onboarding": {
     "workspaceDescription": "Elige un plan de Cloud para crear proyectos, compilar código y ejecutar tus apps. Antes de suscribirte no se incluyen proyectos ni recursos de cómputo.",

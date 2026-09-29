@@ -5,11 +5,11 @@ const h = vi.hoisted(() => ({
   owner: vi.fn(), find: vi.fn(), reserve: vi.fn(), attach: vi.fn(), ready: vi.fn(), active: vi.fn(),
   token: vi.fn(), spend: vi.fn(), create: vi.fn(), retry: vi.fn(), get: vi.fn(), start: vi.fn(), resume: vi.fn(),
   permanent: vi.fn(), resize: vi.fn(), wait: vi.fn(), credentials: [] as unknown[],
-  discard: vi.fn(), list: vi.fn(), exec: vi.fn(), invalidate: vi.fn(), dispose: vi.fn(),
+  inFlight: vi.fn(), discard: vi.fn(), list: vi.fn(), exec: vi.fn(), invalidate: vi.fn(), dispose: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   withAdvisoryLock: async (_key: string, run: () => Promise<unknown>) => run(),
-  repos: { project: { findByIdInOrganization: h.owner }, deployment: { findById: h.active },
+  repos: { project: { findByIdInOrganization: h.owner }, deployment: { findById: h.active, listInFlightByProject: h.inFlight },
     cloudDockerWorkspace: { find: h.find, reserve: h.reserve, attach: h.attach, markReady: h.ready, discardUncreated: h.discard } },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: true, OBLIEN_API_URL: "https://staging.oblien.test" } }));
@@ -33,7 +33,7 @@ vi.mock("@repo/adapters", async (original) => ({
   },
 }));
 
-import { cloudDockerResources, cloudDockerWorkspaceForCleanup, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "@repo/platform/engine/lib/cloud-docker-workspace";
+import { cloudDockerNeedsBuild, reconcileCloudDockerWorkspace, runningDockerAllocation, cloudDockerResources, cloudDockerWorkspaceForCleanup, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "@repo/platform/engine/lib/cloud-docker-workspace";
 
 const project = { id: "project-a", organizationId: "org-a", activeDeploymentId: null, cloudWorkspaceId: null } as Project;
 const resources = { cpuCores: 2, memoryMb: 4096, diskMb: 32768 };
@@ -52,6 +52,8 @@ beforeEach(() => {
   h.get.mockResolvedValue({ id: "workspace-a", namespace: "namespace-a", status: "active", info: { status: "running" }, resources: { cpus: 2, memory_mb: 4096, disk_size_mb: 32768 } });
   h.wait.mockImplementation(async () => h.get());
   h.exec.mockResolvedValue("");
+  h.resize.mockResolvedValue({ success: true, relaunched: true });
+  h.inFlight.mockResolvedValue([]);
   h.discard.mockImplementation(async () => { binding = undefined; });
 });
 
@@ -141,7 +143,7 @@ describe("Cloud Docker provisioning and retry", () => {
     await ensureCloudDockerWorkspace(input);
     const controller = new AbortController();
     h.exec.mockResolvedValueOnce("abcdef123456");
-    h.resize.mockImplementation(async () => { controller.abort(); });
+    h.resize.mockImplementation(async () => { controller.abort(); return { success: true, relaunched: true }; });
     await expect(ensureCloudDockerWorkspace({ ...input, resources: { ...resources, memoryMb: 8192 }, signal: controller.signal })).rejects.toThrow();
     expect(h.exec).toHaveBeenLastCalledWith("docker start 'abcdef123456'");
     expect(h.wait).toHaveBeenLastCalledWith(expect.anything(), "workspace-a", "namespace-a");
@@ -233,6 +235,62 @@ describe("Cloud Docker provisioning and retry", () => {
   it("sizes one host for enabled services and build headroom", () => {
     expect(cloudDockerResources({ services: [{ resources: { cpuCores: 1, memoryMb: 3072, diskMb: 1024 } },
       { resources: { cpuCores: 1, memoryMb: 3072, diskMb: 1024 } }, { enabled: false, resources: { cpuCores: 100, memoryMb: 999999, diskMb: 999999 } }],
-      buildResources: { cpuCores: 2, memoryMb: 1024, diskMb: 4096 } })).toEqual({ cpuCores: 2, memoryMb: 7168, diskMb: 32768 });
+      reserveBuild: true, buildResources: { cpuCores: 2, memoryMb: 1024, diskMb: 4096 } })).toEqual({ cpuCores: 2, memoryMb: 7680, diskMb: 8192 });
+  });
+  it("uses a 1 GB image-only host instead of permanently reserving a source builder", () => {
+    const services = [{ name: "vaultwarden", image: "vaultwarden/server:latest", enabled: true }];
+    expect(cloudDockerNeedsBuild(services)).toBe(false);
+    expect(cloudDockerResources({ services })).toEqual({ cpuCores: 1, memoryMb: 1024, diskMb: 8192 });
+    expect(cloudDockerNeedsBuild([{ ...services[0]!, build: { context: "." } }])).toBe(true);
+    expect(cloudDockerResources({ services, reserveBuild: true })).toEqual({ cpuCores: 1, memoryMb: 3072, diskMb: 8192 });
+  });
+  it("releases unused CPU/RAM after deployment, preserving disks and previously running services", async () => {
+    await ensureCloudDockerWorkspace(input);
+    h.exec.mockResolvedValueOnce("abcdef123456").mockResolvedValueOnce(JSON.stringify(["abcdef123456", project.id, 512 * 1048576, 500000000, 0, 0]))
+      .mockResolvedValueOnce("abcdef123456");
+    expect(await reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a", resources: { cpuCores: 1, memoryMb: 1024, diskMb: 8192 } })).toBe(true);
+    expect(h.resize).toHaveBeenCalledExactlyOnceWith({ cpus: 1, memory_mb: 1024, disk_size_mb: 32768, apply: true });
+    expect(h.exec).toHaveBeenLastCalledWith("docker start 'abcdef123456'");
+    expect(h.create).toHaveBeenCalledOnce();
+  });
+  it("never reduces below the actual running containers even if desired settings are smaller", async () => {
+    await ensureCloudDockerWorkspace(input);
+    h.exec.mockResolvedValueOnce("abcdef123456").mockResolvedValueOnce(JSON.stringify(["abcdef123456", project.id, 3584 * 1048576, 2000000000, 0, 0]));
+    expect(await reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a", resources: { cpuCores: 1, memoryMb: 1024, diskMb: 8192 } })).toBe(false);
+    expect(h.resize).not.toHaveBeenCalled();
+  });
+  it.each(["foreign", "unbounded", "incomplete"])("refuses an unsafe %s container inspection before resizing", async kind => {
+    await ensureCloudDockerWorkspace(input);
+    h.exec.mockResolvedValueOnce("abcdef123456").mockResolvedValueOnce(kind === "incomplete" ? "" : JSON.stringify([
+      "abcdef123456", kind === "foreign" ? "project-other" : project.id, kind === "unbounded" ? 0 : 512 * 1048576, 500000000, 0, 0]));
+    await expect(reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a", resources: { cpuCores: 1, memoryMb: 1024, diskMb: 8192 } })).rejects.toThrow();
+    expect(h.resize).not.toHaveBeenCalled();
+  });
+  it("leaves a stopped host and a different in-flight deployment untouched", async () => {
+    await ensureCloudDockerWorkspace(input);
+    h.inFlight.mockResolvedValueOnce([{ id: "another-deployment" }]);
+    expect(await reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a", deploymentId: "this-deployment" })).toBe(false);
+    h.get.mockResolvedValueOnce({ namespace: "namespace-a", info: { status: "stopped" }, resources: {} });
+    expect(await reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a" })).toBe(false);
+    expect(h.resize).not.toHaveBeenCalled(); expect(h.start).not.toHaveBeenCalled();
+  });
+  it("checks namespace ownership before inspecting or resizing a host", async () => {
+    await ensureCloudDockerWorkspace(input);
+    h.get.mockResolvedValueOnce({ namespace: "namespace-other", info: { status: "running" } });
+    await expect(reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a" })).rejects.toThrow("namespace changed");
+    expect(h.exec).not.toHaveBeenCalled(); expect(h.resize).not.toHaveBeenCalled();
+  });
+  it("accepts fractional Docker CPU quotas without equating them to VM core counts", () => {
+    expect(runningDockerAllocation(JSON.stringify(["abcdef123456", project.id, 512 * 1048576, 0, 25000, 100000]), project.id))
+      .toEqual({ cpuCores: 1, memoryMb: 1024, diskMb: 8192 });
+  });
+  it.each(["500000000", null, true])("refuses a nonnumeric Docker CPU allocation (%s)", cpu => {
+    expect(() => runningDockerAllocation(JSON.stringify(["abcdef123456", project.id, 512 * 1048576, cpu, 0, 0]), project.id))
+      .toThrow("Cannot verify");
+  });
+  it("does not report a saved-but-unapplied resource change as ready", async () => {
+    await ensureCloudDockerWorkspace(input);
+    h.resize.mockResolvedValueOnce({ success: true, relaunched: false, pending_capacity_verification: true });
+    await expect(ensureCloudDockerWorkspace({ ...input, resources: { ...resources, memoryMb: 8192 } })).rejects.toThrow("pending verification");
   });
 });

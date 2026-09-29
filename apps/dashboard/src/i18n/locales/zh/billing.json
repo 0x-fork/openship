@@ -331,7 +331,7 @@
     "creditsPerCycle": "每个账单周期 {amount} 积分",
     "buildTime": "构建时间",
     "buildMinutes": "每月 {amount} 分钟",
-    "buildHint": "构建代码所花的时间。一次 5 分钟的构建会消耗每月额度中的 5 分钟。",
+    "buildHint": "构建根据实际资源消耗使用共享额度。仅当已保存的套餐包含单独的构建时长限制时，才会应用该限制。",
     "apps": "运行中的服务",
     "appsHint": "同时运行的应用、数据库和工作进程。每个运行中的 Compose 服务都计入此上限。",
     "machine": "每个服务的 CPU 和内存",
@@ -345,7 +345,7 @@
     "setupOnly": "需要订阅",
     "setupHint": "选择 Cloud 套餐以创建项目、构建代码并运行应用。",
     "includedTitle": "你的资源",
-    "limitsHint": "套餐中的项目数、运行服务数和每月构建时间。",
+    "limitsHint": "套餐包含的项目数、运行中的服务数，以及适用的构建时长限制。",
     "balanceRule": "用量额度耗尽后，应用会暂停。追加用量以继续运行，或升级套餐以提高资源上限。",
     "reset": "构建额度将于 {date} 重置",
     "cpuHint": "随时间累计的处理资源用量。1 个 vCPU 运行 1 小时等于 1 vCPU 小时。",
@@ -365,7 +365,12 @@
     "usageIncluded": "包含共享用量额度",
     "usageSummary": "构建和运行中的应用共享用量额度。机器规格越高、运行时间越长，消耗越多。",
     "usageDetails": "用量详情",
-    "usagePercent": "已使用 {percent}%"
+    "usagePercent": "已使用 {percent}%",
+    "poolHint": "所有工作空间共享，包括已停止的空间和待完成的更改。",
+    "creditUnitsHint": "积分衡量资源消耗，而不是分钟数。CPU、内存、磁盘活动和传输各有独立费率。",
+    "topupCapacityHint": "充值增加使用积分。需要更多 CPU、内存或存储空间时，请升级套餐。",
+    "poolTitle": "共享容量",
+    "poolCapacity": "{cpu} vCPU · {ram} GB 内存 · {disk} GB 磁盘"
   },
   "onboarding": {
     "workspaceDescription": "选择 Cloud 套餐以创建项目、构建代码并运行应用。订阅前不包含项目或计算资源。",

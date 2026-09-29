@@ -3,7 +3,7 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
-import type { PlanLimits, PlanTierId } from "@repo/core";
+import type { OblienLimits, PlanLimits, PlanTierId } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { PlanResources } from "./PlanResources";
 
@@ -53,6 +53,8 @@ export interface ApiPlan {
    * removed there is a compile error here rather than a silently dead field.
    */
   limits: PlanLimits;
+  /** Declared shared VM pool, supplied by the live catalog or saved paid offer. */
+  resourceLimits?: OblienLimits;
   /** Finished localized strings, numbers already interpolated by the catalog. */
   features: string[];
   /** "Everything in X, plus:" — a lead-in, NOT a bullet, so it renders above the
@@ -111,6 +113,7 @@ interface PricingCardsProps {
  *  error here rather than a card wearing another tier's icon. */
 const PLAN_ICON: Record<PlanTierId, React.ReactNode> = {
   free: <UiIcon name="bolt" className="size-5" />,
+  hobby: <UiIcon name="code" className="size-5" />,
   starter: <UiIcon name="rocket" className="size-5" />,
   pro: <UiIcon name="star" className="size-5" />,
   team: <UiIcon name="building" className="size-5" />,
@@ -177,6 +180,7 @@ const WIDEST_COLUMNS: Record<number, string> = {
   3: "xl:grid-cols-3",
   4: "xl:grid-cols-4",
   5: "xl:grid-cols-5",
+  6: "xl:grid-cols-3",
 };
 
 export const PricingCards: React.FC<PricingCardsProps> = ({

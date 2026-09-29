@@ -15,10 +15,16 @@ export function PlanResources({ plan, interval = "monthly", compact = false }: {
   const count = (n: number | null) => n === null ? copy.unlimited : formatBillingNumber(n, locale);
   const spec = plan.limits.maxResourceTier ? RESOURCE_TIER_SPECS[plan.limits.maxResourceTier] : null;
   const credits = interval === "annual" ? plan.annualCredits : plan.monthlyCredits;
+  const pool = plan.resourceLimits;
+  const hasPool = pool && [pool.max_total_vcpus, pool.max_total_ram_mb, pool.max_total_disk_gb]
+    .every(value => typeof value === "number" && Number.isFinite(value));
   const facts = [
     { Icon: "folder-open" as const, label: copy.projects, value: count(plan.limits.maxProjects) },
     { Icon: "layers" as const, label: copy.apps, value: count(plan.limits.runningServices) },
-    { Icon: "clock" as const, label: copy.buildTime, value: plan.limits.buildMinutesPerMonth === null ? copy.unlimited : interpolate(copy.buildMinutes, { amount: count(plan.limits.buildMinutesPerMonth) }) },
+    ...(plan.limits.buildMinutesPerMonth === null ? [] : [{ Icon: "clock" as const, label: copy.buildTime, value: interpolate(copy.buildMinutes, { amount: count(plan.limits.buildMinutesPerMonth) }) }]),
+    ...(hasPool ? [{ Icon: "cloud" as const, label: copy.poolTitle, value: interpolate(copy.poolCapacity, {
+      cpu: count(pool.max_total_vcpus), ram: count(pool.max_total_ram_mb! / 1024), disk: count(pool.max_total_disk_gb),
+    }) }] : []),
     { Icon: "cpu" as const, label: copy.machine, value: spec ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}` : copy.unlimited },
     ...(plan.edge ? [{ Icon: "globe" as const, label: t.billing.resourceOverview.bandwidth, value: plan.edge.bandwidthGb === null ? copy.unlimited : interpolate(t.billing.resourceOverview.bandwidthPerMonth, { amount: count(plan.edge.bandwidthGb) }) }] : []),
   ];
@@ -42,6 +48,7 @@ export function PlanResources({ plan, interval = "monthly", compact = false }: {
           <dd className="ms-auto text-end text-sm font-medium tabular-nums text-foreground"><bdi>{value}</bdi></dd>
         </div>)}
       </dl>
+      {hasPool && <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{copy.poolHint}</p>}
       <details className="group mt-5 rounded-lg bg-muted/35 p-3">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-foreground [&::-webkit-details-marker]:hidden">
           {copy.usageIncluded}<UiIcon name="chevron-down" className="size-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />

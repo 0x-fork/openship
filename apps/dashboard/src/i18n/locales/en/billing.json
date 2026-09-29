@@ -331,7 +331,7 @@
     "creditsPerCycle": "{amount} credits / billing cycle",
     "buildTime": "Build time",
     "buildMinutes": "{amount} min / month",
-    "buildHint": "Time spent building your code. A 5-minute build uses 5 build minutes from your monthly allowance.",
+    "buildHint": "Builds use the shared usage allowance according to their resource consumption. A separate time limit applies only when included in your saved plan.",
     "apps": "Running services",
     "appsHint": "Apps, databases and workers running at the same time. Each running Compose service counts toward this limit.",
     "machine": "CPU & memory per service",
@@ -345,7 +345,7 @@
     "setupOnly": "Subscription required",
     "setupHint": "Choose a Cloud plan to create projects, build your code and run apps.",
     "includedTitle": "Your resources",
-    "limitsHint": "Projects, running services and monthly build time in your plan.",
+    "limitsHint": "Projects, running services and any build time limit included in your plan.",
     "balanceRule": "Apps pause when the usage allowance runs out. Add more usage to continue, or upgrade for higher resource limits.",
     "reset": "Build allowance resets {date}",
     "cpuHint": "Processing used over time. 1 vCPU running for 1 hour is 1 vCPU-hour.",
@@ -365,7 +365,12 @@
     "usageIncluded": "Shared usage allowance included",
     "usageSummary": "Builds and running apps share a usage allowance. Larger machines and longer running times use more.",
     "usageDetails": "Usage details",
-    "usagePercent": "{percent}% used"
+    "usagePercent": "{percent}% used",
+    "poolHint": "Shared across all workspaces, including stopped workspaces and pending changes.",
+    "creditUnitsHint": "Credits measure resource consumption, not minutes. CPU, memory, disk activity and transfer each have their own rate.",
+    "topupCapacityHint": "Top-ups add usage credits. Upgrade your plan for more total CPU, RAM or storage.",
+    "poolTitle": "Shared capacity",
+    "poolCapacity": "{cpu} vCPU · {ram} GB RAM · {disk} GB disk"
   },
   "onboarding": {
     "workspaceDescription": "Choose a Cloud plan to create projects, build your code and run your apps. No projects or compute are included before subscribing.",

@@ -331,7 +331,7 @@
     "creditsPerCycle": "{amount} créditos / ciclo de cobrança",
     "buildTime": "Tempo de compilação",
     "buildMinutes": "{amount} min / mês",
-    "buildHint": "Tempo gasto no build do código. Um build de 5 minutos usa 5 minutos da sua franquia mensal.",
+    "buildHint": "As compilações consomem a franquia compartilhada conforme os recursos utilizados. Um limite de tempo separado só se aplica quando incluído no seu plano salvo.",
     "apps": "Serviços ativos",
     "appsHint": "Aplicativos, bancos de dados e processos executados ao mesmo tempo. Cada serviço Compose ativo conta para este limite.",
     "machine": "CPU e memória por serviço",
@@ -345,7 +345,7 @@
     "setupOnly": "Assinatura necessária",
     "setupHint": "Escolha um plano Cloud para criar projetos, compilar código e executar apps.",
     "includedTitle": "Seus recursos",
-    "limitsHint": "Projetos, serviços em execução e tempo de build mensal do seu plano.",
+    "limitsHint": "Projetos, serviços em execução e qualquer limite de tempo de compilação incluído no seu plano.",
     "balanceRule": "Os apps são pausados quando a franquia acaba. Adicione mais uso para continuar ou mude de plano para aumentar os limites de recursos.",
     "reset": "A cota de compilação renova em {date}",
     "cpuHint": "Processamento usado ao longo do tempo. 1 vCPU durante 1 hora equivale a 1 vCPU-hora.",
@@ -365,7 +365,12 @@
     "usageIncluded": "Franquia de uso compartilhada incluída",
     "usageSummary": "Builds e apps em execução compartilham uma franquia de uso. Máquinas maiores e tempos de execução mais longos consomem mais.",
     "usageDetails": "Detalhes de uso",
-    "usagePercent": "{percent}% utilizado"
+    "usagePercent": "{percent}% utilizado",
+    "poolHint": "Compartilhado por todos os espaços, incluindo os parados e as alterações pendentes.",
+    "creditUnitsHint": "Créditos medem consumo de recursos, não minutos. CPU, memória, atividade de disco e transferência têm taxas próprias.",
+    "topupCapacityHint": "Recargas adicionam créditos de uso. Altere o plano para aumentar CPU, RAM ou armazenamento.",
+    "poolTitle": "Capacidade compartilhada",
+    "poolCapacity": "{cpu} vCPU · {ram} GB de RAM · {disk} GB de disco"
   },
   "onboarding": {
     "workspaceDescription": "Escolha um plano Cloud para criar projetos, compilar código e executar seus apps. Antes da assinatura, nenhum projeto ou recurso de computação está incluído.",

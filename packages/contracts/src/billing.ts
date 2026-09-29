@@ -29,6 +29,11 @@ const planLimits = Type.Object({
   computeMinutesPerMonth: numberOrNull, buildMinutesPerMonth: numberOrNull,
   freeSubdomains: numberOrNull, customDomains: numberOrNull, seats: numberOrNull,
 });
+const capacityLimit = Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]);
+const namespaceResourceLimits = Type.Object({
+  max_workspaces: capacityLimit, max_vcpus: capacityLimit, max_ram_mb: capacityLimit, max_disk_gb: capacityLimit,
+  max_total_vcpus: capacityLimit, max_total_ram_mb: capacityLimit, max_total_disk_gb: capacityLimit,
+});
 export const BillingPlansSchema = Type.Object({
   provider: Type.Optional(Type.Literal("oblien")),
   locale: Type.String(), annual: Type.Object({ enabled: Type.Boolean(), monthsFree: Type.Number() }),
@@ -39,6 +44,7 @@ export const BillingPlansSchema = Type.Object({
     effectivePrice: Type.Object({ monthly: numberOrNull }), listPrice: Type.Object({ monthly: numberOrNull }),
     campaign: Type.Union([Type.Object({ id: Type.String(), percentOff: Type.Number(), durationMonths: numberOrNull, endsAt: Type.String() }), Type.Null()]),
     monthlyCredits: numberOrNull, annualCredits: Type.Optional(numberOrNull), limits: planLimits,
+    resourceLimits: Type.Optional(namespaceResourceLimits),
     edge: Type.Optional(edgeLimits), features: Type.Array(Type.String()),
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
@@ -100,7 +106,7 @@ export const BillingOperationSchemas = {
   getCheckout: {
     action: "read",
     input: Type.Object(
-      { checkoutId: Type.String({ pattern: "^cs_[A-Za-z0-9_]+$", maxLength: 255 }) },
+      { checkoutId: Type.String({ pattern: "^(?:cs_[A-Za-z0-9_]+|bco_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$", maxLength: 255 }) },
       { additionalProperties: false },
     ),
     output: BillingCheckoutStatusSchema,
