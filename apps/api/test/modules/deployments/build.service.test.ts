@@ -225,10 +225,13 @@ function installStatefulComposeRepo<T extends Record<string, unknown>>(initial: 
     query: { service: { findMany: async () => [stored] } },
     update: () => ({
       set: (data: Record<string, unknown>) => ({
-        where: async () => {
-          writes.push(configuration.openService(data));
-          stored = { ...stored, ...data } as T;
-        },
+        where: () => ({
+          returning: async () => {
+            writes.push(configuration.openService(data));
+            stored = { ...stored, ...data } as T;
+            return [stored];
+          },
+        }),
       }),
     }),
   } as unknown as Database;

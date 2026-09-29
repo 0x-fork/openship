@@ -7,6 +7,13 @@ the in-app updater surfaces critical advisories from `release-advisories.json`.
 
 ### Fixed
 
+- Compose deployments preserve unchanged image services across folder uploads
+  and snapshot syncs. Import metadata updates no longer mark services dirty or
+  overwrite the timestamp of a concurrent configuration edit. Changed project
+  resource limits still apply while respecting each service's overrides (#986).
+- Docker replacement and teardown use graceful shutdown by default, honoring
+  image stop signals and configured grace periods. Runtime probes reap their
+  watchdog before exiting so PostgreSQL does not mistake it for a crashed backend.
 - Instance and project exports include plaintext environment values, server keys
   and credentials by default, without an export password. Imports still read
   older encrypted archives and encrypt credentials with the destination's key.
