@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { IconProvider } from "@repo/ui/icons";
+import { runtimeTarget } from "@repo/core";
+import { CLOUD_ICON_BASE_URL, IconProvider, LOCAL_ICON_BASE_URL } from "@repo/ui/icons";
 import { cookies, headers } from "next/headers";
 import "./globals.css";
 import { ThemeProvider, ThemeScript } from "@/components/theme-provider";
@@ -99,6 +100,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // per-request thanks to `force-dynamic` above.
   const localApiOrigin = process.env.OPENSHIP_LOCAL_API_URL;
   const deploymentInfo = await getDeploymentInfoOrNull();
+  // Resolve the asset host before SSR, including auth and API-unavailable pages.
+  // Cloud-connected desktop instances still use their bundled icons.
+  const cloudIcons =
+    !localApiOrigin &&
+    deploymentInfo?.deployMode !== "desktop" &&
+    !(deploymentInfo?.selfHosted ?? runtimeTarget.selfHosted);
 
   const locale = await resolveRequestLocale();
   const dir = isRtl(locale) ? "rtl" : "ltr";
@@ -132,7 +139,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : null}
       </head>
       <body>
-        <IconProvider baseUrl={process.env.OPENSHIP_ICON_BASE_URL}>
+        <IconProvider
+          baseUrl={cloudIcons ? CLOUD_ICON_BASE_URL : process.env.OPENSHIP_ICON_BASE_URL}
+          fallbackBaseUrl={LOCAL_ICON_BASE_URL}
+        >
           <ThemeProvider>
             <AuthProvider>
               {!localApiOrigin && deploymentInfo?.selfHosted === false && deploymentInfo.deployMode !== "desktop" && deploymentInfo.cloudAnalytics ? (

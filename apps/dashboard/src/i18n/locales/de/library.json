@@ -10,16 +10,15 @@
   },
   "page": {
     "title": "Neues Projekt",
-    "subtitle": "Importiere ein Repository, füge eine URL ein oder starte von einer Vorlage",
+    "subtitle": "Stelle eine App bereit oder importiere dein eigenes Projekt.",
     "tabs": {
       "folder": "Ordner",
-      "github": "GitHub",
-      "url": "Git-URL",
-      "template": "Vorlage"
+      "github": "GitHub"
     }
   },
   "connect": {
     "connectGithub": "GitHub verbinden",
+    "deployApp": "App bereitstellen",
     "manageInSettings": "In den Einstellungen verwalten",
     "terminal": {
       "title": "GitHub verbinden",
@@ -138,8 +137,6 @@
     "noMatchingDesc": "Versuche einen anderen Suchbegriff oder passe deine Filter an",
     "noReposDesc": "Dieses Konto hat noch keine Repositories",
     "privateBadge": "Privat",
-    "localOnly": "Nur lokal",
-    "localOnlyTooltip": "Die Openship App ist nicht auf {owner} installiert. Nur lokale Builds — installiere die App bei diesem Owner, um Remote-Deploys zu aktivieren.",
     "repoCountSingular": "{count} Repository",
     "repoCountPlural": "{count} Repositories",
     "matching": "passend zu \"{query}\"",

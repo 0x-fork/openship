@@ -1,16 +1,15 @@
 {
   "page": {
     "title": "Yeni Proje",
-    "subtitle": "Bir depoyu içe aktarın, bir URL yapıştırın veya bir şablondan başlayın",
+    "subtitle": "Bir uygulama dağıtın veya kendi projenizi içe aktarın.",
     "tabs": {
       "folder": "Klasör",
-      "github": "GitHub",
-      "url": "Git URL'si",
-      "template": "Şablon"
+      "github": "GitHub"
     }
   },
   "connect": {
     "connectGithub": "GitHub'a Bağlan",
+    "deployApp": "Uygulama dağıt",
     "manageInSettings": "Ayarlarda Yönet",
     "terminal": {
       "title": "GitHub'a Bağlan",
@@ -129,8 +128,6 @@
     "noMatchingDesc": "Farklı bir arama terimi deneyin veya filtrelerinizi ayarlayın",
     "noReposDesc": "Bu hesabın henüz hiç deposu yok",
     "privateBadge": "Özel",
-    "localOnly": "Yalnızca yerel",
-    "localOnlyTooltip": "Openship Uygulaması {owner} hesabında kurulu değil. Yalnızca yerel derleme yapılabilir — uzak dağıtımları etkinleştirmek için uygulamayı bu hesaba kurun.",
     "repoCountSingular": "{count} depo",
     "repoCountPlural": "{count} depo",
     "matching": "\"{query}\" ile eşleşen",

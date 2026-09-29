@@ -10,16 +10,15 @@
   },
   "page": {
     "title": "新建项目",
-    "subtitle": "导入仓库、粘贴 URL 或从模板开始",
+    "subtitle": "部署应用或导入你自己的项目。",
     "tabs": {
       "folder": "文件夹",
-      "github": "GitHub",
-      "url": "Git URL",
-      "template": "模板"
+      "github": "GitHub"
     }
   },
   "connect": {
     "connectGithub": "连接 GitHub",
+    "deployApp": "部署应用",
     "manageInSettings": "在设置中管理",
     "terminal": {
       "title": "连接 GitHub",
@@ -138,8 +137,6 @@
     "noMatchingDesc": "请尝试其他搜索词或调整筛选条件",
     "noReposDesc": "此账户尚无任何仓库",
     "privateBadge": "私有",
-    "localOnly": "仅限本地",
-    "localOnlyTooltip": "Openship App 未安装在 {owner} 上。仅支持本地构建——在该所有者上安装 App 即可启用远程部署。",
     "repoCountSingular": "{count} 个仓库",
     "repoCountPlural": "{count} 个仓库",
     "matching": "匹配“{query}”",

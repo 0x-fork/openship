@@ -51,6 +51,10 @@ vi.mock("@repo/platform/engine/lib/route-apply.service", () => ({
   reconcileProjectRoutes: reconcile,
 }));
 
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ target: "selfhosted" }),
+}));
+
 vi.mock("@repo/platform/engine/modules/route-rules/route-rule.service", () => ({
   pushProjectRules: vi.fn().mockResolvedValue(undefined),
 }));
