@@ -11,9 +11,10 @@ changing the plan; purchasing credits does not raise resource caps.
 Signed `namespace.quota.threshold`, `credits.low` and `credits.depleted` events
 refresh the provider entitlement before any notification is prepared. Delayed
 warnings after funding, old billing periods, different service quotas and stale
-namespace bindings do not notify the wrong customer. Openship queues notifications
-and its processed event checkpoint in one database transaction; a failure returns
-503 for Oblien's durable retry. No webhook grants credits in Openship.
+namespace bindings do not notify the wrong customer. Openship queues notifications,
+preserves credit-exhaustion activity when recording is enabled, and writes the
+processed event checkpoint in one database transaction; a failure returns 503 for
+Oblien's durable retry. No webhook grants credits in Openship.
 
 Billing recipients receive email and in-app messages through the existing
 notification system, subject to billing-read access and notification preferences.

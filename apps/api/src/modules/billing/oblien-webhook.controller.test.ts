@@ -33,7 +33,10 @@ vi.mock("@repo/platform/engine/config/env", () => ({
   },
 }));
 vi.mock("@repo/platform/engine/lib/mail", () => ({ sendMail: h.sendMail }));
-vi.mock("../../lib/audit", () => ({ audit: { record: h.auditRecord } }));
+vi.mock("@repo/db/repos", () => ({
+  createAuditEventRepo: () => ({ create: h.auditRecord }),
+  createAuditSettingsRepo: () => ({}),
+}));
 vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { prepare: h.notificationEmit },
 }));
@@ -111,7 +114,7 @@ beforeEach(() => {
   h.notificationEmit.mockReset().mockResolvedValue(h.enqueue);
   h.sendMail.mockReset();
   h.processed.clear();
-  h.sync.mockReset().mockResolvedValue({ entitlement: { namespace: "os-abc", status: "credit_exhausted", quota: { balance: 0,
+  h.sync.mockReset().mockResolvedValue({ tier: "pro", entitlement: { namespace: "os-abc", status: "credit_exhausted", quota: { balance: 0,
     alert: { state: "depleted", percent: 100, used: 10000, limit: 10000, remaining: 0, balance: 0, thresholds: [80,95], threshold: 95 } } } });
 });
 
@@ -167,7 +170,7 @@ describe("oblienWebhook — dispatch", () => {
     expect(arg.cpuTimeMinutes).toBe(120); // physical unit, not converted
   });
 
-  it("credits.depleted queues a notification before acknowledgement (Oblien owns enforcement)", async () => {
+  it("credits.depleted queues a notification and records activity before acknowledgement", async () => {
     h.orgFindById.mockResolvedValue({
       id: "org_1",
       subscriptionStatus: "active",
@@ -181,7 +184,11 @@ describe("oblienWebhook — dispatch", () => {
     });
     const res = (await oblienWebhook(makeCtx(body, sign(body)))) as unknown as JsonResult;
     expect(res.status).toBe(200);
-    expect(h.auditRecord).not.toHaveBeenCalled();
+    expect(h.auditRecord).toHaveBeenCalledOnce();
+    expect(h.auditRecord).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: "org_1", eventType: "billing.credit_exhausted", source: "webhook",
+      after: expect.objectContaining({ planTierId: "pro", oblienNamespace: "os-abc" }),
+    }));
     expect(h.enqueue).toHaveBeenCalledOnce();
     expect(h.notificationEmit).toHaveBeenCalledTimes(1);
   });
@@ -257,10 +264,6 @@ describe("oblienWebhook — dispatch", () => {
   });
 });
 
-// The application seams moved with the shared engine.
-vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { record: h.auditRecord } }));
-
-
 describe("durable quota alert receipt", () => {
   it("returns 503 without a checkpoint when notification storage fails, then retries the same event", async () => {
     const body = JSON.stringify({ id: "evt-critical", event: "credits.depleted", data: { namespace: "os-abc", service: "workspace_vm" } });
@@ -270,6 +273,15 @@ describe("durable quota alert receipt", () => {
     expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-critical"))) as unknown as JsonResult).status).toBe(200);
     expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-critical"))) as unknown as JsonResult).status).toBe(200);
     expect(h.enqueue).toHaveBeenCalledTimes(2);
+    expect(h.auditRecord).toHaveBeenCalledOnce();
+    expect(h.processed.size).toBe(1);
+  });
+  it("leaves the event retryable when exhaustion activity cannot be recorded", async () => {
+    const body = JSON.stringify({ id: "evt-activity", event: "credits.depleted", data: { namespace: "os-abc", service: "workspace_vm" } });
+    h.auditRecord.mockRejectedValueOnce(new Error("activity storage unavailable"));
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-activity"))) as unknown as JsonResult).status).toBe(503);
+    expect(h.processed.size).toBe(0);
+    expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-activity"))) as unknown as JsonResult).status).toBe(200);
     expect(h.processed.size).toBe(1);
   });
   it("never routes a compute quota warning or a changed namespace to the Cloud credit recipient", async () => {

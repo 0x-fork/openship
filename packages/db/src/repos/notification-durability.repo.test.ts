@@ -5,6 +5,8 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import * as schema from "../schema";
 import { createNotificationChannelRepo, createNotificationDeliveryRepo } from "./notification.repo";
+import { createAuditEventRepo } from "./audit-event.repo";
+import { createAuditSettingsRepo } from "./audit-settings.repo";
 import type { Database } from "../client";
 
 const client = new PGlite("memory://");
@@ -25,7 +27,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   await client.exec(
-    'TRUNCATE notification_delivery, notification_channel, oblien_webhook_event, "user" CASCADE',
+    'TRUNCATE notification_delivery, notification_channel, oblien_webhook_event, audit_event, "user" CASCADE',
   );
 });
 afterAll(async () => {
@@ -33,10 +35,13 @@ afterAll(async () => {
 });
 
 describe("durable credit notifications with real Postgres semantics", () => {
-  it("rolls back recipient fan-out with its webhook checkpoint and deduplicates retries by org/user/channel", async () => {
+  it("rolls back recipient fan-out, exhaustion activity, and the checkpoint, and deduplicates retries", async () => {
     await expect(
       db.transaction(async (tx) => {
         await createNotificationDeliveryRepo(tx as unknown as Database).createOnce("evt1", data);
+        await createAuditEventRepo(tx as unknown as Database, createAuditSettingsRepo(tx as unknown as Database)).create({
+          organizationId: data.organizationId, eventType: "billing.credit_exhausted", source: "webhook",
+        });
         await tx
           .insert(schema.oblienWebhookEvent)
           .values({
@@ -49,6 +54,7 @@ describe("durable credit notifications with real Postgres semantics", () => {
     ).rejects.toThrow("crash before commit");
     expect(await db.select().from(schema.notificationDelivery)).toHaveLength(0);
     expect(await db.select().from(schema.oblienWebhookEvent)).toHaveLength(0);
+    expect(await db.select().from(schema.auditEvent)).toHaveLength(0);
     await Promise.all(Array.from({ length: 10 }, () => delivery.createOnce("evt1", data)));
     await delivery.createOnce("evt1", { ...data, organizationId: "org2" });
     await delivery.createOnce("evt1", { ...data, userId: "u2" });

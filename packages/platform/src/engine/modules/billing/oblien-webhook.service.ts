@@ -6,6 +6,7 @@
  */
 export interface BillingWebhookResponse { status: number; payload: Record<string, unknown> }
 import { db, schema, repos, eq, type Database } from "@repo/db";
+import { createAuditEventRepo, createAuditSettingsRepo } from "@repo/db/repos";
 import { safeErrorMessage } from "@repo/core";
 
 import { env, localDashboardUrl } from "@repo/platform/engine/config/env";
@@ -186,7 +187,7 @@ export async function handleOblienWebhook(
       }
       // Every relevant notification refreshes provider truth. In particular,
       // old payment/suspension events cannot revert a newer paid entitlement.
-      const { entitlement } = await sync({ syncResourceLimits: false });
+      const { entitlement, tier } = await sync({ syncResourceLimits: false });
       if (entitlement.namespace !== namespace) throw new Error("Billing namespace changed during delivery");
       if (eventType === "credits.usage") await handleCreditsUsage(orgId, payload, entitlement.quota.balance);
       const alert = creditAlertNotification({ eventType, eventId, data: payload.data ?? {},
@@ -194,10 +195,21 @@ export async function handleOblienWebhook(
       await observeVerifiedBillingEvent(orgId, eventType, payload.data, payload.timestamp);
       const enqueue = alert ? await notification.prepare(alert) : null;
       // No email is sent while holding this transaction. The receiver only ACKs
-      // once every notification and its processed checkpoint commit together.
+      // once notifications, the exhaustion activity, and its checkpoint commit together.
       await db.transaction(async transaction => {
         const tx = transaction as unknown as Database;
         if (enqueue) await enqueue(tx);
+        if (alert?.eventType === "billing.credit_exhausted") {
+          await createAuditEventRepo(tx, createAuditSettingsRepo(tx)).create({
+            organizationId: orgId,
+            actorUserId: null,
+            eventType: alert.eventType,
+            resourceType: "organization",
+            resourceId: orgId,
+            source: "webhook",
+            after: { planTierId: tier, oblienNamespace: namespace, sourceEventId: eventId },
+          });
+        }
         await upsertWebhookEventProcessed(tx, eventId, eventType);
       });
     });
