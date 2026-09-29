@@ -1,4 +1,7 @@
 {
+  "appInstall": {
+    "exposeTitle": "Domains und Routing"
+  },
   "settingSection": {
     "edit": "Bearbeiten",
     "save": "Speichern",

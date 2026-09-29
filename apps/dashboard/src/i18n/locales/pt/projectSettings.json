@@ -1,4 +1,7 @@
 {
+  "appInstall": {
+    "exposeTitle": "Domínios e roteamento"
+  },
   "settingSection": {
     "edit": "Editar",
     "save": "Guardar",

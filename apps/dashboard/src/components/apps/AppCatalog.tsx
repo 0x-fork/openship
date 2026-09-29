@@ -167,18 +167,19 @@ export function AppCatalog() {
               className="w-full ps-10 pe-4 py-2.5 bg-card border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all"
             />
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1">
             {categories.map((c) => {
               const on = category === c;
               return (
                 <button
                   key={c}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => setCategory(c)}
-                  className={`rounded-lg border px-3 py-1.5 text-[13px] font-medium capitalize transition-colors ${
+                  className={`inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                     on
-                      ? "border-primary/40 bg-primary/[0.06] text-foreground"
-                      : "border-border/60 text-muted-foreground hover:bg-muted/40"
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   }`}
                 >
                   {catLabel(c)}

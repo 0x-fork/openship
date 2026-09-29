@@ -37,6 +37,7 @@ import { getApiErrorMessage } from "@/lib/api/client";
 import {
   AppSettingsForm,
   fk,
+  withSettingDefaults,
   type FormValue,
   type FormValidity,
 } from "@/components/app-settings/AppSettingsForm";
@@ -44,7 +45,7 @@ import {
   AppDestinationPicker,
   type AppDestination,
 } from "@/components/deploy/AppDestinationPicker";
-import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
+import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { resolvePublicEndpointHostname } from "@/lib/public-endpoint-payload";
 import {
@@ -63,15 +64,21 @@ import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import { defaultDomainType } from "@/lib/default-domain-type";
+import {
+  defaultAppEndpointExposure,
+  getAppEndpointModes,
+  type AppEndpointExposure as Expo,
+} from "@/lib/app-endpoint-exposure";
 import { installSettledMessage } from "@/lib/install-settled-message";
 import { appInstallDnsTargets, attachDeploymentDomainIds } from "@/lib/deployment-dns";
-import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import { AppLogo } from "@/components/AppLogo";
 import { VerifiedBadge } from "@/components/apps/VerifiedBadge";
 import { HostingBadge } from "@/components/apps/HostingBadge";
 import { UnverifiedBadge } from "@/components/apps/UnverifiedBadge";
 import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Input } from "@/components/ui/input";
 import { encodeProjectSlug } from "@/utils/repoSlug";
 import { parseContainerPort } from "@/utils/compose-ports";
 
@@ -118,38 +125,6 @@ function hostPortForEndpoint(
 /** Container port a compose `ports` spec serves, as a number ("8203:80" → 80). */
 function containerPortOf(spec: string): number {
   return Number(parseContainerPort(spec));
-}
-
-/**
- * Per-endpoint exposure choice, keyed by `${service}:${port}`.
- *  http: mode port|domain — free-vs-custom is chosen inside the domain detail
- *        (the PublicEndpointsCard toggle), so it's not duplicated as a mode.
- *  tcp:  mode publish|internal.
- */
-type Expo =
-  | { kind: "http"; mode: "port" | "domain"; ep: PublicEndpoint }
-  | { kind: "tcp"; mode: "publish" | "internal" };
-
-/**
- * The picker's starting state for one endpoint: the author's `defaultMode` when
- * valid for the kind, else port-only — which invents nothing.
- *
- * Cloud being CONNECTED used to pre-select `domain`, so on a Cloud instance an
- * operator who touched nothing got *.opsh.io hostnames "by choice". Connectivity
- * is a capability, not an intent. `defaultDomainType` still decides free-vs-custom
- * for the moment the operator does switch to a domain (free needs Cloud).
- */
-function defaultExpo(e: AppEndpoint, cloudConnected: boolean): Expo {
-  if (e.kind === "http") {
-    const mode = e.defaultMode === "domain" || e.defaultMode === "port" ? e.defaultMode : "port";
-    return {
-      kind: "http",
-      mode,
-      ep: createPublicEndpoint({ domainType: defaultDomainType(cloudConnected) }),
-    };
-  }
-  const mode = e.defaultMode === "internal" || e.defaultMode === "publish" ? e.defaultMode : "publish";
-  return { kind: "tcp", mode };
 }
 
 /** One stored/desired public route on a service row (the `publicEndpoints` shape). */
@@ -249,10 +224,9 @@ export default function AppInstallPage() {
   // Desktop mode → the "open on localhost / forward the port" hints are relevant
   // (a VPS is already public; a local app is already localhost).
   const isDesktop = deployMode === "desktop";
-  // Free .opsh.io routing needs Openship Cloud; when it's not connected we
-  // default the install to a port-only (no-domain) deploy instead of letting
-  // preflight hard-fail. Forced true on SaaS/native (CloudContext).
-  const { connected: cloudConnected, requireCloud } = useCloud();
+  // Cloud status selects free vs. custom domains; the template's routing intent
+  // is the same for Cloud, self-hosted, and local targets.
+  const { connected: cloudConnected, loading: cloudLoading, requireCloud } = useCloud();
   const { showModal, hideModal } = useModal();
   const showCloudPricing = useCloudDeployPricing();
   // Desktop mode: apps can't run on this machine yet — see useLocalDeployGate.
@@ -360,37 +334,46 @@ export default function AppInstallPage() {
   const candidatesFor = (category?: string) =>
     candidates.filter((p) => !category || p.category === category);
 
-  const [values, setValues] = useState<Record<string, FormValue>>(() => {
-    const seed: Record<string, FormValue> = {};
-    for (const f of installFields) seed[fk(f.service, f.key)] = envToSettingValue(f, undefined);
-    return seed;
-  });
+  const [values, setValues] = useState<Record<string, FormValue>>(() =>
+    withSettingDefaults(installFields),
+  );
+  useEffect(() => {
+    setValues((previous) => withSettingDefaults(installFields, previous));
+  }, [installFields]);
   const [expo, setExpo] = useState<Record<string, Expo>>(() => {
     const out: Record<string, Expo> = {};
-    for (const e of appEndpoints) out[endpointKey(e)] = defaultExpo(e, cloudConnected);
+    if (cloudLoading && !cloudConnected) return out;
+    for (const e of appEndpoints) out[endpointKey(e)] = defaultAppEndpointExposure(e, cloudConnected);
     return out;
   });
   // The runtime (overlay-fresh) template can declare endpoints the bundled one
   // didn't, and those arrive AFTER the state above was seeded — fill any missing
   // picker so what the wizard renders is what the install sends.
   useEffect(() => {
+    // Wait for the initial domain-provider choice (free vs. custom); only fill
+    // missing choices, never reset saved routes or user edits.
+    if (cloudLoading && !cloudConnected) return;
     setExpo((prev) => {
       const missing = appEndpoints.filter((e) => !prev[endpointKey(e)]);
       if (missing.length === 0) return prev;
       const next = { ...prev };
-      for (const e of missing) next[endpointKey(e)] = defaultExpo(e, cloudConnected);
+      for (const e of missing) next[endpointKey(e)] = defaultAppEndpointExposure(e, cloudConnected);
       return next;
     });
-  }, [appEndpoints, cloudConnected]);
-  // Author can restrict the exposure choices offered per endpoint via `allowedModes`.
-  const modeAllowed = (e: AppEndpoint, mode: NonNullable<AppEndpoint["defaultMode"]>) =>
-    !e.allowedModes || e.allowedModes.includes(mode);
+  }, [appEndpoints, cloudConnected, cloudLoading]);
+  const exposureReady = appEndpoints.every((e) => Boolean(expo[endpointKey(e)]));
+  const exposureModeLabels = {
+    domain: { label: w.routeDomainLabel, description: w.routeDomainDesc },
+    port: { label: w.routePortLabel, description: w.routePortDesc },
+    publish: { label: w.tcpPublishLabel, description: w.tcpPublishDesc },
+    internal: { label: w.tcpInternalLabel, description: w.tcpInternalDesc },
+  };
   const setExpoMode = (key: string, mode: Expo["mode"]) =>
     setExpo((p) => (p[key] ? { ...p, [key]: { ...p[key], mode } as Expo } : p));
-  const setExpoEp = (key: string, ep: PublicEndpoint) =>
+  const setExpoEp = (key: string, updates: Partial<PublicEndpoint>) =>
     setExpo((p) => {
       const cur = p[key];
-      return cur?.kind === "http" ? { ...p, [key]: { ...cur, ep } } : p;
+      return cur?.kind === "http" ? { ...p, [key]: { ...cur, ep: { ...cur.ep, ...updates } } } : p;
     });
   const [destination, setDestination] = useState<AppDestination | null>(null);
 
@@ -514,7 +497,6 @@ export default function AppInstallPage() {
   useEffect(() => {
     if (!targetDraftId || appEndpoints.length === 0) return;
     if (rehydratedRef.current === targetDraftId) return;
-    rehydratedRef.current = targetDraftId;
     let cancelled = false;
     void (async () => {
       const [info, svcRes] = await Promise.all([
@@ -526,6 +508,9 @@ export default function AppInstallPage() {
       setDraftSlug(project?.slug ?? project?.name ?? null);
       const services = (svcRes?.services ?? []) as Service[];
       if (services.length > 0) {
+        // A catalog update can cancel the pending read. Only mark the draft
+        // restored once its routes are applied, so the next effect can retry.
+        rehydratedRef.current = targetDraftId;
         setExpo((prev) => ({ ...prev, ...rehydrateExpo(appEndpoints, services, cloudConnected) }));
       }
     })();
@@ -896,7 +881,7 @@ export default function AppInstallPage() {
   };
 
   const install = async () => {
-    if (busy) return;
+    if (busy || !exposureReady) return;
     // Business-field validity gate (required + per-field rules). The form reports
     // this; block with a clear message rather than shipping an invalid install.
     if (formValidity && !formValidity.valid) {
@@ -1313,9 +1298,38 @@ export default function AppInstallPage() {
   }
 
   // ── Form state ────────────────────────────────────────────────────────────
+  const singleSettingsCard = template.installLayout?.settings === "single";
+  const splitSettingsCards = template.installLayout?.settings === "split";
+  // Existing drafts keep their project name. The same field is used in the
+  // standalone card and catalog-authored layouts.
+  const nameField = !adoptedProjectId && (
+    <div className="min-w-0">
+      <label htmlFor="app-name" className="block text-sm font-medium text-foreground">
+        {w.nameLabel}
+      </label>
+      <Input
+        id="app-name"
+        type="text"
+        value={appName}
+        onChange={(e) => setAppName(e.target.value)}
+        placeholder={template.name}
+        variant="filled"
+        className="mt-2"
+      />
+      <p className="mt-1.5 text-xs text-muted-foreground">{w.nameHint}</p>
+      {openDraft && targetDraftId === openDraft.projectId && (
+        <p className="mt-2 text-xs text-warning">
+          You already have a not-yet-deployed “{openDraft.name}”. Installing with this
+          name updates it — the options below are the ones it was configured with.
+          Change the name to install a separate copy.
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <PageContainer outerClassName="pb-20">
-      <div className="mx-auto max-w-5xl pt-6">
+      <div className="@container/app-install">
         {/* Back to the app catalog */}
         <button
           type="button"
@@ -1366,51 +1380,37 @@ export default function AppInstallPage() {
         {/* Two columns: what the app needs (left) + where it goes & the deploy
             action (right, sticky). Mirrors the deploy wizard's config/sidebar
             split so the destination switch + Deploy button live together. */}
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="mt-6 grid grid-cols-1 items-start gap-6 @5xl/app-install:grid-cols-[minmax(0,1fr)_340px]">
           {/* LEFT — business settings + public URL */}
           <div className="min-w-0 space-y-5">
-            {/* Name — how the app appears in Openship. A fresh install can name
-                it (a 2nd install of the same type auto-suffixes server-side);
-                reopening a draft keeps its existing name, so hide it then. */}
-            {!adoptedProjectId && (
-              <div className="rounded-2xl border border-border/50 bg-card p-5">
-                <label htmlFor="app-name" className="text-sm font-semibold text-foreground">
-                  {w.nameLabel}
-                </label>
-                <p className="mt-0.5 text-xs text-muted-foreground">{w.nameHint}</p>
-                <input
-                  id="app-name"
-                  type="text"
-                  value={appName}
-                  onChange={(e) => setAppName(e.target.value)}
-                  placeholder={template.name}
-                  className="mt-3 w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/25"
-                />
-                {/* This name resolves to an existing, never-deployed draft — say so.
-                    Install UPDATES that draft (its settings below are rehydrated
-                    from it); rename to install a second, separate copy instead. */}
-                {openDraft && targetDraftId === openDraft.projectId && (
-                  <p className="mt-2 text-xs text-warning">
-                    You already have a not-yet-deployed “{openDraft.name}”. Installing with this
-                    name updates it — the options below are the ones it was configured with.
-                    Change the name to install a separate copy.
-                  </p>
+            {(nameField || installFields.length > 0) && (
+              <div
+                className={
+                  splitSettingsCards
+                    ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-5"
+                    : "space-y-5"
+                }
+              >
+                {!singleSettingsCard && nameField && (
+                  <div className="rounded-2xl bg-card p-5">{nameField}</div>
+                )}
+
+                {(installFields.length > 0 || (singleSettingsCard && nameField)) && (
+                  <AppSettingsForm
+                    groups={groups}
+                    values={values}
+                    onChange={setField}
+                    secretSetLabel={t.projectSettings.appSettings.secretSet}
+                    showAdvanced
+                    filter={isInstallField}
+                    flat={template.installLayout?.settings !== "grouped"}
+                    columns={template.installLayout?.columns}
+                    leadingContent={singleSettingsCard ? nameField : undefined}
+                    title={splitSettingsCards ? undefined : t.projectSettings.appSettings.modeApp}
+                    onValidityChange={setFormValidity}
+                  />
                 )}
               </div>
-            )}
-
-            {installFields.length > 0 && (
-              <AppSettingsForm
-                groups={groups}
-                values={values}
-                onChange={setField}
-                secretSetLabel={t.projectSettings.appSettings.secretSet}
-                showAdvanced
-                filter={isInstallField}
-                flat
-                title={t.projectSettings.appSettings.modeApp}
-                onValidityChange={setFormValidity}
-              />
             )}
 
             {/* Declared connections — this app needs a value (e.g. DATABASE_URL)
@@ -1457,65 +1457,76 @@ export default function AppInstallPage() {
               </div>
             )}
 
-            {/* Exposure — asked per endpoint. Web endpoints get the domain flow
+            {/* Routing — asked per endpoint. Web endpoints get the domain flow
                 (or port-only); databases (raw TCP) publish a port (firewall) or
                 stay internal. Reuses the deploy wizard's routing core. */}
             {needsExposure && (
-              <div className="rounded-2xl border border-border/50 bg-card p-5">
+              <div className="@container/app-routes rounded-2xl bg-card p-5">
                 <h3 className="text-sm font-semibold text-foreground">{w.exposeTitle}</h3>
-                <div className="mt-4 space-y-6">
+                <div className="mt-4 grid grid-cols-1 items-start gap-4 @min-[38rem]/app-routes:grid-cols-2">
                   {appEndpoints.map((e) => {
                     const key = endpointKey(e);
                     const st = expo[key];
-                    if (!st) return null;
+                    if (!st) {
+                      return (
+                        <div
+                          key={key}
+                          aria-busy="true"
+                          className="h-48 animate-pulse rounded-xl bg-muted/40"
+                        />
+                      );
+                    }
+                    const modes = getAppEndpointModes(e);
                     return (
-                      <div key={key}>
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">{e.label}</span>
-                          <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                      <section
+                        key={key}
+                        aria-labelledby={`endpoint-${key}`}
+                        className="min-w-0 space-y-3 rounded-xl bg-card p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <h4
+                            id={`endpoint-${key}`}
+                            title={e.label}
+                            className="min-w-0 truncate text-sm font-medium text-foreground"
+                          >
+                            {e.label}
+                          </h4>
+                          <span className="shrink-0 rounded-md bg-muted/60 px-2 py-1 text-xs text-muted-foreground">
                             {e.kind === "http" ? w.httpBadge : w.tcpBadge}
-                          </span>
-                          <span className="font-mono text-[11px] text-muted-foreground/50">
-                            :{e.port}
+                            <span className="ms-1.5 font-mono">{e.port}</span>
                           </span>
                         </div>
 
+                        <CustomSelect
+                          aria-label={`${e.label}: ${w.exposeTitle}`}
+                          value={st.mode}
+                          options={modes.map((value) => ({ value, ...exposureModeLabels[value] }))}
+                          onChange={(mode) => setExpoMode(key, mode)}
+                          variant="filled"
+                          triggerClassName="bg-muted/60 hover:bg-muted"
+                          disabled={modes.length < 2}
+                        />
+
                         {st.kind === "http" ? (
-                          <div className="space-y-2">
-                            {modeAllowed(e, "port") && (
-                              <OptionCard
-                                value="port"
-                                selected={st.mode === "port"}
-                                onSelect={() => setExpoMode(key, "port")}
-                                icon={<UiIcon name="network" className="size-4" />}
-                                label={w.routePortLabel}
-                                description={w.routePortDesc}
-                              />
-                            )}
-                            {modeAllowed(e, "domain") && (
-                              <OptionCard
-                                value="domain"
-                                selected={st.mode === "domain"}
-                                onSelect={() => setExpoMode(key, "domain")}
-                                icon={<UiIcon name="globe" className="size-4" />}
-                                label={w.routeDomainLabel}
-                                description={w.routeDomainDesc}
-                              />
-                            )}
-                            {/* Free-vs-custom + the domain/slug input live here only. */}
+                          <>
+                            {/* One editor per declared route; the template owns the ports. */}
                             {st.mode === "domain" && (
-                              <div className="mt-3">
-                                <PublicEndpointsCard
+                              <div>
+                                <RoutingSettingsCard
                                   /* The DEFAULT free label for THIS route — the card
                                      previews it, and the installer writes exactly it
                                      when the slug is left blank. */
                                   projectName={defaultFreeLabel(e)}
-                                  endpoints={[st.ep]}
-                                  hasServer
-                                  runtimePort={String(e.port)}
-                                  allowPortEdit={false}
-                                  hideHeader
-                                  onChange={(eps) => eps[0] && setExpoEp(key, eps[0])}
+                                  domain={st.ep.domain}
+                                  customDomain={st.ep.customDomain}
+                                  domainType={st.ep.domainType}
+                                  onDomainChange={(domain) => setExpoEp(key, { domain })}
+                                  onCustomDomainChange={(customDomain) =>
+                                    setExpoEp(key, { customDomain })
+                                  }
+                                  onDomainTypeChange={(domainType) =>
+                                    setExpoEp(key, { domainType })
+                                  }
                                 />
                                 {st.ep.domainType === "free" && !cloudConnected && (
                                   <p className="mt-2 text-xs text-warning">
@@ -1534,47 +1545,29 @@ export default function AppInstallPage() {
                                   )}
                               </div>
                             )}
-                            {st.mode === "port" && isDesktop && (
-                              <p className="mt-2 text-xs text-muted-foreground/70">
-                                {w.desktopReachNote}
+                            {st.mode === "port" && (
+                              <p className="text-xs leading-relaxed text-muted-foreground">
+                                {w.routePortDesc}
+                                {isDesktop && <> {w.desktopReachNote}</>}
                               </p>
                             )}
-                          </div>
+                          </>
                         ) : (
-                          <div className="space-y-2">
-                            {modeAllowed(e, "publish") && (
-                              <OptionCard
-                                value="publish"
-                                selected={st.mode === "publish"}
-                                onSelect={() => setExpoMode(key, "publish")}
-                                icon={<UiIcon name="network" className="size-4" />}
-                                label={w.tcpPublishLabel}
-                                description={w.tcpPublishDesc}
-                              />
-                            )}
-                            {modeAllowed(e, "internal") && (
-                              <OptionCard
-                                value="internal"
-                                selected={st.mode === "internal"}
-                                onSelect={() => setExpoMode(key, "internal")}
-                                icon={<UiIcon name="lock" className="size-4" />}
-                                label={w.tcpInternalLabel}
-                                description={w.tcpInternalDesc}
-                              />
-                            )}
+                          <>
                             {st.mode === "publish" && (
-                              <p className="mt-2 text-xs text-warning">
+                              <p className="text-xs leading-relaxed text-warning">
                                 {interpolate(w.tcpFirewallNote, { port: String(e.port) })}
                               </p>
                             )}
-                            {st.mode === "internal" && isDesktop && (
-                              <p className="mt-2 text-xs text-muted-foreground/70">
-                                {w.desktopReachNote}
+                            {st.mode === "internal" && (
+                              <p className="text-xs leading-relaxed text-muted-foreground">
+                                {w.tcpInternalDesc}
+                                {isDesktop && <> {w.desktopReachNote}</>}
                               </p>
                             )}
-                          </div>
+                          </>
                         )}
-                      </div>
+                      </section>
                     );
                   })}
                 </div>
@@ -1583,11 +1576,13 @@ export default function AppInstallPage() {
           </div>
 
           {/* RIGHT — destination + deploy action (sticky) */}
-          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <div className="min-w-0 space-y-4 @5xl/app-install:sticky @5xl/app-install:top-6">
             {/* Destination — where to install (reuses the deploy target picker) */}
             <div className="rounded-2xl border border-border/50 bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
+              {selfHosted && (
+                <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
+              )}
 
               {/* State the app's own floor before the picker, so the choice is
                   informed rather than corrected afterwards. */}
@@ -1653,8 +1648,8 @@ export default function AppInstallPage() {
               <button
                 type="button"
                 onClick={install}
-                disabled={busy || (formValidity ? !formValidity.valid : false)}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                disabled={busy || !exposureReady || (formValidity ? !formValidity.valid : false)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? (
                   <UiIcon name="spinner" className="size-4 animate-spin" />
@@ -1667,9 +1662,9 @@ export default function AppInstallPage() {
                 type="button"
                 onClick={goAdvanced}
                 disabled={busy}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
               >
-                <UiIcon name="sliders" className="size-3.5" /> {w.advanced}
+                <UiIcon name="sliders" className="size-4" /> {w.advanced}
               </button>
             </div>
           </div>

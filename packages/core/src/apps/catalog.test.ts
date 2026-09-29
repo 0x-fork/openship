@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { buildCatalog } from "../../scripts/gen-catalog";
-import { isValidAppTemplate, parseAppTemplate, templateEngineOk } from "./schema";
+import { appTemplateSchema, isValidAppTemplate, parseAppTemplate, templateEngineOk } from "./schema";
 import { APP_TEMPLATES, getAppTemplate } from "../app-templates";
 
 const committed = JSON.parse(
@@ -140,6 +140,40 @@ describe("templateEngineOk", () => {
 });
 
 describe("app template — strict fields + referential integrity", () => {
+  it.each(["single", "split", "grouped"])("preserves %s form layout metadata when parsing a catalog entry", (settings) => {
+    const template = {
+      ...base,
+      installLayout: { settings, columns: 2 },
+      settings: [
+        {
+          id: "general",
+          label: "General",
+          columns: 1,
+          fields: [{ key: "NOTE", service: "db", label: "Note", type: "textarea", fullWidth: true }],
+        },
+      ],
+    };
+    expect(appTemplateSchema.parse(template)).toEqual(template);
+  });
+
+  it.each([
+    { installLayout: { settings: "flex" } },
+    { installLayout: { columns: 2 } },
+    { installLayout: { settings: "single", columns: 3 } },
+    { settings: [{ id: "g", label: "G", columns: "2", fields: [] }] },
+    {
+      settings: [
+        {
+          id: "g",
+          label: "G",
+          fields: [{ key: "NOTE", service: "db", label: "Note", type: "text", fullWidth: "true" }],
+        },
+      ],
+    },
+  ])("rejects malformed form layout metadata: %j", (layout) => {
+    expect(isValidAppTemplate({ ...base, ...layout })).toBe(false);
+  });
+
   it("accepts the extended setting field types", () => {
     expect(
       isValidAppTemplate({

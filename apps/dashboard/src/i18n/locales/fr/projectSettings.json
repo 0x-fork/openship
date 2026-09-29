@@ -1,4 +1,7 @@
 {
+  "appInstall": {
+    "exposeTitle": "Domaines et routage"
+  },
   "settingSection": {
     "edit": "Modifier",
     "save": "Enregistrer",
