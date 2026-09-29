@@ -331,7 +331,7 @@
     "creditsPerCycle": "Fatura dönemi başına {amount} kredi",
     "buildTime": "Derleme süresi",
     "buildMinutes": "Ayda {amount} dk",
-    "buildHint": "Kodunuzu derlemek için harcanan süre. 5 dakikalık bir derleme, aylık hakkınızdan 5 dakika kullanır.",
+    "buildHint": "Derlemeler, kaynak tüketimlerine göre ortak kullanım hakkını tüketir. Ayrı bir süre sınırı yalnızca kayıtlı planınızda yer alıyorsa uygulanır.",
     "apps": "Çalışan hizmetler",
     "appsHint": "Aynı anda çalışan uygulamalar, veritabanları ve arka plan görevleri. Çalışan her Compose hizmeti bu sınıra dahil edilir.",
     "machine": "Hizmet başına CPU ve bellek",
@@ -345,7 +345,7 @@
     "setupOnly": "Abonelik gerekli",
     "setupHint": "Proje oluşturmak, kod derlemek ve uygulama çalıştırmak için bir Cloud planı seçin.",
     "includedTitle": "Kaynaklarınız",
-    "limitsHint": "Planınızdaki projeler, çalışan servisler ve aylık derleme süresi.",
+    "limitsHint": "Planınızdaki projeler, çalışan hizmetler ve varsa derleme süresi sınırı.",
     "balanceRule": "Kullanım hakkı bitince uygulamalar duraklatılır. Devam etmek için kullanım ekleyin veya kaynak limitlerini artırmak için planınızı yükseltin.",
     "reset": "Derleme kotası {date} tarihinde yenilenir",
     "cpuHint": "Zaman içindeki işlem gücü kullanımıdır. 1 vCPU’nun 1 saat çalışması 1 vCPU-saat eder.",
@@ -365,7 +365,12 @@
     "usageIncluded": "Ortak kullanım hakkı dahil",
     "usageSummary": "Derlemeler ve çalışan uygulamalar ortak bir kullanım hakkını paylaşır. Daha büyük makineler ve daha uzun çalışma süreleri daha fazla tüketir.",
     "usageDetails": "Kullanım ayrıntıları",
-    "usagePercent": "%{percent} kullanıldı"
+    "usagePercent": "%{percent} kullanıldı",
+    "poolHint": "Durdurulanlar ve bekleyen değişiklikler dahil tüm çalışma alanlarında paylaşılır.",
+    "creditUnitsHint": "Krediler dakikayı değil kaynak tüketimini ölçer. CPU, bellek, disk etkinliği ve aktarımın ayrı ücretleri vardır.",
+    "topupCapacityHint": "Yüklemeler kullanım kredisi ekler. Daha fazla CPU, RAM veya depolama için planı yükseltin.",
+    "poolTitle": "Paylaşılan kapasite",
+    "poolCapacity": "{cpu} vCPU · {ram} GB bellek · {disk} GB disk"
   },
   "onboarding": {
     "workspaceDescription": "Proje oluşturmak, kod derlemek ve uygulamalarınızı çalıştırmak için bir Cloud planı seçin. Abonelik öncesinde proje veya işlem kaynağı dahil değildir.",

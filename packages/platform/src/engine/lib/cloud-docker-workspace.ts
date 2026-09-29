@@ -9,6 +9,8 @@ import { createProvisionLock } from "./provision-lock";
 import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
 import { resolveCloudServiceResources, resolveBuildResources } from "./resources";
 import type { DeploymentMeta } from "./deployment-runtime";
+import type { DeployableService } from "./deployable-service";
+import { withProjectRuntimeLock } from "./project-runtime-lock";
 
 function workspaceSlug(projectId: string): string {
   return `os-docker-${createHash("sha256").update(projectId).digest("hex").slice(0, 24)}`;
@@ -51,20 +53,125 @@ export async function usesCloudDockerWorkspace(project: Project, mode?: "single"
   return true;
 }
 
+export function cloudDockerNeedsBuild(services: DeployableService[]): boolean {
+  return services.some(service => service.enabled !== false && Boolean(service.build || service.advanced?.build ||
+    (service.kind === "monorepo" && !service.image)));
+}
+
 export function cloudDockerResources(input: {
   resources?: ResourceConfig | null; buildResources?: ResourceConfig | null;
+  reserveBuild?: boolean;
   services: Array<{ enabled?: boolean; resources?: ResourceConfig | Record<string, unknown> | null }>;
 }): ResourceConfig {
   const resources = input.services.filter(s => s.enabled !== false)
     .map(s => resolveCloudServiceResources(s.resources, input.resources));
-  const build = resolveBuildResources(input.buildResources, { isCloud: true });
-  // Catalog defaults, plus room for Docker/BuildKit. The VM is billed once;
-  // each service's limits are still applied by Docker inside that allocation.
+  const build = input.reserveBuild ? resolveBuildResources(input.buildResources, { isCloud: true }) : null;
+  // Image pulls need no source-build reservation. Include bounded Docker/OS
+  // overhead; a source build receives temporary RAM released after deployment.
   return {
-    cpuCores: Math.max(2, Math.ceil(build.cpuCores), Math.ceil(resources.reduce((n, r) => n + r.cpuCores, 0))),
-    memoryMb: Math.max(4096, Math.ceil((build.memoryMb + resources.reduce((n, r) => n + r.memoryMb, 0)) / 256) * 256),
-    diskMb: Math.max(32768, build.diskMb, ...resources.map(r => r.diskMb)),
+    cpuCores: Math.max(1, Math.ceil(build?.cpuCores ?? 0), Math.ceil(resources.reduce((n, r) => n + r.cpuCores, 0))),
+    memoryMb: Math.max(1024, Math.ceil((512 + (build?.memoryMb ?? 0) + resources.reduce((n, r) => n + r.memoryMb, 0)) / 256) * 256),
+    diskMb: Math.max(8192, build?.diskMb ?? 0, ...resources.map(r => r.diskMb)),
   };
+}
+
+/** Only selected, non-secret inspect fields enter this parser. Unknown or
+ * unbounded containers forbid automatic downsizing. Never guess their needs. */
+export function runningDockerAllocation(output: string, projectId: string): ResourceConfig {
+  let cpu = 0, memory = 0;
+  for (const line of output.trim().split(/\r?\n/).filter(Boolean)) {
+    const row: unknown = JSON.parse(line);
+    if (!Array.isArray(row) || row.length !== 6 || row[1] !== projectId || typeof row[0] !== "string" || !/^[a-f0-9]{12,64}$/.test(row[0])) {
+      throw new Error("Cannot safely reduce a Cloud workspace with an unverified container");
+    }
+    const [, , bytes, nanoCpu, quota, period] = row;
+    if (![bytes, nanoCpu, quota, period].every(Number.isSafeInteger)) {
+      throw new Error("Cannot verify the running container's resource allocation");
+    }
+    const cores = nanoCpu > 0 ? nanoCpu / 1e9 : (quota > 0 && period > 0 ? quota / period : 0);
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isFinite(cores) || cores <= 0) {
+      throw new Error("Set explicit container CPU and memory limits before reducing this Cloud workspace");
+    }
+    cpu += cores; memory += bytes / 1048576;
+  }
+  return { cpuCores: Math.max(1, Math.ceil(cpu)), memoryMb: Math.max(1024, Math.ceil((memory + 512) / 256) * 256), diskMb: 8192 };
+}
+
+async function resizeDockerWorkspace(input: {
+  client: Oblien; workspaceId: string; namespace: string; projectId: string;
+  resources: ResourceConfig; signal?: AbortSignal; onProgress?: (message: string) => void;
+}) {
+  const ws = input.client.workspace(input.workspaceId);
+  const executor = new CloudWorkspaceExecutor(() => ws.runtime());
+  try {
+    const inspect = () => executor.exec(`docker ps --filter ${sq(`label=openship.project=${input.projectId}`)} --filter status=running --format '{{.ID}}'`, { timeout: 30_000 });
+    const previous = await (input.signal ? executor.runWithAbortSignal(input.signal, inspect) : inspect());
+    const running = previous.trim().split(/\s+/).filter(Boolean);
+    if (running.some(id => !/^[a-f0-9]{12,64}$/.test(id))) throw new Error("Invalid container identity during Cloud workspace resizing");
+    input.signal?.throwIfAborted();
+    let failure: { error: unknown } | undefined;
+    try {
+      const result = await ws.resources.update({ cpus: input.resources.cpuCores, memory_mb: input.resources.memoryMb,
+        disk_size_mb: input.resources.diskMb, apply: true });
+      if (result.success === false || result.relaunched === false || result.pending_capacity_verification) {
+        throw new Error("The Cloud resource change is still pending verification; retry once the provider confirms it");
+      }
+    } catch (error) { failure = { error }; }
+    // Finish restoration even after cancellation or a lost provider response.
+    try {
+      await waitForCloudDockerWorkspace(input.client, input.workspaceId, input.namespace);
+      ws.invalidateRuntime();
+      if (running.length) await executor.exec(`docker start ${running.map(sq).join(" ")}`);
+    } catch (error) {
+      throw new AggregateError(failure ? [failure.error, error] : [error],
+        "Could not restore running services after resizing the Cloud workspace. Check the workspace before retrying.", { cause: error });
+    }
+    if (failure) throw failure.error;
+    input.signal?.throwIfAborted();
+  } finally { await executor.dispose(); }
+}
+
+/** Release temporary CPU/RAM on an existing, running project host. The caller
+ * holds deployment admission for this project; the provider serializes actual
+ * namespace capacity. Disks, stopped services and other projects are preserved. */
+export async function reconcileCloudDockerWorkspace(input: {
+  projectId: string; organizationId: string; workspaceId: string; resources: ResourceConfig;
+  deploymentId?: string; onProgress?: (message: string) => void;
+}): Promise<boolean> {
+  return withProjectRuntimeLock(input.projectId, () => createProvisionLock(`cloud:docker-project:${input.projectId}`).run(async () => {
+    const project = await repos.project.findByIdInOrganization(input.projectId, input.organizationId);
+    const binding = await repos.cloudDockerWorkspace.find(input.projectId, input.organizationId);
+    if (!project || project.deletedAt || project.deletionInProgress || !binding || binding.workspaceId !== input.workspaceId) return false;
+    const inFlight = await repos.deployment.listInFlightByProject(input.projectId);
+    if (inFlight.some(dep => dep.id !== input.deploymentId)) return false;
+    const credentials = env.CLOUD_MODE ? await issueNamespaceToken(input.organizationId) : await getOrgCloudToken(input.organizationId);
+    if (!credentials || credentials.namespace !== binding.namespace) throw new Error("Cloud workspace namespace binding does not match this project");
+    const client = new Oblien({ token: credentials.token, baseUrl: env.OBLIEN_API_URL });
+    const ws = client.workspace(input.workspaceId);
+    const current = await ws.get();
+    if (current.namespace !== binding.namespace) throw new Error("Cloud workspace namespace changed");
+    if (cloudWorkspaceStatus(current) !== "running" && cloudWorkspaceStatus(current) !== "active") return false;
+    const allocated = current.resources;
+    if (!allocated || !allocated.cpus || !allocated.memory_mb || !allocated.disk_size_mb) return false;
+    const executor = new CloudWorkspaceExecutor(() => ws.runtime());
+    let running: ResourceConfig;
+    try {
+      const ids = (await executor.exec("docker ps --quiet --no-trunc", { timeout: 30_000 })).trim().split(/\s+/).filter(Boolean);
+      if (ids.some(id => !/^[a-f0-9]{12,64}$/.test(id))) throw new Error("Invalid container identity during Cloud workspace resizing");
+      const format = '[{{json .Id}},{{json (index .Config.Labels "openship.project")}},{{json .HostConfig.Memory}},{{json .HostConfig.NanoCpus}},{{json .HostConfig.CpuQuota}},{{json .HostConfig.CpuPeriod}}]';
+      const output = ids.length ? await executor.exec(`docker inspect --format ${sq(format)} ${ids.map(sq).join(" ")}`, { timeout: 30_000 }) : "";
+      if (output.trim().split(/\r?\n/).filter(Boolean).length !== ids.length) throw new Error("Cloud container allocation changed during inspection");
+      running = runningDockerAllocation(output, input.projectId);
+    } finally { await executor.dispose(); }
+    const next = { cpuCores: Math.max(input.resources.cpuCores, running.cpuCores),
+      memoryMb: Math.max(input.resources.memoryMb, running.memoryMb), diskMb: allocated.disk_size_mb };
+    // This path only reduces CPU/RAM, never asks a resize to grow capacity.
+    if (next.cpuCores > allocated.cpus || next.memoryMb > allocated.memory_mb ||
+        (next.cpuCores === allocated.cpus && next.memoryMb === allocated.memory_mb)) return false;
+    input.onProgress?.("Releasing unused Cloud build resources; running services will briefly restart.\n");
+    await resizeDockerWorkspace({ ...input, client, namespace: binding.namespace, resources: next });
+    return true;
+  }));
 }
 
 /** Reserve identity before a provider write. Retries use exactly the same POST
@@ -146,45 +253,12 @@ export async function ensureCloudDockerWorkspace(input: {
     if (allocated && (input.resources.cpuCores > (allocated.cpus ?? binding.resources.cpuCores) ||
         input.resources.memoryMb > (allocated.memory_mb ?? binding.resources.memoryMb) ||
         input.resources.diskMb > (allocated.disk_size_mb ?? binding.resources.diskMb))) {
-      // Oblien applies resource changes by restarting the VM. Capture exactly
-      // the running service containers so custom Docker restart policies do not
-      // strand a sibling, and intentionally stopped services stay stopped.
       input.onProgress?.("Increasing the shared Cloud workspace allocation; running services will briefly restart.\n");
-      const executor = new CloudWorkspaceExecutor(() => ws.runtime());
-      try {
-        const inspect = () => executor.exec(`docker ps --filter ${sq(`label=openship.project=${input.projectId}`)} --filter status=running --format '{{.ID}}'`, { timeout: 30_000 });
-        const previous = await (input.signal ? executor.runWithAbortSignal(input.signal, inspect) : inspect());
-        const running = previous.trim().split(/\s+/).filter(Boolean);
-        if (running.some(id => !/^[a-f0-9]{12,64}$/.test(id))) throw new Error("Invalid container identity during Cloud workspace resizing");
-        input.signal?.throwIfAborted();
-        let resizeFailure: { error: unknown } | undefined;
-        try {
-          await ws.resources.update({
-            cpus: Math.max(input.resources.cpuCores, allocated.cpus ?? binding.resources.cpuCores),
-            memory_mb: Math.max(input.resources.memoryMb, allocated.memory_mb ?? binding.resources.memoryMb),
-            disk_size_mb: Math.max(input.resources.diskMb, allocated.disk_size_mb ?? binding.resources.diskMb),
-            apply: true,
-          });
-        } catch (error) {
-          // The provider may have restarted the VM before its response was
-          // lost. Restore the captured running set even on an uncertain result.
-          resizeFailure = { error };
-        }
-        // Once the resize has begun, restore running services even if this
-        // deployment is cancelled. Cancelling a build must not strand siblings.
-        try {
-          await waitForCloudDockerWorkspace(client, workspaceId, namespace);
-          ws.invalidateRuntime();
-          if (running.length) await executor.exec(`docker start ${running.map(sq).join(" ")}`);
-        } catch (error) {
-          throw new AggregateError(resizeFailure ? [resizeFailure.error, error] : [error],
-            "Could not restore running services after resizing the Cloud workspace. Check the workspace before retrying.", { cause: error });
-        }
-        if (resizeFailure) throw resizeFailure.error;
-        input.signal?.throwIfAborted();
-      } finally {
-        await executor.dispose();
-      }
+      await resizeDockerWorkspace({ ...input, client, workspaceId, namespace, resources: {
+        cpuCores: Math.max(input.resources.cpuCores, allocated.cpus ?? binding.resources.cpuCores),
+        memoryMb: Math.max(input.resources.memoryMb, allocated.memory_mb ?? binding.resources.memoryMb),
+        diskMb: Math.max(input.resources.diskMb, allocated.disk_size_mb ?? binding.resources.diskMb),
+      } });
     }
     await repos.cloudDockerWorkspace.markReady(input.projectId, input.organizationId, workspaceId);
     return { projectId: input.projectId, workspaceId };

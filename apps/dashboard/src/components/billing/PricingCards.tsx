@@ -3,7 +3,7 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
-import type { PlanLimits, PlanTierId } from "@repo/core";
+import type { OblienLimits, PlanLimits, PlanTierId } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { PlanResources } from "./PlanResources";
 
@@ -53,6 +53,8 @@ export interface ApiPlan {
    * removed there is a compile error here rather than a silently dead field.
    */
   limits: PlanLimits;
+  /** Declared shared VM pool, supplied by the live catalog or saved paid offer. */
+  resourceLimits?: OblienLimits;
   /** Finished localized strings, numbers already interpolated by the catalog. */
   features: string[];
   /** "Everything in X, plus:" — a lead-in, NOT a bullet, so it renders above the

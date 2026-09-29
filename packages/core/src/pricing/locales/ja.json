@@ -49,7 +49,9 @@
     "selfHostedUnlimited": "デプロイ、プロジェクト、サーバー、ドメインすべて無制限",
     "selfHostedServices": "マネージドサービスはすべて利用可能 — Postgres、Redis、メール",
     "selfHostedClients": "CLI、Web、デスクトップ — バックエンドは一つ",
-    "selfHostedFreeSubdomains": "Openship Cloud に接続すると、無料の {freeDomainSuffix} サブドメインが {freeSubdomains} 個"
+    "selfHostedFreeSubdomains": "Openship Cloud に接続すると、無料の {freeDomainSuffix} サブドメインが {freeSubdomains} 個",
+    "usageCredits": "月あたり{credits}利用クレジット",
+    "namespaceCapacity": "合計: {namespaceCpu} vCPU、RAM {namespaceRamGb} GB、ディスク {namespaceDiskGb} GB"
   },
   "selfHosted": {
     "name": "セルフホスト",
@@ -61,7 +63,9 @@
   "creditPacks": {
     "pack_5k": "{credits} クレジット",
     "pack_25k": "{credits} クレジット",
-    "pack_100k": "{credits} クレジット"
+    "pack_100k": "{credits} クレジット",
+    "pack_500": "{credits} クレジット",
+    "pack_2k": "{credits} クレジット"
   },
   "ui": {
     "perMonth": "/月",

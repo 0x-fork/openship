@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { planLimits, type PlanTierId } from "@repo/core";
+import { planLimits, resolvePlan, type PlanTierId } from "@repo/core";
 const h = vi.hoisted(() => ({ cloud: true, tier: "starter", count: vi.fn(), usage: vi.fn(), sync: vi.fn() }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { get CLOUD_MODE() { return h.cloud; } } }));
 vi.mock("@repo/db", () => ({ repos: {
@@ -14,6 +14,7 @@ beforeEach(() => {
   h.sync.mockImplementation(async () => ({
     tier: h.tier,
     limits: planLimits(h.tier as PlanTierId),
+    resourceLimits: resolvePlan(h.tier as PlanTierId).oblienLimits,
   }));
   h.count.mockResolvedValue(3);
   h.usage.mockResolvedValue(0);
@@ -71,12 +72,32 @@ describe("Cloud deploy and update resource gates", () => {
     await expect(assertCloudDeploymentLimits("org-a", { buildResources: { cpuCores: 16, memoryMb: 32768, diskMb: 32768 } }))
       .rejects.toMatchObject({ reason: "resource-tier" });
   });
+  it("does not reserve or reject an unused build size for an image-only deployment", async () => {
+    const imageOnly = [{ enabled: true, image: "vaultwarden/server:latest" }];
+    await expect(assertCloudDeploymentLimits("org-a", { services: imageOnly,
+      buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 32768 } })).resolves.toBeUndefined();
+  });
+  it.each([{ services: [] }, { services: [{ enabled: true, image: "redis:8" }] }])("still validates source builds for native applications with services $services", async ({ services }) => {
+    h.count.mockResolvedValue(0);
+    await expect(assertCloudDeploymentLimits("org-a", { nativeApplication: true, runsApplication: true, services,
+      buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 32768 } })).rejects.toMatchObject({ reason: "resource-tier" });
+  });
+  it("uses the paid offer's saved build ceiling when the current catalog differs", async () => {
+    h.sync.mockResolvedValue({ tier: "pro", limits: planLimits("pro"),
+      resourceLimits: { ...resolvePlan("pro").oblienLimits, max_vcpus: 3, max_ram_mb: 8192 } });
+    await expect(assertCloudDeploymentLimits("org-a", {
+      buildResources: { cpuCores: 3, memoryMb: 8192, diskMb: 8192 } })).resolves.toBeUndefined();
+    await expect(assertCloudDeploymentLimits("org-a", {
+      buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 8192 } })).rejects.toMatchObject({ reason: "resource-tier" });
+  });
   it("cannot turn an unavailable service count into additional capacity", async () => {
     h.count.mockRejectedValue(new Error("database unavailable"));
     await expect(assertCloudDeploymentLimits("org-a", { services: services() })).rejects.toThrow("database unavailable");
     await expect(assertRunningServiceQuota("org-a")).rejects.toThrow("database unavailable");
   });
   it("cannot turn an unavailable build meter into a new allowance", async () => {
+    h.sync.mockResolvedValue({ tier: "starter", limits: { ...planLimits("starter"), buildMinutesPerMonth: 3000 },
+      resourceLimits: resolvePlan("starter").oblienLimits });
     h.usage.mockRejectedValue(new Error("usage unavailable"));
     await expect(assertBuildMinutesAvailable("org-a")).rejects.toThrow("usage unavailable");
   });

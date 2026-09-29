@@ -41,7 +41,7 @@ import {
   edgeProxyFor,
 } from "@repo/adapters";
 import { platform } from "../../lib/platform-config";
-import { cloudDockerResources, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
+import { cloudDockerNeedsBuild, reconcileCloudDockerWorkspace, cloudDockerResources, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
 import { assertCloudDeploymentLimits } from "../../lib/plan-guard";
 import {
   resolveUpstreamUrl,
@@ -652,6 +652,7 @@ async function executeBuildAndDeploy(
     provisioned,
   };
 
+  let settledDockerResources: ResourceConfig | undefined;
   try {
     // Decide the runtime modes as DATA (no mutate-then-undo). Two historical
     // flips, encoded in resolveBuildRuntimeModes: services → Docker (containers
@@ -669,11 +670,14 @@ async function executeBuildAndDeploy(
     });
     if (willRunServices && resolveEffectiveTarget(plat.target, snapshot) === "cloud" &&
         await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode)) {
+      settledDockerResources = cloudDockerResources({ resources: snapshot.resources,
+        services: serviceMode.servicePreflightServices.map(service => ({ enabled: service.enabled, resources: service.advanced?.resources })) });
       logger.log("→ Preparing the project's shared Docker workspace on Openship Cloud.\n");
       snapshot.cloudDockerWorkspace = await ensureCloudDockerWorkspace({
         projectId: project.id, organizationId: dep.organizationId,
         resources: cloudDockerResources({
           resources: snapshot.resources, buildResources: snapshot.buildResources,
+          reserveBuild: cloudDockerNeedsBuild(serviceMode.servicePreflightServices),
           services: serviceMode.servicePreflightServices.map(service => ({
             enabled: service.enabled,
             resources: service.advanced?.resources,
@@ -1393,6 +1397,12 @@ async function executeBuildAndDeploy(
     // the pipeline's healthCheck hook, so nothing still needs a transport once
     // this function settles.
     for (const rt of transports) disposeRuntime(rt);
+    if (snapshot.cloudDockerWorkspace && settledDockerResources) {
+      await reconcileCloudDockerWorkspace({ projectId: project.id, organizationId: dep.organizationId,
+        workspaceId: snapshot.cloudDockerWorkspace.workspaceId, deploymentId: dep.id,
+        resources: settledDockerResources, onProgress: message => logger.log(message) })
+        .catch(error => logger.log(`Cloud capacity reconciliation is pending: ${error instanceof Error ? error.message : "provider unavailable"}\n`));
+    }
   }
 }
 

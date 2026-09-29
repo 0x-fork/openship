@@ -24,11 +24,13 @@ import {
   AppError,
   FREE_DOMAIN_SUFFIX,
   planLimits,
+  resolvePlan,
   PRICING,
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
   type PlanTierId,
   type PlanLimits,
+  type OblienLimits,
   type WorkloadType,
 } from "@repo/core";
 import { repos } from "@repo/db";
@@ -83,7 +85,7 @@ export class FreeSubdomainLimitError extends PlanUpgradeRequiredError {
 }
 
 /** The org's current tier. Unknown/missing → the catalog's most restrictive. */
-async function planFor(organizationId: string): Promise<{ tier: PlanTierId; limits: PlanLimits }> {
+async function planFor(organizationId: string): Promise<{ tier: PlanTierId; limits: PlanLimits; resourceLimits: OblienLimits }> {
   const org = await repos.organization.findById(organizationId);
   if (env.CLOUD_MODE && org?.oblienNamespace) {
     const { syncOblienEntitlement } = await import("../modules/billing/billing-oblien-quota");
@@ -92,7 +94,7 @@ async function planFor(organizationId: string): Promise<{ tier: PlanTierId; limi
     return await syncOblienEntitlement(organizationId, { syncResourceLimits: false });
   }
   const tier = (org?.planTierId ?? "free") as PlanTierId;
-  return { tier, limits: planLimits(tier) };
+  return { tier, limits: planLimits(tier), resourceLimits: resolvePlan(tier).oblienLimits };
 }
 
 /** The org's tier, for callers that need to name it in their own error. */
@@ -198,12 +200,9 @@ export async function assertPlanAllowsServices(organizationId: string): Promise<
 /**
  * Refuse a machine size larger than the tier allows.
  *
- * This gate exists because OBLIEN CANNOT DO IT. Its `max_vcpus`/`max_ram_mb` are
- * per-workspace ceilings applied namespace-wide, and a transient BUILD workspace
- * is a workspace — so the ceiling has to be large enough for a 4 vCPU / 8 GB
- * build, which makes it useless as a cap on a 0.5 vCPU service. Oblien is the
- * coarse backstop; this is the real per-service cap, enforced where the size is
- * actually chosen.
+ * Oblien enforces the VM and namespace allocation; several Docker services
+ * can share one VM. Openship also enforces the selected per-service tier inside
+ * that host, so a container cannot silently exceed its service configuration.
  *
  * Sizes are compared through `RESOURCE_TIER_ORDER` — the deploy wizard's own
  * ordering — so "larger than your plan" means the same thing here and in the
@@ -309,7 +308,7 @@ export async function assertCloudServiceAllowance(organizationId: string, input:
  * must obey the same limits as the dashboard's resource picker. */
 export async function assertCloudDeploymentLimits(organizationId: string, input: CloudDeploymentLimits): Promise<void> {
   if (!env.CLOUD_MODE) return;
-  const { tier, limits } = await planFor(organizationId);
+  const { tier, limits, resourceLimits: policy } = await planFor(organizationId);
   await assertServiceAllowance(organizationId, tier, input, limits);
   const services = input.services?.filter(service => service.enabled !== false);
   for (const service of services ?? []) {
@@ -326,10 +325,17 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
       limits,
     );
   }
+  if (services?.length && !input.nativeApplication && services.every(service => {
+    const candidate = service as typeof service & { build?: unknown; image?: string | null; kind?: string };
+    return Boolean(candidate.image || (candidate.advanced as { imageTemplate?: unknown } | null)?.imageTemplate) &&
+      !candidate.build && !(candidate.advanced as { build?: unknown } | null)?.build;
+  })) return;
   const build = resolveBuildResources(input.buildResources, { isCloud: true });
-  const maximum = PRICING.oblien.buildResources;
+  const maximum = { cpuCores: policy.max_vcpus ?? PRICING.oblien.buildResources.cpuCores,
+    memoryMb: policy.max_ram_mb ?? PRICING.oblien.buildResources.memoryMb,
+    diskGb: policy.max_disk_gb ?? PRICING.oblien.buildResources.diskGb };
   if (limits.maxResourceTier !== null && (!Number.isFinite(build.cpuCores) || !Number.isFinite(build.memoryMb) ||
-      build.cpuCores > maximum.cpuCores || build.memoryMb > maximum.memoryMb || build.diskMb > Math.max(32768, maximum.diskGb * 1024))) {
+      build.cpuCores > maximum.cpuCores || build.memoryMb > maximum.memoryMb || build.diskMb > maximum.diskGb * 1024)) {
     throw new PlanUpgradeRequiredError(
       `Builds on this plan support up to ${maximum.cpuCores} vCPU and ${maximum.memoryMb / 1024} GB RAM. Reduce the build allocation.`,
       "resource-tier", tier,

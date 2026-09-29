@@ -8,9 +8,9 @@
   },
   "oblien": {
     "buildResources": {
-      "cpuCores": 4,
-      "memoryMb": 8192,
-      "diskGb": 10
+      "cpuCores": 1,
+      "memoryMb": 2048,
+      "diskGb": 8
     }
   },
   "campaigns": [],
@@ -56,10 +56,13 @@
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 2,
-          "max_vcpus": null,
-          "max_ram_mb": null,
-          "max_disk_gb": null
+          "max_workspaces": 0,
+          "max_vcpus": 1,
+          "max_ram_mb": 1024,
+          "max_disk_gb": 8,
+          "max_total_vcpus": 0,
+          "max_total_ram_mb": 0,
+          "max_total_disk_gb": 0
         }
       }
     },
@@ -88,31 +91,35 @@
         "maxProjects": 10,
         "maxResourceTier": "medium",
         "computeMinutesPerMonth": null,
-        "buildMinutesPerMonth": 3000,
+        "buildMinutesPerMonth": null,
         "freeSubdomains": 25,
         "customDomains": null,
         "seats": null
       },
       "features": [
         "everythingIn",
+        "usageCredits",
+        "namespaceCapacity",
         "anyWorkload",
         "runningServices",
-        "buildMinutes",
         "power",
         "projects",
         "emailSupport"
       ],
       "billing": {
-        "creditsPerCycle": 1200,
+        "creditsPerCycle": 800,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 5,
-          "max_vcpus": null,
-          "max_ram_mb": null,
-          "max_disk_gb": null
+          "max_workspaces": 3,
+          "max_vcpus": 1,
+          "max_ram_mb": 4096,
+          "max_disk_gb": 16,
+          "max_total_vcpus": 1,
+          "max_total_ram_mb": 4096,
+          "max_total_disk_gb": 32
         }
       }
     },
@@ -141,30 +148,34 @@
         "maxProjects": 50,
         "maxResourceTier": "high",
         "computeMinutesPerMonth": null,
-        "buildMinutesPerMonth": 12000,
+        "buildMinutesPerMonth": null,
         "freeSubdomains": 100,
         "customDomains": null,
         "seats": null
       },
       "features": [
         "everythingIn",
+        "usageCredits",
+        "namespaceCapacity",
         "runningServices",
-        "buildMinutes",
         "power",
         "projects",
         "prioritySupport"
       ],
       "billing": {
-        "creditsPerCycle": 3000,
+        "creditsPerCycle": 3500,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 12,
-          "max_vcpus": null,
-          "max_ram_mb": null,
-          "max_disk_gb": null
+          "max_workspaces": 6,
+          "max_vcpus": 2,
+          "max_ram_mb": 6144,
+          "max_disk_gb": 32,
+          "max_total_vcpus": 4,
+          "max_total_ram_mb": 8192,
+          "max_total_disk_gb": 128
         }
       }
     },
@@ -193,31 +204,35 @@
         "maxProjects": null,
         "maxResourceTier": "xlarge",
         "computeMinutesPerMonth": null,
-        "buildMinutesPerMonth": 36000,
+        "buildMinutesPerMonth": null,
         "freeSubdomains": null,
         "customDomains": null,
         "seats": null
       },
       "features": [
         "everythingIn",
+        "usageCredits",
+        "namespaceCapacity",
         "runningServices",
-        "buildMinutes",
         "power",
         "projectsUnlimited",
         "freeSubdomainsUnlimited",
         "prioritySupport"
       ],
       "billing": {
-        "creditsPerCycle": 15000,
+        "creditsPerCycle": 9000,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 52,
-          "max_vcpus": null,
-          "max_ram_mb": null,
-          "max_disk_gb": null
+          "max_workspaces": 12,
+          "max_vcpus": 4,
+          "max_ram_mb": 12288,
+          "max_disk_gb": 64,
+          "max_total_vcpus": 8,
+          "max_total_ram_mb": 16384,
+          "max_total_disk_gb": 256
         }
       }
     },
@@ -269,31 +284,34 @@
           "max_workspaces": null,
           "max_vcpus": null,
           "max_ram_mb": null,
-          "max_disk_gb": null
+          "max_disk_gb": null,
+          "max_total_vcpus": null,
+          "max_total_ram_mb": null,
+          "max_total_disk_gb": null
         }
       }
     }
   ],
   "creditPacks": [
     {
-      "id": "pack_5k",
-      "creditsMilli": 5000000,
-      "priceCents": 500,
-      "stripePriceEnv": "STRIPE_PRICE_PACK_5K",
+      "id": "pack_500",
+      "creditsMilli": 500000,
+      "priceCents": 700,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_500",
       "sortOrder": 10
     },
     {
-      "id": "pack_25k",
-      "creditsMilli": 25000000,
-      "priceCents": 2000,
-      "stripePriceEnv": "STRIPE_PRICE_PACK_25K",
+      "id": "pack_2k",
+      "creditsMilli": 2000000,
+      "priceCents": 2500,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_2K",
       "sortOrder": 20
     },
     {
-      "id": "pack_100k",
-      "creditsMilli": 100000000,
-      "priceCents": 7000,
-      "stripePriceEnv": "STRIPE_PRICE_PACK_100K",
+      "id": "pack_5k",
+      "creditsMilli": 5000000,
+      "priceCents": 6000,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_5K",
       "sortOrder": 30
     }
   ],

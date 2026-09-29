@@ -50,7 +50,7 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
     await expect(
       setup({
         ...catalog,
-        reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true, effectiveResourceLimits: true },
+        reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true, effectiveResourceLimits: true, aggregateResourceLimits: true },
       }).api.assertResellerSupport(),
     ).resolves.toBeUndefined();
     await expect(
@@ -64,6 +64,11 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
     await expect(setup({ success: true, plans: [], creditPacks: [],
       reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true, effectiveResourceLimits },
     }).api.assertResellerSupport()).rejects.toMatchObject({ code: "OBLIEN_BILLING_UPGRADE_REQUIRED" });
+  });
+  it.each([undefined, false])("requires aggregate enforcement before selling bounded offers (%s)", async aggregateResourceLimits => {
+    await expect(setup({ success: true, plans: [], creditPacks: [], reseller: { contractVersion: 2, offerPolicy: true,
+      resourceLimits: true, effectiveResourceLimits: true, aggregateResourceLimits } }).api.assertResellerSupport())
+      .rejects.toMatchObject({ code: "OBLIEN_BILLING_UPGRADE_REQUIRED" });
   });
   it("retains the immutable offer, policy, limits and reseller metadata on subscription reads", async () => {
     const saved = {

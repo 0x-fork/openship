@@ -331,7 +331,7 @@
     "creditsPerCycle": "{amount} crédits / cycle de facturation",
     "buildTime": "Temps de compilation",
     "buildMinutes": "{amount} min / mois",
-    "buildHint": "Temps consacré au build de votre code. Un build de 5 minutes utilise 5 minutes de votre quota mensuel.",
+    "buildHint": "Les builds consomment le quota partagé selon les ressources utilisées. Une limite de temps distincte ne s’applique que si elle est incluse dans votre offre enregistrée.",
     "apps": "Services actifs",
     "appsHint": "Applications, bases de données et workers exécutés en même temps. Chaque service Compose actif compte dans cette limite.",
     "machine": "CPU et mémoire par service",
@@ -345,7 +345,7 @@
     "setupOnly": "Abonnement requis",
     "setupHint": "Choisissez une offre Cloud pour créer des projets, compiler votre code et exécuter des apps.",
     "includedTitle": "Vos ressources",
-    "limitsHint": "Projets, services actifs et temps de build mensuel de votre offre.",
+    "limitsHint": "Projets, services en cours et éventuelle limite de temps de build incluse dans votre offre.",
     "balanceRule": "Les apps sont mises en pause lorsque le quota est épuisé. Ajoutez de l’utilisation pour continuer ou passez à une offre supérieure pour augmenter les limites.",
     "reset": "Le quota de compilation est renouvelé le {date}",
     "cpuHint": "Puissance de calcul utilisée dans le temps. 1 vCPU pendant 1 heure correspond à 1 vCPU-heure.",
@@ -365,7 +365,12 @@
     "usageIncluded": "Quota d’utilisation partagé inclus",
     "usageSummary": "Les builds et les apps en cours d’exécution partagent un quota d’utilisation. Les machines plus grandes et les durées plus longues consomment davantage.",
     "usageDetails": "Détails de l’utilisation",
-    "usagePercent": "{percent} % utilisé"
+    "usagePercent": "{percent} % utilisé",
+    "poolHint": "Partagé entre tous les espaces, y compris ceux arrêtés et les changements en attente.",
+    "creditUnitsHint": "Les crédits mesurent la consommation, pas des minutes. CPU, mémoire, activité disque et transfert ont chacun leur tarif.",
+    "topupCapacityHint": "Les recharges ajoutent des crédits. Changez de forfait pour augmenter CPU, RAM ou stockage.",
+    "poolTitle": "Capacité partagée",
+    "poolCapacity": "{cpu} vCPU · {ram} Go de RAM · {disk} Go de disque"
   },
   "onboarding": {
     "workspaceDescription": "Choisissez une offre Cloud pour créer des projets, compiler votre code et exécuter vos apps. Aucun projet ni ressource de calcul n’est inclus avant l’abonnement.",

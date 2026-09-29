@@ -77,9 +77,9 @@ describe("Cloud customer checkout", () => {
       (plan) => !["free", "enterprise"].includes(plan.id),
     );
     expect(plans.map((plan) => [plan.id, plan.price.monthly, plan.monthlyCredits])).toEqual([
-      ["starter", 1000, 1_200_000],
-      ["pro", 3900, 3_000_000],
-      ["team", 9900, 15_000_000],
+      ["starter", 1000, 800_000],
+      ["pro", 3900, 3_500_000],
+      ["team", 9900, 9_000_000],
     ]);
     expect(presentCloudPlans().annual.enabled).toBe(false);
   });
@@ -91,11 +91,11 @@ describe("Cloud customer checkout", () => {
       kind: "subscription",
       billingInterval: "monthly",
       offer: {
-        reference: "openship:starter:v1",
+        reference: "openship:starter:v2",
         unitAmount: 1000,
-        credits: 1200,
+        credits: 800,
         policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" },
-        resourceLimits: { max_workspaces: 5 },
+        resourceLimits: { max_workspaces: 3, max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 32 },
       },
       metadata: {
         openship_plan: "starter",
@@ -122,8 +122,8 @@ describe("Cloud customer checkout", () => {
     await createCheckoutSession(ctx(), "team", "monthly", "team-attempt-001");
     const input = h.checkout.mock.calls[0]![0];
     expect(input.offer).toMatchObject({
-      unitAmount: 9900, credits: 15000,
-      resourceLimits: { max_workspaces: 52, max_vcpus: null, max_ram_mb: null, max_disk_gb: null },
+      unitAmount: 9900, credits: 9000,
+      resourceLimits: { max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 },
     });
     expect(JSON.parse(input.metadata.openship_limits).runningServices).toBe(50);
     expect(h.quota).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe("Cloud customer checkout", () => {
     const plan = PRICING.plans.find(plan => plan.id === "starter")!;
     const saved = structuredClone(plan.billing.resourceLimits);
     try {
-      plan.billing.resourceLimits = { max_workspaces: 7, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 24 };
+      plan.billing.resourceLimits = { ...saved, max_workspaces: 7, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 24 };
       await createCheckoutSession(ctx(), "starter", "monthly");
       expect(h.checkout.mock.calls[0]![0].offer.resourceLimits).toEqual(plan.billing.resourceLimits);
       expect(h.quota).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe("Cloud customer checkout", () => {
     try {
       PRICING.annual.enabled = true;
       plan.price.annual = 10_000;
-      plan.billing.yearlyCreditsPerCycle = 14_400;
+      plan.billing.yearlyCreditsPerCycle = 8_000;
       plan.billing.overdraft = 60;
       plan.billing.suspendThreshold = 60;
       await createCheckoutSession(ctx(), "starter", "annual", "annual-attempt-001");
@@ -153,7 +153,7 @@ describe("Cloud customer checkout", () => {
           billingInterval: "yearly",
           offer: expect.objectContaining({
             unitAmount: 10_000,
-            credits: 14_400,
+            credits: 8_000,
             policy: { overdraft: 60, suspendThreshold: 60, onOverdraftAction: "stop_workspaces" },
           }),
         }),
@@ -199,7 +199,7 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: "ns-org-a",
-        offer: expect.objectContaining({ reference: "openship:team:v1", unitAmount: 9900 }),
+        offer: expect.objectContaining({ reference: "openship:team:v2", unitAmount: 9900 }),
         billingInterval: "monthly",
       }),
     );
@@ -232,16 +232,16 @@ describe("Cloud customer checkout", () => {
       subscription,
     }));
     expect(await listActiveCreditPacks()).toMatchObject([
-      { id: "pack_5k", credits_milli: 5_000_000, price_cents: 500 },
-      { id: "pack_25k", credits_milli: 25_000_000, price_cents: 2000 },
-      { id: "pack_100k", credits_milli: 100_000_000, price_cents: 7000 },
+      { id: "pack_500", credits_milli: 500_000, price_cents: 700 },
+      { id: "pack_2k", credits_milli: 2_000_000, price_cents: 2500 },
+      { id: "pack_5k", credits_milli: 5_000_000, price_cents: 6000 },
     ]);
     await createTopupCheckoutSession(ctx(), "pack_5k", "attempt-00000001");
     expect(h.checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: "ns-org-a",
         kind: "topup",
-        offer: expect.objectContaining({ credits: 5000, unitAmount: 500 }),
+        offer: expect.objectContaining({ credits: 5000, unitAmount: 6000 }),
       }),
     );
     await expect(createTopupCheckoutSession(ctx(), "removed-pack")).rejects.toMatchObject({

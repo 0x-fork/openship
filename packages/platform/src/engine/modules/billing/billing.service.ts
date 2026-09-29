@@ -112,7 +112,7 @@ export async function createTopupCheckoutSession(ctx: RequestContext, packId: st
     },
     successUrl: `${runtimeTarget.dashboard}/billing/overview?topup=success&session_id={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${runtimeTarget.dashboard}/billing/overview?topup=cancelled`,
-    idempotencyKey: checkoutKey(ctx.organizationId, `topup:${packId}`, requestKey),
+    idempotencyKey: checkoutKey(ctx.organizationId, `topup:${offer.reference}`, requestKey),
   });
   await cloudAnalytics.checkoutStarted(ctx, { checkoutId: result.checkoutId, kind: "topup", amount: offer.unitAmount });
   return { checkoutUrl: result.url };

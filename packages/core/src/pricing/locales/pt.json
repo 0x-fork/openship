@@ -49,7 +49,9 @@
     "selfHostedUnlimited": "Deploys, projetos, servidores e domínios ilimitados",
     "selfHostedServices": "Todos os serviços gerenciados: Postgres, Redis, e-mail",
     "selfHostedClients": "CLI, web e desktop: um único backend",
-    "selfHostedFreeSubdomains": "{freeSubdomains} subdomínios {freeDomainSuffix} gratuitos ao conectar à Cloud"
+    "selfHostedFreeSubdomains": "{freeSubdomains} subdomínios {freeDomainSuffix} gratuitos ao conectar à Cloud",
+    "usageCredits": "{credits} créditos de uso por mês",
+    "namespaceCapacity": "Total: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB de disco"
   },
   "selfHosted": {
     "name": "Auto-hospedado",
@@ -61,7 +63,9 @@
   "creditPacks": {
     "pack_5k": "{credits} créditos",
     "pack_25k": "{credits} créditos",
-    "pack_100k": "{credits} créditos"
+    "pack_100k": "{credits} créditos",
+    "pack_500": "{credits} créditos",
+    "pack_2k": "{credits} créditos"
   },
   "ui": {
     "perMonth": "/mês",

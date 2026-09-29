@@ -2188,7 +2188,6 @@ async function provisionServiceContainer(
       existingWorkspaceId: snapshot.cloudDockerWorkspace.workspaceId,
       resources: cloudDockerResources({
         resources: projectResources,
-        buildResources: resolveBuildResources((project.buildResources ?? snapshot.buildResources) as Record<string, unknown> | null, { isCloud: true }),
         services: services.map(sibling => {
           const row = rows.get(sibling.id);
           const allocated = row?.allocatedResources?.containerId === row?.containerId ? row?.allocatedResources : null;

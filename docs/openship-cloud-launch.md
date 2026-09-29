@@ -1,5 +1,7 @@
 # Openship Cloud release gate
 
+Current retail capacity and funded allowances are documented in [the September 29 model](cloud-capacity-economics.md). That v2 contract supersedes the inherited VM caps and old top-up prices in the historical reports below. Require `reseller.aggregateResourceLimits: true` in the deployed API before v2 checkout.
+
 Paid Cloud subscriptions use Oblien Mode B. Oblien owns hosted checkout, payment collection,
 subscription renewals, credit grants, usage enforcement, and workspace lifecycle.
 Openship owns its prices, product copy, namespace allowances and application limits,
@@ -51,12 +53,12 @@ changes. The catalog and detailed configuration are documented in
 [`packages/core/src/pricing/README.md`](../packages/core/src/pricing/README.md).
 
 Deploy the matching Oblien API first: `/billing/catalog` must report
-`reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true, effectiveResourceLimits: true }`.
+`reseller: { contractVersion: 2, offerPolicy: true, resourceLimits: true, effectiveResourceLimits: true, aggregateResourceLimits: true }`.
 Dashboard docs alone cannot enable this contract. Then deploy the updated
 Openship API and dashboard together. Checkout and the readiness check reject an
 older provider; startup also logs the missing capability. Existing subscription
 management remains available during that update. The npm SDK remains pinned to the
-published 2.4.0 transport, so Openship does not depend on a pending SDK release.
+published 2.5.0 transport, so Openship does not depend on a pending SDK release.
 
 The user reports a successful test-mode payment with the earlier integration.
 That is not a live acceptance result for this new offer contract. Keep the
@@ -78,7 +80,7 @@ browser return URL.
 
 ## What is connected
 
-- `oblien@2.4.0` supplies the official billing module. Openship validates the
+- `oblien@2.5.0` supplies the official billing module. Openship validates the
   returned namespace, subscription shape, hosted URL, and agreement between the
   namespace subscription and its entitlement. Its JSON transport rejects
   credential redirects, bounds request time, checks both HTTP and body failures,

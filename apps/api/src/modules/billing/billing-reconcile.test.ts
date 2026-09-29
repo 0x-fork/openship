@@ -68,7 +68,7 @@ describe("Oblien-managed entitlements", () => {
     expect(h.mirror).toHaveBeenCalledWith("org_1", "os-customer", {
       planTierId: "pro", subscriptionStatus: "active", currentPeriodStart: period.start, currentPeriodEnd: period.end,
     });
-    expect(complimentaryCloudPlan(result.grant!)).toMatchObject({ price: { monthly: 0 }, monthlyCredits: 3_000_000 });
+    expect(complimentaryCloudPlan(result.grant!)).toMatchObject({ price: { monthly: 0 }, monthlyCredits: 3_500_000 });
     await expect(assertCloudCanSpend("org_1")).resolves.toBeUndefined();
     h.balance.mockResolvedValue({ namespace: "os-customer", balance: 0, blocking: true });
     await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
@@ -118,7 +118,7 @@ describe("Oblien-managed entitlements", () => {
       expect(await cloudPlan("starter", saved)).toMatchObject({
         price: { monthly: 1000 },
         effectivePrice: { monthly: 1000 },
-        monthlyCredits: 1_200_000,
+        monthlyCredits: 800_000,
         limits,
         name: saved.offer.name,
       });

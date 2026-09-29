@@ -316,7 +316,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.entitlement).toHaveBeenCalledTimes(5);
     expect(provider.subscription).toHaveBeenCalledTimes(5);
     expect(provider.quota).not.toHaveBeenCalled();
-    expect(provider.resourceRead).not.toHaveBeenCalled();
+    expect(provider.resourceRead).toHaveBeenCalled();
     expect(provider.resourceUpdate).not.toHaveBeenCalled();
   });
 
@@ -331,7 +331,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.checkout).toHaveBeenCalledTimes(2);
     for (const [input] of provider.checkout.mock.calls) {
-      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 52, max_vcpus: null, max_ram_mb: null, max_disk_gb: null });
+      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
     }
   });
 
@@ -355,9 +355,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(native.locale).toBe("ar");
     expect(native.plans.find(plan => plan.id === "starter")).toMatchObject({
       price: { monthly: 1000, annual: null },
-      monthlyCredits: 1_200_000,
+      monthlyCredits: 800_000,
       annualCredits: null,
-      limits: { buildMinutesPerMonth: 3000 },
+      limits: { buildMinutesPerMonth: null },
     });
     expect(JSON.stringify(native)).not.toMatch(/stripeCouponEnv|oblienLimits|STRIPE_PRICE/);
     const response = await app.request("/api/billing/plans", { headers: { "Accept-Language": "de" } });
@@ -380,7 +380,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: org!.oblienNamespace,
         kind: "subscription",
-        offer: { reference: "openship:starter:v1", unitAmount: 1000, credits: 1200 },
+        offer: { reference: "openship:starter:v2", unitAmount: 1000, credits: 800 },
         billingInterval: "monthly",
       });
       expect(input).not.toHaveProperty("customer");
@@ -489,7 +489,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     for (const client of [c.native, c.remote]) {
       const packs = await client.listTopupPacks();
       expect(packs).toHaveLength(3);
-      expect(packs[0]).toMatchObject({ id: "pack_5k", credits_milli: 5_000_000, price_cents: 500 });
+      expect(packs[0]).toMatchObject({ id: "pack_500", credits_milli: 500_000, price_cents: 700 });
       expect(await client.createTopup({ packId: "pack_5k" })).toEqual({
         checkoutUrl: "https://checkout.stripe.com/private-session",
       });
@@ -498,8 +498,8 @@ describe("billing through the same SDK and HTTP application operations", () => {
       provider.checkout.mock.calls.every(
         ([input]) =>
           input.kind === "topup" &&
-          input.offer.reference === "openship:pack_5k:v1" &&
-          input.offer.unitAmount === 500 &&
+          input.offer.reference === "openship:pack_5k:v2" &&
+          input.offer.unitAmount === 6000 &&
           input.offer.credits === 5000,
       ),
     ).toBe(true);

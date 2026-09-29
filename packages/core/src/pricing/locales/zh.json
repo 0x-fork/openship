@@ -49,7 +49,9 @@
     "selfHostedUnlimited": "部署、项目、服务器和域名均不限数量",
     "selfHostedServices": "全部托管服务:Postgres、Redis、邮件服务",
     "selfHostedClients": "CLI、网页端和桌面端,共用一个后端",
-    "selfHostedFreeSubdomains": "连接 Cloud 后可获得 {freeSubdomains} 个免费 {freeDomainSuffix} 子域名"
+    "selfHostedFreeSubdomains": "连接 Cloud 后可获得 {freeSubdomains} 个免费 {freeDomainSuffix} 子域名",
+    "usageCredits": "每月 {credits} 使用积分",
+    "namespaceCapacity": "总计：{namespaceCpu} vCPU、{namespaceRamGb} GB 内存、{namespaceDiskGb} GB 磁盘"
   },
   "selfHosted": {
     "name": "自托管",
@@ -61,7 +63,9 @@
   "creditPacks": {
     "pack_5k": "{credits} 点额度",
     "pack_25k": "{credits} 点额度",
-    "pack_100k": "{credits} 点额度"
+    "pack_100k": "{credits} 点额度",
+    "pack_500": "{credits} 点额度",
+    "pack_2k": "{credits} 点额度"
   },
   "ui": {
     "perMonth": "/月",

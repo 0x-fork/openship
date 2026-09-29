@@ -11,6 +11,7 @@ import { isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "@/app/(dashboard)/billing/_components/billing-shared";
 import { BillingOverview } from "./BillingOverview";
 import { BillingCapacity } from "./BillingCapacity";
+import { PlanResources } from "./PlanResources";
 import { BillingResourceUsage } from "./BillingResourceUsage";
 import { ResourceMeter } from "./ResourceMeter";
 import { BillingTopups } from "./BillingTopups";
@@ -313,6 +314,26 @@ describe("customer credit limits", () => {
     expect(details.open).toBe(false);
     await act(async () => { details.open = true; });
     expect(visibleText()).toContain("900 credits left");
+  });
+  it("shows the provider's shared pool independently from service counts and credit balance", async () => {
+    await render(<BillingCapacity state={{ ...paid, capacity: { ...paid.capacity,
+      vcpus: { used: 3, max: 4 }, ramMb: { used: 3072, max: 8192 }, diskGb: { used: 96, max: 128 },
+      workspaces: { used: 3, max: 6 }, buildMinutes: { used: 14, max: null },
+    } }} />);
+    for (const [label, used, max] of [[copy.header.vcpus, "3", "4"], [copy.header.ram, "3", "8"], [copy.header.diskCap, "96", "128"]]) {
+      const meter = container.querySelector(`[role="meter"][aria-label="${label}"]`);
+      expect(meter?.getAttribute("aria-valuenow")).toBe(used);
+      expect(meter?.getAttribute("aria-valuemax")).toBe(max);
+    }
+    expect(visibleText()).toContain(copy.resourceOverview.measuredUsage);
+    expect(visibleText()).not.toMatch(/No set limit|3,000 min/);
+  });
+  it("displays the supplied offer's total capacity without claiming unlimited build time", async () => {
+    await render(<PlanResources plan={{ ...hobby, resourceLimits: { ...PLANS.pro.oblienLimits,
+      max_total_vcpus: 7, max_total_ram_mb: 10240, max_total_disk_gb: 192 } }} />);
+    expect(container.textContent).toContain("7 vCPU · 10 GB RAM · 192 GB disk");
+    expect(container.textContent).toContain(copy.resourcesGuide.poolHint);
+    expect(container.textContent).not.toMatch(/No set limit|3,000 min/);
   });
   it("does not turn an unknown paid balance into unlimited credits", async () => {
     await render(<BillingCapacity state={{ ...paid, balance: { total: null, quotaLimit: null, quotaUsed: 300_000, quotaRemaining: null, unlimited: false } }} />);

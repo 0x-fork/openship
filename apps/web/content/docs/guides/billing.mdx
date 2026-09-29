@@ -30,9 +30,13 @@ fixed number of runtime hours.
 
 Running-service allowances apply across your organization. A Compose project
 runs in one Cloud VM and must fit that machine's CPU, RAM and disk capacity,
-including its build. A larger plan lets you run more services across projects;
+including temporary build resources when source code must be built. Image-only templates do not reserve a source builder. A larger plan lets you run more services across projects;
 it does not combine them into an arbitrarily large VM. Split a large stack
 across projects or reduce its machine sizes if it exceeds that capacity.
+
+The current monthly plans include 800 / 3,500 / 9,000 metered credits. Total namespace ceilings are 1 / 4 / 8 vCPU, 4 / 8 / 16 GB RAM, and 32 / 128 / 256 GB disk for Starter / Pro / Team. Stopped workspaces, build hosts and pending resource changes count toward allocation. Per-VM limits apply as well; service counts do not promise every service can run at its maximum size simultaneously.
+
+Credit packs add 500 credits for $7, 2,000 for $25, or 5,000 for $60. A credit is not a minute: consumption depends on CPU, memory, disk activity and transfer. Extra credits extend usage; upgrading the plan increases capacity. Previously purchased credit grants and prices remain attached to their saved subscription.
 
 Every plan includes **unlimited team members**: the price you see covers your
 whole organisation, not a head count.
