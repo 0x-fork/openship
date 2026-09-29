@@ -39,7 +39,7 @@ import { presentCloudPlans, subscriptionPlan } from "@repo/platform/engine/modul
 
 const ctx = (organizationId = "org-a") => ({ organizationId }) as never;
 const subscription = {
-  tierId: "hobby", status: "active", billingInterval: "yearly",
+  tierId: "hobby", status: "active" as const, billingInterval: "yearly" as const,
   periodStart: "2026-09-01T00:00:00Z", periodEnd: "2027-09-01T00:00:00Z",
   cancelAtPeriodEnd: false, canceledAt: null,
 };
