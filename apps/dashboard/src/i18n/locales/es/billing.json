@@ -429,5 +429,18 @@
     "currentPeriod": "Período de facturación actual",
     "viewUsage": "Ver uso detallado",
     "bandwidthPerMonth": "{amount} GB / mes"
+  },
+  "creditAlert": {
+    "lowTitle": "Quedan pocos créditos de Cloud",
+    "lowDescription": "Has usado el {percent}% de tu cuota, incluidos los créditos comprados. Quedan {credits} créditos.",
+    "graceTitle": "Estás usando créditos de margen",
+    "graceDescription": "Tus créditos pagados se han agotado. Quedan {credits} créditos de margen antes de bloquear nuevas cargas de trabajo.",
+    "exhaustedTitle": "Créditos de Cloud agotados",
+    "exhaustedDescription": "Las nuevas cargas de trabajo están bloqueadas hasta que añadas créditos o se renueve tu cuota pagada. Abre la facturación para ver tus opciones.",
+    "buyCredits": "Comprar más créditos",
+    "openBilling": "Abrir facturación",
+    "close": "Entendido",
+    "opening": "Abriendo la facturación de la organización de esta alerta…",
+    "wrongOrganization": "Este enlace de facturación no está disponible para tu cuenta. Inicia sesión con una cuenta de la organización de la alerta."
   }
 }

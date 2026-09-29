@@ -251,8 +251,7 @@ Checkout errors preserve a validated support reference and known provider code
 without exposing the provider's arbitrary error body. Top-up retries keep their
 original payment key. Webhooks verify HMAC and match a current signed body ID
 to `X-Webhook-Id`; older body-ID-less events retain their existing deduplication
-path. Oblien's outgoing webhooks are best effort without automatic retries, so
-the periodic entitlement sweep and fresh reads remain required.
+path. Oblien retries payment and namespace credit-alert webhooks durably. The periodic entitlement sweep and fresh reads remain required to reconcile current state.
 
 Paid customers retain their verified balance and subscription controls if the
 plan catalog is temporarily unavailable. Usage explanations are collapsed, and
@@ -732,3 +731,12 @@ Provider references: [index](https://oblien.com/llms.txt),
 [namespaces](https://oblien.com/docs/api/namespaces),
 [Pages](https://oblien.com/docs/api/pages),
 [scoped tokens](https://oblien.com/docs/api/scoped-tokens).
+
+## Credit warnings and recovery
+
+Cloud warnings follow Oblien's current namespace quota state and use the existing notification
+pipeline for durable email and in-app delivery. Deploy the additive `quota.alert` provider response
+and database migration `0153_durable_credit_alerts` before rolling out the API and dashboard.
+
+[Namespace credit alerts](namespace-credit-alerts.md) is the reference for delivery guarantees,
+provider requirements, organization isolation, and verification.

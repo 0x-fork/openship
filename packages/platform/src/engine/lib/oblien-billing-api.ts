@@ -47,6 +47,14 @@ export const oblienCatalogSchema = z.object({
   ),
 });
 
+export const oblienQuotaAlertSchema = z.object({
+  state: z.enum(["ok", "low", "grace", "depleted", "unlimited", "disabled"]),
+  thresholds: z.array(amount.positive().max(100)), threshold: amount.nullable(),
+  percent: amount.nullable(), used: amount, limit: allowance,
+  remaining: amount.nullable(), balance: amount.nullable(), overdraft: amount.nonnegative(), blocking: z.boolean(),
+});
+export type OblienQuotaAlert = z.infer<typeof oblienQuotaAlertSchema>;
+
 export const oblienEntitlementSchema = z.object({
   success: z.literal(true), namespace,
   tierId: z.string().nullable(),
@@ -59,6 +67,7 @@ export const oblienEntitlementSchema = z.object({
     balance: amount.nullable(),
     overdraft: amount.nonnegative().optional(),
     suspendThreshold: allowance.optional(),
+    alert: oblienQuotaAlertSchema.optional(),
   }),
 });
 

@@ -429,5 +429,18 @@
     "currentPeriod": "Current billing period",
     "viewUsage": "View detailed usage",
     "bandwidthPerMonth": "{amount} GB / month"
+  },
+  "creditAlert": {
+    "lowTitle": "Cloud credits running low",
+    "lowDescription": "You have used {percent}% of your allowance, including purchased credits. {credits} credits remain.",
+    "graceTitle": "You are using grace credits",
+    "graceDescription": "Your paid credits are used up. {credits} grace credits remain before new workloads are blocked.",
+    "exhaustedTitle": "Cloud credits exhausted",
+    "exhaustedDescription": "New workloads are blocked until credits are added or your paid allowance renews. Open billing to review your options.",
+    "buyCredits": "Buy more credits",
+    "openBilling": "Open billing",
+    "close": "Got it",
+    "opening": "Opening billing for the organization in this alert…",
+    "wrongOrganization": "This billing link is unavailable for your account. Sign in with an account that belongs to the organization in the alert."
   }
 }

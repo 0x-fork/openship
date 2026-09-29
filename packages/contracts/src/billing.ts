@@ -65,7 +65,13 @@ export const BillingCheckoutStatusSchema = Type.Object({
   fulfilled: Type.Boolean(),
   creditsGranted: Type.Number(),
 });
+export const BillingCreditAlertSchema = Type.Object({
+  state: Type.Union(["ok", "low", "grace", "depleted", "unlimited", "disabled"].map(value => Type.Literal(value))),
+  namespace: Type.String(), percent: numberOrNull, threshold: numberOrNull, thresholds: Type.Array(Type.Number()),
+  remaining: numberOrNull, balance: numberOrNull, limit: numberOrNull,
+});
 export const BillingStateSchema = Type.Object({
+  creditAlert: Type.Optional(Type.Union([BillingCreditAlertSchema, Type.Null()])),
   tier, status: Type.String(), currentPeriod,
   balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull, unlimited: Type.Optional(Type.Boolean()) }),
   plan: Type.Optional(Type.Union([BillingPlansSchema.properties.plans.items, Type.Null()])),

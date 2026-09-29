@@ -429,5 +429,18 @@
     "currentPeriod": "Período de cobrança atual",
     "viewUsage": "Ver uso detalhado",
     "bandwidthPerMonth": "{amount} GB / mês"
+  },
+  "creditAlert": {
+    "lowTitle": "Os créditos Cloud estão a acabar",
+    "lowDescription": "Usou {percent}% da sua quota, incluindo os créditos comprados. Restam {credits} créditos.",
+    "graceTitle": "Está a usar créditos de tolerância",
+    "graceDescription": "Os créditos pagos esgotaram-se. Restam {credits} créditos de tolerância antes do bloqueio de novas cargas de trabalho.",
+    "exhaustedTitle": "Créditos Cloud esgotados",
+    "exhaustedDescription": "As novas cargas de trabalho ficam bloqueadas até adicionar créditos ou renovar a quota paga. Consulte a faturação para ver as opções.",
+    "buyCredits": "Comprar mais créditos",
+    "openBilling": "Abrir faturação",
+    "close": "Entendido",
+    "opening": "A abrir a faturação da organização deste alerta…",
+    "wrongOrganization": "Este link de faturação não está disponível para a sua conta. Inicie sessão com uma conta da organização deste alerta."
   }
 }

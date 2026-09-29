@@ -67,3 +67,20 @@ shown as a successful purchase.
 
 See the [billing API](/docs/api/billing) for the endpoints behind each of those
 actions.
+
+## Credit warnings and recovery
+
+Cloud warnings use your workspace's current credit balance, including purchased credits.
+The default warning levels are 80% and 95%. A banner stays visible while credits are low;
+a dismissible dialog appears at the final warning level, when grace credits begin, or when
+credits are exhausted.
+
+Choose **Buy more credits** to open credit packs when top-ups are available, or **Open billing**
+to review your plan and options. After a purchase, wait for checkout to confirm that credits
+were granted. The warning refreshes when you return to the dashboard and every minute while
+it is visible. Buying credits does not increase a plan's CPU, memory, or other resource limits.
+
+Billing alerts use your notification preferences. Email requires a verified address and a
+working email connection; the dashboard warning remains available independently. Links in
+alerts select the workspace the alert belongs to. If you cannot access it, sign in with an
+account that belongs to that workspace.

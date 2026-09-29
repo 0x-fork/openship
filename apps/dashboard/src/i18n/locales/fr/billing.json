@@ -429,5 +429,18 @@
     "currentPeriod": "Période de facturation actuelle",
     "viewUsage": "Voir la consommation détaillée",
     "bandwidthPerMonth": "{amount} Go / mois"
+  },
+  "creditAlert": {
+    "lowTitle": "Crédits Cloud bientôt épuisés",
+    "lowDescription": "Vous avez utilisé {percent}% de votre quota, crédits achetés inclus. Il reste {credits} crédits.",
+    "graceTitle": "Vous utilisez les crédits de tolérance",
+    "graceDescription": "Vos crédits payés sont épuisés. Il reste {credits} crédits de tolérance avant le blocage des nouvelles charges de travail.",
+    "exhaustedTitle": "Crédits Cloud épuisés",
+    "exhaustedDescription": "Les nouvelles charges de travail sont bloquées jusqu’à l’ajout de crédits ou au renouvellement payé du quota. Consultez la facturation pour voir vos options.",
+    "buyCredits": "Acheter des crédits",
+    "openBilling": "Ouvrir la facturation",
+    "close": "Compris",
+    "opening": "Ouverture de la facturation de l’organisation concernée…",
+    "wrongOrganization": "Ce lien de facturation est indisponible pour votre compte. Connectez-vous avec un compte membre de l’organisation concernée."
   }
 }
