@@ -50,13 +50,26 @@ export function createNotificationChannelRepo(db: Database) {
     async ensureAccountChannels(userId: string): Promise<void> {
       const [account] = await db.select().from(user).where(eq(user.id, userId)).limit(1);
       if (!account) return;
+      const existing = await db.select().from(notificationChannel)
+        .where(eq(notificationChannel.userId, userId));
       const key = (kind: string, address = "") => `nch_account_${kind}_${createHash("sha256").update(JSON.stringify([userId, address])).digest("hex")}`;
-      const channels: NewNotificationChannel[] = [{ id: key("in_app"), userId, kind: "in_app", label: "In-app", config: {}, verified: true, enabled: true }];
-      if (account.emailVerified && account.email) channels.push({
+      // Settings channels may predate these deterministic defaults. Reuse their
+      // destinations, including disabled/unverified rows, without changing the
+      // user's verification or delivery preferences.
+      const channels: NewNotificationChannel[] = [];
+      if (!existing.some(channel => channel.kind === "in_app")) channels.push({
+        id: key("in_app"), userId, kind: "in_app", label: "In-app", config: {}, verified: true, enabled: true,
+      });
+      const hasAccountEmail = existing.some(channel => {
+        const address = (channel.config as { address?: unknown } | null)?.address;
+        return channel.kind === "email" && typeof address === "string" &&
+          address.trim().toLowerCase() === account.email.trim().toLowerCase();
+      });
+      if (account.emailVerified && account.email && !hasAccountEmail) channels.push({
         id: key("email", account.email), userId, kind: "email", label: "Account email",
         config: { address: account.email, accountEmail: true }, verified: true, enabled: true,
       });
-      await db.insert(notificationChannel).values(channels).onConflictDoNothing();
+      if (channels.length) await db.insert(notificationChannel).values(channels).onConflictDoNothing();
     },
 
     /** List channels for a user — newest first. Includes disabled rows

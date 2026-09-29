@@ -196,6 +196,31 @@ describe("notifications shared SDK/HTTP operations", () => {
     expect(await c.native.testChannel(email.channelId!)).toMatchObject({ ok: true });
   });
 
+  it("reuses Settings destinations and sends one credit email when the source event is retried", async () => {
+    const owner = await seedOwner();
+    await db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, owner.userId));
+    const user = (await repos.user.findById(owner.userId))!;
+    const email = await repos.notificationChannel.create({
+      userId: owner.userId, kind: "email", label: "My email", config: { address: user.email },
+      verified: true, enabled: true,
+    });
+    const inbox = await repos.notificationChannel.create({
+      userId: owner.userId, kind: "in_app", label: "My inbox", config: {}, verified: true, enabled: true,
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const enqueue = await notification.prepare({
+        organizationId: owner.orgId, eventType: "billing.credit_low", resourceType: "billing",
+        idempotencyKey: "same-credit-warning", payload: { durable: true, message: "95% used" },
+      });
+      await enqueue(db);
+    }
+    const deliveries = await repos.notificationDelivery.listForUser(owner.userId, owner.orgId);
+    expect(deliveries.map(row => row.channelId).sort()).toEqual([email.id, inbox.id].sort());
+    await processQueuedNotifications();
+    expect(h.mail).toHaveBeenCalledOnce();
+    expect(h.mail).toHaveBeenCalledWith(expect.objectContaining({ to: user.email, organizationId: owner.orgId }));
+  });
+
   it("never sends queued credit email after the account address or billing permission is revoked", async () => {
     const owner = await seedOwner();
     await db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, owner.userId));

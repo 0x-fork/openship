@@ -88,6 +88,25 @@ describe("durable credit notifications with real Postgres semantics", () => {
     expect(await channels.listByUser("u1")).toHaveLength(2);
   });
 
+  it.each([true, false])("keeps existing account destinations and their enabled=%s preference", async (enabled) => {
+    await db.insert(schema.user).values({
+      id: "u1", email: "one@example.test", name: "One", emailVerified: true,
+    });
+    const email = await channels.create({
+      userId: "u1", kind: "email", label: "My email", config: { address: "one@example.test" },
+      verified: true, enabled,
+    });
+    const inbox = await channels.create({
+      userId: "u1", kind: "in_app", label: "My inbox", config: {}, verified: true, enabled,
+    });
+    await Promise.all(Array.from({ length: 6 }, () => channels.ensureAccountChannels("u1")));
+    const held = await channels.listByUser("u1");
+    expect(held.map(row => row.id).sort()).toEqual([email.id, inbox.id].sort());
+    expect(held.every(row => row.enabled === enabled)).toBe(true);
+    expect(await channels.listVerifiedForUsersByKinds(["u1"], ["email", "in_app"]))
+      .toHaveLength(enabled ? 2 : 0);
+  });
+
   it("recovers an expired claim without restarting and fences acknowledgments from the former worker", async () => {
     await delivery.createOnce("evt1", data);
     const [first] = await delivery.claimQueued();
