@@ -40,13 +40,50 @@ The cookie name is prefixed with your instance mode — `openship.session_token`
 
 ### Passkeys
 
-After the first password or OAuth sign-in, open **Settings → General → Passkeys** to register Face ID,
-Touch ID, Windows Hello, a password manager, or a hardware security key. The authenticator keeps the
-private key; Openship stores only the public WebAuthn credential. The login page then offers **Sign in
-with a passkey** and creates the same signed session cookie as the other browser login methods.
+On Openship Cloud or a self-hosted instance with local accounts, open **Settings → General → Passkeys**
+after signing in. Add a passkey using Face ID, Touch ID, Windows Hello, a password manager, or a
+compatible hardware security key. Registration requires a recent session and a discoverable credential
+so the login page can find it without a username. The private key stays with your authenticator;
+Openship stores the public WebAuthn credential.
 
-Passkeys are bound to the dashboard hostname configured by `OPENSHIP_PUBLIC_URL`. Keep that hostname
-stable: moving the dashboard to a different domain requires registering a new passkey on the new domain.
+Choose **Sign in with a passkey** on the login page. If you enabled two-factor authentication, complete
+that step before a session is issued. You can remove saved passkeys from Settings even in a browser
+that cannot create them. Keep another sign-in method available before removing your last passkey.
+
+Passkeys require HTTPS, except on localhost. They bind to the configured **dashboard** hostname and
+browser origin, independently of the API host. Self-hosted public instances use `OPENSHIP_PUBLIC_URL`;
+Cloud uses its dashboard runtime URL. Keep the hostname stable: moving to another domain requires
+registering a passkey there. Use your password or social login to do that.
+
+### Two-factor authentication
+
+Open **Settings → General → Two-factor authentication** on Openship Cloud or a self-hosted instance
+using `OPENSHIP_AUTH_MODE=local` (including a VPS). No email delivery or additional provider is needed
+for authenticator codes.
+
+1. Choose **Set up 2FA** and confirm your current password. If you have only used social login, first
+   choose **Add password**; this requires a recent signed-in session and does not replace social login.
+2. Scan the QR code with an authenticator app, or enter the setup key manually.
+3. Enter the app's six-digit code. Protection starts only after this verification succeeds.
+4. Copy or download your recovery codes and store them somewhere safe. Each code works once.
+
+When 2FA is enabled, password, social, and passkey sign-in all require an authenticator or recovery
+code before creating a usable session. Pending challenges expire after ten minutes. Browser handoffs,
+invitations, and MCP authorization continue after verification. Password resets do not disable 2FA.
+
+Use **Recovery codes** to replace your codes, or **Turn off 2FA** to disable protection; both require
+your password. Replacing codes invalidates the old set. An enabled authenticator cannot be overwritten
+by starting setup again: disable it explicitly first. Keep your authenticator or a recovery code
+available; an email password reset is not a way to bypass the second factor.
+
+These controls do not apply to account-free local mode. Instances that delegate sign-in to Openship
+Cloud manage account security on Cloud rather than storing a separate local factor.
+
+Authentication tables are added automatically during the normal database upgrade. Back up and retain
+your installation's `BETTER_AUTH_SECRET`, which encrypts authenticator secrets and recovery codes.
+An instance transfer must include credentials to preserve accounts with 2FA enabled; the destination
+re-encrypts them with its own key. An incomplete factor restore is rejected before changing data.
+Project-only transfers do not move account credentials.
 
 <Callout title="Bearer tokens are refused from the dashboard's own origin" type="warn">
 If a request arrives with a `Bearer` header **and** an `Origin` matching one of the dashboard's trusted

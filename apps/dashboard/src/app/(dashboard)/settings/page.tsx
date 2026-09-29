@@ -41,6 +41,7 @@ import { UntrackedEdgeRoutes } from "./_components/UntrackedEdgeRoutes";
 import { LanguageSetting } from "./_components/LanguageSetting";
 import { PreferencesSetting } from "./_components/PreferencesSetting";
 import { PasskeysSetting } from "./_components/PasskeysSetting";
+import { TwoFactorSetting } from "./_components/TwoFactorSetting";
 import { ProductViewSetting } from "./_components/ProductViewSetting";
 import { MailModeSetting } from "./_components/MailModeSetting";
 import { UpdatesTab } from "./_components/UpdatesTab";
@@ -73,7 +74,7 @@ export default function SettingsPage() {
 }
 
 function SettingsPageInner() {
-  const { selfHosted, deployMode, productView } = usePlatform();
+  const { selfHosted, deployMode, productView, authMode } = usePlatform();
   const { refresh } = useCloud();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -144,7 +145,7 @@ function SettingsPageInner() {
               {/* Per-user shell: full platform vs Openship Mail's mail-only rail.
                   Renders nothing on the SaaS. */}
               <ProductViewSetting />
-              <PasskeysSetting />
+              {authMode === "local" && <><TwoFactorSetting /><PasskeysSetting /></>}
               <PreferencesSetting />
             </>
           )}

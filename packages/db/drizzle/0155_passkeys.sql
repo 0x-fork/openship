@@ -14,4 +14,14 @@ CREATE TABLE "passkey" (
 --> statement-breakpoint
 CREATE INDEX "passkey_user_id_idx" ON "passkey" ("user_id");
 --> statement-breakpoint
-CREATE INDEX "passkey_credential_id_idx" ON "passkey" ("credential_id");
+CREATE UNIQUE INDEX "passkey_credential_id_idx" ON "passkey" ("credential_id");
+--> statement-breakpoint
+ALTER TABLE "user" ADD COLUMN "two_factor_enabled" boolean DEFAULT false NOT NULL;
+--> statement-breakpoint
+CREATE TABLE "two_factor" (
+  "id" text PRIMARY KEY NOT NULL,
+  "secret" text NOT NULL,
+  "backup_codes" text NOT NULL,
+  "user_id" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  CONSTRAINT "two_factor_user_id_unique" UNIQUE ("user_id")
+);

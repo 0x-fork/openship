@@ -1,185 +1,164 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Icon as UiIcon } from "@repo/ui/icons";
+import { useEffect, useState } from "react";
+import { Icon } from "@repo/ui/icons";
 import { authClient } from "@/lib/auth-client";
+import { passkeysSupported } from "@/lib/account-security";
 import { useToast } from "@/context/ToastContext";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { SettingsSection } from "./SettingsSection";
-
-type UserPasskey = {
-  id: string;
-  name?: string | null;
-  deviceType: string;
-  backedUp: boolean;
-  createdAt?: string | Date | null;
-};
-
-type PasskeyClient = {
-  passkey: {
-    addPasskey: (input?: {
-      name?: string;
-    }) => Promise<{ data: UserPasskey | null; error: { message?: string } | null }>;
-    listUserPasskeys: () => Promise<{
-      data: UserPasskey[] | null;
-      error: { message?: string } | null;
-    }>;
-    deletePasskey: (input: {
-      id: string;
-    }) => Promise<{ data: unknown; error: { message?: string } | null }>;
-  };
-};
-
-const passkeys = authClient as unknown as PasskeyClient;
 
 export function PasskeysSetting() {
   const { showToast } = useToast();
-  const [items, setItems] = useState<UserPasskey[]>([]);
+  const { t } = useI18n();
+  const copy = t.settings.accountSecurity;
+  const { data: items, error, isPending, refetch } = authClient.useListPasskeys();
   const [name, setName] = useState("");
   const [supported, setSupported] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const result = await passkeys.passkey.listUserPasskeys();
-    if (result.error) throw new Error(result.error.message || "Could not load passkeys.");
-    setItems(result.data ?? []);
-  }, []);
+  useEffect(() => setSupported(passkeysSupported()), []);
 
-  useEffect(() => {
-    if (!("PublicKeyCredential" in window)) return;
-    setSupported(true);
-    setLoading(true);
-    let alive = true;
-    void load()
-      .catch((error) => {
-        if (alive)
-          showToast(
-            error instanceof Error ? error.message : "Could not load passkeys.",
-            "error",
-            "Passkeys",
-          );
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
+  async function add(event: React.FormEvent) {
+    event.preventDefault();
+    if (working) return;
+    setWorking(true);
+    try {
+      const result = await authClient.passkey.addPasskey({
+        name: name.trim() || copy.passkeyDefault,
       });
-    return () => {
-      alive = false;
-    };
-  }, [load, showToast]);
-
-  async function addPasskey() {
-    setWorking(true);
-    try {
-      const result = await passkeys.passkey.addPasskey({ name: name.trim() || "My passkey" });
-      if (result.error) throw new Error(result.error.message || "Could not add the passkey.");
+      if (result.error) throw new Error(result.error.message || copy.passkeyFailed);
       setName("");
-      await load();
-      showToast("Passkey added.", "success", "Passkeys");
+      showToast(copy.passkeyAdded, "success", copy.passkeysTitle);
     } catch (error) {
       showToast(
-        error instanceof Error ? error.message : "Could not add the passkey.",
+        error instanceof Error ? error.message : copy.passkeyFailed,
         "error",
-        "Passkeys",
+        copy.passkeysTitle,
       );
     } finally {
       setWorking(false);
     }
   }
 
-  async function removePasskey(item: UserPasskey) {
-    if (
-      !window.confirm(
-        `Remove “${item.name || "Passkey"}”? You cannot use it to sign in afterwards.`,
-      )
-    )
-      return;
+  async function remove(id: string) {
+    if (working) return;
     setWorking(true);
     try {
-      const result = await passkeys.passkey.deletePasskey({ id: item.id });
-      if (result.error) throw new Error(result.error.message || "Could not remove the passkey.");
-      await load();
-      showToast("Passkey removed.", "success", "Passkeys");
+      const result = await authClient.passkey.deletePasskey({ id });
+      if (result.error) throw new Error(result.error.message || copy.passkeyFailed);
+      setRemoving(null);
+      showToast(copy.passkeyRemoved, "success", copy.passkeysTitle);
     } catch (error) {
       showToast(
-        error instanceof Error ? error.message : "Could not remove the passkey.",
+        error instanceof Error ? error.message : copy.passkeyFailed,
         "error",
-        "Passkeys",
+        copy.passkeysTitle,
       );
     } finally {
       setWorking(false);
     }
   }
-
-  if (!supported) return null;
 
   return (
-    <SettingsSection
-      icon="key"
-      title="Passkeys"
-      description="Use Face ID, Touch ID, Windows Hello or a security key for passwordless sign-in."
-    >
+    <SettingsSection icon="key" title={copy.passkeysTitle} description={copy.passkeysDescription}>
       <div className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Passkey name, for example MacBook Pro"
-            aria-label="Passkey name"
-            maxLength={80}
-          />
-          <Button
-            type="button"
-            disabled={working}
-            onClick={() => void addPasskey()}
-            className="sm:shrink-0"
-          >
-            {working ? (
-              <UiIcon name="spinner" className="size-4 animate-spin" />
-            ) : (
-              <UiIcon name="key" className="size-4" />
-            )}
-            Add passkey
-          </Button>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <UiIcon name="spinner" className="size-4 animate-spin" /> Loading passkeys…
-          </div>
-        ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No passkeys added yet.</p>
+        {supported ? (
+          <form onSubmit={add} className="flex flex-col items-start gap-3 sm:flex-row sm:items-end">
+            <div className="w-full min-w-0 flex-1 space-y-1.5">
+              <Label htmlFor="passkey-name">{copy.passkeyName}</Label>
+              <Input
+                id="passkey-name"
+                variant="filled"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={copy.passkeyPlaceholder}
+                maxLength={80}
+                disabled={working}
+              />
+            </div>
+            <Button type="submit" disabled={working || isPending} className="shrink-0">
+              {working && <Icon name="spinner" className="size-4 animate-spin" />}
+              {copy.passkeyAdd}
+            </Button>
+          </form>
         ) : (
-          <div className="space-y-2">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/10 p-4"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {item.name || "Passkey"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.deviceType === "multiDevice" || item.backedUp
-                      ? "Synced passkey"
-                      : "Device-bound passkey"}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={working}
-                  onClick={() => void removePasskey(item)}
-                  aria-label={`Remove ${item.name || "passkey"}`}
-                >
-                  <UiIcon name="trash" className="size-4" />
-                </Button>
-              </div>
-            ))}
+          <p className="text-sm text-muted-foreground">{copy.passkeyUnsupported}</p>
+        )}
+        {error ? (
+          <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-danger">
+            <span>{error.message || copy.loadFailed}</span>
+            <Button variant="secondary" size="sm" onClick={() => void refetch()}>
+              {copy.retry}
+            </Button>
           </div>
+        ) : isPending ? (
+          <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Icon name="spinner" className="size-4 animate-spin" />
+            {copy.loading}
+          </div>
+        ) : !items?.length ? (
+          <p className="text-sm text-muted-foreground">{copy.passkeysEmpty}</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((item) => (
+              <li key={item.id} className="rounded-xl bg-card p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {item.name || copy.passkeyDefault}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.deviceType === "multiDevice" || item.backedUp
+                        ? copy.synced
+                        : copy.deviceBound}
+                    </p>
+                  </div>
+                  {removing !== item.id && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={working}
+                      aria-label={interpolate(copy.removeNamed, {
+                        name: item.name || copy.passkeyDefault,
+                      })}
+                      onClick={() => setRemoving(item.id)}
+                    >
+                      <Icon name="trash" className="size-4" />
+                    </Button>
+                  )}
+                </div>
+                {removing === item.id && (
+                  <div className="mt-3 space-y-3">
+                    <p className="text-sm text-muted-foreground">{copy.removeConfirm}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={working}
+                        onClick={() => void remove(item.id)}
+                      >
+                        {copy.remove}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={working}
+                        onClick={() => setRemoving(null)}
+                      >
+                        {copy.cancel}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </SettingsSection>
