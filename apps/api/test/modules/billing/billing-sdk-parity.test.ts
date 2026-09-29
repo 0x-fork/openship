@@ -119,6 +119,7 @@ beforeEach(() => {
   }
   provider.catalog.mockResolvedValue({
     success: true,
+    // Deliberately stale provider prices: customer offers come from Openship.
     plans: [
       { tierId: "hobby", name: "Hobby", priceMonthly: 10, priceYearly: 100, currency: "usd", creditsPerCycle: 1200, yearlyCreditsPerCycle: 14400, features: [] },
       { tierId: "pro", name: "Pro", priceMonthly: 29, priceYearly: 290, currency: "usd", creditsPerCycle: 3000, yearlyCreditsPerCycle: 36000, features: [] },
@@ -238,9 +239,10 @@ describe("billing through the same SDK and HTTP application operations", () => {
           capacity: { buildMinutes: { used: 0, max: 0 }, services: { max: 0 }, projects: { max: 0 } },
           maxServiceMachine: null, topups: { available: false, status: "unavailable" },
         });
-        await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
-          code: "CLOUD_PLAN_REQUIRED",
-        });
+        for (const pack of CREDIT_PACKS)
+          await expect(client.createTopup({ packId: pack.id })).rejects.toMatchObject({
+            statusCode: 402, code: "CLOUD_PLAN_REQUIRED",
+          });
       }
       namespaces.add((await repos.organization.findById(owner.orgId))!.oblienNamespace!);
     }
@@ -340,7 +342,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const c = await clients(await seedOwner());
     for (const client of [c.native, c.remote]) {
       await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
-      await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
+      await expect(client.createTopup({ packId: CREDIT_PACKS[0]!.id })).rejects.toMatchObject({
         code: "OBLIEN_BILLING_UNAVAILABLE",
       });
     }
@@ -353,12 +355,18 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const native = await c.native.listPlans({ locale: "ar" });
     expect(await remote.billing.listPlans({ locale: "ar" })).toEqual(native);
     expect(native.locale).toBe("ar");
-    expect(native.plans.find(plan => plan.id === "starter")).toMatchObject({
-      price: { monthly: 1000, annual: null },
-      monthlyCredits: 800_000,
-      annualCredits: null,
-      limits: { buildMinutesPerMonth: null },
-    });
+    for (const [id, monthlyPrice, monthlyCredits] of [
+      ["hobby", 500, 400_000],
+      ["starter", 2000, 1_700_000],
+      ["pro", 4000, 3_500_000],
+      ["team", 9900, 9_000_000],
+    ] as const)
+      expect(native.plans.find(plan => plan.id === id)).toMatchObject({
+        price: { monthly: monthlyPrice, annual: null },
+        monthlyCredits,
+        annualCredits: null,
+        limits: { buildMinutesPerMonth: null },
+      });
     expect(JSON.stringify(native)).not.toMatch(/stripeCouponEnv|oblienLimits|STRIPE_PRICE/);
     const response = await app.request("/api/billing/plans", { headers: { "Accept-Language": "de" } });
     expect(response.headers.get("Vary")).toBe("Accept-Language");
@@ -366,13 +374,18 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.checkout).not.toHaveBeenCalled();
   });
 
-  it("uses the selected tenant for provider state and checkout without auditing session URLs", async () => {
+  it.each([
+    ["hobby", 500, 400],
+    ["starter", 2000, 1700],
+    ["pro", 4000, 3500],
+    ["team", 9900, 9000],
+  ] as const)("uses the selected tenant and current %s offer without auditing checkout URLs", async (tier, unitAmount, credits) => {
     const owner = await seedOwner(), other = await seedOwner(), c = await clients(owner);
     await db.update(schema.organization).set({ planTierId: "team" }).where(eq(schema.organization.id, other.orgId));
     expect(await c.native.getState()).toEqual(await c.remote.getState());
     expect((await c.native.getState()).tier).toBe("free");
     for (const client of [c.native, c.remote]) {
-      expect(await client.createSubscription({ planTierId: "starter", interval: "monthly" })).toEqual({ checkoutUrl: "https://checkout.stripe.com/private-session" });
+      expect(await client.createSubscription({ planTierId: tier, interval: "monthly" })).toEqual({ checkoutUrl: "https://checkout.stripe.com/private-session" });
     }
     const org = await repos.organization.findById(owner.orgId);
     expect(org?.oblienNamespace).toBeTruthy();
@@ -380,8 +393,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: org!.oblienNamespace,
         kind: "subscription",
-        offer: { reference: "openship:starter:v2", unitAmount: 1000, credits: 800 },
+        offer: { reference: `openship:${tier}:v3`, unitAmount, credits },
         billingInterval: "monthly",
+        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "3" },
       });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");
@@ -479,35 +493,62 @@ describe("billing through the same SDK and HTTP application operations", () => {
   });
 
   it("uses Openship credit packs instead of legacy database prices and enforces the independent top-up switch", async () => {
-    const owner = await seedOwner(), c = await clients(owner), legacyPack = CREDIT_PACKS[0]!;
+    const owner = await seedOwner(), c = await clients(owner), pack = CREDIT_PACKS[0]!;
     await c.native.getState();
     provider.subscriptions.set((await repos.organization.findById(owner.orgId))!.oblienNamespace!, {
       tierId: "hobby", status: "active", billingInterval: "monthly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
       cancelAtPeriodEnd: false, canceledAt: null,
     });
-    await db.insert(schema.creditPack).values({ id: legacyPack.id, name: legacyPack.name, creditsMilli: 999, priceCents: 999, sortOrder: 0, stripeProductId: "product_retired", stripePriceId: "price_retired", active: true });
+    await db.insert(schema.creditPack).values({ id: pack.id, name: pack.name, creditsMilli: 999, priceCents: 999, sortOrder: 0, stripeProductId: "product_retired", stripePriceId: "price_retired", active: true });
+    const expectedPacks = [
+      { id: "pack_400", credits_milli: 400_000, price_cents: 500 },
+      { id: "pack_1700", credits_milli: 1_700_000, price_cents: 2000 },
+      { id: "pack_4500", credits_milli: 4_500_000, price_cents: 5000 },
+    ];
     for (const client of [c.native, c.remote]) {
       const packs = await client.listTopupPacks();
-      expect(packs).toHaveLength(3);
-      expect(packs[0]).toMatchObject({ id: "pack_500", credits_milli: 500_000, price_cents: 700 });
-      expect(await client.createTopup({ packId: "pack_5k" })).toEqual({
-        checkoutUrl: "https://checkout.stripe.com/private-session",
-      });
+      expect(packs).toMatchObject(expectedPacks);
+      for (const expectedPack of expectedPacks) {
+        expect(await client.createTopup({ packId: expectedPack.id })).toEqual({
+          checkoutUrl: "https://checkout.stripe.com/private-session",
+        });
+        expect(provider.checkout).toHaveBeenLastCalledWith(expect.objectContaining({
+          namespace: (await repos.organization.findById(owner.orgId))!.oblienNamespace,
+          kind: "topup",
+          offer: {
+            reference: `openship:${expectedPack.id}:v3`,
+            name: "Openship compute credits",
+            description: expect.any(String),
+            unitAmount: expectedPack.price_cents,
+            currency: "usd",
+            credits: expectedPack.credits_milli / 1000,
+          },
+        }));
+      }
     }
-    expect(
-      provider.checkout.mock.calls.every(
-        ([input]) =>
-          input.kind === "topup" &&
-          input.offer.reference === "openship:pack_5k:v2" &&
-          input.offer.unitAmount === 6000 &&
-          input.offer.credits === 5000,
-      ),
-    ).toBe(true);
+    expect(provider.checkout).toHaveBeenCalledTimes(6);
     provider.topups = false;
     for (const client of [c.native, c.remote])
-      await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
+      await expect(client.createTopup({ packId: pack.id })).rejects.toMatchObject({
         code: "BILLING_TOPUPS_NOT_ENABLED",
       });
+    expect(provider.checkout).toHaveBeenCalledTimes(6);
+  });
+
+  it.each(["pack_500", "pack_5k"])("rejects the retired %s pack without creating a provider checkout", async packId => {
+    const owner = await seedOwner(), c = await clients(owner);
+    await c.native.getState();
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    provider.subscriptions.set(namespace, {
+      tierId: "hobby", status: "active", billingInterval: "monthly",
+      periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+      cancelAtPeriodEnd: false, canceledAt: null,
+    });
+    for (const client of [c.native, c.remote])
+      await expect(client.createTopup({ packId })).rejects.toMatchObject({
+        statusCode: 404, code: "BILLING_PACK_NOT_FOUND",
+      });
+    expect(provider.checkout).not.toHaveBeenCalled();
   });
 
   it.each(["canceled", "past_due"] as const)("refuses top-ups when entitlement is %s despite an active subscription row", async status => {
@@ -527,7 +568,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     });
     for (const client of [c.native, c.remote]) {
       expect((await client.getState()).topups).toEqual({ available: false, status: "unavailable" });
-      await expect(client.createTopup({ packId: "pack_5k" })).rejects.toMatchObject({
+      await expect(client.createTopup({ packId: CREDIT_PACKS[0]!.id })).rejects.toMatchObject({
         statusCode: 402, code: "CLOUD_PLAN_REQUIRED",
       });
     }
@@ -551,7 +592,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     });
     for (const client of [c.native, c.remote]) {
       expect((await client.getState()).topups.available).toBe(true);
-      expect(await client.createTopup({ packId: "pack_5k" })).toHaveProperty("checkoutUrl");
+      expect(await client.createTopup({ packId: CREDIT_PACKS[0]!.id })).toHaveProperty("checkoutUrl");
     }
     expect(provider.resourceUpdate).not.toHaveBeenCalled();
   });

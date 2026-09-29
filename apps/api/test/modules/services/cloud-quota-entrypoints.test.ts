@@ -16,6 +16,7 @@ vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (ori
   syncOblienEntitlement: async () => ({
     tier: h.tier,
     limits: h.savedLimits ?? planLimits(h.tier),
+    resourceLimits: resolvePlan(h.tier).oblienLimits,
   }),
 }));
 vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
@@ -29,7 +30,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
 }));
 import { db, schema, repos, seedOwner } from "../jobs/_harness";
 import { eq } from "@repo/db";
-import { planLimits } from "@repo/core";
+import { planLimits, resolvePlan } from "@repo/core";
 import { createService, updateService, startServiceContainer, restartServiceContainer } from "@repo/platform/engine/modules/services/service.service";
 import { createQueuedDeployment, type DeploymentConfigSnapshot } from "@repo/platform/engine/modules/deployments/build.service";
 import { createServicesProjectWithId } from "@repo/platform/engine/modules/projects/project-crud.service";
