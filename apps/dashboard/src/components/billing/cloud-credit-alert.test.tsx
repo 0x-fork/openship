@@ -87,20 +87,20 @@ const notice = (value: BillingState) => (
 it("shows the provider warning at 80% and a once-per-band popup at 95%, with a scoped top-up action", async () => {
   await render(notice(state({ percent: 80, threshold: 80, remaining: 800_000 })));
   expect(container.textContent).toContain("80%");
-  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   await render(notice(state()));
-  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   expect(container.textContent).toContain("200 credits");
   expect(container.querySelector("a")?.getAttribute("href")).toBe(
     "/cloud-billing?organizationId=org-a&tab=topups",
   );
   await act(async () =>
-    [...container.querySelectorAll("button")]
+    [...document.querySelectorAll("button")]
       .find((button) => button.textContent === copy.close)!
       .click(),
   );
   await render(notice(state()));
-  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector('[role="status"]')).not.toBeNull();
 });
 
@@ -122,7 +122,7 @@ it("distinguishes grace/exhaustion, rearms on renewal, and hides recovered, disa
   await render(notice(state({}, { creditAlert: null })));
   expect(container.textContent).toBe("");
   await render(notice(state({}, { currentPeriod: { start: "2026-10-01", end: "2026-11-01" } })));
-  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
 });
 
 it("offers billing management when top-ups are disabled and never initiates a purchase itself", async () => {
@@ -130,6 +130,39 @@ it("offers billing management when top-ups are disabled and never initiates a pu
   expect(container.querySelector("a")?.textContent).toBe(copy.openBilling);
   expect(container.querySelector("a")?.getAttribute("href")).toContain("tab=overview");
   expect(h.setActive).not.toHaveBeenCalled();
+});
+
+it("focuses the shared dialog and restores focus after Escape without reopening the same warning", async () => {
+  const previous = document.createElement("button");
+  previous.textContent = "Previous control";
+  document.body.append(previous);
+  previous.focus();
+  try {
+    await render(notice(state()));
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(document.activeElement).toBe(dialog);
+    await act(async () =>
+      dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(previous);
+    await render(notice(state()));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  } finally {
+    previous.remove();
+  }
+});
+
+it("removes an already-open warning dialog when the selected organization changes", async () => {
+  await render(<CloudCreditAlert />);
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  h.read.mockResolvedValue(state({ state: "ok" }));
+  await act(async () => {
+    h.org = "org-b";
+    h.listeners.forEach((listener) => listener());
+  });
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.textContent).toBe("");
 });
 
 it("hides the old organization immediately and rejects its delayed balance response", async () => {

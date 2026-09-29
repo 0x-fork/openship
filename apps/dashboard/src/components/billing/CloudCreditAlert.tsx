@@ -5,6 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/Modal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { billingApi, type BillingState } from "@/lib/api/billing";
 import { getActiveOrganizationId, subscribeActiveOrganization } from "@/lib/api/client";
@@ -159,9 +161,9 @@ export function CreditAlertNotice({
           <p className="font-semibold">{title}</p>
           <p className="mt-1 break-words">{description}</p>
         </div>
-        <a href={href} className="shrink-0 rounded-lg border border-current px-3 py-2 font-medium">
-          {action}
-        </a>
+        <Button asChild variant="secondary" className="shrink-0">
+          <a href={href}>{action}</a>
+        </Button>
       </div>
       {openKey === key && (
         <AlertDialog
@@ -177,60 +179,57 @@ export function CreditAlertNotice({
   );
 }
 
-function AlertDialog({
-  title,
-  description,
-  href,
-  action,
-  closeLabel,
-  onClose,
-}: {
+interface AlertDialogProps {
   title: string;
   description: string;
   href: string;
   action: string;
   closeLabel: string;
   onClose: () => void;
-}) {
+}
+
+function AlertDialog(props: AlertDialogProps) {
+  return (
+    <Modal isOpen onClose={props.onClose} width="100%" maxWidth="448px" showCloseButton={false}>
+      <AlertDialogContent {...props} />
+    </Modal>
+  );
+}
+
+function AlertDialogContent({
+  title,
+  description,
+  href,
+  action,
+  closeLabel,
+  onClose,
+}: AlertDialogProps) {
   const { dialog, onKeyDown } = useDialogFocus(onClose);
   const id = useId();
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+      ref={dialog}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={`${id}-title`}
+      aria-describedby={`${id}-description`}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      className="p-5 outline-none"
     >
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${id}-title`}
-        aria-describedby={`${id}-description`}
-        tabIndex={-1}
-        onKeyDown={onKeyDown}
-        onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl outline-none"
-      >
-        <h2 id={`${id}-title`} className="text-lg font-semibold">
-          {title}
-        </h2>
-        <p id={`${id}-description`} className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <a
-            href={href}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            {action}
-          </a>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-sm"
-          >
-            {closeLabel}
-          </button>
-        </div>
+      <h2 id={`${id}-title`} className="text-lg font-semibold">
+        {title}
+      </h2>
+      <p id={`${id}-description`} className="mt-3 text-sm leading-relaxed text-muted-foreground">
+        {description}
+      </p>
+      <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+        <Button type="button" variant="ghost" onClick={onClose}>
+          {closeLabel}
+        </Button>
+        <Button asChild>
+          <a href={href}>{action}</a>
+        </Button>
       </div>
     </div>
   );
