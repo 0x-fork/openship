@@ -68,7 +68,8 @@ export class GhCliSource {
 
   /**
    * The gh user + every org they belong to — for the owner picker. Tagged
-   * source: "cli" ("Local only"), incl. orgs with no App installation.
+   * source: "cli", including orgs with no App installation. Deployment access
+   * is resolved separately for the chosen build target.
    */
   async listOwners(): Promise<MappedAccount[]> {
     const out: MappedAccount[] = [];

@@ -120,6 +120,7 @@ function Flow() {
           connecting={false}
           onConnect={ctx.connect}
           onRefresh={ctx.refresh}
+          onBrowseApps={() => {}}
           cliAction={null}
         />
       )}

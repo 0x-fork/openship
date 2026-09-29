@@ -26,7 +26,7 @@ export interface GitHubAccount {
    * rendering CLI org memberships as App installations.
    *
    *  - "app" → real GitHub App installation
-   *  - "cli" → gh CLI org membership (local-only)
+   *  - "cli" → gh CLI org membership
    */
   source?: MappedAccount["source"];
 }
@@ -47,14 +47,9 @@ export interface GitHubRepo {
   owner: { login: string; avatar_url: string } | string;
   html_url?: string;
   /**
-   * Where this repo was sourced from:
-   *   - "app"  → covered by a GitHub App installation. Deployable
-   *              anywhere (local + remote) via short-lived install tokens.
-   *   - "cli"  → seen by the local gh CLI but NOT covered by an App
-   *              installation. Local builds only — remote deploys are
-   *              refused by clone-auth (GITHUB_APP_INSTALLATION_REQUIRED).
-   *   - "both" → visible via both sources. Same capabilities as "app".
-   *   - "token" → the user's personal token (local and remote builds).
+   * Which credential source listed this repository (App, CLI, both, or personal
+   * token). This is provenance, not a deployment restriction: preflight resolves
+   * access for the chosen target, including server credentials and desktop relay.
    */
   source?: MappedRepository["source"];
 }

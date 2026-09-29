@@ -1,4 +1,5 @@
 import type { Oblien, DomainRoute } from "oblien";
+import { isIP } from "node:net";
 import { AppError } from "@repo/core";
 import type { ManualCert, RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./types";
@@ -106,12 +107,40 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       });
       return;
     }
-    if (owner.owner_type !== "workspace" || !route.targetUrl) {
+    // Public workspace ports are registered as `port`; custom workspace
+    // domains use `workspace`. In both cases owner_id is the workspace ID.
+    if (!["workspace", "port"].includes(owner.owner_type) || !route.targetUrl) {
       throw new Error("Cloud route target does not match its owning resource");
     }
     const target = new URL(route.targetUrl);
-    const current = new URL(owner.target.includes("://") ? owner.target : `http://${owner.target}`);
-    if (target.hostname !== current.hostname || target.username || target.password) {
+    if (!["http:", "https:"].includes(target.protocol) || target.username || target.password) {
+      throw new Error("Cloud route target must belong to its owning workspace");
+    }
+    // `target` becomes a compiled JSON table after routes.set(), and a stored
+    // raw IP can become stale after a restart. Revalidate the live resource;
+    // neither representation of the previous target is ownership evidence.
+    const workspace = await this.client.workspace(owner.owner_id).get();
+    if (
+      workspace.id !== owner.owner_id ||
+      workspace.namespace !== this.options.namespace ||
+      (this.options.dockerWorkspaceId && owner.owner_id !== this.options.dockerWorkspaceId)
+    ) {
+      throw new AppError(
+        "Cloud route workspace is no longer in this project or organization",
+        409,
+        "CLOUD_ROUTE_OWNER_CHANGED",
+      );
+    }
+    const ip = workspace.ip;
+    if (typeof ip !== "string" || !isIP(ip)) {
+      throw new AppError(
+        "The Cloud workspace has no current network address. Start it and retry routing.",
+        409,
+        "CLOUD_WORKSPACE_NOT_READY",
+      );
+    }
+    const current = new URL(`http://${isIP(ip) === 6 ? `[${ip}]` : ip}`);
+    if (target.hostname !== current.hostname) {
       throw new Error("Cloud route target must belong to its owning workspace");
     }
     const port = Number(target.port || (target.protocol === "https:" ? 443 : 80));
@@ -147,7 +176,8 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       else await this.pages.disable(page.slug);
       return;
     }
-    if (owner.owner_type !== "workspace") throw new Error("Cloud route is owned by an unsupported resource type");
+    if (!["workspace", "port"].includes(owner.owner_type))
+      throw new Error("Cloud route is owned by an unsupported resource type");
     if (owner.is_custom) {
       const { domains } = await this.workspaceDomain(owner.owner_id, domain);
       await domains.disconnect();
