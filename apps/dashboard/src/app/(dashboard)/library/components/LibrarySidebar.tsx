@@ -128,12 +128,9 @@ function SaasConnectionCard({
   const connected = identity?.connected ?? false;
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <UiIcon name="github" className="size-4 text-muted-foreground" />
-        <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
-      </div>
+      <h3 className="mb-4 font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
       <SourceRow
-        icon={"github"}
+        icon={personal ? "key" : "github"}
         label={personal ? t.settings.github.methodToken : t.library.sidebar.openshipGithubApp}
         sublabel={
           connected
@@ -244,10 +241,7 @@ function SelfHostedConnectionCard({
 
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <UiIcon name="github" className="size-4 text-muted-foreground" />
-        <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
-      </div>
+      <h3 className="mb-4 font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
 
       <div className="space-y-2.5">
         {tokenRow}

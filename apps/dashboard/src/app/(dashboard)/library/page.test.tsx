@@ -146,6 +146,7 @@ describe("New Project source actions", () => {
   });
 
   it("switches from the account row into URL import and back to the chosen owner", async () => {
+    h.selfHosted = true;
     await render();
     await click("Import from Git URL");
     expect(container.querySelector('input[type="url"]')).not.toBeNull();
@@ -157,13 +158,33 @@ describe("New Project source actions", () => {
     expect(container.querySelector('input[aria-label="Search repositories..."]')).not.toBeNull();
   });
 
-  it.each([false, true])(
-    "imports a public repository while disconnected, including loading=%s",
-    async (loading) => {
+  it("offers Git URL as a Cloud tab without repeating the account-row shortcut", async () => {
+    await render();
+    expect(container.querySelector('button[aria-label="Import from Git URL"]')).toBeNull();
+    await click("Git URL");
+    expect(button("Git URL").getAttribute("aria-pressed")).toBe("true");
+    expect(button("GitHub").getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector('input[type="url"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Add GitHub account"]')).toBeNull();
+    await click("GitHub");
+    expect(container.querySelector('input[type="url"]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Search repositories..."]')).not.toBeNull();
+    expect(h.selectOwner).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    "imports a public repository while disconnected, selfHosted=%s and loading=%s",
+    async (selfHosted, loading) => {
       h.connected = false;
+      h.selfHosted = selfHosted;
       h.loading = loading;
       await render();
-      await click("Import from Git URL");
+      await click(selfHosted ? "Import from Git URL" : "Git URL");
       await submitUrl("https://github.com/alice/my.app.git");
       const path = h.push.mock.calls[0]?.[0] as string;
       expect(decodeSlug(path.split("/").at(-1)!)).toEqual({
@@ -177,7 +198,7 @@ describe("New Project source actions", () => {
 
   it("rejects URLs outside GitHub instead of importing a matching substring", async () => {
     await render();
-    await click("Import from Git URL");
+    await click("Git URL");
     await submitUrl("https://example.com/github.com/alice/app");
     expect(h.push).not.toHaveBeenCalled();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(

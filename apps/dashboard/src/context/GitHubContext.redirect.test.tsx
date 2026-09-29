@@ -220,8 +220,21 @@ describe("GitHub redirect completion", () => {
   });
 
   it("lets the user select an existing installation with one claim and visible focus", async () => {
-    h.connect.mockResolvedValue({ connected: false, flow: "installations", state: "selection-attempt", installUrl: "https://github.com/install?state=selection-attempt",
-      installations: [{ id: 42, login: "connected-team", connected: false }] });
+    h.connect.mockResolvedValue({
+      connected: false,
+      flow: "installations",
+      state: "selection-attempt",
+      installUrl: "https://github.com/install?state=selection-attempt",
+      installations: [
+        {
+          id: 42,
+          login: "connected-team",
+          avatarUrl: "https://avatars.githubusercontent.com/u/42?v=4",
+          type: "Organization",
+          connected: false,
+        },
+      ],
+    });
     let complete!: (result: unknown) => void;
     h.claimInstallation.mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
     await render();
@@ -230,6 +243,9 @@ describe("GitHub redirect completion", () => {
     expect(dialog).not.toBeNull();
     expect(document.activeElement).toBe(dialog);
     const pick = [...dialog!.querySelectorAll("button")].find((button) => button.textContent?.includes("connected-team"))!;
+    expect(pick.querySelector("img")?.getAttribute("src")).toBe(
+      "https://avatars.githubusercontent.com/u/42?v=4",
+    );
     await act(async () => { pick.click(); pick.click(); });
     expect(h.claimInstallation).toHaveBeenCalledExactlyOnceWith({ state: "selection-attempt", installationId: "42" });
     expect(pick.disabled).toBe(true);

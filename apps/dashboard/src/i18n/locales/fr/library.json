@@ -13,7 +13,9 @@
     "subtitle": "Déployez une application ou importez votre projet.",
     "tabs": {
       "folder": "Dossier",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "Modèles",
+      "gitUrl": "URL Git"
     }
   },
   "connect": {

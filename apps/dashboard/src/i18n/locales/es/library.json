@@ -13,7 +13,9 @@
     "subtitle": "Despliega una aplicación o importa tu propio proyecto.",
     "tabs": {
       "folder": "Carpeta",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "Plantillas",
+      "gitUrl": "URL de Git"
     }
   },
   "connect": {

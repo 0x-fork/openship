@@ -4,7 +4,9 @@
     "subtitle": "Bir uygulama dağıtın veya kendi projenizi içe aktarın.",
     "tabs": {
       "folder": "Klasör",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "Şablonlar",
+      "gitUrl": "Git adresi"
     }
   },
   "connect": {

@@ -13,7 +13,9 @@
     "subtitle": "انشر تطبيقًا أو استورد مشروعك.",
     "tabs": {
       "folder": "مجلد",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "القوالب",
+      "gitUrl": "رابط Git"
     }
   },
   "connect": {

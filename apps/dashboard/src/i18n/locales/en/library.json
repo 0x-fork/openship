@@ -13,7 +13,9 @@
     "subtitle": "Deploy an app or import your own project.",
     "tabs": {
       "folder": "Folder",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "Templates",
+      "gitUrl": "Git URL"
     }
   },
   "connect": {
