@@ -11,10 +11,18 @@ describe("Oblien SDK transport", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, workspace: { id: "not-created" } }, { status: 503 })));
     await expect(new Oblien({ token: "test" }).workspaces.create({ wait_ready: false })).rejects.toMatchObject({ status: 503 });
   });
-  it("normalizes the provider's HTTP 200 namespace-validation refusal", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ valid: false, error: "namespace is full", code: "NAMESPACE_LIMIT_REACHED" })));
-    await expect(new Oblien({ token: "test" }).workspaces.create({ wait_ready: false })).rejects.toMatchObject({ status: 409, code: "NAMESPACE_LIMIT_REACHED" });
-  });
+  it.each(["NAMESPACE_LIMIT_REACHED", "SANDBOX_LIMIT_REACHED", "POOL_LIMIT_REACHED"])(
+    "normalizes the provider's HTTP 200 %s refusal",
+    async (code) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json({ valid: false, error: "capacity exceeded", code })),
+      );
+      await expect(
+        new Oblien({ token: "test" }).workspaces.create({ wait_ready: false }),
+      ).rejects.toMatchObject({ status: 409, code });
+    },
+  );
   it("keeps official request formatting and never follows authenticated redirects", async () => {
     const fetcher = vi.fn(async () => Response.json({ success: true, workspace: { id: "ws-a", namespace: "tenant-a" } }));
     vi.stubGlobal("fetch", fetcher);
@@ -171,6 +179,35 @@ describe("Oblien SDK transport", () => {
       .catch((error) => error);
     expect(error.details).toBeUndefined();
     expect(error.requestId).toBeUndefined();
+    expect(error.message).not.toContain("private-");
+  });
+  it("preserves only a failed creation's workspace identity for cleanup", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            code: "CREATE_FAILED",
+            message: "private-account-data",
+            details: {
+              workspace_id: "ws-failed",
+              token: "private-secret",
+              workspace: { env: { SECRET: "private-secret" } },
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const error = await new Oblien({ token: "test" }).workspaces
+      .create({ wait_ready: false })
+      .catch((error) => error);
+    expect(error).toMatchObject({
+      status: 422,
+      code: "CREATE_FAILED",
+      details: { workspace_id: "ws-failed" },
+    });
+    expect(JSON.stringify(error)).not.toContain("private-");
     expect(error.message).not.toContain("private-");
   });
   it.each([

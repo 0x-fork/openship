@@ -1,5 +1,17 @@
 {
   "appInstall": {
+    "hostFitHint": "Puedes continuar. El rendimiento en este equipo puede ser limitado.",
+    "cloudFitTitle": "Esta app necesita un plan Cloud superior",
+    "upgradePlan": "Mejorar plan",
+    "checkingCapacity": "Comprobando capacidad…",
+    "checkCapacityAgain": "Comprobar de nuevo",
+    "cloudFitUnavailable": "No se pudo comprobar la capacidad. Se volverá a comprobar al desplegar.",
+    "withoutDomainsTitle": "¿Continuar sin dominios?",
+    "withoutDomainsBody": "Solo se podrá acceder a estos servicios web a través de sus puertos publicados. Puedes añadir dominios más adelante desde el proyecto.",
+    "withoutDomainsCloudBody": "Estos servicios web no tendrán una URL pública en Cloud. Los demás servicios de esta app podrán seguir accediendo a ellos. Puedes añadir dominios más adelante desde el proyecto.",
+    "addDomains": "Añadir dominios",
+    "continueWithoutDomains": "Continuar sin dominios",
+    "routePortCloudDesc": "Privado para este espacio de trabajo de Cloud. Añade un dominio para obtener una URL pública.",
     "exposeTitle": "Dominios y enrutamiento"
   },
   "settingSection": {

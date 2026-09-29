@@ -72,8 +72,8 @@ export interface TemplateServiceSpec {
   name: string;
   /** Upstream image to pull. Exactly one of `image`/`build` per service. */
   image?: string;
-  /** Initial container limits. Cloud sums the profile into the project's VM.
-   * Existing explicit settings are retained when an unfinished install is retried. */
+  /** Initial Cloud container limits, summed into the project's VM allocation.
+   * Self-hosted defaults stay uncapped; explicit Cloud overrides are retained. */
   resources?: Readonly<ResourceValues>;
   /** Inline build context — build instead of pull. Mutually exclusive with `image`. */
   build?: TemplateServiceBuild;

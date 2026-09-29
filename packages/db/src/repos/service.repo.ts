@@ -804,6 +804,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
               eq(project.id, input.projectId),
               eq(project.organizationId, input.organizationId),
               eq(project.appTemplateId, input.appTemplateId),
+              sql`${project.resources} IS NULL`,
               sql`${project.activeDeploymentId} IS NULL`,
               sql`${project.deletedAt} IS NULL`,
               eq(project.deletionInProgress, false),

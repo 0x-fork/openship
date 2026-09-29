@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import type { Project } from "@repo/db";
 
 const h = vi.hoisted(() => ({
@@ -49,12 +50,22 @@ beforeEach(() => {
   h.ready.mockImplementation(async () => { binding!.state = "ready"; });
   h.create.mockResolvedValue({ id: "workspace-a", namespace: "namespace-a", status: "creating" });
   h.retry.mockResolvedValue({ id: "workspace-a", namespace: "namespace-a", status: "creating" });
-  h.get.mockResolvedValue({ id: "workspace-a", namespace: "namespace-a", status: "active", info: { status: "running" }, resources: { cpus: 2, memory_mb: 4096, disk_size_mb: 32768 } });
+  h.get.mockResolvedValue({
+    id: "workspace-a",
+    namespace: "namespace-a",
+    slug: `os-docker-${createHash("sha256").update(project.id).digest("hex").slice(0, 24)}`,
+    status: "active",
+    info: { status: "running" },
+    resources: { cpus: 2, memory_mb: 4096, disk_size_mb: 32768 },
+  });
   h.wait.mockImplementation(async () => h.get());
   h.exec.mockResolvedValue("");
   h.resize.mockResolvedValue({ success: true, relaunched: true });
   h.inFlight.mockResolvedValue([]);
-  h.discard.mockImplementation(async () => { binding = undefined; });
+  h.list.mockResolvedValue({ workspaces: [], total: 0, limit: 100, page: 1 });
+  h.discard.mockImplementation(async () => {
+    binding = undefined;
+  });
 });
 
 describe("Cloud Docker provisioning and retry", () => {
@@ -144,72 +155,117 @@ describe("Cloud Docker provisioning and retry", () => {
     expect(h.create.mock.calls.map(([request]) => request.config.cpus)).toEqual([5, 2]);
     expect(binding?.state).toBe("ready");
   });
-  it("repairs an older rejected reservation in the same retry after its resources were corrected", async () => {
-    binding = {
-      projectId: project.id,
-      namespace: "namespace-a",
-      image: "oblien/docker:29",
-      resources: { ...resources, cpuCores: 5 },
-      provisionKey: "old-rejected-key",
-      workspaceId: null,
-      state: "provisioning",
-    };
-    h.create.mockImplementation(async (request) => {
-      if (request.config.cpus > 4) {
-        throw Object.assign(new Error("namespace permits 4 vCPU"), {
-          status: 409,
-          code: "NAMESPACE_LIMIT_REACHED",
-        });
-      }
-      return { id: "workspace-a", namespace: "namespace-a" };
-    });
-    await expect(ensureCloudDockerWorkspace(input)).resolves.toEqual({
-      projectId: "project-a",
-      workspaceId: "workspace-a",
-    });
-    expect(h.create.mock.calls.map(([request]) => request.config.cpus)).toEqual([5, 2]);
-    expect(h.create.mock.calls.map(([request]) => request.idempotency_key)).toEqual([
-      "old-rejected-key",
-      "stable-key",
-    ]);
-    expect(h.attach).toHaveBeenCalledOnce();
-  });
-  it("stops after the corrected allocation is also refused", async () => {
-    binding = {
-      projectId: project.id,
-      namespace: "namespace-a",
-      image: "oblien/docker:29",
-      resources: { ...resources, cpuCores: 5 },
-      provisionKey: "old-rejected-key",
-      workspaceId: null,
-      state: "provisioning",
-    };
-    h.create.mockRejectedValue(
-      Object.assign(new Error("namespace capacity still full"), {
-        status: 409,
-        code: "NAMESPACE_LIMIT_REACHED",
-      }),
-    );
-    await expect(ensureCloudDockerWorkspace(input)).rejects.toMatchObject({
-      code: "NAMESPACE_LIMIT_REACHED",
-    });
-    expect(h.create).toHaveBeenCalledTimes(2);
-    expect(h.attach).not.toHaveBeenCalled();
+  it.each([
+    "NAMESPACE_LIMIT_REACHED",
+    "SANDBOX_LIMIT_REACHED",
+    "POOL_LIMIT_REACHED",
+    "plan_limit_exceeded",
+    "namespace_limit_exceeded",
+  ])("leaves a rejected %s installation deletable without creating a workspace", async (code) => {
+    const error = Object.assign(new Error("creation rejected"), { status: 409, code });
+    h.create.mockRejectedValueOnce(error);
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toBe(error);
+    expect(
+      await cloudDockerWorkspaceForCleanup(project.id, project.organizationId),
+    ).toBeUndefined();
     expect(binding).toBeUndefined();
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.start).not.toHaveBeenCalled();
   });
-  it("preserves the exact reservation for an ambiguous 409 conflict", async () => {
+  it("keeps an unclassified conflict reserved instead of assuming no workspace exists", async () => {
     h.create.mockRejectedValueOnce(
-      Object.assign(new Error("creation already in progress"), {
+      Object.assign(new Error("create already in progress"), {
         status: 409,
         code: "CREATE_IN_PROGRESS",
       }),
     );
-    await expect(ensureCloudDockerWorkspace(input)).rejects.toMatchObject({
-      code: "CREATE_IN_PROGRESS",
-    });
-    await ensureCloudDockerWorkspace({ ...input, resources: { ...resources, memoryMb: 8192 } });
-    expect(h.create.mock.calls[1]![0]).toEqual(h.create.mock.calls[0]![0]);
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("already in progress");
+    expect(binding?.provisionKey).toBe("stable-key");
     expect(h.discard).not.toHaveBeenCalled();
+  });
+  it("releases a new reservation if cancelled before the provider request", async () => {
+    const controller = new AbortController();
+    const reserve = h.reserve.getMockImplementation()!;
+    h.reserve.mockImplementationOnce(async (...args) => {
+      const result = await reserve(...args);
+      controller.abort(new Error("install cancelled"));
+      return result;
+    });
+    await expect(
+      ensureCloudDockerWorkspace({ ...input, signal: controller.signal }),
+    ).rejects.toThrow("install cancelled");
+    expect(h.create).not.toHaveBeenCalled();
+    expect(
+      await cloudDockerWorkspaceForCleanup(project.id, project.organizationId),
+    ).toBeUndefined();
+  });
+  it("preserves an earlier uncertain request when a retry is cancelled before sending", async () => {
+    h.create.mockRejectedValueOnce(new Error("response lost"));
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("response lost");
+    const controller = new AbortController();
+    h.token.mockImplementationOnce(async () => {
+      controller.abort(new Error("retry cancelled"));
+      return { token: "short-lived-tenant-token", namespace: "namespace-a" };
+    });
+    await expect(
+      ensureCloudDockerWorkspace({ ...input, signal: controller.signal }),
+    ).rejects.toThrow("retry cancelled");
+    expect(binding?.provisionKey).toBe("stable-key");
+    expect(h.discard).not.toHaveBeenCalled();
+    expect(h.create).toHaveBeenCalledOnce();
+  });
+  it("tracks a failed creation's returned workspace so deletion can reclaim it", async () => {
+    const error = Object.assign(new Error("initial provisioning failed"), {
+      status: 422,
+      code: "CREATE_FAILED",
+      details: { workspace_id: "workspace-a" },
+    });
+    h.create.mockRejectedValueOnce(error);
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toBe(error);
+    expect(await cloudDockerWorkspaceForCleanup(project.id, project.organizationId)).toMatchObject({
+      workspaceId: "workspace-a",
+      state: "provisioning",
+    });
+    expect(h.discard).not.toHaveBeenCalled();
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.wait).not.toHaveBeenCalled();
+  });
+  it("does not release a previous uncertain request when its retry is rejected", async () => {
+    h.create.mockRejectedValueOnce(new Error("response lost"));
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("response lost");
+    h.create.mockRejectedValueOnce(Object.assign(new Error("token expired"), { status: 401 }));
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("token expired");
+    expect(binding?.provisionKey).toBe("stable-key");
+    expect(h.discard).not.toHaveBeenCalled();
+  });
+  it("keeps an unclassified provisioning failure reserved when no identity is returned", async () => {
+    h.create.mockRejectedValueOnce(
+      Object.assign(new Error("provisioning failed"), {
+        status: 422,
+        code: "CREATE_FAILED",
+      }),
+    );
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("provisioning failed");
+    expect(binding?.provisionKey).toBe("stable-key");
+    expect(h.discard).not.toHaveBeenCalled();
+  });
+  it.each([
+    { namespace: "another-namespace" },
+    { slug: "another-project" },
+    { id: "another-workspace" },
+  ])("never adopts a failed resource with mismatching ownership: %j", async (mismatch) => {
+    h.create.mockRejectedValueOnce(
+      Object.assign(new Error("creation failed"), {
+        status: 422,
+        details: { workspace_id: "workspace-a" },
+      }),
+    );
+    const created = await h.get();
+    h.get.mockResolvedValueOnce({ ...created, ...mismatch });
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("ownership");
+    expect(binding?.workspaceId).toBeNull();
+    expect(h.discard).not.toHaveBeenCalled();
+    expect(h.attach).not.toHaveBeenCalled();
   });
   it("applies a larger allocation and restores only previously running containers", async () => {
     await ensureCloudDockerWorkspace(input);

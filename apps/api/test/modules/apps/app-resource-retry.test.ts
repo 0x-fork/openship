@@ -24,7 +24,10 @@ const project = {
   framework: "docker-compose",
   isApp: true,
 } as Project;
-const snapshot = { serviceDeploymentMode: "services" } as DeploymentConfigSnapshot;
+const snapshot = {
+  serviceDeploymentMode: "services",
+  deployTarget: "cloud",
+} as DeploymentConfigSnapshot;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -59,6 +62,11 @@ const allocation = async (p = project, s = snapshot) => {
 };
 
 describe("retrying an app without rerunning the installer", () => {
+  it("does not apply Cloud allocation profiles when retrying a self-hosted install", async () => {
+    await allocation(project, { ...snapshot, deployTarget: "server" });
+    expect(h.seed).not.toHaveBeenCalled();
+    expect(h.rows.every((row) => row.advanced?.resources === undefined)).toBe(true);
+  });
   it("repairs a legacy Supabase draft before freezing its deployment allocation", async () => {
     expect(await allocation()).toMatchObject({ cpuCores: 4, memoryMb: 8192, diskMb: 40960 });
     expect(h.seed).toHaveBeenCalledWith(

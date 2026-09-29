@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { CLOUD_DOCKER_IMAGE, CloudWorkspaceExecutor, Oblien, cloudWorkspaceStatus, sq, waitForCloudDockerWorkspace, type ResourceConfig } from "@repo/adapters";
+import {
+  CLOUD_DOCKER_IMAGE,
+  CloudWorkspaceExecutor,
+  Oblien,
+  cloudWorkspaceCreationFailure,
+  cloudWorkspaceStatus,
+  sq,
+  waitForCloudDockerWorkspace,
+  type ResourceConfig,
+} from "@repo/adapters";
 import { repos, type Project } from "@repo/db";
 import { AppError, deploymentBelongsToProject } from "@repo/core";
 import { env } from "../config/env";
@@ -7,9 +16,7 @@ import { issueNamespaceToken } from "./openship-cloud";
 import { getOrgCloudToken } from "./cloud/client";
 import { createProvisionLock } from "./provision-lock";
 import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
-import { resolveCloudServiceResources, resolveBuildResources } from "./resources";
 import type { DeploymentMeta } from "./deployment-runtime";
-import type { DeployableService } from "./deployable-service";
 import { withProjectRuntimeLock } from "./project-runtime-lock";
 
 function workspaceSlug(projectId: string): string {
@@ -34,7 +41,9 @@ export async function cloudDockerWorkspaceForCleanup(projectId: string, organiza
       }
       if (!result.workspaces.length || page * result.limit >= result.total) break;
     }
-    throw new Error("Cloud Docker provisioning is not yet confirmed. Retry deletion once provisioning has settled.");
+    throw new Error(
+      `Cloud Docker provisioning is not yet confirmed. Retry deletion; if it keeps failing, contact support@openship.io with project ${projectId}.`,
+    );
   });
 }
 
@@ -53,27 +62,7 @@ export async function usesCloudDockerWorkspace(project: Project, mode?: "single"
   return true;
 }
 
-export function cloudDockerNeedsBuild(services: DeployableService[]): boolean {
-  return services.some(service => service.enabled !== false && Boolean(service.build || service.advanced?.build ||
-    (service.kind === "monorepo" && !service.image)));
-}
-
-export function cloudDockerResources(input: {
-  resources?: ResourceConfig | null; buildResources?: ResourceConfig | null;
-  reserveBuild?: boolean;
-  services: Array<{ enabled?: boolean; resources?: ResourceConfig | Record<string, unknown> | null }>;
-}): ResourceConfig {
-  const resources = input.services.filter(s => s.enabled !== false)
-    .map(s => resolveCloudServiceResources(s.resources, input.resources));
-  const build = input.reserveBuild ? resolveBuildResources(input.buildResources, { isCloud: true }) : null;
-  // Image pulls need no source-build reservation. Include bounded Docker/OS
-  // overhead; a source build receives temporary RAM released after deployment.
-  return {
-    cpuCores: Math.max(1, Math.ceil(build?.cpuCores ?? 0), Math.ceil(resources.reduce((n, r) => n + r.cpuCores, 0))),
-    memoryMb: Math.max(1024, Math.ceil((512 + (build?.memoryMb ?? 0) + resources.reduce((n, r) => n + r.memoryMb, 0)) / 256) * 256),
-    diskMb: Math.max(8192, build?.diskMb ?? 0, ...resources.map(r => r.diskMb)),
-  };
-}
+export { cloudDockerNeedsBuild, cloudDockerResources } from "./resources";
 
 /** Only selected, non-secret inspect fields enter this parser. Unknown or
  * unbounded containers forbid automatic downsizing. Never guess their needs. */
@@ -184,19 +173,32 @@ export async function ensureCloudDockerWorkspace(input: {
 }): Promise<NonNullable<DeploymentMeta["cloudDockerWorkspace"]>> {
   return createProvisionLock(`cloud:docker-project:${input.projectId}`).run(async () => {
     input.signal?.throwIfAborted();
-    const project = await repos.project.findByIdInOrganization(input.projectId, input.organizationId);
-    if (!project || project.deletedAt || project.deletionInProgress) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
-    const existing = input.existingWorkspaceId !== undefined
-      ? await repos.cloudDockerWorkspace.find(input.projectId, input.organizationId) : undefined;
-    if (input.existingWorkspaceId !== undefined && (!existing || existing.workspaceId !== input.existingWorkspaceId)) {
-      throw new AppError("Cloud Docker workspace does not belong to this project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+    const project = await repos.project.findByIdInOrganization(
+      input.projectId,
+      input.organizationId,
+    );
+    if (!project || project.deletedAt || project.deletionInProgress)
+      throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
+    const existing = await repos.cloudDockerWorkspace.find(input.projectId, input.organizationId);
+    if (
+      input.existingWorkspaceId !== undefined &&
+      (!existing || existing.workspaceId !== input.existingWorkspaceId)
+    ) {
+      throw new AppError(
+        "Cloud Docker workspace does not belong to this project",
+        404,
+        "CLOUD_WORKSPACE_NOT_FOUND",
+      );
     }
     if (env.CLOUD_MODE) await assertCloudCanSpend(input.organizationId);
     const credentials = env.CLOUD_MODE ? await issueNamespaceToken(input.organizationId) : await getOrgCloudToken(input.organizationId);
     if (!credentials) throw new AppError("Connect Openship Cloud before deploying", 503, "CLOUD_NOT_CONNECTED");
     const { namespace, token } = credentials;
     const client = new Oblien({ token, baseUrl: env.OBLIEN_API_URL });
-    let binding =
+    if (!existing?.workspaceId && project.cloudWorkspaceId) {
+      throw new Error("An existing native workspace must be migrated before enabling Docker");
+    }
+    const binding =
       existing ??
       (await repos.cloudDockerWorkspace.reserve(
         {
@@ -211,70 +213,71 @@ export async function ensureCloudDockerWorkspace(input: {
       throw new Error("Cloud workspace namespace binding does not match this project");
     let workspaceId = binding.workspaceId;
     if (!workspaceId) {
-      if (project.cloudWorkspaceId) throw new Error("An existing native workspace must be migrated before enabling Docker");
-      let workspace: Awaited<ReturnType<typeof client.workspaces.create>>;
-      for (let attempt = 0; ; attempt++) {
-        input.signal?.throwIfAborted();
-        try {
-          workspace = await client.workspaces.create({
-            name: `Openship Compose ${input.projectId}`,
-            slug: workspaceSlug(input.projectId),
-            namespace,
-            image: binding.image,
-            mode: "temporary",
-            wait_ready: false,
-            idempotency_key: binding.provisionKey,
-            config: {
-              cpus: binding.resources.cpuCores,
-              memory_mb: binding.resources.memoryMb,
-              disk_size_mb: binding.resources.diskMb,
-              wait_for_init: true,
-              ttl: "1h",
-              ttl_action: "remove",
-              remove_on_exit: false,
-              network_config: { allow_internet: true, public_ingress: false },
-            },
-          });
-          break;
-        } catch (error) {
-          // Namespace admission rejects before a VM is created. Retaining its
-          // oversized request would make a corrected retry repeat the same failure.
-          // Other conflicts and uncertain responses must keep their idempotency key.
-          const refusal = error as { status?: number; code?: string } | null;
-          const status = Number(refusal?.status);
-          const rejectedCapacity = status === 409 && refusal?.code === "NAMESPACE_LIMIT_REACHED";
-          if (rejectedCapacity || [400, 401, 402, 403, 404, 422].includes(status)) {
+      if (input.signal?.aborted) {
+        // This attempt has sent nothing. An older reservation can still belong
+        // to an uncertain POST, so only release a key allocated by this call.
+        if (!existing) {
+          await repos.cloudDockerWorkspace.discardUncreated(
+            input.projectId,
+            input.organizationId,
+            binding.provisionKey,
+          );
+        }
+        input.signal.throwIfAborted();
+      }
+      const workspace = await client.workspaces
+        .create({
+          name: `Openship Compose ${input.projectId}`,
+          slug: workspaceSlug(input.projectId),
+          namespace,
+          image: binding.image,
+          mode: "temporary",
+          wait_ready: false,
+          idempotency_key: binding.provisionKey,
+          config: {
+            cpus: binding.resources.cpuCores,
+            memory_mb: binding.resources.memoryMb,
+            disk_size_mb: binding.resources.diskMb,
+            wait_for_init: true,
+            ttl: "1h",
+            ttl_action: "remove",
+            remove_on_exit: false,
+            network_config: { allow_internet: true, public_ingress: false },
+          },
+        })
+        .catch(async (error) => {
+          const failure = cloudWorkspaceCreationFailure(error);
+          if (failure.workspaceId) {
+            // A failed create may already own a disk. Persist its verified
+            // identity before reporting the failure so normal deletion finds it.
+            const created = await client.workspaces.get(failure.workspaceId);
+            if (
+              created.id !== failure.workspaceId ||
+              created.namespace !== namespace ||
+              created.slug !== workspaceSlug(input.projectId)
+            ) {
+              throw new Error("Could not verify the failed Cloud workspace's ownership");
+            }
+            await repos.cloudDockerWorkspace.attach(
+              input.projectId,
+              input.organizationId,
+              namespace,
+              failure.workspaceId,
+            );
+          } else if (failure.rejected && !existing) {
+            // Quota refusals are documented 409s too. They allocated nothing;
+            // unknown conflicts, timeouts and outages must retain the retry key.
+            // A rejection of this retry cannot disprove an earlier uncertain POST.
             await repos.cloudDockerWorkspace.discardUncreated(
               input.projectId,
               input.organizationId,
               binding.provisionKey,
             );
           }
-          const changed = (["cpuCores", "memoryMb", "diskMb"] as const).some(
-            (key) => binding.resources[key] !== input.resources[key],
-          );
-          if (!rejectedCapacity || !changed || attempt !== 0) throw error;
-          input.signal?.throwIfAborted();
-          binding = await repos.cloudDockerWorkspace.reserve(
-            {
-              projectId: input.projectId,
-              namespace,
-              image: CLOUD_DOCKER_IMAGE,
-              resources: input.resources,
-            },
-            input.organizationId,
-          );
-          if (binding.namespace !== namespace || binding.workspaceId) {
-            throw new Error(
-              "Cloud workspace reservation changed. Retry after provisioning settles.",
-            );
-          }
-          input.onProgress?.(
-            "Retrying the rejected workspace allocation with the updated resource settings.\n",
-          );
-        }
-      }
-      if (!workspace.id || workspace.namespace !== namespace) throw new Error("Oblien returned an unexpected workspace namespace");
+          throw error;
+        });
+      if (!workspace.id || workspace.namespace !== namespace)
+        throw new Error("Oblien returned an unexpected workspace namespace");
       workspaceId = workspace.id;
       // Complete this write even when cancellation arrived during POST. Teardown
       // and retries must know which resource exists outside our process.

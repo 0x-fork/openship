@@ -1689,7 +1689,7 @@
     "apps.hostFit": {
       "page": "apps",
       "section": "Operations",
-      "description": "Check template requirements against a destination.",
+      "description": "Preview host recommendations or Cloud plan fit, including an optional draft's saved resources.",
       "route": "GET /api/apps/catalog/:id/host-fit"
     },
     "apps.removeCustom": {

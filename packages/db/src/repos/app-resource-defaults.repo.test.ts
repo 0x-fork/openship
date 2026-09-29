@@ -89,19 +89,23 @@ describe("atomic resource defaults for unfinished apps", () => {
 
   it.each([
     { activeDeploymentId: "active-release" },
+    { resources: { cpuCores: 1, memoryMb: 2048, diskMb: 16384 } },
     { deletedAt: new Date("2026-01-01T00:00:00Z") },
     { deletionInProgress: true },
-  ])("does not touch deployed or deleting projects: %j", async (patch) => {
-    const { input } = await fixture();
-    await connection.db
-      .update(schema.project)
-      .set(patch)
-      .where(eq(schema.project.id, input.projectId));
-    expect(await repos.service.seedDraftAppResourceDefaults(input)).toEqual([]);
-    expect(
-      (await repos.service.listByProject(input.projectId)).every((s) => !s.advanced?.resources),
-    ).toBe(true);
-  });
+  ])(
+    "does not override project settings or touch deployed/deleting projects: %j",
+    async (patch) => {
+      const { input } = await fixture();
+      await connection.db
+        .update(schema.project)
+        .set(patch)
+        .where(eq(schema.project.id, input.projectId));
+      expect(await repos.service.seedDraftAppResourceDefaults(input)).toEqual([]);
+      expect(
+        (await repos.service.listByProject(input.projectId)).every((s) => !s.advanced?.resources),
+      ).toBe(true);
+    },
+  );
 
   it("serializes concurrent retries so profiles cannot be mixed between catalog versions", async () => {
     const { input } = await fixture();

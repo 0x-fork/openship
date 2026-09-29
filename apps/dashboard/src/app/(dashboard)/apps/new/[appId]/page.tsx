@@ -17,6 +17,8 @@ import {
   resolveLocalized,
   declaredServiceRoutes,
   defaultAppRouteLabel,
+  installServicePorts,
+  serviceRoutingPatch,
   isValidCustomHostname,
   normalizeCustomHostname,
   normalizeServiceLabel,
@@ -26,6 +28,7 @@ import {
   hasMinResources,
   type AppSettingField,
   type AppEndpoint,
+  type AppInstallEndpoint as StoredRoute,
   type InstallPhaseId,
   type InstallPhaseStatus,
 } from "@repo/core";
@@ -72,6 +75,7 @@ import {
 import { installSettledMessage } from "@/lib/install-settled-message";
 import { appInstallDnsTargets, attachDeploymentDomainIds } from "@/lib/deployment-dns";
 import { AppLogo } from "@/components/AppLogo";
+import { AppDomainConfirmation } from "@/components/apps/AppDomainConfirmation";
 import { VerifiedBadge } from "@/components/apps/VerifiedBadge";
 import { HostingBadge } from "@/components/apps/HostingBadge";
 import { UnverifiedBadge } from "@/components/apps/UnverifiedBadge";
@@ -126,14 +130,6 @@ function hostPortForEndpoint(
 function containerPortOf(spec: string): number {
   return Number(parseContainerPort(spec));
 }
-
-/** One stored/desired public route on a service row (the `publicEndpoints` shape). */
-type StoredRoute = {
-  port: number;
-  domainType: "free" | "custom";
-  domain?: string;
-  customDomain?: string;
-};
 
 /**
  * The routing ALREADY stored on a service row for one endpoint's port, or null
@@ -237,6 +233,8 @@ export default function AppInstallPage() {
   // Reopening a draft app passes its existing project id — adopt it instead of
   // creating a duplicate (the backend also get-or-creates, this avoids the call).
   const adoptedProjectId = searchParams.get("projectId");
+  const cancelInstallConfirmation = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelInstallConfirmation.current?.(), [appId, adoptedProjectId]);
   // A deploy already in flight, carried in the URL (written the moment we enter
   // `installing`) so a hard refresh mid-install RESUMES the progress view —
   // re-attaching to the same SSE stream — instead of dropping back to the form.
@@ -362,9 +360,14 @@ export default function AppInstallPage() {
     });
   }, [appEndpoints, cloudConnected, cloudLoading]);
   const exposureReady = appEndpoints.every((e) => Boolean(expo[endpointKey(e)]));
+  const [destination, setDestination] = useState<AppDestination | null>(null);
+  const cloudDestination = destination?.deployTarget === "cloud" || (!destination && !selfHosted);
   const exposureModeLabels = {
     domain: { label: w.routeDomainLabel, description: w.routeDomainDesc },
-    port: { label: w.routePortLabel, description: w.routePortDesc },
+    port: {
+      label: cloudDestination ? w.domainNone : w.routePortLabel,
+      description: cloudDestination ? w.routePortCloudDesc : w.routePortDesc,
+    },
     publish: { label: w.tcpPublishLabel, description: w.tcpPublishDesc },
     internal: { label: w.tcpInternalLabel, description: w.tcpInternalDesc },
   };
@@ -375,7 +378,6 @@ export default function AppInstallPage() {
       const cur = p[key];
       return cur?.kind === "http" ? { ...p, [key]: { ...cur, ep: { ...cur.ep, ...updates } } } : p;
     });
-  const [destination, setDestination] = useState<AppDestination | null>(null);
 
   // Header description: clamped to two lines with a More/Less toggle, because a
   // heavy app's blurb runs long enough to push the form below the fold.
@@ -399,37 +401,6 @@ export default function AppInstallPage() {
     return () => ro.disconnect();
   }, [descExpanded, template?.description]);
 
-  // Does the chosen destination meet what the app declares it needs? Only asked
-  // for an app that declares something (almost none do) — the answer is the
-  // machine's measured capacity, and the fit verdict is computed server-side by
-  // the same function deploy preflight uses, so the notice below and the refusal
-  // can't disagree. Advisory: Install stays enabled and preflight is the gate.
-  const declaresResources = hasMinResources(template?.minResources);
-  const [hostFit, setHostFit] = useState<AppHostFitView | null>(null);
-  useEffect(() => {
-    const appId = template?.id;
-    if (!declaresResources || !appId || !destination) {
-      setHostFit(null);
-      return;
-    }
-    let live = true;
-    void appsApi
-      .hostFit(appId, {
-        deployTarget: destination.deployTarget,
-        serverId: destination.deployTarget === "server" ? destination.serverId : undefined,
-      })
-      .then((res) => {
-        if (live) setHostFit(res.data);
-      })
-      .catch(() => {
-        // An advisory read — a failure means no notice, never a blocked install.
-        if (live) setHostFit(null);
-      });
-    return () => {
-      live = false;
-    };
-  }, [declaresResources, template?.id, destination]);
-
   // Project name shown in Openship. Editable for a fresh install (a second
   // install of the same app auto-suffixes server-side, e.g. "Convex 2"); hidden
   // when reopening an existing draft, which already has its name.
@@ -437,6 +408,7 @@ export default function AppInstallPage() {
 
   const [phase, setPhase] = useState<Phase>(resumeDeploymentId ? "installing" : "form");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   // A Stop request is in flight (the cancel POST + teardown). Disables the Stop
   // button. `cancelled` records that the terminal `error` phase was a user Stop,
   // not a failure — the progress view swaps to neutral "cancelled" copy.
@@ -480,6 +452,63 @@ export default function AppInstallPage() {
   // installer itself makes, on `slugify(name)`).
   const targetDraftId =
     adoptedProjectId ?? (openDraft && projectLabel === openDraft.slug ? openDraft.projectId : null);
+
+  const declaresResources = hasMinResources(template?.minResources);
+  const [hostFit, setHostFit] = useState<AppHostFitView | null>(null);
+  const [capacityLoading, setCapacityLoading] = useState(false);
+  const [capacityRevision, setCapacityRevision] = useState(0);
+  // Match the install target, including a draft created before DNS was cancelled.
+  const capacityProjectId = adoptedProjectId ?? projectId ?? targetDraftId;
+  useEffect(() => {
+    const templateId = template?.id;
+    if (!templateId || (selfHosted && (!declaresResources || !destination))) {
+      setHostFit(null);
+      setCapacityLoading(false);
+      return;
+    }
+    let live = true;
+    setHostFit(null);
+    setCapacityLoading(true);
+    void appsApi
+      .hostFit(templateId, {
+        deployTarget: cloudDestination ? "cloud" : destination?.deployTarget,
+        serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+        projectId: capacityProjectId ?? undefined,
+      })
+      .then((res) => {
+        if (live) setHostFit(res.data);
+      })
+      .catch(() => {
+        // Preview failure never substitutes for the deployment's authoritative check.
+        if (live) setHostFit(null);
+      })
+      .finally(() => {
+        if (live) setCapacityLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [
+    declaresResources,
+    template?.id,
+    destination,
+    cloudDestination,
+    selfHosted,
+    capacityProjectId,
+    capacityRevision,
+  ]);
+
+  // Checkout opens separately, preserving the form. Refresh the plan when the
+  // operator returns; no polling or automatic deployment follows an upgrade.
+  useEffect(() => {
+    if (selfHosted) return;
+    const refresh = () => setCapacityRevision((value) => value + 1);
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [selfHosted]);
+  const needsCloudUpgrade = !selfHosted && hostFit?.cloud?.status === "upgrade";
+  const checkingCloudCapacity = !selfHosted && capacityLoading;
+
   const [draftSlug, setDraftSlug] = useState<string | null>(null);
   /** The default free subdomain LABEL for one endpoint — identical to what the
    *  installer writes when the slug field is left blank (shared helper), so the
@@ -811,8 +840,7 @@ export default function AppInstallPage() {
    *  used to come back as a free route (and then 403 on a disconnected instance).
    *  Nothing is carried over: the wizard now asks about every DECLARED route, so a
    *  stored route for an unasked port is one no operator was ever shown. */
-  const applyDraftRouting = async (pid: string) => {
-    const choices = routeChoices();
+  const applyDraftRouting = async (pid: string, choices: InstallAppRoute[]) => {
     if (choices.length === 0) return;
     const svcRes = await servicesApi.list(pid);
     const services = (svcRes?.services ?? []) as Service[];
@@ -843,29 +871,74 @@ export default function AppInstallPage() {
             : [],
       );
       await servicesApi.update(pid, svc.id, {
-        exposed: publicEndpoints.length > 0,
-        publicEndpoints,
-        ...(publicEndpoints[0] ? { domainType: publicEndpoints[0].domainType } : {}),
+        ...serviceRoutingPatch({ exposed: publicEndpoints.length > 0, publicEndpoints }),
+        ports: installServicePorts(
+          svc.name,
+          template?.services?.find((service) => service.name === svc.name)?.ports,
+          choices,
+          svc.ports as string[] | null,
+        ),
       });
     }
   };
 
-  /** The routing choice, gated exactly as the server gates it — a custom endpoint
-   *  needs its hostname AND that hostname has to be a hostname, and a free one
-   *  needs Openship Cloud (requireCloud pops the same connect modal the deploy
-   *  wizard uses). Null = don't proceed.
+  /** Keep one submission pending through either confirmation. Leaving the
+   * installer cancels it so a stale modal cannot create or deploy a project. */
+  const confirmInstall = (
+    content: (confirm: () => void, cancel: () => void) => React.ReactNode,
+    maxWidth: string,
+  ) =>
+    new Promise<boolean>((resolve) => {
+      let modalId = "";
+      let settled = false;
+      const settle = (proceed: boolean) => {
+        if (settled) return;
+        settled = true;
+        cancelInstallConfirmation.current = null;
+        resolve(proceed);
+      };
+      const finish = (proceed: boolean) => {
+        settle(proceed);
+        hideModal(modalId);
+      };
+      const cancel = () => finish(false);
+      cancelInstallConfirmation.current = cancel;
+      modalId = showModal({
+        maxWidth,
+        width: "100%",
+        showCloseButton: false,
+        onClose: () => settle(false),
+        customContent: content(() => finish(true), cancel),
+      });
+    });
+
+  /** Validate hostnames and managed-domain access before any writes. A missing
+   *  custom hostname can become port-only only after explicit confirmation, and
+   *  only when the catalog allows it. Null = don't proceed.
    *
    *  The shape gate is not decoration: `myhost` / `host:8443` / `host/path` used to
    *  reach the API, fail deep inside the service write, and leave a project row
    *  behind with no services. */
   const validatedRouteChoices = async (): Promise<InstallAppRoute[] | null> => {
     const routes = routeChoices();
-    if (routes.some((r) => r.mode === "custom" && !r.customDomain)) {
+    const missing = routes.filter((route) => route.mode === "custom" && !route.customDomain);
+    if (
+      routes
+        .filter(
+          (route) => route.mode === "port" || (route.mode === "custom" && !route.customDomain),
+        )
+        .some((route) => {
+          const endpoint = appEndpoints.find(
+            (e) => e.service === route.service && e.port === route.port,
+          );
+          return !endpoint || !getAppEndpointModes(endpoint).includes("port");
+        })
+    ) {
       showToast(w.customRequired, "error");
       return null;
     }
     const malformed = routes.find(
-      (r) => r.mode === "custom" && !isValidCustomHostname(r.customDomain ?? ""),
+      (r) => r.mode === "custom" && r.customDomain && !isValidCustomHostname(r.customDomain),
     );
     if (malformed) {
       showToast(
@@ -877,11 +950,82 @@ export default function AppInstallPage() {
     if (routes.some((r) => r.mode === "free") && !(await requireCloud("managed-project-domain"))) {
       return null;
     }
-    return routes;
+    const withoutDomains = appEndpoints.filter((endpoint) => {
+      if (endpoint.kind !== "http" || !getAppEndpointModes(endpoint).includes("domain"))
+        return false;
+      const route = routes.find((r) => r.service === endpoint.service && r.port === endpoint.port);
+      return (
+        (route?.mode === "custom" && !route.customDomain) ||
+        (route?.mode === "port" && (endpoint.scope === "public" || endpoint.scope === undefined))
+      );
+    });
+    if (withoutDomains.length === 0) return routes;
+
+    const confirmed = await confirmInstall(
+      (confirm, cancel) => (
+        <AppDomainConfirmation
+          endpoints={withoutDomains}
+          cloud={cloudDestination}
+          onClose={cancel}
+          onAddDomains={() => {
+            setExpo((previous) => {
+              const next = { ...previous };
+              for (const endpoint of withoutDomains) {
+                const key = endpointKey(endpoint);
+                const current = next[key];
+                if (current?.kind === "http") next[key] = { ...current, mode: "domain" };
+              }
+              return next;
+            });
+            cancel();
+            requestAnimationFrame(() => {
+              const section = document
+                .getElementById(`endpoint-${endpointKey(withoutDomains[0]!)}`)
+                ?.closest("section");
+              const field =
+                section?.querySelector<HTMLElement>("input:not([disabled])") ??
+                section?.querySelector<HTMLElement>("button:not([disabled])");
+              field?.scrollIntoView?.({ block: "center" });
+              field?.focus();
+            });
+          }}
+          onConfirm={confirm}
+        />
+      ),
+      "480px",
+    );
+    if (!confirmed) return null;
+    // Only an explicit confirmation can turn an empty custom-domain choice
+    // into no routing. Carry this same plan through new and adopted drafts.
+    setExpo((previous) => {
+      const next = { ...previous };
+      for (const route of missing) {
+        const key = `${route.service}:${route.port}`;
+        const current = next[key];
+        if (current?.kind === "http") next[key] = { ...current, mode: "port" };
+      }
+      return next;
+    });
+    return routes.map((route) =>
+      route.mode === "custom" && !route.customDomain
+        ? { service: route.service, port: route.port, mode: "port" }
+        : route,
+    );
   };
 
-  const install = async () => {
-    if (busy || !exposureReady) return;
+  const withSubmission = (run: () => Promise<void>) => async () => {
+    if (submitting.current || busy || !exposureReady) return;
+    submitting.current = true;
+    setBusy(true);
+    try {
+      await run();
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
+
+  const install = withSubmission(async () => {
     // Business-field validity gate (required + per-field rules). The form reports
     // this; block with a clear message rather than shipping an invalid install.
     if (formValidity && !formValidity.valid) {
@@ -939,7 +1083,6 @@ export default function AppInstallPage() {
     }
     const routes = await validatedRouteChoices();
     if (!routes) return;
-    setBusy(true);
     setDeploymentId(null);
     setLogs("");
     // Reset the live stepper so a re-install starts from a clean slate.
@@ -971,7 +1114,7 @@ export default function AppInstallPage() {
         }
         pid = data.projectId;
       } else {
-        await applyDraftRouting(pid);
+        await applyDraftRouting(pid, routes);
       }
       setProjectId(pid);
 
@@ -1000,7 +1143,6 @@ export default function AppInstallPage() {
       }
 
       const startDeploy = async (targetPid: string) => {
-        setBusy(true);
         try {
           const dep = await deployApi.buildAccess({
             projectId: targetPid,
@@ -1042,8 +1184,6 @@ export default function AppInstallPage() {
           } else {
             showToast(msg, "error");
           }
-        } finally {
-          setBusy(false);
         }
       };
 
@@ -1058,29 +1198,19 @@ export default function AppInstallPage() {
           : [];
         const dnsTargets = attachDeploymentDomainIds(pendingDnsTargets, domainRows);
         if (dnsTargets.length > 0) {
-          setBusy(false);
-          let modalId = "";
-          modalId = showModal({
-            customContent: (
+          const confirmed = await confirmInstall(
+            (confirm, cancel) => (
               <DnsRecordsModal
                 targets={dnsTargets}
                 serverId={destination?.deployTarget === "server" ? destination.serverId : undefined}
                 confirmLabel={w.install}
-                onConfirm={() => {
-                  hideModal(modalId);
-                  void startDeploy(pid);
-                }}
-                onCancel={() => {
-                  hideModal(modalId);
-                  setBusy(false);
-                }}
+                onConfirm={confirm}
+                onCancel={cancel}
               />
             ),
-            width: "100%",
-            maxWidth: "560px",
-            showCloseButton: false,
-          });
-          return;
+            "560px",
+          );
+          if (!confirmed) return;
         }
       }
 
@@ -1100,36 +1230,36 @@ export default function AppInstallPage() {
       } else {
         showToast(msg, "error");
       }
-    } finally {
-      setBusy(false);
     }
-  };
+  });
 
   /** Advanced escape: hand off to the technical wizard, reusing an adopted /
    *  already-created draft so we never create a duplicate project. The routing
    *  picked so far travels with the create write — the /deploy wizard then edits
    *  real stored routes instead of ones the server guessed. */
-  const goAdvanced = async () => {
-    if (busy) return;
+  const goAdvanced = withSubmission(async () => {
     const routes = await validatedRouteChoices();
     if (!routes) return;
-    setBusy(true);
     try {
       const pid = adoptedProjectId ?? projectId;
       if (pid) {
+        await applyDraftRouting(pid, routes);
         router.push(`/deploy/${encodeProjectSlug(pid)}`);
         return;
       }
-      const res = await appsApi.install({ templateId: appId, routes });
+      const res = await appsApi.install({
+        templateId: appId,
+        name: appName.trim() || undefined,
+        routes,
+      });
       const data = res.data;
       if (data.kind === "template") {
         router.push(`/deploy/${encodeProjectSlug(data.projectId)}`);
       }
     } catch (err) {
       showToast(getApiErrorMessage(err, w.installFailed), "error");
-      setBusy(false);
     }
-  };
+  });
 
   // ── Progress / done / error states (shared clean progress view) ────────────
   if (phase === "installing" || phase === "done" || phase === "error") {
@@ -1547,8 +1677,8 @@ export default function AppInstallPage() {
                             )}
                             {st.mode === "port" && (
                               <p className="text-xs leading-relaxed text-muted-foreground">
-                                {w.routePortDesc}
-                                {isDesktop && <> {w.desktopReachNote}</>}
+                                {cloudDestination ? w.routePortCloudDesc : w.routePortDesc}
+                                {isDesktop && !cloudDestination && <> {w.desktopReachNote}</>}
                               </p>
                             )}
                           </>
@@ -1562,7 +1692,7 @@ export default function AppInstallPage() {
                             {st.mode === "internal" && (
                               <p className="text-xs leading-relaxed text-muted-foreground">
                                 {w.tcpInternalDesc}
-                                {isDesktop && <> {w.desktopReachNote}</>}
+                                {isDesktop && !cloudDestination && <> {w.desktopReachNote}</>}
                               </p>
                             )}
                           </>
@@ -1614,8 +1744,33 @@ export default function AppInstallPage() {
               {/* Declared minimum vs. the destination's measured capacity. Shown
                   only on a real shortfall — an unmeasurable box reports "unknown",
                   which is never one. */}
+              {needsCloudUpgrade && (
+                <div
+                  role="status"
+                  className="mt-4 space-y-2 rounded-xl bg-warning/10 px-3.5 py-3 text-sm"
+                >
+                  <p className="font-medium text-warning">{w.cloudFitTitle}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {hostFit?.cloud?.message}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setCapacityRevision((value) => value + 1)}
+                    disabled={capacityLoading || busy}
+                    className="inline-flex items-center gap-1.5 rounded-lg text-xs font-medium text-foreground hover:underline focus-visible:outline-primary disabled:opacity-50"
+                  >
+                    <UiIcon name="refresh" className="size-3.5" />
+                    {w.checkCapacityAgain}
+                  </button>
+                </div>
+              )}
+              {hostFit?.cloud?.status === "unavailable" && (
+                <p role="status" className="mt-3 text-xs text-muted-foreground">
+                  {w.cloudFitUnavailable}
+                </p>
+              )}
               {hostFit && !hostFit.fit.ok && (
-                <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/[0.05] px-3.5 py-3 text-xs text-warning">
+                <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-warning/10 px-3.5 py-3 text-xs text-warning">
                   <UiIcon name="warning" className="mt-0.5 size-4 shrink-0" />
                   <div className="space-y-1">
                     <p className="font-semibold">
@@ -1645,19 +1800,36 @@ export default function AppInstallPage() {
 
             {/* Actions */}
             <div className="space-y-2">
-              <button
-                type="button"
-                onClick={install}
-                disabled={busy || !exposureReady || (formValidity ? !formValidity.valid : false)}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busy ? (
-                  <UiIcon name="spinner" className="size-4 animate-spin" />
-                ) : (
-                  <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
-                )}
-                {busy ? w.installing : w.install}
-              </button>
+              {needsCloudUpgrade ? (
+                <a
+                  href="/billing/plans"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-primary"
+                >
+                  {w.upgradePlan}
+                  <UiIcon name="arrow-up-right" className="size-4" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={install}
+                  disabled={
+                    busy ||
+                    checkingCloudCapacity ||
+                    !exposureReady ||
+                    (formValidity ? !formValidity.valid : false)
+                  }
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busy ? (
+                    <UiIcon name="spinner" className="size-4 animate-spin" />
+                  ) : (
+                    <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
+                  )}
+                  {busy ? w.installing : checkingCloudCapacity ? w.checkingCapacity : w.install}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={goAdvanced}

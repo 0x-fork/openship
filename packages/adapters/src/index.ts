@@ -577,7 +577,7 @@ export {
 } from "./platform";
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
-export { Oblien } from "./oblien";
+export { Oblien, cloudWorkspaceCreationFailure } from "./oblien";
 export type {
   NamespaceUsageUnits,
   NamespaceUsageUnitBucket,

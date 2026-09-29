@@ -1,5 +1,17 @@
 {
   "appInstall": {
+    "hostFitHint": "Du kannst fortfahren. Die Leistung auf diesem Rechner kann eingeschränkt sein.",
+    "cloudFitTitle": "Diese App benötigt einen größeren Cloud-Tarif",
+    "upgradePlan": "Tarif upgraden",
+    "checkingCapacity": "Kapazität wird geprüft…",
+    "checkCapacityAgain": "Erneut prüfen",
+    "cloudFitUnavailable": "Die Kapazität konnte nicht geprüft werden. Sie wird beim Deployment erneut geprüft.",
+    "withoutDomainsTitle": "Ohne Domains fortfahren?",
+    "withoutDomainsBody": "Diese Web-Endpunkte sind nur über ihre veröffentlichten Ports erreichbar. Du kannst später im Projekt Domains hinzufügen.",
+    "withoutDomainsCloudBody": "Diese Web-Endpunkte haben auf Cloud keine öffentliche URL. Andere Dienste dieser App können sie weiterhin erreichen. Du kannst später im Projekt Domains hinzufügen.",
+    "addDomains": "Domains hinzufügen",
+    "continueWithoutDomains": "Ohne Domains fortfahren",
+    "routePortCloudDesc": "Nur innerhalb dieses Cloud-Workspaces erreichbar. Füge eine Domain für eine öffentliche URL hinzu.",
     "exposeTitle": "Domains und Routing"
   },
   "settingSection": {

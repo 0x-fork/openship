@@ -109,6 +109,18 @@
     "unmanaged": "Bu uygulamanın henüz yapılandırılabilir bir ayarı yok."
   },
   "appInstall": {
+    "hostFitHint": "Devam edebilirsiniz. Bu makinede performans sınırlı olabilir.",
+    "cloudFitTitle": "Bu uygulama daha büyük bir Cloud planı gerektiriyor",
+    "upgradePlan": "Planı yükselt",
+    "checkingCapacity": "Kapasite kontrol ediliyor…",
+    "checkCapacityAgain": "Yeniden kontrol et",
+    "cloudFitUnavailable": "Kapasite kontrol edilemedi. Dağıtım sırasında yeniden kontrol edilecek.",
+    "withoutDomainsTitle": "Alan adları olmadan devam edilsin mi?",
+    "withoutDomainsBody": "Bu web uç noktalarına yalnızca yayınlanan bağlantı noktalarından erişilebilecek. Daha sonra projeden alan adları ekleyebilirsiniz.",
+    "withoutDomainsCloudBody": "Bu web uç noktalarının Cloud üzerinde herkese açık bir URL’si olmayacak. Bu uygulamadaki diğer hizmetler erişmeye devam edebilir. Daha sonra projeden alan adları ekleyebilirsiniz.",
+    "addDomains": "Alan adı ekle",
+    "continueWithoutDomains": "Alan adı olmadan devam et",
+    "routePortCloudDesc": "Bu Cloud çalışma alanına özel. Herkese açık bir URL için alan adı ekleyin.",
     "exposeTitle": "Alan adları ve yönlendirme",
     "install": "Kur",
     "installing": "Kuruluyor…",

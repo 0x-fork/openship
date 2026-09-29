@@ -28,6 +28,8 @@ import {
   PRICING,
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
+  formatCpuCores,
+  formatMemoryMb,
   type PlanTierId,
   type PlanLimits,
   type OblienLimits,
@@ -36,7 +38,14 @@ import {
 import { repos } from "@repo/db";
 import { env } from "../config/env";
 import { isCloudManagedHostname } from "./public-endpoints";
-import { resolveBuildResources, resolveCloudServiceResources, resolveRuntimeResources } from "./resources";
+import {
+  cloudDockerNeedsBuild,
+  cloudDockerResources,
+  resolveBuildResources,
+  resolveCloudServiceResources,
+  resolveRuntimeResources,
+  type CloudServiceResourceInput,
+} from "./resources";
 import type { ResourceConfig, RuntimeAdapter } from "@repo/adapters";
 
 /**
@@ -54,6 +63,7 @@ export class PlanUpgradeRequiredError extends AppError {
       | "build-minutes-exhausted"
       | "free-subdomain-limit"
       | "resource-tier"
+      | "workspace-capacity"
       | "running-services"
       | "project-limit",
     /** The tier that refused, for telemetry and copy. */
@@ -259,7 +269,9 @@ type CloudDeploymentLimits = {
   runsApplication?: boolean;
   /** A native main app may also have separately managed auxiliary services. */
   nativeApplication?: boolean;
-  services?: Array<{ name?: string; enabled?: boolean; advanced?: { resources?: ResourceConfig | Record<string, unknown> | null } | null }>;
+  /** Docker service stacks share one VM; its aggregate allocation also has to fit. */
+  dockerWorkspace?: boolean;
+  services?: CloudServiceResourceInput[];
 };
 
 type CloudServiceAllowance = Pick<CloudDeploymentLimits, "projectId" | "runsApplication" | "nativeApplication" | "services">;
@@ -287,11 +299,17 @@ async function assertServiceAllowance(
       const counted = prospective
         ? await repos.service.countRunningForOrg(organizationId, [], nativeProject, prospective)
         : await repos.service.countRunningForOrg(organizationId, [], nativeProject);
-      const used = nativeApplication ? counted + 1 : Math.max(counted, services?.length ?? 1);
-      if (used > limit) throw new PlanUpgradeRequiredError(
-        `Your plan includes ${limit} services. Stop and disable a service, remove it, or upgrade before deploying.`,
-        "running-services", tier,
-      );
+      const used = nativeApplication
+        ? counted + 1
+        : !input.projectId
+          ? counted + (services?.length ?? 1)
+          : Math.max(counted, services?.length ?? 1);
+      if (used > limit)
+        throw new PlanUpgradeRequiredError(
+          `Your plan includes ${limit} services. Stop and disable a service, remove it, or upgrade before deploying.`,
+          "running-services",
+          tier,
+        );
     }
   }
 }
@@ -325,11 +343,38 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
       limits,
     );
   }
-  if (services?.length && !input.nativeApplication && services.every(service => {
-    const candidate = service as typeof service & { build?: unknown; image?: string | null; kind?: string };
-    return Boolean(candidate.image || (candidate.advanced as { imageTemplate?: unknown } | null)?.imageTemplate) &&
-      !candidate.build && !(candidate.advanced as { build?: unknown } | null)?.build;
-  })) return;
+  if (input.dockerWorkspace && services?.length) {
+    const allocation = cloudDockerResources({
+      resources: input.resources,
+      buildResources: input.buildResources,
+      reserveBuild: cloudDockerNeedsBuild(services),
+      services: services.map((service) => ({ resources: service.advanced?.resources })),
+    });
+    const shortages = [
+      policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
+        ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
+        : null,
+      policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
+        ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
+        : null,
+      policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
+        ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
+        : null,
+    ].filter(Boolean);
+    if (shortages.length)
+      throw new PlanUpgradeRequiredError(
+        `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
+        "workspace-capacity",
+        tier,
+      );
+  }
+  if (
+    services?.length &&
+    !input.nativeApplication &&
+    services.every(service => Boolean(service.image || service.advanced?.imageTemplate) &&
+      !service.build && !service.advanced?.build)
+  )
+    return;
   const build = resolveBuildResources(input.buildResources, { isCloud: true });
   const maximum = { cpuCores: policy.max_vcpus ?? PRICING.oblien.buildResources.cpuCores,
     memoryMb: policy.max_ram_mb ?? PRICING.oblien.buildResources.memoryMb,
