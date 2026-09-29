@@ -13,7 +13,9 @@
     "subtitle": "Implante um app ou importe seu próprio projeto.",
     "tabs": {
       "folder": "Pasta",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "Modelos",
+      "gitUrl": "URL do Git"
     }
   },
   "connect": {

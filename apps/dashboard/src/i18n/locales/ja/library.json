@@ -13,7 +13,9 @@
     "subtitle": "アプリをデプロイするか、自分のプロジェクトをインポートします。",
     "tabs": {
       "folder": "フォルダ",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "テンプレート",
+      "gitUrl": "GitのURL"
     }
   },
   "connect": {

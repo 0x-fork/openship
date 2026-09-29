@@ -23,7 +23,7 @@ import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWiz
 import { useI18n } from "@/components/i18n-provider";
 import { AppCatalog } from "@/components/apps/AppCatalog";
 
-type Tab = "folder" | "repositories" | "server" | "apps";
+type Tab = "folder" | "repositories" | "url" | "server" | "apps";
 
 /** One-time gh-CLI repo-read consent flag (per browser — desktop is single-user). */
 const GH_CLI_CONSENT_KEY = "openship.gh-cli-consent";
@@ -61,19 +61,20 @@ export default function LibraryPage() {
   const isDesktop = deployMode === "desktop";
   const { connected: cloudConnected } = useCloud();
 
-  // GitHub browsing and public URL import share one source selector. URL import
-  // remains available before signing in or granting access to local repositories.
+  // Cloud has a dedicated URL tab. Self-hosted instances keep its shortcut in
+  // the account row; both use the same selection and public import flow.
   const [activeTab, setActiveTab] = useState<Tab>("repositories");
   const appsTabRef = useRef<HTMLButtonElement>(null);
-  const [importingUrl, setImportingUrl] = useState(false);
+  const importingUrl = activeTab === "url";
   const [showMigrate, setShowMigrate] = useState(false);
 
+  const importUrl = () => setActiveTab("url");
   const selectOwner = (login: string) => {
-    setImportingUrl(false);
+    setActiveTab("repositories");
     if (login) setSelectedOwner(login);
   };
   const addAccount = () => {
-    setImportingUrl(false);
+    setActiveTab("repositories");
     const app = capabilities?.methods.find((method) => method.kind === "app");
     const available = app
       ? app.available && (!app.requiresCloud || cloudConnected)
@@ -89,7 +90,7 @@ export default function LibraryPage() {
         onSelectOwner={selectOwner}
         onAddAccount={addAccount}
         addingAccount={loading || connecting}
-        onImportUrl={() => setImportingUrl(true)}
+        onImportUrl={selfHosted ? importUrl : undefined}
         importingUrl={importingUrl}
       />
     </div>
@@ -115,15 +116,19 @@ export default function LibraryPage() {
     (state.sources.ghCli.method ?? "host-cli") === "host-cli" &&
     !ghCliConsent;
 
-  // One "Folder" tab, environment-dependent behavior:
-  //   - self-hosted / desktop → deploy straight from a path on the box (native
-  //     picker, no upload, no stack pick — the local pipeline reads it).
-  //   - SaaS → upload the folder to a cloud build workspace (stack picked up
-  //     front so we know which image to provision).
+  // Cloud's Templates entry starts with a framework, then uploads the source.
+  // Desktop can read a folder directly; remote self-hosted browsers upload it.
   const tabs: TabItem[] = [
     { key: "apps", label: t.dashboard.pages.apps.title, icon: "grid" },
     { key: "repositories", label: t.library.page.tabs.github, icon: "github" },
-    { key: "folder", label: t.library.page.tabs.folder, icon: "folder-out" },
+    ...(!selfHosted
+      ? [{ key: "url" as const, label: t.library.page.tabs.gitUrl, icon: "link" as const }]
+      : []),
+    {
+      key: "folder",
+      label: selfHosted ? t.library.page.tabs.folder : t.library.page.tabs.templates,
+      icon: selfHosted ? "folder-out" : "layers",
+    },
     // Adopting a running Docker deployment needs SSH into the user's own box —
     // self-hosted / desktop only (cloud mode has no server inventory).
     ...(selfHosted ? [{ key: "server" as const, label: t.migration.entry.tab, icon: "migration" as const }] : []),
@@ -149,18 +154,20 @@ export default function LibraryPage() {
       <div className="flex flex-wrap items-center gap-1 mb-6">
         {tabs.map((tab) => {
           const Icon = tab.icon;
+          const selected =
+            activeTab === tab.key || (selfHosted && importingUrl && tab.key === "repositories");
           return (
             <button
               key={tab.key}
               ref={tab.key === "apps" ? appsTabRef : undefined}
               type="button"
-              aria-pressed={activeTab === tab.key}
+              aria-pressed={selected}
               onClick={() => {
                 setActiveTab(tab.key);
                 if (tab.key === "server") setShowMigrate(true);
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                activeTab === tab.key
+                selected
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               }`}
@@ -188,7 +195,7 @@ export default function LibraryPage() {
               <FolderUpload />
             )
           ) : importingUrl ? (
-            <UrlImport header={sourceHeader} />
+            <UrlImport header={selfHosted ? sourceHeader : undefined} />
           ) : loading ? (
             <LoadingSkeleton header={sourceHeader} />
           ) : !connected ? (
@@ -217,7 +224,7 @@ export default function LibraryPage() {
               installUrl={installUrl}
               onInstall={addAccount}
               installing={connecting}
-              onImportUrl={() => setImportingUrl(true)}
+              onImportUrl={selfHosted ? importUrl : undefined}
               server={{
                 search: libRepos.search,
                 onSearch: libRepos.setSearch,

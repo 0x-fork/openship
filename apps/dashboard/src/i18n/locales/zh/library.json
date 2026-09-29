@@ -13,7 +13,9 @@
     "subtitle": "部署应用或导入你自己的项目。",
     "tabs": {
       "folder": "文件夹",
-      "github": "GitHub"
+      "github": "GitHub",
+      "templates": "模板",
+      "gitUrl": "Git 链接"
     }
   },
   "connect": {

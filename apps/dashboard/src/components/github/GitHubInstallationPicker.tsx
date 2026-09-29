@@ -119,9 +119,7 @@ export function GitHubInstallationPicker({
             onClick={() => void connect(installation.id)}
             className="flex w-full items-center gap-3 rounded-xl bg-muted/40 p-3.5 text-start transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-card">
-              <Icon name="github" className="size-5 text-foreground" />
-            </span>
+            <InstallationAvatar avatarUrl={installation.avatarUrl} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-foreground">
                 {installation.login}
@@ -156,5 +154,26 @@ export function GitHubInstallationPicker({
         {copy.installAnother}
       </Button>
     </div>
+  );
+}
+
+function InstallationAvatar({ avatarUrl }: { avatarUrl: string }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  return (
+    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-card">
+      {avatarUrl && failedUrl !== avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          className="size-full object-cover"
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setFailedUrl(avatarUrl)}
+        />
+      ) : (
+        <Icon name="github" className="size-5 text-foreground" aria-hidden="true" />
+      )}
+    </span>
   );
 }
