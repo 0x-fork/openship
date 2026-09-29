@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
-import { BuildLogger, DockerRuntime } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, type ResourceConfig } from "@repo/adapters";
 import { repos, type Project } from "@repo/db";
+import { resolveRuntimeResources } from "@repo/platform/engine/lib/resources";
 import { projectServicesToDeployableServices } from "@repo/platform/engine/modules/deployments/compose/project-services";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { seedDeployment, seedOrg, seedProject, setActive } from "../helpers/seed";
@@ -77,13 +78,19 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
       const services = await repos.service.listByProject(project.id);
       const snapshot = projectServicesToDeployableServices(services);
       await repos.service.syncFromCompose(project.id, snapshot, { removeMissing: false });
+      const current = (await repos.project.findById(project.id))!;
+      const resources = current.resources as ResourceConfig | null;
       const deployment = await seedDeployment(project, {
         imageRef: "compose",
         containerId: "compose",
-        meta: { runtimeMode: "docker", deployTarget: "local", composeServices: snapshot },
+        meta: {
+          runtimeMode: "docker",
+          deployTarget: "local",
+          composeServices: snapshot,
+          resources,
+        },
       });
       await repos.service.syncFromCompose(project.id, snapshot, { removeMissing: false });
-      const current = (await repos.project.findById(project.id))!;
       const { deployComposeServices } =
         await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
       const result = await deployComposeServices(
@@ -94,6 +101,7 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
         {
           executor: null,
           localHost: false,
+          resources: resolveRuntimeResources(resources, { isCloud: false }),
           // The buildable app is rebuilt each time; use the prepared test image
           // so this regression exercises activation without unrelated build tools.
           builtImages: new Map(services.filter((s) => s.build).map((s) => [s.id, IMAGE])),
@@ -186,6 +194,45 @@ describeDockerE2E("unchanged Compose database deployments (#986)", () => {
     expect(logs.map((entry) => entry.message).join("\n")).not.toMatch(
       /was not properly shut down|automatic recovery in progress|database system was interrupted/,
     );
+
+    const repeated = await fixture.deploy();
+    expect(repeated.db.containerId).toBe(next.db.containerId);
+    expect(await runtime.listProjectContainerIds(fixture.project.id)).toHaveLength(2);
+  });
+
+  it.each([
+    {
+      behavior: "applies changed project resource limits to an otherwise unchanged database",
+      own: undefined,
+      recreate: true,
+      expected: { cpuCores: 1, memoryMb: 256 },
+    },
+    {
+      behavior: "keeps the database when service overrides leave its effective limits unchanged",
+      own: { cpuCores: 2, memoryMb: 512 },
+      recreate: false,
+      expected: { cpuCores: 2, memoryMb: 512 },
+    },
+    {
+      behavior: "applies an inherited CPU change while preserving the service's memory override",
+      own: { memoryMb: 512 },
+      recreate: true,
+      expected: { cpuCores: 1, memoryMb: 512 },
+    },
+  ])("$behavior", async ({ own, recreate, expected }) => {
+    const fixture = await stack();
+    if (own) {
+      fixture.parsed[0]!.advanced = { ...fixture.parsed[0]!.advanced, resources: own };
+    }
+    const first = await fixture.deploy();
+    await repos.project.update(fixture.project.id, {
+      resources: { cpuCores: 1, memoryMb: 256, diskMb: 0 },
+    });
+    const next = await fixture.deploy();
+    expect(next.db.containerId === first.db.containerId).toBe(!recreate);
+    expect(await runtime.getContainerInfo(next.db.containerId!)).toMatchObject({
+      resources: expected,
+    });
 
     const repeated = await fixture.deploy();
     expect(repeated.db.containerId).toBe(next.db.containerId);
