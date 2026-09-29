@@ -770,7 +770,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   verification: "Better Auth one-shot nonces, all short-TTL",
   domain_dns_challenge: "temporary ACME order and worker lease; start a new TXT challenge after an instance transfer",
   acme_account: "instance-bound ACME account signing keys; the destination registers its own account without changing installed certificates",
-  github_install_state: "one-shot install nonce, deleted on callback",
+  github_install_state: "short-lived GitHub connection attempts, purged after expiry",
   cloud_handoff_code: "60s one-time cloud-connect codes",
   data_transfer_session: "short-lived whole-instance transfer capability and upload lease",
   data_transfer_chunk: "short-lived chunk staging for a whole-instance transfer",
