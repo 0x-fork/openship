@@ -2088,14 +2088,23 @@ ${serveLocation}
     // rolled back — otherwise a bad conf stays on disk and poisons every
     // subsequent reload box-wide (same self-rollback applyRateLimit uses).
     const snapshot = await this._captureFile(configPath);
+    // The target-check vhost is created before a project route can exist. Once a
+    // real route claims the same hostname it answers that challenge itself, so the
+    // single-purpose vhost must retire in the SAME config transaction. Leaving it
+    // behind produces nginx's duplicate-server-name warning and, because `_` sorts
+    // first, can make the challenge-only 404 vhost win over the application.
+    const challengePath = this.challengeVhostPath(route.domain);
+    const challengeSnapshot = await this._captureFile(challengePath);
     // The prelude carries http-scope `map` blocks, so it goes ABOVE the server
     // block(s) — one file may hold both the :80 and :443 blocks, and a map may
     // appear only once for the pair.
     await this._writeFile(configPath, `${prelude}${serverBlock}`);
+    if (challengeSnapshot.exists) await this._rm(challengePath);
     try {
       await this.reload();
     } catch (err) {
       await this._restoreFile(configPath, snapshot);
+      await this._restoreFile(challengePath, challengeSnapshot);
       await this.reload().catch(() => undefined);
       throw err;
     }
@@ -2405,6 +2414,23 @@ ${serveLocation}
       // answers the challenge. This gates a domain-control claim, so it has to mean
       // "there is a location for it", not "the string appears".
       if (conf.includes(`${EDGE_CHALLENGE_URL_PREFIX} {`)) {
+        // A dedicated challenge vhost may predate this route. The generated route
+        // now serves the same token directory, so keeping both is invalid nginx
+        // state: duplicate server_name, with the underscore-prefixed file loaded
+        // first. Retire it transactionally so an unrelated reload failure cannot
+        // leave disk and the running edge disagreeing.
+        const challengePath = this.challengeVhostPath(host);
+        const snapshot = await this._captureFile(challengePath);
+        if (snapshot.exists) {
+          await this._rm(challengePath);
+          try {
+            await this.reload();
+          } catch (err) {
+            await this._restoreFile(challengePath, snapshot);
+            await this.reload().catch(() => undefined);
+            throw err;
+          }
+        }
         return { served: true, via: "existing-vhost" };
       }
       return {
