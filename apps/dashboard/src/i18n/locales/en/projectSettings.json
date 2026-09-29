@@ -22,6 +22,8 @@
     "updateTo": "Update to {version}",
     "updating": "Updating…",
     "updateFailed": "Update failed",
+    "automaticUpdateUnavailable": "Automatic update unavailable",
+    "automaticUpdateUnavailableDescription": "An update was detected, but at least one service image is local or cannot be resolved from its registry. Publish every service image before applying the project update.",
     "toastTitle": "Source",
     "cliManaged": "This is the Openship control plane — it updates itself. Run \"openship update\" on the host to upgrade it; there's nothing to change here."
   },

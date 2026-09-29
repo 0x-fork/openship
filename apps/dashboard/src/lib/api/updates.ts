@@ -11,6 +11,8 @@ export interface UpdateStatusItem {
   kind: "commit" | "release" | "image";
   behind: boolean;
   latestInProgress: boolean;
+  /** False when applying would have to pull a local/private unresolved image. */
+  canApply: boolean;
   currentLabel: string | null;
   latestLabel: string | null;
   detail: unknown;

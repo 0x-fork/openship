@@ -46,6 +46,7 @@ import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
 import { assertResourceInOrg } from "@repo/platform/engine/lib/resource-access";
 import { mapWithLimit } from "@repo/platform/engine/lib/map-with-limit";
 import {
+  driftMode,
   evaluateDrift,
   hasDeployedSide,
   resolveUpstreamDrift,
@@ -93,13 +94,23 @@ function imageLabel(
     ref: string;
     deployedDigest?: string | null;
     latestDigest?: string | null;
+    behind?: boolean;
   }>,
   side: "deployed" | "latest",
+  distinguishMovedTags = false,
 ): string | null {
   const parts = [
     ...new Set(
       services
-        .map((s) => serviceVersion(s.ref, side === "deployed" ? s.deployedDigest : s.latestDigest))
+        .map((s) => {
+          const digest = side === "deployed" ? s.deployedDigest : s.latestDigest;
+          const version = serviceVersion(s.ref, digest);
+          // Mutable tags keep the same human version when their content moves.
+          // If that made the aggregate before/after copy identical, append the
+          // digest only for the services with proven drift.
+          const content = distinguishMovedTags && s.behind ? shortDigest(digest) : null;
+          return version && content ? `${version}@${content}` : version;
+        })
         .filter((v): v is string => !!v),
     ),
   ];
@@ -127,9 +138,16 @@ function presentation(status: DriftStatus) {
       detail: { pinned: status.pinned },
     };
   }
+  let currentLabel = imageLabel(status.services, "deployed");
+  let latestLabel = imageLabel(status.services, "latest");
+  if (status.behind && currentLabel === latestLabel) {
+    currentLabel = imageLabel(status.services, "deployed", true);
+    latestLabel = imageLabel(status.services, "latest", true);
+  }
   return {
-    currentLabel: imageLabel(status.services, "deployed"),
-    latestLabel: imageLabel(status.services, "latest"),
+    currentLabel,
+    latestLabel,
+    canApply: status.canApply,
     detail: { services: status.services },
   };
 }
@@ -461,6 +479,7 @@ async function driftItem(
     kind: status.mode,
     behind: status.behind,
     latestInProgress: status.latestInProgress,
+    canApply: "canApply" in view ? view.canApply : true,
     currentLabel: view.currentLabel,
     latestLabel: view.latestLabel,
     detail: view.detail,
@@ -561,6 +580,19 @@ export async function applyProjectUpdate(ctx: RequestContext, projectId: string)
   const active = await findActiveDeployment(project);
   if (!active) {
     throw new ValidationError("Deploy this project before updating it.");
+  }
+  if (driftMode(project) === "image") {
+    const status = await getProjectDrift(ctx, projectId);
+    if (
+      !status.supported ||
+      status.mode !== "image" ||
+      !status.behind ||
+      !status.canApply
+    ) {
+      throw new ValidationError(
+        "Automatic update is unavailable because at least one service image is local or cannot be resolved from its registry.",
+      );
+    }
   }
   return redeployBuildSession(ctx, active.id, {
     trigger: "update",

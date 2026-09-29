@@ -86,6 +86,8 @@
     "updateTo": "{version} sürümüne güncelle",
     "updating": "Güncelleniyor…",
     "updateFailed": "Güncelleme başarısız oldu",
+    "automaticUpdateUnavailable": "Otomatik güncelleme kullanılamıyor",
+    "automaticUpdateUnavailableDescription": "Bir güncelleme algılandı ancak en az bir hizmet imajı yerel veya kayıt defterinden çözümlenemiyor. Proje güncellemesini uygulamadan önce tüm hizmet imajlarını yayınlayın.",
     "toastTitle": "Kaynak"
   },
   "appSettings": {

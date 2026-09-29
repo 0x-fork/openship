@@ -288,6 +288,7 @@ export const ProjectDriftSchema = Type.Union([
   Type.Object({
     ...driftBase,
     mode: Type.Literal("image"),
+    canApply: Type.Boolean(),
     services: Type.Array(
       Type.Object({
         serviceId: Type.String(),

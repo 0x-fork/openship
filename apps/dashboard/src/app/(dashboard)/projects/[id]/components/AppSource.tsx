@@ -101,6 +101,7 @@ export function AppSource() {
   const latest = status?.latestLabel ?? null;
   const behind = !!status?.behind;
   const inProgress = !!status?.latestInProgress;
+  const canApply = status?.canApply !== false;
   const kindLabel = kind === "image" ? s.kindImage : s.kindRelease;
 
   return (
@@ -122,7 +123,7 @@ export function AppSource() {
           label={s.latest}
           value={loading ? "…" : !hasData ? s.notChecked : latest ?? s.upToDate}
           mono={hasData && !!latest}
-          badge={behind ? s.updateAvailable : undefined}
+          badge={behind ? (canApply ? s.updateAvailable : s.automaticUpdateUnavailable) : undefined}
         />
         {repository && (
           <div className="flex items-center justify-between gap-3 border-b border-border/40 py-3 last:border-0">
@@ -153,7 +154,7 @@ export function AppSource() {
 
         {inProgress ? (
           <span className="text-xs text-muted-foreground">{s.updating}</span>
-        ) : behind ? (
+        ) : behind && canApply ? (
           <button
             type="button"
             onClick={applyUpdate}
@@ -163,6 +164,10 @@ export function AppSource() {
             {applying ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-up-circle" className="size-4" />}
             {latest ? interpolate(s.updateTo, { version: latest }) : s.update}
           </button>
+        ) : behind ? (
+          <span className="max-w-sm text-right text-xs font-medium text-warning">
+            {s.automaticUpdateUnavailableDescription}
+          </span>
         ) : (
           hasData &&
           !loading && (

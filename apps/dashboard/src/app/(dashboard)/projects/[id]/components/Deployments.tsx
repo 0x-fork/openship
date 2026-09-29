@@ -353,10 +353,14 @@ export const Deployments = () => {
 
       {!isSelfApp && availableUpdate?.mode === "image" && (
         <WarningCallout
-          title={t.projectSettings.appSource.updateAvailable}
-          description={availableUpdate.services?.filter((service) => service.behind)
-            .map((service) => `${service.name} (${service.ref})`).join(", ")}
-          actions={
+          title={availableUpdate.canApply
+            ? t.projectSettings.appSource.updateAvailable
+            : t.projectSettings.appSource.automaticUpdateUnavailable}
+          description={availableUpdate.canApply
+            ? availableUpdate.services?.filter((service) => service.behind)
+                .map((service) => `${service.name} (${service.ref})`).join(", ")
+            : t.projectSettings.appSource.automaticUpdateUnavailableDescription}
+          actions={availableUpdate.canApply ? (
             <button
               type="button"
               onClick={() => runRedeploy("update")}
@@ -365,7 +369,7 @@ export const Deployments = () => {
             >
               {isRedeploying ? t.projects.redeploy.deploying : t.projectSettings.appSource.update}
             </button>
-          }
+          ) : undefined}
         />
       )}
 

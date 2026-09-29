@@ -2236,6 +2236,16 @@ async function imageServicesOf(p: Project) {
   return services.filter((s) => s.image && !s.build && (s.enabled ?? true));
 }
 
+/** Refs that explicitly describe host-local content, never a registry source. */
+function isLocalOnlyImageRef(ref: string): boolean {
+  const noDigest = ref.split("@")[0];
+  const lastColon = noDigest.lastIndexOf(":");
+  const lastSlash = noDigest.lastIndexOf("/");
+  const tag = lastColon > lastSlash ? noDigest.slice(lastColon + 1).toLowerCase() : null;
+  const first = noDigest.split("/")[0]?.toLowerCase();
+  return tag === "local" || first === "localhost" || first?.startsWith("localhost:") === true;
+}
+
 /**
  * Is there anything running to BE behind? Nothing to compare means drift is not a
  * question worth a network round-trip, so readers skip the poll entirely rather
@@ -2321,7 +2331,9 @@ export async function resolveUpstreamDrift(
     const digestByRef: Record<string, string | null> = {};
     await Promise.all(
       refs.map(async (ref) => {
-        digestByRef[ref] = await resolveLatestImageDigest(ref).catch(() => null);
+        digestByRef[ref] = isLocalOnlyImageRef(ref)
+          ? null
+          : await resolveLatestImageDigest(ref).catch(() => null);
       }),
     );
     return { supported: true, mode: "image", digestByRef };
@@ -2510,6 +2522,13 @@ export async function evaluateDrift(
       mode: "image" as const,
       behind: services.some((s) => s.behind),
       latestInProgress: false,
+      // Applying an image update force-pulls and recreates the WHOLE compose
+      // cohort. One unresolved ref therefore makes the project-level action
+      // unsafe even when a public sidecar has provable drift: a local-only image
+      // such as `my-app:local` would be sent to Docker Hub and the deploy would
+      // fail before the sidecar update could complete. Keep reporting the real
+      // drift, but let every caller suppress the automatic action.
+      canApply: services.every((s) => !isLocalOnlyImageRef(s.ref) && s.latestDigest !== null),
       services,
     };
   }

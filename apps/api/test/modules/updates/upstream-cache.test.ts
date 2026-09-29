@@ -37,6 +37,7 @@ const deploymentRepo = vi.hoisted(() => ({
 }));
 const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn(), listByDeployment: vi.fn() }));
 const resolveUpstreamDrift = vi.hoisted(() => vi.fn());
+const redeployBuildSession = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
@@ -64,10 +65,11 @@ vi.mock("@repo/platform/engine/modules/projects/project-crud.service", async (im
 
 // Never reached here; stubbed so the module graph doesn't drag in the build pipeline.
 vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
-  redeployBuildSession: vi.fn(),
+  redeployBuildSession,
 }));
 
 import {
+  applyProjectUpdate,
   getProjectDrift,
   listOrganizationUpdates,
   scanOrganizationUpdates,
@@ -149,6 +151,7 @@ beforeEach(() => {
     fn.mockReset();
   }
   resolveUpstreamDrift.mockReset();
+  redeployBuildSession.mockReset();
   updateStatusRepo.upsert.mockResolvedValue(undefined);
   updateStatusRepo.deleteByProject.mockResolvedValue(undefined);
   deploymentRepo.findById.mockResolvedValue({ id: "dep_live", projectId: "proj_1", organizationId: "org_1", commitSha: SHIPPED });
@@ -202,6 +205,91 @@ describe("a project with no cached row", () => {
 
     expect(resolveUpstreamDrift).not.toHaveBeenCalled();
     expect(items).toEqual([]);
+  });
+});
+
+describe("mixed local and registry image cohorts", () => {
+  const imageProject = project({
+    id: "proj_images",
+    name: "twenty-crm",
+    gitProvider: null,
+    gitOwner: null,
+    gitRepo: null,
+    gitBranch: null,
+    activeDeploymentId: "dep_images",
+  });
+  const services = [
+    {
+      id: "svc_app",
+      name: "app",
+      image: "twenty-ven-production:local",
+      build: null,
+      enabled: true,
+    },
+    {
+      id: "svc_db",
+      name: "db",
+      image: "postgres:16-alpine",
+      build: null,
+      enabled: true,
+    },
+  ];
+  const imageUpstream: UpstreamDrift = {
+    supported: true,
+    mode: "image",
+    digestByRef: {
+      "twenty-ven-production:local": null,
+      "postgres:16-alpine": "sha256:2222222222222222",
+    },
+  };
+
+  function setupImageProject() {
+    setup([imageProject], []);
+    projectRepo.findById.mockResolvedValue(imageProject);
+    deploymentRepo.findById.mockResolvedValue({
+      id: "dep_images",
+      projectId: imageProject.id,
+      organizationId: imageProject.organizationId,
+    });
+    serviceRepo.listByProject.mockResolvedValue(services);
+    serviceRepo.listByDeployment.mockResolvedValue([
+      {
+        serviceId: "svc_app",
+        imageRef: "twenty-ven-production:local",
+        imageDigest: "sha256:local",
+      },
+      {
+        serviceId: "svc_db",
+        imageRef: "postgres:16-alpine",
+        imageDigest: "sha256:1111111111111111",
+      },
+    ]);
+    resolveUpstreamDrift.mockResolvedValue(imageUpstream);
+  }
+
+  it("reports the real moved digest without presenting identical version copy", async () => {
+    setupImageProject();
+
+    const [item] = await listOrganizationUpdates(ctx, { behindOnly: true });
+
+    expect(item).toMatchObject({
+      projectId: "proj_images",
+      kind: "image",
+      behind: true,
+      canApply: false,
+    });
+    expect(item.currentLabel).toContain("16-alpine@111111111111");
+    expect(item.latestLabel).toContain("16-alpine@222222222222");
+    expect(item.currentLabel).not.toBe(item.latestLabel);
+  });
+
+  it("refuses the direct apply endpoint instead of force-pulling the local image", async () => {
+    setupImageProject();
+
+    await expect(applyProjectUpdate(ctx, imageProject.id)).rejects.toThrow(
+      "Automatic update is unavailable because at least one service image is local",
+    );
+    expect(redeployBuildSession).not.toHaveBeenCalled();
   });
 });
 
