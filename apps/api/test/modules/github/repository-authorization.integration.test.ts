@@ -366,12 +366,40 @@ describe("Cloud repository authorization from browser callback through library a
   it("also checks the issuing session at installation completion", async () => {
     const owner = await actor();
     const attempt = await authorize(owner);
+    const selectionUrl = `${apiOrigin}/api/cloud/github/install-callback?${new URLSearchParams({ state: attempt.state, flow: "select" })}`;
+    const selection = await app.request(selectionUrl);
+    expect(selection.status).toBe(200);
+    expect(await selection.text()).toContain("Acme");
     await db.delete(schema.session).where(eq(schema.session.id, owner.sessionId));
+    expect((await app.request(selectionUrl)).status).toBe(403);
     const response = await app.request(
       `${apiOrigin}/api/cloud/github/install-callback?${new URLSearchParams({ state: attempt.state, installation_id: "42", setup_action: "install" })}`,
     );
     expect(response.status).toBe(403);
     expect(await repos.gitInstallation.listByOrganization(owner.orgId)).toEqual([]);
+  });
+
+  it("completes repository authorization through the public picker without a Cloud session cookie", async () => {
+    const owner = await actor();
+    const attempt = await authorize(owner);
+    const page = await app.request(
+      `${apiOrigin}/api/cloud/github/install-callback?${new URLSearchParams({ state: attempt.state, flow: "select" })}`,
+    );
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain(`name="state" value="${attempt.state}"`);
+    expect(html).toContain('name="installation_id" value="42"');
+    expect(page.headers.get("set-cookie")).toBeNull();
+    const selected = await app.request(
+      `${apiOrigin}/api/cloud/github/install-callback?${new URLSearchParams({ state: attempt.state, installation_id: "42", setup_action: "update" })}`,
+    );
+    expect(selected.status).toBe(200);
+    expect(await owner.client.github.pollConnect({ state: attempt.state })).toEqual({
+      status: "complete",
+    });
+    expect((await owner.client.github.getHome()).repos).toMatchObject([
+      { full_name: "Acme/private-app" },
+    ]);
   });
 
   it("completes OAuth and an installation claim once when callbacks race", async () => {

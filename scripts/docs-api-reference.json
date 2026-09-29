@@ -2864,11 +2864,11 @@
     },
     "GET /api/cloud/github/install-callback": {
       "page": "cloud",
-      "description": "GitHub install callback — atomically claim a durable user/workspace nonce after matching user-token and Openship App-JWT verification."
+      "description": "Select an existing GitHub installation with flow=select, or atomically claim the workspace-bound attempt after GitHub user-token and App-JWT verification."
     },
     "POST /api/cloud/github/install-url": {
       "page": "cloud",
-      "description": "Build the App install URL with a one-time state token."
+      "description": "Build an Openship installation-selection URL with a one-time workspace state; existing installations can reconnect without another GitHub setup callback."
     },
     "POST /api/cloud/github/installation-token": {
       "page": "cloud",

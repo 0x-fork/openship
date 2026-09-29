@@ -69,6 +69,8 @@ import {
 import {
   startGithubLinkFromBridgeToken,
   buildOrgScopedInstallUrl,
+  getGithubInstallSelection,
+  type GithubInstallSelectionResult,
   attributeGithubInstall,
   listOrgInstallations,
   mintOrgInstallationToken,
@@ -917,9 +919,9 @@ export async function githubOauthSuccess(c: Context) {
 /**
  * POST /api/cloud/github/install-url
  *
- * Returns the central App's installation URL with a one-time state token
- * embedded as a query parameter. GitHub Apps preserve the `state` query
- * param through the install flow and append it to the Setup URL alongside
+ * Returns Openship's account-selection URL with a one-time state token. It
+ * offers existing installations, or forwards a new install to GitHub with the
+ * same state. GitHub preserves that state and appends it to the Setup URL alongside
  * `installation_id` and `setup_action` — that's what lets us attribute
  * the install back to the userId that started the flow without requiring
  * a SaaS session cookie on the popup browser (the App's Setup URL on
@@ -944,6 +946,10 @@ export async function githubInstallUrl(c: Context) {
  * committed atomically. No browser session is trusted on this callback.
  */
 export async function githubInstallCallback(c: Context) {
+  c.header("Cache-Control", "no-store");
+  c.header("Referrer-Policy", "no-referrer");
+  if (c.req.query("flow") === "select") return githubInstallSelection(c);
+
   const result = await attributeGithubInstall({
     installationIdRaw: c.req.query("installation_id"),
     setupAction: c.req.query("setup_action"),
@@ -1011,13 +1017,69 @@ export async function githubInstallCallback(c: Context) {
   }
 }
 
+async function githubInstallSelection(c: Context) {
+  const result = await getGithubInstallSelection(c.req.query("state"));
+  switch (result.kind) {
+    case "ready":
+      if (result.installations.length === 0) return c.redirect(result.installUrl);
+      return c.html(
+        renderCallbackHtml(
+          "Connect GitHub",
+          `Choose the GitHub account to connect to ${result.workspaceName}.`,
+          { selection: result },
+        ),
+      );
+    case "missing-params":
+    case "state-expired":
+      return c.html(
+        renderCallbackHtml(
+          "Install link expired",
+          "This installation link expired or was already used. Start a new connection from Openship.",
+        ),
+        400,
+      );
+    case "forbidden":
+      return c.html(renderCallbackHtml("Installation not authorized", result.message), 403);
+    case "failed":
+      console.error("[github install-selection] failed:", result.error);
+      return c.html(
+        renderCallbackHtml(
+          "Could not load GitHub accounts",
+          "Your GitHub accounts could not be loaded. Refresh this page to try again.",
+        ),
+        502,
+      );
+  }
+}
+
 function renderCallbackHtml(
   title: string,
   message: string,
-  opts?: { closeAfterMs?: number },
+  opts?: {
+    closeAfterMs?: number;
+    selection?: Extract<GithubInstallSelectionResult, { kind: "ready" }>;
+  },
 ): string {
   const closeScript = opts?.closeAfterMs
     ? `<script>setTimeout(() => window.close(), ${opts.closeAfterMs});</script>`
+    : "";
+  const selection = opts?.selection;
+  const accounts = selection
+    ? `<div class="installations">${selection.installations
+        .map(
+          (installation) => `
+      <form method="get" action="/api/cloud/github/install-callback">
+        <input type="hidden" name="state" value="${escapeHtml(selection.state)}" />
+        <input type="hidden" name="installation_id" value="${escapeHtml(String(installation.id))}" />
+        <input type="hidden" name="setup_action" value="update" />
+        <button type="submit">
+          <strong>${escapeHtml(installation.login)}</strong>
+          <span>${installation.type === "Organization" ? "Organization" : "Personal account"}</span>
+        </button>
+      </form>`,
+        )
+        .join("")}</div>
+      <a class="install-another" href="${escapeHtml(selection.installUrl)}">Install on another GitHub account</a>`
     : "";
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1030,12 +1092,20 @@ function renderCallbackHtml(
     .card { background: #fff; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06); }
     h1 { font-size: 18px; font-weight: 600; margin: 0 0 12px; }
     p { font-size: 14px; line-height: 1.55; color: #555; margin: 0; }
+    .installations { display: grid; gap: 12px; margin-top: 24px; }
+    .installations button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 16px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .installations button:hover { background: #f6f6f6; }
+    .installations button:focus-visible, .install-another:focus-visible { outline: 2px solid #171717; outline-offset: 3px; }
+    .installations strong { overflow-wrap: anywhere; }
+    .installations span { font-size: 12px; color: #666; }
+    .install-another { display: inline-block; margin-top: 20px; font-size: 14px; color: #333; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(message)}</p>
+    ${accounts}
   </div>
   ${closeScript}
 </body>

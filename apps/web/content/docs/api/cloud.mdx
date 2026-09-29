@@ -104,6 +104,13 @@ The public `GET` handoff routes take query params, not a body — `desktop-hando
 expect `redirect`, `state`, and `code_challenge`; `github/install-callback` expects `installation_id`,
 `setup_action`, and `state`; `github/oauth-bridge` expects `token`.
 
+GitHub installation links first open Openship's account selection using `flow=select` and
+`state`. The user can reconnect an existing installation or continue to GitHub for a new
+one. This also works in the external browser used by self-hosted and desktop instances:
+the temporary state binds the choice to its initiating user and workspace without requiring
+a Cloud browser session. Discovery and selection recheck access, and the installation claim
+uses the same verification and transaction as the dashboard picker.
+
 ### Deploy proxies (preflight, edge proxy, analytics)
 
 ```
@@ -306,8 +313,8 @@ from the dashboard.
 | Check edge-proxy domain verification. | `POST /api/cloud/edge-proxy/verify-check`<br />`cloud:write` |
 | Exchange a one-time code for user + session (rate-limited). | `POST /api/cloud/exchange-code`<br />`Handler authentication` |
 | Export an org- or project-scope subgraph dump (rate-limited). | `POST /api/cloud/export-subgraph`<br />`cloud:admin` |
-| GitHub install callback — atomically claim a durable user/workspace nonce after matching user-token and Openship App-JWT verification. | `GET /api/cloud/github/install-callback`<br />`Handler authentication` |
-| Build the App install URL with a one-time state token. | `POST /api/cloud/github/install-url`<br />`cloud:write` |
+| Select an existing GitHub installation with flow=select, or atomically claim the workspace-bound attempt after GitHub user-token and App-JWT verification. | `GET /api/cloud/github/install-callback`<br />`Handler authentication` |
+| Build an Openship installation-selection URL with a one-time workspace state; existing installations can reconnect without another GitHub setup callback. | `POST /api/cloud/github/install-url`<br />`cloud:write` |
 | Mint a short-lived (~60min) installation access token. | `POST /api/cloud/github/installation-token`<br />`cloud:write` |
 | List the org owner's GitHub App installations. | `GET /api/cloud/github/installations`<br />`cloud:read` |
 | Consume the bridge token and redirect the browser into GitHub OAuth. | `GET /api/cloud/github/oauth-bridge`<br />`Handler authentication` |

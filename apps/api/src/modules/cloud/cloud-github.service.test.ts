@@ -10,6 +10,9 @@ const h = vi.hoisted(() => ({
   pendingApproval: vi.fn(),
   authorize: vi.fn(),
   memberFind: vi.fn(),
+  organizationFind: vi.fn(),
+  listInstallations: vi.fn(),
+  currentInstallations: vi.fn(),
   claim: vi.fn(),
   audit: vi.fn(),
   verify: vi.fn(),
@@ -30,8 +33,10 @@ vi.mock("@repo/db", () => ({
       pendingApproval: h.pendingApproval,
     },
     member: { find: h.memberFind },
+    organization: { findById: h.organizationFind },
     gitInstallation: {
       claimWithState: h.claim,
+      listByOrganization: h.currentInstallations,
       findByOrgAndOwner: vi.fn(),
     },
     auditEvent: { create: h.audit },
@@ -43,6 +48,7 @@ vi.mock("@repo/platform/engine/lib/auth", () => ({
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({
   cloudRuntimeTarget: { api: "https://api.openship.io" },
+  env: { GITHUB_APP_ID: "9" },
 }));
 vi.mock("@repo/platform/engine/lib/org-actor", () => ({
   resolveOrgOwner: vi.fn(),
@@ -57,11 +63,13 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
 }));
 vi.mock("@repo/platform/engine/modules/github/github.installation-verification", () => ({
   verifyGitHubInstallationForUser: h.verify,
+  listGitHubInstallationsForUser: h.listInstallations,
 }));
 
 import {
   attributeGithubInstall,
   buildOrgScopedInstallUrl,
+  getGithubInstallSelection,
 } from "@repo/platform/engine/modules/cloud/cloud-github.service";
 
 const installation = {
@@ -103,6 +111,9 @@ describe("cloud GitHub App installation attribution", () => {
     h.pendingApproval.mockResolvedValue(true);
     h.authorize.mockResolvedValue(undefined);
     h.memberFind.mockResolvedValue({ id: "member_1", role: "member" });
+    h.organizationFind.mockResolvedValue({ id: "org_1", name: "Acme workspace" });
+    h.listInstallations.mockResolvedValue([installation]);
+    h.currentInstallations.mockResolvedValue([]);
     h.verify.mockResolvedValue({ kind: "ok", installation });
     h.claim.mockResolvedValue({ id: "installation_row" });
     h.audit.mockResolvedValue({});
@@ -118,13 +129,61 @@ describe("cloud GitHub App installation attribution", () => {
 
     expect(result.state).toMatch(/^ghrepo_[A-Za-z0-9_-]{32}$/);
     expect(result.url).toBe(
-      `https://github.com/apps/openship-io/installations/new?state=${result.state}`,
+      `https://api.openship.io/api/cloud/github/install-callback?flow=select&state=${result.state}`,
     );
     expect(h.stateCreate).toHaveBeenCalledWith(expect.objectContaining({
       state: result.state,
       userId: "member_1",
       organizationId: "org_1",
     }));
+  });
+
+  it("offers only active installations of this App without claiming or consuming the state", async () => {
+    h.listInstallations.mockResolvedValue([
+      installation,
+      { ...installation, id: 43, app_id: 10 },
+      { ...installation, id: 44, suspended_at: "2026-09-29T00:00:00Z" },
+    ]);
+
+    await expect(getGithubInstallSelection("nonce")).resolves.toEqual({
+      kind: "ready",
+      state: "nonce",
+      workspaceName: "Acme workspace",
+      installUrl: "https://github.com/apps/openship-io/installations/new?state=nonce",
+      installations: [{ id: 42, login: "Acme", avatarUrl: "", type: "Organization", connected: false }],
+    });
+    expect(h.listInstallations).toHaveBeenCalledWith("user_1");
+    expect(h.claim).not.toHaveBeenCalled();
+    expect(h.stateConsume).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    null,
+    { organizationId: null, sourceId: null, flow: "install" },
+    { organizationId: "org_1", sourceId: null, flow: "manifest" },
+    { organizationId: "org_1", sourceId: "custom_app", flow: "install" },
+  ])(
+    "does not disclose GitHub accounts for an expired or unrelated setup state: %j",
+    async (binding) => {
+      h.stateFind.mockResolvedValue(binding);
+
+      await expect(getGithubInstallSelection("nonce")).resolves.toEqual({ kind: "state-expired" });
+      expect(h.listInstallations).not.toHaveBeenCalled();
+    },
+  );
+
+  it("revokes selection access after the initiating user leaves the workspace", async () => {
+    h.memberFind.mockResolvedValue(null);
+
+    await expect(getGithubInstallSelection("nonce")).resolves.toMatchObject({ kind: "forbidden" });
+    expect(h.listInstallations).not.toHaveBeenCalled();
+  });
+
+  it("requires GitHub authorization before offering existing installations", async () => {
+    h.listInstallations.mockResolvedValue(null);
+
+    await expect(getGithubInstallSelection("nonce")).resolves.toMatchObject({ kind: "forbidden" });
+    expect(h.claim).not.toHaveBeenCalled();
   });
 
   it("rejects invalid installation ids before reading or burning state", async () => {

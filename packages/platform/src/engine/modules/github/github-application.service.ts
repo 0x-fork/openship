@@ -158,37 +158,87 @@ async function installationRedirect(ctx: ExecutionContext) {
   };
 }
 
-async function connectCloudApp(ctx: ExecutionContext, input: NonNullable<Parameters<GitHubOperations["connect"]>[0]>) {
-  if (input.source === "cli") throw new AppError("Use a GitHub App or personal token on Openship Cloud.", 400, "NOT_SUPPORTED");
+async function connectCloudApp(
+  ctx: ExecutionContext,
+  input: NonNullable<Parameters<GitHubOperations["connect"]>[0]>,
+) {
+  if (input.source === "cli")
+    throw new AppError(
+      "Use a GitHub App or personal token on Openship Cloud.",
+      400,
+      "NOT_SUPPORTED",
+    );
   const status = await githubAuth.getUserStatus(ctx.userId, ctx);
-  const current = status.connected ? await githubAuth.getUserInstallations(ctx, status) : [];
-  if (status.connected && current.length && !input.source && !input.state) return { connected: true as const };
-  let install: { state: string; url: string };
+  if (status.connected && !input.source && !input.state) {
+    const current = await githubAuth.getUserInstallations(ctx, status);
+    if (current.length) return { connected: true as const };
+  }
+  let state: string;
   if (input.state) {
     const binding = await repos.githubInstallState.find(input.state);
-    if (!binding || binding.flow !== "install" || binding.sourceId || binding.userId !== ctx.userId || binding.organizationId !== ctx.organizationId) {
-      throw new AppError("This GitHub connection attempt expired or belongs to another workspace. Start again.", 409, "GITHUB_ATTEMPT_EXPIRED");
+    if (
+      !binding ||
+      binding.flow !== "install" ||
+      binding.sourceId ||
+      binding.userId !== ctx.userId ||
+      binding.organizationId !== ctx.organizationId
+    ) {
+      throw new AppError(
+        "This GitHub connection attempt expired or belongs to another workspace. Start again.",
+        409,
+        "GITHUB_ATTEMPT_EXPIRED",
+      );
     }
-    install = { state: input.state, url: `${githubAuth.getInstallUrl()}?state=${encodeURIComponent(input.state)}` };
+    state = input.state;
   } else {
     const result = await githubAuth.resolveInstallUrl(ctx);
-    if (!result.state || !result.url) throw new AppError("Could not start GitHub installation. Try again.", 503, "GITHUB_APP_UNAVAILABLE");
-    install = { state: result.state, url: result.url };
+    if (!result.state || !result.url)
+      throw new AppError(
+        "Could not start GitHub installation. Try again.",
+        503,
+        "GITHUB_APP_UNAVAILABLE",
+      );
+    state = result.state;
   }
-  if (!status.connected) return {
-    connected: false as const, flow: "redirect" as const, step: "install" as const, completion: "attempt" as const,
-    url: `${resolveAuthBaseUrl()}/api/github/connect/redirect?install_state=${encodeURIComponent(install.state)}`, state: install.state,
+  if (!status.connected)
+    return {
+      connected: false as const,
+      flow: "redirect" as const,
+      step: "install" as const,
+      completion: "attempt" as const,
+      url: `${resolveAuthBaseUrl()}/api/github/connect/redirect?install_state=${encodeURIComponent(state)}`,
+      state,
+    };
+  // Direct Cloud dashboards and external install links share discovery and
+  // workspace checks. Their browser adapters render the same verified choices.
+  const { getGithubInstallSelection } = await import("../cloud/cloud-github.service");
+  const selection = await getGithubInstallSelection(state);
+  if (selection.kind === "forbidden")
+    throw new AppError(selection.message, 403, "GITHUB_INSTALLATION_FAILED");
+  if (selection.kind === "failed")
+    throw new AppError(selection.error, 502, "GITHUB_INSTALLATION_FAILED");
+  if (selection.kind !== "ready")
+    throw new AppError(
+      "This GitHub connection attempt expired. Start again.",
+      409,
+      "GITHUB_ATTEMPT_EXPIRED",
+    );
+  if (selection.installations.length)
+    return {
+      connected: false,
+      flow: "installations",
+      state,
+      installUrl: selection.installUrl,
+      installations: selection.installations,
+    } satisfies GitHubInstallationSelection;
+  return {
+    connected: false as const,
+    flow: "redirect" as const,
+    step: "install" as const,
+    completion: "attempt" as const,
+    state,
+    url: selection.installUrl,
   };
-  const { listAvailableGitHubInstallations } = await import("./github.installation-verification");
-  const available = await listAvailableGitHubInstallations(ctx.userId);
-  if (available.length) return {
-    connected: false, flow: "installations", state: install.state, installUrl: install.url,
-    installations: available.map((entry) => ({
-      id: entry.id, login: entry.account.login, avatarUrl: entry.account.avatar_url, type: entry.account.type,
-      connected: current.some((item) => item.id === entry.id),
-    })),
-  } satisfies GitHubInstallationSelection;
-  return { connected: false as const, flow: "redirect" as const, step: "install" as const, completion: "attempt" as const, ...install };
 }
 
 /** POST /github/connect - Normalized connection flow.
