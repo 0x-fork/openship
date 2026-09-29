@@ -53,7 +53,7 @@ function leafKeys(value: unknown, prefix = ""): string[] {
 describe("pricing catalog (pricing.json)", () => {
   it("rejects unfunded plan or top-up allowances and inherited retail capacity", () => {
     const overfundedPlan = structuredClone(PRICING);
-    overfundedPlan.plans.find(plan => plan.id === "pro")!.billing.creditsPerCycle = 3901;
+    overfundedPlan.plans.find(plan => plan.id === "pro")!.billing.creditsPerCycle = 4001;
     expect(pricingCatalogSchema.safeParse(overfundedPlan).success).toBe(false);
     const overfundedPack = structuredClone(PRICING);
     overfundedPack.creditPacks[0]!.creditsMilli = (overfundedPack.creditPacks[0]!.priceCents + 1) * 1000;
@@ -70,13 +70,13 @@ describe("pricing catalog (pricing.json)", () => {
     // The union is hand-declared (a JSON import widens ids to `string`), so this
     // is the assertion that keeps type and data in lockstep. Adding a tier to
     // the JSON without the union means every exhaustive Record silently misses it.
-    const union: PlanTierId[] = ["free", "starter", "pro", "team", "enterprise"];
+    const union: PlanTierId[] = ["free", "hobby", "starter", "pro", "team", "enterprise"];
     expect(PRICING.plans.map((p) => p.id)).toEqual(union);
     expect(PLAN_IDS).toEqual(union);
   });
 
-  it("prices the published ladder: free, $10, $39, $99, custom", () => {
-    expect(PRICING.plans.map((p) => p.price.monthly)).toEqual([0, 1000, 3900, 9900, null]);
+  it("prices the published ladder: free, $5, $20, $40, $99, custom", () => {
+    expect(PRICING.plans.map((p) => p.price.monthly)).toEqual([0, 500, 2000, 4000, 9900, null]);
   });
 
   it("ships exactly one popular tier", () => {
@@ -130,14 +130,11 @@ describe("pricing catalog (pricing.json)", () => {
     expect(planMonthlyCredits("free")).toBe(0);
   });
 
-  it("never lets a count-bearing limit be 1", () => {
-    // The feature strings say "{maxProjects} projects" / "{runningServices}
-    // running services". A value of 1 renders "1 projects", and carrying a
-    // per-language plural system (Arabic alone has six forms) for one number is
-    // not worth it — so the catalog stays out of the singular instead.
+  it("uses singular service copy for the one-service Hobby allowance", () => {
     for (const plan of PRICING.plans) {
       expect(plan.limits.maxProjects, `${plan.id}.maxProjects`).not.toBe(1);
-      expect(plan.limits.runningServices, `${plan.id}.runningServices`).not.toBe(1);
+      if (plan.limits.runningServices === 1) expect(plan.features).toContain("oneRunningService");
+      else expect(plan.features).not.toContain("oneRunningService");
     }
   });
 
@@ -215,7 +212,7 @@ describe("pricing catalog (pricing.json)", () => {
       const credits = plan.billing.creditsPerCycle;
       expect(planMonthlyCredits(plan.id), plan.id).toBe(credits === null ? null : credits * 1000);
     }
-    expect(planMonthlyCredits("starter")).toBe(800_000);
+    expect(planMonthlyCredits("starter")).toBe(1_700_000);
     expect(planMonthlyCredits("pro")).toBe(3_500_000);
     expect(planMonthlyCredits("team")).toBe(9_000_000);
   });
@@ -244,9 +241,9 @@ describe("pricing catalog (pricing.json)", () => {
   });
 
   it("declares finite VM and total capacity for retail tiers independently of the enterprise owner", () => {
-    expect(PLAN_IDS.map(id => PLANS[id].oblienLimits.max_workspaces)).toEqual([0, 3, 6, 12, null]);
-    expect(["starter", "pro", "team"].map(id => PLANS[id as PlanTierId].oblienLimits.max_total_vcpus)).toEqual([1, 4, 8]);
-    for (const id of ["starter", "pro", "team"] as const) {
+    expect(PLAN_IDS.map(id => PLANS[id].oblienLimits.max_workspaces)).toEqual([0, 1, 3, 6, 12, null]);
+    expect(["hobby", "starter", "pro", "team"].map(id => PLANS[id as PlanTierId].oblienLimits.max_total_vcpus)).toEqual([1, 2, 4, 8]);
+    for (const id of ["hobby", "starter", "pro", "team"] as const) {
       expect(Object.values(PLANS[id].oblienLimits).every(value => Number.isInteger(value) && value! > 0)).toBe(true);
     }
   });
@@ -592,7 +589,7 @@ describe("pricing resolution", () => {
     // The point of the model: above free, what separates two tiers is FIVE numbers
     // and a support level. A tier that gained a capability bullet the tier below
     // lacks would be the regression this locks out.
-    for (const id of ["starter", "pro", "team"] as const) {
+    for (const id of ["hobby", "starter", "pro", "team"] as const) {
       const words = resolvePlan(id, "en").features.join(" ");
       expect(words, `${id} must not convert credits into fixed runtime`).not.toMatch(
         /compute minutes/,
@@ -663,7 +660,7 @@ describe("pricing resolution", () => {
   });
 
   it("describes top-ups as metered credits without a fixed runtime promise", () => {
-    const small = resolveCreditPacks("en").find((pack) => pack.id === "pack_500")!;
+    const small = resolveCreditPacks("en").find((pack) => pack.id === "pack_400")!;
     expect(small.explains).toBe(
       "Applied to metered Cloud usage; duration depends on your workload.",
     );
@@ -674,11 +671,11 @@ describe("pricing resolution", () => {
       }
     }
     expect(resolveCreditPacks("en").map((pack) => pack.name)).toEqual([
-      "500 credits",
-      "2,000 credits",
-      "5,000 credits",
+      "400 credits",
+      "1,700 credits",
+      "4,500 credits",
     ]);
-    expect(CREDIT_PACKS[0]!.credits_milli).toBe(500_000);
+    expect(CREDIT_PACKS[0]!.credits_milli).toBe(400_000);
   });
 
   it("narrows locale-ish input to a supported locale", () => {
@@ -732,34 +729,37 @@ describe("stripe price ids", () => {
   it("reports every unconfigured purchasable price, with the env var to set", () => {
     const missing = withEnv(
       {
+        STRIPE_PRICE_HOBBY_MONTHLY: undefined,
         STRIPE_PRICE_STARTER_MONTHLY: undefined,
         STRIPE_PRICE_PRO_MONTHLY: undefined,
         STRIPE_PRICE_TEAM_MONTHLY: undefined,
-        STRIPE_PRICE_PACK_500: undefined,
-        STRIPE_PRICE_PACK_2K: undefined,
-        STRIPE_PRICE_PACK_5K: undefined,
+        STRIPE_PRICE_PACK_400: undefined,
+        STRIPE_PRICE_PACK_1700: undefined,
+        STRIPE_PRICE_PACK_4500: undefined,
       },
       () => validatePlanPriceIds().missing,
     );
     expect(missing).toEqual([
+      "hobby.monthly (STRIPE_PRICE_HOBBY_MONTHLY)",
       "starter.monthly (STRIPE_PRICE_STARTER_MONTHLY)",
       "pro.monthly (STRIPE_PRICE_PRO_MONTHLY)",
       "team.monthly (STRIPE_PRICE_TEAM_MONTHLY)",
-      "pack_500 (STRIPE_PRICE_PACK_500)",
-      "pack_2k (STRIPE_PRICE_PACK_2K)",
-      "pack_5k (STRIPE_PRICE_PACK_5K)",
+      "pack_400 (STRIPE_PRICE_PACK_400)",
+      "pack_1700 (STRIPE_PRICE_PACK_1700)",
+      "pack_4500 (STRIPE_PRICE_PACK_4500)",
     ]);
   });
 
   it("does not demand an annual price id while annual is unpublished", () => {
     const missing = withEnv(
       {
+        STRIPE_PRICE_HOBBY_MONTHLY: "p0",
         STRIPE_PRICE_STARTER_MONTHLY: "p1",
         STRIPE_PRICE_PRO_MONTHLY: "p2",
         STRIPE_PRICE_TEAM_MONTHLY: "p3",
-        STRIPE_PRICE_PACK_500: "p4",
-        STRIPE_PRICE_PACK_2K: "p5",
-        STRIPE_PRICE_PACK_5K: "p6",
+        STRIPE_PRICE_PACK_400: "p4",
+        STRIPE_PRICE_PACK_1700: "p5",
+        STRIPE_PRICE_PACK_4500: "p6",
       },
       () => validatePlanPriceIds().missing,
     );
@@ -767,8 +767,8 @@ describe("stripe price ids", () => {
   });
 
   it("resolves a pack price id by pack id", () => {
-    withEnv({ STRIPE_PRICE_PACK_2K: "price_pack_x" }, () => {
-      expect(resolveCreditPackPriceId("pack_2k")).toBe("price_pack_x");
+    withEnv({ STRIPE_PRICE_PACK_1700: "price_pack_x" }, () => {
+      expect(resolveCreditPackPriceId("pack_1700")).toBe("price_pack_x");
     });
     expect(resolveCreditPackPriceId("pack_nope")).toBeNull();
   });

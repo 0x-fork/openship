@@ -19,6 +19,10 @@
     "enterprise": {
       "name": "Enterprise",
       "tagline": "Custom limits, dedicated infrastructure, and an SLA."
+    },
+    "hobby": {
+      "name": "Hobby",
+      "tagline": "Light development and occasional apps, with a finite usage allowance."
     }
   },
   "features": {
@@ -51,7 +55,9 @@
     "selfHostedClients": "CLI, web, and desktop — one backend",
     "selfHostedFreeSubdomains": "{freeSubdomains} free {freeDomainSuffix} subdomains when you connect to Cloud",
     "usageCredits": "{credits} usage credits per month",
-    "namespaceCapacity": "Total: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB disk"
+    "namespaceCapacity": "Total: {namespaceCpu} vCPU, {namespaceRamGb} GB RAM, {namespaceDiskGb} GB disk",
+    "finiteUsage": "Continuous hosting may need credit top-ups.",
+    "oneRunningService": "1 running app, database or worker"
   },
   "selfHosted": {
     "name": "Self-hosted",
@@ -65,7 +71,10 @@
     "pack_25k": "{credits} credits",
     "pack_100k": "{credits} credits",
     "pack_500": "{credits} credits",
-    "pack_2k": "{credits} credits"
+    "pack_2k": "{credits} credits",
+    "pack_400": "{credits} credits",
+    "pack_1700": "{credits} credits",
+    "pack_4500": "{credits} credits"
   },
   "ui": {
     "perMonth": "/mo",

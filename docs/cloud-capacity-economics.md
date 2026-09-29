@@ -1,58 +1,72 @@
 # Cloud capacity and unit economics — 2026-09-29
 
-The v2 catalog fixes two independent defects: inherited Enterprise VM limits on
-retail namespaces, and permanent build headroom on image-only Compose hosts.
-[The catalog reference](../packages/core/src/pricing/README.md) is the exact
-customer contract and rollout guide.
+Version 3 introduces **$5 / $20 / $40 / $99** Hobby / Starter / Pro / Team offers,
+with **400 / 1,700 / 3,500 / 9,000** metered credits. The prior capacity fixes and
+source-builder corrections remain in place. [The catalog reference](../packages/core/src/pricing/README.md)
+is the exact customer contract, including saved v1/v2 renewal behavior.
 
-## Hardware budget
+## Hardware and revenue budget
 
-The operator supplied $70/month for 12 physical CPU cores, 64 GB RAM and 1 TB
-storage. Using those as a conservative capacity envelope, without counting CPU
-oversubscription, a homogeneous node fits at most 12 Starter, 3 Pro, or 1 Team
-namespace at their full CPU ceilings. At list prices that is $120, $117, or $99
-revenue against $70 bare hardware: $50, $47, or $29 remaining **before** payment
-fees, backups, networking, control-plane costs, taxes, idle capacity and support.
-A mixed node (one Team plus one Pro) uses the 12-core envelope and yields $138.
-These are sizing bounds, not guaranteed profit or dedicated-core promises.
+The operator supplied $70/month for 12 physical cores, 64 GB RAM and 1 TB storage.
+It is a hardware cost, not a complete operating cost. Plan ceilings are shared
+virtual CPU limits and maximum allocation; they are not dedicated physical cores
+or a promise of continuous use for the subscription price. Keep fleet admission
+and operational headroom independent of retail namespace limits.
 
-Reserve operational headroom in node placement and monitor actual utilization.
-Do not assume all 64 GB RAM or all disk space can be sold: kernels, Docker, images,
-snapshots, backups and the platform need capacity. Customer limits bound exposure;
-they do not replace fleet admission or adequate free disk.
+For planning, assume another $25/node/month for operations, card fees of 2.9% plus
+$0.30 per payment, and a 2% refund reserve. These assumptions need actual invoices.
+With $200 revenue from ten payments, contribution is $92.20 (46.1%); with $300 from
+fifteen payments it is $185.80 (61.9%). At a $20 average charge, break-even is about
+$102/node/month and a 60% contribution target needs about $283. These exclude tax,
+company payroll and other unmodelled expenses. Safe workload density must support
+the revenue target: three $40 Pro subscriptions only leave $18.22 under this model.
+Do not use CPU oversubscription or credit expiry as a substitute for measurement.
 
-Wallet funding and retail credits are a separate ledger constraint. At the
-current 100 credits/USD contract, included 800 / 3,500 / 9,000 credits fit the
-$10 / $39 / $99 funding. Top-up grants also fit their payments. This does not mean
-one credit equals one minute. Current observed Oblien rates were 1.5 credits per
-CPU-minute, 0.2 per memory GB-minute, 0.1 per disk-I/O GB and 0.15 per transfer GB.
-A full-load 1-CPU / 1-GB workload therefore uses roughly 1.7 credits/minute before
-I/O, under those rates; idle usage is different. Recheck provider rates before
-publishing runtime estimates. Process-local billing soft caps are not a durable
-monthly entitlement and must not be used to promise a month of runtime.
+At company level, count the customer's payment once. Funding the Openship-owned
+Oblien wallet is an internal transfer, not additional company revenue. At the
+100 credits/USD funding rate, every ordinary allowance and top-up is funded by
+its payment. Promotional subsidy must be separately budgeted and recorded.
 
-Because Openship and Oblien have the same owner, wholesale transfer prices can
-be reviewed separately later. This release deliberately does not change global
-Oblien rates or silently subsidize ordinary retail purchases.
+## Usage pricing
+
+One credit is not one minute. Current legacy Oblien workspace rates are 1.5
+credits/active CPU-minute, 0.2/measured RSS GiB-minute and 0.15/GB of RX+TX transfer.
+Workspace flush does not charge disk I/O. The legacy monthly discounts are 700
+credits/vCPU for CPU, 100/GiB for memory and 100/vCPU for network. They are separate
+from namespace budgets. The matching Oblien fix persists discount use with wallet,
+namespace usage and ledger writes in one SQL transaction, scoped to owner,
+namespace, workspace and UTC calendar month. Restart, top-up or quota reset cannot
+replenish a consumed discount. Node billing windows must also replay unchanged
+after a lost acknowledgement. Deploy and verify both halves before relying on it.
+
+The proposed next Oblien compute card is **preview only**: $0.030/active vCPU-hour,
+$0.008/reserved GiB-hour, $0.10/retained GiB-month and $0.05/public-egress GB.
+Reserved RAM, retained disk and public egress require different meters from RSS,
+disk I/O and RX+TX. Activating those rates requires matching meters and seven days
+of usage/cost validation. They must not be advertised as the current billing rate.
+
+Hobby is a finite trial-sized paid allowance, not a $5 always-on VM. Explain that
+before checkout. Top-ups (400/$5, 1,700/$20, 4,500/$50) buy additional consumption
+without changing hardware limits; a capacity increase requires a plan upgrade.
+Alerts and recovery use the provider's namespace balance, including purchased
+credits. Grace stays zero unless the reseller explicitly configures it.
 
 ## Verification and rollout
 
 1. Deploy the generic Oblien aggregate-capacity API and additive schema first.
-   Require `reseller.aggregateResourceLimits` before enabling v2 sales.
+   Require `reseller.aggregateResourceLimits` before enabling new sales.
 2. Deploy this Openship API/dashboard together. Published SDK 2.5.0 is sufficient.
-3. Reconcile existing organizations through the billing sweep or normal guarded
-   Cloud actions. v1 paid credits and periods remain unchanged; finite safety
-   ceilings replace inherited retail capacity.
+3. Reconcile organizations through the billing sweep or guarded Cloud actions.
+   v1 paid credits and periods remain unchanged; finite safety ceilings replace
+   inherited capacity. v2 saved commercial terms remain intact.
 4. Review oversized existing Docker hosts while no deployment is in progress.
-   The shared reconciliation helper reduces CPU/RAM only after checking project
-   ownership, namespace binding and actual bounded running containers. It retains
-   disk size and restores exactly the running container set.
-5. Check provider `allocated_resource_usage`, create/resize rejection diagnostics,
-   a paid upgrade, a top-up, renewal replay and signed webhook handling. A checkout
-   return is not proof of credit delivery. Do not charge a real customer to test.
+   The shared helper reduces CPU/RAM only after checking ownership, namespace
+   binding and bounded running containers. It retains disks and restores exactly
+   the captured running services.
+5. Verify provider allocation diagnostics, paid upgrades, top-ups, renewal replay,
+   and signed webhooks. A checkout return alone does not prove credit delivery.
+   Run payment tests in an isolated provider environment, not on a real customer.
 
-A database transaction commits financial grants and checkpoints. VM changes are
-remote operations with durable reservations and recovery, not one distributed
-transaction across Stripe, SQL, Docker and the network. A failed response must
-retain capacity until provider state is verified. Never expire such a reservation
-merely to make a deployment succeed.
+Financial grants and checkpoints commit atomically in SQL. Stripe, SQL and VM
+operations use durable work and idempotent recovery; they are not one distributed
+transaction. Ambiguous VM operations retain capacity until provider state is known.

@@ -10,7 +10,7 @@ const savedPro = (): NonNullable<OblienSubscription> => ({ tierId: "reseller", s
 
 describe("funded Cloud offers and isolated capacity", () => {
   it("keeps every retail allowance within wallet funding and finite hardware limits", () => {
-    for (const tier of ["starter", "pro", "team"] as const) {
+    for (const tier of ["hobby", "starter", "pro", "team"] as const) {
       const offer = subscriptionOffer(tier, "monthly");
       expect(offer.credits).toBeLessThanOrEqual(offer.unitAmount);
       expect(Object.values(offer.resourceLimits!).every(value => Number.isInteger(value) && value! > 0)).toBe(true);
@@ -28,17 +28,20 @@ describe("funded Cloud offers and isolated capacity", () => {
   });
   it("bounds legacy inherited capacity while preserving the customer's paid credits and price", async () => {
     const subscription = savedPro();
-    subscription.offer = { ...subscription.offer!, reference: "openship:pro:v1", credits: 3000,
+    subscription.offer = { ...subscription.offer!, reference: "openship:pro:v1", credits: 3000, unitAmount: 3900,
       resourceLimits: { max_workspaces: 12, max_vcpus: null, max_ram_mb: null, max_disk_gb: null } };
     subscription.metadata!.openship_offer_version = "1";
     const before = structuredClone(subscription);
     expect(subscriptionPlan(subscription, "org-a", "ns-a").resourceLimits).toEqual({ max_workspaces: 6, max_vcpus: 2,
-      max_ram_mb: 6144, max_disk_gb: 32, max_total_vcpus: 4, max_total_ram_mb: 8192, max_total_disk_gb: 128 });
+      max_ram_mb: 8192, max_disk_gb: 32, max_total_vcpus: 4, max_total_ram_mb: 8192, max_total_disk_gb: 128 });
     expect(await cloudPlan("pro", subscription)).toMatchObject({ price: { monthly: 3900 }, monthlyCredits: 3_000_000 });
     expect(subscription).toEqual(before);
   });
   it("renewals retain the v2 paid snapshot when the public catalog changes", async () => {
-    const subscription = savedPro(), before = structuredClone(subscription);
+    const subscription = savedPro();
+    subscription.offer!.reference = "openship:pro:v2"; subscription.offer!.unitAmount = 3900;
+    subscription.offer!.resourceLimits!.max_ram_mb = 6144; subscription.metadata!.openship_offer_version = "2";
+    const before = structuredClone(subscription);
     const raw = PRICING.plans.find(plan => plan.id === "pro")!, old = structuredClone(raw);
     try {
       raw.billing.creditsPerCycle = 1000; raw.billing.resourceLimits.max_total_vcpus = 1; raw.price.monthly = 4900;

@@ -97,8 +97,8 @@ describe("Oblien-managed entitlements", () => {
       periodEnd: entitlement().periodEnd,
       cancelAtPeriodEnd: false,
       canceledAt: null,
-      offer: subscriptionOffer("starter", "monthly"),
-      metadata: subscriptionMetadata("starter", "org_1", "os-customer"),
+      offer: { ...subscriptionOffer("starter", "monthly"), reference: "openship:starter:v2", unitAmount: 1000, credits: 800 },
+      metadata: { ...subscriptionMetadata("starter", "org_1", "os-customer"), openship_offer_version: "2" },
     };
     const limits = structuredClone(planLimits("starter"));
     const raw = PRICING.plans.find((plan) => plan.id === "starter")!;
@@ -110,7 +110,7 @@ describe("Oblien-managed entitlements", () => {
     h.entitlement.mockResolvedValue({ ...entitlement(), tierId: "reseller" });
     h.subscription.mockResolvedValue({ namespace: "os-customer", subscription: saved });
     try {
-      raw.price.monthly = 2000;
+      raw.price.monthly = 4500;
       raw.limits.maxProjects = 100;
       raw.billing.creditsPerCycle = 9000;
       expect(await syncOblienEntitlement("org_1")).toMatchObject({ tier: "starter", limits });

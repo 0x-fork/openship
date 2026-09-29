@@ -77,8 +77,9 @@ describe("Cloud customer checkout", () => {
       (plan) => !["free", "enterprise"].includes(plan.id),
     );
     expect(plans.map((plan) => [plan.id, plan.price.monthly, plan.monthlyCredits])).toEqual([
-      ["starter", 1000, 800_000],
-      ["pro", 3900, 3_500_000],
+      ["hobby", 500, 400_000],
+      ["starter", 2000, 1_700_000],
+      ["pro", 4000, 3_500_000],
       ["team", 9900, 9_000_000],
     ]);
     expect(presentCloudPlans().annual.enabled).toBe(false);
@@ -91,11 +92,11 @@ describe("Cloud customer checkout", () => {
       kind: "subscription",
       billingInterval: "monthly",
       offer: {
-        reference: "openship:starter:v2",
-        unitAmount: 1000,
-        credits: 800,
+        reference: "openship:starter:v3",
+        unitAmount: 2000,
+        credits: 1700,
         policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" },
-        resourceLimits: { max_workspaces: 3, max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 32 },
+        resourceLimits: { max_workspaces: 3, max_total_vcpus: 2, max_total_ram_mb: 6144, max_total_disk_gb: 32 },
       },
       metadata: {
         openship_plan: "starter",
@@ -110,6 +111,23 @@ describe("Cloud customer checkout", () => {
       runningServices: 3,
       maxProjects: 10,
     });
+  });
+  it("sells the new Hobby offer as a namespace contract with finite capacity", async () => {
+    expect(parseInput(CreateSubscriptionBody, { planTierId: "hobby", interval: "monthly" })).toMatchObject({ planTierId: "hobby" });
+    await createCheckoutSession(ctx(), "hobby", "monthly", "hobby-attempt-001");
+    expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({
+      namespace: "ns-org-a",
+      offer: expect.objectContaining({
+        reference: "openship:hobby:v3", unitAmount: 500, credits: 400,
+        resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 4096, max_disk_gb: 16,
+          max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 16 },
+      }),
+    }));
+    expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("planTierId");
+    expect(h.quota).not.toHaveBeenCalled();
+  });
+  it("keeps an old provider Hobby subscription mapped to its original Openship Starter tier", () => {
+    expect(subscriptionPlan(subscription, "org-a", "ns-org-a").tier).toBe("starter");
   });
   it("does not invent yearly prices or grants while annual checkout is disabled", async () => {
     await expect(createCheckoutSession(ctx(), "starter", "annual")).rejects.toMatchObject({
@@ -181,7 +199,7 @@ describe("Cloud customer checkout", () => {
         }),
       ).toThrow();
       expect(() =>
-        parseInput(CreateTopupBody, { packId: "pack_5k", [field]: "injected" }),
+        parseInput(CreateTopupBody, { packId: "pack_4500", [field]: "injected" }),
       ).toThrow();
     }
   });
@@ -199,7 +217,7 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: "ns-org-a",
-        offer: expect.objectContaining({ reference: "openship:team:v2", unitAmount: 9900 }),
+        offer: expect.objectContaining({ reference: "openship:team:v3", unitAmount: 9900 }),
         billingInterval: "monthly",
       }),
     );
@@ -220,7 +238,7 @@ describe("Cloud customer checkout", () => {
     // Both purchase kinds verify the namespace through the shared entitlement read.
     h.sync.mockRejectedValue(new Error("subscription API unavailable"));
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow("subscription API unavailable");
-    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toThrow(
+    await expect(createTopupCheckoutSession(ctx(), "pack_4500")).rejects.toThrow(
       "subscription API unavailable",
     );
     expect(h.checkout).not.toHaveBeenCalled();
@@ -232,16 +250,16 @@ describe("Cloud customer checkout", () => {
       subscription,
     }));
     expect(await listActiveCreditPacks()).toMatchObject([
-      { id: "pack_500", credits_milli: 500_000, price_cents: 700 },
-      { id: "pack_2k", credits_milli: 2_000_000, price_cents: 2500 },
-      { id: "pack_5k", credits_milli: 5_000_000, price_cents: 6000 },
+      { id: "pack_400", credits_milli: 400_000, price_cents: 500 },
+      { id: "pack_1700", credits_milli: 1_700_000, price_cents: 2000 },
+      { id: "pack_4500", credits_milli: 4_500_000, price_cents: 5000 },
     ]);
-    await createTopupCheckoutSession(ctx(), "pack_5k", "attempt-00000001");
+    await createTopupCheckoutSession(ctx(), "pack_4500", "attempt-00000001");
     expect(h.checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: "ns-org-a",
         kind: "topup",
-        offer: expect.objectContaining({ credits: 5000, unitAmount: 6000 }),
+        offer: expect.objectContaining({ credits: 4500, unitAmount: 5000 }),
       }),
     );
     await expect(createTopupCheckoutSession(ctx(), "removed-pack")).rejects.toMatchObject({
@@ -252,7 +270,7 @@ describe("Cloud customer checkout", () => {
   it("does not sell top-ups when current entitlement cannot be verified", async () => {
     h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription }));
     h.sync.mockRejectedValue(new Error("entitlement unavailable"));
-    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toThrow("entitlement unavailable");
+    await expect(createTopupCheckoutSession(ctx(), "pack_4500")).rejects.toThrow("entitlement unavailable");
     expect(h.checkout).not.toHaveBeenCalled();
   });
   it("refuses purchases before checkout when the provider cannot preserve the offer's policy and limits", async () => {
@@ -265,14 +283,14 @@ describe("Cloud customer checkout", () => {
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow(
       "Billing provider update required",
     );
-    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toThrow(
+    await expect(createTopupCheckoutSession(ctx(), "pack_4500")).rejects.toThrow(
       "Billing provider update required",
     );
     expect(h.checkout).not.toHaveBeenCalled();
   });
   it.each([null, "canceled", "past_due", "unpaid", "paused"])("does not sell unusable top-up credits to a customer with subscription %s", async status => {
     h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: status === null ? null : { ...subscription, status } }));
-    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toMatchObject({
+    await expect(createTopupCheckoutSession(ctx(), "pack_4500")).rejects.toMatchObject({
       code: "CLOUD_PLAN_REQUIRED",
       statusCode: 402,
     });
@@ -283,7 +301,7 @@ describe("Cloud customer checkout", () => {
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toMatchObject({ code: "BILLING_NOT_ENABLED" });
     h.env.BILLING_ENABLED = true;
     h.env.BILLING_TOPUPS_ENABLED = false;
-    await expect(createTopupCheckoutSession(ctx(), "pack_5k")).rejects.toMatchObject({
+    await expect(createTopupCheckoutSession(ctx(), "pack_4500")).rejects.toMatchObject({
       code: "BILLING_TOPUPS_NOT_ENABLED",
     });
     expect(h.checkout).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 # Openship Cloud release gate
 
-Current retail capacity and funded allowances are documented in [the September 29 model](cloud-capacity-economics.md). That v2 contract supersedes the inherited VM caps and old top-up prices in the historical reports below. Require `reseller.aggregateResourceLimits: true` in the deployed API before v2 checkout.
+Current retail capacity and funded allowances are documented in [the September 29 model](cloud-capacity-economics.md). That v3 contract supersedes the inherited VM caps and old top-up prices in the historical reports below. Require `reseller.aggregateResourceLimits: true` in the deployed API before new checkout.
 
 Paid Cloud subscriptions use Oblien Mode B. Oblien owns hosted checkout, payment collection,
 subscription renewals, credit grants, usage enforcement, and workspace lifecycle.
@@ -31,9 +31,9 @@ longer reproduces. A fresh namespace still has no paid subscription after merely
 opening checkout. A completed payment and signed public delivery remain to be
 verified; see [the checkout verification report](openship-cloud-production-verification.md).
 
-## Reseller offer contract, 2026-09-21
+## Reseller offer contract, updated 2026-09-29
 
-New purchases use Openship's $10 / $39 / $99 monthly catalog. Each checkout saves
+New purchases use Openship's $5 / $20 / $40 / $99 monthly catalog. Each checkout saves
 an immutable generic offer: price, namespace credits, zero-by-default configurable
 grace, VM caps and application plan metadata. The namespace receives the customer
 subscription. The reseller account receives wallet funding and retains its own

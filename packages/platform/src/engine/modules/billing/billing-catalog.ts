@@ -18,7 +18,7 @@ import type { ResolvedPlanGrant } from "./billing-plan-grants";
 
 // Read compatibility for subscriptions sold before Openship owned its offers.
 // New checkouts never use these platform catalog IDs.
-const LEGACY_PLAN_IDS: Readonly<Record<PlanTierId, string>> = {
+const LEGACY_PLAN_IDS: Readonly<Partial<Record<PlanTierId, string>>> = {
   free: "free", starter: "hobby", pro: "pro", team: "scale", enterprise: "enterprise",
 };
 
@@ -26,17 +26,19 @@ const LEGACY_PLAN_IDS: Readonly<Record<PlanTierId, string>> = {
 // allowances for new offers without an enforced namespace traffic policy.
 export const CLOUD_EDGE_BANDWIDTH_GB: Readonly<Record<PlanTierId, number | null>> = {
   free: 0,
+  hobby: null,
   starter: null,
   pro: null,
   team: null,
   enterprise: null,
 };
 
-export const OFFER_VERSION = "2";
+export const OFFER_VERSION = "3";
 export const offerReference = (tier: PlanTierId) => `openship:${tier}:v${OFFER_VERSION}`;
 
 export function supportedOfferReference(reference: string | undefined, tier: PlanTierId): boolean {
-  return reference === `openship:${tier}:v1` || reference === offerReference(tier);
+  return reference === offerReference(tier) || (tier !== "hobby" &&
+    (reference === `openship:${tier}:v1` || reference === `openship:${tier}:v2`));
 }
 
 /** v1 left resource sizes inherited from the Enterprise reseller. Apply the
@@ -78,7 +80,7 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
   const tier = metadata?.openship_plan as PlanTierId;
   const version = metadata?.openship_offer_version;
   if (!PLAN_IDS.includes(tier) || tier === "free" || !offer || !metadata || !supportedOfferReference(offer.reference, tier) ||
-      !["1", OFFER_VERSION].includes(version ?? "") || offer.reference !== `openship:${tier}:v${version}` || !metadata.openship_organization || !metadata.openship_namespace ||
+      !["1", "2", OFFER_VERSION].includes(version ?? "") || offer.reference !== `openship:${tier}:v${version}` || !metadata.openship_organization || !metadata.openship_namespace ||
       (organizationId !== undefined && metadata.openship_organization !== organizationId) ||
       (namespace !== undefined && metadata.openship_namespace !== namespace) || !offer.policy || !offer.resourceLimits) invalidContract();
   let decoded: unknown;

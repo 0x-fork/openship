@@ -44,7 +44,7 @@ export { planLimitsSchema } from "./schema";
 
 /** Plan tier identifier. Mirrors `pricing.json#plans[].id`; the pricing test
  *  asserts the two never drift (a new tier is a compile error, by design). */
-export type PlanTierId = "free" | "starter" | "pro" | "team" | "enterprise";
+export type PlanTierId = "free" | "hobby" | "starter" | "pro" | "team" | "enterprise";
 
 /** Ordered plan ids, display order = catalog order. */
 export const PLAN_IDS: readonly PlanTierId[] = PRICING.plans.map((p) => p.id as PlanTierId);

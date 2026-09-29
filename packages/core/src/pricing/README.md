@@ -6,13 +6,17 @@ same catalog to the dashboard, marketing and linked installations. Checkout uses
 a generic Oblien offer; the subscription belongs to the customer's namespace.
 The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
-## Version 2 offers
+## Version 3 offers
 
 | Plan | Monthly price | Included credits | Total vCPU | Total RAM | Total disk | Workspace count | Per VM: CPU / RAM / disk |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Starter | $10 | 800 | 1 | 4 GB | 32 GB | 3 | 1 / 4 GB / 16 GB |
-| Pro | $39 | 3,500 | 4 | 8 GB | 128 GB | 6 | 2 / 6 GB / 32 GB |
+| Hobby | $5 | 400 | 1 | 4 GB | 16 GB | 1 | 1 / 4 GB / 16 GB |
+| Starter | $20 | 1,700 | 2 | 6 GB | 32 GB | 3 | 2 / 6 GB / 16 GB |
+| Pro | $40 | 3,500 | 4 | 8 GB | 128 GB | 6 | 2 / 8 GB / 32 GB |
 | Team | $99 | 9,000 | 8 | 16 GB | 256 GB | 12 | 4 / 12 GB / 64 GB |
+
+Hobby includes a finite allowance for light use. A continuously running Docker
+host can need top-ups; $5 does not buy an unlimited always-on VM.
 
 All limits apply together. Workspace/service counts do not promise that every
 workspace or container can use its maximum size at the same time. CPU is shared
@@ -20,7 +24,7 @@ virtual CPU quota, not a dedicated physical core. An unpaid namespace has zero
 workspace and total capacity. Enterprise remains contact-sales; only a verified
 contract or audited operator grant can select it.
 
-At Oblien's current 100 credits/USD wallet rate, these payments fund 1,000 / 3,900 /
+At Oblien's current 100 credits/USD wallet rate, these payments fund 500 / 2,000 / 4,000 /
 9,900 wallet credits. The namespace allowances stay below that funding. Catalog
 validation rejects unfunded retail allowances, top-ups and inherited retail
 capacity. Oblien-admin promotions explicitly account for any promotional subsidy;
@@ -29,12 +33,12 @@ they are not an unrecorded enlargement of the namespace allowance.
 Openship uses **milli-credits** internally: 1,000 milli-credits = one Oblien credit.
 `billing.creditsPerCycle` and offers use whole credits; API `monthlyCredits`,
 `annualCredits` and `credits_milli` use milli-credits. Credits are not minutes.
-CPU, memory, disk activity and transfer are metered independently by Oblien.
+Oblien meters CPU, memory and transfer; its active rate card defines the billed dimensions. Current workspace billing does not charge disk I/O.
 Neither a resource ceiling nor a credit grant promises continuous full-load
-runtime for the entire month. Paid v2 plans have no additional fixed build-minute
+runtime for the entire month. New paid plans have no additional fixed build-minute
 allowance; builds consume the same metered credits as applications.
 
-Top-ups are 500 credits for $7, 2,000 for $25 and 5,000 for $60. They add purchased
+Top-ups are 400 credits for $5, 1,700 for $20 and 4,500 for $50. They add purchased
 credits without resetting consumption or changing capacity, grace, service limits
 or the subscription. Only unused purchased credits carry to a later paid cycle.
 Checkout idempotency includes the versioned offer reference, so a changed pack
@@ -71,10 +75,14 @@ stopped services stay stopped.
 
 ## Existing subscriptions and upgrades
 
-`openship:<tier>:v2` saves the price, credits, grace, application limits and all
+`openship:<tier>:v3` saves the price, credits, grace, application limits and all
 seven capacity fields. Renewals use that snapshot, even after catalog edits.
-Unknown versions, missing v2 capacity fields and organization/namespace mismatches
+Unknown versions, missing v2/v3 capacity fields and organization/namespace mismatches
 fail closed. Price and credit metadata never come from browser input.
+
+Saved v2 subscriptions retain their original price, credits and capacity snapshot.
+The new Hobby tier exists only in v3: a legacy provider `hobby` subscription still
+maps to its original Openship Starter tier, never to the new $5 plan.
 
 Legacy v1 offers left VM sizes inherited from the Enterprise owner. Reconciliation
 adds the current retail safety ceilings to those offers while preserving their

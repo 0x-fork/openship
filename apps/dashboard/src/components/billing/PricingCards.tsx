@@ -113,6 +113,7 @@ interface PricingCardsProps {
  *  error here rather than a card wearing another tier's icon. */
 const PLAN_ICON: Record<PlanTierId, React.ReactNode> = {
   free: <UiIcon name="bolt" className="size-5" />,
+  hobby: <UiIcon name="code" className="size-5" />,
   starter: <UiIcon name="rocket" className="size-5" />,
   pro: <UiIcon name="star" className="size-5" />,
   team: <UiIcon name="building" className="size-5" />,
@@ -179,6 +180,7 @@ const WIDEST_COLUMNS: Record<number, string> = {
   3: "xl:grid-cols-3",
   4: "xl:grid-cols-4",
   5: "xl:grid-cols-5",
+  6: "xl:grid-cols-3",
 };
 
 export const PricingCards: React.FC<PricingCardsProps> = ({

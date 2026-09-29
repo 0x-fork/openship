@@ -67,9 +67,67 @@
       }
     },
     {
+      "id": "hobby",
+      "price": {
+        "monthly": 500,
+        "annual": null
+      },
+      "stripePriceEnv": {
+        "monthly": "STRIPE_PRICE_HOBBY_MONTHLY",
+        "annual": "STRIPE_PRICE_HOBBY_ANNUAL"
+      },
+      "popular": false,
+      "contactSales": null,
+      "support": "community",
+      "inherits": "free",
+      "limits": {
+        "workloads": [
+          "static",
+          "web",
+          "worker"
+        ],
+        "services": true,
+        "runningServices": 1,
+        "maxProjects": 3,
+        "maxResourceTier": "low",
+        "computeMinutesPerMonth": null,
+        "buildMinutesPerMonth": null,
+        "freeSubdomains": 10,
+        "customDomains": null,
+        "seats": null
+      },
+      "features": [
+        "everythingIn",
+        "usageCredits",
+        "namespaceCapacity",
+        "anyWorkload",
+        "oneRunningService",
+        "power",
+        "projects",
+        "finiteUsage",
+        "communitySupport"
+      ],
+      "billing": {
+        "creditsPerCycle": 400,
+        "yearlyCreditsPerCycle": null,
+        "overdraft": 0,
+        "suspendThreshold": 0,
+        "onOverdraftAction": "stop_workspaces",
+        "resourceLimits": {
+          "max_workspaces": 1,
+          "max_vcpus": 1,
+          "max_ram_mb": 4096,
+          "max_disk_gb": 16,
+          "max_total_vcpus": 1,
+          "max_total_ram_mb": 4096,
+          "max_total_disk_gb": 16
+        }
+      }
+    },
+    {
       "id": "starter",
       "price": {
-        "monthly": 1000,
+        "monthly": 2000,
         "annual": null
       },
       "stripePriceEnv": {
@@ -79,7 +137,7 @@
       "popular": false,
       "contactSales": null,
       "support": "email",
-      "inherits": "free",
+      "inherits": "hobby",
       "limits": {
         "workloads": [
           "static",
@@ -100,25 +158,24 @@
         "everythingIn",
         "usageCredits",
         "namespaceCapacity",
-        "anyWorkload",
         "runningServices",
         "power",
         "projects",
         "emailSupport"
       ],
       "billing": {
-        "creditsPerCycle": 800,
+        "creditsPerCycle": 1700,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
           "max_workspaces": 3,
-          "max_vcpus": 1,
-          "max_ram_mb": 4096,
+          "max_vcpus": 2,
+          "max_ram_mb": 6144,
           "max_disk_gb": 16,
-          "max_total_vcpus": 1,
-          "max_total_ram_mb": 4096,
+          "max_total_vcpus": 2,
+          "max_total_ram_mb": 6144,
           "max_total_disk_gb": 32
         }
       }
@@ -126,7 +183,7 @@
     {
       "id": "pro",
       "price": {
-        "monthly": 3900,
+        "monthly": 4000,
         "annual": null
       },
       "stripePriceEnv": {
@@ -171,7 +228,7 @@
         "resourceLimits": {
           "max_workspaces": 6,
           "max_vcpus": 2,
-          "max_ram_mb": 6144,
+          "max_ram_mb": 8192,
           "max_disk_gb": 32,
           "max_total_vcpus": 4,
           "max_total_ram_mb": 8192,
@@ -294,24 +351,24 @@
   ],
   "creditPacks": [
     {
-      "id": "pack_500",
-      "creditsMilli": 500000,
-      "priceCents": 700,
-      "stripePriceEnv": "STRIPE_PRICE_PACK_500",
+      "id": "pack_400",
+      "creditsMilli": 400000,
+      "priceCents": 500,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_400",
       "sortOrder": 10
     },
     {
-      "id": "pack_2k",
-      "creditsMilli": 2000000,
-      "priceCents": 2500,
-      "stripePriceEnv": "STRIPE_PRICE_PACK_2K",
+      "id": "pack_1700",
+      "creditsMilli": 1700000,
+      "priceCents": 2000,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_1700",
       "sortOrder": 20
     },
     {
-      "id": "pack_5k",
-      "creditsMilli": 5000000,
-      "priceCents": 6000,
-      "stripePriceEnv": "STRIPE_PRICE_PACK_5K",
+      "id": "pack_4500",
+      "creditsMilli": 4500000,
+      "priceCents": 5000,
+      "stripePriceEnv": "STRIPE_PRICE_PACK_4500",
       "sortOrder": 30
     }
   ],
