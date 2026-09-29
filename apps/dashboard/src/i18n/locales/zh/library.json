@@ -45,6 +45,20 @@
       "ghCliDesc": "使用你本机的 GitHub 登录。无需云端。",
       "useGhCli": "使用 gh CLI",
       "connecting": "连接中…"
+    },
+    "installationPicker": {
+      "title": "选择 GitHub 访问权限",
+      "description": "为此工作区选择现有的 App 安装。",
+      "sharedHint": "在此使用不会更改其他 Openship 连接。",
+      "connect": "使用此账户",
+      "connected": "已连接",
+      "installAnother": "在其他 GitHub 账户上安装",
+      "failed": "无法连接此安装。",
+      "tryAgain": "重新开始",
+      "successTitle": "GitHub 已连接",
+      "successDescription": "仓库访问已就绪，可以返回 Openship。",
+      "errorTitle": "GitHub 连接需要处理",
+      "returnToApp": "返回资源库"
     }
   },
   "folderUpload": {

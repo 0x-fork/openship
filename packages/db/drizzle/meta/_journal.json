@@ -1079,6 +1079,13 @@
       "when": 1790605200000,
       "tag": "0153_durable_credit_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1790670000000,
+      "tag": "0154_github_repository_authorization",
+      "breakpoints": true
     }
   ]
 }

@@ -207,8 +207,8 @@ export const githubApi = {
    *   - "cli"   → only consider the gh CLI source.
    *   - omit    → server picks based on installation auth mode.
    */
-  connect: (source?: "oauth" | "cli") =>
-    api.post<any>(endpoints.github.connect, source ? { source } : undefined),
+  connect: (source?: "oauth" | "cli", state?: string) =>
+    api.post<any>(endpoints.github.connect, source || state ? { source, state } : undefined, { timeout: 60_000 }),
 
   /**
    * Connect this instance with a pasted GitHub token. Validated server-side
@@ -222,7 +222,7 @@ export const githubApi = {
     ),
 
   /** Poll device flow status */
-  pollConnect: () => api.get<any>(endpoints.github.connectPoll),
+  pollConnect: (state?: string) => api.get<any>(endpoints.github.connectPoll, state ? { params: { state }, dedupe: false } : undefined),
 
   /** Finalize a workspace-bound GitHub App installation callback. */
   claimInstallation: (input: { state: string; installationId: string; setupAction?: string }) =>
@@ -230,7 +230,7 @@ export const githubApi = {
       ok: boolean;
       pendingApproval?: boolean;
       installation?: { login?: string };
-    }>(endpoints.github.installationClaim, input),
+    }>(endpoints.github.installationClaim, input, { timeout: 60_000 }),
 
   /**
    * Disconnect a GitHub source.

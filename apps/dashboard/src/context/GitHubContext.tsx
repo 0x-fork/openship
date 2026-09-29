@@ -1,15 +1,17 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
-import { GITHUB_SOURCES_CHANGED_EVENT, githubApi } from "@/lib/api";
+import { GITHUB_SOURCES_CHANGED_EVENT, githubApi, settingsApi } from "@/lib/api";
 import { endpoints } from "@/lib/api/endpoints";
 import { ApiError, getApiErrorMessage, isAbortError, isNetworkError } from "@/lib/api/client";
 import { resolveApiNavigationUrl } from "@/lib/api/urls";
 import { openAuthWindow } from "@/utils/authWindow";
 import { useToast } from "@/context/ToastContext";
 import { consumeGitHubConnectError, githubConnectErrorMessage } from "@/lib/github-connect-error";
-import type { GitHubConnectionState, MappedAccount, MappedRepository } from "@repo/contracts";
-export type { GitHubConnectionState } from "@repo/contracts";
+import type { GitHubCapabilities, GitHubConnectionState, GitHubInstallationSelection, MappedAccount, MappedRepository } from "@repo/contracts";
+export type { GitHubCapabilities, GitHubConnectionState } from "@repo/contracts";
+import { GitHubInstallationDialog } from "@/components/github/GitHubInstallationPicker";
+import { useI18n } from "@/components/i18n-provider";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -108,19 +110,6 @@ interface GitHubContextValue {
   capabilities: GitHubCapabilities | null;
 }
 
-export interface GitHubCapabilities {
-  platform: "saas" | "selfhosted";
-  desktop: boolean;
-  primary: "device" | "token" | "app" | "ssh-key" | "forwarding" | null;
-  methods: Array<{
-    kind: "device" | "token" | "app" | "ssh-key" | "forwarding";
-    available: boolean;
-    configured: boolean;
-    requiresCloud?: boolean;
-    unavailableReason?: string;
-  }>;
-}
-
 export type CliAction =
   | { type: "terminal"; command: string; message: string }
   /** No device client id on this instance — collect a token in the UI instead of
@@ -188,6 +177,8 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   // env.CLOUD_MODE during the initial dashboard layout. We deliberately
   // don't shadow it here.
   const { showToast } = useToast();
+  const { t } = useI18n();
+  const [installationSelection, setInstallationSelection] = useState<GitHubInstallationSelection | null>(null);
   const [state, setState] = useState<GitHubConnectionState>(initialData?.state ?? EMPTY_STATE);
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(!initialData);
@@ -306,7 +297,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
 
   /* ── Connect GitHub ─────────────────────────────────────────── */
   const connect = useCallback(
-    async (source?: "oauth" | "cli") => {
+    async (source?: "oauth" | "cli", installation?: GitHubInstallationSelection) => {
       if (connectInFlight.current) return;
       // An earlier popup may have closed before its callback committed. Stop
       // that observer before starting a new attempt, including its late reads.
@@ -321,8 +312,10 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
       let reservedWindow: ReturnType<typeof openAuthWindow> | null = null;
       setConnecting(true);
       setCliAction(null);
+      setInstallationSelection(null);
 
       let active = true;
+      let attemptState: string | undefined;
       let redirectTimeout: number | null = null;
       let pollTimer: number | null = null;
       const cleanup = () => {
@@ -352,7 +345,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
         window.dispatchEvent(new Event(GITHUB_SOURCES_CHANGED_EVENT));
       };
       const finishCallbackError = () => {
-        const linkError = consumeGitHubConnectError();
+        const linkError = consumeGitHubConnectError(undefined, attemptState);
         if (!linkError) return false;
         finishRedirectFlow();
         showToast(githubConnectErrorMessage(linkError), "error", "GitHub");
@@ -361,17 +354,26 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
 
       try {
         reservedWindow = source === "cli" ? null : openAuthWindow();
-        const res = await githubApi.connect(source);
+        const res = installation
+          ? { connected: false, flow: "redirect", step: "install", completion: "attempt", url: installation.installUrl, state: installation.state }
+          : await githubApi.connect(source);
         if (!active) return;
 
         // Already connected - just refresh
         if (res?.connected) {
           finishRedirectFlow();
+          showToast(t.library.connect.installationPicker.successTitle, "success", "GitHub");
           return;
         }
 
         switch (res?.flow) {
+          case "installations":
+            cleanup();
+            finishConnect();
+            setInstallationSelection(res);
+            return;
           case "redirect": {
+            attemptState = res.completion === "attempt" ? res.state : undefined;
             const handle = reservedWindow ?? openAuthWindow();
             reservedWindow = handle;
             if (handle.blocked) {
@@ -392,7 +394,6 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
               typeof res.url === "string" ? res.url : endpoints.github.connectRedirect,
             );
             let checking = false;
-            let windowReturned = false;
             let lastError: string | null = null;
             const checkCompletion = async () => {
               if (!active || checking) return;
@@ -400,6 +401,21 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
               if (finishCallbackError()) return;
               checking = true;
               try {
+                if (res.completion === "attempt") {
+                  if (!res.state) throw new Error("GitHub did not return a connection attempt. Start again.");
+                  const progress = await githubApi.pollConnect(res.state);
+                  if (!active) return;
+                  lastError = null;
+                  if (progress.status === "complete") {
+                    finishRedirectFlow();
+                    showToast(t.library.connect.installationPicker.successTitle, "success", "GitHub");
+                  }
+                  else if (progress.status === "error") {
+                    finishRedirectFlow();
+                    showToast(progress.error || "GitHub connection failed. Please try again.", "error", "GitHub");
+                  }
+                  return;
+                }
                 const status = await githubApi.getStatus({ includeInstallUrl: false });
                 if (!active) return;
                 lastError = null;
@@ -429,7 +445,6 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
             };
             handle.onClose(() => {
               if (!active) return;
-              windowReturned = true;
               // Closing a popup (or returning to Electron) allows another
               // attempt, but is not proof that GitHub finished. Keep observing:
               // focus and cross-origin window isolation can arrive BEFORE the
@@ -443,8 +458,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
               if (!active) return;
               finishConnect();
               cleanup();
-              if (!windowReturned)
-                showToast(
+              showToast(
                   lastError
                     ? `Could not confirm the GitHub connection: ${lastError}`
                     : "GitHub connection was not confirmed. Finish authorization and repository access in the GitHub window, then try again.",
@@ -483,18 +497,16 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
             return;
 
           default:
-            cleanup();
-            finishConnect();
+            throw new Error("GitHub returned an incomplete connection response. Try again or use a personal token.");
         }
       } catch (err) {
         if (!active) return;
         cleanup();
         finishConnect();
-        if (isAbortError(err) || isNetworkError(err)) return;
         showToast(getApiErrorMessage(err, "Failed to connect to GitHub"), "error", "GitHub");
       }
     },
-    [refresh, showToast],
+    [refresh, showToast, t],
   );
 
   /* ── Connect with a pasted token ────────────────────────────── */
@@ -510,11 +522,18 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
       // Throws on an invalid / under-scoped token so the caller can render the
       // server's reason on the field it came from. refresh() drops the cached
       // status and re-pulls, which is what propagates the identity app-wide.
-      await githubApi.setInstanceToken(token);
+      const methods: GitHubCapabilities | undefined = capabilities ?? (await githubApi.getStatus({ includeInstallUrl: false }))?.capabilities;
+      const tokenMethod = methods?.methods.find((method) => method.kind === "token");
+      if (tokenMethod?.available === false) throw new Error(tokenMethod.unavailableReason || "Token connection isn't available for this account.");
+      if (tokenMethod?.credentialScope === "user" || methods?.platform === "saas") {
+        await settingsApi.updateCloneCredentials({ token, asDefault: true });
+      } else if (methods?.platform === "selfhosted") {
+        await githubApi.setInstanceToken(token);
+      } else throw new Error("Could not load GitHub connection options. Refresh and try again.");
       setCliAction(null);
       await refresh(true);
     },
-    [cancelPendingConnect, refresh],
+    [cancelPendingConnect, refresh, capabilities],
   );
 
   /* ── Disconnect GitHub ──────────────────────────────────────── */
@@ -646,6 +665,14 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
       }}
     >
       {children}
+      {installationSelection && <GitHubInstallationDialog selection={installationSelection}
+            onClose={() => setInstallationSelection(null)}
+            onInstall={() => void connect("oauth", installationSelection)} onRestart={() => void connect("oauth")}
+            onComplete={() => {
+              setInstallationSelection(null);
+              window.dispatchEvent(new Event(GITHUB_SOURCES_CHANGED_EVENT));
+              showToast(t.library.connect.installationPicker.successTitle, "success", "GitHub");
+            }} />}
     </GitHubContext.Provider>
   );
 }

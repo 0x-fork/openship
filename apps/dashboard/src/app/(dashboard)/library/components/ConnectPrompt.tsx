@@ -91,8 +91,9 @@ export function ConnectPrompt({
   const isDesktop = capabilities?.desktop ?? deployMode === "desktop";
   const can = (kind: "device" | "token" | "app" | "ssh-key" | "forwarding") => {
     const m = capabilities?.methods.find((x) => x.kind === kind);
-    return m ? m.available : selfHosted;
+    return m ? m.available : kind === "token" || selfHosted;
   };
+  const leadWithApp = (capabilities?.primary ?? (selfHosted ? null : "app")) === "app";
   const cardCount = (can("device") ? 1 : 0) + (can("token") || can("ssh-key") ? 1 : 0);
 
   // No device client id on this instance → collect a token here rather than
@@ -211,7 +212,7 @@ export function ConnectPrompt({
             : t.library.connect.default.descSaas}
         </p>
 
-        {!isDesktop && selfHosted && can("token") ? (
+        {!leadWithApp && !isDesktop && selfHosted && can("token") ? (
           // VPS / remote self-hosted: the API runs in a container with no `gh`
           // and no shell, so there's no `gh auth login` to hint at and no reason
           // to bounce to Settings — paste a token right here. This IS the empty
@@ -219,7 +220,7 @@ export function ConnectPrompt({
           <div className="max-w-md mx-auto text-start">
             <TokenField onSaved={onRefresh} />
           </div>
-        ) : can("device") || can("token") ? (
+        ) : !leadWithApp && (can("device") || can("token")) ? (
           // Desktop: sign in with GitHub (device code, nothing to register), or
           // bring your own credential. A single card centers; two go side by side.
           // Openship Cloud is deliberately absent here — reachable in Settings.
@@ -274,7 +275,7 @@ export function ConnectPrompt({
             )}
           </div>
         ) : (
-          // SaaS: one path — the Openship GitHub App via OAuth.
+          // The App remains the Cloud default when a personal token is available.
           <div className="flex flex-col items-center gap-3">
             <button
               onClick={() => onConnect("oauth")}
@@ -299,7 +300,7 @@ export function ConnectPrompt({
         <div className="mt-7">
           <Link
             href="/settings?tab=git"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             <UiIcon name="settings" className="size-3.5" />
             {t.library.connect.manageInSettings}

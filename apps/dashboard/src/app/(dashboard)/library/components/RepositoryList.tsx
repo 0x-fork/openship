@@ -185,16 +185,16 @@ export function RepositoryList({
               </button>
             ))}
             {installUrl ? (
-              <a
-                href={installUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={onInstall}
+                disabled={installing}
                 className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 text-muted-foreground transition-all hover:border-border hover:bg-muted/50 hover:text-foreground"
                 aria-label={t.library.repositoryList.addAccount}
                 title={t.library.repositoryList.addAccount}
               >
                 <UiIcon name="plus" className="size-4" />
-              </a>
+              </button>
             ) : null}
           </div>
         )}
