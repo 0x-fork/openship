@@ -97,12 +97,12 @@ const canonicalize = (value: unknown): unknown => {
   return value;
 };
 
-const canonicalSpec = (s: ComposeServiceSpec): string =>
-  JSON.stringify(canonicalize(toComposeSpec(s)));
+const composeValuesEqual = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 
 /** Compose-field equality (ignores routing + ordering-insensitive env). */
 export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) =>
-  canonicalSpec(a) === canonicalSpec(b);
+  composeValuesEqual(toComposeSpec(a), toComposeSpec(b));
 
 /** A raw source expression was replaced before inline edits had ownership
  * metadata. It may be an old interpolation result or an intentional edit. */
@@ -186,9 +186,6 @@ function reconcileComposeEnvironment(
     }),
   };
 }
-
-const composeValuesEqual = (a: unknown, b: unknown) =>
-  JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 
 /** Three-way merge maps by key; arrays and scalars are indivisible fields.
  * Local changes win only where they were made, including explicit deletions. */
@@ -604,6 +601,33 @@ export function normalizeRoutingFields(input: {
 
 export function createServiceRepo(db: Database, encryption: ConfigurationEncryption) {
   const codec = createConfigurationSecrets(encryption);
+
+  function writeUpdate(id: string, data: Partial<NewService>, updatedAt: Date | null = new Date()) {
+    return db
+      .update(service)
+      .set(codec.sealService({ ...data, ...(updatedAt === null ? {} : { updatedAt }) }))
+      .where(eq(service.id, id));
+  }
+
+  /** Both Compose writers compare decrypted values before sealing the patch.
+   * No-op syncs and import metadata must not mark unchanged containers dirty
+   * (#986). Every changed configuration field still requires a deployment. */
+  async function updateFromCompose(stored: Service, data: Partial<NewService>): Promise<Service> {
+    const changed = Object.entries(data).filter(
+      ([key, value]) => value !== undefined && !composeValuesEqual(stored[key as keyof Service], value),
+    );
+    if (changed.length === 0) return stored;
+
+    const patch = Object.fromEntries(changed) as Partial<NewService>;
+    const configChanged = changed.some(([key]) => key !== "importedSpec" && key !== "driftSpec");
+    // Omit the timestamp on metadata-only writes: setting the value we read
+    // could backdate a concurrent config edit. RETURNING includes those edits
+    // in the result instead of echoing a stale read over the persisted row.
+    const [updated] = await writeUpdate(stored.id, patch, configChanged ? new Date() : null).returning();
+    if (!updated) throw new Error("Service was removed during Compose synchronization");
+    return codec.openService(updated);
+  }
+
   return {
     // ── Services ───────────────────────────────────────────────────────
 
@@ -757,10 +781,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     },
 
     async update(id: string, data: Partial<NewService>) {
-      await db
-        .update(service)
-        .set(codec.sealService({ ...data, updatedAt: new Date() }))
-        .where(eq(service.id, id));
+      await writeUpdate(id, data);
     },
 
     async remove(id: string) {
@@ -970,22 +991,15 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         if (ex) {
           // Update existing - preserve the operator's `enabled` choice AND their
           // `sortOrder` (dashboard reordering); the compose YAML carries neither.
-          // One computed patch for both the write and the echoed row, or the
-          // returned Service would disagree with what was stored.
           const patch = composeWritePatch(p, ex, composeAuthoritative);
-          await this.update(ex.id, {
-            ...patch,
-            ...routing,
-            ...(composeAuthoritative ? { importedSpec: toComposeSpec(p), driftSpec: null } : {}),
-            // enabled + sortOrder left as-is (already on ex)
-          });
-          results.push({
-            ...ex,
-            ...patch,
-            ...routing,
-            ...(composeAuthoritative ? { importedSpec: toComposeSpec(p), driftSpec: null } : {}),
-            updatedAt: new Date(),
-          } as Service);
+          results.push(
+            await updateFromCompose(ex, {
+              ...patch,
+              ...routing,
+              ...(composeAuthoritative ? { importedSpec: toComposeSpec(p), driftSpec: null } : {}),
+              // enabled + sortOrder left as-is (already on ex)
+            }),
+          );
         } else {
           const importedSpec = composeAuthoritative ? toComposeSpec(p) : undefined;
           // Create new - new compose services default to enabled.
@@ -1076,27 +1090,19 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         const ours = toComposeSpec(ex);
 
         const merged = reconcileComposeSpec(ours, base, theirs, p);
-        if (
-          !composeSpecsEqual(ours, merged) ||
-          base === null ||
-          !composeSpecsEqual(base, theirs) ||
-          !Object.hasOwn(base, "buildArgs") ||
-          ex.driftSpec
-        ) {
-          await this.update(ex.id, {
-            ...merged,
-            ...normalizeRoutingFields({
-              exposed: ex.exposed,
-              exposedPort: ex.exposedPort,
-              domain: ex.domain,
-              customDomain: ex.customDomain,
-              domainType: ex.domainType,
-              publicEndpoints: ex.publicEndpoints,
-            }),
-            importedSpec: theirs,
-            driftSpec: null,
-          });
-        }
+        await updateFromCompose(ex, {
+          ...merged,
+          ...normalizeRoutingFields({
+            exposed: ex.exposed,
+            exposedPort: ex.exposedPort,
+            domain: ex.domain,
+            customDomain: ex.customDomain,
+            domainType: ex.domainType,
+            publicEndpoints: ex.publicEndpoints,
+          }),
+          importedSpec: theirs,
+          driftSpec: null,
+        });
       }
 
       // An env_var row is an operator edit too. Removing a service cascades to
