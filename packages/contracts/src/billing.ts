@@ -100,7 +100,7 @@ export const BillingOperationSchemas = {
   getCheckout: {
     action: "read",
     input: Type.Object(
-      { checkoutId: Type.String({ pattern: "^cs_[A-Za-z0-9_]+$", maxLength: 255 }) },
+      { checkoutId: Type.String({ pattern: "^(?:cs_[A-Za-z0-9_]+|bco_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$", maxLength: 255 }) },
       { additionalProperties: false },
     ),
     output: BillingCheckoutStatusSchema,

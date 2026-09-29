@@ -381,9 +381,22 @@ export class OblienBillingApi {
   }
 
   async createCheckout(input: OblienCheckout) {
-    const result = await this.validate(this.billing.checkout(input), checkoutSchema);
-    this.validateHostedUrl(result.url, "checkout.stripe.com");
+    // Oblien validates admin-issued codes against the authenticated reseller
+    // and this saved namespace offer before creating the Stripe session.
+    const request = { ...input, allowPromotionCodes: true };
+    const result = await this.validate(this.billing.checkout(request), checkoutSchema);
+    this.validateCheckoutUrl(result.url);
     return result;
+  }
+
+  private validateCheckoutUrl(value: string): void {
+    const url = new URL(value);
+    if (url.hostname === "api.oblien.com") {
+      this.validateHostedUrl(value, "api.oblien.com");
+      if (url.pathname === "/billing/pay" && !url.search && /^#[A-Za-z0-9_-]{43}$/.test(url.hash)) return;
+      throw new AppError("Cloud billing returned an invalid hosted URL", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
+    }
+    this.validateHostedUrl(value, "checkout.stripe.com");
   }
 
   private validateHostedUrl(value: string, hostname: string): void {
