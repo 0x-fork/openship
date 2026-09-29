@@ -180,7 +180,7 @@ The current API has **424 unique tools**. Permission tags below describe the rou
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
 | `delete_github_repos_by_owner_by_repo_webhooks`<br />`DELETE /api/github/repos/:owner/:repo/webhooks` | Delete a repository webhook identified by body.hookId. Read the repository webhook list first; removing it can stop automatic deployments. | `github:admin` |
-| `get_github_connect_poll`<br />`GET /api/github/connect/poll` | Read progress of an existing self-hosted GitHub device authorization. The user must complete GitHub’s browser approval; polling does not grant access. | `github:read`<br />Self-hosted |
+| `get_github_connect_poll`<br />`GET /api/github/connect/poll` | Read a GitHub connection attempt using its returned state, or self-hosted device authorization without a state. Completion means the requested connection committed; polling never grants access. | `github:read` |
 | `get_github_home`<br />`GET /api/github/home` | GitHub home: connection state, accounts, and repos in one call. | `github:read` |
 | `get_github_local_status`<br />`GET /api/github/local-status` | Read this self-hosted controller’s GitHub identity status and any connection problem. Local here means the Openship controller, not the MCP client. | `github:read`<br />Self-hosted |
 | `get_github_orgs_by_org_repos`<br />`GET /api/github/orgs/:org/repos` | List repositories in a GitHub org/account. | `github:list` |
@@ -193,7 +193,7 @@ The current API has **424 unique tools**. Permission tags below describe the rou
 | `get_github_repos_by_owner_by_repo_webhooks`<br />`GET /api/github/repos/:owner/:repo/webhooks` | List a repo's webhooks (to check push auto-deploy wiring). | `github:list` |
 | `get_github_sources`<br />`GET /api/github/sources` | List configured self-hosted GitHub App sources and their connection status without private keys. Requires workspace-owner access. | `github:admin`<br />Self-hosted |
 | `get_github_status`<br />`GET /api/github/status` | GitHub connection status for the org. | `github:read` |
-| `post_github_connect`<br />`POST /api/github/connect` | Start GitHub authorization and return the supported redirect, device-code or terminal flow. Give the returned URL/code to the user; do not claim connection until GitHub status confirms it. Browser approval remains outside MCP. | `github:write` |
+| `post_github_connect`<br />`POST /api/github/connect` | Start GitHub connection and return a redirect, installation selection, device code, or token instructions. Let the user complete approval in Openship or GitHub. For redirects with completion=attempt, poll using the returned state; existing connection status does not confirm a new installation. | `github:write` |
 | `post_github_repos_by_owner_by_repo_webhooks`<br />`POST /api/github/repos/:owner/:repo/webhooks` | Register Openship’s deployment webhook for this repository. Prefer the project auto-deploy tool when configuring an existing project; it chooses the correct delivery strategy. | `github:write` |
 | `post_github_sources_by_id_verify`<br />`POST /api/github/sources/:id/verify` | Verify a configured self-hosted GitHub App source and refresh its health status. Does not create an installation or return its credentials. | `github:admin`<br />Self-hosted |
 
@@ -563,6 +563,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/analytics/usage/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `POST /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /api/auth/callback/github` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /api/auth/cloud-callback` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /api/auth/desktop-auth-poll` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `POST /api/auth/desktop-auth-start` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
@@ -638,7 +639,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/domains/:id/verify/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/github/connect/redirect` | GitHub OAuth callback - no session yet during redirect |
 | `POST /api/github/disconnect` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
-| `POST /api/github/installations/claim` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
+| `POST /api/github/installations/claim` | The browser completes GitHub authorization and selects an installation. Use connect/status to start and inspect the connection. |
 | `POST /api/github/instance-token` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
 | `POST /api/github/repos` | GitHub repository creation is outside deployment management. Create repositories through GitHub, then deploy with Openship. |
 | `DELETE /api/github/repos/:owner/:repo` | Deleting the upstream GitHub repository is outside deployment management. Openship project removal does not delete source repositories. |

@@ -45,6 +45,20 @@
       "ghCliDesc": "Usa el inicio de sesión de GitHub de tu equipo. No hace falta la nube.",
       "useGhCli": "Usar la CLI de gh",
       "connecting": "Conectando…"
+    },
+    "installationPicker": {
+      "title": "Elige el acceso a GitHub",
+      "description": "Selecciona una instalación existente de la App para este espacio de trabajo.",
+      "sharedHint": "Tus otras conexiones de Openship se conservan.",
+      "connect": "Usar esta cuenta",
+      "connected": "Ya conectada",
+      "installAnother": "Instalar en otra cuenta de GitHub",
+      "failed": "No se pudo conectar esta instalación.",
+      "tryAgain": "Volver a empezar",
+      "successTitle": "GitHub conectado",
+      "successDescription": "El acceso a los repositorios está listo. Puedes volver a Openship.",
+      "errorTitle": "La conexión con GitHub necesita atención",
+      "returnToApp": "Volver a la biblioteca"
     }
   },
   "folderUpload": {

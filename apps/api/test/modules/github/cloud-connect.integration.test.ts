@@ -76,11 +76,11 @@ async function clients(actor: SeededOwner) {
 async function start(actor: SeededOwner) {
   const c = await clients(actor);
   const result = await c.http.github.connect();
-  if (result.connected || result.flow !== "redirect" || !result.state || !result.url) {
-    throw new Error("Expected a state-bound GitHub installation redirect");
+  if (result.connected || result.flow !== "installations") {
+    throw new Error("Expected a state-bound GitHub installation selection");
   }
-  expect(result.step).toBe("install");
-  expect(new URL(result.url).searchParams.get("state")).toBe(result.state);
+  expect(new URL(result.installUrl).searchParams.get("state")).toBe(result.state);
+  expect(result.installations).toMatchObject([{ id: 42, login: "Acme" }]);
   return { ...c, state: result.state };
 }
 
@@ -155,7 +155,11 @@ describe("Cloud GitHub installation through HTTP, shared engine, and database", 
         accounts: [{ login: "acme", source: "app" }],
         installUrl: "",
       });
-      expect(await client.github.connect({ source: "oauth" })).toEqual({ connected: true });
+      expect(await client.github.connect()).toEqual({ connected: true });
+      expect(await client.github.connect({ source: "oauth" })).toMatchObject({
+        flow: "installations", installations: [{ id: 42, connected: true }],
+      });
+      expect(await client.github.pollConnect({ state: c.state })).toEqual({ status: "complete" });
     }
     const other = await clients(await seedOwner());
     expect(await other.http.github.getStatus({ includeInstallUrl: false })).toMatchObject({

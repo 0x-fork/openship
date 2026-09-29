@@ -45,6 +45,20 @@
       "ghCliDesc": "استخدم تسجيل دخول GitHub على جهازك. لا حاجة إلى السحابة.",
       "useGhCli": "استخدم gh CLI",
       "connecting": "جارٍ الاتصال…"
+    },
+    "installationPicker": {
+      "title": "اختر الوصول إلى GitHub",
+      "description": "اختر تثبيتًا حاليًا للتطبيق لمساحة العمل هذه.",
+      "sharedHint": "استخدامه هنا لا يغيّر اتصالاتك الأخرى في Openship.",
+      "connect": "استخدم هذا الحساب",
+      "connected": "متصل بالفعل",
+      "installAnother": "ثبّت التطبيق على حساب GitHub آخر",
+      "failed": "تعذّر ربط هذا التثبيت.",
+      "tryAgain": "ابدأ من جديد",
+      "successTitle": "تم الاتصال بـ GitHub",
+      "successDescription": "الوصول إلى المستودعات جاهز. يمكنك العودة إلى Openship.",
+      "errorTitle": "اتصال GitHub يحتاج إلى مراجعة",
+      "returnToApp": "العودة إلى المكتبة"
     }
   },
   "folderUpload": {

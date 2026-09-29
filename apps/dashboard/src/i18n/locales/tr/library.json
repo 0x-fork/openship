@@ -36,6 +36,20 @@
       "ghCliDesc": "Makinenizin GitHub girişini kullanın. Bulut gerekmez.",
       "useGhCli": "gh CLI Kullan",
       "connecting": "Bağlanılıyor…"
+    },
+    "installationPicker": {
+      "title": "GitHub erişimini seçin",
+      "description": "Bu çalışma alanı için mevcut bir App kurulumunu seçin.",
+      "sharedHint": "Diğer Openship bağlantılarınız korunur.",
+      "connect": "Bu hesabı kullan",
+      "connected": "Zaten bağlı",
+      "installAnother": "Başka bir GitHub hesabına yükle",
+      "failed": "Bu kurulum bağlanamadı.",
+      "tryAgain": "Yeniden başla",
+      "successTitle": "GitHub bağlandı",
+      "successDescription": "Depolara erişim hazır. Openship’e dönebilirsiniz.",
+      "errorTitle": "GitHub bağlantısı ilgilenmenizi gerektiriyor",
+      "returnToApp": "Kütüphaneye dön"
     }
   },
   "folderUpload": {

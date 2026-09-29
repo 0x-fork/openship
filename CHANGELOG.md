@@ -7,6 +7,10 @@ the in-app updater surfaces critical advisories from `release-advisories.json`.
 
 ### Fixed
 
+- Cloud GitHub connections use separate repository authorization, so a GitHub
+  identity can connect multiple Openship accounts without transferring sign-in.
+  Existing installations can be selected, personal tokens remain available in
+  Git settings, and each connection reports its own completion or failure.
 - Compose deployments preserve unchanged image services across folder uploads
   and snapshot syncs. Import metadata updates no longer mark services dirty or
   overwrite the timestamp of a concurrent configuration edit. Changed project

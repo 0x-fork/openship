@@ -42,7 +42,7 @@ const capabilities = {
   primary: "app",
   methods: [
     { kind: "app", available: true },
-    { kind: "token", available: false },
+    { kind: "token", available: true, credentialScope: "user" },
     { kind: "device", available: false },
     { kind: "forwarding", available: false },
   ],
@@ -211,6 +211,24 @@ async function save(token = "ghp_alice") {
 }
 
 describe("Cloud personal-token onboarding", () => {
+  it("uses the personal-token endpoint from the connection chooser and updates the library immediately", async () => {
+    await render();
+    const method = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Access token"));
+    expect(method).toBeDefined();
+    await act(async () => method!.click());
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="GitHub token"]');
+    expect(input).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "ghp_alice");
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const connect = [...input!.parentElement!.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Connect")!;
+    await act(async () => connect.click());
+    expect(h.patch).toHaveBeenCalledWith(endpoints.settings.cloneCredentials, { token: "ghp_alice", asDefault: true });
+    expect(container.querySelector('[data-testid="repos"]')?.textContent).toBe("alice-repo");
+    expect(container.textContent).toContain("@alice");
+  });
+
   it("links alternative methods to Git settings and makes a saved token usable immediately", async () => {
     await render();
     expect(

@@ -1941,7 +1941,7 @@
     "github.connect": {
       "page": "github",
       "section": "Connect",
-      "description": "Start a supported GitHub connection flow.",
+      "description": "Start GitHub authorization or select an accessible App installation. Repository access is separate from Cloud sign-in.",
       "route": "POST /api/github/connect"
     },
     "github.claimInstallation": {
@@ -1959,7 +1959,7 @@
     "github.pollConnect": {
       "page": "github",
       "section": "Connect",
-      "description": "Poll an in-progress connection flow.",
+      "description": "Poll the returned state for one connection attempt, or omit state for a self-hosted device flow.",
       "route": "GET /api/github/connect/poll"
     },
     "github.setInstanceToken": {
@@ -2717,6 +2717,10 @@
     "GET /api/auth/*": {
       "page": "auth",
       "description": "Handle browser sessions and authentication through Better Auth."
+    },
+    "GET /api/auth/callback/github": {
+      "page": "auth",
+      "description": "Complete a browser-bound Cloud repository authorization; ordinary GitHub sign-in callbacks remain handled by Better Auth."
     },
     "POST /api/auth/*": {
       "page": "auth",

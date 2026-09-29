@@ -45,6 +45,20 @@
       "ghCliDesc": "お使いのマシンの GitHub ログインを使用します。クラウドは不要です。",
       "useGhCli": "gh CLI を使う",
       "connecting": "接続中…"
+    },
+    "installationPicker": {
+      "title": "GitHubへのアクセスを選択",
+      "description": "このワークスペースで使用する既存のAppインストールを選択してください。",
+      "sharedHint": "他のOpenship接続はそのまま維持されます。",
+      "connect": "このアカウントを使用",
+      "connected": "接続済み",
+      "installAnother": "別のGitHubアカウントにインストール",
+      "failed": "このインストールを接続できませんでした。",
+      "tryAgain": "やり直す",
+      "successTitle": "GitHubに接続しました",
+      "successDescription": "リポジトリへのアクセスが準備できました。Openshipに戻れます。",
+      "errorTitle": "GitHub接続の確認が必要です",
+      "returnToApp": "ライブラリに戻る"
     }
   },
   "folderUpload": {

@@ -12,6 +12,7 @@ import { appFetch, getUserToken } from "./github.auth";
 import type { GitSource } from "@repo/db";
 import { githubAppFetch } from "./github.app-client";
 import { sourceClientCredentials } from "./github-source.service";
+import { env } from "../../config/env";
 import type { GitHubInstallation } from "@repo/contracts";
 
 export type GitHubInstallationVerificationResult =
@@ -26,8 +27,16 @@ async function findUserInstallation(
   token: string,
   installationId: number,
 ): Promise<GitHubInstallation | null> {
+  for await (const batch of userInstallationPages(token)) {
+    const match = batch.find((installation) => installation.id === installationId);
+    if (match) return match;
+  }
+  return null;
+}
+
+async function* userInstallationPages(token: string): AsyncGenerator<GitHubInstallation[]> {
   const perPage = 100;
-  for (let page = 1; ; page++) {
+  for (let page = 1; page <= 50; page++) {
     const data = await ghFetch<{
       total_count: number;
       installations?: GitHubInstallation[];
@@ -39,12 +48,23 @@ async function findUserInstallation(
       throw new Error("GitHub returned an invalid installation count.");
     }
     const batch = data.installations ?? [];
-    const match = batch.find((installation) => installation.id === installationId);
-    if (match) return match;
+    yield batch;
     if (batch.length < perPage || page * perPage >= data.total_count) {
-      return null;
+      return;
     }
   }
+  throw new Error("GitHub returned too many installations. Narrow App access on GitHub and try again.");
+}
+
+/** Discover through this user's GitHub authorization, never another tenant's DB. */
+export async function listAvailableGitHubInstallations(userId: string): Promise<GitHubInstallation[]> {
+  const token = await getUserToken(userId);
+  if (!token) return [];
+  const installations: GitHubInstallation[] = [];
+  for await (const batch of userInstallationPages(token)) {
+    installations.push(...batch.filter((entry) => entry.app_id === Number(env.GITHUB_APP_ID) && !entry.suspended_at));
+  }
+  return installations;
 }
 
 export async function verifyGitHubInstallationForUser(
@@ -78,6 +98,7 @@ export async function verifyGitHubInstallationForUser(
   );
   if (
     appInstallation.id !== installationId ||
+    appInstallation.suspended_at ||
     appInstallation.account.id !== userInstallation.account.id ||
     appInstallation.app_id !== userInstallation.app_id
   ) {

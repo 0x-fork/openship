@@ -6,6 +6,9 @@ const h = vi.hoisted(() => ({
   stateFind: vi.fn(),
   stateConsume: vi.fn(),
   stateRemove: vi.fn(),
+  stateFailure: vi.fn(),
+  pendingApproval: vi.fn(),
+  authorize: vi.fn(),
   memberFind: vi.fn(),
   claim: vi.fn(),
   audit: vi.fn(),
@@ -23,6 +26,8 @@ vi.mock("@repo/db", () => ({
       find: h.stateFind,
       consume: h.stateConsume,
       remove: h.stateRemove,
+      recordFailure: h.stateFailure,
+      pendingApproval: h.pendingApproval,
     },
     member: { find: h.memberFind },
     gitInstallation: {
@@ -41,6 +46,9 @@ vi.mock("@repo/platform/engine/config/env", () => ({
 }));
 vi.mock("@repo/platform/engine/lib/org-actor", () => ({
   resolveOrgOwner: vi.fn(),
+}));
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: h.authorize },
 }));
 vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
   getInstallUrl: h.getInstallUrl,
@@ -81,6 +89,9 @@ describe("cloud GitHub App installation attribution", () => {
       state: "nonce",
       userId: "user_1",
       organizationId: "org_1",
+      flow: "install",
+      sourceId: null,
+      payload: {},
     });
     h.stateConsume.mockResolvedValue({
       state: "nonce",
@@ -88,6 +99,9 @@ describe("cloud GitHub App installation attribution", () => {
       organizationId: "org_1",
     });
     h.stateRemove.mockResolvedValue(undefined);
+    h.stateFailure.mockResolvedValue(undefined);
+    h.pendingApproval.mockResolvedValue(true);
+    h.authorize.mockResolvedValue(undefined);
     h.memberFind.mockResolvedValue({ id: "member_1", role: "member" });
     h.verify.mockResolvedValue({ kind: "ok", installation });
     h.claim.mockResolvedValue({ id: "installation_row" });
@@ -102,7 +116,7 @@ describe("cloud GitHub App installation attribution", () => {
   it("persists install state for the actual caller and active workspace", async () => {
     const result = await buildOrgScopedInstallUrl("member_1", "org_1");
 
-    expect(result.state).toHaveLength(32);
+    expect(result.state).toMatch(/^ghrepo_[A-Za-z0-9_-]{32}$/);
     expect(result.url).toBe(
       `https://github.com/apps/openship-io/installations/new?state=${result.state}`,
     );
@@ -150,7 +164,7 @@ describe("cloud GitHub App installation attribution", () => {
       kind: "forbidden",
       message: "You no longer have access to the Openship workspace that started this install.",
     });
-    expect(h.stateRemove).toHaveBeenCalledWith("nonce");
+    expect(h.stateFailure).toHaveBeenCalledWith("nonce", "user_1", "org_1", expect.stringContaining("no longer have access"));
     expect(h.verify).not.toHaveBeenCalled();
     expect(h.claim).not.toHaveBeenCalled();
   });
@@ -201,7 +215,7 @@ describe("cloud GitHub App installation attribution", () => {
     });
 
     expect(result).toEqual({ kind: "pending-approval" });
-    expect(h.stateConsume).toHaveBeenCalledWith("nonce");
+    expect(h.pendingApproval).toHaveBeenCalledWith("nonce", "user_1", "org_1");
     expect(h.verify).not.toHaveBeenCalled();
     expect(h.claim).not.toHaveBeenCalled();
   });

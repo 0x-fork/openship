@@ -949,6 +949,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "cluster_database", column: "envValueEncrypted" },
   { table: "user_settings", column: "cloudSessionToken" },
   { table: "user_settings", column: "cloneTokenEncrypted" },
+  { table: "user_settings", column: "githubAuthorizationEncrypted" },
   { table: "project", column: "cloneTokenEncrypted" },
   { table: "project", column: "webhookSecret" },
   { table: "cloud_webhook_binding", column: "webhookSecret" },
