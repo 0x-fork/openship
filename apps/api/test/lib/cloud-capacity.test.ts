@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { OperationError } from "@repo/contracts";
 const h = vi.hoisted(() => ({
   cloud: true,
   org: vi.fn(),
@@ -160,6 +161,22 @@ describe("Cloud allocation admission", () => {
       },
     });
   });
+  it("retains the effective builder size in a measured pool refusal", async () => {
+    const buildResources = { cpuCores: 0.25, memoryMb: 1024, diskMb: 8192 };
+    await expect(assertCloudWorkspaceCapacity({ ...input, requested: { ...input.requested, memoryMb: 4096 }, buildResources }))
+      .rejects.toMatchObject({ code: "CLOUD_CAPACITY_REQUIRED", details: { capacity: { buildResources } } });
+  });
+  it.each([null, { cpuCores: 0.25, memoryMb: 512, diskMb: 8192 }])("keeps build recovery after an asynchronous provider refusal: %j", (buildResources) => {
+    expect(cloudCapacityFailure({ code: "NAMESPACE_LIMIT_REACHED" }, "project", buildResources))
+      .toMatchObject({ code: "CLOUD_CAPACITY_REQUIRED", details: { projectId: "project", capacity: { buildResources } } });
+  });
+  it("preserves a typed build-limit recovery across the worker boundary", () => {
+    const error = new OperationError("Build too large", 402, "PLAN_UPGRADE_REQUIRED", {
+      projectId: "project", reason: "resource-tier",
+      capacity: { buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 32768 } },
+    });
+    expect(cloudCapacityFailure(new Error("Preparing workspace", { cause: error }), "project")).toBe(error);
+  });
   it("normalizes only the provider's namespace limit error without exposing provider payloads", () => {
     expect(
       cloudCapacityFailure(
@@ -177,5 +194,14 @@ describe("Cloud allocation admission", () => {
     for (const code of ["OWNER_LIMIT_REACHED", "FLEET_FULL", "INSUFFICIENT_CAPACITY", "UNKNOWN"]) {
       expect(cloudCapacityFailure({ code }, "project")).toBeNull();
     }
+  });
+  it("preserves a namespace refusal through adapter context without treating other causes as capacity", () => {
+    const refusal = Object.assign(new Error("Provider details"), { code: "NAMESPACE_LIMIT_REACHED" });
+    const error = new Error("Could not prepare the existing workspace", { cause: new Error("Could not resize", { cause: refusal }) });
+    expect(cloudCapacityFailure(error, "project")).toMatchObject({ code: "CLOUD_CAPACITY_REQUIRED", details: { projectId: "project" } });
+    const cyclic = new Error("not a capacity failure");
+    cyclic.cause = cyclic;
+    expect(cloudCapacityFailure(cyclic, "project")).toBeNull();
+    expect(cloudCapacityFailure(new Error("NAMESPACE_LIMIT_REACHED in a log line"), "project")).toBeNull();
   });
 });

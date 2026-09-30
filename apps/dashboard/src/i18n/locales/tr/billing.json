@@ -491,6 +491,17 @@
     "plans": "Planları karşılaştır",
     "close": "Kapat",
     "back": "Tahsislere dön",
+    "requested": "Dağıtım için istenen kaynaklar",
+    "build": "Derleme kaynakları",
+    "buildDescription": "Derlemeler havuzunuzun kullanılabilir kapasitesini kullanır. İsteğe bağlı bir sınır belirleyebilirsiniz; daha az kaynak derlemeyi yavaşlatabilir veya belleğin tükenmesine yol açabilir.",
+    "editBuild": "Derlemeyi ayarla",
+    "saveBuild": "Derleme kaynaklarını kaydet",
+    "requestChanged": "Kaynaklar değişti. Yeniden denemede güncellenen istek mevcut kapasiteyle karşılaştırılır.",
+    "buildUnavailable": "Bu proje artık Cloud’a dağıtılmıyor. Derleme kaynaklarını ayarlamak için proje ayarlarını açın.",
+    "buildInvalid": "En az 0.25 vCPU ve 128 MB bellek kullanın.",
+    "buildSaveError": "Derleme kaynakları kaydedilemedi. Hatayı inceleyip yeniden deneyin.",
+    "cancel": "İptal",
+    "imageOnly": "Hazır görüntüler: kaynak kodu derlemek için kaynak ayrılmaz.",
     "unavailable": {
       "permission": "Yeniden boyutlandırma için projeye ve servislerine yazma izni gerekir.",
       "deleting": "Bu proje siliniyor.",
@@ -500,6 +511,8 @@
       "unverified": "Bu çalışma alanının tahsisi doğrulanamadı.",
       "not-running": "Yeniden boyutlandırmadan önce bu çalışma alanını başlat.",
       "no-services": "Ayarlanacak etkin servis yok."
-    }
+    },
+    "automaticBuild": "Otomatik",
+    "customBuildLimit": "Sınır belirle"
   }
 }

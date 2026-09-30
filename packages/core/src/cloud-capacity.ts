@@ -28,12 +28,14 @@ export function cloudAllocationShortfalls(
   pool: CloudCapacityPool,
   requested: CloudAllocation,
   existing?: CloudAllocation | null,
+  /** Native service builds can create several workspaces in one deployment. */
+  additionalWorkspaces = existing ? 0 : 1,
 ): CloudCapacityShortfall[] {
   const additional = {
     cpuCores: Math.max(0, requested.cpuCores - (existing?.cpuCores ?? 0)),
     memoryMb: Math.max(0, requested.memoryMb - (existing?.memoryMb ?? 0)),
     diskMb: Math.max(0, requested.diskMb - (existing?.diskMb ?? 0)),
-    workspaces: existing ? 0 : 1,
+    workspaces: additionalWorkspaces,
   };
   return (Object.keys(additional) as CloudCapacityDimension[]).flatMap((dimension) => {
     const { used, max } = pool[dimension];

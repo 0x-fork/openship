@@ -46,8 +46,12 @@ export function cloudCapacityRequired(input: {
   pool: CloudCapacityPool;
   requested: CloudAllocation;
   existing?: CloudAllocation | null;
+  additionalWorkspaces?: number;
+  /** Null means this deployment uses only existing images. */
+  buildResources?: CloudAllocation | null;
+  buildMode?: "automatic" | "custom";
 }) {
-  const shortfalls = cloudAllocationShortfalls(input.pool, input.requested, input.existing);
+  const shortfalls = cloudAllocationShortfalls(input.pool, input.requested, input.existing, input.additionalWorkspaces);
   return new OperationError(
     "Your Cloud resource pool does not have enough available capacity. Adjust project allocations or choose a larger plan.",
     409,
@@ -66,6 +70,7 @@ export async function assertCloudWorkspaceCapacity(input: {
   organizationId: string;
   projectId: string;
   requested: CloudAllocation;
+  buildResources?: CloudAllocation | null;
   /** Only a verified, durable Docker host is resized in place. Native deploys
    * create replacement workspaces and must reserve their full allocation. */
   reuseDockerWorkspace: boolean;
@@ -100,6 +105,7 @@ export async function assertCloudWorkspaceCapacity(input: {
       pool,
       requested: input.requested,
       existing,
+      buildResources: input.buildResources,
     });
   }
 }
@@ -107,20 +113,37 @@ export async function assertCloudWorkspaceCapacity(input: {
 /** Retain actionable capacity errors across an asynchronous deployment failure.
  * Only an allowlisted provider code enters this recovery; account/fleet failures
  * keep their support diagnosis rather than encouraging an unnecessary upgrade. */
-export function cloudCapacityFailure(error: unknown, projectId: string): OperationError | null {
-  if (error instanceof OperationError && error.code === "CLOUD_CAPACITY_REQUIRED") return error;
-  const value = error as { code?: unknown; requestId?: unknown } | null;
-  if (typeof value?.code !== "string" || value.code.toUpperCase() !== "NAMESPACE_LIMIT_REACHED")
-    return null;
-  return new OperationError(
-    "Cloud capacity changed before this deployment could start. Review project allocations and retry.",
-    409,
-    "CLOUD_CAPACITY_REQUIRED",
-    {
-      projectId,
-      ...(typeof value.requestId === "string" && /^[a-f0-9-]{36}$/i.test(value.requestId)
-        ? { reference: value.requestId }
-        : {}),
-    },
-  );
+export function cloudCapacityFailure(
+  error: unknown,
+  projectId: string,
+  buildResources?: CloudAllocation | null,
+): OperationError | null {
+  const seen = new Set<unknown>();
+  // Adapter context must not hide an actionable provider refusal. Inspect only
+  // typed causes, never parse arbitrary messages or provider response bodies.
+  let current = error;
+  while (current && typeof current === "object" && seen.size < 8 && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof OperationError && (
+      current.code === "CLOUD_CAPACITY_REQUIRED" ||
+      (current.code === "PLAN_UPGRADE_REQUIRED" && current.details?.capacity)
+    )) return current;
+    const value = current as { code?: unknown; requestId?: unknown; cause?: unknown };
+    if (typeof value.code === "string" && value.code.toUpperCase() === "NAMESPACE_LIMIT_REACHED") {
+      return new OperationError(
+        "Cloud capacity changed before this deployment could start. Review project allocations and retry.",
+        409,
+        "CLOUD_CAPACITY_REQUIRED",
+        {
+          projectId,
+          ...(buildResources !== undefined ? { capacity: { buildResources } } : {}),
+          ...(typeof value.requestId === "string" && /^[a-f0-9-]{36}$/i.test(value.requestId)
+            ? { reference: value.requestId }
+            : {}),
+        },
+      );
+    }
+    current = value.cause;
+  }
+  return null;
 }

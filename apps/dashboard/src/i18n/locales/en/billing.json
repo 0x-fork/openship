@@ -491,6 +491,17 @@
     "plans": "Compare plans",
     "close": "Close",
     "back": "Back to allocations",
+    "requested": "Requested for deployment",
+    "build": "Build resources",
+    "buildDescription": "Builds use your pool’s available capacity. Set an optional cap; smaller builds may be slower or run out of memory.",
+    "editBuild": "Adjust build",
+    "saveBuild": "Save build resources",
+    "requestChanged": "Resources changed. Retry checks the updated request against current capacity.",
+    "buildUnavailable": "This project no longer deploys to Cloud. Open its settings to adjust build resources.",
+    "buildInvalid": "Use at least 0.25 vCPU and 128 MB of memory.",
+    "buildSaveError": "Could not save build resources. Review the error and try again.",
+    "cancel": "Cancel",
+    "imageOnly": "Prebuilt images: no source-build resources are reserved.",
     "unavailable": {
       "permission": "Project and service write access is required to resize this workspace.",
       "deleting": "This project is being deleted.",
@@ -500,6 +511,8 @@
       "unverified": "This workspace allocation could not be verified.",
       "not-running": "Start this workspace before resizing it.",
       "no-services": "No enabled services to adjust."
-    }
+    },
+    "automaticBuild": "Automatic",
+    "customBuildLimit": "Set a limit"
   }
 }

@@ -54,6 +54,7 @@ import {
 } from "../deployment-cancellation";
 import { assertExactServiceTargets } from "../exact-service-targets";
 import { strictRefreshImages } from "../pinned-artifacts";
+import { cloudCapacityFailure } from "../../../lib/cloud-capacity";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -82,6 +83,7 @@ export interface ComposePipelineOpts {
   composeInterpolationEnv: Record<string, string>;
   buildEnvVars: Record<string, string>;
   buildResources: ResourceConfig;
+  serviceBuildResources?: Record<string, ResourceConfig>;
   runtimeResources: ResourceConfig;
   gitToken?: string;
   /** Path to the git-credential relay helper on the build host (desktop relay).
@@ -303,6 +305,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     composeInterpolationEnv,
     buildEnvVars,
     buildResources,
+    serviceBuildResources: opts.serviceBuildResources,
     gitToken,
     gitCredentialHelperPath,
     gitSsh,
@@ -324,6 +327,13 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       keepProvisioned: keepProvisionedOnCancel(),
     });
     return;
+  }
+
+  const capacityFailure = composeBuild.buildErrorCauses
+    ?.map(cause => cloudCapacityFailure(cause, project.id, buildResources)).find(Boolean);
+  if (capacityFailure) {
+    await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
+    throw capacityFailure;
   }
 
   // An exact multi-service webhook is one coordinated rollout. If any selected

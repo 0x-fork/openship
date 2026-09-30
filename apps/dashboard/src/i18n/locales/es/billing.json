@@ -491,6 +491,17 @@
     "plans": "Comparar planes",
     "close": "Cerrar",
     "back": "Volver a las asignaciones",
+    "requested": "Solicitado para el despliegue",
+    "build": "Recursos de compilación",
+    "buildDescription": "Las compilaciones usan la capacidad disponible de tu grupo. Puedes establecer un límite; con menos recursos pueden ser más lentas o quedarse sin memoria.",
+    "editBuild": "Ajustar compilación",
+    "saveBuild": "Guardar recursos de compilación",
+    "requestChanged": "Los recursos cambiaron. Al reintentar se comprobará la solicitud actualizada con la capacidad disponible.",
+    "buildUnavailable": "Este proyecto ya no se despliega en Cloud. Abre sus ajustes para cambiar los recursos de compilación.",
+    "buildInvalid": "Usa al menos 0.25 vCPU y 128 MB de memoria.",
+    "buildSaveError": "No se pudieron guardar los recursos de compilación. Revisa el error y vuelve a intentarlo.",
+    "cancel": "Cancelar",
+    "imageOnly": "Imágenes precompiladas: no se reservan recursos para compilar el código fuente.",
     "unavailable": {
       "permission": "Se requiere permiso de escritura en el proyecto y sus servicios para cambiar el tamaño.",
       "deleting": "Se está eliminando este proyecto.",
@@ -500,6 +511,8 @@
       "unverified": "No se pudo verificar la asignación del espacio de trabajo.",
       "not-running": "Inicia este espacio antes de cambiar su tamaño.",
       "no-services": "No hay servicios habilitados para ajustar."
-    }
+    },
+    "automaticBuild": "Automático",
+    "customBuildLimit": "Establecer límite"
   }
 }

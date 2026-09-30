@@ -36,9 +36,8 @@ describe("shared Cloud capacity", () => {
     ).toEqual([]);
   });
   it("shows independent CPU, memory, disk and workspace shortages", () => {
-    const full = Object.fromEntries(
-      Object.entries(pool).map(([k, v]) => [k, { used: v.max, max: v.max }]),
-    ) as CloudCapacityPool;
+    const full = structuredClone(pool);
+    for (const meter of Object.values(full)) meter.used = meter.max ?? meter.used;
     expect(cloudAllocationShortfalls(full, micro).map((s) => s.dimension)).toEqual([
       "cpuCores",
       "memoryMb",

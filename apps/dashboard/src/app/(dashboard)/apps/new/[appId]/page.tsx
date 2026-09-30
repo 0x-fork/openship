@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   getAppTemplate,
@@ -64,6 +64,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useModal } from "@/context/ModalContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
+import { cloudDeployFailure } from "@/lib/cloud-deploy-pricing";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import { defaultDomainType } from "@/lib/default-domain-type";
@@ -417,6 +418,11 @@ export default function AppInstallPage() {
   const [isStopping, setIsStopping] = useState(false);
   const [cancelled, setCancelled] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(resumeDeploymentId);
+  const activeDeployment = useRef<string | null>(resumeDeploymentId);
+  useEffect(() => {
+    activeDeployment.current = deploymentId;
+    return () => { if (activeDeployment.current === deploymentId) activeDeployment.current = null; };
+  }, [deploymentId]);
   const [projectId, setProjectId] = useState<string | null>(adoptedProjectId);
   const [progress, setProgress] = useState(0);
   // Epoch ms this install started, for the progress panel's elapsed clock. Set
@@ -427,6 +433,8 @@ export default function AppInstallPage() {
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [logs, setLogs] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [cloudFailure, setCloudFailure] = useState<ApiError | null>(null);
+  const shownRecovery = useRef<string | null>(null);
   // The JSON-mapped install stepper's live state: real backend phase boundaries
   // (images → services → app-setup → ready) and per-service statuses, both fed by
   // SSE and replayed on reconnect. Empty object = all-pending preview.
@@ -634,20 +642,68 @@ export default function AppInstallPage() {
   // `action_required` / `reconciling` into a plain success/failure, so the true
   // DB status (and the precise liveUrl) comes from the read, not the stream.
   const settledRef = useRef(false);
+  const attachDeployment = useCallback((response: Awaited<ReturnType<typeof deployApi.buildAccess>>, targetPid: string) => {
+    const depId = response?.data?.deployment_id ?? response?.data?.deploymentId ?? response?.deployment_id;
+    if (typeof depId !== "string" || !depId) throw new Error(w.installFailed);
+    settledRef.current = false;
+    shownRecovery.current = null;
+    activeDeployment.current = depId;
+    setProjectId(targetPid);
+    setDeploymentId(depId);
+    setLogs("");
+    setPhases({});
+    setServices([]);
+    setProgress(0);
+    setLiveUrl(null);
+    setCancelled(false);
+    setErrorMsg("");
+    setCloudFailure(null);
+    setPhaseLabel(w.phaseQueued);
+    setStartedAt(Date.now());
+    setPhase("installing");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("deployment", depId);
+      url.searchParams.set("projectId", targetPid);
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      /* resume just won't survive a reload */
+    }
+  }, [w.installFailed, w.phaseQueued]);
+  const retryDeployment = useCallback(async function retry(): Promise<void> {
+    if (!deploymentId || !projectId || submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    try {
+      attachDeployment(await deployApi.buildRedeploy(deploymentId), projectId);
+    } catch (error) {
+      if (!showCloudPricing(error, retry)) showToast(getApiErrorMessage(error, w.installFailed), "error");
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }, [deploymentId, projectId, attachDeployment, showCloudPricing, showToast, w.installFailed]);
+  useEffect(() => {
+    if (phase !== "error" || !cloudFailure || !deploymentId || shownRecovery.current === deploymentId) return;
+    if (showCloudPricing(cloudFailure, retryDeployment)) shownRecovery.current = deploymentId;
+  }, [phase, cloudFailure, deploymentId, showCloudPricing, retryDeployment]);
   const resolveTerminal = async (fallback: {
     ok: boolean;
     message?: string;
+    errorCode?: string;
+    errorDetails?: Record<string, unknown>;
     /** This resolution is a CANCEL (the user's Stop, or an SSE `cancelled`), even
      *  if the DB row hasn't caught up yet. Load-bearing: a cancel must never
      *  inherit the generic failure message — see `settledMessage`. */
     cancelled?: boolean;
   }) => {
-    if (settledRef.current || !deploymentId) return;
+    if (settledRef.current || !deploymentId || activeDeployment.current !== deploymentId) return;
     settledRef.current = true;
     let status = "";
     let s: any = {};
     try {
       const res = await deployApi.getBuildStatus(deploymentId);
+      if (activeDeployment.current !== deploymentId) return;
       s = res?.data ?? res ?? {};
       status = s.deploymentStatus ?? s.status ?? "";
       // Prefer the server's full accumulated log over the streamed fragments.
@@ -655,10 +711,19 @@ export default function AppInstallPage() {
     } catch {
       /* fall back to the SSE outcome below */
     }
+    if (activeDeployment.current !== deploymentId) return;
     // A cancelled deploy (user Stop, or resuming one) is a neutral outcome, not a
     // failure — flag it so the error screen reads as "cancelled".
     const isCancel = status === "cancelled" || fallback.cancelled === true;
     if (isCancel) setCancelled(true);
+    const failureProjectId = typeof s.project_id === "string" ? s.project_id : projectId;
+    if (failureProjectId) setProjectId(failureProjectId);
+    setCloudFailure(isCancel ? null : cloudDeployFailure({
+      errorCode: s.errorCode ?? fallback.errorCode,
+      errorDetails: s.errorCode ? s.errorDetails : fallback.errorDetails,
+      errorMessage: s.failureMessage ?? s.errorMessage ?? fallback.message,
+      projectId: failureProjectId,
+    }));
     // The reason under the verdict — or nothing. A cancel never inherits the
     // failure fallback; see `installSettledMessage` for why.
     const settledMessage = () =>
@@ -713,7 +778,7 @@ export default function AppInstallPage() {
         if (typeof pct === "number") setProgress(pct);
       },
       onSuccess: () => void resolveTerminal({ ok: true }),
-      onFailure: (message) => void resolveTerminal({ ok: false, message }),
+      onFailure: (message, errorCode, errorDetails) => void resolveTerminal({ ok: false, message, errorCode, errorDetails }),
       onCanceled: () => {
         setCancelled(true);
         // The stream's cancel message is a fixed "Build cancelled" — the verdict
@@ -753,6 +818,8 @@ export default function AppInstallPage() {
           await resolveTerminal({
             ok: status === "ready" || status === "no_changes",
             message: s.failureMessage,
+            errorCode: s.errorCode,
+            errorDetails: s.errorDetails,
             cancelled: status === "cancelled",
           });
           return;
@@ -1146,15 +1213,6 @@ export default function AppInstallPage() {
     }
     const routes = await validatedRouteChoices();
     if (!routes) return;
-    setDeploymentId(null);
-    setLogs("");
-    // Reset the live stepper so a re-install starts from a clean slate.
-    setPhases({});
-    setServices([]);
-    setProgress(0);
-    setLiveUrl(null);
-    setCancelled(false);
-    settledRef.current = false;
     // Flips true the moment a deployment is actually created. A preflight
     // failure rejects buildAccess BEFORE that, so `started` stays false and the
     // catch surfaces a toast instead of the full-screen error card.
@@ -1215,26 +1273,8 @@ export default function AppInstallPage() {
             deployTarget: destination?.deployTarget,
             serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
           });
-          const depId =
-            dep?.data?.deployment_id ?? dep?.data?.deploymentId ?? dep?.deployment_id ?? null;
-          setDeploymentId(depId);
+          attachDeployment(dep, targetPid);
           started = true;
-          // Persist the deployment id in the URL so a hard refresh mid-install
-          // resumes the progress view (re-attaches to the same SSE stream) instead
-          // of dropping back to the form. Client-only; best-effort.
-          if (depId) {
-            try {
-              const url = new URL(window.location.href);
-              url.searchParams.set("deployment", depId);
-              url.searchParams.set("projectId", targetPid);
-              window.history.replaceState(null, "", url.toString());
-            } catch {
-              /* resume just won't survive a reload */
-            }
-          }
-          setPhaseLabel(w.phaseQueued);
-          setStartedAt(Date.now());
-          setPhase("installing");
         } catch (err) {
           if (!started && showCloudPricing(err, () => startDeploy(targetPid))) return;
           const msg = getApiErrorMessage(err, w.installFailed).replace(
@@ -1343,6 +1383,7 @@ export default function AppInstallPage() {
     // Leaving the progress view (Retry / Back to form): drop the persisted
     // deployment id so a subsequent refresh doesn't resume a finished/failed run.
     const resetToForm = () => {
+      activeDeployment.current = null;
       settledRef.current = false;
       setPhases({});
       setServices([]);
@@ -1350,6 +1391,7 @@ export default function AppInstallPage() {
       setProgress(0);
       setLiveUrl(null);
       setErrorMsg("");
+      setCloudFailure(null);
       setDeploymentId(null);
       setCancelled(false);
       setStartedAt(null);
@@ -1483,6 +1525,11 @@ export default function AppInstallPage() {
         onGoToProject={() => projectId && router.push(`/projects/${projectId}`)}
         onViewBuild={() => deploymentId && router.push(`/build/${deploymentId}`)}
         onRetry={resetToForm}
+        recoveryAction={cloudFailure ? {
+          label: cloudFailure.status === 409 ? t.billing.capacityEditor.title : t.billing.deployGate.manageBilling,
+          pending: busy,
+          onClick: () => { showCloudPricing(cloudFailure, retryDeployment); },
+        } : undefined}
         onStop={stopInstall}
         isStopping={isStopping}
         cancelled={cancelled}

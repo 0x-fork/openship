@@ -491,6 +491,17 @@
     "plans": "Tarife vergleichen",
     "close": "Schließen",
     "back": "Zurück zu Zuweisungen",
+    "requested": "Für das Deployment angefordert",
+    "build": "Build-Ressourcen",
+    "buildDescription": "Builds nutzen die verfügbare Kapazität deines Pools. Du kannst ein Limit festlegen; kleinere Builds können langsamer sein oder zu wenig Arbeitsspeicher haben.",
+    "editBuild": "Build anpassen",
+    "saveBuild": "Build-Ressourcen speichern",
+    "requestChanged": "Die Ressourcen wurden geändert. Beim erneuten Versuch wird die aktualisierte Anfrage gegen die verfügbare Kapazität geprüft.",
+    "buildUnavailable": "Dieses Projekt wird nicht mehr in Cloud bereitgestellt. Öffne seine Einstellungen, um die Build-Ressourcen anzupassen.",
+    "buildInvalid": "Verwende mindestens 0.25 vCPU und 128 MB Arbeitsspeicher.",
+    "buildSaveError": "Build-Ressourcen konnten nicht gespeichert werden. Prüfe den Fehler und versuche es erneut.",
+    "cancel": "Abbrechen",
+    "imageOnly": "Vorgefertigte Images: Es werden keine Ressourcen für einen Quellcode-Build reserviert.",
     "unavailable": {
       "permission": "Zum Anpassen sind Schreibrechte für das Projekt und alle Dienste erforderlich.",
       "deleting": "Dieses Projekt wird gelöscht.",
@@ -500,6 +511,8 @@
       "unverified": "Die Workspace-Zuweisung konnte nicht bestätigt werden.",
       "not-running": "Starte diesen Workspace vor der Größenänderung.",
       "no-services": "Keine aktivierten Dienste zum Anpassen."
-    }
+    },
+    "automaticBuild": "Automatisch",
+    "customBuildLimit": "Limit festlegen"
   }
 }

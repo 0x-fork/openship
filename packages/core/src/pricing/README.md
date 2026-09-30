@@ -86,8 +86,12 @@ service slots. Reservations remain until activation or worker cleanup finishes;
 redeploying the same service does not consume a second slot.
 
 An image-only Compose app gets only its service allocation plus Docker/OS room:
-a default 512 MB service uses a 1 CPU / 1 GB host with an 8 GB disk. Source builds
-reserve additional RAM temporarily. After deployment, verified running container
+a default 0.5-vCPU / 512 MB service uses a 0.5-vCPU / 1 GB host with an 8 GB disk.
+Runtime and source builds share the same pool. The SaaS engine reads Oblien's
+effective limits and allocated usage before choosing temporary build CPU/RAM;
+saved build settings are upper limits, and an unset setting uses available
+headroom. It protects the runtime allocation and does not borrow pending savings.
+After deployment, verified running container
 limits determine whether CPU/RAM can be released under the project runtime lock.
 Disks never shrink automatically. Unknown/unbounded containers prevent automatic
 downsizing. Captured running services are restored after a resize; intentionally

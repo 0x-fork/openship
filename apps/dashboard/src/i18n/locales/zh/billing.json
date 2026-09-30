@@ -491,6 +491,17 @@
     "plans": "比较套餐",
     "close": "关闭",
     "back": "返回资源分配",
+    "requested": "部署所需资源",
+    "build": "构建资源",
+    "buildDescription": "构建使用资源池中的可用容量。可按需设置上限；资源较少可能导致构建变慢或内存不足。",
+    "editBuild": "调整构建",
+    "saveBuild": "保存构建资源",
+    "requestChanged": "资源已更改。重试时将根据当前可用容量检查更新后的请求。",
+    "buildUnavailable": "此项目已不再部署到 Cloud。请打开项目设置以调整构建资源。",
+    "buildInvalid": "请至少分配 0.25 vCPU 和 128 MB 内存。",
+    "buildSaveError": "无法保存构建资源。请检查错误后重试。",
+    "cancel": "取消",
+    "imageOnly": "预构建镜像：不会预留源代码构建资源。",
     "unavailable": {
       "permission": "调整此工作区大小需要项目及其服务的写入权限。",
       "deleting": "正在删除此项目。",
@@ -500,6 +511,8 @@
       "unverified": "无法验证此工作区的资源分配。",
       "not-running": "请先启动此工作区，再调整大小。",
       "no-services": "没有可调整的已启用服务。"
-    }
+    },
+    "automaticBuild": "自动",
+    "customBuildLimit": "设置上限"
   }
 }

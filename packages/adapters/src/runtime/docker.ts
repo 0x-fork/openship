@@ -31,7 +31,7 @@
 /// <reference path="./tar-fs.d.ts" />
 import Dockerode from "dockerode";
 import * as tarFs from "tar-fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createGzip } from "node:zlib";
 import { StringDecoder } from "node:string_decoder";
 
@@ -1592,6 +1592,14 @@ export class DockerRuntime implements RuntimeAdapter {
     // `--force-rm` is a legacy-builder concept (BuildKit keeps no intermediate
     // containers to remove), so it goes when BuildKit is on.
     const buildKit = await this.remoteBuildKitAvailable();
+    // Cloud hosts also run the project's services. Their builder must stay
+    // inside the headroom selected by the engine. The daemon's default
+    // BuildKit driver ignores --memory/--cpu-quota, so bound its worker instead.
+    const cloudLimits = this.connectionOptions?.transport === "cloud" ? dockerBuildResourceLimits(config.resources) : undefined;
+    const boundedBuildKit = buildKit && cloudLimits && Object.keys(cloudLimits).length > 0;
+    const builderName = boundedBuildKit
+      ? `openship-${createHash("sha256").update(config.projectId).digest("hex").slice(0, 24)}` : undefined;
+    const removeBuilder = builderName ? `docker buildx rm --force --keep-state ${sq(builderName)}` : undefined;
     const builderEnv = buildKit ? "DOCKER_BUILDKIT=1 " : "";
     const ownershipHost = buildKit ? null : newBuildOwnershipHost();
     // `--progress` is a buildx flag, NOT a docker-build flag: a CLI without the
@@ -1599,9 +1607,13 @@ export class DockerRuntime implements RuntimeAdapter {
     // it ever looks at the context. `--force-rm` is the mirror image — a legacy-only
     // concept (BuildKit keeps no intermediate containers to remove). So the flag set
     // follows the builder; passing either unconditionally breaks one of the two.
-    const builderFlags = buildKit
+    let builderFlags = buildKit
       ? " --progress=plain"
       : ` --force-rm --add-host ${sq(`${ownershipHost}:127.0.0.1`)}`;
+    if (!buildKit && cloudLimits) {
+      if (cloudLimits.memory) builderFlags += ` --memory ${cloudLimits.memory} --memory-swap ${cloudLimits.memory}`;
+      if (cloudLimits.cpuquota) builderFlags += ` --cpu-quota ${cloudLimits.cpuquota} --cpu-period ${cloudLimits.cpuperiod}`;
+    }
     if (buildKit) {
       log.log("Builder: BuildKit (docker buildx detected on the host)");
     } else if (opts?.requiresBuildKit) {
@@ -1625,10 +1637,28 @@ export class DockerRuntime implements RuntimeAdapter {
     // prints terse "#N 0.xx" lines and DROPS the failed step's actual stdout/stderr
     // (an OOM-killed `bun install`, a tsup error, …), so a failed build surfaced only
     // as a bare "exited with code 1". Plain progress streams every line through.
-    const buildCmd =
+    let buildCmd =
       `cd ${sq(remoteBuildDir)} && ` +
       `${builderEnv}docker build${builderFlags} -t ${sq(tag)}${dockerfileFlag} ` +
       `${labelArgs} ${buildArgs} .`;
+    if (boundedBuildKit) {
+      const driverOptions = [
+        ...(cloudLimits.memory ? [`memory=${cloudLimits.memory}`, `memory-swap=${cloudLimits.memory}`] : []),
+        ...(cloudLimits.cpuquota ? [`cpu-quota=${cloudLimits.cpuquota}`, `cpu-period=${cloudLimits.cpuperiod}`] : []),
+      ].map(option => `--driver-opt ${sq(option)}`).join(" ");
+      // One stable cache per project workspace; remove the worker after every
+      // build while retaining its cache for the next one. No global --use.
+      // The remote trap also runs if the control-plane stream disconnects.
+      buildCmd = [
+        "set -e",
+        `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
+        `${removeBuilder} >/dev/null 2>&1 || true`,
+        `docker buildx create --name ${sq(builderName!)} --driver docker-container ${driverOptions} --bootstrap`,
+        `cd ${sq(remoteBuildDir)}`,
+        `docker buildx build --builder ${sq(builderName!)} --load --progress=plain -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
+      ].join("\n");
+      log.log(`Build worker limited to ${describeResourceLimits(config.resources)}.\n`);
+    }
 
     log.log(
       `Running Docker build on remote (${Object.keys(resolvedBuildArgs).length} build argument${Object.keys(resolvedBuildArgs).length === 1 ? "" : "s"}; values hidden).`,
@@ -1646,7 +1676,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // an exit-137 diagnostic never claims a cap this path did not enforce.
     const diagnosticContext: DockerBuildDiagnosticContext = {
       configuredMemoryMb: config.resources.memoryMb,
-      memoryLimitApplied: false,
+      memoryLimitApplied: Boolean(cloudLimits?.memory),
     };
     const buildContainerTracker = buildKit
       ? null
@@ -1701,6 +1731,12 @@ export class DockerRuntime implements RuntimeAdapter {
       idleMonitor.stop();
       buildContainerTracker?.flush();
       signal?.removeEventListener("abort", forwardCancellation);
+      if (removeBuilder) {
+        // Cancellation can terminate the remote shell before its EXIT trap.
+        // Retry the same project's worker cleanup without the aborted signal.
+        await executor.exec(`${removeBuilder} >/dev/null 2>&1 || ! docker buildx inspect ${sq(builderName!)} >/dev/null 2>&1`)
+          .catch(error => log.log(`Cloud build worker cleanup is pending: ${safeErrorMessage(error)}\n`, "warn"));
+      }
     }
 
     log.log("─── end docker build output ───");

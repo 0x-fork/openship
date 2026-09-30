@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { CloudCapacityModal } from "./CloudCapacityModal";
+import { ApiError } from "@/lib/api/client";
+import type { CloudCapacityRestriction } from "@/lib/cloud-deploy-pricing";
 const h = vi.hoisted(() => ({
   capacity: vi.fn(),
   preview: vi.fn(),
@@ -12,14 +14,23 @@ const h = vi.hoisted(() => ({
   status: vi.fn(),
   close: vi.fn(),
   retry: vi.fn(),
+  resources: vi.fn(),
+  saveResources: vi.fn(),
 }));
 vi.mock("@/lib/api/billing", () => ({
   billingApi: { getCapacity: h.capacity, previewCapacity: h.preview, applyCapacity: h.apply },
 }));
 vi.mock("@/lib/api/deploy", () => ({ deployApi: { getBuildStatus: h.status } }));
+vi.mock("@/lib/api/projects", () => ({ projectsApi: { getResources: h.resources, updateResources: h.saveResources } }));
 const copy = baseDictionary.billing.capacityEditor;
 const allocation = { cpuCores: 2, memoryMb: 2560, diskMb: 8192 };
 const after = { cpuCores: 1.25, memoryMb: 2048, diskMb: 8192 };
+const buildResources = { cpuCores: 1, memoryMb: 2048, diskMb: 32768 };
+const resourceView = {
+  requiresLimit: true,
+  build: buildResources,
+  production: { cpuCores: 0.25, memoryMb: 256, diskMb: 20480 },
+};
 const view = {
   pool: {
     cpuCores: { used: 4, max: 4 },
@@ -65,7 +76,7 @@ async function enter(name: string, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-async function render() {
+async function render(restriction: Partial<CloudCapacityRestriction> = {}) {
   await act(async () =>
     root!.render(
       <I18nProvider>
@@ -74,6 +85,7 @@ async function render() {
             code: "CLOUD_CAPACITY_REQUIRED",
             projectId: "new-project",
             requested: { cpuCores: 0.5, memoryMb: 1024, diskMb: 8192 },
+            ...restriction,
           }}
           onClose={h.close}
           onRetry={h.retry}
@@ -104,6 +116,8 @@ beforeEach(() => {
   });
   h.apply.mockResolvedValue({ deploymentId: "adjustment", projectId: "existing" });
   h.status.mockResolvedValue({ deploymentStatus: "building" });
+  h.resources.mockResolvedValue({ success: true, data: resourceView });
+  h.saveResources.mockImplementation(async (_id, input) => ({ success: true, data: { ...resourceView, ...input } }));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -117,6 +131,86 @@ afterEach(async () => {
 });
 
 describe("capacity recovery", () => {
+  it("restores automatic build sizing without changing production resources", async () => {
+    await render({ buildResources, buildMode: "custom" });
+    await click(copy.editBuild);
+    await click(copy.automaticBuild);
+    expect(container.querySelector(`input[aria-label="${copy.build} ${copy.cpuCores}"]`)).toBeNull();
+    await click(copy.saveBuild);
+    expect(h.saveResources).toHaveBeenCalledExactlyOnceWith("new-project", { build: null });
+    expect(h.apply).not.toHaveBeenCalled();
+    expect(h.retry).not.toHaveBeenCalled();
+  });
+  it("starts with automatic sizing and allows an optional build cap", async () => {
+    h.resources.mockResolvedValue({ success: true, data: { ...resourceView, buildMode: "automatic",
+      build: { cpuCores: 0, memoryMb: 0, diskMb: 32768 } } });
+    await render({ buildResources, buildMode: "automatic" });
+    await click(copy.editBuild);
+    expect(button(copy.automaticBuild).getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(`input[aria-label="${copy.build} ${copy.cpuCores}"]`)).toBeNull();
+    await click(copy.customBuildLimit);
+    await enter(`${copy.build} ${copy.cpuCores}`, "0.5");
+    await enter(`${copy.build} ${copy.memoryMb}`, "512");
+    await click(copy.saveBuild);
+    expect(h.saveResources).toHaveBeenCalledExactlyOnceWith("new-project", { build: { cpuCores: 0.5, memoryMb: 512, diskMb: 32768 } });
+  });
+  it("reduces only the next build and rechecks capacity instead of retaining a stale shortfall", async () => {
+    await render({ buildResources });
+    expect(button(copy.retryDeploy).disabled).toBe(true);
+    await click(copy.editBuild);
+    expect(h.resources).toHaveBeenCalledWith("new-project");
+    await enter(`${copy.build} ${copy.cpuCores}`, "0.25");
+    await enter(`${copy.build} ${copy.memoryMb}`, "512");
+    await act(async () => {
+      button(copy.saveBuild).click();
+      button(copy.saveBuild).click();
+    });
+    expect(h.saveResources).toHaveBeenCalledExactlyOnceWith("new-project", {
+      build: { cpuCores: 0.25, memoryMb: 512, diskMb: 32768 },
+    });
+    expect(h.apply).not.toHaveBeenCalled();
+    expect(h.retry).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(copy.requestChanged);
+    expect(container.textContent).not.toContain(copy.needCapacity);
+    expect(button(copy.retryDeploy).disabled).toBe(false);
+    await click(copy.retryDeploy);
+    expect(h.retry).toHaveBeenCalledOnce();
+  });
+  it("retains build edits and displays a failed save without claiming capacity is available", async () => {
+    h.saveResources.mockRejectedValue(new ApiError(403, "Forbidden", { error: "Project write access required" }));
+    await render({ buildResources });
+    await click(copy.editBuild);
+    await enter(`${copy.build} ${copy.cpuCores}`, "0.25");
+    await click(copy.saveBuild);
+    expect(container.textContent).toContain("Project write access required");
+    expect(container.querySelector<HTMLInputElement>(`input[aria-label="${copy.build} ${copy.cpuCores}"]`)?.value).toBe("0.25");
+    expect(container.textContent).not.toContain(copy.requestChanged);
+    expect(button(copy.retryDeploy).disabled).toBe(true);
+    expect(h.retry).not.toHaveBeenCalled();
+  });
+  it("does not offer build controls for image-only deployments", async () => {
+    await render({ buildResources: null });
+    expect(container.textContent).toContain(copy.imageOnly);
+    expect(container.textContent).not.toContain(copy.editBuild);
+    expect(h.resources).not.toHaveBeenCalled();
+  });
+  it("never changes self-hosted resources from Cloud recovery after a project changes target", async () => {
+    h.resources.mockResolvedValue({ success: true, data: { ...resourceView, requiresLimit: false } });
+    await render({ buildResources });
+    await click(copy.editBuild);
+    expect(container.textContent).toContain(copy.buildUnavailable);
+    expect(container.querySelector("form")).toBeNull();
+    expect(h.saveResources).not.toHaveBeenCalled();
+  });
+  it("shows a workspace build limit without inventing an additional pool reservation", async () => {
+    await render({ buildResources, scope: "workspace", message: "Build exceeds the workspace memory limit" });
+    expect(container.textContent).toContain("Build exceeds the workspace memory limit");
+    expect(container.textContent).not.toContain(copy.needCapacity);
+    await click(copy.editBuild);
+    expect(button(copy.retryDeploy).disabled).toBe(true);
+    await click(copy.cancel);
+    expect(h.saveResources).not.toHaveBeenCalled();
+  });
   it("requires review and restart confirmation before changing any resources", async () => {
     await render();
     expect(button(copy.retryDeploy).disabled).toBe(true);
@@ -162,6 +256,22 @@ describe("capacity recovery", () => {
     await click(copy.retryDeploy);
     expect(h.retry).toHaveBeenCalledOnce();
     expect(container.querySelector('a[href="/build/adjustment"]')).not.toBeNull();
+  });
+  it("rechecks the deployment request after adjusting that same project's services", async () => {
+    await render({ projectId: "existing", requested: { cpuCores: 8, memoryMb: 16384, diskMb: 8192 }, reusesWorkspace: true });
+    await review();
+    await click(copy.confirm);
+    h.status.mockResolvedValue({ deploymentStatus: "ready" });
+    const released = structuredClone(view);
+    released.pool.cpuCores.used = 3.25;
+    released.projects[0]!.allocation = after;
+    h.capacity.mockResolvedValue(released);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(container.textContent).toContain(copy.requestChanged);
+    expect(container.textContent).not.toContain(copy.needCapacity);
+    expect(button(copy.retryDeploy).disabled).toBe(false);
+    await click(copy.retryDeploy);
+    expect(h.retry).toHaveBeenCalledOnce();
   });
   it("reuses the request key after an ambiguous transport failure", async () => {
     await render();

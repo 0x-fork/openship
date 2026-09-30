@@ -306,6 +306,7 @@ export async function enrichProject(p: Project) {
     // tier on cloud, NO limits self-hosted (the machine is the cap).
     resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
       isCloud: deployTarget === "cloud",
+      automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
     }),
   };
 }
@@ -379,6 +380,7 @@ export async function enrichProjectsBatch(
       // free tier on cloud, NO limits self-hosted (the machine is the cap).
       resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
         isCloud: deployTarget === "cloud",
+        automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
       }),
     };
   });

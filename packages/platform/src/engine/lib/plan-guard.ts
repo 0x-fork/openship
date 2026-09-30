@@ -26,7 +26,6 @@ import {
   planLimits,
   planServiceResources,
   resolvePlan,
-  PRICING,
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
   formatCpuCores,
@@ -42,7 +41,6 @@ import { isCloudManagedHostname } from "./public-endpoints";
 import {
   cloudDockerNeedsBuild,
   cloudDockerResources,
-  resolveBuildResources,
   resolveCloudServiceResources,
   resolveRuntimeResources,
   type CloudServiceResourceInput,
@@ -346,33 +344,16 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
   if (input.dockerWorkspace && services?.length) {
     const allocation = cloudDockerResources({
       resources: input.resources,
-      buildResources: input.buildResources,
-      reserveBuild: cloudDockerNeedsBuild(services, input.retainedImages),
       services: services.map((service) => ({ resources: service.advanced?.resources })),
     });
     assertWorkspaceResourcesFitPlan(tier, allocation, policy);
-    if (input.projectId) {
+    // Source builders use Oblien's current headroom in prepareCloudBuildResources.
+    // Image-only actions need no build allocation, even with saved build settings.
+    if (input.projectId && !cloudDockerNeedsBuild(services, input.retainedImages)) {
       await assertCloudWorkspaceCapacity({ organizationId, projectId: input.projectId,
-        requested: allocation, reuseDockerWorkspace: true });
+        requested: allocation, reuseDockerWorkspace: true,
+        buildResources: null });
     }
-  }
-  if (
-    services?.length &&
-    !input.nativeApplication &&
-    services.every(service => Boolean(service.name && input.retainedImages?.[service.name]?.trim()) ||
-      (Boolean(service.image || service.advanced?.imageTemplate) && !service.build && !service.advanced?.build))
-  )
-    return;
-  const build = resolveBuildResources(input.buildResources, { isCloud: true });
-  const maximum = { cpuCores: policy.max_vcpus ?? PRICING.oblien.buildResources.cpuCores,
-    memoryMb: policy.max_ram_mb ?? PRICING.oblien.buildResources.memoryMb,
-    diskGb: policy.max_disk_gb ?? PRICING.oblien.buildResources.diskGb };
-  if (limits.maxResourceTier !== null && (!Number.isFinite(build.cpuCores) || !Number.isFinite(build.memoryMb) ||
-      build.cpuCores > maximum.cpuCores || build.memoryMb > maximum.memoryMb || build.diskMb > maximum.diskGb * 1024)) {
-    throw new PlanUpgradeRequiredError(
-      `Builds on this plan support up to ${maximum.cpuCores} vCPU and ${maximum.memoryMb / 1024} GB RAM. Reduce the build allocation.`,
-      "resource-tier", tier,
-    );
   }
 }
 

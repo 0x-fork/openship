@@ -491,6 +491,17 @@
     "plans": "Comparar planos",
     "close": "Fechar",
     "back": "Voltar às alocações",
+    "requested": "Solicitado para a implantação",
+    "build": "Recursos de compilação",
+    "buildDescription": "Os builds usam a capacidade disponível do seu pool. Você pode definir um limite; com menos recursos, eles podem ficar mais lentos ou sem memória.",
+    "editBuild": "Ajustar compilação",
+    "saveBuild": "Salvar recursos de compilação",
+    "requestChanged": "Os recursos mudaram. A nova tentativa verificará a solicitação atualizada com a capacidade disponível.",
+    "buildUnavailable": "Este projeto não é mais implantado no Cloud. Abra suas configurações para ajustar os recursos de compilação.",
+    "buildInvalid": "Use pelo menos 0.25 vCPU e 128 MB de memória.",
+    "buildSaveError": "Não foi possível salvar os recursos de compilação. Verifique o erro e tente novamente.",
+    "cancel": "Cancelar",
+    "imageOnly": "Imagens prontas: nenhum recurso é reservado para compilar o código-fonte.",
     "unavailable": {
       "permission": "É necessário acesso de escrita ao projeto e aos serviços para redimensionar este espaço.",
       "deleting": "Este projeto está sendo excluído.",
@@ -500,6 +511,8 @@
       "unverified": "Não foi possível verificar a alocação deste espaço.",
       "not-running": "Inicie este espaço antes de redimensioná-lo.",
       "no-services": "Nenhum serviço habilitado para ajustar."
-    }
+    },
+    "automaticBuild": "Automático",
+    "customBuildLimit": "Definir limite"
   }
 }

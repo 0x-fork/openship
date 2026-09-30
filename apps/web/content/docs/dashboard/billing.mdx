@@ -50,6 +50,11 @@ Choose **Manage Cloud capacity** in Billing, or open it when a deployment needs
 more available capacity. The pool shows reserved CPU, memory and storage.
 A service-count allowance does not guarantee that another workspace will fit.
 
+Source builds share this pool with running apps. Openship selects build CPU and
+memory from Oblien's reported available capacity, within its workspace limits.
+Existing runtime allocations stay reserved. Image-only installs need no source
+builder. These rules also apply to catalog apps and their retries.
+
 1. Choose **Adjust** beside a running project and edit its service CPU or memory.
 2. Choose **Review changes**. Review the resulting workspace allocation and the
    services that may briefly restart.
@@ -67,6 +72,10 @@ here, and workspace allocations include Docker overhead and build reservations.
 After five minutes, automatic checks stop and **Refresh capacity** checks the
 same operation again. Closing the dialog does not cancel a deployment. If an
 adjustment fails, inspect its logs and refresh capacity before trying again.
+
+For a source build, **Edit build resources** lets you set an optional CPU/memory
+cap or choose **Automatic** again. This changes the next build, preserving
+production settings. A smaller build may be slower or run out of memory.
 
 ## Credit warnings and recovery
 

@@ -15,7 +15,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { BUILD_SESSION_ERROR_FALLBACK } from "@/context/deployment/load-session";
 import { ResourceNotFound } from "@/components/resource-not-found";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
-import { ApiError } from "@/lib/api/client";
+import { cloudDeployFailure } from "@/lib/cloud-deploy-pricing";
 
 const BuildPage: React.FC = () => {
   const params = useParams();
@@ -154,9 +154,8 @@ const BuildPage: React.FC = () => {
     // an auto-redeploy on the user's fix.
     const key = `${deploymentId}:${state.errorCode}`;
     if (shownModalRef.current === key) return;
-    if (state.errorCode === "CLOUD_CAPACITY_REQUIRED" && showCloudPricing(new ApiError(409, "Capacity required", {
-      ...state.errorDetails, code: state.errorCode, projectId: state.projectId,
-    }), handleRedeploy)) {
+    const cloudFailure = cloudDeployFailure(state);
+    if (cloudFailure && showCloudPricing(cloudFailure, handleRedeploy)) {
       shownModalRef.current = key;
       return;
     }

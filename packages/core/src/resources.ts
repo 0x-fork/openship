@@ -86,6 +86,8 @@ export interface HostCapacity {
 export interface ProjectResources {
   production: ResourceValues;
   build: ResourceValues;
+  /** Hosted Cloud uses available provider capacity unless a build cap is saved. */
+  buildMode?: "automatic" | "custom";
   sleepMode: string;
   port: number;
   /** Preset matching the saved production values. */

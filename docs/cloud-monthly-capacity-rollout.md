@@ -1,12 +1,71 @@
-# Monthly Cloud capacity rollout
+# Shared Cloud capacity and pricing rollout
 
-The approved next offers are below. They are **not active checkout offers**.
-Current checkout remains credit-based while the provider contract is being
-completed. Offer v6 raises Hobby storage to 25 GB without changing prices or
-credits. Starter's per-workspace disk limit becomes 32 GB within its existing
-32 GB pool, so a Hobby upgrade does not require shrinking a disk.
-Every saved subscription retains its own terms. The capacity editor
-works independently with each subscription's existing limits.
+## Allocation authority
+
+Oblien owns effective namespace/account limits, current reservations, atomic
+admission, applied workspace resources, deletion and metering. Openship reads
+`effective_resource_limits` and `allocated_resource_usage`; it does not infer
+free capacity from service counts, observed CPU activity or credit balance.
+Stopped workspaces and pending updates remain allocated until Oblien reports
+that they have been released.
+
+Runtime and builds use **one shared pool**. Before a source build, Openship reads
+the remaining CPU/RAM and selects a build allocation within it and Oblien's
+current per-workspace limits. A saved build setting is an optional upper limit;
+clearing it restores automatic sizing. There is no fixed default Cloud build
+machine and no separate build capacity pool.
+
+Shared Docker projects reserve their runtime allocation and Docker overhead
+before granting the builder any headroom. Pending runtime reductions do not
+count as released capacity. Native service builds divide headroom across their
+concurrent workspaces, reserving room for image services and their eventual
+runtime sizes. A native source workspace becomes its runtime after building,
+so those two phases are not charged as simultaneous workspaces.
+
+The same selected allocation reaches the actual builder and shared Docker host.
+Cloud Docker builds enforce the CPU/RAM budget on their BuildKit worker (or the
+legacy builder), keeping the existing project cache and removing the worker
+when the build finishes. Shared workspace reconciliation releases temporary
+CPU/RAM after success, failure or cancellation; disks are never shrunk. A failed
+or ambiguous resize is not reported as released capacity.
+
+Admission is checked again when the worker starts. Another deployment may still
+win a reservation between the read and provision: Oblien's atomic admission is
+final. That refusal returns through the normal capacity editor and deployment
+logs, including catalog app installs. Unknown provider measurements produce a
+retryable error; they never become an assumed empty pool.
+
+## Customer recovery
+
+The editor shows actual provider allocations, previews CPU/RAM adjustments and
+requires restart confirmation. It redeploys the same project using retained
+images, preserving volumes and service settings. It waits for both deployment
+completion and confirmed provider allocation before treating the adjustment as
+complete. Retry uses the original deployment/install; it does not create another
+project. Customers can also set a smaller build cap or restore automatic sizing.
+A smaller build can be slower or run out of memory; it does not guarantee that
+any application can build on any amount of capacity.
+
+Existing image-based native workspaces now apply changed runtime CPU/RAM before
+reuse. A Micro redeploy must be confirmed at **0.25 vCPU**, preserving workspace
+identity and disk. Resource update responses are checked, then read back. A
+successful HTTP response alone is insufficient when the change is pending.
+
+The current allocation editor supports running projects with a shared Docker
+workspace and an active deployment. Native, stopped and draft projects show
+why an in-place editor adjustment is unavailable. Native Micro settings still
+apply through ordinary redeployment. Self-hosted machine limits and SSH build
+behavior are unchanged.
+
+## Pricing scope
+
+Current checkout remains credit based. Offer v6 raises Hobby storage to 25 GB
+without changing prices or credits. Starter's per-workspace disk limit becomes
+32 GB within its existing 32 GB pool, so upgrading from Hobby does not require
+shrinking a disk. Saved subscriptions retain their purchased terms.
+
+These approved next offers are recorded for follow-up; they are **not the active
+checkout offers** in this PR:
 
 | Plan           | Monthly price | CPU pool | Memory pool | Storage pool |
 | -------------- | ------------: | -------: | ----------: | -----------: |
@@ -15,100 +74,39 @@ works independently with each subscription's existing limits.
 | Pro            |           $39 |   4 vCPU |       16 GB |       128 GB |
 | Scale (`team`) |           $99 |   8 vCPU |       32 GB |       256 GB |
 
-For these new offers, projects and services share the pool without a separate
-count limit. One service may use the whole advertised pool. Smaller services
-can share the same project workspace; every additional workspace reserves its
-own capacity. Stopped workspaces and pending increases still count until the
-provider confirms release. Actual runtime usage is not free allocation.
+Activating larger pools, different project/service allowances or changing from
+consumption credits to included monthly hosting is Openship billing work, using
+Oblien's existing generic billing and namespace APIs. It is not a prerequisite
+for automatic build sizing. Do not bypass current subscription suspension or
+rewrite historical paid terms. Publish prices and limits through the single
+pricing catalog only when checkout, renewal and entitlement behavior match.
+The current Docker/OS overhead (512 MB, memory rounded to 256 MB, minimum 1 GB
+host) must be included when describing usable service memory.
 
-Hosting within the pool is included in the monthly subscription. It must not
-stop because a finite consumption-credit balance was exhausted. Source builds
-need a separate allowance and allocation; they cannot consume the customer's
-entire hosting pool just to deploy an update. A draft allowance is 300 / 1,000 /
-3,000 / 6,000 build minutes per month respectively on a 1 vCPU, 2 GB builder.
-Those build amounts are not published or enforced as new paid terms yet.
+## Provider verification handoff
 
-## Provider contract required before activation
+No new build-specific provider API is needed. Verify these generic contracts:
 
-The public `GET https://api.oblien.com/billing/catalog` response inspected on
-2026-09-30 advertises reseller contract version 2, offer policy, resource limits,
-effective resource limits, and aggregate resource limits. It does not advertise
-fixed monthly hosting or a separate build pool. The installed billing contract
-requires positive offer credits and restores that saved credit policy on renewal.
-Changing only the Openship balance check cannot prevent provider suspension.
+- `namespaces.get` reports current effective per-workspace and aggregate limits,
+  plus allocated usage including stopped workspaces and pending updates.
+- `workspace.resources.update` (`PUT /workspace/{id}/resources`, `apply: true`)
+  applies fractional CPU/RAM without replacing the workspace or shrinking its
+  disk. Pending changes remain distinguishable from applied changes.
+- `workspace.get` and the namespace allocation read agree after a confirmed
+  resize. Four 0.25-vCPU native workspaces account for 1 vCPU, not 4 vCPU.
+- Create, resize and release remain atomic across concurrent callers. Structured
+  namespace/account/fleet errors retain their code and request reference.
 
-The Oblien integration needs a documented, versioned contract covering:
+If those existing APIs report a Micro workspace as applied at 0.25 vCPU while
+namespace usage still charges it as 1 vCPU, that is a provider accounting issue
+to investigate with the affected workspace IDs and request reference. Without
+those live readings, do not attribute the customer's incident to that cause.
 
-1. A hosted monthly-capacity offer and its authoritative subscription/entitlement
-   response, including renewals, cancellation, failed payment and refunds. Active
-   monthly hosting must not depend on a finite customer consumption balance.
-2. A separate build allowance, reservation, usage and release model. Exhausting
-   build minutes must stop new builds while keeping running apps and image-only
-   resource adjustments available.
-3. System overhead accounting. Current Docker workspaces reserve 512 MB for the
-   OS/Docker, round memory to 256 MB, and require at least 1 GB. A raw 4 GB service
-   therefore does not fit a 4 GB provider pool today. Specify which overhead the
-   provider excludes or funds so the advertised whole-pool service is feasible.
-4. Atomic allocation admission and release reporting for CPU, memory, storage,
-   workspace counts, and pending updates. Existing namespace allocation reads
-   and workspace resizes are reused; no undocumented provider endpoint is assumed.
-5. Independent saved terms: new offers must not rewrite a prior customer's price,
-   credits, resource limits or renewal terms. Any migration of existing paid
-   customers is a separate explicit operation.
+## Validation
 
-Suggested message to Oblien:
-
-> We are introducing monthly hosting pools: Hobby $5 (1 CPU/4 GB/25 GB), Starter
-> $20 (2/8/32), Pro $39 (4/16/128), Scale $99 (8/32/256). Projects and services
-> share the pool, and one service can use all of it. Your `/billing/catalog`
-> currently advertises reseller contract v2 with finite credits. Please provide
-> the supported offer, subscription, entitlement and renewal contract for hosting
-> that remains available throughout an active monthly subscription, plus a
-> separate build allowance/reservation and explicit OS/Docker overhead treatment.
-> We must preserve existing paid snapshots. Our capacity editor already uses
-> namespace allocation reads and verified workspace resizing; we are not disabling
-> current checkout or credit enforcement to simulate the new hosting contract.
-
-## Activation and validation
-
-After the provider contract is available, implement it at the existing billing
-adapter boundary, update the single active pricing catalog with a new offer
-version, and derive the dashboard and website from that catalog. Do not publish
-a second source of live prices or a flag that merely bypasses credit checks.
-
-Verify against a disposable provider namespace before publishing:
-
-- Purchase, renewal, cancellation, failed payment and top-up behavior with both
-  historical credit subscriptions and new monthly-capacity subscriptions.
-- A service using the full CPU/memory pool, both alone and split into smaller
-  services, without an undisclosed overhead rejection.
-- Deployment at full runtime allocation while the builder uses its separate pool.
-- Exhausted build minutes leave running apps available and still permit a retained
-  image resource adjustment.
-- A full namespace, confirmed downsizing with a service restart, confirmed release,
-  and retry of the original blocked deployment without a second project or disk.
-- Concurrent reservations, lost responses, process restarts, denied permissions,
-  stale previews, failed resizes, retained volumes and unavailable measurements.
-
-## Current capacity editor boundary
-
-`GET /api/billing/capacity` reports provider allocations. Preview and apply require
-billing access plus write access to the project and all its services. Apply uses
-the normal deployment queue and retained images. Service resource overrides,
-the deployment row and its build session commit together. Retries reuse a scoped
-idempotency key and the same durable deployment.
-
-The editor currently resizes running projects with a shared Docker workspace and
-an active deployment. Native Cloud workspaces and stopped/draft projects are shown
-with their limitation; they are not silently converted or restarted. Disk shrink
-is not supported. An unavailable workspace read cannot authorize a resize. The
-dashboard waits for the worker to finish and the provider allocation to match
-before treating the adjustment as complete; a ready deployment alone is not proof.
-Ordinary deployment preflight checks capacity when measurements are available;
-otherwise it leaves admission to the provider's atomic reservation, avoiding a
-new dependency on optional capacity measurements. Ownership mismatches still fail.
-
-The automated suites cover calculations, HTTP/native SDK authorization, real
-database admission, retained-image execution contracts, provider resize behavior
-and UI recovery. They simulate the provider and do not certify a live billing
-cycle or the as-yet unavailable monthly hosting contract.
+Automated coverage includes provider-derived build sizing, concurrent native
+build budgets, Micro redeployment, restart/apply verification, identity checks,
+full pools, unavailable measurements, retained-image recovery, async catalog
+install errors and retry, optional build caps, and self-hosted isolation.
+Provider responses are simulated in these tests. Live paid checkout, renewal
+and customer resource changes are not performed by the test suite.

@@ -111,6 +111,7 @@ import {
   syncProjectRouteState,
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
+import { prepareCloudBuildResources } from "./cloud-build-resources";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { assertExactServiceTargets } from "./exact-service-targets";
 import {
@@ -1389,7 +1390,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   const { cloudDockerNeedsBuild } = await import("../../lib/resources");
   const needsBuild = meta.composeServices?.length
     ? cloudDockerNeedsBuild(meta.composeServices, strictRefreshImages(meta))
-    : !meta.refreshAppDeploymentId;
+    : !meta.refreshAppDeploymentId && !meta.releaseImageRef;
   if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId);
   const insertDeployment = async () => {
     if (env.CLOUD_MODE) {
@@ -1397,6 +1398,8 @@ async function createQueuedDeploymentUnlocked(opts: {
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
       const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
+      const dockerWorkspace = mode.useServicePipeline &&
+        await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode);
       meta = {
         ...meta,
         cloudApplicationSlot: !mode.useServicePipeline && snapshotToClass(meta).workload !== "static",
@@ -1410,10 +1413,10 @@ async function createQueuedDeploymentUnlocked(opts: {
         runsApplication: snapshotToClass(meta).workload !== "static",
         services: mode.useServicePipeline ? mode.servicePreflightServices : undefined,
         retainedImages: strictRefreshImages(meta),
-        dockerWorkspace:
-          mode.useServicePipeline &&
-          (await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode)),
+        dockerWorkspace,
       });
+      await prepareCloudBuildResources({ project, snapshot: meta,
+        services: mode.useServicePipeline ? mode.servicePreflightServices : undefined, dockerWorkspace });
     }
 
     // Version is NOT assigned here. A version number represents a shipped
