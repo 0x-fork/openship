@@ -48,10 +48,15 @@ import { useAttentionFeed } from "@/hooks/useAttentionFeed";
 
 interface DashboardHomeClientProps {
   initialData?: any;
+  hostedCloud: boolean;
   planCard?: ReactNode;
 }
 
-export default function DashboardHomeClient({ initialData, planCard }: DashboardHomeClientProps) {
+export default function DashboardHomeClient({
+  initialData,
+  hostedCloud,
+  planCard,
+}: DashboardHomeClientProps) {
   const { user } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
@@ -209,7 +214,7 @@ export default function DashboardHomeClient({ initialData, planCard }: Dashboard
 
             {/* Alerts replace the activity summary; Apps stays accessible and
                 Quick Tip uses only the space left after these cards. */}
-            {attention.cards === 0 && (
+            {attention.cards === 0 && (!hostedCloud || projects.length > 0) && (
               <div className="bg-card rounded-2xl border border-border/50 p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <UiIcon name="activity" className="size-4 text-muted-foreground" />
