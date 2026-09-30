@@ -149,7 +149,7 @@ export async function scanEdgeOrphans(): Promise<EdgeOrphanScan> {
   // sites as orphans and make a subsequent remove take down a live domain.
   if (!comparison) return empty("Tracked hostnames could not be read.");
   const [scan, knownHostnames] = comparison;
-  if (!scan) return empty("The edge's site list could not be read.");
+  if (!scan || scan.readable === false) return empty("The edge's site list could not be read.");
 
   return {
     scanned: true,

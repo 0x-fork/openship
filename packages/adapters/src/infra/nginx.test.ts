@@ -1800,7 +1800,7 @@ describe("the generated vhost carries the tunables in every server block", () =>
 describe("render → parse round-trip (the renderer and the read-back agree)", () => {
   /** Read our own edge back the way the live read-back and migrate both do. */
   async function scanBack(conf: string) {
-    const exec = async (cmd: string) => (cmd.startsWith("cat ") ? conf : "");
+    const exec = async (cmd: string) => (cmd.startsWith("sh -c ") ? conf : "");
     const result = await scanOpenshipEdge({ exec } as unknown as CommandExecutor);
     return result.sites.find((s) => s.serverNames.includes("app.example.com"))!;
   }

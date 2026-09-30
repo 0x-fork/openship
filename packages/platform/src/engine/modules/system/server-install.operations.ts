@@ -13,7 +13,7 @@ import { authorization } from "../../lib/authorization";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { sshManager } from "../../lib/ssh-manager";
 import { withPinnedEdgeImage } from "../../lib/edge-image";
-import { resolveAcmeProviderOptions } from "../../lib/acme-config";
+import { resolveEdgeProviderOptions } from "../../lib/edge-provider-options";
 import { assertSelfHosted, assertServerExecution, requireSelfHostedServer } from "./server-access";
 import { ALLOWED_COMPONENTS, deliverEdgeBeforeInstall, installPrerequisites, dependencyFailureMessage, failSystem } from "./server-check.operations";
 import { refreshServerContainer } from "./server-containers.service";
@@ -167,7 +167,7 @@ export const serverInstallationDependencies: NonNullable<ServerDependencies["ins
                 acmeEmail: config?.acmeEmail,
                 edgeImage: config.edgeImage,
                 nginx: {
-                  ...resolveAcmeProviderOptions(),
+                  ...(await resolveEdgeProviderOptions(serverId)),
                   ...(config?.acmeEmail ? { acmeEmail: config.acmeEmail } : {}),
                 },
               },
