@@ -59,6 +59,7 @@ interface ProviderWorkspace {
   slug: string;
   status: string;
   provisioning: { state: string };
+  resources?: { cpus: number; memory_mb: number; disk_size_mb: number };
 }
 
 let workspaces: Map<string, ProviderWorkspace>;
@@ -102,6 +103,11 @@ beforeEach(async () => {
           slug: body.slug,
           status: "error",
           provisioning: { state: "failed" },
+          resources: {
+            cpus: body.config.cpus,
+            memory_mb: body.config.memory_mb,
+            disk_size_mb: body.config.disk_size_mb,
+          },
         };
         workspaces.set(workspace.id, workspace);
         if (createMode === "lost-response") throw new TypeError("provider response lost");
@@ -123,6 +129,15 @@ beforeEach(async () => {
         });
       }
       const workspaceId = url.pathname.match(/^\/workspace\/([^/]+)$/)?.[1];
+      const retryId = url.pathname.match(/^\/workspace\/([^/]+)\/provisioning\/retry$/)?.[1];
+      if (retryId && method === "POST") {
+        const workspace = workspaces.get(retryId)!;
+        workspace.status = "running";
+        workspace.provisioning.state = "ready";
+        return Response.json({ success: true, workspace });
+      }
+      if (url.pathname.endsWith("/lifecycle/permanent") && method === "POST")
+        return Response.json({ success: true });
       if (workspaceId && method === "GET") {
         // Async deletion is only complete once a subsequent read confirms absent.
         if (deleting.has(workspaceId)) workspaces.delete(workspaceId);
@@ -217,6 +232,58 @@ async function expectDeleted(projectId: string) {
 }
 
 describe("Supabase Cloud installation failure and deletion", () => {
+  it("saves an explicitly chosen MongoDB hostname exactly while keeping its database unrouted", async () => {
+    const owner = await seedOwner();
+    await db.update(schema.organization).set({ planTierId: "pro" }).where(eq(schema.organization.id, owner.orgId));
+    const response = await app.request("/api/apps", {
+      method: "POST",
+      headers: { ...owner.auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        templateId: "mongodb",
+        name: "Production database",
+        routes: [{ service: "mongo-express", port: 8081, mode: "free", domain: "mongodb-mongo-express" }],
+      }),
+    });
+    const result = await response.json();
+    expect(response.status, JSON.stringify(result)).toBe(200);
+    const services = await repos.service.listByProject(result.data.projectId);
+    expect(services.find(service => service.name === "mongo-express")).toMatchObject({
+      exposed: true,
+      publicEndpoints: [{ port: 8081, domainType: "free", domain: "mongodb-mongo-express" }],
+    });
+    expect(services.find(service => service.name === "mongo")?.exposed).toBe(false);
+    expect(requests.some(request => request.startsWith("POST "))).toBe(false);
+  });
+
+  it("assigns automatic domains from the new instance's unique name", async () => {
+    const owner = await seedOwner();
+    await db.update(schema.organization).set({ planTierId: "pro" }).where(eq(schema.organization.id, owner.orgId));
+    const headers = { ...owner.auth, "Content-Type": "application/json" };
+    const existing = await app.request("/api/projects", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "MongoDB", projectType: "services", hasBuild: false }),
+    });
+    expect(existing.ok, await existing.text()).toBe(true);
+    const response = await app.request("/api/apps", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        templateId: "mongodb",
+        name: "MongoDB",
+        routes: [{ service: "mongo-express", port: 8081, mode: "free" }],
+      }),
+    });
+    const result = await response.json();
+    expect(response.status, JSON.stringify(result)).toBe(200);
+    expect(result.data.slug).toBe("mongodb-2");
+    const services = await repos.service.listByProject(result.data.projectId);
+    expect(services.find(service => service.name === "mongo-express")?.publicEndpoints).toEqual([
+      { port: 8081, domainType: "free", domain: "mongodb-2-mongo-express" },
+    ]);
+    expect(requests.some(request => request.startsWith("POST "))).toBe(false);
+  });
+
   it("can save the complete draft without consuming slots before deployment admission", async () => {
     const { owner, projectId, secrets } = await installSupabase("starter");
     expect(await repos.service.countRunningForOrg(owner.orgId)).toBe(0);
@@ -340,6 +407,31 @@ describe("Supabase Cloud installation failure and deletion", () => {
     const result = await remove(owner, projectId);
     expect(result.status, JSON.stringify(result.body)).toBe(200);
     expect(requests.slice(beforeDelete).some((request) => request.startsWith("POST "))).toBe(false);
+    await expectDeleted(projectId);
+  });
+
+  it("recovers the original VM when a create replay hits quota, then retries and deletes that same VM", async () => {
+    createMode = "lost-response";
+    const { owner, projectId, secrets } = await installSupabase();
+    await failProvisioning(owner, projectId);
+    const reserved = await repos.cloudDockerWorkspace.find(projectId, owner.orgId);
+    expect(reserved?.workspaceId).toBeNull();
+    createMode = "quota";
+
+    const recovered = await ensureCloudDockerWorkspace({ projectId, organizationId: owner.orgId, resources });
+
+    expect(recovered.workspaceId).toBe("ws-initial-failure");
+    expect(await repos.cloudDockerWorkspace.find(projectId, owner.orgId)).toMatchObject({
+      provisionKey: reserved!.provisionKey,
+      workspaceId: "ws-initial-failure",
+      state: "ready",
+    });
+    expect(workspaces.size).toBe(1);
+    expect(requests.filter(request => request === "POST /workspace")).toHaveLength(2);
+    expect(requests).toContain("POST /workspace/ws-initial-failure/provisioning/retry");
+    expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
+    const removed = await remove(owner, projectId);
+    expect(removed.status, JSON.stringify(removed.body)).toBe(200);
     await expectDeleted(projectId);
   });
 

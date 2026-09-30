@@ -96,15 +96,17 @@ function workspaceIdFromDetails(details: unknown): string | undefined {
 export function cloudWorkspaceCreationFailure(error: unknown): {
   workspaceId?: string;
   rejected: boolean;
+  capacityRejected: boolean;
 } {
   const value = error as { status?: number; code?: string; details?: unknown } | null;
   const workspaceId = workspaceIdFromDetails(value?.details);
+  const capacityRejected = !workspaceId && typeof value?.code === "string" && capacityErrors.has(value.code.toLowerCase());
   return {
     workspaceId,
+    capacityRejected,
     rejected:
       !workspaceId &&
-      ([400, 401, 402, 403, 404].includes(value?.status ?? 0) ||
-        (typeof value?.code === "string" && capacityErrors.has(value.code.toLowerCase()))),
+      ([400, 401, 402, 403, 404].includes(value?.status ?? 0) || capacityRejected),
   };
 }
 
