@@ -434,9 +434,9 @@ export async function planProjectLimit(organizationId: string): Promise<number |
  * Refuse a new running service past the tier's allowance.
  *
  * Compose services share one VM, so workspace count cannot enforce this limit.
- * Count enabled definitions, disabled definitions with a live container, and
- * single-app deployments (including queued reservations). Creation/enabling
- * holds the organization quota lock through the database write.
+ * Count enabled definitions in activated projects, disabled definitions with a
+ * live container, and single-app deployments (including queued reservations).
+ * Callers hold the organization quota lock through the reservation write.
  */
 export async function assertRunningServiceQuota(
   organizationId: string,
@@ -455,10 +455,27 @@ export async function assertRunningServiceQuota(
   throw new PlanUpgradeRequiredError(
     limit === 0
       ? "Choose a Cloud plan to run apps, databases and workers."
-      : `Your plan includes ${limit} running services and you're using ${used}. Upgrade to run more, or remove a service first.`,
+      : `Your plan includes ${limit} service slots and ${used} are reserved. Stop and disable a service, remove it, or upgrade to run more.`,
     "running-services",
     tier,
   );
+}
+
+/** Draft edits do not start services or reserve slots. Re-read the project
+ * inside the caller's organization quota lock so creation/enabling cannot use
+ * stale lifecycle state after waiting for another mutation. Deployment admission
+ * reserves a draft's frozen service names before any provisioning starts. */
+export async function assertServiceDefinitionQuota(
+  organizationId: string,
+  projectId: string,
+  addingCount = 1,
+  replacingServiceIds: readonly string[] = [],
+): Promise<void> {
+  if (!env.CLOUD_MODE || addingCount === 0) return;
+  const project = await repos.project.findByIdInOrganization(projectId, organizationId);
+  if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
+  if (!project.activeDeploymentId) return;
+  await assertRunningServiceQuota(organizationId, addingCount, replacingServiceIds);
 }
 
 /* ─── Build minutes ──────────────────────────────────────────────────────── */

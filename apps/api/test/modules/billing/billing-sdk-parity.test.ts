@@ -61,7 +61,7 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: () => ({ request: provider.cloudRequest }) }));
 vi.mock("@repo/platform/engine/modules/billing/billing-resources.service", () => ({ getBillingResources: provider.resources }));
 import { db, schema, repos, seedOwner, type SeededOwner } from "../jobs/_harness";
-import { AppError, CREDIT_PACKS, FREE_DOMAIN_SUFFIX } from "@repo/core";
+import { AppError, CREDIT_PACKS, FREE_DOMAIN_SUFFIX, getAppTemplate } from "@repo/core";
 import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
@@ -138,6 +138,95 @@ afterEach(async () => {
 });
 
 describe("billing through the same SDK and HTTP application operations", () => {
+  it("reports a Supabase draft as one project and zero services, then tracks its deployment reservation", async () => {
+    const owner = await seedOwner(),
+      c = await clients(owner);
+    await c.native.getState();
+    const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+    provider.subscriptions.set(namespace, {
+      tierId: "scale",
+      status: "active",
+      billingInterval: "monthly",
+      periodStart: "2026-09-27T00:00:00Z",
+      periodEnd: "2026-10-27T00:00:00Z",
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+    });
+    provider.resourceRead.mockImplementation(async (slug: string) => ({
+      success: true,
+      data: {
+        slug,
+        effective_resource_limits: {
+          max_workspaces: 12,
+          max_total_vcpus: 8,
+          max_total_ram_mb: 16384,
+          max_total_disk_gb: 256,
+        },
+        allocated_resource_usage: {
+          workspaces: 0,
+          vcpus: 0,
+          ram_mb: 0,
+          disk_gb: 0,
+          pending_updates: 0,
+        },
+      },
+    }));
+    const groupId = `group-${owner.orgId}`,
+      projectId = `project-${owner.orgId}`;
+    await db
+      .insert(schema.projectGroup)
+      .values({ id: groupId, organizationId: owner.orgId, name: "Supabase", slug: "supabase" });
+    await db.insert(schema.project).values({
+      id: projectId,
+      groupId,
+      organizationId: owner.orgId,
+      name: "Supabase",
+      slug: "supabase",
+      isApp: true,
+      appTemplateId: "supabase",
+    });
+    const services = [];
+    for (const spec of getAppTemplate("supabase")!.services!) {
+      services.push(
+        await repos.service.create({ projectId, name: spec.name, image: spec.image, enabled: true }),
+      );
+    }
+    expect(services).toHaveLength(9);
+    const expectSlots = async (used: number) => {
+      for (const client of [c.native, c.remote]) {
+        expect(await client.getState()).toMatchObject({
+          tier: "team",
+          balance: { quotaUsed: 0 },
+          capacity: {
+            services: { used, max: 50 },
+            projects: { used: 1, max: null },
+            workspaces: { used: 0, max: 12 },
+            vcpus: { used: 0, max: 8 },
+            ramMb: { used: 0, max: 16384 },
+            diskGb: { used: 0, max: 256 },
+          },
+        });
+      }
+    };
+    await expectSlots(0);
+    const deploymentId = `deployment-${owner.orgId}`;
+    await db.insert(schema.deployment).values({
+      id: deploymentId,
+      projectId,
+      organizationId: owner.orgId,
+      branch: "main",
+      status: "queued",
+      meta: {
+        cloudApplicationSlot: false,
+        cloudServiceSlots: services.map((service) => service.name),
+      },
+    });
+    await expectSlots(services.length);
+    await repos.deployment.updateStatus(deploymentId, "failed");
+    await expectSlots(0);
+    expect(await repos.service.listByProject(projectId)).toHaveLength(services.length);
+  });
+
   it("verifies a checkout only inside its authenticated organization in both transports", async () => {
     const owner = await seedOwner(),
       other = await seedOwner();
