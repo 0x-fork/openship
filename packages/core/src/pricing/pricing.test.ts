@@ -8,6 +8,7 @@ import {
   PRICING_LOCALES,
   CREDIT_PACKS,
   planLimits,
+  planServiceResources,
   planAllowsWorkload,
   planAllowsServices,
   planMonthlyCredits,
@@ -27,7 +28,7 @@ import {
   type PlanTierId,
   type PricingLocale,
 } from "./index";
-import { pricingCatalogSchema, pricingCopySchema } from "./schema";
+import { pricingCatalogSchema, pricingCopySchema, planLimitsSchema } from "./schema";
 import { RESOURCE_TIER_ORDER, RESOURCE_TIER_SPECS } from "../resources";
 
 const localesDir = fileURLToPath(new URL("./locales", import.meta.url));
@@ -148,7 +149,8 @@ describe("pricing catalog (pricing.json)", () => {
       "services", // plan-guard: assertPlanAllowsServices
       "runningServices", // Oblien max_workspaces + plan-guard
       "maxProjects", // plan-guard: assertProjectQuota
-      "maxResourceTier", // Oblien max_vcpus/max_ram_mb/max_disk_gb
+      "maxResourceTier", // saved preset ceiling, plan-guard
+      "maxServiceResources", // explicit per-service CPU/RAM, plan-guard
       "computeMinutesPerMonth", // legacy display field, null on paid plans
       "buildMinutesPerMonth", // plan-guard: assertBuildMinutesAvailable
       "freeSubdomains", // plan-guard: assertFreeSubdomainQuota
@@ -257,13 +259,50 @@ describe("pricing catalog (pricing.json)", () => {
     expect(PRICING.oblien.buildResources.diskGb).toBeGreaterThan(0);
   });
 
-  it("caps per-service power to a tier the deploy wizard can actually select", () => {
-    // The page used to advertise up to 64 vCPU while the picker topped out at 2,
-    // so nothing a customer read was choosable.
-    for (const id of PLAN_IDS) {
-      const tier = planLimits(id).maxResourceTier;
-      if (tier === null) continue;
-      expect(RESOURCE_TIER_ORDER, `${id} maxResourceTier`).toContain(tier);
+  it.each([
+    ["hobby", 1, 2048], ["starter", 2, 3072], ["pro", 4, 4096], ["team", 8, 8192],
+  ] as const)("allows one %s service the shared CPU pool and half the shared RAM", (id, cpuCores, memoryMb) => {
+    const limits = planServiceResources(planLimits(id));
+    expect(limits).toEqual({ cpuCores, memoryMb });
+    expect(cpuCores).toBe(PLANS[id].oblienLimits.max_total_vcpus);
+    expect(cpuCores).toBe(PLANS[id].oblienLimits.max_vcpus);
+    expect(memoryMb).toBe(PLANS[id].oblienLimits.max_total_ram_mb! / 2);
+    expect(resolvePlan(id).features).toContain(`Up to ${cpuCores} vCPU and ${memoryMb / 1024} GB RAM per app`);
+  });
+
+  it.each(RESOURCE_TIER_ORDER)("retains a saved %s preset when no explicit ceiling was purchased", maxResourceTier => {
+    const { cpuCores, memoryMb } = RESOURCE_TIER_SPECS[maxResourceTier];
+    expect(planServiceResources({ maxResourceTier })).toEqual({ cpuCores, memoryMb });
+  });
+
+  it("resolves explicit limits independently of the preset, including uncapped contracts", () => {
+    expect(planServiceResources({ maxResourceTier: "xlarge", maxServiceResources: { cpuCores: 1, memoryMb: 3072 } }))
+      .toEqual({ cpuCores: 1, memoryMb: 3072 });
+    expect(planServiceResources({ maxResourceTier: "low", maxServiceResources: null })).toBeNull();
+    expect(planServiceResources({ maxResourceTier: null })).toBeNull();
+  });
+
+  it.each([
+    { cpuCores: 0, memoryMb: 1024 }, { cpuCores: 1, memoryMb: 0 },
+    { cpuCores: -1, memoryMb: 1024 }, { cpuCores: Infinity, memoryMb: 1024 },
+    { cpuCores: NaN, memoryMb: 1024 }, { cpuCores: 1, memoryMb: 1.5 },
+    { cpuCores: 1 }, { cpuCores: 1, memoryMb: 1024, diskMb: 8192 },
+  ])("rejects invalid saved service ceilings: %j", maxServiceResources => {
+    expect(planLimitsSchema.safeParse({ ...planLimits("starter"), maxServiceResources }).success).toBe(false);
+  });
+
+  it.each([null, undefined, { cpuCores: 3, memoryMb: 3072 }, { cpuCores: 1, memoryMb: 7168 }])(
+    "rejects new retail ceilings that are missing or exceed provider capacity: %j", maxServiceResources => {
+      const catalog = structuredClone(PRICING);
+      catalog.plans.find(plan => plan.id === "starter")!.limits.maxServiceResources = maxServiceResources;
+      expect(pricingCatalogSchema.safeParse(catalog).success).toBe(false);
+    },
+  );
+
+  it("keeps metered build usage visible without inventing a fixed-minute allowance", () => {
+    for (const id of ["hobby", "starter", "pro", "team"] as const) {
+      expect(planLimits(id).buildMinutesPerMonth).toBeNull();
+      expect(resolvePlan(id).features).toContain("Builds use shared credits, with no monthly time cap");
     }
   });
 

@@ -6,7 +6,8 @@ import {
   safeErrorMessage,
   CREDIT_PACKS,
   PLANS,
-  RESOURCE_TIER_SPECS,
+  planServiceResources,
+  detectTier,
   resolveCreditPackPriceId,
   type PlanTierId,
   type CreditPackDefinition,
@@ -106,6 +107,7 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
     readCloudCapacity(entitlement.namespace).catch(() => ({})),
   ]);
   const buildTimeMinutes = buildMinutes.usedMinutes;
+  const serviceResources = tier === "free" ? null : planServiceResources(planLimitsForTier);
 
   return {
     tier,
@@ -146,13 +148,8 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
     overQuota,
     buildTimeMinutes,
     buildMinutesResetAt: buildMinutes.periodEnd,
-    maxServiceMachine: tier !== "free" && planLimitsForTier.maxResourceTier
-      ? {
-          tier: planLimitsForTier.maxResourceTier,
-          cpuCores: RESOURCE_TIER_SPECS[planLimitsForTier.maxResourceTier].cpuCores,
-          memoryMb: RESOURCE_TIER_SPECS[planLimitsForTier.maxResourceTier].memoryMb,
-        }
-      : null,
+    maxServiceMachine: serviceResources
+      ? { tier: detectTier({ ...serviceResources, diskMb: 0 }), ...serviceResources } : null,
     /**
      * The two allowances the plan gate actually refuses on, as meters. Both were
      * declared in this contract and never populated — the dashboard's "Free

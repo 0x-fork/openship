@@ -330,6 +330,7 @@
     "creditsHint": "Les compilations et les applications actives consomment des crédits pour le CPU, la mémoire, les accès disque et les transferts de données. Les charges plus importantes les consomment plus vite.",
     "creditsPerCycle": "{amount} crédits / cycle de facturation",
     "buildTime": "Temps de compilation",
+    "buildUsageBased": "Utilise les crédits partagés",
     "buildMinutes": "{amount} min / mois",
     "buildHint": "Les builds consomment le quota partagé selon les ressources utilisées. Une limite de temps distincte ne s’applique que si elle est incluse dans votre offre enregistrée.",
     "apps": "Places de services",

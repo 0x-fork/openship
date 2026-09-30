@@ -31,6 +31,7 @@
     "anyWorkload": "شغّل أي شيء — حاويات وCompose وعمليات خلفية وPostgres وRedis",
     "runningServices": "{runningServices} تطبيق أو قاعدة بيانات أو عملية خلفية قيد التشغيل",
     "buildMinutes": "{buildMinutes} دقيقة بناء شهريًا",
+    "meteredBuilds": "تستهلك عمليات البناء الرصيد المشترك دون حد زمني شهري منفصل",
     "power": "حتى {powerCpu} vCPU و{powerRamGb} GB RAM لكل تطبيق",
     "projects": "{maxProjects} مشروع",
     "projectsUnlimited": "مشاريع غير محدودة",

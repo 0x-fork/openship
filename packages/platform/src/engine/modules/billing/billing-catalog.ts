@@ -33,12 +33,22 @@ export const CLOUD_EDGE_BANDWIDTH_GB: Readonly<Record<PlanTierId, number | null>
   enterprise: null,
 };
 
-export const OFFER_VERSION = "3";
+export const OFFER_VERSION = "4";
+const TOPUP_OFFER_VERSION = "3";
 export const offerReference = (tier: PlanTierId) => `openship:${tier}:v${OFFER_VERSION}`;
 
 export function supportedOfferReference(reference: string | undefined, tier: PlanTierId): boolean {
-  return reference === offerReference(tier) || (tier !== "hobby" &&
+  return reference === offerReference(tier) || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
     (reference === `openship:${tier}:v1` || reference === `openship:${tier}:v2`));
+}
+
+/** Offers without a complete saved capacity policy retain their pre-v4 VM CPU
+ * ceilings. New offers always read the current catalog. */
+function inheritedResourceLimits(tier: PlanTierId): ReturnType<typeof cloudNamespaceLimits> {
+  const limits = cloudNamespaceLimits(tier);
+  if (tier === "pro") limits.max_vcpus = 2;
+  if (tier === "team") limits.max_vcpus = 4;
+  return limits;
 }
 
 /** v1 left resource sizes inherited from the Enterprise reseller. Apply the
@@ -47,7 +57,7 @@ export function supportedOfferReference(reference: string | undefined, tier: Pla
 export function savedResourceLimits(tier: PlanTierId, offer: OblienOffer): ReturnType<typeof cloudNamespaceLimits> {
   if (!offer.resourceLimits || !supportedOfferReference(offer.reference, tier)) invalidContract();
   const legacy = offer.reference === `openship:${tier}:v1`;
-  const ceiling = cloudNamespaceLimits(tier);
+  const ceiling = legacy ? inheritedResourceLimits(tier) : cloudNamespaceLimits(tier);
   const keys = Object.keys(ceiling) as Array<keyof typeof ceiling>;
   return Object.fromEntries(keys.map(key => {
     const saved = offer.resourceLimits![key];
@@ -74,19 +84,22 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
     const providerTier = subscription?.tierId;
     const tier = providerTier == null ? "free" : PLAN_IDS.find(id => LEGACY_PLAN_IDS[id] === providerTier);
     if (!tier) throw new AppError("This cloud plan is not supported by this Openship version", 503, "OBLIEN_PLAN_UNSUPPORTED");
-    return { tier, limits: planLimits(tier), resourceLimits: cloudNamespaceLimits(tier) };
+    // Platform subscriptions predate explicit service ceilings; retain their
+    // preset rather than applying a new retail offer to an existing customer.
+    return { tier, limits: { ...planLimits(tier), maxServiceResources: undefined }, resourceLimits: inheritedResourceLimits(tier) };
   }
   const { offer, metadata } = subscription;
   const tier = metadata?.openship_plan as PlanTierId;
   const version = metadata?.openship_offer_version;
   if (!PLAN_IDS.includes(tier) || tier === "free" || !offer || !metadata || !supportedOfferReference(offer.reference, tier) ||
-      !["1", "2", OFFER_VERSION].includes(version ?? "") || offer.reference !== `openship:${tier}:v${version}` || !metadata.openship_organization || !metadata.openship_namespace ||
+      offer.reference !== `openship:${tier}:v${version}` || !metadata.openship_organization || !metadata.openship_namespace ||
       (organizationId !== undefined && metadata.openship_organization !== organizationId) ||
       (namespace !== undefined && metadata.openship_namespace !== namespace) || !offer.policy || !offer.resourceLimits) invalidContract();
   let decoded: unknown;
   try { decoded = JSON.parse(metadata.openship_limits ?? ""); } catch { invalidContract(); }
   const parsed = planLimitsSchema.strict().safeParse(decoded);
   if (!parsed.success) invalidContract();
+  if (version === OFFER_VERSION && tier !== "enterprise" && !parsed.data.maxServiceResources) invalidContract();
   return { tier, limits: parsed.data, resourceLimits: savedResourceLimits(tier, offer) };
 }
 
@@ -128,7 +141,7 @@ export function topupOffer(packId: string): OblienOffer {
   if (!pack)
     throw new AppError("This credit pack is no longer available", 404, "BILLING_PACK_NOT_FOUND");
   return {
-    reference: `openship:${pack.id}:v${OFFER_VERSION}`,
+    reference: `openship:${pack.id}:v${TOPUP_OFFER_VERSION}`,
     name: "Openship compute credits",
     description: `${toOblienCredits(pack.creditsMilli).toLocaleString("en-US")} additional credits for your namespace`,
     unitAmount: pack.priceCents,

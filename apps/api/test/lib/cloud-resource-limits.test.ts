@@ -34,7 +34,7 @@ describe("Oblien-owned namespace capacity", () => {
     expect(await readCloudCapacity("tenant-a")).toEqual({});
   });
   it("declares finite retail VM and aggregate caps without reading enterprise owner capacity", async () => {
-    expect(cloudNamespaceLimits("team")).toEqual({ max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
+    expect(cloudNamespaceLimits("team")).toEqual({ max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
     await expect(initialCloudNamespaceLimits()).resolves.toEqual({ max_workspaces: 0, max_vcpus: 1, max_ram_mb: 1024, max_disk_gb: 8, max_total_vcpus: 0, max_total_ram_mb: 0, max_total_disk_gb: 0 });
     await syncCloudResourceLimits("tenant-a", "team");
     expect(h.update).toHaveBeenCalledWith("ns-a", { resource_limits: cloudNamespaceLimits("team") });

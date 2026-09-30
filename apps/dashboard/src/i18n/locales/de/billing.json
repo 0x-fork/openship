@@ -330,6 +330,7 @@
     "creditsHint": "Builds und laufende Apps verbrauchen Credits für CPU, Arbeitsspeicher, Festplattenzugriffe und Datentransfer. Größere Arbeitslasten verbrauchen Credits schneller.",
     "creditsPerCycle": "{amount} Credits / Abrechnungszeitraum",
     "buildTime": "Build-Zeit",
+    "buildUsageBased": "Nutzt gemeinsames Guthaben",
     "buildMinutes": "{amount} Min. / Monat",
     "buildHint": "Builds verbrauchen das gemeinsame Nutzungsguthaben entsprechend ihrem Ressourcenverbrauch. Ein separates Zeitlimit gilt nur, wenn es in deinem gespeicherten Tarif enthalten ist.",
     "apps": "Dienstplätze",

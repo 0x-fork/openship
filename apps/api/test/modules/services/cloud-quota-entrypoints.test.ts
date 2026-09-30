@@ -174,7 +174,7 @@ describe("Cloud quotas at real application mutation boundaries", () => {
   });
   it("enforces the paid machine-size snapshot before queueing new compute", async () => {
     h.tier = "team";
-    h.savedLimits = { ...planLimits("team"), maxResourceTier: "low" };
+    h.savedLimits = { ...planLimits("team"), maxResourceTier: "low", maxServiceResources: undefined };
     await expect(queue(projectId)).rejects.toMatchObject({ reason: "resource-tier" });
     expect(
       await db.query.deployment.findMany({ where: eq(schema.deployment.projectId, projectId) }),

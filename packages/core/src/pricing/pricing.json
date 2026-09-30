@@ -90,6 +90,10 @@
         "runningServices": 1,
         "maxProjects": 3,
         "maxResourceTier": "low",
+        "maxServiceResources": {
+          "cpuCores": 1,
+          "memoryMb": 2048
+        },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
         "freeSubdomains": 10,
@@ -100,6 +104,7 @@
         "everythingIn",
         "usageCredits",
         "namespaceCapacity",
+        "meteredBuilds",
         "anyWorkload",
         "oneRunningService",
         "power",
@@ -148,6 +153,10 @@
         "runningServices": 3,
         "maxProjects": 10,
         "maxResourceTier": "medium",
+        "maxServiceResources": {
+          "cpuCores": 2,
+          "memoryMb": 3072
+        },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
         "freeSubdomains": 25,
@@ -158,6 +167,7 @@
         "everythingIn",
         "usageCredits",
         "namespaceCapacity",
+        "meteredBuilds",
         "runningServices",
         "power",
         "projects",
@@ -204,6 +214,10 @@
         "runningServices": 10,
         "maxProjects": 50,
         "maxResourceTier": "high",
+        "maxServiceResources": {
+          "cpuCores": 4,
+          "memoryMb": 4096
+        },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
         "freeSubdomains": 100,
@@ -214,6 +228,7 @@
         "everythingIn",
         "usageCredits",
         "namespaceCapacity",
+        "meteredBuilds",
         "runningServices",
         "power",
         "projects",
@@ -227,7 +242,7 @@
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
           "max_workspaces": 6,
-          "max_vcpus": 2,
+          "max_vcpus": 4,
           "max_ram_mb": 8192,
           "max_disk_gb": 32,
           "max_total_vcpus": 4,
@@ -260,6 +275,10 @@
         "runningServices": 50,
         "maxProjects": null,
         "maxResourceTier": "xlarge",
+        "maxServiceResources": {
+          "cpuCores": 8,
+          "memoryMb": 8192
+        },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
         "freeSubdomains": null,
@@ -270,6 +289,7 @@
         "everythingIn",
         "usageCredits",
         "namespaceCapacity",
+        "meteredBuilds",
         "runningServices",
         "power",
         "projectsUnlimited",
@@ -284,7 +304,7 @@
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
           "max_workspaces": 12,
-          "max_vcpus": 4,
+          "max_vcpus": 8,
           "max_ram_mb": 12288,
           "max_disk_gb": 64,
           "max_total_vcpus": 8,

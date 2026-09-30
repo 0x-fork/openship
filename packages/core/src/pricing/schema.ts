@@ -44,13 +44,13 @@ export const planLimitsSchema = z.object({
   runningServices: limitNumber,
   /** Projects (project groups). Oblien has no project concept — Openship gates it. */
   maxProjects: limitNumber,
-  /**
-   * The largest per-service machine this tier may select, named in the deploy
-   * wizard's OWN vocabulary (`RESOURCE_TIER_SPECS`). Stating a raw vCPU number
-   * here is what made the pricing page advertise sizes no picker offered.
-   * `null` = uncapped (enterprise).
-   */
+  /** Preset ceiling for saved offers without explicit service resources. */
   maxResourceTier: z.enum(RESOURCE_TIER_ORDER).nullable(),
+  /** CPU/RAM ceiling, including custom sizes. Absent on older paid snapshots. */
+  maxServiceResources: z.object({
+    cpuCores: z.number().finite().positive(),
+    memoryMb: z.number().int().positive(),
+  }).strict().nullable().optional(),
   /** Legacy display field. Paid offers leave it null: metered credits do not
    * imply a fixed number of runtime minutes. It never determines a credit grant. */
   computeMinutesPerMonth: limitNumber,
@@ -257,6 +257,21 @@ export const pricingCatalogSchema = z
       }
       if (monthlyPurchasable && !plan.contactSales && Object.values(plan.billing.resourceLimits).some(value => value === null)) {
         ctx.addIssue({ code: "custom", path: ["plans", i, "billing", "resourceLimits"], message: "Retail plans require explicit VM and total namespace capacity limits" });
+      }
+      const service = plan.limits.maxServiceResources;
+      if (monthlyPurchasable && !plan.contactSales && !service) {
+        ctx.addIssue({ code: "custom", path: ["plans", i, "limits", "maxServiceResources"], message: "Retail plans require explicit per-service CPU and memory limits" });
+      }
+      if (service) {
+        const policy = plan.billing.resourceLimits;
+        for (const [dimension, caps] of [
+          ["cpuCores", [policy.max_vcpus, policy.max_total_vcpus]],
+          ["memoryMb", [policy.max_ram_mb, policy.max_total_ram_mb]],
+        ] as const) {
+          if (caps.some(cap => cap !== null && service[dimension] > cap)) {
+            ctx.addIssue({ code: "custom", path: ["plans", i, "limits", "maxServiceResources", dimension], message: "A service must fit within its workspace and shared capacity" });
+          }
+        }
       }
       if (annualPurchasable && !plan.billing.yearlyCreditsPerCycle) {
         ctx.addIssue({

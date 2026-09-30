@@ -71,7 +71,7 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 import * as repository from "@repo/platform/engine/modules/billing/billing.repository";
 import { flushAudit } from "@repo/platform/engine/lib/audit-emitter";
 import { eq } from "@repo/db";
-import { presentCloudPlans } from "@repo/platform/engine/modules/billing/billing-catalog";
+import { presentCloudPlans, subscriptionMetadata, subscriptionOffer } from "@repo/platform/engine/modules/billing/billing-catalog";
 
 const app = new Hono().onError(handleApiError)
   .use("*", async (c, next) => { c.set("clientIp", "192.0.2.64"); await next(); })
@@ -341,6 +341,37 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
   });
 
+  it.each([["3", 1, 1024, "medium"], ["4", 2, 3072, "custom"]] as const)(
+    "shows the purchased v%s service ceiling through both SDK and HTTP billing state", async (version, cpuCores, memoryMb, machineTier) => {
+      const owner = await seedOwner(), c = await clients(owner);
+      await c.native.getState();
+      const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+      const metadata: Record<string, string> = { ...subscriptionMetadata("starter", owner.orgId, namespace), openship_offer_version: version };
+      if (version === "3") {
+        const limits = JSON.parse(metadata.openship_limits!);
+        delete limits.maxServiceResources;
+        metadata.openship_limits = JSON.stringify(limits);
+      }
+      const saved: NonNullable<OblienSubscription> = {
+        tierId: "reseller", status: "active", billingInterval: "monthly", cancelAtPeriodEnd: false, canceledAt: null,
+        periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+        offer: { ...subscriptionOffer("starter", "monthly"), reference: `openship:starter:v${version}` }, metadata,
+      };
+      const before = structuredClone(saved);
+      provider.subscriptions.set(namespace, saved);
+      provider.resourceUpdate.mockClear();
+      for (const client of [c.native, c.remote]) {
+        const state = await client.getState();
+        expect(state.maxServiceMachine).toEqual({ tier: machineTier, cpuCores, memoryMb });
+        expect(state.plan?.limits).toEqual(JSON.parse(metadata.openship_limits!));
+        expect(state.plan?.price.monthly).toBe(saved.offer!.unitAmount);
+        expect(state.plan?.monthlyCredits).toBe(saved.offer!.credits * 1000);
+      }
+      expect(provider.subscriptions.get(namespace)).toEqual(before);
+      expect(provider.resourceUpdate).not.toHaveBeenCalled();
+    },
+  );
+
   it("never presents an unsubscribed namespace with a missing policy as unlimited", async () => {
     provider.entitlement.mockImplementation(async namespace => ({
       success: true, namespace, tierId: null, status: "active", periodStart: null, periodEnd: null,
@@ -422,7 +453,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.checkout).toHaveBeenCalledTimes(2);
     for (const [input] of provider.checkout.mock.calls) {
-      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
+      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
     }
   });
 
@@ -482,9 +513,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: org!.oblienNamespace,
         kind: "subscription",
-        offer: { reference: `openship:${tier}:v3`, unitAmount, credits },
+        offer: { reference: `openship:${tier}:v4`, unitAmount, credits },
         billingInterval: "monthly",
-        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "3" },
+        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "4" },
       });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");

@@ -26,6 +26,9 @@ const planLimits = Type.Object({
   workloads: Type.Array(Type.Union(WORKLOAD_TYPES.map(value => Type.Literal(value)))),
   services: Type.Boolean(), runningServices: numberOrNull, maxProjects: numberOrNull,
   maxResourceTier: Type.Union([...RESOURCE_TIER_ORDER.map(value => Type.Literal(value)), Type.Null()]),
+  maxServiceResources: Type.Optional(Type.Union([Type.Object({
+    cpuCores: Type.Number({ exclusiveMinimum: 0 }), memoryMb: Type.Integer({ exclusiveMinimum: 0 }),
+  }, { additionalProperties: false }), Type.Null()])),
   computeMinutesPerMonth: numberOrNull, buildMinutesPerMonth: numberOrNull,
   freeSubdomains: numberOrNull, customDomains: numberOrNull, seats: numberOrNull,
 });

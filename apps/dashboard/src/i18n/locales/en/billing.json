@@ -330,6 +330,7 @@
     "creditsHint": "Builds and running apps use credits for CPU, memory, disk activity and data transfer. Larger workloads use credits faster.",
     "creditsPerCycle": "{amount} credits / billing cycle",
     "buildTime": "Build time",
+    "buildUsageBased": "Uses shared credits",
     "buildMinutes": "{amount} min / month",
     "buildHint": "Builds use the shared usage allowance according to their resource consumption. A separate time limit applies only when included in your saved plan.",
     "apps": "Service slots",

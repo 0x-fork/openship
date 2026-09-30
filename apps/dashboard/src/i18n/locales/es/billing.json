@@ -330,6 +330,7 @@
     "creditsHint": "Las compilaciones y las aplicaciones activas consumen créditos por CPU, memoria, actividad de disco y transferencia de datos. Las cargas mayores consumen créditos más rápido.",
     "creditsPerCycle": "{amount} créditos / ciclo de facturación",
     "buildTime": "Tiempo de compilación",
+    "buildUsageBased": "Usa créditos compartidos",
     "buildMinutes": "{amount} min / mes",
     "buildHint": "Las compilaciones consumen la asignación compartida según los recursos que utilizan. Solo se aplica un límite de tiempo independiente si está incluido en tu plan guardado.",
     "apps": "Cupos de servicios",
