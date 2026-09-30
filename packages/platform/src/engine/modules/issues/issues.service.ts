@@ -364,7 +364,6 @@ function updateIssue(row: UpdateRow): SystemIssue {
   // the CLI (`build.service` refuses to redeploy it), so it is a PLATFORM issue
   // with no in-app fix rather than a project row with a button that 403s.
   const isSelf = row.appTemplateId === "openship";
-  const automaticUnavailable = row.kind === "image" && row.canApply === false;
   const version =
     row.currentLabel && row.latestLabel
       ? `${row.currentLabel} → ${row.latestLabel}`
@@ -377,15 +376,12 @@ function updateIssue(row: UpdateRow): SystemIssue {
     scope: isSelf ? "platform" : "project",
     source: "update",
     title: row.name,
-    message: automaticUnavailable
-      ? "Update detected, but automatic apply is unavailable because at least one service image is local or cannot be resolved from its registry."
-      : version,
+    message: version,
     details: {
       kind: row.kind,
       currentLabel: row.currentLabel,
       latestLabel: row.latestLabel,
       latestInProgress: row.latestInProgress,
-      canApply: row.canApply,
       selfUpdate: isSelf,
     },
     target: {
@@ -396,7 +392,7 @@ function updateIssue(row: UpdateRow): SystemIssue {
       // whose Update button would 403.
       href: isSelf ? "/settings?tab=instance" : `/projects/${row.projectId}`,
     },
-    resolveWith: isSelf || automaticUnavailable
+    resolveWith: isSelf
       ? []
       : [{ label: "Update", method: "POST", path: `/api/updates/${row.projectId}/apply` }],
   };

@@ -109,7 +109,6 @@ const update = (over: Record<string, unknown> = {}) => ({
   kind: "image",
   behind: true,
   latestInProgress: false,
-  canApply: true,
   currentLabel: "2.1.0",
   latestLabel: "2.1.4",
   ...over,
@@ -487,20 +486,6 @@ describe("every row carries its own fix", () => {
     expect(issues[0].resolveWith).toEqual([
       { label: "Update", method: "POST", path: "/api/updates/proj-2/apply" },
     ]);
-  });
-
-  it("keeps local-image drift visible without offering an apply action", async () => {
-    listOrganizationUpdates.mockResolvedValue([
-      update({ canApply: false, currentLabel: "local, 16-alpine", latestLabel: "local, 16-alpine" }),
-    ]);
-
-    const { issues } = await listOrganizationIssues(ctx);
-
-    expect(issues[0]).toMatchObject({
-      kind: "update_available",
-      message: expect.stringContaining("automatic apply is unavailable"),
-      resolveWith: [],
-    });
   });
 
   it("ignores an update row that is not actually behind", async () => {

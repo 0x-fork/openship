@@ -348,64 +348,7 @@ describe("image drift — digests keyed by the ref they were polled for", () => 
       digestByRef: { "n8nio/n8n:1.2": "sha256:new" },
     });
 
-    expect(status).toMatchObject({ behind: true, canApply: true });
-  });
-
-  it("keeps mixed local and registry image drift visible but not automatically applicable", async () => {
-    serviceRepo.listByProject.mockResolvedValue([
-      svc({ id: "svc_app", name: "app", image: "twenty-ven-production:local" }),
-      svc({ id: "svc_db", name: "db", image: "postgres:16-alpine" }),
-    ]);
-    serviceRepo.listByDeployment.mockResolvedValue([
-      {
-        serviceId: "svc_app",
-        imageRef: "twenty-ven-production:local",
-        imageDigest: "sha256:local",
-      },
-      {
-        serviceId: "svc_db",
-        imageRef: "postgres:16-alpine",
-        imageDigest: "sha256:old",
-      },
-    ]);
-
-    const status = await evaluateDrift(imageProject(), {
-      supported: true,
-      mode: "image",
-      digestByRef: {
-        "twenty-ven-production:local": null,
-        "postgres:16-alpine": "sha256:new",
-      },
-    });
-
-    expect(status).toMatchObject({ supported: true, mode: "image", behind: true, canApply: false });
-    expect(status).toMatchObject({
-      services: [
-        expect.objectContaining({ name: "app", latestDigest: null, behind: false }),
-        expect.objectContaining({ name: "db", latestDigest: "sha256:new", behind: true }),
-      ],
-    });
-  });
-
-  it("never treats a :local ref as automatically pullable from a cached registry result", async () => {
-    serviceRepo.listByProject.mockResolvedValue([
-      svc({ id: "svc_app", name: "app", image: "twenty-ven-production:local" }),
-    ]);
-    serviceRepo.listByDeployment.mockResolvedValue([
-      {
-        serviceId: "svc_app",
-        imageRef: "twenty-ven-production:local",
-        imageDigest: "sha256:local",
-      },
-    ]);
-
-    const status = await evaluateDrift(imageProject(), {
-      supported: true,
-      mode: "image",
-      digestByRef: { "twenty-ven-production:local": "sha256:public-name-collision" },
-    });
-
-    expect(status).toMatchObject({ supported: true, mode: "image", canApply: false });
+    expect(status).toMatchObject({ behind: true });
   });
 
   it("ignores a digest polled for a tag the service no longer uses", async () => {

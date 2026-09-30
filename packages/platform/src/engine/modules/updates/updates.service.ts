@@ -38,7 +38,7 @@
  */
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
-import { ValidationError, withTimeout } from "@repo/core";
+import { ValidationError, digestSha, withTimeout } from "@repo/core";
 import { repos, type NewUpdateStatus, type Project, type UpdateStatus } from "@repo/db";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -55,7 +55,7 @@ import {
   type DriftStatus,
   type UpstreamDrift,
 } from "@repo/platform/engine/modules/projects/project-crud.service";
-import { redeployBuildSession } from "@repo/platform/engine/modules/deployments/build.service";
+import { redeployBuildSession, triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
 
 // ─── Display labels ──────────────────────────────────────────────────────────
@@ -72,8 +72,9 @@ function imageTag(ref: string): string | null {
 
 /** Short form of a `sha256:…` (or bare hex) content digest. */
 function shortDigest(digest?: string | null): string | null {
-  if (!digest) return null;
-  const hex = digest.includes(":") ? digest.slice(digest.indexOf(":") + 1) : digest;
+  const content = digestSha(digest ?? undefined);
+  if (!content) return null;
+  const hex = content.includes(":") ? content.slice(content.indexOf(":") + 1) : content;
   return hex.slice(0, 12) || null;
 }
 
@@ -147,7 +148,6 @@ function presentation(status: DriftStatus) {
   return {
     currentLabel,
     latestLabel,
-    canApply: status.canApply,
     detail: { services: status.services },
   };
 }
@@ -479,7 +479,6 @@ async function driftItem(
     kind: status.mode,
     behind: status.behind,
     latestInProgress: status.latestInProgress,
-    canApply: "canApply" in view ? view.canApply : true,
     currentLabel: view.currentLabel,
     latestLabel: view.latestLabel,
     detail: view.detail,
@@ -556,23 +555,18 @@ export async function getProjectDrift(
 // ─── Applying ────────────────────────────────────────────────────────────────
 
 /**
- * Apply the available update to a project (app / git / release / self-app). Runs
- * a redeploy with the `update` trigger — which force-pulls image tags and
- * recreates every image service, and (for release/git projects) rolls forward
- * to the latest version/commit. The existing rollback-orchestrator auto-archive
- * gives one-click revert. Returns the new deployment id so the UI can follow
- * build progress.
+ * Apply the available update. Image projects recheck drift and update only the
+ * services whose images changed; release/git projects roll forward to the latest
+ * version/commit. Both use the shared deployment and rollback machinery and
+ * return the new deployment id so the UI can follow progress.
  *
  * It no longer asks for a pre-deploy backup: every deploy fires the project's
  * `trigger_on_pre_deploy` policies once from the shared funnel (see
  * backups/triggers/pre-deploy.ts), so the opt-in this path used to pass enqueued
  * a SECOND run per policy for the same cutover.
  *
- * Deliberately does not touch `update_status`: the upstream hasn't moved, and the
- * nudge stops the moment the deployment row exists, because `latestInProgress` is
- * computed live. (The previous rescan here re-armed the banner it had just
- * cleared — `redeployBuildSession` returns while the build is still queued, so a
- * rescan at this instant recomputed drift against the version being replaced.)
+ * No post-deploy rescan: the deployed half is always read live, while the
+ * upstream result remains valid until the next poll.
  */
 export async function applyProjectUpdate(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
@@ -583,16 +577,23 @@ export async function applyProjectUpdate(ctx: RequestContext, projectId: string)
   }
   if (driftMode(project) === "image") {
     const status = await getProjectDrift(ctx, projectId);
-    if (
-      !status.supported ||
-      status.mode !== "image" ||
-      !status.behind ||
-      !status.canApply
-    ) {
-      throw new ValidationError(
-        "Automatic update is unavailable because at least one service image is local or cannot be resolved from its registry.",
-      );
+    const serviceIds = status.supported && status.mode === "image"
+      ? status.services.filter((service) => service.behind).map((service) => service.serviceId)
+      : [];
+    if (!serviceIds.length) {
+      throw new ValidationError("No newer service images could be confirmed. Check for updates and retry.");
     }
+    // Reuse the exclusive-scope deploy path (including its live target checks
+    // and pre-pull-before-cutover). A moved sidecar tag must not force-pull a
+    // sibling's local image, restart an unchanged database or build an app.
+    const { deployment } = await triggerDeployment(ctx, {
+      projectId,
+      environment: active.environment,
+      trigger: "update",
+      serviceIds,
+      strictServiceScope: true,
+    });
+    return { success: true, deployment_id: deployment.id, project_id: projectId };
   }
   return redeployBuildSession(ctx, active.id, {
     trigger: "update",

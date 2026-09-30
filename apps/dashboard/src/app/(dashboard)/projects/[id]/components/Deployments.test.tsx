@@ -173,7 +173,7 @@ it("shows the shared release update and clears the banner when that result clear
 
 it("makes a detected image update actionable through the shared update operation", async () => {
   context.availableUpdate = {
-    supported: true, mode: "image", behind: true, latestInProgress: false, canApply: true,
+    supported: true, mode: "image", behind: true, latestInProgress: false,
     services: [
       { serviceId: "redis", name: "redis", ref: "redis:7", deployedDigest: "old", latestDigest: "new", behind: true },
       { serviceId: "db", name: "db", ref: "postgres:16", deployedDigest: "same", latestDigest: "same", behind: false },
@@ -188,31 +188,6 @@ it("makes a detected image update actionable through the shared update operation
   expect(mocks.openBuild).toHaveBeenCalledWith(
     expect.anything(), { data: { deployment: { id: "image-update" } } }, "project",
   );
-});
-
-it("explains a mixed local-image update without offering the unsafe apply action", async () => {
-  context.availableUpdate = {
-    supported: true, mode: "image", behind: true, latestInProgress: false, canApply: false,
-    services: [
-      { serviceId: "app", name: "app", ref: "twenty-ven-production:local", deployedDigest: "local", latestDigest: null, behind: false },
-      { serviceId: "db", name: "db", ref: "postgres:16-alpine", deployedDigest: "old", latestDigest: "new", behind: true },
-    ],
-  };
-
-  await act(async () => root.render(<Deployments />));
-
-  expect(container.textContent).toContain(
-    baseDictionary.projectSettings.appSource.automaticUpdateUnavailable,
-  );
-  expect(container.textContent).toContain(
-    baseDictionary.projectSettings.appSource.automaticUpdateUnavailableDescription,
-  );
-  expect(
-    [...container.querySelectorAll("button")].some(
-      (candidate) => candidate.textContent === baseDictionary.projectSettings.appSource.update,
-    ),
-  ).toBe(false);
-  expect(mocks.applyUpdate).not.toHaveBeenCalled();
 });
 
 it.each([
