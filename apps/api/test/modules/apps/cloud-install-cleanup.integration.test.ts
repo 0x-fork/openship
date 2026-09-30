@@ -318,12 +318,14 @@ describe("Supabase Cloud installation failure and deletion", () => {
     expect(await preview()).toMatchObject({ status: "ready" });
     const services = await repos.service.listByProject(projectId);
     const database = services.find((service) => service.name === "db")!;
-    await repos.service.update(database.id, {
-      advanced: { ...database.advanced, resources: { cpuCores: 3, memoryMb: 3072, diskMb: 40960 } },
-    });
-    expect(await preview()).toMatchObject({ status: "upgrade", resources: { cpuCores: 6 } });
-    expect((await repos.service.findById(database.id))?.advanced?.resources?.cpuCores).toBe(3);
-    expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
+    for (const [cpuCores, workspaceCpu, status] of [[5, 8, "ready"], [6, 9, "upgrade"]] as const) {
+      await repos.service.update(database.id, {
+        advanced: { ...database.advanced, resources: { cpuCores, memoryMb: 3072, diskMb: 40960 } },
+      });
+      expect(await preview()).toMatchObject({ status, resources: { cpuCores: workspaceCpu } });
+      expect((await repos.service.findById(database.id))?.advanced?.resources?.cpuCores).toBe(cpuCores);
+      expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
+    }
     expect(requests.some((request) => request.startsWith("POST "))).toBe(false);
     const outsider = await seedOwner();
     const forbidden = await app.request(
