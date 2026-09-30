@@ -65,6 +65,11 @@ capacity. Oblien intersects configured, paid, account and platform limits and
 reserves capacity atomically on create/resize. `readCloudCapacity` supplies the
 dashboard with provider allocations instead of estimating them from services.
 
+Service slots include enabled services in deployed projects, active containers,
+and accepted deployment reservations. Saving an undeployed draft consumes no
+service slots. Reservations remain until activation or worker cleanup finishes;
+redeploying the same service does not consume a second slot.
+
 An image-only Compose app gets only its service allocation plus Docker/OS room:
 a default 512 MB service uses a 1 CPU / 1 GB host with an 8 GB disk. Source builds
 reserve additional RAM temporarily. After deployment, verified running container

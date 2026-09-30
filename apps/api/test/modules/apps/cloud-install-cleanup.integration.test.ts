@@ -156,11 +156,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function installSupabase() {
+async function installSupabase(tier: "pro" | "starter" = "pro") {
   const owner = await seedOwner();
   await db
     .update(schema.organization)
-    .set({ planTierId: "pro" })
+    .set({ planTierId: tier })
     .where(eq(schema.organization.id, owner.orgId));
   const response = await app.request("/api/apps", {
     method: "POST",
@@ -217,6 +217,18 @@ async function expectDeleted(projectId: string) {
 }
 
 describe("Supabase Cloud installation failure and deletion", () => {
+  it("can save the complete draft without consuming slots before deployment admission", async () => {
+    const { owner, projectId, secrets } = await installSupabase("starter");
+    expect(await repos.service.countRunningForOrg(owner.orgId)).toBe(0);
+    const response = await app.request(
+      `/api/apps/catalog/supabase/host-fit?deployTarget=cloud&projectId=${projectId}`,
+      { headers: owner.auth },
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.cloud.status).toBe("upgrade");
+    expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
+    expect(requests.some((request) => request.startsWith("POST "))).toBe(false);
+  });
   it("previews the plan and actual draft resources without provisioning or changing saved settings", async () => {
     const { owner, projectId, secrets } = await installSupabase();
     const preview = async () => {
