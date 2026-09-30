@@ -58,7 +58,7 @@ export {
 
 export { BUILD_STEPS } from "./types";
 
-export { DEFAULT_RESOURCE_CONFIG, DEFAULT_BUILD_RESOURCE_CONFIG } from "./types";
+export { cloudCpus, DEFAULT_RESOURCE_CONFIG, DEFAULT_BUILD_RESOURCE_CONFIG } from "./types";
 
 // ─── Runtime layer ───────────────────────────────────────────────────────────
 export type {

@@ -3,6 +3,7 @@ import {
   CLOUD_DOCKER_IMAGE,
   CloudWorkspaceExecutor,
   Oblien,
+  cloudCpus,
   cloudWorkspaceCreationFailure,
   cloudWorkspaceStatus,
   sq,
@@ -97,7 +98,11 @@ export function runningDockerAllocation(output: string, projectId: string): Reso
     }
     cpu += cores; memory += bytes / 1048576;
   }
-  return { cpuCores: Math.max(1, Math.ceil(cpu)), memoryMb: Math.max(1024, Math.ceil((memory + 512) / 256) * 256), diskMb: 8192 };
+  return {
+    cpuCores: cloudCpus(cpu),
+    memoryMb: Math.max(1024, Math.ceil((memory + 512) / 256) * 256),
+    diskMb: 8192,
+  };
 }
 
 async function resizeDockerWorkspace(input: {

@@ -13,6 +13,7 @@
  */
 
 import {
+  cloudCpus,
   DEFAULT_RESOURCE_CONFIG,
   DEFAULT_BUILD_RESOURCE_CONFIG,
   type ResourceConfig,
@@ -223,12 +224,15 @@ export function cloudDockerResources(input: {
     ? resolveBuildResources(input.buildResources, { isCloud: true })
     : null;
   // Image pulls need no source-build reservation. Include bounded Docker/OS
-  // overhead; a source build receives temporary RAM released after deployment.
+  // overhead; a source build receives temporary resources released after deployment.
+  // Oblien accepts fractional CPU, including on Docker hosts. Use the same
+  // normalization as native Cloud workspaces instead of reserving whole cores.
   return {
-    cpuCores: Math.max(
-      1,
-      Math.ceil(build?.cpuCores ?? 0),
-      Math.ceil(resources.reduce((n, r) => n + r.cpuCores, 0)),
+    cpuCores: cloudCpus(
+      Math.max(
+        build?.cpuCores ?? 0,
+        resources.reduce((n, r) => n + r.cpuCores, 0),
+      ),
     ),
     memoryMb: Math.max(
       1024,
