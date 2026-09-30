@@ -76,8 +76,8 @@ describe("pricing catalog (pricing.json)", () => {
     expect(PLAN_IDS).toEqual(union);
   });
 
-  it("prices the published ladder: free, $5, $20, $40, $99, custom", () => {
-    expect(PRICING.plans.map((p) => p.price.monthly)).toEqual([0, 500, 2000, 4000, 9900, null]);
+  it("prices the published ladder: free, $5, $20, $39, $99, custom", () => {
+    expect(PRICING.plans.map((p) => p.price.monthly)).toEqual([0, 500, 2000, 3900, 9900, null]);
   });
 
   it("ships exactly one popular tier", () => {

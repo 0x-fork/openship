@@ -6,19 +6,20 @@ same catalog to the dashboard, marketing and linked installations. Checkout uses
 a generic Oblien offer; the subscription belongs to the customer's namespace.
 The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
-## Version 4 offers
+## Version 5 offers
 
 | Plan | Monthly price | Included credits | Shared CPU / RAM / disk | Per service: CPU / RAM | Projects | Service slots |
 | --- | ---: | ---: | --- | --- | ---: | ---: |
 | Hobby | $5 | 400 | 1 / 4 GB / 16 GB | 1 / 2 GB | 3 | 1 |
 | Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 2 / 3 GB | 10 | 3 |
-| Pro | $40 | 3,500 | 4 / 8 GB / 128 GB | 4 / 4 GB | 50 | 10 |
+| Pro | $39 | 3,500 | 4 / 8 GB / 128 GB | 4 / 4 GB | 50 | 10 |
 | Scale | $99 | 9,000 | 8 / 16 GB / 256 GB | 8 / 8 GB | No set limit | 50 |
 
 CPU values are vCPU. New retail offers allow one service up to the full shared
 CPU pool and half the shared RAM. `limits.maxServiceResources` records that ceiling explicitly,
 including custom sizes; it does not change machine presets or workload defaults.
-Prices, included credits, project/service counts and aggregate capacity are unchanged.
+Version 5 lowers Pro to $39/month. Included credits, project/service counts and
+capacity retain their v4 values.
 
 | Plan | Workspace count | Per VM: vCPU / RAM / disk |
 | --- | ---: | --- |
@@ -36,7 +37,7 @@ virtual CPU quota, not a dedicated physical core. An unpaid namespace has zero
 workspace and total capacity. Enterprise remains contact-sales; only a verified
 contract or audited operator grant can select it.
 
-At Oblien's current 100 credits/USD wallet rate, these payments fund 500 / 2,000 / 4,000 /
+At Oblien's current 100 credits/USD wallet rate, these payments fund 500 / 2,000 / 3,900 /
 9,900 wallet credits. The namespace allowances stay below that funding. Catalog
 validation rejects unfunded retail allowances, top-ups and inherited retail
 capacity. Oblien-admin promotions explicitly account for any promotional subsidy;
@@ -92,12 +93,14 @@ stopped services stay stopped.
 
 ## Existing subscriptions and upgrades
 
-`openship:<tier>:v4` saves the price, credits, grace, application limits and all
+`openship:<tier>:v5` saves the price, credits, grace, application limits and all
 seven capacity fields. Renewals use that snapshot, even after catalog edits.
-Unknown versions, missing v2/v3/v4 capacity fields and organization/namespace mismatches
+Unknown versions, missing v2–v5 capacity fields and organization/namespace mismatches
 fail closed. Price and credit metadata never come from browser input.
 
-Saved v2/v3 subscriptions retain their original price, credits and capacity snapshot.
+Saved v2/v3/v4 subscriptions retain their original price, credits and capacity snapshot,
+including the $40 price on existing v4 Pro subscriptions. New v5 offers use a
+distinct checkout reference so retries cannot reuse the older price.
 Snapshots without `maxServiceResources` retain their purchased `maxResourceTier`
 ceiling. There is no automatic uplift or rewrite of existing paid subscriptions;
 any adjustment is an explicit operator action. Unchanged top-ups retain v3 references.

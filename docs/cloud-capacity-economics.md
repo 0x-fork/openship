@@ -1,14 +1,16 @@
 # Cloud capacity and unit economics — 2026-09-30
 
-Version 4 retains **$5 / $20 / $40 / $99** Hobby / Starter / Pro / Scale offers,
-with **400 / 1,700 / 3,500 / 9,000** metered credits. New offers allow one service
+Version 5 offers **$5 / $20 / $39 / $99** Hobby / Starter / Pro / Scale plans,
+with **400 / 1,700 / 3,500 / 9,000** metered credits. These retain the v4 capacity
+limits: one service can use
 up to the full shared CPU pool and half the RAM: **1 vCPU / 2 GB**, **2 vCPU / 3 GB**,
-**4 vCPU / 4 GB**, and **8 vCPU / 8 GB**. Pro and Scale VM CPU ceilings also become
-4 and 8 vCPU so those service sizes can be provisioned. Total allocation and
-funding do not change. Existing paid snapshots are not upgraded automatically.
+**4 vCPU / 4 GB**, and **8 vCPU / 8 GB**. Pro and Scale VM CPU ceilings remain
+4 and 8 vCPU so those service sizes can be provisioned. The $39 Pro payment funds
+3,900 wallet credits, above its unchanged 3,500-credit allowance. Existing paid
+snapshots keep their purchased prices and limits.
 The prior capacity fixes and
 source-builder corrections remain in place. [The catalog reference](../packages/core/src/pricing/README.md)
-is the exact customer contract, including saved v1/v2/v3 renewal behavior.
+is the exact customer contract, including saved v1–v4 renewal behavior.
 
 ## Hardware and revenue budget
 
@@ -24,7 +26,7 @@ With $200 revenue from ten payments, contribution is $92.20 (46.1%); with $300 f
 fifteen payments it is $185.80 (61.9%). At a $20 average charge, break-even is about
 $102/node/month and a 60% contribution target needs about $283. These exclude tax,
 company payroll and other unmodelled expenses. Safe workload density must support
-the revenue target: three $40 Pro subscriptions only leave $18.22 under this model.
+the revenue target: three $39 Pro subscriptions only leave $15.37 under this model.
 Do not use CPU oversubscription or credit expiry as a substitute for measurement.
 
 At company level, count the customer's payment once. Funding the Openship-owned
@@ -63,7 +65,7 @@ credits. Grace stays zero unless the reseller explicitly configures it.
 2. Deploy this Openship API/dashboard together. Published SDK 2.5.0 is sufficient.
 3. Reconcile organizations through the billing sweep or guarded Cloud actions.
    v1 paid credits and periods remain unchanged; pre-v4 finite safety ceilings
-   still bound inherited capacity. v2/v3 saved commercial terms and per-service
+   still bound inherited capacity. v2/v3/v4 saved commercial terms and per-service
    ceilings remain intact.
 4. Review oversized existing Docker hosts while no deployment is in progress.
    The shared helper reduces CPU/RAM only after checking ownership, namespace

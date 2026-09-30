@@ -18,7 +18,7 @@ describe("funded Cloud offers and isolated capacity", () => {
       expect(Object.values(offer.resourceLimits!).every(value => Number.isInteger(value) && value! > 0)).toBe(true);
       expect(offer.policy).toMatchObject({ overdraft: 0, suspendThreshold: 0 });
       expect(presentCloudPlans().plans.find(plan => plan.id === tier)?.resourceLimits).toEqual(offer.resourceLimits);
-      expect(offer.reference).toBe(`openship:${tier}:v4`);
+      expect(offer.reference).toBe(`openship:${tier}:v5`);
       const saved = subscriptionPlan({ ...savedPro(), offer, metadata: subscriptionMetadata(tier, "org-a", "ns-a") });
       const published = presentCloudPlans().plans.find(plan => plan.id === tier)!;
       expect(planServiceResources(saved.limits)).toEqual(planServiceResources(published.limits));
@@ -116,17 +116,33 @@ describe("funded Cloud offers and isolated capacity", () => {
     expect(planServiceResources(subscriptionPlan({ ...subscription, tierId: "hobby" }).limits))
       .toEqual({ cpuCores: 1, memoryMb: 1024 });
   });
-  it.each([null, undefined, { cpuCores: 0, memoryMb: 4096 }])("rejects an unverifiable v4 service ceiling: %j", maxServiceResources => {
+  it("preserves the $40 v4 Pro purchase after publishing the $39 offer", async () => {
     const subscription = savedPro();
-    subscription.metadata!.openship_limits = JSON.stringify({ ...JSON.parse(subscription.metadata!.openship_limits!), maxServiceResources });
-    expect(() => subscriptionPlan(subscription)).toThrow(/could not be verified/);
+    subscription.offer = { ...subscription.offer!, reference: "openship:pro:v4", unitAmount: 4000 };
+    subscription.metadata!.openship_offer_version = "4";
+    const before = structuredClone(subscription);
+    const saved = subscriptionPlan(subscription, "org-a", "ns-a");
+    expect(await cloudPlan("pro", subscription)).toMatchObject({ price: { monthly: 4000 }, monthlyCredits: 3_500_000,
+      limits: saved.limits, resourceLimits: subscription.offer.resourceLimits });
+    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v5", unitAmount: 3900, credits: 3500,
+      resourceLimits: saved.resourceLimits });
+    expect(subscription).toEqual(before);
+  });
+  it.each(["4", "5"])("rejects unverifiable service ceilings in v%s", version => {
+    for (const maxServiceResources of [null, undefined, { cpuCores: 0, memoryMb: 4096 }]) {
+      const subscription = savedPro();
+      subscription.offer!.reference = `openship:pro:v${version}`;
+      subscription.metadata!.openship_offer_version = version;
+      subscription.metadata!.openship_limits = JSON.stringify({ ...JSON.parse(subscription.metadata!.openship_limits!), maxServiceResources });
+      expect(() => subscriptionPlan(subscription)).toThrow(/could not be verified/);
+    }
   });
   it("rejects unknown versions and mismatched offer metadata", () => {
     const subscription = savedPro();
     subscription.metadata!.openship_offer_version = "3";
     expect(() => subscriptionPlan(subscription)).toThrow(/could not be verified/);
-    subscription.metadata!.openship_offer_version = "5";
-    subscription.offer!.reference = "openship:pro:v5";
+    subscription.metadata!.openship_offer_version = "6";
+    subscription.offer!.reference = "openship:pro:v6";
     expect(() => subscriptionPlan(subscription)).toThrow(/could not be verified/);
   });
   it.each([undefined, null])("rejects an incomplete or unbounded new retail capacity contract (%s)", value => {

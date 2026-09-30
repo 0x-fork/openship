@@ -33,12 +33,13 @@ export const CLOUD_EDGE_BANDWIDTH_GB: Readonly<Record<PlanTierId, number | null>
   enterprise: null,
 };
 
-export const OFFER_VERSION = "4";
+// Version price/term changes so checkout retries cannot reuse an earlier quote.
+export const OFFER_VERSION = "5";
 const TOPUP_OFFER_VERSION = "3";
 export const offerReference = (tier: PlanTierId) => `openship:${tier}:v${OFFER_VERSION}`;
 
 export function supportedOfferReference(reference: string | undefined, tier: PlanTierId): boolean {
-  return reference === offerReference(tier) || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
+  return reference === offerReference(tier) || reference === `openship:${tier}:v4` || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
     (reference === `openship:${tier}:v1` || reference === `openship:${tier}:v2`));
 }
 
@@ -99,7 +100,7 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
   try { decoded = JSON.parse(metadata.openship_limits ?? ""); } catch { invalidContract(); }
   const parsed = planLimitsSchema.strict().safeParse(decoded);
   if (!parsed.success) invalidContract();
-  if (version === OFFER_VERSION && tier !== "enterprise" && !parsed.data.maxServiceResources) invalidContract();
+  if (Number(version) >= 4 && tier !== "enterprise" && !parsed.data.maxServiceResources) invalidContract();
   return { tier, limits: parsed.data, resourceLimits: savedResourceLimits(tier, offer) };
 }
 

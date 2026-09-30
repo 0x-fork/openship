@@ -79,7 +79,7 @@ describe("Cloud customer checkout", () => {
     expect(plans.map((plan) => [plan.id, plan.price.monthly, plan.monthlyCredits])).toEqual([
       ["hobby", 500, 400_000],
       ["starter", 2000, 1_700_000],
-      ["pro", 4000, 3_500_000],
+      ["pro", 3900, 3_500_000],
       ["team", 9900, 9_000_000],
     ]);
     expect(presentCloudPlans().annual.enabled).toBe(false);
@@ -92,7 +92,7 @@ describe("Cloud customer checkout", () => {
       kind: "subscription",
       billingInterval: "monthly",
       offer: {
-        reference: "openship:starter:v4",
+        reference: "openship:starter:v5",
         unitAmount: 2000,
         credits: 1700,
         policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" },
@@ -118,7 +118,7 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({
       namespace: "ns-org-a",
       offer: expect.objectContaining({
-        reference: "openship:hobby:v4", unitAmount: 500, credits: 400,
+        reference: "openship:hobby:v5", unitAmount: 500, credits: 400,
         resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 4096, max_disk_gb: 16,
           max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 16 },
       }),
@@ -217,7 +217,7 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: "ns-org-a",
-        offer: expect.objectContaining({ reference: "openship:team:v4", unitAmount: 9900 }),
+        offer: expect.objectContaining({ reference: "openship:team:v5", unitAmount: 9900 }),
         billingInterval: "monthly",
       }),
     );

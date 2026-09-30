@@ -478,7 +478,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     for (const [id, monthlyPrice, monthlyCredits] of [
       ["hobby", 500, 400_000],
       ["starter", 2000, 1_700_000],
-      ["pro", 4000, 3_500_000],
+      ["pro", 3900, 3_500_000],
       ["team", 9900, 9_000_000],
     ] as const)
       expect(native.plans.find(plan => plan.id === id)).toMatchObject({
@@ -497,7 +497,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
   it.each([
     ["hobby", 500, 400],
     ["starter", 2000, 1700],
-    ["pro", 4000, 3500],
+    ["pro", 3900, 3500],
     ["team", 9900, 9000],
   ] as const)("uses the selected tenant and current %s offer without auditing checkout URLs", async (tier, unitAmount, credits) => {
     const owner = await seedOwner(), other = await seedOwner(), c = await clients(owner);
@@ -513,9 +513,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: org!.oblienNamespace,
         kind: "subscription",
-        offer: { reference: `openship:${tier}:v4`, unitAmount, credits },
+        offer: { reference: `openship:${tier}:v5`, unitAmount, credits },
         billingInterval: "monthly",
-        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "4" },
+        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "5" },
       });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");
