@@ -18,24 +18,27 @@ export function PlanResources({ plan, interval = "monthly", compact = false }: {
   const pool = plan.resourceLimits;
   const hasPool = pool && [pool.max_total_vcpus, pool.max_total_ram_mb, pool.max_total_disk_gb]
     .every(value => typeof value === "number" && Number.isFinite(value));
+  const projects = { Icon: "folder-open" as const, label: copy.projects, value: count(plan.limits.maxProjects) };
+  const services = { Icon: "layers" as const, label: copy.apps, value: count(plan.limits.runningServices) };
+  const builds = { Icon: "clock" as const, label: copy.buildTime, value: plan.limits.buildMinutesPerMonth === null
+    ? copy.buildUsageBased : interpolate(copy.buildMinutes, { amount: count(plan.limits.buildMinutesPerMonth) }) };
   const facts = [
     ...(hasPool ? [{ Icon: "cloud" as const, label: copy.poolTitle, value: interpolate(copy.poolCapacity, {
       cpu: count(pool.max_total_vcpus), ram: count(pool.max_total_ram_mb! / 1024), disk: count(pool.max_total_disk_gb),
     }) }] : []),
     { Icon: "cpu" as const, label: copy.machine, value: spec ? `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}` : copy.unlimited },
-    { Icon: "clock" as const, label: copy.buildTime, value: plan.limits.buildMinutesPerMonth === null
-      ? copy.buildUsageBased : interpolate(copy.buildMinutes, { amount: count(plan.limits.buildMinutesPerMonth) }) },
+    builds,
     { Icon: "bolt" as const, label: copy.credits, value: credits == null
       ? plan.id === "enterprise" ? t.billing.pricing.custom : "—"
       : interpolate(copy.creditsPerCycle, { amount: formatMilliCredits(credits, locale) }) },
-    { Icon: "folder-open" as const, label: copy.projects, value: count(plan.limits.maxProjects) },
-    { Icon: "layers" as const, label: copy.apps, value: count(plan.limits.runningServices) },
+    projects,
+    services,
     ...(plan.edge ? [{ Icon: "globe" as const, label: t.billing.resourceOverview.bandwidth, value: plan.edge.bandwidthGb === null ? copy.unlimited : interpolate(t.billing.resourceOverview.bandwidthPerMonth, { amount: count(plan.edge.bandwidthGb) }) }] : []),
   ];
   if (compact) {
     return (
       <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {facts.slice(0, 3).map(({ label, value }) => (
+        {[projects, services, builds].map(({ label, value }) => (
           <div key={label} className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 p-3 sm:block">
             <dt className="text-sm text-muted-foreground">{label}</dt>
             <dd className="text-sm font-semibold tabular-nums text-foreground sm:mt-2"><bdi>{value}</bdi></dd>
