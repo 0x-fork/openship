@@ -260,11 +260,12 @@ describe("pricing catalog (pricing.json)", () => {
   });
 
   it.each([
-    ["hobby", 0.5, 2048], ["starter", 1, 3072], ["pro", 2, 4096], ["team", 4, 8192],
-  ] as const)("allows one %s service up to half its shared CPU and RAM", (id, cpuCores, memoryMb) => {
+    ["hobby", 1, 2048], ["starter", 2, 3072], ["pro", 4, 4096], ["team", 8, 8192],
+  ] as const)("allows one %s service the shared CPU pool and half the shared RAM", (id, cpuCores, memoryMb) => {
     const limits = planServiceResources(planLimits(id));
     expect(limits).toEqual({ cpuCores, memoryMb });
-    expect(cpuCores).toBe(PLANS[id].oblienLimits.max_total_vcpus! / 2);
+    expect(cpuCores).toBe(PLANS[id].oblienLimits.max_total_vcpus);
+    expect(cpuCores).toBe(PLANS[id].oblienLimits.max_vcpus);
     expect(memoryMb).toBe(PLANS[id].oblienLimits.max_total_ram_mb! / 2);
     expect(resolvePlan(id).features).toContain(`Up to ${cpuCores} vCPU and ${memoryMb / 1024} GB RAM per app`);
   });

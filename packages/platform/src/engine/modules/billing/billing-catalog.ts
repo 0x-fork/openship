@@ -42,13 +42,22 @@ export function supportedOfferReference(reference: string | undefined, tier: Pla
     (reference === `openship:${tier}:v1` || reference === `openship:${tier}:v2`));
 }
 
+/** Offers without a complete saved capacity policy retain their pre-v4 VM CPU
+ * ceilings. New offers always read the current catalog. */
+function inheritedResourceLimits(tier: PlanTierId): ReturnType<typeof cloudNamespaceLimits> {
+  const limits = cloudNamespaceLimits(tier);
+  if (tier === "pro") limits.max_vcpus = 2;
+  if (tier === "team") limits.max_vcpus = 4;
+  return limits;
+}
+
 /** v1 left resource sizes inherited from the Enterprise reseller. Apply the
  * documented safety ceiling without changing paid credits, price or period.
  * New offers retain their complete saved allocation through renewal. */
 export function savedResourceLimits(tier: PlanTierId, offer: OblienOffer): ReturnType<typeof cloudNamespaceLimits> {
   if (!offer.resourceLimits || !supportedOfferReference(offer.reference, tier)) invalidContract();
   const legacy = offer.reference === `openship:${tier}:v1`;
-  const ceiling = cloudNamespaceLimits(tier);
+  const ceiling = legacy ? inheritedResourceLimits(tier) : cloudNamespaceLimits(tier);
   const keys = Object.keys(ceiling) as Array<keyof typeof ceiling>;
   return Object.fromEntries(keys.map(key => {
     const saved = offer.resourceLimits![key];
@@ -77,7 +86,7 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
     if (!tier) throw new AppError("This cloud plan is not supported by this Openship version", 503, "OBLIEN_PLAN_UNSUPPORTED");
     // Platform subscriptions predate explicit service ceilings; retain their
     // preset rather than applying a new retail offer to an existing customer.
-    return { tier, limits: { ...planLimits(tier), maxServiceResources: undefined }, resourceLimits: cloudNamespaceLimits(tier) };
+    return { tier, limits: { ...planLimits(tier), maxServiceResources: undefined }, resourceLimits: inheritedResourceLimits(tier) };
   }
   const { offer, metadata } = subscription;
   const tier = metadata?.openship_plan as PlanTierId;

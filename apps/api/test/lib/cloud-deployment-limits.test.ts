@@ -24,7 +24,7 @@ const base = { cpuCores: 1, memoryMb: 1024, diskMb: 8192 };
 const services = () => [{ enabled: true }, { enabled: true }, { enabled: true }];
 describe("Cloud deploy and update resource gates", () => {
   it.each([
-    ["hobby", 0.5, 2048], ["starter", 1, 3072], ["pro", 2, 4096], ["team", 4, 8192],
+    ["hobby", 1, 2048], ["starter", 2, 3072], ["pro", 4, 4096], ["team", 8, 8192],
   ] as const)("applies the new %s ceiling to resource edits, deployments and existing runtimes", async (tier, cpuCores, memoryMb) => {
     h.tier = tier;
     const resources = { cpuCores, memoryMb, diskMb: 8192 };
@@ -44,10 +44,11 @@ describe("Cloud deploy and update resource gates", () => {
   });
   it("compares named presets on their CPU and RAM, not a separate preset rank", async () => {
     await expect(assertPlanAllowsResourceTier("org-a", { tier: "medium" })).resolves.toBeUndefined();
-    await expect(assertPlanAllowsResourceTier("org-a", { tier: "high" })).rejects.toMatchObject({ reason: "resource-tier" });
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "high" })).resolves.toBeUndefined();
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "xlarge" })).rejects.toMatchObject({ reason: "resource-tier" });
     h.sync.mockResolvedValue({ tier: "starter", limits: { ...planLimits("starter"), maxResourceTier: "low" },
       resourceLimits: resolvePlan("starter").oblienLimits });
-    await expect(assertPlanAllowsResourceTier("org-a", { tier: "medium" })).resolves.toBeUndefined();
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "high" })).resolves.toBeUndefined();
   });
   it.each([
     { tier: "unknown" }, { tier: "__proto__" }, { tier: "unlimited" }, {},
@@ -71,7 +72,7 @@ describe("Cloud deploy and update resource gates", () => {
   });
   it("includes the combined Docker workspace allocation, even when each service fits", async () => {
     h.tier = "team";
-    const stack = Array.from({ length: 5 }, (_, index) => ({
+    const stack = Array.from({ length: 9 }, (_, index) => ({
       name: `svc-${index}`,
       image: "redis:8",
       advanced: { resources: base },
@@ -89,7 +90,7 @@ describe("Cloud deploy and update resource gates", () => {
     await expect(
       assertCloudDeploymentLimits("org-a", {
         dockerWorkspace: true,
-        services: [...stack.slice(0, 4), { ...stack[4], enabled: false }],
+        services: [...stack.slice(0, 8), { ...stack[8], enabled: false }],
       }),
     ).resolves.toBeUndefined();
   });
@@ -114,7 +115,7 @@ describe("Cloud deploy and update resource gates", () => {
       ).rejects.toMatchObject({ reason: "workspace-capacity" });
     },
   );
-  it("uses the purchased workspace limit rather than hardcoding four CPUs", async () => {
+  it("honors a saved workspace CPU ceiling below the new catalog", async () => {
     h.sync.mockResolvedValue({
       tier: "team",
       limits: planLimits("team"),
@@ -129,6 +130,12 @@ describe("Cloud deploy and update resource gates", () => {
         })),
       }),
     ).resolves.toBeUndefined();
+    await expect(
+      assertCloudDeploymentLimits("org-a", {
+        dockerWorkspace: true,
+        services: Array.from({ length: 7 }, () => ({ image: "redis:8", advanced: { resources: base } })),
+      }),
+    ).rejects.toMatchObject({ reason: "workspace-capacity" });
   });
   it("counts a not-yet-created app in addition to the organization's existing services", async () => {
     h.count.mockResolvedValue(2);

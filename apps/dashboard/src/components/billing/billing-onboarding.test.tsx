@@ -337,13 +337,13 @@ describe("customer credit limits", () => {
     expect(visibleText()).toContain(copy.resourcesGuide.buildTime);
     expect(visibleText()).toContain(copy.resourcesGuide.buildUsageBased);
     expect(visibleText()).toContain("1,234 credits / billing cycle");
-    expect(visibleText()).toContain("1 vCPU · 3 GB");
+    expect(visibleText()).toContain("2 vCPU · 3 GB");
   });
   it("shows saved preset ceilings and fixed build allowances without using new catalog limits", async () => {
     await render(<PlanResources plan={{ ...hobby, limits: { ...hobby.limits,
       maxServiceResources: undefined, buildMinutesPerMonth: 3000 } }} />);
     expect(visibleText()).toContain("1 vCPU · 1 GB");
-    expect(visibleText()).not.toContain("1 vCPU · 3 GB");
+    expect(visibleText()).not.toContain("2 vCPU · 3 GB");
     expect(visibleText()).toContain("3,000 min / month");
     expect(visibleText()).not.toContain(copy.resourcesGuide.buildUsageBased);
   });

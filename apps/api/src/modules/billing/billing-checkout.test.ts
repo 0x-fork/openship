@@ -141,7 +141,7 @@ describe("Cloud customer checkout", () => {
     const input = h.checkout.mock.calls[0]![0];
     expect(input.offer).toMatchObject({
       unitAmount: 9900, credits: 9000,
-      resourceLimits: { max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 },
+      resourceLimits: { max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 },
     });
     expect(JSON.parse(input.metadata.openship_limits).runningServices).toBe(50);
     expect(h.quota).not.toHaveBeenCalled();

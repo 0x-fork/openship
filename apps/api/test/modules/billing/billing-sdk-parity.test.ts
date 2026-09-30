@@ -341,8 +341,8 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
   });
 
-  it.each([["3", 1024, "medium"], ["4", 3072, "custom"]] as const)(
-    "shows the purchased v%s service ceiling through both SDK and HTTP billing state", async (version, memoryMb, machineTier) => {
+  it.each([["3", 1, 1024, "medium"], ["4", 2, 3072, "custom"]] as const)(
+    "shows the purchased v%s service ceiling through both SDK and HTTP billing state", async (version, cpuCores, memoryMb, machineTier) => {
       const owner = await seedOwner(), c = await clients(owner);
       await c.native.getState();
       const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
@@ -362,7 +362,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
       provider.resourceUpdate.mockClear();
       for (const client of [c.native, c.remote]) {
         const state = await client.getState();
-        expect(state.maxServiceMachine).toEqual({ tier: machineTier, cpuCores: 1, memoryMb });
+        expect(state.maxServiceMachine).toEqual({ tier: machineTier, cpuCores, memoryMb });
         expect(state.plan?.limits).toEqual(JSON.parse(metadata.openship_limits!));
         expect(state.plan?.price.monthly).toBe(saved.offer!.unitAmount);
         expect(state.plan?.monthlyCredits).toBe(saved.offer!.credits * 1000);
@@ -453,7 +453,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.checkout).toHaveBeenCalledTimes(2);
     for (const [input] of provider.checkout.mock.calls) {
-      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
+      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
     }
   });
 

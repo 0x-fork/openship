@@ -10,13 +10,13 @@ The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
 | Plan | Monthly price | Included credits | Shared CPU / RAM / disk | Per service: CPU / RAM | Projects | Service slots |
 | --- | ---: | ---: | --- | --- | ---: | ---: |
-| Hobby | $5 | 400 | 1 / 4 GB / 16 GB | 0.5 / 2 GB | 3 | 1 |
-| Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 1 / 3 GB | 10 | 3 |
-| Pro | $40 | 3,500 | 4 / 8 GB / 128 GB | 2 / 4 GB | 50 | 10 |
-| Team | $99 | 9,000 | 8 / 16 GB / 256 GB | 4 / 8 GB | No set limit | 50 |
+| Hobby | $5 | 400 | 1 / 4 GB / 16 GB | 1 / 2 GB | 3 | 1 |
+| Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 2 / 3 GB | 10 | 3 |
+| Pro | $40 | 3,500 | 4 / 8 GB / 128 GB | 4 / 4 GB | 50 | 10 |
+| Scale | $99 | 9,000 | 8 / 16 GB / 256 GB | 8 / 8 GB | No set limit | 50 |
 
-CPU values are vCPU. New retail offers allow one service up to half of the shared
-CPU and RAM pool. `limits.maxServiceResources` records that ceiling explicitly,
+CPU values are vCPU. New retail offers allow one service up to the full shared
+CPU pool and half the shared RAM. `limits.maxServiceResources` records that ceiling explicitly,
 including custom sizes; it does not change machine presets or workload defaults.
 Prices, included credits, project/service counts and aggregate capacity are unchanged.
 
@@ -24,8 +24,8 @@ Prices, included credits, project/service counts and aggregate capacity are unch
 | --- | ---: | --- |
 | Hobby | 1 | 1 / 4 GB / 16 GB |
 | Starter | 3 | 2 / 6 GB / 16 GB |
-| Pro | 6 | 2 / 8 GB / 32 GB |
-| Team | 12 | 4 / 12 GB / 64 GB |
+| Pro | 6 | 4 / 8 GB / 32 GB |
+| Scale | 12 | 8 / 12 GB / 64 GB |
 
 Hobby includes a finite allowance for light use. A continuously running Docker
 host can need top-ups; $5 does not buy an unlimited always-on VM.
@@ -105,8 +105,9 @@ The new Hobby tier exists from v3: a legacy provider `hobby` subscription still
 maps to its original Openship Starter tier, never to the new $5 plan.
 
 Legacy v1 offers left VM sizes inherited from the Enterprise owner. Reconciliation
-adds the current retail safety ceilings to those offers while preserving their
-paid price, credits, period and history. It also preserves tighter saved limits.
+retains their pre-v4 safety ceilings, including 2 vCPU per Pro VM and 4 vCPU per
+Scale VM, while preserving paid price, credits, period and history. Pre-reseller
+subscriptions also keep those CPU ceilings. Tighter saved limits remain in force.
 Existing allocations above a new ceiling are not destroyed; downsize CPU/RAM or
 remove/migrate resources before adding more. The older API patch shape preserves
 the new total fields, so a prior client cannot erase them by omission.

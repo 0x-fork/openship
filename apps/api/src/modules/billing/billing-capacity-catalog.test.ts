@@ -45,17 +45,39 @@ describe("funded Cloud offers and isolated capacity", () => {
     expect(await cloudPlan("pro", subscription)).toMatchObject({ price: { monthly: 3900 }, monthlyCredits: 3_000_000 });
     expect(subscription).toEqual(before);
   });
+  it.each([
+    ["pro", "pro", 2, 2048], ["team", "scale", 4, 8192],
+  ] as const)("preserves pre-v4 inherited CPU ceilings for %s", (tier, providerTier, cpuCores, memoryMb) => {
+    const subscription = savedPro();
+    subscription.offer = { ...subscriptionOffer(tier, "monthly"), reference: `openship:${tier}:v1`,
+      resourceLimits: { max_workspaces: 12, max_vcpus: null, max_ram_mb: null, max_disk_gb: null } };
+    subscription.metadata = { ...subscriptionMetadata(tier, "org-a", "ns-a"), openship_offer_version: "1" };
+    const limits = JSON.parse(subscription.metadata.openship_limits!);
+    delete limits.maxServiceResources;
+    subscription.metadata.openship_limits = JSON.stringify(limits);
+    const before = structuredClone(subscription);
+    expect(subscriptionPlan(subscription).resourceLimits.max_vcpus).toBe(cpuCores);
+    expect(planServiceResources(subscriptionPlan(subscription).limits)).toEqual({ cpuCores, memoryMb });
+    expect(subscription).toEqual(before);
+
+    subscription.offer.resourceLimits!.max_vcpus = 1;
+    expect(subscriptionPlan(subscription).resourceLimits.max_vcpus).toBe(1);
+    const inherited = subscriptionPlan({ ...subscription, tierId: providerTier });
+    expect(inherited.resourceLimits.max_vcpus).toBe(cpuCores);
+    expect(planServiceResources(inherited.limits)).toEqual({ cpuCores, memoryMb });
+  });
   it("renewals retain the v2 paid snapshot when the public catalog changes", async () => {
     const subscription = savedPro();
     subscription.offer!.reference = "openship:pro:v2"; subscription.offer!.unitAmount = 3900;
-    subscription.offer!.resourceLimits!.max_ram_mb = 6144; subscription.metadata!.openship_offer_version = "2";
+    subscription.offer!.resourceLimits!.max_vcpus = 2; subscription.offer!.resourceLimits!.max_ram_mb = 6144;
+    subscription.metadata!.openship_offer_version = "2";
     const before = structuredClone(subscription);
     const raw = PRICING.plans.find(plan => plan.id === "pro")!, old = structuredClone(raw);
     try {
       raw.billing.creditsPerCycle = 1000; raw.billing.resourceLimits.max_total_vcpus = 1; raw.price.monthly = 4900;
       expect(subscriptionPlan(subscription, "org-a", "ns-a").resourceLimits.max_total_vcpus).toBe(4);
       expect(await cloudPlan("pro", subscription)).toMatchObject({ price: { monthly: 3900 }, monthlyCredits: 3_500_000,
-        resourceLimits: { max_total_vcpus: 4 } });
+        resourceLimits: { max_vcpus: 2, max_total_vcpus: 4 } });
       expect(subscription).toEqual(before);
     } finally { Object.assign(raw, old); }
   });
@@ -77,7 +99,7 @@ describe("funded Cloud offers and isolated capacity", () => {
     expect(saved.resourceLimits).toEqual(subscription.offer!.resourceLimits);
     expect(planServiceResources(saved.limits)).toEqual({ cpuCores: 2, memoryMb: 2048 });
     expect(planServiceResources(presentCloudPlans().plans.find(plan => plan.id === "pro")!.limits))
-      .toEqual({ cpuCores: 2, memoryMb: 4096 });
+      .toEqual({ cpuCores: 4, memoryMb: 4096 });
     const displayed = await cloudPlan("pro", subscription);
     expect(displayed).toMatchObject({ price: { monthly: 4000 }, monthlyCredits: 3_500_000,
       limits: saved.limits, resourceLimits: subscription.offer!.resourceLimits });
