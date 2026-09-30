@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
+import { RESOURCE_TIER_SPECS } from "@repo/core";
 import type { Project } from "@repo/db";
 
 const h = vi.hoisted(() => ({
@@ -439,22 +440,141 @@ describe("Cloud Docker provisioning and retry", () => {
       { resources: { cpuCores: 1, memoryMb: 3072, diskMb: 1024 } }, { enabled: false, resources: { cpuCores: 100, memoryMb: 999999, diskMb: 999999 } }],
       reserveBuild: true, buildResources: { cpuCores: 2, memoryMb: 1024, diskMb: 4096 } })).toEqual({ cpuCores: 2, memoryMb: 7680, diskMb: 8192 });
   });
+  it.each([
+    { services: [{}], cpu: 0.25 },
+    {
+      services: [
+        {},
+        { resources: { cpuCores: 0.5 } },
+        { enabled: false, resources: { cpuCores: 8 } },
+      ],
+      cpu: 0.75,
+    },
+    { services: [{ resources: { cpuCores: 1 } }, {}], cpu: 1.25 },
+  ])(
+    "reserves $cpu vCPU for enabled services, including inherited and explicit limits",
+    ({ services, cpu }) => {
+      const allocation = cloudDockerResources({ resources: RESOURCE_TIER_SPECS.micro, services });
+      expect(allocation.cpuCores).toBe(cpu);
+      expect(allocation.memoryMb).toBe(1024);
+      expect(allocation.diskMb).toBe(8192);
+    },
+  );
+  it("provisions Micro within a fractional provider allowance without duplicating concurrent requests", async () => {
+    const allocation = cloudDockerResources({ resources: RESOURCE_TIER_SPECS.micro, services: [{}] });
+    h.create.mockImplementation(async (request) => {
+      if (request.config.cpus > 0.25)
+        throw Object.assign(new Error("namespace CPU capacity exceeded"), {
+          status: 409,
+          code: "NAMESPACE_LIMIT_REACHED",
+        });
+      return { id: "workspace-a", namespace: "namespace-a" };
+    });
+    const workspace = await h.get();
+    h.get.mockResolvedValue({
+      ...workspace,
+      resources: { cpus: 0.25, memory_mb: 1024, disk_size_mb: 8192 },
+    });
+    const results = await Promise.all([
+      ensureCloudDockerWorkspace({ ...input, resources: allocation }),
+      ensureCloudDockerWorkspace({ ...input, resources: allocation }),
+    ]);
+    expect(results).toEqual([
+      { projectId: project.id, workspaceId: "workspace-a" },
+      { projectId: project.id, workspaceId: "workspace-a" },
+    ]);
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.resize).not.toHaveBeenCalled();
+    expect(binding?.resources.cpuCores).toBe(0.25);
+  });
+  it("reserves a fractional builder, releases it after deployment, then grows the same workspace for another service", async () => {
+    const workspace = await h.get();
+    h.get.mockImplementation(async () => workspace);
+    h.create.mockImplementation(async (request) => {
+      workspace.resources = {
+        cpus: request.config.cpus,
+        memory_mb: request.config.memory_mb,
+        disk_size_mb: request.config.disk_size_mb,
+      };
+      return { id: workspace.id, namespace: workspace.namespace };
+    });
+    h.resize.mockImplementation(async (resources) => {
+      workspace.resources = {
+        cpus: resources.cpus,
+        memory_mb: resources.memory_mb,
+        disk_size_mb: resources.disk_size_mb,
+      };
+      return { success: true, relaunched: true };
+    });
+    h.exec.mockImplementation(async (command) =>
+      command.startsWith("docker inspect")
+        ? JSON.stringify(["abcdef123456", project.id, 256 * 1048576, 250000000, 0, 0])
+        : "abcdef123456",
+    );
+    const workload = { resources: RESOURCE_TIER_SPECS.micro, services: [{}] };
+    await ensureCloudDockerWorkspace({
+      ...input,
+      resources: cloudDockerResources({
+        ...workload,
+        reserveBuild: true,
+        buildResources: { cpuCores: 0.75, memoryMb: 1024, diskMb: 32768 },
+      }),
+    });
+    expect(workspace.resources).toEqual({ cpus: 0.75, memory_mb: 1792, disk_size_mb: 32768 });
+    const settled = {
+      ...input,
+      workspaceId: workspace.id,
+      resources: cloudDockerResources(workload),
+    };
+    expect(await reconcileCloudDockerWorkspace(settled)).toBe(true);
+    expect(workspace.resources).toEqual({ cpus: 0.25, memory_mb: 1024, disk_size_mb: 32768 });
+    expect(h.exec).toHaveBeenLastCalledWith("docker start 'abcdef123456'");
+    expect(await reconcileCloudDockerWorkspace(settled)).toBe(false);
+    expect(h.resize).toHaveBeenCalledOnce();
+
+    await ensureCloudDockerWorkspace({
+      ...input,
+      resources: cloudDockerResources({ ...workload, services: [{}, {}] }),
+    });
+    expect(workspace.resources).toEqual({ cpus: 0.5, memory_mb: 1024, disk_size_mb: 32768 });
+    expect(h.resize).toHaveBeenCalledTimes(2);
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(binding?.workspaceId).toBe(workspace.id);
+  });
   it("uses a 1 GB image-only host instead of permanently reserving a source builder", () => {
     const services = [{ name: "vaultwarden", image: "vaultwarden/server:latest", enabled: true }];
     expect(cloudDockerNeedsBuild(services)).toBe(false);
-    expect(cloudDockerResources({ services })).toEqual({ cpuCores: 1, memoryMb: 1024, diskMb: 8192 });
+    expect(cloudDockerResources({ services })).toEqual({ cpuCores: 0.5, memoryMb: 1024, diskMb: 8192 });
     expect(cloudDockerNeedsBuild([{ ...services[0]!, build: { context: "." } }])).toBe(true);
     expect(cloudDockerResources({ services, reserveBuild: true })).toEqual({ cpuCores: 1, memoryMb: 3072, diskMb: 8192 });
   });
-  it("releases unused CPU/RAM after deployment, preserving disks and previously running services", async () => {
-    await ensureCloudDockerWorkspace(input);
-    h.exec.mockResolvedValueOnce("abcdef123456").mockResolvedValueOnce(JSON.stringify(["abcdef123456", project.id, 512 * 1048576, 500000000, 0, 0]))
-      .mockResolvedValueOnce("abcdef123456");
-    expect(await reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a", resources: { cpuCores: 1, memoryMb: 1024, diskMb: 8192 } })).toBe(true);
-    expect(h.resize).toHaveBeenCalledExactlyOnceWith({ cpus: 1, memory_mb: 1024, disk_size_mb: 32768, apply: true });
-    expect(h.exec).toHaveBeenLastCalledWith("docker start 'abcdef123456'");
-    expect(h.create).toHaveBeenCalledOnce();
-  });
+  it.each([0.25, 0.5])(
+    "releases unused CPU/RAM while preserving the running %s-vCPU container and its disk",
+    async (runningCpu) => {
+      await ensureCloudDockerWorkspace(input);
+      h.exec
+        .mockResolvedValueOnce("abcdef123456")
+        .mockResolvedValueOnce(
+          JSON.stringify(["abcdef123456", project.id, 512 * 1048576, runningCpu * 1e9, 0, 0]),
+        )
+        .mockResolvedValueOnce("abcdef123456");
+      expect(
+        await reconcileCloudDockerWorkspace({
+          ...input,
+          workspaceId: "workspace-a",
+          resources: { cpuCores: 0.25, memoryMb: 1024, diskMb: 8192 },
+        }),
+      ).toBe(true);
+      expect(h.resize).toHaveBeenCalledExactlyOnceWith({
+        cpus: runningCpu,
+        memory_mb: 1024,
+        disk_size_mb: 32768,
+        apply: true,
+      });
+      expect(h.exec).toHaveBeenLastCalledWith("docker start 'abcdef123456'");
+      expect(h.create).toHaveBeenCalledOnce();
+    },
+  );
   it("never reduces below the actual running containers even if desired settings are smaller", async () => {
     await ensureCloudDockerWorkspace(input);
     h.exec.mockResolvedValueOnce("abcdef123456").mockResolvedValueOnce(JSON.stringify(["abcdef123456", project.id, 3584 * 1048576, 2000000000, 0, 0]));
@@ -482,9 +602,13 @@ describe("Cloud Docker provisioning and retry", () => {
     await expect(reconcileCloudDockerWorkspace({ ...input, workspaceId: "workspace-a" })).rejects.toThrow("namespace changed");
     expect(h.exec).not.toHaveBeenCalled(); expect(h.resize).not.toHaveBeenCalled();
   });
-  it("accepts fractional Docker CPU quotas without equating them to VM core counts", () => {
-    expect(runningDockerAllocation(JSON.stringify(["abcdef123456", project.id, 512 * 1048576, 0, 25000, 100000]), project.id))
-      .toEqual({ cpuCores: 1, memoryMb: 1024, diskMb: 8192 });
+  it("preserves fractional Docker quota/period allocations when sizing the workspace", () => {
+    expect(
+      runningDockerAllocation(
+        JSON.stringify(["abcdef123456", project.id, 512 * 1048576, 0, 25000, 100000]),
+        project.id,
+      ),
+    ).toEqual({ cpuCores: 0.25, memoryMb: 1024, diskMb: 8192 });
   });
   it.each(["500000000", null, true])("refuses a nonnumeric Docker CPU allocation (%s)", cpu => {
     expect(() => runningDockerAllocation(JSON.stringify(["abcdef123456", project.id, 512 * 1048576, cpu, 0, 0]), project.id))
