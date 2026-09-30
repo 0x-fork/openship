@@ -371,7 +371,14 @@
     "creditUnitsHint": "积分衡量资源消耗，而不是分钟数。CPU、内存、磁盘活动和传输各有独立费率。",
     "topupCapacityHint": "充值增加使用积分。需要更多 CPU、内存或存储空间时，请升级套餐。",
     "poolTitle": "共享容量",
-    "poolCapacity": "{cpu} vCPU · {ram} GB 内存 · {disk} GB 磁盘"
+    "poolCapacity": "{cpu} vCPU · {ram} GB 内存 · {disk} GB 磁盘",
+    "buildIncluded": "已包含",
+    "perService": "每个服务",
+    "storage": "存储",
+    "usageNote": "用量说明。",
+    "planUsageNote": "构建和运行中的应用共用同一额度。可用时长取决于资源消耗。额度用尽后应用会暂停，追加用量即可继续。",
+    "poolNote": "所有工作空间共享 CPU、内存和存储，包括已停止的工作空间和待完成的变更。",
+    "creditAllowances": "每个账单周期包含的积分"
   },
   "onboarding": {
     "workspaceDescription": "选择 Cloud 套餐以创建项目、构建代码并运行应用。订阅前不包含项目或计算资源。",

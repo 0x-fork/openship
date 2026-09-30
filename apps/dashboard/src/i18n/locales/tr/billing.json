@@ -371,7 +371,14 @@
     "creditUnitsHint": "Krediler dakikayı değil kaynak tüketimini ölçer. CPU, bellek, disk etkinliği ve aktarımın ayrı ücretleri vardır.",
     "topupCapacityHint": "Yüklemeler kullanım kredisi ekler. Daha fazla CPU, RAM veya depolama için planı yükseltin.",
     "poolTitle": "Paylaşılan kapasite",
-    "poolCapacity": "{cpu} vCPU · {ram} GB bellek · {disk} GB disk"
+    "poolCapacity": "{cpu} vCPU · {ram} GB bellek · {disk} GB disk",
+    "buildIncluded": "Dahil",
+    "perService": "Hizmet başına",
+    "storage": "Depolama",
+    "usageNote": "Kullanım notu.",
+    "planUsageNote": "Derlemeler ve çalışan uygulamalar aynı kotayı paylaşır. Süre, kaynak tüketimine bağlıdır. Kota bitince uygulamalar duraklar; devam etmek için kullanım bakiyesi ekleyin.",
+    "poolNote": "CPU, RAM ve depolama; durdurulanlar ve bekleyen değişiklikler dahil tüm çalışma alanları arasında paylaşılır.",
+    "creditAllowances": "Fatura dönemi başına dahil edilen krediler"
   },
   "onboarding": {
     "workspaceDescription": "Proje oluşturmak, kod derlemek ve uygulamalarınızı çalıştırmak için bir Cloud planı seçin. Abonelik öncesinde proje veya işlem kaynağı dahil değildir.",

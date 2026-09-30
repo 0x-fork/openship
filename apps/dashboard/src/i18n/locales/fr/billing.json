@@ -371,7 +371,14 @@
     "creditUnitsHint": "Les crédits mesurent la consommation, pas des minutes. CPU, mémoire, activité disque et transfert ont chacun leur tarif.",
     "topupCapacityHint": "Les recharges ajoutent des crédits. Changez de forfait pour augmenter CPU, RAM ou stockage.",
     "poolTitle": "Capacité partagée",
-    "poolCapacity": "{cpu} vCPU · {ram} Go de RAM · {disk} Go de disque"
+    "poolCapacity": "{cpu} vCPU · {ram} Go de RAM · {disk} Go de disque",
+    "buildIncluded": "Inclus",
+    "perService": "Par service",
+    "storage": "Stockage",
+    "usageNote": "À propos de l’utilisation.",
+    "planUsageNote": "Les builds et les apps en cours partagent un quota. Sa durée dépend des ressources utilisées. Les apps sont suspendues à épuisement ; ajoutez du crédit d’utilisation pour continuer.",
+    "poolNote": "Le processeur, la RAM et le stockage sont partagés entre les espaces, y compris ceux arrêtés et les modifications en attente.",
+    "creditAllowances": "Crédits inclus par cycle de facturation"
   },
   "onboarding": {
     "workspaceDescription": "Choisissez une offre Cloud pour créer des projets, compiler votre code et exécuter vos apps. Aucun projet ni ressource de calcul n’est inclus avant l’abonnement.",

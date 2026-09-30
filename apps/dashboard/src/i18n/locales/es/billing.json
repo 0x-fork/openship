@@ -371,7 +371,14 @@
     "creditUnitsHint": "Los créditos miden consumo de recursos, no minutos. CPU, memoria, actividad de disco y transferencia tienen tarifas propias.",
     "topupCapacityHint": "Las recargas añaden créditos de uso. Mejora el plan para ampliar CPU, RAM o almacenamiento.",
     "poolTitle": "Capacidad compartida",
-    "poolCapacity": "{cpu} vCPU · {ram} GB de RAM · {disk} GB de disco"
+    "poolCapacity": "{cpu} vCPU · {ram} GB de RAM · {disk} GB de disco",
+    "buildIncluded": "Incluido",
+    "perService": "Por servicio",
+    "storage": "Almacenamiento",
+    "usageNote": "Nota de uso.",
+    "planUsageNote": "Las compilaciones y las apps en ejecución comparten una asignación. Su duración depende del consumo. Las apps se pausan al agotarse; añade saldo de uso para continuar.",
+    "poolNote": "La CPU, la RAM y el almacenamiento se comparten entre espacios, incluidos los detenidos y los cambios pendientes.",
+    "creditAllowances": "Créditos incluidos por ciclo de facturación"
   },
   "onboarding": {
     "workspaceDescription": "Elige un plan de Cloud para crear proyectos, compilar código y ejecutar tus apps. Antes de suscribirte no se incluyen proyectos ni recursos de cómputo.",

@@ -10,7 +10,6 @@ import type { BillingSubscription } from "@repo/contracts";
 import type { BillingState } from "@/lib/api/billing";
 import { needsCloudPlan } from "@/lib/billing-presentation";
 import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
-import { CloudUsageGuide } from "./CloudUsageGuide";
 
 export function CloudPlanPicker({ currentPlan, subscription, complimentary, billingEnabled = false, canChangeSubscription = false, preserveProject = false, onCheckoutStarted }: {
   currentPlan: PlanTierId; billingEnabled?: boolean; canChangeSubscription?: boolean;
@@ -109,7 +108,6 @@ export function CloudPlanPicker({ currentPlan, subscription, complimentary, bill
       purchasesDisabled={!canPurchase}
       interval={interval}
     />
-      {!preserveProject && <CloudUsageGuide collapsible />}
     </div>
   );
 }

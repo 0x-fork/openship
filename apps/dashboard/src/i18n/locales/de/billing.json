@@ -371,7 +371,14 @@
     "creditUnitsHint": "Credits messen Ressourcenverbrauch, keine Minuten. CPU, RAM, Festplattenaktivität und Transfer haben eigene Raten.",
     "topupCapacityHint": "Aufladungen ergänzen Nutzungsguthaben. Mehr CPU, RAM oder Speicher erfordert ein Tarifupgrade.",
     "poolTitle": "Gemeinsame Kapazität",
-    "poolCapacity": "{cpu} vCPU · {ram} GB RAM · {disk} GB Speicher"
+    "poolCapacity": "{cpu} vCPU · {ram} GB RAM · {disk} GB Speicher",
+    "buildIncluded": "Enthalten",
+    "perService": "Pro Dienst",
+    "storage": "Speicher",
+    "usageNote": "Zur Nutzung.",
+    "planUsageNote": "Builds und laufende Apps teilen sich ein Kontingent. Die Dauer hängt vom Ressourcenverbrauch ab. Bei Verbrauch pausieren Apps; füge Nutzungsguthaben hinzu, um fortzufahren.",
+    "poolNote": "CPU, RAM und Speicher werden von allen Workspaces geteilt, einschließlich gestoppter Workspaces und ausstehender Änderungen.",
+    "creditAllowances": "Enthaltene Credits pro Abrechnungszeitraum"
   },
   "onboarding": {
     "workspaceDescription": "Wähle einen Cloud-Tarif, um Projekte anzulegen, Code zu bauen und Apps auszuführen. Ohne Abonnement sind keine Projekte oder Rechenressourcen enthalten.",

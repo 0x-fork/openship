@@ -25,6 +25,8 @@ export function useCloudDeployPricing() {
       customContent: <CloudDeployPlanModal restriction={restriction} onClose={() => hideModal(id)} />,
       width: "100%",
       maxWidth: "1440px",
+      maxHeight: "calc(100dvh - 2rem)",
+      overflow: "hidden",
       showCloseButton: false,
       onClose: () => { openModal.current = null; },
     });

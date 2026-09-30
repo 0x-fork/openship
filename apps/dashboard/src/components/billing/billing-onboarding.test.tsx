@@ -12,6 +12,7 @@ import { BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "@/app/(dashbo
 import { BillingOverview } from "./BillingOverview";
 import { BillingCapacity } from "./BillingCapacity";
 import { PlanResources } from "./PlanResources";
+import { PlanUsageNote } from "./PlanUsageNote";
 import { BillingResourceUsage } from "./BillingResourceUsage";
 import { ResourceMeter } from "./ResourceMeter";
 import { BillingTopups } from "./BillingTopups";
@@ -101,16 +102,16 @@ describe("Cloud billing before the first subscription", () => {
       expect(card?.querySelector("[data-resource-value]")?.textContent).toMatch(/^0/);
       expect(card?.textContent).toContain(copy.onboarding.planRequired);
     }
-    expect(visibleText()).not.toMatch(/0 of 3|500/i);
+    expect(container.querySelector("dl")?.textContent).not.toMatch(/credits|0 of 3|500/i);
     expect(container.textContent).not.toMatch(/Unlimited|No set limit|∞/);
     expect(container.textContent).toContain("$15");
-    expect(visibleText()).toContain("1,234 credits / billing cycle");
-    expect(container.querySelector("dl")?.textContent).toContain(copy.resourcesGuide.buildUsageBased);
+    expect(container.querySelector('[role="note"]')?.textContent).toContain("Hobby: 1,234");
+    expect(container.querySelector("dl")?.textContent).not.toMatch(/credits/i);
     expect(button("Subscribe to Hobby").disabled).toBe(false);
     expect(mocks.get).toHaveBeenCalledOnce();
     expect(mocks.get.mock.calls[0]![0]).toContain("billing/plans");
     expect(mocks.post).not.toHaveBeenCalled();
-    expect(container.querySelector("details")?.open).toBe(false);
+    expect(container.querySelector('[role="note"] details')).toBeNull();
   });
 
   it("keeps a usable pricing link during catalog failures and recovers on retry", async () => {
@@ -230,7 +231,7 @@ describe("complimentary Cloud plans", () => {
     expect(visibleText()).toContain(copy.complimentary.label);
     expect(visibleText()).toContain(copy.complimentary.untilRevoked);
     expect(visibleText()).toContain("Credits renew on Oct 27, 2026");
-    expect(container.textContent).toContain("15,000 credits / billing cycle");
+    expect(container.querySelector('[role="note"]')?.textContent).toContain("Scale: 15,000");
     expect(container.textContent).not.toContain(copy.subscription.billedMonthly);
     expect(container.textContent).not.toContain(copy.onboarding.offerDescription);
     expect(container.querySelector("button")).toBeNull();
@@ -331,12 +332,14 @@ describe("customer credit limits", () => {
   it("displays the supplied offer's total capacity without claiming unlimited build time", async () => {
     await render(<PlanResources plan={{ ...hobby, resourceLimits: { ...PLANS.pro.oblienLimits,
       max_total_vcpus: 7, max_total_ram_mb: 10240, max_total_disk_gb: 192 } }} />);
-    expect(container.textContent).toContain("7 vCPU · 10 GB RAM · 192 GB disk");
-    expect(container.textContent).toContain(copy.resourcesGuide.poolHint);
+    const valueFor = (label: string) => [...container.querySelectorAll("dt")].find(item => item.textContent === label)?.parentElement?.querySelector("dd")?.textContent;
+    expect(valueFor(copy.header.vcpus)).toBe("7");
+    expect(valueFor(copy.header.ram)).toBe("10 GB");
+    expect(valueFor(copy.resourcesGuide.storage)).toBe("192 GB");
+    expect(valueFor(copy.resourcesGuide.buildTime)).toBe(copy.resourcesGuide.buildIncluded);
+    expect(container.textContent).not.toContain(copy.resourcesGuide.poolHint);
     expect(container.textContent).not.toMatch(/No set limit|3,000 min/);
-    expect(visibleText()).toContain(copy.resourcesGuide.buildTime);
-    expect(visibleText()).toContain(copy.resourcesGuide.buildUsageBased);
-    expect(visibleText()).toContain("1,234 credits / billing cycle");
+    expect(visibleText()).not.toMatch(/credits/i);
     expect(visibleText()).toContain("2 vCPU · 3 GB");
   });
   it("shows saved preset ceilings and fixed build allowances without using new catalog limits", async () => {
@@ -345,15 +348,14 @@ describe("customer credit limits", () => {
     expect(visibleText()).toContain("1 vCPU · 1 GB");
     expect(visibleText()).not.toContain("2 vCPU · 3 GB");
     expect(visibleText()).toContain("3,000 min / month");
-    expect(visibleText()).not.toContain(copy.resourcesGuide.buildUsageBased);
+    expect(visibleText()).not.toContain(copy.resourcesGuide.buildIncluded);
   });
   it("shows annual credits from the paid offer and leaves missing credit amounts unknown", async () => {
-    await render(<PlanResources plan={hobby} interval="annual" />);
-    expect(visibleText()).toContain("14,555 credits / billing cycle");
-    expect(visibleText()).not.toContain("1,234 credits / billing cycle");
-    await render(<PlanResources plan={{ ...hobby, annualCredits: null }} interval="annual" />);
-    const credits = [...container.querySelectorAll("dt")].find(label => label.textContent === copy.resourcesGuide.credits);
-    expect(credits?.parentElement?.querySelector("dd")?.textContent).toBe("—");
+    await render(<PlanUsageNote plans={[hobby]} interval="annual" />);
+    expect(visibleText()).toContain("Hobby: 14,555");
+    expect(visibleText()).not.toContain("1,234");
+    await render(<PlanUsageNote plans={[{ ...hobby, annualCredits: null }]} interval="annual" />);
+    expect(container.querySelector('[role="note"] li')?.textContent).toBe("Hobby: —");
   });
   it("uses the same explicit service ceiling in billing when no precomputed machine is supplied", async () => {
     await render(<BillingCapacity state={{ ...paid, plan: { ...hobby,
