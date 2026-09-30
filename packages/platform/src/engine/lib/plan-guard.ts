@@ -48,6 +48,7 @@ import {
   type CloudServiceResourceInput,
 } from "./resources";
 import type { ResourceConfig, RuntimeAdapter } from "@repo/adapters";
+import { assertCloudWorkspaceCapacity } from "./cloud-capacity";
 
 /**
  * A refusal the user can act on by upgrading. 402 Payment Required is the
@@ -228,7 +229,7 @@ export async function assertPlanAllowsResourceTier(
   assertResourcesFitPlan(tier, requested, limits);
 }
 
-function assertResourcesFitPlan(
+export function assertResourcesFitPlan(
   tier: PlanTierId,
   requested: { tier?: string | null; cpuCores?: number | null; memoryMb?: number | null },
   limits: PlanLimits,
@@ -268,6 +269,8 @@ type CloudDeploymentLimits = {
   nativeApplication?: boolean;
   /** Docker service stacks share one VM; its aggregate allocation also has to fit. */
   dockerWorkspace?: boolean;
+  /** Internally pinned images use the same no-build decision as the deployer. */
+  retainedImages?: Readonly<Record<string, string>>;
   services?: CloudServiceResourceInput[];
 };
 
@@ -344,32 +347,20 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
     const allocation = cloudDockerResources({
       resources: input.resources,
       buildResources: input.buildResources,
-      reserveBuild: cloudDockerNeedsBuild(services),
+      reserveBuild: cloudDockerNeedsBuild(services, input.retainedImages),
       services: services.map((service) => ({ resources: service.advanced?.resources })),
     });
-    const shortages = [
-      policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
-        ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
-        : null,
-      policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
-        ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
-        : null,
-      policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
-        ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
-        : null,
-    ].filter(Boolean);
-    if (shortages.length)
-      throw new PlanUpgradeRequiredError(
-        `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
-        "workspace-capacity",
-        tier,
-      );
+    assertWorkspaceResourcesFitPlan(tier, allocation, policy);
+    if (input.projectId) {
+      await assertCloudWorkspaceCapacity({ organizationId, projectId: input.projectId,
+        requested: allocation, reuseDockerWorkspace: true });
+    }
   }
   if (
     services?.length &&
     !input.nativeApplication &&
-    services.every(service => Boolean(service.image || service.advanced?.imageTemplate) &&
-      !service.build && !service.advanced?.build)
+    services.every(service => Boolean(service.name && input.retainedImages?.[service.name]?.trim()) ||
+      (Boolean(service.image || service.advanced?.imageTemplate) && !service.build && !service.advanced?.build))
   )
     return;
   const build = resolveBuildResources(input.buildResources, { isCloud: true });
@@ -383,6 +374,30 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
       "resource-tier", tier,
     );
   }
+}
+
+/** Shared by adjustment previews and deployment admission. A namespace's total
+ * capacity is separate from the purchased limit on one workspace. */
+export function assertWorkspaceResourcesFitPlan(
+  tier: PlanTierId,
+  allocation: { cpuCores: number; memoryMb: number; diskMb: number },
+  policy: OblienLimits,
+): void {
+  const shortages = [
+    policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
+      ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
+      : null,
+    policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
+      ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
+      : null,
+    policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
+      ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
+      : null,
+  ].filter(Boolean);
+  if (shortages.length) throw new PlanUpgradeRequiredError(
+    `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
+    "workspace-capacity", tier,
+  );
 }
 
 /** Starting an existing container applies its OLD limits, not editable settings.

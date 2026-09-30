@@ -8,12 +8,16 @@ import type { BillingState } from "@/lib/api/billing";
 import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
 import { cloudUsagePercent, hasUnlimitedCloudCredits } from "@/lib/billing-presentation";
 import { ResourceLabel as MetricLabel, ResourceMeter, ResourceRing } from "./ResourceMeter";
+import { useModal } from "@/context/ModalContext";
+import { Button } from "@/components/ui/button";
+import { CloudCapacityModal } from "./CloudCapacityModal";
 
 export type { BillingState };
 
 /** Show provider capacity separately from metered consumption credits. */
 export function BillingCapacity({ state }: { state: BillingState }) {
   const { t, locale } = useI18n();
+  const { showModal, hideModal } = useModal();
   const copy = t.billing.resourcesGuide;
   const onboarding = t.billing.onboarding;
   const limits = state.plan?.limits ?? PLANS[state.tier].limits;
@@ -41,12 +45,15 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   const savedProjects = cap?.projects?.used ?? 0;
 
   return <section className="rounded-2xl border border-border/40 bg-card p-5 sm:p-6">
-    <div className="flex items-start justify-between gap-4">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0 flex-1 basis-64">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">{noPlan ? copy.noPlan : copy.includedTitle}</h2>
         <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">{noPlan ? onboarding.workspaceDescription : t.billing.resourceOverview.overviewHint}</p>
       </div>
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground"><UiIcon name="cloud" className="size-5" aria-hidden="true" /></div>
+      {!noPlan && <Button variant="secondary" onClick={() => {
+        const id = showModal({ customContent: <CloudCapacityModal onClose={() => hideModal(id)} />,
+          width: "100%", maxWidth: "880px", maxHeight: "calc(100dvh - 2rem)", overflow: "hidden", showCloseButton: false });
+      }}>{t.billing.capacityEditor.title}</Button>}
     </div>
     <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
       {rows.map(({ meter, Icon, ...row }) => <ResourceMeter key={row.label} {...row} {...meter} noPlan={noPlan} icon={<UiIcon name={Icon} className="size-4" aria-hidden="true" />} />)}

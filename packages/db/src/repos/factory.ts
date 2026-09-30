@@ -49,6 +49,7 @@ export {
   type NewDeployment,
   type BuildSession,
   type NewBuildSession,
+  type DeploymentResourceChanges,
 } from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
 export { createDomainDnsChallengeRepo, type DomainDnsChallenge } from "./domain-dns-challenge.repo";

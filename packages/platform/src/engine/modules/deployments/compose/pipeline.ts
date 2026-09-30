@@ -53,6 +53,7 @@ import {
   throwIfDeploymentCancelled,
 } from "../deployment-cancellation";
 import { assertExactServiceTargets } from "../exact-service-targets";
+import { strictRefreshImages } from "../pinned-artifacts";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -419,6 +420,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       serverId: snapshot.serverId,
       targetServiceIds,
       strictScope,
+      retainedImages: strictRefreshImages(snapshot),
       forcePullImages: snapshot.forcePullImages,
       onArtifactActivationStart: () => {
         artifactActivationStarted = true;

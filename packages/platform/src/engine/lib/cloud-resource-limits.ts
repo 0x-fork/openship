@@ -1,4 +1,4 @@
-import { AppError, resolvePlan, type PlanTierId } from "@repo/core";
+import { AppError, resolvePlan, type CloudCapacityPool, type PlanTierId } from "@repo/core";
 import { getOblienClient } from "./oblien-client";
 import { z } from "zod";
 
@@ -49,7 +49,9 @@ const capacityResponse = z.object({ success: z.literal(true), data: z.object({
 /** Read actual reserved capacity from Oblien. Openship never reconstructs this
  * from service counts, cached VM rows or the customer's credit balance. */
 export async function readCloudCapacity(namespace: string) {
-  const { data } = capacityResponse.parse(await getOblienClient().namespaces.get(namespace));
+  const parsed = capacityResponse.safeParse(await getOblienClient().namespaces.get(namespace));
+  if (!parsed.success) throw new AppError("Cloud capacity could not be verified. Please retry.", 503, "CLOUD_CAPACITY_UNAVAILABLE");
+  const { data } = parsed.data;
   if (data.slug !== namespace) throw new AppError("Cloud namespace ownership changed", 502, "CLOUD_NAMESPACE_MISMATCH");
   const limits = data.effective_resource_limits, used = data.allocated_resource_usage;
   if (!limits || !used) return {};
@@ -58,5 +60,21 @@ export async function readCloudCapacity(namespace: string) {
     vcpus: { used: used.vcpus, max: limits.max_total_vcpus },
     ramMb: { used: used.ram_mb, max: limits.max_total_ram_mb },
     diskGb: { used: used.disk_gb, max: limits.max_total_disk_gb },
+  };
+}
+
+/** Admission requires a complete, authoritative snapshot. Missing measurements
+ * must not be interpreted as an empty pool or reconstructed from service rows. */
+export async function readCloudCapacityPool(namespace: string): Promise<CloudCapacityPool> {
+  const capacity = await readCloudCapacity(namespace);
+  if (!capacity.vcpus || !capacity.ramMb || !capacity.diskGb || !capacity.workspaces) {
+    throw new AppError("Cloud capacity could not be verified. Retry when the provider is available.",
+      503, "CLOUD_CAPACITY_UNAVAILABLE");
+  }
+  return {
+    cpuCores: capacity.vcpus,
+    memoryMb: capacity.ramMb,
+    diskMb: { used: capacity.diskGb.used * 1024, max: capacity.diskGb.max === null ? null : capacity.diskGb.max * 1024 },
+    workspaces: capacity.workspaces,
   };
 }

@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api/client";
 import type { BillingState } from "./api/billing";
-import { cloudDeployRecovery, cloudDeployRestriction } from "./cloud-deploy-pricing";
+import { cloudDeployRecovery, cloudDeployRestriction, cloudCapacityRestriction } from "./cloud-deploy-pricing";
 
 describe("Cloud deployment recovery", () => {
+  it("uses delta accounting only when admission verified a reusable workspace", () => {
+    const requested = { cpuCores: 1, memoryMb: 2048, diskMb: 8192 };
+    const refusal = (capacity: unknown) => new ApiError(409, "Conflict", { code: "CLOUD_CAPACITY_REQUIRED", projectId: "project", capacity });
+    expect(cloudCapacityRestriction(refusal({ requested }))).toMatchObject({ requested, reusesWorkspace: false });
+    expect(cloudCapacityRestriction(refusal({ requested, existing: requested }))).toMatchObject({ requested, reusesWorkspace: true });
+    expect(cloudCapacityRestriction(refusal({ requested: { ...requested, cpuCores: NaN } }))?.requested).toBeUndefined();
+    expect(cloudCapacityRestriction(new ApiError(409, "Conflict", { code: "OWNER_LIMIT_REACHED" }))).toBeNull();
+  });
   it.each(["CLOUD_BILLING_BLOCKED", "PLAN_UPGRADE_REQUIRED"])("recognizes the explicit %s refusal", (code) => {
     expect(cloudDeployRestriction(new ApiError(402, "Payment Required", { code, reason: "build-minutes-exhausted" })))
       .toEqual({ code, reason: "build-minutes-exhausted" });

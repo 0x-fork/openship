@@ -43,6 +43,7 @@ import {
 import { platform } from "../../lib/platform-config";
 import { cloudDockerNeedsBuild, reconcileCloudDockerWorkspace, cloudDockerResources, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
 import { assertCloudDeploymentLimits } from "../../lib/plan-guard";
+import { cloudCapacityFailure } from "../../lib/cloud-capacity";
 import {
   resolveUpstreamUrl,
   resolveRouteStrategy,
@@ -137,6 +138,7 @@ import {
   pinnedStaticDir,
   refreshAppDeploymentId,
   snapshotNeedsGitSource,
+  strictRefreshImages,
 } from "./pinned-artifacts";
 import { snapshotToClass } from "./deployment-class";
 import { shouldRetainArtifact } from "./rollback/restore-plan";
@@ -353,7 +355,11 @@ async function markDeploymentFailedFromOutside(
       // `updateStatus(id, "failed")` below would erase that distinction.
       return;
     }
-    await repos.deployment.updateStatus(deploymentId, "failed").catch(() => {});
+    const capacityError = cloudCapacityFailure(error, dep.projectId);
+    await repos.deployment.updateStatus(deploymentId, "failed", {
+      errorMessage: capacityError?.message ?? message,
+      ...(capacityError ? { errorCode: capacityError.code, errorDetails: capacityError.details } : {}),
+    }).catch(() => {});
     const buildSession = await repos.deployment
       .findBuildSessionByDeploymentId(deploymentId)
       .catch(() => null);
@@ -684,6 +690,7 @@ async function executeBuildAndDeploy(
       runsApplication: snapshotToClass(snapshot).workload !== "static",
       services: willRunServices ? serviceMode.servicePreflightServices : undefined,
       dockerWorkspace,
+      retainedImages: strictRefreshImages(snapshot),
     });
     if (dockerWorkspace) {
       settledDockerResources = cloudDockerResources({
@@ -698,7 +705,7 @@ async function executeBuildAndDeploy(
         projectId: project.id, organizationId: dep.organizationId,
         resources: cloudDockerResources({
           resources: snapshot.resources, buildResources: snapshot.buildResources,
-          reserveBuild: cloudDockerNeedsBuild(serviceMode.servicePreflightServices),
+          reserveBuild: cloudDockerNeedsBuild(serviceMode.servicePreflightServices, strictRefreshImages(snapshot)),
           services: serviceMode.servicePreflightServices.map(service => ({
             enabled: service.enabled,
             resources: service.advanced?.resources,
@@ -1136,7 +1143,7 @@ async function executeBuildAndDeploy(
       // alongside the real monorepo row (no DB unique constraint on
       // (projectId, name)). Filter to compose-kind before handing it off.
       const composeOnly = snapshot.composeServices?.filter((s) => serviceKind(s) === "compose");
-      if (composeOnly?.length) {
+      if (composeOnly?.length && !snapshot.capacityAdjustment) {
         // removeMissing: false — this list is the release's frozen snapshot, not
         // an authoritative inventory. On a rollback it predates services added
         // since; on any deploy the delete cascades `service_deployment` and so
@@ -1411,7 +1418,9 @@ async function executeBuildAndDeploy(
     // Only an UNSETTLED error is a deploy failure. An error thrown after the
     // outcome was recorded is bookkeeping: reporting it as a failure would
     // invert a working deploy and tear its containers down.
-    await reportPipelineError(ctx, message, logger);
+    const capacityError = cloudCapacityFailure(err, project.id);
+    await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
+      ? { errorCode: capacityError.code, errorDetails: capacityError.details } : undefined);
   } finally {
     // The deploy is over either way — release the loopback bridges it opened.
     // Safe here and not earlier: the readiness/stabilization gate runs INLINE as

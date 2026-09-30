@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
 import { CreateSubscriptionBody, CreateTopupBody } from "./billing-inputs";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
+import { ApplyCloudCapacitySchema, CloudCapacityEditSchema, CloudCapacityOverviewSchema, CloudCapacityPreviewSchema } from "./cloud-capacity";
 
 const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
 const stringOrNull = Type.Union([Type.String(), Type.Null()]);
@@ -117,6 +118,10 @@ export const BillingOperationSchemas = {
   },
   getState: { action: "read", output: BillingStateSchema },
   getResources: { action: "read", output: BillingResourcesSchema },
+  getCapacity: { action: "read", output: CloudCapacityOverviewSchema },
+  previewCapacity: { action: "read", input: CloudCapacityEditSchema, output: CloudCapacityPreviewSchema },
+  applyCapacity: { action: "write", input: ApplyCloudCapacitySchema,
+    output: Type.Object({ deploymentId: Type.String(), projectId: Type.String() }) },
   getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
   cancelSubscription: { action: "admin", output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },

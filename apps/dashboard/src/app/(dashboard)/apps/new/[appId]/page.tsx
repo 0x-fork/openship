@@ -1236,7 +1236,7 @@ export default function AppInstallPage() {
           setStartedAt(Date.now());
           setPhase("installing");
         } catch (err) {
-          if (!started && showCloudPricing(err)) return;
+          if (!started && showCloudPricing(err, () => startDeploy(targetPid))) return;
           const msg = getApiErrorMessage(err, w.installFailed).replace(
             /^Pre-deploy checks failed:\s*/i,
             "",

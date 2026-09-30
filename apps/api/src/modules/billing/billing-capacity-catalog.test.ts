@@ -5,6 +5,7 @@ import { Value } from "@sinclair/typebox/value";
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient() { throw new Error("Capacity must be provider-enforced, not computed from owner resources"); } }));
 import { cloudPlan, presentCloudPlans, subscriptionMetadata, subscriptionOffer, subscriptionPlan, topupOffer } from "@repo/platform/engine/modules/billing/billing-catalog";
 import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
+import { savedOffer, savedMetadata } from "../../../test/helpers/saved-cloud-offer";
 
 const savedPro = (): NonNullable<OblienSubscription> => ({ tierId: "reseller", status: "active", billingInterval: "monthly",
   periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z", cancelAtPeriodEnd: false, canceledAt: null,
@@ -18,7 +19,7 @@ describe("funded Cloud offers and isolated capacity", () => {
       expect(Object.values(offer.resourceLimits!).every(value => Number.isInteger(value) && value! > 0)).toBe(true);
       expect(offer.policy).toMatchObject({ overdraft: 0, suspendThreshold: 0 });
       expect(presentCloudPlans().plans.find(plan => plan.id === tier)?.resourceLimits).toEqual(offer.resourceLimits);
-      expect(offer.reference).toBe(`openship:${tier}:v5`);
+      expect(offer.reference).toBe(`openship:${tier}:v6`);
       const saved = subscriptionPlan({ ...savedPro(), offer, metadata: subscriptionMetadata(tier, "org-a", "ns-a") });
       const published = presentCloudPlans().plans.find(plan => plan.id === tier)!;
       expect(planServiceResources(saved.limits)).toEqual(planServiceResources(published.limits));
@@ -124,11 +125,11 @@ describe("funded Cloud offers and isolated capacity", () => {
     const saved = subscriptionPlan(subscription, "org-a", "ns-a");
     expect(await cloudPlan("pro", subscription)).toMatchObject({ price: { monthly: 4000 }, monthlyCredits: 3_500_000,
       limits: saved.limits, resourceLimits: subscription.offer.resourceLimits });
-    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v5", unitAmount: 3900, credits: 3500,
+    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v6", unitAmount: 3900, credits: 3500,
       resourceLimits: saved.resourceLimits });
     expect(subscription).toEqual(before);
   });
-  it.each(["4", "5"])("rejects unverifiable service ceilings in v%s", version => {
+  it.each(["4", "5", "6"])("rejects unverifiable service ceilings in v%s", version => {
     for (const maxServiceResources of [null, undefined, { cpuCores: 0, memoryMb: 4096 }]) {
       const subscription = savedPro();
       subscription.offer!.reference = `openship:pro:v${version}`;
@@ -141,8 +142,8 @@ describe("funded Cloud offers and isolated capacity", () => {
     const subscription = savedPro();
     subscription.metadata!.openship_offer_version = "3";
     expect(() => subscriptionPlan(subscription)).toThrow(/could not be verified/);
-    subscription.metadata!.openship_offer_version = "6";
-    subscription.offer!.reference = "openship:pro:v6";
+    subscription.metadata!.openship_offer_version = "99";
+    subscription.offer!.reference = "openship:pro:v99";
     expect(() => subscriptionPlan(subscription)).toThrow(/could not be verified/);
   });
   it.each([undefined, null])("rejects an incomplete or unbounded new retail capacity contract (%s)", value => {
@@ -152,5 +153,16 @@ describe("funded Cloud offers and isolated capacity", () => {
   it("rejects a subscription copied from another organization or namespace", () => {
     expect(() => subscriptionPlan(savedPro(), "org-b", "ns-a")).toThrow(/could not be verified/);
     expect(() => subscriptionPlan(savedPro(), "org-a", "ns-b")).toThrow(/could not be verified/);
+  });
+  it("publishes Hobby with 25 GB while preserving the paid v5 storage and credits", async () => {
+    const offer = subscriptionOffer("hobby", "monthly");
+    expect(offer).toMatchObject({ reference: "openship:hobby:v6", unitAmount: 500, credits: 400,
+      resourceLimits: { max_disk_gb: 25, max_total_disk_gb: 25 } });
+    const subscription = { ...savedPro(), offer: savedOffer("hobby", "monthly"), metadata: savedMetadata("hobby", "org-a", "ns-a") };
+    const before = structuredClone(subscription);
+    expect(subscriptionPlan(subscription, "org-a", "ns-a").resourceLimits).toMatchObject({ max_disk_gb: 16, max_total_disk_gb: 16 });
+    expect(await cloudPlan("hobby", subscription)).toMatchObject({ price: { monthly: 500 }, monthlyCredits: 400_000,
+      resourceLimits: { max_disk_gb: 16, max_total_disk_gb: 16 } });
+    expect(subscription).toEqual(before);
   });
 });

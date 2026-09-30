@@ -1,8 +1,9 @@
 # Cloud capacity and unit economics — 2026-09-30
 
-Version 5 offers **$5 / $20 / $39 / $99** Hobby / Starter / Pro / Scale plans,
-with **400 / 1,700 / 3,500 / 9,000** metered credits. These retain the v4 capacity
-limits: one service can use
+Version 6 offers **$5 / $20 / $39 / $99** Hobby / Starter / Pro / Scale plans,
+with **400 / 1,700 / 3,500 / 9,000** metered credits. Hobby storage increases to
+25 GB and a Starter workspace can use its existing 32 GB storage pool, preserving
+disk capacity on upgrade. The other v4 capacity limits remain: one service can use
 up to the full shared CPU pool and half the RAM: **1 vCPU / 2 GB**, **2 vCPU / 3 GB**,
 **4 vCPU / 4 GB**, and **8 vCPU / 8 GB**. Pro and Scale VM CPU ceilings remain
 4 and 8 vCPU so those service sizes can be provisioned. The $39 Pro payment funds
@@ -10,7 +11,7 @@ up to the full shared CPU pool and half the RAM: **1 vCPU / 2 GB**, **2 vCPU / 3
 snapshots keep their purchased prices and limits.
 The prior capacity fixes and
 source-builder corrections remain in place. [The catalog reference](../packages/core/src/pricing/README.md)
-is the exact customer contract, including saved v1–v4 renewal behavior.
+is the exact customer contract, including saved v1–v5 renewal behavior.
 
 ## Hardware and revenue budget
 
@@ -65,7 +66,7 @@ credits. Grace stays zero unless the reseller explicitly configures it.
 2. Deploy this Openship API/dashboard together. Published SDK 2.5.0 is sufficient.
 3. Reconcile organizations through the billing sweep or guarded Cloud actions.
    v1 paid credits and periods remain unchanged; pre-v4 finite safety ceilings
-   still bound inherited capacity. v2/v3/v4 saved commercial terms and per-service
+   still bound inherited capacity. v2/v3/v4/v5 saved commercial terms and per-service
    ceilings remain intact.
 4. Review oversized existing Docker hosts while no deployment is in progress.
    The shared helper reduces CPU/RAM only after checking ownership, namespace

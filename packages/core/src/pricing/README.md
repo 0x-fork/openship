@@ -6,11 +6,11 @@ same catalog to the dashboard, marketing and linked installations. Checkout uses
 a generic Oblien offer; the subscription belongs to the customer's namespace.
 The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
-## Version 5 offers
+## Version 6 offers
 
 | Plan | Monthly price | Included credits | Shared CPU / RAM / disk | Per service: CPU / RAM | Projects | Service slots |
 | --- | ---: | ---: | --- | --- | ---: | ---: |
-| Hobby | $5 | 400 | 1 / 4 GB / 16 GB | 1 / 2 GB | 3 | 1 |
+| Hobby | $5 | 400 | 1 / 4 GB / 25 GB | 1 / 2 GB | 3 | 1 |
 | Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 2 / 3 GB | 10 | 3 |
 | Pro | $39 | 3,500 | 4 / 8 GB / 128 GB | 4 / 4 GB | 50 | 10 |
 | Scale | $99 | 9,000 | 8 / 16 GB / 256 GB | 8 / 8 GB | No set limit | 50 |
@@ -18,13 +18,15 @@ The Enterprise reseller owner receives wallet funding and keeps its own plan.
 CPU values are vCPU. New retail offers allow one service up to the full shared
 CPU pool and half the shared RAM. `limits.maxServiceResources` records that ceiling explicitly,
 including custom sizes; it does not change machine presets or workload defaults.
-Version 5 lowers Pro to $39/month. Included credits, project/service counts and
-capacity retain their v4 values.
+Version 5 lowered Pro to $39/month. Version 6 raises Hobby storage to 25 GB and
+lets a Starter workspace use its 32 GB storage pool, so upgrading from Hobby does
+not require a smaller disk. Included credits, project/service counts and other
+capacity limits retain their v4 values.
 
 | Plan | Workspace count | Per VM: vCPU / RAM / disk |
 | --- | ---: | --- |
-| Hobby | 1 | 1 / 4 GB / 16 GB |
-| Starter | 3 | 2 / 6 GB / 16 GB |
+| Hobby | 1 | 1 / 4 GB / 25 GB |
+| Starter | 3 | 2 / 6 GB / 32 GB |
 | Pro | 6 | 4 / 8 GB / 32 GB |
 | Scale | 12 | 8 / 12 GB / 64 GB |
 
@@ -93,14 +95,17 @@ stopped services stay stopped.
 
 ## Existing subscriptions and upgrades
 
-`openship:<tier>:v5` saves the price, credits, grace, application limits and all
+`openship:<tier>:v6` saves the price, credits, grace, application limits and all
 seven capacity fields. Renewals use that snapshot, even after catalog edits.
-Unknown versions, missing v2–v5 capacity fields and organization/namespace mismatches
+Unknown versions, missing v2–v6 capacity fields and organization/namespace mismatches
 fail closed. Price and credit metadata never come from browser input.
 
-Saved v2/v3/v4 subscriptions retain their original price, credits and capacity snapshot,
+Saved v2/v3/v4/v5 subscriptions retain their original price, credits and capacity snapshot,
 including the $40 price on existing v4 Pro subscriptions. New v5 offers use a
 distinct checkout reference so retries cannot reuse the older price.
+Version 6 raises Hobby's per-workspace and total storage limit from 16 GB to
+25 GB and Starter's per-workspace storage limit from 16 GB to its existing 32 GB
+pool. Prices, credits, other allowances and saved subscriptions are unchanged.
 Snapshots without `maxServiceResources` retain their purchased `maxResourceTier`
 ceiling. There is no automatic uplift or rewrite of existing paid subscriptions;
 any adjustment is an explicit operator action. Unchanged top-ups retain v3 references.

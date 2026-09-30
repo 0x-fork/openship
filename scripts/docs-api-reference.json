@@ -1866,6 +1866,24 @@
       "description": "Read compute usage, edge traffic, and bandwidth limits.",
       "route": "GET /api/billing/resources"
     },
+    "billing.getCapacity": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read verified Cloud pool and authorized project allocations.",
+      "route": "GET /api/billing/capacity"
+    },
+    "billing.previewCapacity": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Preview resource changes and affected restarts without applying them.",
+      "route": "POST /api/billing/capacity/preview"
+    },
+    "billing.applyCapacity": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Apply a confirmed resource adjustment through the deployment queue.",
+      "route": "POST /api/billing/capacity/apply"
+    },
     "billing.getSubscription": {
       "page": "billing",
       "section": "Operations",

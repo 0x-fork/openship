@@ -198,10 +198,14 @@ export interface CloudServiceResourceInput {
   } | null;
 }
 
-export function cloudDockerNeedsBuild(services: CloudServiceResourceInput[]): boolean {
+export function cloudDockerNeedsBuild(
+  services: CloudServiceResourceInput[],
+  retainedImages?: Readonly<Record<string, string>>,
+): boolean {
   return services.some(
     (service) =>
       service.enabled !== false &&
+      !(service.name && retainedImages?.[service.name]?.trim()) &&
       Boolean(
         service.build || service.advanced?.build || (service.kind === "monorepo" && !service.image),
       ),

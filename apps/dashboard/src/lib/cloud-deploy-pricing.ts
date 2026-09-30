@@ -1,5 +1,29 @@
 import { ApiError } from "@/lib/api/client";
 import type { BillingState } from "@/lib/api/billing";
+import type { CloudAllocation } from "@repo/core";
+
+export interface CloudCapacityRestriction {
+  code: "CLOUD_CAPACITY_REQUIRED";
+  projectId: string;
+  requested?: CloudAllocation;
+  reusesWorkspace?: boolean;
+}
+
+/** Same public details for synchronous admission and persisted worker errors. */
+export function cloudCapacityRestriction(error: unknown): CloudCapacityRestriction | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const body = error.body as { code?: unknown; projectId?: unknown; capacity?: { requested?: CloudAllocation; existing?: CloudAllocation } } | null;
+  if (body?.code !== "CLOUD_CAPACITY_REQUIRED" || typeof body.projectId !== "string") return null;
+  const request = body.capacity?.requested;
+  const requested = request && [request.cpuCores, request.memoryMb, request.diskMb].every(n => typeof n === "number" && Number.isFinite(n) && n >= 0)
+    ? request : undefined;
+  // Only a verified reusable workspace gets delta accounting. Native Cloud
+  // replacements need room for their full allocation while the old one runs.
+  const existing = body.capacity?.existing;
+  const reusesWorkspace = !!existing && [existing.cpuCores, existing.memoryMb, existing.diskMb]
+    .every(n => typeof n === "number" && Number.isFinite(n) && n > 0);
+  return { code: "CLOUD_CAPACITY_REQUIRED", projectId: body.projectId, requested, reusesWorkspace };
+}
 
 export interface CloudDeployRestriction {
   code: "CLOUD_BILLING_BLOCKED" | "PLAN_UPGRADE_REQUIRED";
