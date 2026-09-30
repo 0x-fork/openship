@@ -49,6 +49,7 @@ export const BillingPlansSchema = Type.Object({
     monthlyCredits: numberOrNull, annualCredits: Type.Optional(numberOrNull), limits: planLimits,
     resourceLimits: Type.Optional(namespaceResourceLimits),
     edge: Type.Optional(edgeLimits), features: Type.Array(Type.String()),
+    featureKeys: Type.Optional(Type.Array(Type.String())),
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
 });

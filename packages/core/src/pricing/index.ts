@@ -201,6 +201,8 @@ export interface PlanDefinition {
   oblienLimits: OblienLimits;
   limits: PlanLimits;
   features: readonly string[];
+  /** Stable keys aligned with `features`, so clients can group facts without parsing copy. */
+  featureKeys: readonly string[];
   popular: boolean;
   support: string;
   contactSales?: string;
@@ -310,6 +312,12 @@ const EVERYTHING_IN_KEY = "everythingIn";
 export function resolvePlan(planId: PlanTierId, locale: PricingLocale = "en"): PlanDefinition {
   const plan = PLAN_BY_ID.get(planId) ?? PLAN_BY_ID.get(DEFAULT_PLAN_TIER)!;
   const values = placeholders(plan, locale);
+  const features = plan.features
+    .filter((key) => key !== EVERYTHING_IN_KEY)
+    .flatMap((key) => {
+      const template = featureTemplate(key, locale);
+      return template === null ? [] : [{ key, label: fill(template, values) }];
+    });
   return {
     id: plan.id as PlanTierId,
     name: planName(plan.id, locale),
@@ -327,13 +335,8 @@ export function resolvePlan(planId: PlanTierId, locale: PricingLocale = "en"): P
         : null;
       return lead === null ? {} : { inheritedFrom: fill(lead, values) };
     })(),
-    features: plan.features
-      .filter((key) => key !== EVERYTHING_IN_KEY)
-      .map((key) => {
-        const template = featureTemplate(key, locale);
-        return template === null ? null : fill(template, values);
-      })
-      .filter((s): s is string => s !== null),
+    features: features.map(({ label }) => label),
+    featureKeys: features.map(({ key }) => key),
     popular: plan.popular,
     support: plan.support,
     ...(plan.contactSales ? { contactSales: plan.contactSales } : {}),

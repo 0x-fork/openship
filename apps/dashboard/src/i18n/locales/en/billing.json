@@ -371,7 +371,14 @@
     "creditUnitsHint": "Credits measure resource consumption, not minutes. CPU, memory, disk activity and transfer each have their own rate.",
     "topupCapacityHint": "Top-ups add usage credits. Upgrade your plan for more total CPU, RAM or storage.",
     "poolTitle": "Shared capacity",
-    "poolCapacity": "{cpu} vCPU · {ram} GB RAM · {disk} GB disk"
+    "poolCapacity": "{cpu} vCPU · {ram} GB RAM · {disk} GB disk",
+    "buildIncluded": "Included",
+    "perService": "Per service",
+    "storage": "Storage",
+    "usageNote": "Usage note.",
+    "planUsageNote": "Builds and running apps share one allowance. How long it lasts depends on resource use. Apps pause when it runs out; add usage to continue.",
+    "poolNote": "CPU, RAM and storage are shared across workspaces, including stopped workspaces and pending changes.",
+    "creditAllowances": "Included credits per billing cycle"
   },
   "onboarding": {
     "workspaceDescription": "Choose a Cloud plan to create projects, build your code and run your apps. No projects or compute are included before subscribing.",

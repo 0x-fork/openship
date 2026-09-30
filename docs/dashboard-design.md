@@ -43,6 +43,16 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   their established sizes (the default `Button` is 40px).
 - A destination with one valid choice, such as Openship Cloud on the hosted service, uses a
   compact summary row. Show a picker when the user has a choice.
+- Plan comparisons lead with CPU, memory, storage and service/project limits. Keep build
+  time separate from runtime capacity; show minutes only when the offer defines a time
+  allowance. Put metering and shared-capacity explanations once below the plans. Keep
+  benefits visible, and use catalog feature keys to avoid repeating resource facts.
+- Plan cards respond to their container: one column on phones, two at intermediate widths,
+  and four when readable. Offer links to each plan above a stacked comparison; never rely
+  on hidden horizontal overflow to reveal additional plans.
+- The plans comparison (`/billing/plans`) and Scale canvas open with the desktop sidebar
+  collapsed. Keep the toggle available, restore the normal preference on leaving, and
+  keep manual expansion independent between these sections. Mobile navigation opens fully.
 
 ## Typography and copy
 

@@ -371,7 +371,14 @@
     "creditUnitsHint": "クレジットは分数ではなくリソース消費量です。CPU、メモリ、ディスク処理、転送には個別の料金があります。",
     "topupCapacityHint": "追加購入は利用クレジットを増やします。CPU・RAM・ストレージの上限を増やすにはプランをアップグレードしてください。",
     "poolTitle": "共有容量",
-    "poolCapacity": "{cpu} vCPU · {ram} GB RAM · {disk} GB ディスク"
+    "poolCapacity": "{cpu} vCPU · {ram} GB RAM · {disk} GB ディスク",
+    "buildIncluded": "含まれます",
+    "perService": "サービスあたり",
+    "storage": "ストレージ",
+    "usageNote": "使用量について。",
+    "planUsageNote": "ビルドと実行中のアプリは同じ利用枠を共有します。利用できる時間はリソースの消費量によって変わります。使い切るとアプリは一時停止します。利用枠を追加すると続行できます。",
+    "poolNote": "CPU、RAM、ストレージは、停止中のワークスペースや保留中の変更も含め、すべてのワークスペースで共有されます。",
+    "creditAllowances": "請求サイクルごとの付属クレジット"
   },
   "onboarding": {
     "workspaceDescription": "Cloudプランを選んでプロジェクトを作成し、コードをビルドしてアプリを実行しましょう。契約前はプロジェクトやコンピューティングリソースは含まれません。",

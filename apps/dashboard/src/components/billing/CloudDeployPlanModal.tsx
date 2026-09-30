@@ -9,7 +9,6 @@ import { billingApi, type BillingState } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
 import { cloudDeployRecovery, type CloudDeployRestriction } from "@/lib/cloud-deploy-pricing";
 import { CloudPlanPicker } from "./CloudPlanPicker";
-import { CloudUsageGuide } from "./CloudUsageGuide";
 
 export function CloudDeployPlanModal({ restriction, onClose }: {
   restriction: CloudDeployRestriction;
@@ -100,7 +99,6 @@ export function CloudDeployPlanModal({ restriction, onClose }: {
         </p>
       ) : state && (
         <div className="space-y-6">
-          {showPlans && <CloudUsageGuide collapsible />}
           {showPlans && <CloudPlanPicker
             currentPlan={state.tier}
             subscription={state.subscription}
