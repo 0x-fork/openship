@@ -1,4 +1,4 @@
-import { repos } from "@repo/db";
+import { repos, type Server } from "@repo/db";
 import type { EdgeProviderOptions } from "@repo/adapters";
 import { resolveAcmeProviderOptions } from "./acme-config";
 import { isLocalHostRow } from "./box-org";
@@ -15,10 +15,13 @@ export function edgeProviderOptions(remoteServerId?: string): EdgeProviderOption
   };
 }
 
-/** Callers with only a server id must resolve the local-host alias too. */
-export async function resolveEdgeProviderOptions(serverId?: string): Promise<EdgeProviderOptions> {
-  if (!serverId) return edgeProviderOptions();
-  const server = await repos.server.get(serverId);
-  if (!server) throw new Error(`Server not found: ${serverId}`);
-  return edgeProviderOptions((await isLocalHostRow(server)) ? undefined : serverId);
+/** Reuse an already-authorized row when available. Id-only callers also resolve
+ * the local-host alias so every path selects the same edge lock. */
+export async function resolveEdgeProviderOptions(
+  target?: string | Server,
+): Promise<EdgeProviderOptions> {
+  if (!target) return edgeProviderOptions();
+  const server = typeof target === "string" ? await repos.server.get(target) : target;
+  if (!server) throw new Error(`Server not found: ${target}`);
+  return edgeProviderOptions((await isLocalHostRow(server)) ? undefined : server.id);
 }

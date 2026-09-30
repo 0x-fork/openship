@@ -123,7 +123,7 @@ export async function prepareServerEdge(
         {
           onLog: opts.onLog,
           promptUser,
-          nginx: await resolveEdgeProviderOptions(serverId),
+          nginx: await resolveEdgeProviderOptions(server),
           edgeImage: pinnedEdgeImage(),
         },
       );

@@ -44,7 +44,8 @@ export const serverInstallationDependencies: NonNullable<ServerDependencies["ins
     return subscriptionEvents(writer => subscribeSetupSession(sessionId, writer), signal);
   },
   async start(ctx, serverId, body, signal) {
-    await assertServerExecution(await requireSelfHostedServer(ctx, serverId));
+    const server = await requireSelfHostedServer(ctx, serverId);
+    await assertServerExecution(server);
     signal?.throwIfAborted();
     const validNames = body.components.filter(name => ALLOWED_COMPONENTS.has(name));
     if (validNames.length === 0) return failSystem({ error: "Invalid component names" }, 400);
@@ -167,7 +168,7 @@ export const serverInstallationDependencies: NonNullable<ServerDependencies["ins
                 acmeEmail: config?.acmeEmail,
                 edgeImage: config.edgeImage,
                 nginx: {
-                  ...(await resolveEdgeProviderOptions(serverId)),
+                  ...(await resolveEdgeProviderOptions(server)),
                   ...(config?.acmeEmail ? { acmeEmail: config.acmeEmail } : {}),
                 },
               },

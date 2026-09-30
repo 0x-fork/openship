@@ -85,3 +85,10 @@ it("does not fall back to a local edge for a deleted server", async () => {
   await expect(resolveEdgeProviderOptions("missing")).rejects.toThrow("Server not found");
   expect(h.advisory).not.toHaveBeenCalled();
 });
+
+it("reuses the authorized server row without an additional unscoped lookup", async () => {
+  const options = await resolveEdgeProviderOptions({ id: "srv_setup", isLocal: false } as never);
+  await options.configLock!.run(async () => undefined);
+  expect(h.server).not.toHaveBeenCalled();
+  expect(h.advisory).toHaveBeenCalledWith("edge-config:server:srv_setup", expect.any(Function));
+});
