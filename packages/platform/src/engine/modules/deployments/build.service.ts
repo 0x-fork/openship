@@ -175,10 +175,8 @@ export async function runDeploymentPreflight(
     /** Project id — passed to the remote-clone-token preflight check so
      *  project-scoped clone tokens are considered. */
     projectId?: string;
-    /** Catalog app this project instantiates + whether it has ever been live, so
-     *  the app's declared host minimum is matched against the target machine. */
+    /** Catalog app whose recommendations are checked against the target machine. */
     appTemplateId?: string | null;
-    firstDeploy?: boolean;
   },
 ): Promise<void> {
   const preflight = await runPreflightChecks(snapshot, {
@@ -194,7 +192,6 @@ export async function runDeploymentPreflight(
     ...(opts.gitOwner !== undefined ? { gitOwner: opts.gitOwner } : {}),
     ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
     ...(opts.appTemplateId !== undefined ? { appTemplateId: opts.appTemplateId } : {}),
-    ...(opts.firstDeploy !== undefined ? { firstDeploy: opts.firstDeploy } : {}),
     buildStrategy: snapshot.buildStrategy as "local" | "server" | undefined,
   });
   if (!preflight.ok) {
@@ -1387,6 +1384,7 @@ async function createQueuedDeploymentUnlocked(opts: {
       const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
+      const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
       meta = {
         ...meta,
         cloudApplicationSlot: !mode.useServicePipeline && snapshotToClass(meta).workload !== "static",
@@ -1399,6 +1397,9 @@ async function createQueuedDeploymentUnlocked(opts: {
         resources: meta.resources, buildResources: meta.buildResources,
         runsApplication: snapshotToClass(meta).workload !== "static",
         services: mode.useServicePipeline ? mode.servicePreflightServices : undefined,
+        dockerWorkspace:
+          mode.useServicePipeline &&
+          (await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode)),
       });
     }
 
@@ -2069,10 +2070,8 @@ export async function requestBuildAccess(
     multiService: useServicePipeline,
     gitOwner: project.gitOwner,
     projectId: project.id,
-    // An app project carries its catalog id; a never-deployed one is the only
-    // deploy a host-capacity shortfall is allowed to refuse.
+    // Catalog apps receive an advisory host-capacity check.
     appTemplateId: project.appTemplateId,
-    firstDeploy: !project.activeDeploymentId,
   });
   const env = deployEnvironment;
 
@@ -2844,10 +2843,8 @@ export async function triggerDeployment(
     multiService: useServicePipeline,
     gitOwner: project.gitOwner,
     projectId: project.id,
-    // An app project carries its catalog id; a never-deployed one is the only
-    // deploy a host-capacity shortfall is allowed to refuse.
+    // Catalog apps receive an advisory host-capacity check.
     appTemplateId: project.appTemplateId,
-    firstDeploy: !project.activeDeploymentId,
   });
 
   // ── Resolve commit info: fetch HEAD from GitHub if not provided ────

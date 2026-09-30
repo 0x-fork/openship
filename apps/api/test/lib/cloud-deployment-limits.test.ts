@@ -16,14 +16,90 @@ beforeEach(() => {
     limits: planLimits(h.tier as PlanTierId),
     resourceLimits: resolvePlan(h.tier as PlanTierId).oblienLimits,
   }));
-  h.count.mockResolvedValue(3);
+  h.count.mockResolvedValue(0);
   h.usage.mockResolvedValue(0);
 });
 const base = { cpuCores: 1, memoryMb: 1024, diskMb: 8192 };
 const services = () => [{ enabled: true }, { enabled: true }, { enabled: true }];
 describe("Cloud deploy and update resource gates", () => {
+  it("includes the combined Docker workspace allocation, even when each service fits", async () => {
+    h.tier = "team";
+    const stack = Array.from({ length: 5 }, (_, index) => ({
+      name: `svc-${index}`,
+      image: "redis:8",
+      advanced: { resources: base },
+    }));
+    await expect(
+      assertCloudDeploymentLimits("org-a", { services: stack }),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertCloudDeploymentLimits("org-a", { dockerWorkspace: true, services: stack }),
+    ).rejects.toMatchObject({
+      statusCode: 402,
+      code: "PLAN_UPGRADE_REQUIRED",
+      reason: "workspace-capacity",
+    });
+    await expect(
+      assertCloudDeploymentLimits("org-a", {
+        dockerWorkspace: true,
+        services: [...stack.slice(0, 4), { ...stack[4], enabled: false }],
+      }),
+    ).resolves.toBeUndefined();
+  });
+  it.each([
+    { resources: { ...base, memoryMb: 7168 }, count: 2, build: undefined },
+    { resources: { ...base, diskMb: 81920 }, count: 1, build: undefined },
+    { resources: { ...base, memoryMb: 8192 }, count: 1, build: "." },
+  ])(
+    "checks workspace RAM, disk and temporary build capacity: %j",
+    async ({ resources, count, build }) => {
+      h.tier = "team";
+      await expect(
+        assertCloudDeploymentLimits("org-a", {
+          dockerWorkspace: true,
+          buildResources: { cpuCores: 2, memoryMb: 8192, diskMb: 16384 },
+          services: Array.from({ length: count }, () => ({
+            image: "example/app:1",
+            build,
+            advanced: { resources },
+          })),
+        }),
+      ).rejects.toMatchObject({ reason: "workspace-capacity" });
+    },
+  );
+  it("uses the purchased workspace limit rather than hardcoding four CPUs", async () => {
+    h.sync.mockResolvedValue({
+      tier: "team",
+      limits: planLimits("team"),
+      resourceLimits: { ...resolvePlan("team").oblienLimits, max_vcpus: 6 },
+    });
+    await expect(
+      assertCloudDeploymentLimits("org-a", {
+        dockerWorkspace: true,
+        services: Array.from({ length: 5 }, () => ({
+          image: "redis:8",
+          advanced: { resources: base },
+        })),
+      }),
+    ).resolves.toBeUndefined();
+  });
+  it("counts a not-yet-created app in addition to the organization's existing services", async () => {
+    h.count.mockResolvedValue(2);
+    await expect(
+      assertCloudDeploymentLimits("org-a", {
+        services: [{ image: "redis:8" }, { image: "redis:8" }],
+      }),
+    ).rejects.toMatchObject({ reason: "running-services" });
+  });
   it("redeploys an existing stack at its allowance without charging service slots twice", async () => {
-    await expect(assertCloudDeploymentLimits("org-a", { resources: base, services: services() })).resolves.toBeUndefined();
+    h.count.mockResolvedValue(3);
+    await expect(
+      assertCloudDeploymentLimits("org-a", {
+        projectId: "existing",
+        resources: base,
+        services: services(),
+      }),
+    ).resolves.toBeUndefined();
   });
   it("checks saved project sizes even when no resource picker value is sent", async () => {
     h.count.mockResolvedValue(0);
@@ -57,8 +133,14 @@ describe("Cloud deploy and update resource gates", () => {
     await expect(assertCloudDeploymentLimits("org-a", { services: services() })).rejects.toMatchObject({ reason: "running-services" });
   });
   it("reserves a native application's slot alongside the organization's other services", async () => {
-    await expect(assertCloudDeploymentLimits("org-a", { projectId: "native-a", runsApplication: true, resources: base }))
-      .rejects.toMatchObject({ reason: "running-services" });
+    h.count.mockResolvedValue(3);
+    await expect(
+      assertCloudDeploymentLimits("org-a", {
+        projectId: "native-a",
+        runsApplication: true,
+        resources: base,
+      }),
+    ).rejects.toMatchObject({ reason: "running-services" });
     expect(h.count).toHaveBeenCalledWith("org-a", [], "native-a");
     h.count.mockResolvedValue(2);
     await expect(assertCloudDeploymentLimits("org-a", { projectId: "native-a", runsApplication: true, resources: base }))

@@ -1,5 +1,17 @@
 {
   "appInstall": {
+    "hostFitHint": "このまま続行できますが、このマシンでは性能が制限される場合があります。",
+    "cloudFitTitle": "このアプリには上位のCloudプランが必要です",
+    "upgradePlan": "プランをアップグレード",
+    "checkingCapacity": "容量を確認中…",
+    "checkCapacityAgain": "再確認",
+    "cloudFitUnavailable": "容量を確認できませんでした。デプロイ時に再確認します。",
+    "withoutDomainsTitle": "ドメインなしで続行しますか？",
+    "withoutDomainsBody": "これらの Web エンドポイントには公開ポートからのみアクセスできます。ドメインは後からプロジェクトで追加できます。",
+    "withoutDomainsCloudBody": "これらの Web エンドポイントには Cloud 上の公開 URL が設定されません。このアプリ内の他のサービスからは引き続きアクセスできます。ドメインは後からプロジェクトで追加できます。",
+    "addDomains": "ドメインを追加",
+    "continueWithoutDomains": "ドメインなしで続行",
+    "routePortCloudDesc": "この Cloud ワークスペース内でのみアクセスできます。公開 URL を使うにはドメインを追加してください。",
     "exposeTitle": "ドメインとルーティング"
   },
   "settingSection": {

@@ -35,7 +35,7 @@ The current API has **424 unique tools**. Permission tags below describe the rou
 | `delete_apps_custom_by_appId`<br />`DELETE /api/apps/custom/:appId` | Remove a custom app from this org's catalog. | `project:write` |
 | `get_apps_catalog`<br />`GET /api/apps/catalog` | List the one-click app catalog (Convex, WordPress, mail, …). | `project:list` |
 | `get_apps_catalog_by_id`<br />`GET /api/apps/catalog/:id` | Get one app's full template (services, config, endpoints) by id. | `project:list` |
-| `get_apps_catalog_by_id_host_fit`<br />`GET /api/apps/catalog/:id/host-fit` | Check whether a destination meets an app's declared minimum resources, before installing. Query: deployTarget, serverId. | `project:list` |
+| `get_apps_catalog_by_id_host_fit`<br />`GET /api/apps/catalog/:id/host-fit` | Preview app capacity before installing. Self-hosted minimums are advisory; Cloud checks the shared workspace allocation against the plan. Pass projectId to include an existing draft's saved resource settings. Query: deployTarget, serverId, projectId. | `project:list` |
 | `get_apps_custom`<br />`GET /api/apps/custom` | List this org's custom (user-uploaded, unverified) apps. | `project:list` |
 | `get_projects_by_id_app_connection`<br />`GET /api/projects/:id/app-connection` | Get an installed app's resolved connection details (URLs + generated keys). | `project:write` |
 | `get_projects_by_id_app_settings`<br />`GET /api/projects/:id/app-settings` | Get an installed app's curated settings schema + current values. | `project:read` |

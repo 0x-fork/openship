@@ -49,7 +49,7 @@ import {
   usesHostLoopbackUpstream,
 } from "../../lib/upstream-url";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
-import { webhookProxyTarget } from "../../config/index";
+import { env, webhookProxyTarget } from "../../config/index";
 import {
   disposeRuntime,
   resolveDeploymentRuntime,
@@ -214,6 +214,18 @@ export async function resolveServicePipelineMode(
     return { useSingleAppPipeline: true, useServicePipeline: false, servicePreflightServices: [] };
   }
 
+  // A failed catalog install can reach this path directly from Retry. Seed only
+  // missing draft profiles before reading/finalizing the next snapshot; an
+  // explicit or restored service snapshot must keep its original allocation.
+  if (
+    project.appTemplateId &&
+    !project.activeDeploymentId &&
+    !snapshot.composeServices?.length &&
+    (env.CLOUD_MODE || snapshot.deployTarget === "cloud")
+  ) {
+    const { ensureDraftAppResourceDefaults } = await import("../apps/app-resource-defaults");
+    await ensureDraftAppResourceDefaults(project);
+  }
   const [servicePreflightServices, useServicePipeline] = await Promise.all([
     resolveProjectServicePreflightServices(project.id, snapshot.composeServices),
     shouldUseProjectServicePipeline(project, snapshot.composeServices),
@@ -662,16 +674,25 @@ async function executeBuildAndDeploy(
     // leak it). Cloud static + Docker-less desktop-local static keep their own mode.
     const serviceMode = await resolveServicePipelineMode(project, snapshot);
     const willRunServices = serviceMode.useServicePipeline;
+    const dockerWorkspace =
+      willRunServices &&
+      resolveEffectiveTarget(plat.target, snapshot) === "cloud" &&
+      (await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode));
     await assertCloudDeploymentLimits(dep.organizationId, {
       projectId: project.id,
       resources: snapshot.resources, buildResources: snapshot.buildResources,
       runsApplication: snapshotToClass(snapshot).workload !== "static",
       services: willRunServices ? serviceMode.servicePreflightServices : undefined,
+      dockerWorkspace,
     });
-    if (willRunServices && resolveEffectiveTarget(plat.target, snapshot) === "cloud" &&
-        await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode)) {
-      settledDockerResources = cloudDockerResources({ resources: snapshot.resources,
-        services: serviceMode.servicePreflightServices.map(service => ({ enabled: service.enabled, resources: service.advanced?.resources })) });
+    if (dockerWorkspace) {
+      settledDockerResources = cloudDockerResources({
+        resources: snapshot.resources,
+        services: serviceMode.servicePreflightServices.map((service) => ({
+          enabled: service.enabled,
+          resources: service.advanced?.resources,
+        })),
+      });
       logger.log("→ Preparing the project's shared Docker workspace on Openship Cloud.\n");
       snapshot.cloudDockerWorkspace = await ensureCloudDockerWorkspace({
         projectId: project.id, organizationId: dep.organizationId,

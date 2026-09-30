@@ -1,5 +1,17 @@
 {
   "appInstall": {
+    "hostFitHint": "Vous pouvez continuer. Les performances peuvent être limitées sur cette machine.",
+    "cloudFitTitle": "Cette app nécessite un forfait Cloud supérieur",
+    "upgradePlan": "Changer de forfait",
+    "checkingCapacity": "Vérification de la capacité…",
+    "checkCapacityAgain": "Vérifier à nouveau",
+    "cloudFitUnavailable": "Impossible de vérifier la capacité. Elle sera vérifiée à nouveau lors du déploiement.",
+    "withoutDomainsTitle": "Continuer sans domaines ?",
+    "withoutDomainsBody": "Ces services web seront accessibles uniquement via leurs ports publiés. Vous pourrez ajouter des domaines plus tard depuis le projet.",
+    "withoutDomainsCloudBody": "Ces services web n’auront pas d’URL publique sur Cloud. Les autres services de cette application pourront toujours y accéder. Vous pourrez ajouter des domaines plus tard depuis le projet.",
+    "addDomains": "Ajouter des domaines",
+    "continueWithoutDomains": "Continuer sans domaines",
+    "routePortCloudDesc": "Accessible uniquement dans cet espace Cloud. Ajoutez un domaine pour obtenir une URL publique.",
     "exposeTitle": "Domaines et routage"
   },
   "settingSection": {
