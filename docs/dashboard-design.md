@@ -50,6 +50,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Plan cards respond to their container: one column on phones, two at intermediate widths,
   and four when readable. Offer links to each plan above a stacked comparison; never rely
   on hidden horizontal overflow to reveal additional plans.
+- Deployment plan dialogs use compact title and action rows. Keep explanations in the
+  scrollable content so the plans receive most of the available viewport height, including
+  on short screens. Keep actions side by side on phones, allowing long labels to wrap.
 - The plans comparison (`/billing/plans`) and Scale canvas open with the desktop sidebar
   collapsed. Keep the toggle available, restore the normal preference on leaving, and
   keep manual expansion independent between these sections. Mobile navigation opens fully.
