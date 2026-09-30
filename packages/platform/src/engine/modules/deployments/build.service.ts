@@ -119,6 +119,7 @@ import {
 } from "../../lib/release-resolver";
 import { commitSourceKey, projectBranch } from "../projects/project-crud.service";
 import { env } from "../../config/index";
+import { ensureDraftAppResourceDefaults } from "../apps/app-resource-defaults";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -2415,6 +2416,12 @@ export async function redeployBuildSession(
     await repos.project.mergeEnvVars(project.id, oldDep.environment, sourceEnv.additions, []);
   }
 
+  // A retry freezes these rows before the pipeline runs. Seed missing catalog
+  // defaults here too, otherwise older failed installs keep the fallback limits
+  // from before resource profiles existed. Explicit settings remain untouched.
+  if (meta.serviceDeploymentMode !== "single" && (env.CLOUD_MODE || meta.deployTarget === "cloud")) {
+    await ensureDraftAppResourceDefaults(project);
+  }
   const currentComposeRows = await listProjectComposeServices(project.id).catch(() => []);
   const currentComposeServices = projectServicesToDeployableServices(
     currentComposeRows.filter((s) => s.enabled),

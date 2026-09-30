@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Oblien } from "./oblien";
+import { Oblien, cloudWorkspaceCreationFailure } from "./oblien";
 afterEach(() => vi.unstubAllGlobals());
 describe("Oblien SDK transport", () => {
   it("propagates an HTTP quota refusal even without success:false", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "NAMESPACE_LIMIT_REACHED" }, { status: 409 })));
     const client = new Oblien({ token: "scoped-test-token" });
-    await expect(client.workspaces.create({ namespace: "tenant-a", wait_ready: false })).rejects.toMatchObject({ status: 409, code: "NAMESPACE_LIMIT_REACHED" });
+    const error = await client.workspaces.create({ namespace: "tenant-a", wait_ready: false }).catch(error => error);
+    expect(error).toMatchObject({ status: 409, code: "NAMESPACE_LIMIT_REACHED" });
+    expect(cloudWorkspaceCreationFailure(error)).toMatchObject({ capacityRejected: true, rejected: true });
   });
   it("rejects an error HTTP status even when a payload claims success", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, workspace: { id: "not-created" } }, { status: 503 })));
@@ -45,6 +47,7 @@ describe("Oblien SDK transport", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "scope_denied", message: "private-secret", details: { token: "private-secret" } }, { status: 403 })));
     const error = await new Oblien({ token: "test" }).workspaces.get("ws-b").catch(error => error);
     expect(error.message).not.toContain("private-secret"); expect(error.details).toBeUndefined(); expect(error.status).toBe(403);
+    expect(cloudWorkspaceCreationFailure(error)).toMatchObject({ capacityRejected: false, rejected: true });
   });
   it("keeps safe namespace allocation diagnostics and the request ID in deploy errors", async () => {
     const requestId = "5d66e628-76c5-4a15-93c7-0eaa02f21097";
@@ -207,6 +210,7 @@ describe("Oblien SDK transport", () => {
       code: "CREATE_FAILED",
       details: { workspace_id: "ws-failed" },
     });
+    expect(cloudWorkspaceCreationFailure(error)).toEqual({ workspaceId: "ws-failed", capacityRejected: false, rejected: false });
     expect(JSON.stringify(error)).not.toContain("private-");
     expect(error.message).not.toContain("private-");
   });

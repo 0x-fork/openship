@@ -155,6 +155,63 @@ describe("Cloud Docker provisioning and retry", () => {
     expect(h.create.mock.calls.map(([request]) => request.config.cpus)).toEqual([5, 2]);
     expect(binding?.state).toBe("ready");
   });
+  it("does not replace an old request when an empty lookup cannot rule out earlier provisioning", async () => {
+    binding = { ...input, namespace: "namespace-a", resources: { ...resources, cpuCores: 5 },
+      provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
+    h.create.mockImplementation(async (request) => {
+      if (request.config.cpus > 4) {
+        throw Object.assign(new Error("namespace permits 4 vCPU"), {
+          status: 409, code: "NAMESPACE_LIMIT_REACHED",
+        });
+      }
+      return { id: "workspace-a", namespace: "namespace-a" };
+    });
+    await expect(ensureCloudDockerWorkspace({ ...input, resources: { ...resources, cpuCores: 4 } }))
+      .rejects.toMatchObject({ code: "NAMESPACE_LIMIT_REACHED" });
+    expect(h.create.mock.calls.map(([request]) => request.config.cpus)).toEqual([5]);
+    expect(h.create.mock.calls.map(([request]) => request.idempotency_key)).toEqual(["legacy-key"]);
+    expect(h.list).toHaveBeenCalled();
+    expect(h.discard).not.toHaveBeenCalled();
+    expect(binding?.state).toBe("provisioning");
+  });
+  it("adopts an earlier workspace discovered after a quota refusal instead of creating another", async () => {
+    binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
+    h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
+    h.list.mockResolvedValue({ workspaces: [await h.get()], total: 1, limit: 100, page: 1 });
+    await expect(ensureCloudDockerWorkspace(input)).resolves.toEqual({ projectId: project.id, workspaceId: "workspace-a" });
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.discard).not.toHaveBeenCalled();
+    expect(h.reserve).not.toHaveBeenCalled();
+  });
+  it("retains an old reservation when a quota refusal cannot be reconciled with provider state", async () => {
+    binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
+    h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
+    h.list.mockRejectedValue(new Error("provider lookup unavailable"));
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("provider lookup unavailable");
+    expect(binding?.provisionKey).toBe("legacy-key");
+    expect(h.discard).not.toHaveBeenCalled();
+    expect(h.reserve).not.toHaveBeenCalled();
+  });
+  it("searches all pages and recovers only the workspace in this project's namespace", async () => {
+    binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
+    h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
+    const workspace = await h.get();
+    h.list.mockResolvedValueOnce({ workspaces: [{ ...workspace, namespace: "other-namespace", id: "foreign-vm" }], total: 2, limit: 1, page: 1 });
+    h.list.mockResolvedValueOnce({ workspaces: [workspace], total: 2, limit: 1, page: 2 });
+    await expect(ensureCloudDockerWorkspace(input)).resolves.toMatchObject({ workspaceId: "workspace-a" });
+    expect(h.list).toHaveBeenNthCalledWith(2, { page: 2, limit: 100 });
+    expect(h.attach).toHaveBeenCalledExactlyOnceWith(project.id, project.organizationId, "namespace-a", "workspace-a");
+  });
+  it("refuses an ambiguous provider identity instead of selecting one disk arbitrarily", async () => {
+    binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
+    h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
+    const workspace = await h.get();
+    h.list.mockResolvedValue({ workspaces: [workspace, { ...workspace, id: "duplicate-vm" }], total: 2, limit: 100, page: 1 });
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("Multiple Cloud workspaces");
+    expect(h.attach).not.toHaveBeenCalled();
+    expect(h.discard).not.toHaveBeenCalled();
+    expect(h.reserve).not.toHaveBeenCalled();
+  });
   it.each([
     "NAMESPACE_LIMIT_REACHED",
     "SANDBOX_LIMIT_REACHED",
@@ -237,6 +294,7 @@ describe("Cloud Docker provisioning and retry", () => {
     await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("token expired");
     expect(binding?.provisionKey).toBe("stable-key");
     expect(h.discard).not.toHaveBeenCalled();
+    expect(h.list).not.toHaveBeenCalled();
   });
   it("keeps an unclassified provisioning failure reserved when no identity is returned", async () => {
     h.create.mockRejectedValueOnce(

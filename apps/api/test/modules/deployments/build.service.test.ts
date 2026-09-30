@@ -56,7 +56,9 @@ const {
       listByProject: vi.fn(),
       reconcileFromCompose: vi.fn(),
       syncFromCompose: vi.fn(),
+      seedDraftAppResourceDefaults: vi.fn(),
     },
+    customAppTemplate: { findByAppId: vi.fn(async () => undefined) },
     serviceDeployment: {
       latestByProject: vi.fn(),
     },
@@ -142,7 +144,8 @@ import {
   type DeploymentConfigSnapshot,
 } from "@repo/platform/engine/modules/deployments/build.service";
 import { createServiceRepo, toComposeSpec, type Database } from "@repo/db";
-import { ENV_MASK, type ReleaseSource } from "@repo/core";
+import { ENV_MASK, getAppTemplate, type ReleaseSource, type ResourceValues } from "@repo/core";
+import { cloudDockerResources } from "@repo/platform/engine/lib/resources";
 import {
   newFolderSessionId,
   putFolderSession,
@@ -1843,6 +1846,59 @@ describe("redeployBuildSession environment snapshot", () => {
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({ envVars: { MANUAL_ENV: "keep-me" } }),
     );
+  });
+
+  it("refreshes missing Cloud app defaults before freezing a failed installation's retry", async () => {
+    const project = baseProject({
+      appTemplateId: "supabase",
+      isApp: true,
+      deployTarget: "cloud",
+      gitProvider: null,
+      localPath: null,
+      hasBuild: false,
+    });
+    const services = getAppTemplate("supabase")!.services!.map((service) => ({
+      id: `svc-${service.name}`,
+      projectId: project.id,
+      name: service.name,
+      kind: "compose",
+      enabled: true,
+      image: service.image,
+      advanced: { stopGracePeriod: "30s" } as Record<string, unknown>,
+    }));
+    const previous = {
+      ...baseSnapshot(),
+      deployTarget: "cloud",
+      serviceDeploymentMode: "services",
+      composeServices: services.map((service) => ({ ...service, advanced: { ...service.advanced } })),
+    };
+    repos.project.findById.mockResolvedValue(project);
+    repos.deployment.findById.mockResolvedValue({
+      id: "dep-old", projectId: project.id, organizationId: project.organizationId,
+      branch: "main", environment: "production", framework: "docker-compose", status: "failed",
+      meta: previous,
+    });
+    repos.service.listByProject.mockResolvedValue(services);
+    repos.service.seedDraftAppResourceDefaults.mockImplementationOnce(async ({ profiles }) => {
+      for (const service of services) {
+        const profile = profiles.find((entry: { name: string }) => entry.name === service.name);
+        if (profile) service.advanced.resources = { ...profile.resources };
+      }
+    });
+
+    await redeployBuildSession(ctx, "dep-old");
+
+    const queued = repos.deployment.create.mock.calls[0]![0];
+    expect(cloudDockerResources({
+      resources: queued.meta.resources,
+      services: queued.meta.composeServices.map((service: { advanced: { resources: ResourceValues } }) => ({
+        resources: service.advanced.resources,
+      })),
+    })).toEqual({ cpuCores: 4, memoryMb: 8192, diskMb: 40960 });
+    expect(queued.envVars).toEqual({ MANUAL_ENV: "keep-me" });
+    expect(queued.meta.composeServices.every((service: { advanced: { stopGracePeriod: string } }) =>
+      service.advanced.stopGracePeriod === "30s")).toBe(true);
+    expect(previous.composeServices.every((service) => service.advanced.resources === undefined)).toBe(true);
   });
 
   it("refreshes openship.json env for a single-app redeploy without parsing Compose", async () => {

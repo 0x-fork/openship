@@ -110,6 +110,10 @@
     "unmanaged": "This app has no configurable settings yet."
   },
   "appInstall": {
+    "configurationLoading": "Loading app configuration…",
+    "catalogLoadFailed": "Couldn't load app details. Try again before installing.",
+    "routingLoadFailed": "Couldn't load saved routing. Try again before installing.",
+    "retryConfiguration": "Try again",
     "install": "Install",
     "installing": "Installing…",
     "advanced": "Advanced deployment options",
@@ -128,6 +132,10 @@
     "withoutDomainsCloudBody": "These web endpoints won't have a public URL on Cloud. Other services in this app can still reach them. You can add domains later from the project.",
     "addDomains": "Add domains",
     "continueWithoutDomains": "Continue without domains",
+    "generatedDomainsTitle": "Use free domains?",
+    "generatedDomainsBody": "These endpoints will get free public URLs. You can choose the names before installing.",
+    "useGeneratedDomains": "Use free domains",
+    "editDomains": "Edit domains",
     "routePortCloudDesc": "Private to this Cloud workspace. Add a domain for a public URL.",
     "progressPreparing": "Preparing…",
     "progressDeploying": "Deploying…",
