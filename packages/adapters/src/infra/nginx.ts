@@ -2410,9 +2410,19 @@ ${serveLocation}
    * modified configs serving additional hostnames, even in our namespace. */
   private async ownedChallengeVhosts(host: string): Promise<string[]> {
     const owned: string[] = [];
+    const normalized = host.toLowerCase().replace(/\.$/, "");
     for (const path of this.challengeVhostPaths(host)) {
       const snapshot = await this._captureFile(path);
-      if (snapshot.exists && this.isChallengeFor(snapshot.content!, host)) owned.push(path);
+      if (!snapshot.exists) continue;
+      if (this.isChallengeFor(snapshot.content!, host)) {
+        owned.push(path);
+      } else if (this.serverNamesIn(snapshot.content!).includes(normalized)) {
+        // Keeping a second config for the same host is unsafe too: nginx only
+        // warns and may continue serving the underscore-prefixed file instead.
+        throw new Error(
+          `Cannot configure ${host}: ${path} claims this hostname but is not an exclusively owned Openship challenge vhost.`,
+        );
+      }
     }
     return owned;
   }

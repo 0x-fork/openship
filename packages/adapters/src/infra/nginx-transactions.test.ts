@@ -121,20 +121,51 @@ describe("challenge ownership", () => {
     },
   );
 
-  it.each([
-    edgeChallengeVhostConf(DASHED).replace(
+  it("does not treat a commented server_name as ownership", async () => {
+    const conf = edgeChallengeVhostConf(DASHED).replace(
       "server_name",
       `# server_name ${DOTTED};\n    server_name`,
-    ),
-    edgeChallengeVhostConf(DOTTED).replace(
-      `server_name ${DOTTED};`,
-      `server_name ${DOTTED} ${DASHED};`,
-    ),
-    `server { listen 80; server_name ${DOTTED}; location / { return 200; } }`,
-  ])("does not delete commented, multi-host or unmarked ownership", async (conf) => {
+    );
     await writeFile(challenge, conf);
     await nginx.registerRoute(route(DOTTED));
     expect(await readFile(challenge, "utf8")).toBe(conf);
+  });
+
+  it.each(
+    [
+      {
+        kind: "multi-host",
+        conf: edgeChallengeVhostConf(DOTTED).replace(
+          `server_name ${DOTTED};`,
+          `server_name ${DOTTED} ${DASHED};`,
+        ),
+      },
+      {
+        kind: "unmarked",
+        conf: `server { listen 80; server_name ${DOTTED}; location / { return 200; } }`,
+      },
+    ].flatMap((entry) =>
+      ["registration", "readiness", "challenge creation"].map((operation) => ({
+        ...entry,
+        operation,
+      })),
+    ),
+  )("refuses $operation for a $kind config claiming the same host", async ({ conf, operation }) => {
+    if (operation === "readiness") await nginx.registerRoute(route(DOTTED));
+    await writeFile(challenge, conf);
+    const beforeRoute = await readFile(routePath, "utf8").catch(() => null);
+    reload.mockClear();
+    await expect(
+      operation === "registration"
+        ? nginx.registerRoute(route(DOTTED))
+        : nginx.serveEdgeChallenge({ host: DOTTED }),
+    ).rejects.toThrow("claims this hostname");
+    expect(await readFile(challenge, "utf8")).toBe(conf);
+    expect(await readFile(routePath, "utf8").catch(() => null)).toBe(beforeRoute);
+    expect(
+      (await readdir(sites)).filter((name) => name.startsWith("_oblien-challenge-")),
+    ).toHaveLength(1);
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it("refuses a foreign file even at the disambiguated name", async () => {
