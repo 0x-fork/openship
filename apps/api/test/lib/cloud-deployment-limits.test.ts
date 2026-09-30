@@ -7,7 +7,8 @@ vi.mock("@repo/db", () => ({ repos: {
   service: { countRunningForOrg: h.count }, deployment: { sumBuildMillisForOrg: h.usage },
 } }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ syncOblienEntitlement: h.sync }));
-import { assertCloudDeploymentLimits, assertRunningServiceQuota, assertBuildMinutesAvailable } from "@repo/platform/engine/lib/plan-guard";
+import { assertCloudDeploymentLimits, assertRunningServiceQuota, assertBuildMinutesAvailable,
+  assertPlanAllowsResourceTier, assertCloudRuntimeLimits } from "@repo/platform/engine/lib/plan-guard";
 import { resolveCloudServiceResources } from "@repo/platform/engine/lib/resources";
 beforeEach(() => {
   vi.resetAllMocks(); h.cloud = true; h.tier = "starter";
@@ -22,6 +23,52 @@ beforeEach(() => {
 const base = { cpuCores: 1, memoryMb: 1024, diskMb: 8192 };
 const services = () => [{ enabled: true }, { enabled: true }, { enabled: true }];
 describe("Cloud deploy and update resource gates", () => {
+  it.each([
+    ["hobby", 0.5, 2048], ["starter", 1, 3072], ["pro", 2, 4096], ["team", 4, 8192],
+  ] as const)("applies the new %s ceiling to resource edits, deployments and existing runtimes", async (tier, cpuCores, memoryMb) => {
+    h.tier = tier;
+    const resources = { cpuCores, memoryMb, diskMb: 8192 };
+    const runtime = { supports: () => false, getContainerInfo: vi.fn().mockResolvedValue({ status: "stopped", resources }) };
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "custom", ...resources })).resolves.toBeUndefined();
+    await expect(assertCloudDeploymentLimits("org-a", { runsApplication: true, resources })).resolves.toBeUndefined();
+    await expect(assertCloudDeploymentLimits("org-a", { dockerWorkspace: true,
+      services: [{ image: "redis:8", advanced: { resources } }] })).resolves.toBeUndefined();
+    await expect(assertCloudRuntimeLimits("org-a", runtime, [{ containerId: "saved-container" }])).resolves.toBeUndefined();
+    for (const tooLarge of [{ ...resources, cpuCores: cpuCores + 0.25 }, { ...resources, memoryMb: memoryMb + 1 }]) {
+      await expect(assertPlanAllowsResourceTier("org-a", { tier: "custom", ...tooLarge })).rejects.toMatchObject({ reason: "resource-tier" });
+      await expect(assertCloudDeploymentLimits("org-a", { services: [{ image: "redis:8", advanced: { resources: tooLarge } }] }))
+        .rejects.toMatchObject({ reason: "resource-tier" });
+      runtime.getContainerInfo.mockResolvedValue({ status: "stopped", resources: tooLarge });
+      await expect(assertCloudRuntimeLimits("org-a", runtime, [{ containerId: "saved-container" }])).rejects.toMatchObject({ reason: "resource-tier" });
+    }
+  });
+  it("compares named presets on their CPU and RAM, not a separate preset rank", async () => {
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "medium" })).resolves.toBeUndefined();
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "high" })).rejects.toMatchObject({ reason: "resource-tier" });
+    h.sync.mockResolvedValue({ tier: "starter", limits: { ...planLimits("starter"), maxResourceTier: "low" },
+      resourceLimits: resolvePlan("starter").oblienLimits });
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "medium" })).resolves.toBeUndefined();
+  });
+  it.each([
+    { tier: "unknown" }, { tier: "__proto__" }, { tier: "unlimited" }, {},
+    { cpuCores: 0, memoryMb: 512 }, { cpuCores: 1, memoryMb: 0 },
+    { cpuCores: -1, memoryMb: 512 }, { cpuCores: NaN, memoryMb: 512 },
+    { cpuCores: Infinity, memoryMb: 512 }, { cpuCores: 1, memoryMb: Infinity },
+  ])("rejects unknown, unbounded or invalid service sizes: %j", async requested => {
+    await expect(assertPlanAllowsResourceTier("org-a", requested)).rejects.toMatchObject({ reason: "resource-tier" });
+  });
+  it("keeps the preset ceiling from an older subscription through edits, deployment and restart", async () => {
+    h.sync.mockResolvedValue({ tier: "starter", limits: { ...planLimits("starter"), maxServiceResources: undefined },
+      resourceLimits: resolvePlan("starter").oblienLimits });
+    const resources = { cpuCores: 1, memoryMb: 3072, diskMb: 8192 };
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "medium" })).resolves.toBeUndefined();
+    await expect(assertPlanAllowsResourceTier("org-a", { tier: "custom", ...resources }))
+      .rejects.toThrow("1 vCPU and 1 GB RAM per service");
+    await expect(assertCloudDeploymentLimits("org-a", { runsApplication: true, resources })).rejects.toMatchObject({ reason: "resource-tier" });
+    await expect(assertCloudRuntimeLimits("org-a", {
+      supports: () => false, getContainerInfo: vi.fn().mockResolvedValue({ status: "stopped", resources }),
+    }, [{ containerId: "saved-container" }])).rejects.toMatchObject({ reason: "resource-tier" });
+  });
   it("includes the combined Docker workspace allocation, even when each service fits", async () => {
     h.tier = "team";
     const stack = Array.from({ length: 5 }, (_, index) => ({
@@ -185,6 +232,7 @@ describe("Cloud deploy and update resource gates", () => {
   });
   it("does not apply Cloud quotas to self-hosted workloads", async () => {
     h.cloud = false;
+    await assertPlanAllowsResourceTier("org-a", { tier: "unlimited" });
     await assertCloudDeploymentLimits("org-a", { resources: { ...base, cpuCores: 128 }, services: services() });
     expect(h.count).not.toHaveBeenCalled(); expect(h.sync).not.toHaveBeenCalled();
   });

@@ -24,6 +24,7 @@ import {
   AppError,
   FREE_DOMAIN_SUFFIX,
   planLimits,
+  planServiceResources,
   resolvePlan,
   PRICING,
   RESOURCE_TIER_ORDER,
@@ -214,9 +215,8 @@ export async function assertPlanAllowsServices(organizationId: string): Promise<
  * can share one VM. Openship also enforces the selected per-service tier inside
  * that host, so a container cannot silently exceed its service configuration.
  *
- * Sizes are compared through `RESOURCE_TIER_ORDER` — the deploy wizard's own
- * ordering — so "larger than your plan" means the same thing here and in the
- * picker. A `custom` size is compared on its numbers against the tier's spec.
+ * Named presets and custom sizes are compared on CPU and RAM against the
+ * purchased service ceiling, independently of the workspace allocation.
  */
 export async function assertPlanAllowsResourceTier(
   organizationId: string,
@@ -233,32 +233,29 @@ function assertResourcesFitPlan(
   requested: { tier?: string | null; cpuCores?: number | null; memoryMb?: number | null },
   limits: PlanLimits,
 ): void {
-  const maxTier = limits.maxResourceTier;
-  if (maxTier === null) return; // uncapped (enterprise)
-
-  const ceiling = RESOURCE_TIER_SPECS[maxTier];
-  const refuse = () => {
+  const ceiling = planServiceResources(limits);
+  if (ceiling === null) return;
+  const refuse = (): never => {
     throw new PlanUpgradeRequiredError(
-      `Your plan allows up to ${ceiling.cpuCores} vCPU and ${Math.round(ceiling.memoryMb / 1024)} GB RAM per service. Upgrade for bigger machines.`,
+      `Your plan allows up to ${formatCpuCores(ceiling.cpuCores)} and ${formatMemoryMb(ceiling.memoryMb)} RAM per service. Upgrade for bigger machines.`,
       "resource-tier",
       tier,
     );
   };
 
-  // A named tier: compare position in the shared order, so an unknown name is
-  // treated as over-limit rather than waved through.
+  // Resolve named presets before comparing; unknown names cannot bypass the cap.
   const requestedTier = requested.tier?.trim();
+  let size = requested;
   if (requestedTier && requestedTier !== "custom") {
-    const wantIdx = RESOURCE_TIER_ORDER.indexOf(requestedTier as never);
-    const maxIdx = RESOURCE_TIER_ORDER.indexOf(maxTier);
-    if (wantIdx < 0 || wantIdx > maxIdx) refuse();
-    return;
+    const preset = RESOURCE_TIER_ORDER.find(name => name === requestedTier);
+    if (!preset) return refuse();
+    size = RESOURCE_TIER_SPECS[preset];
   }
 
   // Custom numbers: either dimension over the ceiling is over-limit. `0` means
   // "unlimited" in ResourceValues and must never read as "small".
-  const cpu = requested.cpuCores ?? 0;
-  const mem = requested.memoryMb ?? 0;
+  const cpu = size.cpuCores ?? 0;
+  const mem = size.memoryMb ?? 0;
   if (!Number.isFinite(cpu) || !Number.isFinite(mem) || cpu <= 0 || mem <= 0 || cpu > ceiling.cpuCores || mem > ceiling.memoryMb) refuse();
 }
 
@@ -398,7 +395,7 @@ export async function assertCloudRuntimeLimits(organizationId: string,
 ): Promise<void> {
   if (!env.CLOUD_MODE || containers.length === 0) return;
   const { tier, limits } = await planFor(organizationId);
-  if (limits.maxResourceTier === null) return;
+  if (planServiceResources(limits) === null) return;
   for (const container of containers) {
     const info = await runtime.getContainerInfo(container.containerId);
     const recorded = container.allocatedResources;

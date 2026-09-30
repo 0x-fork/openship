@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { PLANS, RESOURCE_TIER_SPECS, formatCpuCores, formatMemoryMb } from "@repo/core";
+import { PLANS, planServiceResources, formatCpuCores, formatMemoryMb } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
 import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
@@ -20,8 +20,8 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   const cap = state.capacity;
   const noPlan = state.tier === "free";
   const number = (value: number) => formatBillingNumber(value, locale);
-  const spec = state.maxServiceMachine === undefined
-    ? (limits.maxResourceTier ? RESOURCE_TIER_SPECS[limits.maxResourceTier] : null) : state.maxServiceMachine;
+  const serviceCeiling = planServiceResources(limits);
+  const spec = state.maxServiceMachine === undefined ? serviceCeiling : state.maxServiceMachine;
   const poolHint = copy.poolHint;
   const buildMeter = cap?.buildMinutes ?? { used: state.buildTimeMinutes, max: limits.buildMinutesPerMonth };
   const rows = [
@@ -62,8 +62,8 @@ export function BillingCapacity({ state }: { state: BillingState }) {
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-muted/20 px-4 py-3.5">
         <MetricLabel label={copy.machine} hint={copy.machineHint} />
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium tabular-nums text-foreground">
-          <span className="inline-flex items-center gap-2"><UiIcon name="cpu" className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatCpuCores(spec.cpuCores) : limits.maxResourceTier === null ? copy.unlimited : "—"}</bdi></span>
-          <span className="inline-flex items-center gap-2"><UiIcon name="memory" className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatMemoryMb(spec.memoryMb) : limits.maxResourceTier === null ? copy.unlimited : "—"}</bdi></span>
+          <span className="inline-flex items-center gap-2"><UiIcon name="cpu" className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatCpuCores(spec.cpuCores) : serviceCeiling === null ? copy.unlimited : "—"}</bdi></span>
+          <span className="inline-flex items-center gap-2"><UiIcon name="memory" className="size-4 text-muted-foreground" aria-hidden="true" /><bdi>{spec ? formatMemoryMb(spec.memoryMb) : serviceCeiling === null ? copy.unlimited : "—"}</bdi></span>
         </div>
       </div>
       {limits.buildMinutesPerMonth !== null && resetAt && Number.isFinite(resetAt.getTime()) && <p className="mt-3 text-xs text-muted-foreground">{interpolate(copy.reset, {

@@ -163,8 +163,10 @@ export interface PlanLimits {
   /** Concurrent services; several Compose services may share a workspace. */
   runningServices: number | null;
   maxProjects: number | null;
-  /** Largest per-service machine this tier may select, or null for uncapped. */
+  /** Preset ceiling for saved offers without explicit service resources. */
   maxResourceTier: FixedResourceTier | null;
+  /** Explicit per-service ceiling; null is uncapped, absent retains the saved preset. */
+  maxServiceResources?: { cpuCores: number; memoryMb: number } | null;
   /** Legacy display field; paid offers use credits rather than fixed runtime minutes. */
   computeMinutesPerMonth: number | null;
   buildMinutesPerMonth: number | null;
@@ -229,6 +231,16 @@ export function planLimits(planId: string | null | undefined): PlanLimits {
   return plan.limits;
 }
 
+/** Resolve the supplied contract, never substitute current catalog limits for a saved offer. */
+export function planServiceResources(limits: Pick<PlanLimits, "maxResourceTier" | "maxServiceResources">): {
+  cpuCores: number; memoryMb: number;
+} | null {
+  if (limits.maxServiceResources !== undefined) return limits.maxServiceResources;
+  if (limits.maxResourceTier === null) return null;
+  const { cpuCores, memoryMb } = RESOURCE_TIER_SPECS[limits.maxResourceTier];
+  return { cpuCores, memoryMb };
+}
+
 /** @deprecated Historical display conversion. Not an Oblien metering rate. */
 export const MILLI_PER_COMPUTE_MINUTE = 1000;
 
@@ -269,7 +281,7 @@ function placeholders(plan: PricingCatalogRaw["plans"][number], locale: PricingL
   const unlimited = uiString(locale, "unlimited");
   const n = (v: number | null) => (v === null ? unlimited : formatCount(v, locale));
   const { limits } = plan;
-  const svc = limits.maxResourceTier ? RESOURCE_TIER_SPECS[limits.maxResourceTier] : null;
+  const svc = planServiceResources(limits);
   return {
     credits: n(plan.billing.creditsPerCycle),
     namespaceCpu: n(plan.billing.resourceLimits.max_total_vcpus),
@@ -284,7 +296,6 @@ function placeholders(plan: PricingCatalogRaw["plans"][number], locale: PricingL
     // Per-SERVICE machine size, not a pool — the copy must say so.
     powerCpu: svc ? formatDecimal(svc.cpuCores, locale) : unlimited,
     powerRamGb: svc ? formatDecimal(svc.memoryMb / 1024, locale) : unlimited,
-    powerDiskGb: svc ? formatCount(Math.round(svc.diskMb / 1024), locale) : unlimited,
     computeMinutes: n(limits.computeMinutesPerMonth),
     inherited: plan.inherits ? planName(plan.inherits, locale) : "",
     freeDomainSuffix: PRICING.freeDomainSuffix,

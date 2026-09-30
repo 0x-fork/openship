@@ -31,6 +31,7 @@
     "anyWorkload": "何でも動かせる — コンテナ、Compose、ワーカー、Postgres、Redis",
     "runningServices": "同時に稼働するアプリ・データベース・ワーカー {runningServices} 個",
     "buildMinutes": "毎月 {buildMinutes} 分のビルド時間",
+    "meteredBuilds": "ビルドは共通クレジットを使用し、月ごとの時間上限はありません",
     "power": "アプリ 1 つあたり最大 {powerCpu} vCPU と {powerRamGb} GB RAM",
     "projects": "プロジェクト {maxProjects} 個",
     "projectsUnlimited": "プロジェクトは無制限",

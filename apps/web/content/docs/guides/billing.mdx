@@ -34,7 +34,23 @@ including temporary build resources when source code must be built. Image-only t
 it does not combine them into an arbitrarily large VM. Split a large stack
 across projects or reduce its machine sizes if it exceeds that capacity.
 
-The current monthly plans include 400 / 1,700 / 3,500 / 9,000 metered credits. Total namespace ceilings are 1 / 2 / 4 / 8 vCPU, 4 / 6 / 8 / 16 GB RAM, and 16 / 32 / 128 / 256 GB disk for Hobby / Starter / Pro / Team. Stopped workspaces, build hosts and pending resource changes count toward allocation. Per-VM limits apply as well; service counts do not promise every service can run at its maximum size simultaneously.
+New monthly subscriptions include:
+
+| Plan | Price | Usage credits | Shared capacity | Per service | Projects | Service slots |
+| --- | --- | --- | --- | --- | --- | --- |
+| Hobby | $5 | 400 | 1 vCPU · 4 GB RAM · 16 GB disk | 0.5 vCPU · 2 GB RAM | 3 | 1 |
+| Starter | $20 | 1,700 | 2 vCPU · 6 GB RAM · 32 GB disk | 1 vCPU · 3 GB RAM | 10 | 3 |
+| Pro | $40 | 3,500 | 4 vCPU · 8 GB RAM · 128 GB disk | 2 vCPU · 4 GB RAM | 50 | 10 |
+| Scale | $99 | 9,000 | 8 vCPU · 16 GB RAM · 256 GB disk | 4 vCPU · 8 GB RAM | No set limit | 50 |
+
+Build time uses the same credits as running apps, with no separate monthly minute
+cap on these offers. Credits renew each billing cycle; they do not promise a
+full month at maximum capacity. Existing subscriptions keep their purchased terms,
+which are shown in Billing.
+
+Stopped workspaces, build hosts and pending resource changes count toward shared
+allocation. Per-VM limits apply as well; service counts do not promise every service
+can run at its maximum size simultaneously. Undeployed drafts do not use service slots.
 
 Credit packs add 400 credits for $5, 1,700 for $20, or 4,500 for $50. A credit is not a minute: consumption depends on CPU, memory and transfer under the active Oblien rate card. Extra credits extend usage; upgrading the plan increases capacity. Previously purchased credit grants and prices remain attached to their saved subscription.
 

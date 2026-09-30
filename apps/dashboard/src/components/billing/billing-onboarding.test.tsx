@@ -101,11 +101,11 @@ describe("Cloud billing before the first subscription", () => {
       expect(card?.querySelector("[data-resource-value]")?.textContent).toMatch(/^0/);
       expect(card?.textContent).toContain(copy.onboarding.planRequired);
     }
-    expect(visibleText()).not.toMatch(/credits|0 of 3|500/i);
+    expect(visibleText()).not.toMatch(/0 of 3|500/i);
     expect(container.textContent).not.toMatch(/Unlimited|No set limit|∞/);
     expect(container.textContent).toContain("$15");
-    expect(container.textContent).toContain("1,234 credits / billing cycle");
-    expect(container.querySelector("dl")?.textContent).not.toMatch(/credits/i);
+    expect(visibleText()).toContain("1,234 credits / billing cycle");
+    expect(container.querySelector("dl")?.textContent).toContain(copy.resourcesGuide.buildUsageBased);
     expect(button("Subscribe to Hobby").disabled).toBe(false);
     expect(mocks.get).toHaveBeenCalledOnce();
     expect(mocks.get.mock.calls[0]![0]).toContain("billing/plans");
@@ -334,6 +334,35 @@ describe("customer credit limits", () => {
     expect(container.textContent).toContain("7 vCPU · 10 GB RAM · 192 GB disk");
     expect(container.textContent).toContain(copy.resourcesGuide.poolHint);
     expect(container.textContent).not.toMatch(/No set limit|3,000 min/);
+    expect(visibleText()).toContain(copy.resourcesGuide.buildTime);
+    expect(visibleText()).toContain(copy.resourcesGuide.buildUsageBased);
+    expect(visibleText()).toContain("1,234 credits / billing cycle");
+    expect(visibleText()).toContain("1 vCPU · 3 GB");
+  });
+  it("shows saved preset ceilings and fixed build allowances without using new catalog limits", async () => {
+    await render(<PlanResources plan={{ ...hobby, limits: { ...hobby.limits,
+      maxServiceResources: undefined, buildMinutesPerMonth: 3000 } }} />);
+    expect(visibleText()).toContain("1 vCPU · 1 GB");
+    expect(visibleText()).not.toContain("1 vCPU · 3 GB");
+    expect(visibleText()).toContain("3,000 min / month");
+    expect(visibleText()).not.toContain(copy.resourcesGuide.buildUsageBased);
+  });
+  it("shows annual credits from the paid offer and leaves missing credit amounts unknown", async () => {
+    await render(<PlanResources plan={hobby} interval="annual" />);
+    expect(visibleText()).toContain("14,555 credits / billing cycle");
+    expect(visibleText()).not.toContain("1,234 credits / billing cycle");
+    await render(<PlanResources plan={{ ...hobby, annualCredits: null }} interval="annual" />);
+    const credits = [...container.querySelectorAll("dt")].find(label => label.textContent === copy.resourcesGuide.credits);
+    expect(credits?.parentElement?.querySelector("dd")?.textContent).toBe("—");
+  });
+  it("uses the same explicit service ceiling in billing when no precomputed machine is supplied", async () => {
+    await render(<BillingCapacity state={{ ...paid, plan: { ...hobby,
+      limits: { ...hobby.limits, maxServiceResources: { cpuCores: 1, memoryMb: 3072 } } } }} />);
+    expect(visibleText()).toContain("3 GB");
+    await render(<BillingCapacity state={{ ...paid, plan: { ...hobby,
+      limits: { ...hobby.limits, maxServiceResources: undefined } } }} />);
+    expect(visibleText()).toContain("1 GB");
+    expect(visibleText()).not.toContain("3 GB");
   });
   it("does not turn an unknown paid balance into unlimited credits", async () => {
     await render(<BillingCapacity state={{ ...paid, balance: { total: null, quotaLimit: null, quotaUsed: 300_000, quotaRemaining: null, unlimited: false } }} />);

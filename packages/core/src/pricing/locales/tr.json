@@ -31,6 +31,7 @@
     "anyWorkload": "Her şeyi çalıştırın — container, Compose, worker, Postgres, Redis",
     "runningServices": "{runningServices} çalışan uygulama, veritabanı veya worker",
     "buildMinutes": "Ayda {buildMinutes} build dakikası",
+    "meteredBuilds": "Derlemeler aylık süre sınırı olmadan ortak kredileri kullanır",
     "power": "Uygulama başına en fazla {powerCpu} vCPU ve {powerRamGb} GB RAM",
     "projects": "{maxProjects} proje",
     "projectsUnlimited": "Sınırsız proje",

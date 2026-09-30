@@ -330,6 +330,7 @@
     "creditsHint": "构建和运行中的应用会因 CPU、内存、磁盘读写和数据传输消耗积分。工作负载越大，积分消耗越快。",
     "creditsPerCycle": "每个账单周期 {amount} 积分",
     "buildTime": "构建时间",
+    "buildUsageBased": "使用共享额度",
     "buildMinutes": "每月 {amount} 分钟",
     "buildHint": "构建根据实际资源消耗使用共享额度。仅当已保存的套餐包含单独的构建时长限制时，才会应用该限制。",
     "apps": "服务名额",

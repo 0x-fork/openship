@@ -31,6 +31,7 @@
     "anyWorkload": "Exécutez tout — conteneurs, Compose, workers, Postgres, Redis",
     "runningServices": "{runningServices} applications, bases de données ou workers actifs",
     "buildMinutes": "{buildMinutes} minutes de build par mois",
+    "meteredBuilds": "Les builds utilisent les crédits partagés, sans quota de durée mensuel",
     "power": "Jusqu'à {powerCpu} vCPU et {powerRamGb} GB de RAM par application",
     "projects": "{maxProjects} projets",
     "projectsUnlimited": "Projets illimités",

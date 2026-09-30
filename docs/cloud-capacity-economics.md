@@ -1,9 +1,13 @@
-# Cloud capacity and unit economics — 2026-09-29
+# Cloud capacity and unit economics — 2026-09-30
 
-Version 3 introduces **$5 / $20 / $40 / $99** Hobby / Starter / Pro / Team offers,
-with **400 / 1,700 / 3,500 / 9,000** metered credits. The prior capacity fixes and
+Version 4 retains **$5 / $20 / $40 / $99** Hobby / Starter / Pro / Team offers,
+with **400 / 1,700 / 3,500 / 9,000** metered credits. New offers allow one service
+up to half the shared CPU/RAM pool: **0.5 vCPU / 2 GB**, **1 vCPU / 3 GB**,
+**2 vCPU / 4 GB**, and **4 vCPU / 8 GB**. Total allocation, VM ceilings and
+funding do not change. Existing paid snapshots are not upgraded automatically.
+The prior capacity fixes and
 source-builder corrections remain in place. [The catalog reference](../packages/core/src/pricing/README.md)
-is the exact customer contract, including saved v1/v2 renewal behavior.
+is the exact customer contract, including saved v1/v2/v3 renewal behavior.
 
 ## Hardware and revenue budget
 
@@ -58,7 +62,7 @@ credits. Grace stays zero unless the reseller explicitly configures it.
 2. Deploy this Openship API/dashboard together. Published SDK 2.5.0 is sufficient.
 3. Reconcile organizations through the billing sweep or guarded Cloud actions.
    v1 paid credits and periods remain unchanged; finite safety ceilings replace
-   inherited capacity. v2 saved commercial terms remain intact.
+   inherited capacity. v2/v3 saved commercial terms and per-service ceilings remain intact.
 4. Review oversized existing Docker hosts while no deployment is in progress.
    The shared helper reduces CPU/RAM only after checking ownership, namespace
    binding and bounded running containers. It retains disks and restores exactly

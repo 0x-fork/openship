@@ -330,6 +330,7 @@
     "creditsHint": "Derlemeler ve çalışan uygulamalar CPU, bellek, disk etkinliği ve veri aktarımı için kredi tüketir. Daha büyük iş yükleri kredileri daha hızlı tüketir.",
     "creditsPerCycle": "Fatura dönemi başına {amount} kredi",
     "buildTime": "Derleme süresi",
+    "buildUsageBased": "Ortak kredileri kullanır",
     "buildMinutes": "Ayda {amount} dk",
     "buildHint": "Derlemeler, kaynak tüketimlerine göre ortak kullanım hakkını tüketir. Ayrı bir süre sınırı yalnızca kayıtlı planınızda yer alıyorsa uygulanır.",
     "apps": "Hizmet kotası",

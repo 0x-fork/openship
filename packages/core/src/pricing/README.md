@@ -6,14 +6,26 @@ same catalog to the dashboard, marketing and linked installations. Checkout uses
 a generic Oblien offer; the subscription belongs to the customer's namespace.
 The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
-## Version 3 offers
+## Version 4 offers
 
-| Plan | Monthly price | Included credits | Total vCPU | Total RAM | Total disk | Workspace count | Per VM: CPU / RAM / disk |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Hobby | $5 | 400 | 1 | 4 GB | 16 GB | 1 | 1 / 4 GB / 16 GB |
-| Starter | $20 | 1,700 | 2 | 6 GB | 32 GB | 3 | 2 / 6 GB / 16 GB |
-| Pro | $40 | 3,500 | 4 | 8 GB | 128 GB | 6 | 2 / 8 GB / 32 GB |
-| Team | $99 | 9,000 | 8 | 16 GB | 256 GB | 12 | 4 / 12 GB / 64 GB |
+| Plan | Monthly price | Included credits | Shared CPU / RAM / disk | Per service: CPU / RAM | Projects | Service slots |
+| --- | ---: | ---: | --- | --- | ---: | ---: |
+| Hobby | $5 | 400 | 1 / 4 GB / 16 GB | 0.5 / 2 GB | 3 | 1 |
+| Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 1 / 3 GB | 10 | 3 |
+| Pro | $40 | 3,500 | 4 / 8 GB / 128 GB | 2 / 4 GB | 50 | 10 |
+| Team | $99 | 9,000 | 8 / 16 GB / 256 GB | 4 / 8 GB | No set limit | 50 |
+
+CPU values are vCPU. New retail offers allow one service up to half of the shared
+CPU and RAM pool. `limits.maxServiceResources` records that ceiling explicitly,
+including custom sizes; it does not change machine presets or workload defaults.
+Prices, included credits, project/service counts and aggregate capacity are unchanged.
+
+| Plan | Workspace count | Per VM: vCPU / RAM / disk |
+| --- | ---: | --- |
+| Hobby | 1 | 1 / 4 GB / 16 GB |
+| Starter | 3 | 2 / 6 GB / 16 GB |
+| Pro | 6 | 2 / 8 GB / 32 GB |
+| Team | 12 | 4 / 12 GB / 64 GB |
 
 Hobby includes a finite allowance for light use. A continuously running Docker
 host can need top-ups; $5 does not buy an unlimited always-on VM.
@@ -80,13 +92,16 @@ stopped services stay stopped.
 
 ## Existing subscriptions and upgrades
 
-`openship:<tier>:v3` saves the price, credits, grace, application limits and all
+`openship:<tier>:v4` saves the price, credits, grace, application limits and all
 seven capacity fields. Renewals use that snapshot, even after catalog edits.
-Unknown versions, missing v2/v3 capacity fields and organization/namespace mismatches
+Unknown versions, missing v2/v3/v4 capacity fields and organization/namespace mismatches
 fail closed. Price and credit metadata never come from browser input.
 
-Saved v2 subscriptions retain their original price, credits and capacity snapshot.
-The new Hobby tier exists only in v3: a legacy provider `hobby` subscription still
+Saved v2/v3 subscriptions retain their original price, credits and capacity snapshot.
+Snapshots without `maxServiceResources` retain their purchased `maxResourceTier`
+ceiling. There is no automatic uplift or rewrite of existing paid subscriptions;
+any adjustment is an explicit operator action. Unchanged top-ups retain v3 references.
+The new Hobby tier exists from v3: a legacy provider `hobby` subscription still
 maps to its original Openship Starter tier, never to the new $5 plan.
 
 Legacy v1 offers left VM sizes inherited from the Enterprise owner. Reconciliation
