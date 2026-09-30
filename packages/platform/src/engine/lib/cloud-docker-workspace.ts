@@ -8,6 +8,7 @@ import {
   cloudWorkspaceStatus,
   sq,
   waitForCloudDockerWorkspace,
+  updateCloudWorkspaceResources,
   type ResourceConfig,
 } from "@repo/adapters";
 import { repos, type Project } from "@repo/db";
@@ -119,11 +120,7 @@ async function resizeDockerWorkspace(input: {
     input.signal?.throwIfAborted();
     let failure: { error: unknown } | undefined;
     try {
-      const result = await ws.resources.update({ cpus: input.resources.cpuCores, memory_mb: input.resources.memoryMb,
-        disk_size_mb: input.resources.diskMb, apply: true });
-      if (result.success === false || result.relaunched === false || result.pending_capacity_verification) {
-        throw new Error("The Cloud resource change is still pending verification; retry once the provider confirms it");
-      }
+      await updateCloudWorkspaceResources(ws, input.resources);
     } catch (error) { failure = { error }; }
     // Finish restoration even after cancellation or a lost provider response.
     try {

@@ -92,11 +92,11 @@ describe("Cloud customer checkout", () => {
       kind: "subscription",
       billingInterval: "monthly",
       offer: {
-        reference: "openship:starter:v5",
+        reference: "openship:starter:v6",
         unitAmount: 2000,
         credits: 1700,
         policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" },
-        resourceLimits: { max_workspaces: 3, max_total_vcpus: 2, max_total_ram_mb: 6144, max_total_disk_gb: 32 },
+        resourceLimits: { max_workspaces: 3, max_disk_gb: 32, max_total_vcpus: 2, max_total_ram_mb: 6144, max_total_disk_gb: 32 },
       },
       metadata: {
         openship_plan: "starter",
@@ -118,9 +118,9 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({
       namespace: "ns-org-a",
       offer: expect.objectContaining({
-        reference: "openship:hobby:v5", unitAmount: 500, credits: 400,
-        resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 4096, max_disk_gb: 16,
-          max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 16 },
+        reference: "openship:hobby:v6", unitAmount: 500, credits: 400,
+        resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 4096, max_disk_gb: 25,
+          max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 25 },
       }),
     }));
     expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("planTierId");
@@ -217,7 +217,7 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: "ns-org-a",
-        offer: expect.objectContaining({ reference: "openship:team:v5", unitAmount: 9900 }),
+        offer: expect.objectContaining({ reference: "openship:team:v6", unitAmount: 9900 }),
         billingInterval: "monthly",
       }),
     );

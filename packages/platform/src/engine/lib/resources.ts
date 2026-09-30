@@ -55,12 +55,15 @@ export function encodeResources(
   build?: ResourceConfig | null,
   sleepMode = "auto_sleep",
   port = 3000,
-  opts?: { isCloud?: boolean; capacity?: HostCapacity },
+  opts?: { isCloud?: boolean; capacity?: HostCapacity; automaticBuild?: boolean },
 ): ProjectResources {
   const isCloud = opts?.isCloud ?? false;
   const prod = production ?? (isCloud ? { ...DEFAULT_RESOURCE_CONFIG } : { ...UNLIMITED_RESOURCES });
   return {
-    build: build ?? { ...(isCloud ? DEFAULT_BUILD_RESOURCE_CONFIG : UNLIMITED_RESOURCES) },
+    build: build ?? (opts?.automaticBuild
+      ? { cpuCores: 0, memoryMb: 0, diskMb: DEFAULT_BUILD_RESOURCE_CONFIG.diskMb }
+      : { ...(isCloud ? DEFAULT_BUILD_RESOURCE_CONFIG : UNLIMITED_RESOURCES) }),
+    ...(opts?.automaticBuild ? { buildMode: build ? "custom" as const : "automatic" as const } : {}),
     production: prod,
     sleepMode,
     port,
@@ -198,14 +201,20 @@ export interface CloudServiceResourceInput {
   } | null;
 }
 
-export function cloudDockerNeedsBuild(services: CloudServiceResourceInput[]): boolean {
-  return services.some(
-    (service) =>
-      service.enabled !== false &&
-      Boolean(
-        service.build || service.advanced?.build || (service.kind === "monorepo" && !service.image),
-      ),
-  );
+export function cloudDockerNeedsBuild(
+  services: CloudServiceResourceInput[],
+  retainedImages?: Readonly<Record<string, string>>,
+): boolean {
+  return services.some((service) => cloudServiceNeedsBuild(service, retainedImages));
+}
+
+export function cloudServiceNeedsBuild(
+  service: CloudServiceResourceInput,
+  retainedImages?: Readonly<Record<string, string>>,
+): boolean {
+  return service.enabled !== false &&
+    !(service.name && retainedImages?.[service.name]?.trim()) &&
+    Boolean(service.build || service.advanced?.build || (service.kind === "monorepo" && !service.image));
 }
 
 export function cloudDockerResources(input: {

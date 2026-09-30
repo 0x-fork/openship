@@ -26,7 +26,6 @@ import {
   planLimits,
   planServiceResources,
   resolvePlan,
-  PRICING,
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
   formatCpuCores,
@@ -42,12 +41,12 @@ import { isCloudManagedHostname } from "./public-endpoints";
 import {
   cloudDockerNeedsBuild,
   cloudDockerResources,
-  resolveBuildResources,
   resolveCloudServiceResources,
   resolveRuntimeResources,
   type CloudServiceResourceInput,
 } from "./resources";
 import type { ResourceConfig, RuntimeAdapter } from "@repo/adapters";
+import { assertCloudWorkspaceCapacity } from "./cloud-capacity";
 
 /**
  * A refusal the user can act on by upgrading. 402 Payment Required is the
@@ -228,7 +227,7 @@ export async function assertPlanAllowsResourceTier(
   assertResourcesFitPlan(tier, requested, limits);
 }
 
-function assertResourcesFitPlan(
+export function assertResourcesFitPlan(
   tier: PlanTierId,
   requested: { tier?: string | null; cpuCores?: number | null; memoryMb?: number | null },
   limits: PlanLimits,
@@ -268,6 +267,8 @@ type CloudDeploymentLimits = {
   nativeApplication?: boolean;
   /** Docker service stacks share one VM; its aggregate allocation also has to fit. */
   dockerWorkspace?: boolean;
+  /** Internally pinned images use the same no-build decision as the deployer. */
+  retainedImages?: Readonly<Record<string, string>>;
   services?: CloudServiceResourceInput[];
 };
 
@@ -343,46 +344,41 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
   if (input.dockerWorkspace && services?.length) {
     const allocation = cloudDockerResources({
       resources: input.resources,
-      buildResources: input.buildResources,
-      reserveBuild: cloudDockerNeedsBuild(services),
       services: services.map((service) => ({ resources: service.advanced?.resources })),
     });
-    const shortages = [
-      policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
-        ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
-        : null,
-      policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
-        ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
-        : null,
-      policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
-        ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
-        : null,
-    ].filter(Boolean);
-    if (shortages.length)
-      throw new PlanUpgradeRequiredError(
-        `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
-        "workspace-capacity",
-        tier,
-      );
+    assertWorkspaceResourcesFitPlan(tier, allocation, policy);
+    // Source builders use Oblien's current headroom in prepareCloudBuildResources.
+    // Image-only actions need no build allocation, even with saved build settings.
+    if (input.projectId && !cloudDockerNeedsBuild(services, input.retainedImages)) {
+      await assertCloudWorkspaceCapacity({ organizationId, projectId: input.projectId,
+        requested: allocation, reuseDockerWorkspace: true,
+        buildResources: null });
+    }
   }
-  if (
-    services?.length &&
-    !input.nativeApplication &&
-    services.every(service => Boolean(service.image || service.advanced?.imageTemplate) &&
-      !service.build && !service.advanced?.build)
-  )
-    return;
-  const build = resolveBuildResources(input.buildResources, { isCloud: true });
-  const maximum = { cpuCores: policy.max_vcpus ?? PRICING.oblien.buildResources.cpuCores,
-    memoryMb: policy.max_ram_mb ?? PRICING.oblien.buildResources.memoryMb,
-    diskGb: policy.max_disk_gb ?? PRICING.oblien.buildResources.diskGb };
-  if (limits.maxResourceTier !== null && (!Number.isFinite(build.cpuCores) || !Number.isFinite(build.memoryMb) ||
-      build.cpuCores > maximum.cpuCores || build.memoryMb > maximum.memoryMb || build.diskMb > maximum.diskGb * 1024)) {
-    throw new PlanUpgradeRequiredError(
-      `Builds on this plan support up to ${maximum.cpuCores} vCPU and ${maximum.memoryMb / 1024} GB RAM. Reduce the build allocation.`,
-      "resource-tier", tier,
-    );
-  }
+}
+
+/** Shared by adjustment previews and deployment admission. A namespace's total
+ * capacity is separate from the purchased limit on one workspace. */
+export function assertWorkspaceResourcesFitPlan(
+  tier: PlanTierId,
+  allocation: { cpuCores: number; memoryMb: number; diskMb: number },
+  policy: OblienLimits,
+): void {
+  const shortages = [
+    policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
+      ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
+      : null,
+    policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
+      ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
+      : null,
+    policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
+      ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
+      : null,
+  ].filter(Boolean);
+  if (shortages.length) throw new PlanUpgradeRequiredError(
+    `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
+    "workspace-capacity", tier,
+  );
 }
 
 /** Starting an existing container applies its OLD limits, not editable settings.

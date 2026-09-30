@@ -872,6 +872,8 @@ async function prepareServiceRoutes(opts: {
 
 export interface ComposeDeployOptions {
   builtImages?: Map<string, string>;
+  /** Internal strict-refresh proof; image reuse does not need a build machine. */
+  retainedImages?: Readonly<Record<string, string>>;
   /** Exact service/image pairs known to be present locally because this
    * orchestration built or explicitly pinned them. Unlike a tag-shape check,
    * this is provenance rather than a naming convention. */
@@ -1011,6 +1013,7 @@ async function deployComposeServicesUnlocked(
   await assertCloudDeploymentLimits(project.organizationId, {
     projectId: project.id,
     resources: opts?.resources,
+    retainedImages: opts?.retainedImages,
     // A direct service Start carries siblings without applying their pending
     // resource edits. Organization service counts are still checked by the gate.
     services: opts?.strictScope && opts.targetServiceIds

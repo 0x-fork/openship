@@ -35,7 +35,7 @@ import {
 import { getRuntimeCatalog, getTemplateForOrg, listOrgCustomApps } from "./catalog-source";
 import { appCloudConfiguration, ensureDraftAppResourceDefaults } from "./app-resource-defaults";
 import type { AppHostFit } from "@repo/contracts";
-import { cloudDockerNeedsBuild, cloudDockerResources } from "../../lib/resources";
+import { cloudDockerResources } from "../../lib/resources";
 import { repos } from "@repo/db";
 import { env } from "../../config/index";
 import { decrypt, encrypt } from "../../lib/encryption";
@@ -164,7 +164,8 @@ export async function getAppHostFit(
     );
     const resources = cloudDockerResources({
       ...configuration,
-      reserveBuild: cloudDockerNeedsBuild(configuration.services),
+      // This preview describes the runtime. A source build uses the provider's
+      // available headroom when queued, rather than a fixed extra machine.
       services: configuration.services.map((service) => ({
         enabled: service.enabled,
         resources: service.advanced.resources,

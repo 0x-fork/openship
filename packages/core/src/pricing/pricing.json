@@ -122,10 +122,10 @@
           "max_workspaces": 1,
           "max_vcpus": 1,
           "max_ram_mb": 4096,
-          "max_disk_gb": 16,
+          "max_disk_gb": 25,
           "max_total_vcpus": 1,
           "max_total_ram_mb": 4096,
-          "max_total_disk_gb": 16
+          "max_total_disk_gb": 25
         }
       }
     },
@@ -183,7 +183,7 @@
           "max_workspaces": 3,
           "max_vcpus": 2,
           "max_ram_mb": 6144,
-          "max_disk_gb": 16,
+          "max_disk_gb": 32,
           "max_total_vcpus": 2,
           "max_total_ram_mb": 6144,
           "max_total_disk_gb": 32

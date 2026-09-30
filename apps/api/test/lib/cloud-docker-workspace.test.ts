@@ -23,7 +23,7 @@ vi.mock("@repo/adapters", async (original) => ({
   Oblien: class {
     constructor(credentials: unknown) { h.credentials.push(credentials); }
     workspaces = { create: h.create, retryCreation: h.retry, get: h.get, list: h.list };
-    workspace = () => ({ get: h.get, start: h.start, resume: h.resume,
+    workspace = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
       lifecycle: { makePermanent: h.permanent }, resources: { update: h.resize },
       runtime: async () => ({ exec: { run: h.exec } }), invalidateRuntime: h.invalidate });
   },
@@ -61,7 +61,15 @@ beforeEach(() => {
   });
   h.wait.mockImplementation(async () => h.get());
   h.exec.mockResolvedValue("");
-  h.resize.mockResolvedValue({ success: true, relaunched: true });
+  h.resize.mockImplementation(async (resources) => {
+    const workspace = await h.get();
+    workspace.resources = {
+      cpus: resources.cpus,
+      memory_mb: resources.memory_mb,
+      disk_size_mb: resources.disk_size_mb,
+    };
+    return { success: true, relaunched: true };
+  });
   h.inFlight.mockResolvedValue([]);
   h.list.mockResolvedValue({ workspaces: [], total: 0, limit: 100, page: 1 });
   h.discard.mockImplementation(async () => {
@@ -618,5 +626,17 @@ describe("Cloud Docker provisioning and retry", () => {
     await ensureCloudDockerWorkspace(input);
     h.resize.mockResolvedValueOnce({ success: true, relaunched: false, pending_capacity_verification: true });
     await expect(ensureCloudDockerWorkspace({ ...input, resources: { ...resources, memoryMb: 8192 } })).rejects.toThrow("pending verification");
+  });
+  it("restores services but does not claim capacity was released when the allocation remains unchanged", async () => {
+    await ensureCloudDockerWorkspace(input);
+    h.resize.mockResolvedValue({ success: true, relaunched: true });
+    h.exec.mockImplementation(async (command) => command.startsWith("docker inspect")
+      ? JSON.stringify(["abcdef123456", project.id, 256 * 1048576, 250000000, 0, 0])
+      : "abcdef123456");
+    await expect(reconcileCloudDockerWorkspace({
+      ...input, workspaceId: "workspace-a", resources: { cpuCores: 0.25, memoryMb: 1024, diskMb: 8192 },
+    })).rejects.toThrow("allocation was not applied");
+    expect(h.exec).toHaveBeenLastCalledWith("docker start 'abcdef123456'");
+    expect(h.invalidate).toHaveBeenCalledOnce();
   });
 });

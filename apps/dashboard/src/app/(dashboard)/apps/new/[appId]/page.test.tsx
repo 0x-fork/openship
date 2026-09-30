@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getAppTemplate, type AppTemplate } from "@repo/core";
@@ -7,6 +7,8 @@ import { baseDictionary } from "@/i18n";
 import { ModalProvider } from "@/context/ModalContext";
 import { ApiError } from "@/lib/api/client";
 import type { RoutingSettingsCardProps } from "@/components/routing/RoutingSettingsCard";
+import type { CleanDeployProgressCard } from "@/components/deploy/CleanDeployProgress";
+import type { BuildMessageCallbacks } from "@/lib/sseMessageProcessors";
 import AppInstallPage from "./page";
 
 const h = vi.hoisted(() => ({
@@ -19,6 +21,11 @@ const h = vi.hoisted(() => ({
   updateSettings: vi.fn(),
   build: vi.fn(),
   buildStatus: vi.fn(),
+  redeploy: vi.fn(),
+  showCloudPricing: vi.fn(),
+  callbacks: {} as BuildMessageCallbacks,
+  connect: vi.fn(),
+  disconnect: vi.fn(),
   toast: vi.fn(),
   requireCloud: vi.fn(),
   cloud: false,
@@ -36,7 +43,7 @@ vi.mock("@/lib/api", () => ({
   },
   servicesApi: { list: h.services, update: h.updateService },
   projectsApi: { getInfo: h.info },
-  deployApi: { buildAccess: h.build, getBuildStatus: h.buildStatus },
+  deployApi: { buildAccess: h.build, getBuildStatus: h.buildStatus, buildRedeploy: h.redeploy },
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => h.router,
@@ -59,9 +66,12 @@ vi.mock("@/context/CloudContext", () => ({
   useCloud: () => ({ connected: h.cloud, loading: false, requireCloud: h.requireCloud }),
 }));
 vi.mock("@/hooks/useSSEConnection", () => ({
-  useBuildStream: () => ({ connect: vi.fn(), disconnect: vi.fn() }),
+  useBuildStream: ({ callbacks }: { callbacks: BuildMessageCallbacks }) => {
+    h.callbacks = callbacks;
+    return { connect: h.connect, disconnect: h.disconnect };
+  },
 }));
-vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => vi.fn() }));
+vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => h.showCloudPricing }));
 vi.mock("@/hooks/useLocalDeployGate", () => ({
   useLocalDeployGate: () => ({ blocks: () => false }),
 }));
@@ -99,7 +109,13 @@ vi.mock("@/components/routing/RoutingSettingsCard", () => ({
   ),
 }));
 vi.mock("@/components/deploy/CleanDeployProgress", () => ({
-  CleanDeployProgressCard: () => null,
+  CleanDeployProgressCard: ({ phase, logs, recoveryAction, onRetry }: ComponentProps<typeof CleanDeployProgressCard>) => (
+    <div data-phase={phase}>
+      <pre>{logs}</pre>
+      {recoveryAction && <button onClick={recoveryAction.onClick} disabled={recoveryAction.pending}>{recoveryAction.label}</button>}
+      <button onClick={onRetry}>Back to form</button>
+    </div>
+  ),
   firstPublicHost: () => null,
 }));
 vi.mock("@/components/domains/DnsRecordsModal", () => ({
@@ -154,6 +170,8 @@ beforeEach(() => {
   h.updateService.mockResolvedValue(undefined);
   h.build.mockResolvedValue({ data: { deployment_id: "new-deployment" } });
   h.buildStatus.mockResolvedValue({ data: { status: "pending" } });
+  h.redeploy.mockReset().mockResolvedValue({ data: { deployment_id: "retried-deployment" } });
+  h.showCloudPricing.mockReset().mockReturnValue(false);
   h.requireCloud.mockResolvedValue(true);
   container = document.createElement("div");
   document.body.append(container);
@@ -580,6 +598,118 @@ it("offers an upgrade before Cloud installation, then refreshes after returning 
   await click("Install");
   await click("Use free domains");
   expect(h.build).toHaveBeenCalledOnce();
+});
+
+it.each(["create", "deploy"])("opens subscription recovery at the app %s gate and retains the draft", async (gate) => {
+  const refusal = new ApiError(402, "Payment required", { code: "CLOUD_BILLING_BLOCKED" });
+  h.showCloudPricing.mockReturnValue(true);
+  (gate === "create" ? h.install : h.build).mockRejectedValueOnce(refusal);
+  await renderApp();
+  await click("Install");
+  await click("Use free domains");
+  expect(h.showCloudPricing).toHaveBeenCalledWith(refusal, ...(gate === "deploy" ? [expect.any(Function)] : []));
+  expect(h.connect).not.toHaveBeenCalled();
+  expect(h.toast).not.toHaveBeenCalled();
+  await click("Install");
+  await click("Use free domains");
+  expect(h.install).toHaveBeenCalledTimes(gate === "create" ? 2 : 1);
+  expect(h.connect).toHaveBeenCalledWith("new-deployment", false);
+});
+
+it("recovers a capacity refusal before app deployment using the same configured draft", async () => {
+  const refusal = new ApiError(409, "Capacity required", { code: "CLOUD_CAPACITY_REQUIRED", projectId: "installed-app" });
+  h.showCloudPricing.mockReturnValue(true);
+  h.build.mockRejectedValueOnce(refusal);
+  await renderApp();
+  await click("Install");
+  await click("Use free domains");
+  expect(h.showCloudPricing).toHaveBeenCalledWith(refusal, expect.any(Function));
+  const retry = h.showCloudPricing.mock.calls[0]![1] as () => Promise<void>;
+  await act(async () => { await retry(); });
+  expect(h.install).toHaveBeenCalledOnce();
+  expect(h.build).toHaveBeenCalledTimes(2);
+  expect(h.build).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: "installed-app" }));
+  expect(h.connect).toHaveBeenCalledWith("new-deployment", false);
+});
+
+it("keeps failed app logs, opens capacity recovery, and resumes one deployment after adjustment", async () => {
+  h.showCloudPricing.mockReturnValue(true);
+  await renderApp();
+  await click("Install");
+  await click("Use free domains");
+  h.buildStatus.mockImplementation(async (id: string) => ({ data: id === "new-deployment" ? {
+    deploymentStatus: "failed", project_id: "installed-app", logs: "Preparing Cloud workspace\nPool is full\n",
+    failureMessage: "Capacity required", errorCode: "CLOUD_CAPACITY_REQUIRED",
+    errorDetails: { capacity: { requested: { cpuCores: 1, memoryMb: 1024, diskMb: 8192 } } },
+  } : { deploymentStatus: "building" } }));
+  await act(async () => { h.callbacks.onFailure?.("Capacity required"); });
+  expect(container.textContent).toContain("Pool is full");
+  expect(h.showCloudPricing).toHaveBeenCalledTimes(1);
+  expect(h.showCloudPricing).toHaveBeenCalledWith(expect.objectContaining({
+    status: 409,
+    body: expect.objectContaining({ code: "CLOUD_CAPACITY_REQUIRED", projectId: "installed-app" }),
+  }), expect.any(Function));
+  // Closing the modal must leave recovery accessible alongside the same logs.
+  await click(baseDictionary.billing.capacityEditor.title);
+  expect(h.showCloudPricing).toHaveBeenCalledTimes(2);
+  const retry = h.showCloudPricing.mock.calls[1]![1] as () => Promise<void>;
+  const queued = deferred<unknown>();
+  h.redeploy.mockReturnValueOnce(queued.promise);
+  await act(async () => { void retry(); void retry(); });
+  expect(h.redeploy).toHaveBeenCalledExactlyOnceWith("new-deployment");
+  expect(button(baseDictionary.billing.capacityEditor.title).disabled).toBe(true);
+  await act(async () => queued.resolve({ data: { deployment_id: "retried-deployment" } }));
+  expect(h.install).toHaveBeenCalledOnce();
+  expect(h.connect).toHaveBeenLastCalledWith("retried-deployment", false);
+  expect(container.querySelector('[data-phase="installing"]')).not.toBeNull();
+  expect(new URL(window.location.href).searchParams.get("projectId")).toBe("installed-app");
+  h.buildStatus.mockResolvedValue({ data: { deploymentStatus: "ready", logs: "App is running\n" } });
+  await act(async () => { h.callbacks.onSuccess?.(); });
+  expect(container.querySelector('[data-phase="done"]')).not.toBeNull();
+  expect(container.textContent).toContain("App is running");
+});
+
+it("uses structured stream errors if the final app status read is unavailable", async () => {
+  h.showCloudPricing.mockReturnValue(true);
+  await renderApp();
+  await click("Install");
+  await click("Use free domains");
+  h.buildStatus.mockRejectedValue(new TypeError("Network unavailable"));
+  await act(async () => { h.callbacks.onFailure?.("Capacity changed", "CLOUD_CAPACITY_REQUIRED", { projectId: "installed-app" }); });
+  expect(h.showCloudPricing).toHaveBeenCalledWith(expect.objectContaining({
+    status: 409, body: expect.objectContaining({ projectId: "installed-app" }),
+  }), expect.any(Function));
+});
+
+it("restores capacity recovery when reopening a failed app installation", async () => {
+  h.cloud = true;
+  h.appId = "supabase";
+  h.query = "projectId=installed-app&deployment=failed-deployment";
+  h.template.mockResolvedValue({ data: getAppTemplate("supabase")! });
+  h.services.mockResolvedValue({ services: [] });
+  h.showCloudPricing.mockReturnValue(true);
+  h.buildStatus.mockResolvedValue({ data: {
+    deploymentStatus: "failed", project_id: "installed-app", logs: "Saved install logs\n",
+    errorCode: "CLOUD_CAPACITY_REQUIRED",
+  } });
+  await render();
+  expect(container.textContent).toContain("Saved install logs");
+  expect(h.showCloudPricing).toHaveBeenCalledOnce();
+  expect(h.build).not.toHaveBeenCalled();
+  expect(h.install).not.toHaveBeenCalled();
+});
+
+it.each(["cancelled", "unknown"])("keeps %s app failures out of billing recovery", async (reason) => {
+  h.showCloudPricing.mockReturnValue(true);
+  await renderApp();
+  await click("Install");
+  await click("Use free domains");
+  h.buildStatus.mockResolvedValue({ data: {
+    deploymentStatus: reason === "cancelled" ? "cancelled" : "failed",
+    errorCode: reason === "cancelled" ? "CLOUD_CAPACITY_REQUIRED" : "CLOUD_RUNTIME_PROXY_UNAVAILABLE",
+  } });
+  await act(async () => { h.callbacks.onFailure?.("Stopped"); });
+  expect(h.showCloudPricing).not.toHaveBeenCalled();
 });
 
 it("shows a small host warning while still allowing an undersized self-hosted installation", async () => {

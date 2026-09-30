@@ -309,6 +309,7 @@ export function CleanDeployProgressCard({
   onGoToProject,
   onViewBuild,
   onRetry,
+  recoveryAction,
   onStop,
   isStopping,
   cancelled,
@@ -335,6 +336,8 @@ export function CleanDeployProgressCard({
   onGoToProject: () => void;
   onViewBuild: () => void;
   onRetry: () => void;
+  /** Reopen actionable billing/capacity recovery without discarding the logs. */
+  recoveryAction?: { label: string; onClick: () => void; pending?: boolean };
   /** Cancel the in-flight install. Rendered as a Stop button while installing. */
   onStop?: () => void;
   /** The cancel request is in flight — disables Stop and shows a spinner. */
@@ -539,6 +542,11 @@ export function CleanDeployProgressCard({
                   >
                     <UiIcon name="sliders" className="size-4" /> {w.viewDetails}
                   </button>
+                )}
+                {recoveryAction && !cancelled && (
+                  <Button type="button" disabled={recoveryAction.pending} onClick={recoveryAction.onClick}>
+                    {recoveryAction.label}
+                  </Button>
                 )}
                 <button
                   type="button"
@@ -837,6 +845,11 @@ export function CleanDeployProgressCard({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {phase === "error" && !cancelled && recoveryAction && (
+              <Button type="button" disabled={recoveryAction.pending} onClick={recoveryAction.onClick}>
+                {recoveryAction.label}
+              </Button>
+            )}
             {phase === "error" && (
               <Button type="button" variant="ghost" onClick={onRetry}>
                 <UiIcon name="arrow-left" aria-hidden className="size-4 rtl:rotate-180" />

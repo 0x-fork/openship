@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PLANS, pricingUi } from "@repo/core";
 import { I18nProvider } from "@/components/i18n-provider";
+import { ModalProvider } from "@/context/ModalContext";
 import { baseDictionary } from "@/i18n";
 import type { BillingState } from "@/lib/api/billing";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
@@ -66,7 +67,7 @@ const complimentary: BillingState = {
 };
 let root: Root;
 let container: HTMLDivElement;
-const render = async (node: React.ReactNode) => { await act(async () => root.render(<I18nProvider>{node}</I18nProvider>)); };
+const render = async (node: React.ReactNode) => { await act(async () => root.render(<I18nProvider><ModalProvider>{node}</ModalProvider></I18nProvider>)); };
 function visibleText() {
   const visible = container.cloneNode(true) as HTMLElement;
   for (const details of visible.querySelectorAll("details:not([open])")) details.replaceChildren(details.querySelector("summary")!.cloneNode(true));

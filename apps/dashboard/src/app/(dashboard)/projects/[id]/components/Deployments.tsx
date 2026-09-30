@@ -113,7 +113,7 @@ export const Deployments = () => {
         const res = await deployApi.trigger(body);
         openTriggeredBuild(router, res, projectData.id);
       } catch (error) {
-        if (showCloudPricing(error)) {
+        if (showCloudPricing(error, () => runRedeploy(mode))) {
           setIsRedeploying(false);
           return;
         }

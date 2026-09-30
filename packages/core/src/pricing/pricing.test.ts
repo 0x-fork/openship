@@ -97,6 +97,14 @@ describe("pricing catalog (pricing.json)", () => {
         if (lo === null || hi === null) continue;
         expect(hi, `${paid[i]!.id}.${dim} must be >= ${paid[i - 1]!.id}.${dim}`).toBeGreaterThanOrEqual(lo);
       }
+      // Disks cannot shrink: a paid upgrade must still accommodate every disk
+      // allowed by the previous tier, both per workspace and across the pool.
+      for (const dim of ["max_disk_gb", "max_total_disk_gb"] as const) {
+        const lo = paid[i - 1]!.billing.resourceLimits[dim];
+        const hi = paid[i]!.billing.resourceLimits[dim];
+        expect(hi ?? Infinity, `${paid[i]!.id}.${dim} cannot shrink on upgrade`)
+          .toBeGreaterThanOrEqual(lo ?? Infinity);
+      }
     }
   });
 

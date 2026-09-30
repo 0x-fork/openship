@@ -21,6 +21,7 @@ import {
   unresolvedComposeEnvironmentKeys,
   type Project,
   type Service,
+  type DeploymentResourceChanges,
 } from "@repo/db";
 import {
   AppError,
@@ -59,7 +60,7 @@ import { decryptEnvMap, encrypt } from "../../lib/encryption";
 import { getCommitByRef, getLatestCommit, getRepository } from "../github/github.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { resolveSmartRoute } from "./smart-route";
-import { snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts } from "./pinned-artifacts";
+import { snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts, strictRefreshImages } from "./pinned-artifacts";
 import { deploymentWorkload, projectToClass, snapshotToClass } from "./deployment-class";
 import {
   resolveProjectInfo,
@@ -110,6 +111,7 @@ import {
   syncProjectRouteState,
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
+import { prepareCloudBuildResources } from "./cloud-build-resources";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { assertExactServiceTargets } from "./exact-service-targets";
 import {
@@ -202,6 +204,8 @@ export async function runDeploymentPreflight(
 
 /** Config snapshot stored in deployment.meta - self-contained build+deploy config. */
 export interface DeploymentConfigSnapshot {
+  /** Idempotency for an explicit capacity adjustment; never accepted over HTTP. */
+  capacityAdjustment?: { key: string; requestHash: string };
   /** Internal Cloud service-slot reservation, derived at queue creation. */
   cloudApplicationSlot?: boolean;
   /** Frozen stack names reserve slots before their service rows are synchronized. */
@@ -1294,6 +1298,8 @@ export async function createQueuedDeployment(opts: Parameters<typeof createQueue
 }
 
 async function createQueuedDeploymentUnlocked(opts: {
+  /** Internal, reviewed resource edit committed with deployment admission. */
+  resourceChanges?: DeploymentResourceChanges;
   /** Attribution only; ownership/authorization still comes from organizationId. */
   analyticsActor?: Pick<RequestContext, "userId" | "source">;
   projectId: string;
@@ -1379,13 +1385,21 @@ async function createQueuedDeploymentUnlocked(opts: {
       return project ? shouldUseProjectServicePipeline(project, meta.composeServices) : false;
     },
   });
-  await assertBuildMinutesAvailable(opts.organizationId);
+  // An exact image refresh performs no build and must remain usable when the
+  // monthly build allowance is exhausted. Workload eligibility is still checked.
+  const { cloudDockerNeedsBuild } = await import("../../lib/resources");
+  const needsBuild = meta.composeServices?.length
+    ? cloudDockerNeedsBuild(meta.composeServices, strictRefreshImages(meta))
+    : !meta.refreshAppDeploymentId && !meta.releaseImageRef;
+  if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId);
   const insertDeployment = async () => {
     if (env.CLOUD_MODE) {
       const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
       const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
+      const dockerWorkspace = mode.useServicePipeline &&
+        await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode);
       meta = {
         ...meta,
         cloudApplicationSlot: !mode.useServicePipeline && snapshotToClass(meta).workload !== "static",
@@ -1398,10 +1412,11 @@ async function createQueuedDeploymentUnlocked(opts: {
         resources: meta.resources, buildResources: meta.buildResources,
         runsApplication: snapshotToClass(meta).workload !== "static",
         services: mode.useServicePipeline ? mode.servicePreflightServices : undefined,
-        dockerWorkspace:
-          mode.useServicePipeline &&
-          (await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode)),
+        retainedImages: strictRefreshImages(meta),
+        dockerWorkspace,
       });
+      await prepareCloudBuildResources({ project, snapshot: meta,
+        services: mode.useServicePipeline ? mode.servicePreflightServices : undefined, dockerWorkspace });
     }
 
     // Version is NOT assigned here. A version number represents a shipped
@@ -1438,7 +1453,7 @@ async function createQueuedDeploymentUnlocked(opts: {
       forceAll: opts.forceAll ?? false,
       changedPaths: opts.changedPaths ?? null,
       changedPathsTruncated: opts.changedPathsTruncated ?? false,
-    });
+    }, ...(opts.resourceChanges ? [opts.resourceChanges] as const : []));
   };
   const dep = env.CLOUD_MODE
     ? await createProvisionLock(`cloud:service-quota:${opts.organizationId}`).run(insertDeployment)
@@ -1450,7 +1465,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   }
 
   try {
-    await repos.deployment.createBuildSession({
+    if (!opts.resourceChanges) await repos.deployment.createBuildSession({
       deploymentId: dep.id,
       projectId: opts.projectId,
       status: "queued",
@@ -2605,6 +2620,8 @@ export async function triggerDeployment(
      * builder. Dashboard "Refresh" button.
      */
     refresh?: boolean;
+    /** Internal reviewed resource edit, never accepted from an HTTP deployment body. */
+    resourceChanges?: DeploymentResourceChanges;
     /**
      * Release/dist source: deploy THIS specific version (the `release` webhook
      * passes the published tag). Omitted for a manual redeploy, which re-resolves
@@ -2981,6 +2998,7 @@ export async function triggerDeployment(
     serviceIds: finalServiceIds,
     refreshServiceIds,
     strictServiceScope: data.strictServiceScope,
+    resourceChanges: data.resourceChanges,
     changedPaths: resolvedChangedPaths ?? null,
   });
 

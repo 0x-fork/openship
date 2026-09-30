@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **424 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **427 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -89,11 +89,14 @@ The current API has **424 unique tools**. Permission tags below describe the rou
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
 | `get_billing_allowances`<br />`GET /api/billing/allowances` | List resources consuming workspace allowances, including the projects holding managed domains. | `billing:read` |
+| `get_billing_capacity`<br />`GET /api/billing/capacity` | Read the Cloud pool's allocated CPU, memory and disk, and authorized project allocations. Includes stopped workspaces. Read this again after an adjustment to verify capacity release. | `billing:read` |
 | `get_billing_resources`<br />`GET /api/billing/resources` | List Cloud resources contributing to this workspace’s bill and usage. | `billing:read` |
 | `get_billing_state`<br />`GET /api/billing/state` | Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data. | `billing:read` |
 | `get_billing_subscription`<br />`GET /api/billing/subscription` | Read the workspace’s current subscription tier, state and billing period. | `billing:read` |
 | `get_billing_topup_packs`<br />`GET /api/billing/topup-packs` | List available Cloud credit packs and prices. Reading this does not buy credits. | `billing:read` |
 | `get_billing_usage`<br />`GET /api/billing/usage` | Read metered Cloud usage over the requested date range, grouped by hour or day. This is billing data, not live workload metrics. | `billing:read` |
+| `post_billing_capacity_apply`<br />`POST /api/billing/capacity/apply` | Apply a reviewed capacity adjustment with explicit restart confirmation. Reuses deployed images through normal deployment logs. Requires project and service write access. Reuse the idempotency key for retries; poll the returned deployment and capacity before retrying a blocked deploy. | `billing:write` |
+| `post_billing_capacity_preview`<br />`POST /api/billing/capacity/preview` | Preview service resource edits and the services that may restart. Requires project and service write access, and the revision from capacity. Does not apply changes. | `billing:read` |
 
 ### cloud-local
 

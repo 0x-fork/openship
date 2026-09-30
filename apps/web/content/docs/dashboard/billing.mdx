@@ -44,6 +44,39 @@ portal, isolated from other customers and the reseller account.
 
 For the endpoints behind this screen, see the [billing API](/docs/api/billing).
 
+## Make room for another deployment
+
+Choose **Manage Cloud capacity** in Billing, or open it when a deployment needs
+more available capacity. The pool shows reserved CPU, memory and storage.
+A service-count allowance does not guarantee that another workspace will fit.
+
+Source builds share this pool with running apps. Openship selects build CPU and
+memory from Oblien's reported available capacity, within its workspace limits.
+Existing runtime allocations stay reserved. Image-only installs need no source
+builder. These rules also apply to catalog apps and their retries.
+
+1. Choose **Adjust** beside a running project and edit its service CPU or memory.
+2. Choose **Review changes**. Review the resulting workspace allocation and the
+   services that may briefly restart.
+3. Choose **Apply and restart**. The deployment uses the services' current images
+   and saved settings, preserving persistent volumes. **Deployment logs** opens
+   the normal deployment page.
+4. Wait for capacity verification, then choose **Retry deployment**. The retry
+   uses the original project rather than creating another installation.
+
+Running Docker workspaces can be adjusted here. Other projects show why they are
+unavailable; a resize also requires write permission on the project and its
+services. Stopped workspaces still reserve capacity. Storage cannot be reduced
+here, and workspace allocations include Docker overhead and build reservations.
+
+After five minutes, automatic checks stop and **Refresh capacity** checks the
+same operation again. Closing the dialog does not cancel a deployment. If an
+adjustment fails, inspect its logs and refresh capacity before trying again.
+
+For a source build, **Edit build resources** lets you set an optional CPU/memory
+cap or choose **Automatic** again. This changes the next build, preserving
+production settings. A smaller build may be slower or run out of memory.
+
 ## Credit warnings and recovery
 
 When Cloud credits run low, a persistent dashboard banner links to the affected workspace's

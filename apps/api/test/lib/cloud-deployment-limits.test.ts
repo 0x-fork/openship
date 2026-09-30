@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { planLimits, resolvePlan, type PlanTierId } from "@repo/core";
-const h = vi.hoisted(() => ({ cloud: true, tier: "starter", count: vi.fn(), usage: vi.fn(), sync: vi.fn() }));
+const h = vi.hoisted(() => ({ cloud: true, tier: "starter", count: vi.fn(), usage: vi.fn(), sync: vi.fn(), capacity: vi.fn() }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { get CLOUD_MODE() { return h.cloud; } } }));
 vi.mock("@repo/db", () => ({ repos: {
   organization: { findById: async () => ({ oblienNamespace: "tenant-a", planTierId: h.tier, createdAt: new Date("2026-01-01") }) },
   service: { countRunningForOrg: h.count }, deployment: { sumBuildMillisForOrg: h.usage },
 } }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ syncOblienEntitlement: h.sync }));
+vi.mock("@repo/platform/engine/lib/cloud-capacity", () => ({ assertCloudWorkspaceCapacity: h.capacity }));
 import { assertCloudDeploymentLimits, assertRunningServiceQuota, assertBuildMinutesAvailable,
   assertPlanAllowsResourceTier, assertCloudRuntimeLimits } from "@repo/platform/engine/lib/plan-guard";
 import { resolveCloudServiceResources } from "@repo/platform/engine/lib/resources";
@@ -97,9 +98,8 @@ describe("Cloud deploy and update resource gates", () => {
   it.each([
     { resources: { ...base, memoryMb: 7168 }, count: 2, build: undefined },
     { resources: { ...base, diskMb: 81920 }, count: 1, build: undefined },
-    { resources: { ...base, memoryMb: 8192 }, count: 1, build: "." },
   ])(
-    "checks workspace RAM, disk and temporary build capacity: %j",
+    "checks runtime workspace RAM and disk: %j",
     async ({ resources, count, build }) => {
       h.tier = "team";
       await expect(
@@ -204,27 +204,37 @@ describe("Cloud deploy and update resource gates", () => {
     h.tier = "free";
     await expect(assertCloudDeploymentLimits("org-a", { services: services() })).rejects.toMatchObject({ reason: "static-only" });
   });
-  it("rejects oversized build allocations", async () => {
+  it("leaves optional build caps to the provider-headroom planner", async () => {
     await expect(assertCloudDeploymentLimits("org-a", { buildResources: { cpuCores: 16, memoryMb: 32768, diskMb: 32768 } }))
-      .rejects.toMatchObject({ reason: "resource-tier" });
+      .resolves.toBeUndefined();
+  });
+  it("validates the runtime without adding a second fixed build reservation", async () => {
+    const resources = { cpuCores: 0.25, memoryMb: 256, diskMb: 8192 };
+    const largeBuild = { cpuCores: 4, memoryMb: 8192, diskMb: 8192 };
+    const input = { projectId: "existing", dockerWorkspace: true, resources, buildResources: largeBuild,
+      services: [{ name: "app", build: "." }] };
+    await expect(assertCloudDeploymentLimits("org-a", input)).resolves.toBeUndefined();
+    const buildResources = { cpuCores: 0.25, memoryMb: 512, diskMb: 8192 };
+    await expect(assertCloudDeploymentLimits("org-a", { ...input, buildResources })).resolves.toBeUndefined();
+    expect(h.capacity).not.toHaveBeenCalled();
+    expect(input.resources).toEqual(resources);
+  });
+  it("reports no builder for image-only app admission, even when an old build size is saved", async () => {
+    await assertCloudDeploymentLimits("org-a", { projectId: "image", dockerWorkspace: true,
+      resources: { cpuCores: 0.25, memoryMb: 256, diskMb: 8192 },
+      services: [{ name: "redis", image: "redis:8" }],
+      buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 32768 } });
+    expect(h.capacity).toHaveBeenCalledWith(expect.objectContaining({ buildResources: null, requested: { cpuCores: 0.25, memoryMb: 1024, diskMb: 8192 } }));
   });
   it("does not reserve or reject an unused build size for an image-only deployment", async () => {
     const imageOnly = [{ enabled: true, image: "vaultwarden/server:latest" }];
     await expect(assertCloudDeploymentLimits("org-a", { services: imageOnly,
       buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 32768 } })).resolves.toBeUndefined();
   });
-  it.each([{ services: [] }, { services: [{ enabled: true, image: "redis:8" }] }])("still validates source builds for native applications with services $services", async ({ services }) => {
+  it.each([{ services: [] }, { services: [{ enabled: true, image: "redis:8" }] }])("still validates native runtime limits with services $services", async ({ services }) => {
     h.count.mockResolvedValue(0);
     await expect(assertCloudDeploymentLimits("org-a", { nativeApplication: true, runsApplication: true, services,
-      buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 32768 } })).rejects.toMatchObject({ reason: "resource-tier" });
-  });
-  it("uses the paid offer's saved build ceiling when the current catalog differs", async () => {
-    h.sync.mockResolvedValue({ tier: "pro", limits: planLimits("pro"),
-      resourceLimits: { ...resolvePlan("pro").oblienLimits, max_vcpus: 3, max_ram_mb: 8192 } });
-    await expect(assertCloudDeploymentLimits("org-a", {
-      buildResources: { cpuCores: 3, memoryMb: 8192, diskMb: 8192 } })).resolves.toBeUndefined();
-    await expect(assertCloudDeploymentLimits("org-a", {
-      buildResources: { cpuCores: 4, memoryMb: 8192, diskMb: 8192 } })).rejects.toMatchObject({ reason: "resource-tier" });
+      resources: { cpuCores: 4, memoryMb: 8192, diskMb: 32768 } })).rejects.toMatchObject({ reason: "resource-tier" });
   });
   it("cannot turn an unavailable service count into additional capacity", async () => {
     h.count.mockRejectedValue(new Error("database unavailable"));

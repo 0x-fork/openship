@@ -536,7 +536,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     await vi.waitFor(() => expect(mocks.reportPipelineError).toHaveBeenCalledOnce());
     await waitForDeploymentQuiescence("deployment-1", "project-1");
     expect(mocks.reportPipelineError).toHaveBeenCalledWith(
-      expect.anything(), expect.stringContaining("Database migration failed"), expect.anything(),
+      expect.anything(), expect.stringContaining("Database migration failed"), expect.anything(), undefined,
     );
     expect(mocks.runReleaseCommand).toHaveBeenCalledOnce();
     expect(mocks.withHostPortTargetLock).not.toHaveBeenCalled();
@@ -592,7 +592,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     await vi.waitFor(() => expect(mocks.reportPipelineError).toHaveBeenCalledOnce());
     await waitForDeploymentQuiescence("deployment-1", "project-1");
     expect(mocks.reportPipelineError).toHaveBeenCalledWith(
-      expect.anything(), expect.stringContaining("cannot run release commands"), expect.anything(),
+      expect.anything(), expect.stringContaining("cannot run release commands"), expect.anything(), undefined,
     );
     expect(mocks.runDeployPipeline).not.toHaveBeenCalled();
     expect(mocks.deploy).not.toHaveBeenCalled();
@@ -608,7 +608,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     await vi.waitFor(() => expect(mocks.reportPipelineError).toHaveBeenCalledOnce());
     await waitForDeploymentQuiescence("deployment-1", "project-1");
     expect(mocks.reportPipelineError).toHaveBeenCalledWith(
-      expect.anything(), expect.stringContaining("not supported on multi-service deployments"), expect.anything(),
+      expect.anything(), expect.stringContaining("not supported on multi-service deployments"), expect.anything(), undefined,
     );
     expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
     expect(mocks.runReleaseCommand).not.toHaveBeenCalled();
@@ -622,7 +622,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     await vi.waitFor(() => expect(mocks.reportPipelineError).toHaveBeenCalledOnce());
     await waitForDeploymentQuiescence("deployment-1", "project-1");
     expect(mocks.reportPipelineError).toHaveBeenCalledWith(
-      expect.anything(), expect.stringContaining("Static sites cannot run release commands"), expect.anything(),
+      expect.anything(), expect.stringContaining("Static sites cannot run release commands"), expect.anything(), undefined,
     );
     expect(mocks.runDeployPipeline).not.toHaveBeenCalled();
     expect(mocks.runReleaseCommand).not.toHaveBeenCalled();
@@ -739,7 +739,9 @@ describe("single-app prebuilt release-image pipeline", () => {
       await run();
       await drainDeploymentExecutions();
 
-      expect(mocks.updateDeploymentStatus).toHaveBeenCalledWith("deployment-1", "failed");
+      expect(mocks.updateDeploymentStatus).toHaveBeenCalledWith("deployment-1", "failed", {
+        errorMessage: "Cache capacity reached; all entries are in use",
+      });
       expect(mocks.updateBuildSession).toHaveBeenCalledWith("build-session-1", { status: "failed" });
       expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledWith("build-session-1");
       expect(requestDeploymentCancellation("deployment-1")).toBe(false);
