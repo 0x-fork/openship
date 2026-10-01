@@ -18,14 +18,14 @@ function sessionFor(id: string, organizationId: string) {
 
 export const sourceDependencies: SourceDependencies = {
   projectForSession: (ctx, id) => sessionFor(id, ctx.organizationId).projectId,
-  open: async (ctx, input, apiBaseUrl) => (await import("./folder.service")).createFolderSession({ ...input, orgId: ctx.organizationId, userId: ctx.userId, apiBaseUrl }),
+  open: async (ctx, input, apiBaseUrl) => (await import("./folder.service")).createFolderSession({ ...input, orgId: ctx.organizationId, userId: ctx.userId, apiBaseUrl }, ctx),
   async stage(ctx, input) {
     const { createFolderSession } = await import("./folder.service");
     const root = process.env.OPENSHIP_DATA_DIR ? join(process.env.OPENSHIP_DATA_DIR, "sources") : undefined;
     const source = await prepareSourceDirectory(input.source, { temporaryRoot: root, validatePath: assertNativeSourcePath });
     let id: string | undefined;
     try {
-      const result = await createFolderSession({ orgId: ctx.organizationId, userId: ctx.userId, projectId: input.projectId, name: input.name ?? (source.temporary ? "app" : basename(source.directory)), stack: input.stack, packageManager: input.packageManager });
+      const result = await createFolderSession({ orgId: ctx.organizationId, userId: ctx.userId, projectId: input.projectId, workspaceId: input.workspaceId, name: input.name ?? (source.temporary ? "app" : basename(source.directory)), stack: input.stack, packageManager: input.packageManager }, ctx);
       id = result.sessionId;
       const session = sessionFor(id, ctx.organizationId);
       if (session.mode === "api-relay") {
@@ -45,7 +45,7 @@ export const sourceDependencies: SourceDependencies = {
           session.uploaded = true;
         } finally { stream.destroy(); await archive.dispose(); }
       }
-      return { sessionId: id, expiresAt: result.expiresAt };
+      return { sessionId: id, workspaceId: result.workspaceId, expiresAt: result.expiresAt };
     } catch (error) {
       if (id) {
         const session = deleteFolderSession(id);
@@ -56,7 +56,8 @@ export const sourceDependencies: SourceDependencies = {
   },
   async scan(ctx, id, options) {
     const [{ projectInfoToScanResponse }, { scanFolderSession }] = await Promise.all([import("../../deployments/prepare.service"), import("./folder.service")]);
-    return projectInfoToScanResponse(await scanFolderSession(sessionFor(id, ctx.organizationId)), options);
+    const session = sessionFor(id, ctx.organizationId);
+    return { ...projectInfoToScanResponse(await scanFolderSession(session), options), workspaceId: session.managedWorkspaceId ?? undefined };
   },
   async upload(ctx, id, ticket, body) {
     const session = sessionFor(id, ctx.organizationId);

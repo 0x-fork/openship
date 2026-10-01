@@ -65,11 +65,12 @@ export type DeployTarget = "local" | "server" | "cloud" | "cluster";
  * first-class, separately pickable target.
  */
 export function deriveProjectDeployTarget(project: {
+  workspaceId?: string | null;
   cloudWorkspaceId?: string | null;
   serverId?: string | null;
   clusterId?: string | null;
 }): DeployTarget {
-  if (project.cloudWorkspaceId) return "cloud";
+  if (project.workspaceId || project.cloudWorkspaceId) return "cloud";
   if (project.clusterId) return "cluster";
   if (project.serverId) return "server";
   return "local";

@@ -5,6 +5,7 @@ import type { ManualCert, RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./types";
 import type { CloudAdminProxy } from "../runtime/cloud";
 import { cloudPageHostnames } from "../runtime/cloud/page-hostnames";
+import { CLOUD_DOCKER_ROUTE_ROOT } from "../runtime/cloud/docker-paths";
 
 /** Older Page GET responses use flat fields; connect/renew and newer GETs use
  * the SDK's nested shape. Both must retain an explicit hostname binding. */
@@ -32,7 +33,8 @@ function checkDomainBinding(bound: string | null | undefined, domain: string): v
 export class CloudInfraProvider implements RoutingProvider, SslProvider {
   readonly certificateManagement = "provider" as const;
   constructor(private readonly client: Oblien, private readonly options: {
-    namespace?: string; adminProxy?: CloudAdminProxy; dockerWorkspaceId?: string;
+    namespace?: string; adminProxy?: CloudAdminProxy; dockerWorkspaceId?: string; dockerRouteRoot?: string;
+    registerDockerRoute?: (route: RouteConfig) => Promise<void>;
   } = {}) {}
 
   private get pages() { return this.options.adminProxy?.pages ?? this.client.pages; }
@@ -70,7 +72,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
   private async certificatePage(domain: string) {
     const page = await this.pageForDomain(domain);
     if (!page || (this.options.dockerWorkspaceId && (page.source_workspace_id !== this.options.dockerWorkspaceId ||
-        page.exported_path !== `/opt/openship/cloud-docker/routes/${page.slug}`))) throw disconnected();
+        page.exported_path !== `${this.options.dockerRouteRoot ?? CLOUD_DOCKER_ROUTE_ROOT}/${page.slug}`))) throw disconnected();
     return page;
   }
 
@@ -87,14 +89,15 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
   }
 
   async registerRoute(route: RouteConfig): Promise<void> {
-    const owner = await this.owner(route.domain);
-    if (!owner) throw new Error("Connect this domain to a cloud workspace or page before applying its routes");
     // Advanced deployment rules go through compileRoutingToOblien. A generic
     // host route cannot silently discard those settings.
     if (route.proxyLocations?.length || route.redirects?.length || route.headerRules?.length ||
         route.redirectHost || route.webhookProxy) {
       throw new Error("Cloud routing rules must be applied through the cloud deployment route table");
     }
+    if (this.options.registerDockerRoute) return this.options.registerDockerRoute(route);
+    const owner = await this.owner(route.domain);
+    if (!owner) throw new Error("Connect this domain to a cloud workspace or page before applying its routes");
     const setRoutes = this.options.adminProxy?.setRoutes ??
       ((hostname, input) => this.client.routes.set(hostname, input));
     if (owner.owner_type === "page" && route.staticRoot) {
@@ -156,7 +159,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       const page = await this.pageForDomain(domain);
       if (!page) return;
       if (page.source_workspace_id !== this.options.dockerWorkspaceId ||
-          page.exported_path !== `/opt/openship/cloud-docker/routes/${page.slug}`) {
+          page.exported_path !== `${this.options.dockerRouteRoot ?? CLOUD_DOCKER_ROUTE_ROOT}/${page.slug}`) {
         throw new Error("Cloud route is not owned by this Docker project");
       }
       opts?.signal?.throwIfAborted();

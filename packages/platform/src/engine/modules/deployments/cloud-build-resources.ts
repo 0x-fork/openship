@@ -23,6 +23,7 @@ import {
 import type { DeploymentConfigSnapshot } from "./build.service";
 import { snapshotToClass } from "./deployment-class";
 import { strictRefreshImages } from "./pinned-artifacts";
+import { cloudBillingOwner } from "../../lib/cloud-workspace-scope";
 
 type Capacity = Awaited<ReturnType<typeof readCloudBuildCapacity>>;
 const dimensions = ["cpuCores", "memoryMb", "diskMb"] as const;
@@ -193,6 +194,9 @@ export async function prepareCloudBuildResources(input: {
 }): Promise<CloudBuildAllocation | undefined> {
   if (env.CLOUD_MODE !== true) return;
   const { project, snapshot } = input;
+  // Subscribed Docker hosts build inside their purchased VM. Adapter admission
+  // measures that host; allocating another provider workspace would double count it.
+  if (project.workspaceId && input.dockerWorkspace) return;
   const retained = strictRefreshImages(snapshot);
   let selected = input.services?.filter((service) => service.enabled !== false);
   if (selected && (snapshot.targetServiceIds?.length || snapshot.refreshServiceIds?.length)) {
@@ -211,10 +215,10 @@ export async function prepareCloudBuildResources(input: {
   const sources = selected?.filter((service) => cloudServiceNeedsBuild(service, retained));
   if (sources ? sources.length === 0 : snapshot.refreshAppDeploymentId || snapshot.releaseImageRef)
     return;
-  const org = await repos.organization.findById(project.organizationId);
-  if (!org?.oblienNamespace)
+  const owner = await cloudBillingOwner(project.organizationId, project.workspaceId ?? null);
+  if (!owner.namespace)
     throw new AppError("Connect Cloud before starting a build.", 503, "CLOUD_NOT_CONNECTED");
-  const namespace = org.oblienNamespace;
+  const namespace = owner.namespace;
   const binding = input.dockerWorkspace
     ? await repos.cloudDockerWorkspace.find(project.id, project.organizationId)
     : null;

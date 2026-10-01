@@ -71,6 +71,13 @@ const RESOURCE_USAGE_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
+    key: "cloud:workspace-recovery",
+    label: "Cloud workspace operations",
+    defaultCron: "* * * * *",
+    available: () => platform().target === "cloud",
+    run: async () => (await import("../cloud-workspaces/cloud-workspace.service")).runCloudWorkspaceRecovery(),
+  },
+  {
     key: "ssl:renew",
     label: "SSL certificate renewal",
     defaultCron: "17 3 * * *",

@@ -49,40 +49,40 @@ beforeEach(() => {
 
 describe("cloud namespace and billing boundary", () => {
   it("checks provider policy even for an already recorded namespace", async () => {
-    expect(await ensureNamespaceWithQuota("org_1")).toBe("os-1");
-    expect(h.assertPolicy).toHaveBeenCalledWith("org_1");
+    expect(await ensureNamespaceWithQuota("org_1", null)).toBe("os-1");
+    expect(h.assertPolicy).toHaveBeenCalledWith("org_1", null);
     expect(h.ensure).not.toHaveBeenCalled();
   });
   it("issues no token if entitlement verification fails, and retries next time", async () => {
     h.assertPolicy.mockRejectedValueOnce(new Error("provider unavailable"));
-    await expect(issueNamespaceToken("org_1")).rejects.toThrow("provider unavailable");
+    await expect(issueNamespaceToken("org_1", null)).rejects.toThrow("provider unavailable");
     expect(h.tokens).not.toHaveBeenCalled();
-    await issueNamespaceToken("org_1");
+    await issueNamespaceToken("org_1", null);
     expect(h.assertPolicy).toHaveBeenCalledTimes(2);
     expect(h.tokens).toHaveBeenCalledWith({ scope: "namespace", namespace: "os-1", ttl: 1800 });
   });
   it("does not create provider resources when the organization lookup fails", async () => {
     h.findById.mockRejectedValue(new Error("database unavailable"));
-    await expect(ensureNamespace("org_1")).rejects.toThrow("database unavailable");
+    await expect(ensureNamespace("org_1", null)).rejects.toThrow("database unavailable");
     expect(h.ensure).not.toHaveBeenCalled();
     expect(h.tokens).not.toHaveBeenCalled();
   });
   it("does not mint a token when ownership cannot be persisted", async () => {
     h.org.oblienNamespace = null;
     h.persist.mockRejectedValue(new Error("database unavailable"));
-    await expect(issueNamespaceToken("org_1")).rejects.toThrow("database unavailable");
+    await expect(issueNamespaceToken("org_1", null)).rejects.toThrow("database unavailable");
     expect(h.tokens).not.toHaveBeenCalled();
     expect(h.stores.get("oblien-namespaces")?.size).toBe(0);
   });
   it("checks onboarding defaults before creating a new namespace", async () => {
     h.org.oblienNamespace = null;
     h.defaults.mockRejectedValue(new Error("uncapped default policy"));
-    await expect(ensureNamespace("org_1")).rejects.toThrow("uncapped default policy");
+    await expect(ensureNamespace("org_1", null)).rejects.toThrow("uncapped default policy");
     expect(h.ensure).not.toHaveBeenCalled();
   });
   it("creates new namespaces with finite provider resource ceilings", async () => {
     h.org.oblienNamespace = null;
-    await ensureNamespace("org_1");
+    await ensureNamespace("org_1", null);
     expect(h.ensure).toHaveBeenCalledWith(expect.objectContaining({
       resource_limits: { max_workspaces: 2, max_vcpus: 4, max_ram_mb: 8192, max_disk_gb: 32 },
     }));
@@ -93,7 +93,7 @@ describe("cloud namespace and billing boundary", () => {
   it("rejects an unexpected namespace from the provider", async () => {
     h.org.oblienNamespace = null;
     h.ensure.mockResolvedValue({ data: { slug: "another-customer" } });
-    await expect(issueNamespaceToken("org_1")).rejects.toMatchObject({ code: "CLOUD_NAMESPACE_MISMATCH" });
+    await expect(issueNamespaceToken("org_1", null)).rejects.toMatchObject({ code: "CLOUD_NAMESPACE_MISMATCH" });
     expect(h.persist).not.toHaveBeenCalled();
     expect(h.tokens).not.toHaveBeenCalled();
   });

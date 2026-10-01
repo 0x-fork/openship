@@ -293,7 +293,8 @@ export interface DeploymentConfigSnapshot {
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode?: "bare" | "docker";
   workspaceId?: string;
-  cloudDockerWorkspace?: { projectId: string; workspaceId: string };
+  managedWorkspaceId?: string;
+  cloudDockerWorkspace?: { projectId: string; workspaceId: string; ownerWorkspaceId?: string };
   /**
    * Adopt an already-running process instead of building + starting one. Set
    * for the self-deployed control plane so it becomes a real deployment without
@@ -488,7 +489,8 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     // pipeline, and rollback all see "cloud" without depending on the
     // UI to pass it on every redeploy. The desktop picker still wins
     // when it does pass an explicit deployTarget (see line ~773).
-    deployTarget: project.cloudWorkspaceId ? "cloud" : project.clusterId ? "cluster" : undefined,
+    deployTarget: project.workspaceId || project.cloudWorkspaceId ? "cloud" : project.clusterId ? "cluster" : undefined,
+    ...(project.workspaceId ? { managedWorkspaceId: project.workspaceId } : {}),
     ...(project.clusterId ? { clusterId: project.clusterId, clusterProjectId: project.id, clusterConfig: project.clusterConfig ?? { replicas: 1 } } : {}),
     // Runtime isolation mode persisted on the project (editable in the Runtime
     // tab). So a redeploy/webhook deploy respects the saved choice instead of
@@ -1053,8 +1055,10 @@ export async function resolveSnapshotTarget(
   // (which routes ANY serverId over SSH) and repairs migrated (adopt/reattach) metas
   // that set serverId but historically omitted deployTarget.
   let deployTarget: DeployTarget | undefined;
+  if (project.workspaceId && (override?.serverId || (override?.deployTarget && override.deployTarget !== "cloud")))
+    throw new AppError("Changing this project's Cloud workspace requires a migration", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
   if (override?.deployTarget) deployTarget = override.deployTarget;
-  else if (project.cloudWorkspaceId) deployTarget = "cloud";
+  else if (project.workspaceId || project.cloudWorkspaceId) deployTarget = "cloud";
   else if (project.clusterId) deployTarget = "cluster";
   else if (project.serverId) deployTarget = "server";
   else if (activeMeta?.deployTarget) deployTarget = activeMeta.deployTarget === "cluster" ? "local" : activeMeta.deployTarget;
@@ -1368,7 +1372,7 @@ async function createQueuedDeploymentUnlocked(opts: {
       (meta.volumes?.length || meta.composeServices?.some((service) => service.volumes?.length))) {
     const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
     const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
-    const docker = project && await shouldUseProjectServicePipeline(project, meta.composeServices) &&
+    const docker = project && (project.workspaceId || await shouldUseProjectServicePipeline(project, meta.composeServices)) &&
       await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode);
     if (!docker) throw new AppError("Persistent Compose volumes require a Docker workspace. Existing native cloud projects need a data migration before switching.", 400, "CLOUD_VOLUMES_UNSUPPORTED");
   }
@@ -1384,25 +1388,25 @@ async function createQueuedDeploymentUnlocked(opts: {
       const project = await repos.project.findById(opts.projectId).catch(() => null);
       return project ? shouldUseProjectServicePipeline(project, meta.composeServices) : false;
     },
-  });
+  }, meta.managedWorkspaceId ?? null);
   // An exact image refresh performs no build and must remain usable when the
   // monthly build allowance is exhausted. Workload eligibility is still checked.
   const { cloudDockerNeedsBuild } = await import("../../lib/resources");
   const needsBuild = meta.composeServices?.length
     ? cloudDockerNeedsBuild(meta.composeServices, strictRefreshImages(meta))
     : !meta.refreshAppDeploymentId && !meta.releaseImageRef;
-  if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId);
+  if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId, meta.managedWorkspaceId ?? null);
   const insertDeployment = async () => {
     if (env.CLOUD_MODE) {
       const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
       const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
-      const dockerWorkspace = mode.useServicePipeline &&
+      const dockerWorkspace = (mode.useServicePipeline || Boolean(project.workspaceId)) &&
         await usesCloudDockerWorkspace(project, meta.serviceDeploymentMode);
       meta = {
         ...meta,
-        cloudApplicationSlot: !mode.useServicePipeline && snapshotToClass(meta).workload !== "static",
+        cloudApplicationSlot: !mode.useServicePipeline && (dockerWorkspace || snapshotToClass(meta).workload !== "static"),
         cloudServiceSlots: mode.useServicePipeline
           ? mode.servicePreflightServices.filter(service => service.enabled !== false).map(service => service.name)
           : [],
@@ -1410,7 +1414,7 @@ async function createQueuedDeploymentUnlocked(opts: {
       await assertCloudDeploymentLimits(opts.organizationId, {
         projectId: opts.projectId,
         resources: meta.resources, buildResources: meta.buildResources,
-        runsApplication: snapshotToClass(meta).workload !== "static",
+        runsApplication: dockerWorkspace || snapshotToClass(meta).workload !== "static",
         services: mode.useServicePipeline ? mode.servicePreflightServices : undefined,
         retainedImages: strictRefreshImages(meta),
         dockerWorkspace,
@@ -2003,6 +2007,9 @@ export async function requestBuildAccess(
   // The session/workspace outlive this call (session TTL; workspace made
   // permanent on deploy), so nothing is disposed here.
   if (uploadSession) {
+    if ((uploadSession.managedWorkspaceId ?? null) !== (project.workspaceId ?? null)) {
+      throw new AppError("This source was uploaded for another Cloud workspace. Upload it again for this project.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+    }
     if (uploadSession.mode === "oblien-direct") {
       snapshot.uploadWorkspaceId = uploadSession.workspaceId;
       snapshot.sourceStaged = true;

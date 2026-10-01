@@ -314,6 +314,8 @@ if (env.CLOUD_MODE) {
 
   const { billingSaasRoutes } = await import("./modules/billing/billing.routes");
   app.route("/api/billing", billingSaasRoutes);
+  const { cloudWorkspaceRoutes } = await import("./modules/cloud-workspaces/cloud-workspace.routes");
+  app.route("/api/workspaces", cloudWorkspaceRoutes);
 } else {
   /**
    * System routes - filesystem browse, instance setup, user provisioning.

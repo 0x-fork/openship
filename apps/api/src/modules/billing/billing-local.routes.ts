@@ -51,7 +51,7 @@ r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
 
 /* ---------- Dashboard state snapshot ---------- */
-r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data." } }, billingLocal.getState);
+r.get("/state", { query: BillingOperationSchemas.getState.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data." } }, billingLocal.getState);
 r.get(
   "/checkout",
   { tag: "billing:read", authorizationHandledByOperation: true, mcpExcluded: "Browser checkout configuration; use the billing reads to inspect a plan and complete purchases in Settings → Billing." },
@@ -59,7 +59,7 @@ r.get(
 );
 
 /* ---------- Subscriptions ---------- */
-r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s current subscription tier, state and billing period." } }, billingLocal.getSubscription);
+r.get("/subscription", { query: BillingOperationSchemas.getSubscription.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s current subscription tier, state and billing period." } }, billingLocal.getSubscription);
 r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal", mcpExcluded: "Starts a paid browser checkout. Purchases and payment authorization are completed in Settings → Billing." }, billingLocal.createSubscription);
 
 /* ---------- Cancellation ---------- */
@@ -69,10 +69,10 @@ r.post("/resume", { tag: "billing:admin", authorizationHandledByOperation: true,
 
 /* ---------- Usage ---------- */
 r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read metered Cloud usage over the requested date range, grouped by hour or day. This is billing data, not live workload metrics." }, query: BillingOperationSchemas.getUsage.input }, billingLocal.getUsage);
-r.get("/resources", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List Cloud resources contributing to this workspace’s bill and usage." } }, billingLocal.getResources);
-r.get("/allowances", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List resources consuming workspace allowances, including the projects holding managed domains." } }, billingLocal.listAllowanceDetail);
+r.get("/resources", { query: BillingOperationSchemas.getResources.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List Cloud resources contributing to this workspace’s bill and usage." } }, billingLocal.getResources);
+r.get("/allowances", { query: BillingOperationSchemas.listAllowanceDetail.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List resources consuming workspace allowances, including the projects holding managed domains." } }, billingLocal.listAllowanceDetail);
 
-r.get("/capacity", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the Cloud pool's allocated CPU, memory and disk, and authorized project allocations. Includes stopped workspaces. Read this again after an adjustment to verify capacity release." } }, billingLocal.getCapacity);
+r.get("/capacity", { query: BillingOperationSchemas.getCapacity.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the Cloud pool's allocated CPU, memory and disk, and authorized project allocations. Includes stopped workspaces. Read this again after an adjustment to verify capacity release." } }, billingLocal.getCapacity);
 r.post("/capacity/preview", { tag: "billing:read", readOnly: true, authorizationHandledByOperation: true, body: BillingOperationSchemas.previewCapacity.input, mcp: { description: "Preview service resource edits and the services that may restart. Requires project and service write access, and the revision from capacity. Does not apply changes." } }, billingLocal.previewCapacity);
 r.post("/capacity/apply", { tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal", body: BillingOperationSchemas.applyCapacity.input, mcp: { description: "Apply a reviewed capacity adjustment with explicit restart confirmation. Reuses deployed images through normal deployment logs. Requires project and service write access. Reuse the idempotency key for retries; poll the returned deployment and capacity before retrying a blocked deploy." } }, billingLocal.applyCapacity);
 

@@ -1,0 +1,131 @@
+---
+title: Cloud workspaces
+description: Provision, inspect, resize and remove subscription-owned Cloud execution targets through the SDK, REST and MCP.
+---
+
+These operations are available on Openship Cloud. `cloudWorkspaces` uses the
+same engine and permission checks through HTTP and native SDK scopes. A shared
+workspace always runs Docker; dedicated workspaces allow Docker or a compatible
+single native application. The [workspace guide](/docs/guides/cloud-workspaces)
+explains placement and billing.
+
+## Create and subscribe
+
+```ts
+const workspace = await ship.cloudWorkspaces.create({
+  name: "Production",
+  mode: "shared",
+  runtime: "docker",
+});
+console.log(workspace.id, workspace.state);
+
+const checkout = await ship.billing.createSubscription({
+  workspaceId: workspace.id,
+  planTierId: "pro",
+  interval: "monthly",
+  idempotencyKey: crypto.randomUUID(),
+});
+console.log(checkout);
+```
+
+Creating a workspace saves its identity; it does not buy a plan, create a VM or
+move projects. Complete the returned checkout and verify its fulfillment using
+the [billing workflow](/docs/api/billing). Verified payment queues Docker host
+provisioning. `ensure(id)` can also provision or resume that same host.
+
+Pass `workspaceId` when creating a project, staging source files or installing
+a catalog app. For example, after the workspace is ready:
+
+```ts
+const submitted = await ship.deploy({
+  workspaceId: "cws_production",
+  name: "status-page",
+  source: { type: "files", files: { "index.html": "<h1>Ready</h1>" } },
+});
+console.log(submitted.deployment_id);
+```
+
+An existing project's workspace is immutable. New work cannot silently move a
+project between subscriptions. Omitted placement is resolved only when it is
+unambiguous. Existing organization-owned Cloud resources keep their placement.
+
+## Observe and recover
+
+`ensure`, `resize`, `retry` and `remove` queue durable work. Poll `get(id)` for
+`operation.status`, logs, error and `nextAttemptAt`. An HTTP 202 means accepted,
+not ready. Retry a failed operation with `retry(id)` so it retains its provider
+identity and recovery checkpoint. Reads never create or start a host.
+
+`getUsage(id)` returns measured host usage and accessible projects' disk data.
+Unknown measurements are `null`, with `available: false` and a reason when the
+host cannot be measured. `resources` on the workspace is provisioned capacity;
+it is not a storage usage measurement.
+
+## Review a resize
+
+```ts
+const preview = await ship.cloudWorkspaces.previewResize("cws_production");
+console.log(preview.before, preview.after, preview.restartProjects);
+```
+
+After explicit approval of that preview:
+
+```ts
+await ship.cloudWorkspaces.resize("cws_production", {
+  revision: "PREVIEW_REVISION",
+  confirmRestart: true,
+  idempotencyKey: crypto.randomUUID(),
+});
+```
+
+Use the returned revision instead of the placeholder. Reuse the same key and
+revision after an uncertain response. A changed plan or membership invalidates
+the preview. Resizing applies provider-verified purchased capacity; this request
+cannot buy resources or change a price. It requires workspace administration
+and write access to every affected project. Disk shrinking requires migration.
+
+`remove(id, { confirmDelete: true, idempotencyKey })` also requires billing
+administration. Projects, active subscriptions and unsettled checkouts block
+deletion. After confirmed removal, `get(id)` returns 404. Removing an individual
+shared project never deletes its workspace.
+
+## MCP workflow
+
+Use the tools returned by your Cloud instance's `tools/list`; the
+[generated tool catalog](/docs/api/mcp-tools) includes each workspace operation.
+List targets, choose an accessible workspace, verify subscription and setup,
+then create the project with its ID. For capacity recovery, read usage, preview
+the resize, obtain approval for the listed restarts, apply once and poll until
+settled. Do not treat a timeout as permission to submit a new purchase or resize
+with a new key. The tools enforce the same resource ownership as the dashboard.
+
+## Operations
+
+{/* api-operations:start */}
+
+### Observe
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List accessible subscribed workspaces, their placement and saved operation state. | `cloudWorkspaces.list()` | `GET /api/workspaces`<br />`cloud_workspace:list` |
+| Read live workspace state and durable operation logs, errors and retry timing. | `cloudWorkspaces.get(id)` | `GET /api/workspaces/:id`<br />`cloud_workspace:read` |
+| Measure host usage and accessible project disk data separately from provisioned capacity. | `cloudWorkspaces.getUsage(id)` | `GET /api/workspaces/:id/usage`<br />`cloud_workspace:read` |
+
+### Setup
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Create a workspace identity without purchasing or provisioning resources. | `cloudWorkspaces.create(input)` | `POST /api/workspaces`<br />`cloud_workspace:admin` |
+| Queue idempotent provisioning or resume of the subscribed Docker host. | `cloudWorkspaces.ensure(id)` | `POST /api/workspaces/:id/ensure`<br />`cloud_workspace:write` |
+
+### Control
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Rename a workspace without moving projects or changing billing. | `cloudWorkspaces.rename(id, input)` | `PATCH /api/workspaces/:id`<br />`cloud_workspace:write` |
+| Retry a failed workspace operation using its saved provider identity and recovery checkpoint. | `cloudWorkspaces.retry(id)` | `POST /api/workspaces/:id/retry`<br />`cloud_workspace:admin` |
+| Preview purchased capacity and projects that may restart, without changing the host. | `cloudWorkspaces.previewResize(id)` | `GET /api/workspaces/:id/resize`<br />`cloud_workspace:read` |
+| Queue a reviewed resize with a revision, request key and explicit restart confirmation. | `cloudWorkspaces.resize(id, input)` | `POST /api/workspaces/:id/resize`<br />`cloud_workspace:admin` |
+| Remove an empty workspace after its subscription ends and provider cleanup is confirmed. | `cloudWorkspaces.remove(id, input)` | `DELETE /api/workspaces/:id`<br />`cloud_workspace:admin` |
+
+{/* api-operations:end */}

@@ -36,12 +36,12 @@ async function fetchCloudConnected(): Promise<boolean> {
   }
 }
 
-async function fetchBillingState(): Promise<BillingFetchResult> {
+async function fetchBillingState(workspaceId?: string): Promise<BillingFetchResult> {
   const info = await getDeploymentInfo();
   const isLocalMode = info.selfHosted;
 
   try {
-    const res = await serverApi.get<BillingStateResponse>("billing/state", {
+    const res = await serverApi.get<BillingStateResponse>(workspaceId ? `billing/state?workspaceId=${encodeURIComponent(workspaceId)}` : "billing/state", {
       cache: "no-store",
       // Namespace onboarding may perform several provider reads. Let the API
       // finish its bounded upstream requests before the dashboard gives up.
@@ -61,6 +61,7 @@ async function fetchBillingState(): Promise<BillingFetchResult> {
       const code = typeof body?.code === "string" && /^[a-z0-9_-]{1,80}$/i.test(body.code)
         ? body.code : "BILLING_API_ERROR";
       logBillingFailure(err.status, code);
+      if (code === "CLOUD_WORKSPACE_REQUIRED") return { kind: "unavailable", reason: "workspace-required" };
 
       if (err.status === 401) {
         return {

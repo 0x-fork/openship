@@ -76,7 +76,7 @@ export interface DumpOptions {
  * two cannot drift.
  */
 export const INSTANCE_SCOPED_REFS: Record<string, readonly string[]> = {
-  project: ["serverId", "clusterId"],
+  project: ["serverId", "clusterId", "workspaceId"],
   backup_destination: ["serverId"],
   backup_policy: ["mailServerId"],
   backup_run: ["mailServerId"],
@@ -399,6 +399,12 @@ const TABLES: ReadonlyArray<TableSpec> = [
       { in: "organization", via: "organizationId" },
       { in: "project", via: "root-project-id" },
     ],
+    hasOrganizationId: true,
+  },
+  {
+    sqlName: "cloud_workspace",
+    table: schema.cloudWorkspace,
+    scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: true,
   },
   {
@@ -1170,15 +1176,20 @@ function pickResolver(spec: TableSpec, scope: SubgraphScope): ScopeResolver | nu
 /**
  * Null every instance-scope FK reference across a dump's tables, in-place.
  *
- * Every column in INSTANCE_SCOPED_REFS is nullable in the schema (all five are
- * declared `.references(..., { onDelete: "set null" })`), so nulling is exactly what
- * the schema already says happens when the parent goes away — which, from the
- * destination instance's point of view, it has.
+ * Instance execution targets cannot be adopted by importing a project. These
+ * nullable references must be selected again on the destination instance.
  *
  * Exported for testing and so a caller assembling a dump by other means can apply
  * the same rule.
  */
 export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
+  const managedProjects = new Set((tables.project ?? []).filter(row => row.workspaceId).map(row => row.id));
+  const managedDeployments = new Set<unknown>();
+  for (const row of tables.deployment ?? []) {
+    const meta = row.meta as Record<string, unknown> | null;
+    const binding = meta?.cloudDockerWorkspace as Record<string, unknown> | undefined;
+    if (meta?.managedWorkspaceId || binding?.ownerWorkspaceId) managedProjects.add(row.projectId);
+  }
   for (const [table, columns] of Object.entries(INSTANCE_SCOPED_REFS)) {
     const rows = tables[table];
     if (!rows || rows.length === 0) continue;
@@ -1187,6 +1198,28 @@ export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
         if (row[col] != null) row[col] = null;
       }
     }
+  }
+  // Provider execution ownership never moves with a project export. A restore
+  // must select its new target and redeploy; historical snapshots are not host credentials.
+  for (const row of tables.project ?? []) {
+    if (!managedProjects.has(row.id)) continue;
+    row.activeDeploymentId = null;
+    row.cloudWorkspaceId = null;
+    row.hostPort = null;
+  }
+  for (const row of tables.deployment ?? []) {
+    const meta = row.meta as Record<string, unknown> | null;
+    if (managedProjects.has(row.projectId)) {
+      managedDeployments.add(row.id);
+      row.meta = { ...meta, managedWorkspaceId: undefined, cloudDockerWorkspace: undefined, workspaceId: undefined, deployTarget: undefined };
+      row.containerId = null;
+      row.artifactRetainedAt = null;
+      row.pinned = false;
+    }
+  }
+  for (const row of tables.service_deployment ?? []) {
+    if (!managedDeployments.has(row.deploymentId)) continue;
+    for (const field of ["containerId", "allocatedResources", "hostPort", "hostPorts", "ip"]) row[field] = null;
   }
 }
 

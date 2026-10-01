@@ -49,12 +49,12 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
       return;
     }
     setLoading(true);
-    api.get<UsageResponse>("billing/usage", { params: { ...range, groupBy: "day" } })
+    api.get<UsageResponse>("billing/usage", { params: { ...range, groupBy: "day", workspaceId: state.workspace?.id } })
       .then((res) => { if (!cancelled) setUsage(res.data.usage); })
       .catch((err) => { if (!cancelled) setError(getApiErrorMessage(err, t.billing.usage.loadError)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [from, to, retry, copy.invalidRange, t.billing.usage.loadError]);
+  }, [state.workspace?.id, from, to, retry, copy.invalidRange, t.billing.usage.loadError]);
 
   const buckets = useMemo(() => {
     const daily = usage?.buckets ?? [];

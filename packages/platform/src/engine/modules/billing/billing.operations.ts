@@ -23,6 +23,11 @@ async function invoke(name: keyof typeof BillingOperationSchemas, ctx: Execution
     const run = service[name] as (ctx: ExecutionContext, input: unknown) => Promise<unknown>;
     data = await run(ctx, input);
   } else {
+    // Linked instances execute through their existing organization token. Never
+    // sell them a different subscription just because it is the sole SaaS workspace.
+    const operation = BillingOperationSchemas[name];
+    const schema = "input" in operation ? operation.input : undefined;
+    if (schema && "workspaceId" in schema.properties) input = { ...(isRecord(input) ? input : {}), workspaceId: isRecord(input) && input.workspaceId ? input.workspaceId : "organization" };
     const [method, route] = routes[name];
     const query = new URLSearchParams();
     if (method === "GET" && isRecord(input)) for (const [key, value] of Object.entries(input)) if (value !== undefined) query.set(key, String(value));

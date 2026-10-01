@@ -26,6 +26,7 @@ import {
   resolveServiceHostnameLabel,
   slugify,
   ConflictError,
+  AppError,
   UNKNOWN_CAPACITY,
   type AppConfigField,
   type AppTemplate,
@@ -50,6 +51,7 @@ import {
 } from "../../lib/plan-guard";
 import { getTrustedHostCapacity } from "../../lib/host-capacity";
 import { createProject } from "../projects/project-crud.service";
+import { ensureDefaultCloudWorkspace, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
 import { createService, updateService, setServiceEnvVars } from "../services/service.service";
 
 /**
@@ -146,7 +148,7 @@ export async function getAppHostFit(
   /** The destination as the wizard has it: cloud, or a server row (none = this box,
    *  which is what an unbound project derives). "This machine" is NOT taken from
    *  here — see below. */
-  target: { deployTarget?: string; serverId?: string; projectId?: string },
+  target: { deployTarget?: string; serverId?: string; projectId?: string; workspaceId?: string },
 ): Promise<AppHostFitView> {
   const template = await getTemplateForOrg(ctx.organizationId, templateId);
   const minResources = template?.minResources ?? null;
@@ -161,6 +163,7 @@ export async function getAppHostFit(
       ctx.organizationId,
       template,
       target.projectId,
+      target.workspaceId,
     );
     const resources = cloudDockerResources({
       ...configuration,
@@ -229,6 +232,7 @@ export async function findOpenAppDraft(
 }
 
 export interface InstallAppInput {
+  workspaceId?: string;
   templateId: string;
   name?: string;
   config?: Record<string, string>;
@@ -392,11 +396,19 @@ export async function installApp(
 
   assertInstallRoutes(template, input.routes);
 
+  if (env.CLOUD_MODE) {
+    const workspace = input.workspaceId ? await requireCloudWorkspace(ctx.organizationId, input.workspaceId) : await ensureDefaultCloudWorkspace(ctx.organizationId);
+    if (workspace) {
+      if (workspace.runtime !== "docker") throw new AppError("Catalog apps use Docker services. Choose a Docker workspace.", 400, "CLOUD_WORKSPACE_RUNTIME_CONFLICT");
+      input = { ...input, workspaceId: workspace.id };
+    }
+  }
+
   // Plan gate, before anything is written. Every catalog app becomes a
   // `services` project with image-backed service rows, so it can never be
   // static — a static-only tier is refused here, at the moment the operator
   // clicks Install, rather than at the deploy that follows.
-  await assertPlanAllowsServices(ctx.organizationId);
+  await assertPlanAllowsServices(ctx.organizationId, input.workspaceId);
 
   // Gate the operator's CHOSEN routing before the first row is written: a free
   // *.opsh.io hostname only resolves behind the Cloud edge, so a disconnected
@@ -423,7 +435,10 @@ export async function installApp(
     ctx.organizationId,
     template.id,
     slugify(baseName),
+    input.workspaceId ?? null,
   );
+  if (existingDraft && input.workspaceId && existingDraft.workspaceId !== input.workspaceId)
+    throw new AppError("This app draft belongs to another Cloud workspace. Open that draft or choose a different app name.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
 
   // Reuse the standard create path (owns slug/group/route state + the
   // isApp/appTemplateId marker). Auto-suffix the name until its slug is free so
@@ -441,6 +456,7 @@ export async function installApp(
         created = await createProject(
           {
             name,
+            workspaceId: input.workspaceId,
             framework: template.framework ?? "docker-compose",
             projectType: "services",
             hasBuild: false,
@@ -449,6 +465,7 @@ export async function installApp(
           },
           ctx.organizationId,
           ctx.tokenScope ?? undefined,
+          ctx,
         );
         break;
       } catch (err) {

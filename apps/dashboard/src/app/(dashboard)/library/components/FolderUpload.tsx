@@ -3,6 +3,8 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useState, useRef, useCallback } from "react";
+import { usePlatform } from "@/context/PlatformContext";
+import { WorkspacePicker } from "@/components/cloud-workspaces/WorkspacePicker";
 import { useRouter } from "next/navigation";
 import { buildFolderTarGz, collectFolderFiles } from "@/utils/tarGz";
 import { encodeUploadSlug } from "@/utils/repoSlug";
@@ -37,6 +39,8 @@ function detectPackageManager(paths: Set<string>): string {
 export function FolderUpload() {
   const { t } = useI18n();
   const router = useRouter();
+  const { selfHosted } = usePlatform();
+  const [workspaceId, setWorkspaceId] = useState<string>();
   const fileRef = useRef<HTMLInputElement>(null);
   const [stack, setStack] = useState<FrameworkConfig | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
@@ -84,6 +88,7 @@ export function FolderUpload() {
 
       setPhase("uploading");
       const session = await folderApi.createSession({
+        workspaceId,
         stack: stack.id,
         packageManager: picked.packageManager,
         name: picked.name,
@@ -157,6 +162,7 @@ export function FolderUpload() {
       </div>
 
       <div className="px-5 py-4">
+        {!selfHosted && <div className="mb-4"><WorkspacePicker value={workspaceId} onChange={setWorkspaceId} disabled={busy} /></div>}
         {!picked ? (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}

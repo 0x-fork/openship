@@ -36,6 +36,7 @@ export async function appCloudConfiguration(
   organizationId: string,
   template: AppTemplate,
   projectId?: string,
+  workspaceId?: string,
 ) {
   const project = projectId
     ? await repos.project.findByIdInOrganization(projectId, organizationId)
@@ -57,6 +58,7 @@ export async function appCloudConfiguration(
   const names = project ? savedByName.keys() : profiles.keys();
   return {
     projectId,
+    workspaceId,
     resources: project?.resources as Record<string, unknown> | null | undefined,
     buildResources: project?.buildResources as Record<string, unknown> | null | undefined,
     dockerWorkspace: true,

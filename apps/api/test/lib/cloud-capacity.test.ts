@@ -3,6 +3,7 @@ import { OperationError } from "@repo/contracts";
 const h = vi.hoisted(() => ({
   cloud: true,
   org: vi.fn(),
+  project: vi.fn(),
   binding: vi.fn(),
   workspace: vi.fn(),
   namespace: vi.fn(),
@@ -15,7 +16,7 @@ vi.mock("@repo/platform/engine/config/env", () => ({
   },
 }));
 vi.mock("@repo/db", () => ({
-  repos: { organization: { findById: h.org }, cloudDockerWorkspace: { find: h.binding } },
+  repos: { project: { findByIdInOrganization: h.project }, organization: { findById: h.org }, cloudDockerWorkspace: { find: h.binding } },
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienClient: () => ({
@@ -58,6 +59,7 @@ const namespace = {
 beforeEach(() => {
   vi.resetAllMocks();
   h.cloud = true;
+  h.project.mockResolvedValue({ id: "project", organizationId: "org", workspaceId: null });
   h.org.mockResolvedValue({ oblienNamespace: "tenant" });
   h.binding.mockResolvedValue({ workspaceId: "workspace", namespace: "tenant" });
   h.workspace.mockResolvedValue({

@@ -138,7 +138,7 @@ export async function analyticsProxy(c: Context) {
 
 export async function getToken(c: Context) {
   const ctx = getRequestContext(c);
-  const result = await issueNamespaceToken(ctx.organizationId);
+  const result = await issueNamespaceToken(ctx.organizationId, null);
   return c.json({ data: result });
 }
 
@@ -148,6 +148,8 @@ export async function preflight(c: Context) {
   const result = await runCloudPreflight(ctx.organizationId, {
     slug: body.slug,
     customDomain: body.customDomain,
+    // This relay serves linked instances, whose provider token has this scope.
+    workspaceId: null,
   });
   return c.json({ data: result });
 }

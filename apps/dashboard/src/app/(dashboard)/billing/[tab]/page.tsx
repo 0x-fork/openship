@@ -9,6 +9,7 @@ import { InvoicesPanel, PaymentMethodPanel } from "../_components/billing-shared
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { getBillingPageState } from "../_components/billing-state";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
+import { BillingLayout } from "../_components/BillingLayout";
 
 export default async function BillingTabPage({
   params,
@@ -25,10 +26,11 @@ export default async function BillingTabPage({
     notFound();
   }
 
-  const result = await getBillingPageState();
+  const workspaceId = typeof query.workspaceId === "string" ? query.workspaceId : undefined;
+  const result = await getBillingPageState(workspaceId);
 
   if (result.kind === "unavailable") {
-    return <BillingUnavailable reason={result.reason} />;
+    return <BillingLayout state={null} workspaceId={workspaceId}><BillingUnavailable reason={result.reason} /></BillingLayout>;
   }
 
   const state = result.state;
@@ -51,7 +53,7 @@ export default async function BillingTabPage({
   } }
 
   return (
-    <>
+    <BillingLayout state={state}>
       {(query.checkout === "success" || query.topup === "success") && (
         <BillingCheckoutStatus
           kind={query.topup === "success" ? "topup" : "subscription"}
@@ -63,6 +65,6 @@ export default async function BillingTabPage({
         />
       )}
       {renderTab()}
-    </>
+    </BillingLayout>
   );
 }

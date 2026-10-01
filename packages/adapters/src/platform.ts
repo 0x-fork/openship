@@ -84,7 +84,7 @@ export interface PlatformConfig {
   cloudBeforeProvision?: () => Promise<void>;
   /** Persisted, organization-validated Docker host for one project environment. */
   cloudDocker?: Pick<import("./runtime/cloud/docker").CloudDockerOptions,
-    "workspaceId" | "projectId" | "provisionLock" | "bridgeLock" | "resolveRegistryAuth">;
+    "workspaceId" | "projectId" | "ownerWorkspaceId" | "provisionLock" | "bridgeLock" | "resolveRegistryAuth">;
   /**
    * Admin-scoped Oblien operations that namespace tokens can't perform.
    * Local/desktop instances inject these so CloudRuntime can hand them
@@ -278,6 +278,8 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
   const infra = new CloudInfraProvider(client, {
     namespace: config.cloudNamespace, adminProxy: config.cloudAdminProxy,
     dockerWorkspaceId: config.cloudDocker?.workspaceId,
+    dockerRouteRoot: config.cloudDocker ? cloudDockerProjectPaths(config.cloudDocker.projectId, config.cloudDocker.ownerWorkspaceId).routes : undefined,
+    registerDockerRoute: "registerRoute" in runtime ? (route) => runtime.registerRoute(route) : undefined,
   });
 
   return {
@@ -565,3 +567,4 @@ export function peekPlatform(): Platform | null {
 export function resetPlatform(): void {
   _platform = null;
 }
+import { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";

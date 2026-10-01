@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import Link from "next/link";
+import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
 import { PlanResources } from "./PlanResources";

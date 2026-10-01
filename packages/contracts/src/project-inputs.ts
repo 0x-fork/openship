@@ -349,6 +349,7 @@ export const SetReleaseSourceBody = Type.Object({
 
 export const CreateProjectBody = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 100 }),
+  workspaceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Cloud workspace to run this project in. Reuses its subscribed capacity." })),
   /**
    * Durable deploy-target binding for a newly created project. The generic
    * project PATCH deliberately omits this field: changing a target is a deploy
@@ -525,7 +526,7 @@ export const CreateProjectBody = Type.Object({
 
 // `serverId` is create/ensure-only. Keeping it out of the generic PATCH body is
 // also what keeps PROJECT_UPDATE_KEYS from becoming a target-retargeting path.
-export const UpdateProjectBody = Type.Partial(Type.Omit(CreateProjectBody, ["serverId"]));
+export const UpdateProjectBody = Type.Partial(Type.Omit(CreateProjectBody, ["serverId", "workspaceId"]));
 
 /**
  * POST /projects/ensure — CreateProjectBody plus an optional `projectId` to
@@ -563,6 +564,7 @@ export const EnsureProjectBody = Type.Composite([
 /** POST /projects/folder/session — open a folder-upload deploy session. */
 export const FolderSessionBody = Type.Object(
   {
+    workspaceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     projectId: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
     stack: Type.Optional(
       Type.String({

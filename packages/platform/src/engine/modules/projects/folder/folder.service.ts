@@ -25,7 +25,11 @@ import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
-import { getBuildImage, safeErrorMessage, RESOURCE_TIER_SPECS, type StackId } from "@repo/core";
+import { AppError, getBuildImage, safeErrorMessage, RESOURCE_TIER_SPECS, type StackId } from "@repo/core";
+import { repos } from "@repo/db";
+import type { ExecutionContext } from "../../../../context";
+import { authorization } from "../../../lib/authorization";
+import { ensureDefaultCloudWorkspace, requireCloudWorkspace } from "../../../lib/cloud-workspace-scope";
 import { DEFAULT_BUILD_RESOURCE_CONFIG, provisionCloudWorkspace } from "@repo/adapters";
 import { env } from "../../../config/env";
 import { getNamespaceClient } from "../../../lib/openship-cloud";
@@ -68,6 +72,7 @@ export interface CreateFolderSessionInput {
   orgId: string;
   userId: string;
   projectId?: string;
+  workspaceId?: string;
   /** Client-detected stack — picks the workspace image for the cloud path. */
   stack?: string;
   packageManager?: string;
@@ -111,6 +116,7 @@ export interface UploadTarget {
 }
 
 export interface FolderSessionResult {
+  workspaceId?: string;
   sessionId: string;
   expiresAt: number;
   upload: UploadTarget;
@@ -123,6 +129,7 @@ export interface FolderSessionResult {
  */
 export async function createFolderSession(
   input: CreateFolderSessionInput,
+  ctx?: ExecutionContext,
 ): Promise<FolderSessionResult> {
   const now = Date.now();
   sweepExpired(now);
@@ -130,12 +137,28 @@ export async function createFolderSession(
   const id = newFolderSessionId();
   const expiresAt = now + SESSION_TTL_MS;
 
+  let managedWorkspaceId: string | null = null;
+  let managedDocker = false;
   if (env.CLOUD_MODE) {
+    const project = input.projectId ? await repos.project.findByIdInOrganization(input.projectId, input.orgId) : null;
+    if (input.projectId && !project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
+    if (project && input.workspaceId && project.workspaceId !== input.workspaceId) throw new AppError("Upload target differs from this project's workspace", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+    const selected = project ? project.workspaceId : input.workspaceId;
+    const owner = selected ? await requireCloudWorkspace(input.orgId, selected) : project ? null : await ensureDefaultCloudWorkspace(input.orgId);
+    if (owner) {
+      if (!ctx) throw new AppError("An authenticated workspace context is required", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
+      await authorization.authorize(ctx, { resourceType: "cloud_workspace", resourceId: owner.id, action: "write" });
+      managedWorkspaceId = owner.id;
+      managedDocker = owner.runtime === "docker";
+    }
+  }
+
+  if (env.CLOUD_MODE && !managedDocker) {
     // ── SaaS: direct browser → Oblien workspace ──
     // Scope workspace creation and upload access to the authenticated organization.
-    const { client, namespace } = await getNamespaceClient(input.orgId);
+    const { client, namespace } = await getNamespaceClient(input.orgId, managedWorkspaceId);
     const { assertCloudCanSpend } = await import("../../billing/billing-oblien-quota");
-    await assertCloudCanSpend(input.orgId);
+    await assertCloudCanSpend(input.orgId, managedWorkspaceId);
     // The workspace image is fixed at create time, so resolve it from the
     // client-detected stack when known; fall back to a general JS/TS base
     // otherwise (most uploads are Node/Bun; a mismatch just means the user
@@ -189,6 +212,7 @@ export async function createFolderSession(
       orgId: input.orgId,
       userId: input.userId,
       projectId: input.projectId,
+      managedWorkspaceId,
       mode: "oblien-direct",
       createdAt: now,
       expiresAt,
@@ -200,6 +224,7 @@ export async function createFolderSession(
     const workspaceUploadUrl = `${OBLIEN_RUNTIME_URL}/files/transfer/upload?dest=/app`;
     return {
       sessionId: id,
+      workspaceId: managedWorkspaceId ?? undefined,
       expiresAt,
       upload: {
         url: workspaceUploadUrl,
@@ -226,6 +251,7 @@ export async function createFolderSession(
     orgId: input.orgId,
     userId: input.userId,
     projectId: input.projectId,
+    managedWorkspaceId,
     mode: "api-relay",
     createdAt: now,
     expiresAt,
@@ -237,6 +263,7 @@ export async function createFolderSession(
 
   return {
     sessionId: id,
+    workspaceId: managedWorkspaceId ?? undefined,
     expiresAt,
     upload: {
       url: `projects/folder/upload/${id}`,
@@ -334,7 +361,7 @@ export async function resolveFolderSessionSourceEnv(
 ): Promise<ProjectSourceEnv> {
   if (session.mode === "oblien-direct") {
     if (!session.workspaceId) throw new Error("Session has no workspace");
-    const { client } = await getNamespaceClient(session.orgId);
+    const { client } = await getNamespaceClient(session.orgId, session.managedWorkspaceId ?? null);
     const rt = await client.workspaces.runtime(session.workspaceId);
     const { resolveSourceEnvFromRuntime } = await import("../../deployments/runtime-source");
     return resolveSourceEnvFromRuntime(rt, rootDirectory);
@@ -350,7 +377,7 @@ async function scanSource(session: FolderSession, opts: ResolveOptions = {}) {
     if (!session.workspaceId) throw new Error("Session has no workspace");
     // Namespace-scoped client (not the master) so the by-id runtime lookup
     // resolves within the org's namespace — same reason as createFolderSession.
-    const { client } = await getNamespaceClient(session.orgId);
+    const { client } = await getNamespaceClient(session.orgId, session.managedWorkspaceId ?? null);
     const rt = await client.workspaces.runtime(session.workspaceId);
     const { resolveFromRuntime } = await import("../../deployments/runtime-source");
     return resolveFromRuntime(rt, session.name ?? "app", opts);

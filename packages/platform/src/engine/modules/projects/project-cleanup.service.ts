@@ -95,6 +95,8 @@ export interface CleanupManifest {
   projectId: string;
   /** Only a full project teardown may remove the runtime's project namespace. */
   projectCleanup?: boolean;
+  /** Explicit data-removal choice for project-owned storage on a shared host. */
+  wipeVolumes?: boolean;
   /**
    * Owning org — needed to release a managed (`*.opsh.io`) route on Openship
    * Cloud's edge, which is namespace-scoped upstream. Optional so an older
@@ -192,6 +194,7 @@ export async function collectProjectManifest(
   const resources: CleanupResource[] = [];
   const dockerBinding = await cloudDockerWorkspaceForCleanup(project.id, project.organizationId);
   const cloudWorkspaceId = dockerBinding?.workspaceId ?? project.cloudWorkspaceId;
+  const ownsProviderWorkspace = !dockerBinding?.ownerWorkspaceId;
   const services = await repos.service.listByProject(project.id);
   const seenContainers = new Set<string>();
   const seenVolumes = new Set<string>();
@@ -363,6 +366,38 @@ export async function collectProjectManifest(
   // ── Deployment containers + images + service containers ────────────
   const { rows: allDeps } = await repos.deployment.listByProject(project.id, { perPage: 1000 });
   const seenImages = new Set<string>();
+  for (const dep of allDeps) {
+    const host = (dep.meta as DeploymentMeta | null)?.cloudDockerWorkspace;
+    if (host && (host.projectId !== project.id || host.workspaceId !== dockerBinding?.workspaceId ||
+        (host.ownerWorkspaceId ?? null) !== (dockerBinding.ownerWorkspaceId ?? null))) {
+      throw new Error("Cloud Docker cleanup target does not match the project's owned workspace");
+    }
+  }
+
+  if (dockerBinding?.workspaceId) {
+    // Resolve the canonical host even if a deployment failed before persisting
+    // its container IDs. Shared hosts join the existing label-based sweeps;
+    // project-owned hosts are removed whole after their routes are released.
+    try {
+      const resolved = await resolveDeploymentPlatform({ deployTarget: "cloud",
+        managedWorkspaceId: project.workspaceId ?? undefined,
+        cloudDockerWorkspace: { projectId: project.id, workspaceId: dockerBinding.workspaceId,
+          ownerWorkspaceId: dockerBinding.ownerWorkspaceId ?? undefined },
+      }, { organizationId: project.organizationId });
+      const docker = resolved.platform.runtime;
+      resolvedRuntimes.add(docker);
+      if (!(docker instanceof CloudDockerRuntime)) throw new Error("Cloud Docker cleanup resolved to an unexpected runtime");
+      cloudRouteContexts.push({ key: `cloud:${dockerBinding.workspaceId}`, routing: resolved.platform.routing });
+      for (const hostname of await docker.listProjectRouteHostnames()) pushRoute(hostname, `cloud route ${hostname}`);
+      if (!ownsProviderWorkspace) {
+        dockerRuntimes.add(docker);
+        runtimeTargets.set(docker, { key: `cloud:${dockerBinding.workspaceId}`, serverId: null, runtimeMode: "cloud" });
+      }
+    } catch (error) {
+      for (const opened of resolvedRuntimes) disposeRuntime(opened);
+      throw new Error(`Cloud Docker cleanup could not confirm its workspace and route ownership: ${safeErrorMessage(error)}`);
+    }
+  }
 
   /**
    * An `image_ref` column can hold EITHER a Docker tag or a host DIRECTORY — a
@@ -412,12 +447,8 @@ export async function collectProjectManifest(
   for (const dep of allDeps) {
     const dockerHost = (dep.meta as DeploymentMeta | null)?.cloudDockerWorkspace;
     if (dockerHost) {
-      if (dockerHost.projectId !== project.id || dockerHost.workspaceId !== dockerBinding?.workspaceId) {
-        throw new Error("Cloud Docker cleanup target does not match the project's owned workspace");
-      }
-      // Full project teardown removes the VM and its entire disk after its
-      // routes. Individual Docker deletes add no coverage, and would require
-      // starting a VM that billing or the customer deliberately stopped.
+      // The canonical host above covers every release: either a project-label
+      // sweep on the shared host or full deletion of a project-owned VM.
       continue;
     }
     // Fast-fail: if this deployment targets a server that's UNREACHABLE right
@@ -619,7 +650,7 @@ export async function collectProjectManifest(
   // resolved). De-duped via pushContainer's seenContainers; best-effort +
   // bounded (SSH can hang). A separate set keeps the networks block above
   // from gaining a spurious local-host network resource.
-  const sweepRuntimes = new Set<RuntimeAdapter>([...dockerRuntimes, ...[...resolvedRuntimes].filter(runtime => runtime.supports("projectContainerSweep"))]);
+  const sweepRuntimes = new Set<RuntimeAdapter>([...dockerRuntimes, ...[...resolvedRuntimes].filter(runtime => runtimeTargets.has(runtime) && runtime.supports("projectContainerSweep"))]);
   const localRuntime = platform().runtime;
   if (localRuntime instanceof DockerRuntime) {
     sweepRuntimes.add(localRuntime);
@@ -732,28 +763,19 @@ export async function collectProjectManifest(
       }
     : null;
   if (
+    ownsProviderWorkspace &&
     cloudWorkspaceId &&
     cloudWorkspaceTarget &&
     !seenContainers.has(resourceKey(cloudWorkspaceTarget, cloudWorkspaceId))
   ) {
     try {
-      if (dockerBinding) {
-        const resolved = await resolveDeploymentPlatform({ deployTarget: "cloud",
-          cloudDockerWorkspace: { projectId: project.id, workspaceId: cloudWorkspaceId },
-        }, { organizationId: project.organizationId });
-        const docker = resolved.platform.runtime;
-        resolvedRuntimes.add(docker);
-        if (!(docker instanceof CloudDockerRuntime)) throw new Error("Cloud Docker cleanup resolved to an unexpected runtime");
-        cloudRouteContexts.push({ key: `cloud:${cloudWorkspaceId}`, routing: resolved.platform.routing });
-        for (const hostname of await docker.listProjectRouteHostnames()) pushRoute(hostname, `cloud route ${hostname}`);
-      }
       // BOUNDED: this resolution mints a cloud token (cloudFetch, no native
       // timeout). Without withTimeout a cloud-side hang would stall manifest
       // collection while the teardown holds the deletion lock — the same hang
       // class the SSH paths above are bounded against.
       const { platform: cloudPlatform } = await withTimeout(
         resolveDeploymentPlatform(
-          { deployTarget: "cloud", workspaceId: cloudWorkspaceId },
+          { deployTarget: "cloud", workspaceId: cloudWorkspaceId, managedWorkspaceId: project.workspaceId ?? undefined },
           { organizationId: project.organizationId },
         ),
         INSPECT_TIMEOUT_MS,
@@ -867,6 +889,7 @@ export async function collectProjectManifest(
   return {
     projectId: project.id,
     projectCleanup: true,
+    wipeVolumes,
     organizationId: project.organizationId,
     resources,
     runtimes: [...resolvedRuntimes],
@@ -896,7 +919,7 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
   // an unreachable server would otherwise resolve to `false` and hide the
   // record-only ("Remove from Openship") delete — exactly when it's most useful.
   // The loop below only strengthens (never un-sets) this.
-  let selfHosted = !project.cloudWorkspaceId;
+  let selfHosted = !project.workspaceId && !project.cloudWorkspaceId;
 
   // Map service id → its container id (most recent deployment wins, which
   // matches the order rows come back in). We resolve volumes per container.
@@ -1257,8 +1280,8 @@ export async function executeCleanup(
       for (const runtime of new Set(manifest.runtimes ?? [])) {
         if (!runtime.cleanupProject) continue;
         result.total++;
-        try { await runtime.cleanupProject(manifest.projectId); result.succeeded++; }
-        catch (error) { result.failed.push({ type: "container", ref: manifest.projectId, label: "Cluster project namespace", error: safeErrorMessage(error) }); }
+        try { await runtime.cleanupProject(manifest.projectId, { wipeVolumes: manifest.wipeVolumes }); result.succeeded++; }
+        catch (error) { result.failed.push({ type: "container", ref: manifest.projectId, label: "Project storage and namespace", error: safeErrorMessage(error) }); }
       }
     }
     // Claims are a resource too. Reclaim them only after ALL workload and route

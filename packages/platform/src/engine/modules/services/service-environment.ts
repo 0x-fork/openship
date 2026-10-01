@@ -70,8 +70,8 @@ export async function applyServiceEnvironment(
       );
 
     if (env.CLOUD_MODE) {
-      await assertPlanAllowsServices(ctx.organizationId);
-      await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId]);
+      await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
+      await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId], project.workspaceId ?? null);
     }
     const { runtime, serverId } = await resolveDeploymentRuntimeForRead(deployment);
     try {

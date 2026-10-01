@@ -127,13 +127,13 @@ type DeploymentRow = NonNullable<Awaited<ReturnType<typeof repos.deployment.find
  * against our own edge.
  */
 function isEdgeServedStatic(
-  project: Pick<ProjectRow, "hasServer" | "workloadType" | "cloudWorkspaceId">,
+  project: Pick<ProjectRow, "hasServer" | "workloadType" | "cloudWorkspaceId" | "workspaceId">,
 ): boolean {
   // Only a STATIC workload is served by the edge as files. A worker shares
   // `hasServer=false` but is a real container with its own runtime lifecycle, so
   // route through the workload axis — not the legacy boolean — or a worker's
   // pause/resume would be (mis)handled as edge-route removal (#538-B).
-  return deploymentWorkload(project) === "static" && !project.cloudWorkspaceId;
+  return deploymentWorkload(project) === "static" && !project.cloudWorkspaceId && !project.workspaceId;
 }
 
 /**
@@ -237,7 +237,7 @@ async function enableLiveProject(p: ProjectRow, organizationId: string) {
   await withDeploymentRuntime(dep, async (runtime) => {
     await assertCloudRuntimeLimits(organizationId, runtime, computeIds.map(containerId => ({
       containerId, allocatedResources: serviceRows.find(row => row.containerId === containerId)?.allocatedResources,
-    })));
+    })), p.workspaceId ?? null);
     for (const containerId of containerIds) {
       await startOne(runtime, containerId);
     }

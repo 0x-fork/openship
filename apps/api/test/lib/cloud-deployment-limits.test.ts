@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { planLimits, resolvePlan, type PlanTierId } from "@repo/core";
-const h = vi.hoisted(() => ({ cloud: true, tier: "starter", count: vi.fn(), usage: vi.fn(), sync: vi.fn(), capacity: vi.fn() }));
+const h = vi.hoisted(() => ({ cloud: true, tier: "starter", workspaceId: null as string | null, count: vi.fn(), usage: vi.fn(), sync: vi.fn(), capacity: vi.fn() }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { get CLOUD_MODE() { return h.cloud; } } }));
 vi.mock("@repo/db", () => ({ repos: {
   organization: { findById: async () => ({ oblienNamespace: "tenant-a", planTierId: h.tier, createdAt: new Date("2026-01-01") }) },
+  project: { findByIdInOrganization: async (id: string) => ({ id, organizationId: "org-a", workspaceId: h.workspaceId }) },
+  cloudWorkspace: { findByIdInOrganization: async (id: string) => ({ id, namespace: "shared-tenant", runtime: "docker", mode: "shared" }) },
   service: { countRunningForOrg: h.count }, deployment: { sumBuildMillisForOrg: h.usage },
 } }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ syncOblienEntitlement: h.sync }));
@@ -12,7 +14,7 @@ import { assertCloudDeploymentLimits, assertRunningServiceQuota, assertBuildMinu
   assertPlanAllowsResourceTier, assertCloudRuntimeLimits } from "@repo/platform/engine/lib/plan-guard";
 import { resolveCloudServiceResources } from "@repo/platform/engine/lib/resources";
 beforeEach(() => {
-  vi.resetAllMocks(); h.cloud = true; h.tier = "starter";
+  vi.resetAllMocks(); h.cloud = true; h.tier = "starter"; h.workspaceId = null;
   h.sync.mockImplementation(async () => ({
     tier: h.tier,
     limits: planLimits(h.tier as PlanTierId),
@@ -25,14 +27,15 @@ const base = { cpuCores: 1, memoryMb: 1024, diskMb: 8192 };
 const services = () => [{ enabled: true }, { enabled: true }, { enabled: true }];
 describe("Cloud deploy and update resource gates", () => {
   it.each([
-    ["hobby", 1, 2048], ["starter", 2, 3072], ["pro", 4, 4096], ["team", 8, 8192],
+    ["hobby", 1, 4096], ["starter", 2, 8192], ["pro", 4, 16384], ["team", 8, 32768],
   ] as const)("applies the new %s ceiling to resource edits, deployments and existing runtimes", async (tier, cpuCores, memoryMb) => {
     h.tier = tier;
+    h.workspaceId = "shared-workspace";
     const resources = { cpuCores, memoryMb, diskMb: 8192 };
     const runtime = { supports: () => false, getContainerInfo: vi.fn().mockResolvedValue({ status: "stopped", resources }) };
     await expect(assertPlanAllowsResourceTier("org-a", { tier: "custom", ...resources })).resolves.toBeUndefined();
     await expect(assertCloudDeploymentLimits("org-a", { runsApplication: true, resources })).resolves.toBeUndefined();
-    await expect(assertCloudDeploymentLimits("org-a", { dockerWorkspace: true,
+    await expect(assertCloudDeploymentLimits("org-a", { projectId: "existing", dockerWorkspace: true,
       services: [{ image: "redis:8", advanced: { resources } }] })).resolves.toBeUndefined();
     await expect(assertCloudRuntimeLimits("org-a", runtime, [{ containerId: "saved-container" }])).resolves.toBeUndefined();
     for (const tooLarge of [{ ...resources, cpuCores: cpuCores + 0.25 }, { ...resources, memoryMb: memoryMb + 1 }]) {
@@ -96,8 +99,8 @@ describe("Cloud deploy and update resource gates", () => {
     ).resolves.toBeUndefined();
   });
   it.each([
-    { resources: { ...base, memoryMb: 7168 }, count: 2, build: undefined },
-    { resources: { ...base, diskMb: 81920 }, count: 1, build: undefined },
+    { resources: { ...base, memoryMb: 18432 }, count: 2, build: undefined },
+    { resources: { ...base, diskMb: 307200 }, count: 1, build: undefined },
   ])(
     "checks runtime workspace RAM and disk: %j",
     async ({ resources, count, build }) => {
@@ -161,7 +164,7 @@ describe("Cloud deploy and update resource gates", () => {
       .rejects.toMatchObject({ reason: "resource-tier" });
   });
   it("checks individual Compose limits instead of only checking their project default", async () => {
-    await expect(assertCloudDeploymentLimits("org-a", { resources: base, services: [{ advanced: { resources: { memoryMb: 8192 } } }] }))
+    await expect(assertCloudDeploymentLimits("org-a", { resources: base, services: [{ advanced: { resources: { memoryMb: 9216 } } }] }))
       .rejects.toMatchObject({ reason: "resource-tier" });
   });
   it("inherits partial service settings field by field", async () => {
@@ -195,7 +198,7 @@ describe("Cloud deploy and update resource gates", () => {
         resources: base,
       }),
     ).rejects.toMatchObject({ reason: "running-services" });
-    expect(h.count).toHaveBeenCalledWith("org-a", [], "native-a");
+    expect(h.count).toHaveBeenCalledWith("org-a", [], "native-a", undefined, null);
     h.count.mockResolvedValue(2);
     await expect(assertCloudDeploymentLimits("org-a", { projectId: "native-a", runsApplication: true, resources: base }))
       .resolves.toBeUndefined();

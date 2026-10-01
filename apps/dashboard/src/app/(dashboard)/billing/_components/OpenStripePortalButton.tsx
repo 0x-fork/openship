@@ -2,12 +2,14 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
+import { useBillingWorkspace } from "@/components/billing/BillingWorkspaceContext";
 import { useState } from "react";
 import { api } from "@/lib/api/client";
 import { useI18n } from "@/components/i18n-provider";
 
 export function OpenStripePortalButton({ label, enabled = false }: { label?: string; enabled?: boolean }) {
   const { t } = useI18n();
+  const workspaceId = useBillingWorkspace();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const buttonLabel = label ?? t.billing.portal.openButton;
@@ -25,7 +27,7 @@ export function OpenStripePortalButton({ label, enabled = false }: { label?: str
       // Use the shared api client so the URL resolution respects
       // proxy mode + the new `/api`-suffixed base URL.
       const body = await api.post<{ data?: { portalUrl?: string }; portalUrl?: string }>(
-        "billing/portal",
+        "billing/portal", { workspaceId },
       );
       const portalUrl = body.data?.portalUrl ?? body.portalUrl;
       if (!portalUrl) {

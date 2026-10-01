@@ -1,0 +1,44 @@
+---
+title: Workspaces
+description: Choose where Cloud projects run, inspect actual usage, and manage host operations.
+---
+
+**Workspaces** appears in Openship Cloud. Each entry identifies a subscription
+and execution target; its projects share that capacity when using shared Docker
+placement. Self-hosted installations continue to use **Servers**.
+
+## Workspace overview
+
+The list shows the workspace name, placement, project count and saved operation
+state. Open one for current provider state, provisioned capacity and measured
+CPU, memory and disk usage. **Refresh** checks again without starting the host.
+Unreachable or stopped hosts show why a measurement is unavailable.
+
+The project list links directly to each project. Its disk figures represent
+measured application data. Images, cache and system bytes appear once under
+shared storage. They are not repeated as each project's disk usage.
+
+## Setup and billing
+
+A fresh account uses **Production**. Select a plan to subscribe and provision
+its host. **Billing** opens that workspace's plan, usage, top-ups and invoices;
+the workspace selector keeps independent subscriptions separate.
+
+Repository deployments, source uploads and catalog app installs all include
+the workspace destination. A single compatible choice is shown as a compact
+summary. Adding another workspace gives you another separately billed target.
+
+## Host operations
+
+**Resume workspace** starts an existing stopped host after checking its current
+entitlement. **Apply plan capacity** previews the purchased size and every
+project that may restart. Confirm only after reviewing those details; disk
+shrinking is unavailable.
+
+Operation logs stay inline. Queued work shows its next retry time, and failed
+work offers **Try again**. Refreshing or reopening the page observes the same
+operation. Renaming does not change placement or billing. Workspace deletion
+requires no remaining projects and an ended subscription.
+
+Read the [workspace guide](/docs/guides/cloud-workspaces) for capacity, deployment
+and deletion behavior, or use the [API and SDK](/docs/api/cloud-workspaces).

@@ -1389,7 +1389,7 @@ export function useDeploymentConfig() {
 
         setConfig((prev) =>
           buildPreparedConfig(
-            seedLoadedProjectEnv(prev, context?.projectId, projectEnvState, false),
+            { ...seedLoadedProjectEnv(prev, context?.projectId, projectEnvState, false), workspaceId: scan.workspaceId },
             {
               response,
               project,
@@ -1498,6 +1498,7 @@ export function useDeploymentConfig() {
               ...(savedTarget
                 ? {
                     deployTarget: savedTarget,
+                    workspaceId: typeof project.workspaceId === "string" ? project.workspaceId : undefined,
                     serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
                     serverName:
                       savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
@@ -1538,6 +1539,7 @@ export function useDeploymentConfig() {
             ...(savedTarget
               ? {
                   deployTarget: savedTarget,
+                    workspaceId: typeof project.workspaceId === "string" ? project.workspaceId : undefined,
                   serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
                   serverName: savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
                 }

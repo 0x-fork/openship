@@ -11,7 +11,8 @@ import type { BillingState } from "@/lib/api/billing";
 import { needsCloudPlan } from "@/lib/billing-presentation";
 import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
 
-export function CloudPlanPicker({ currentPlan, subscription, complimentary, billingEnabled = false, canChangeSubscription = false, preserveProject = false, onCheckoutStarted }: {
+export function CloudPlanPicker({ currentPlan, subscription, complimentary, billingEnabled = false, canChangeSubscription = false, preserveProject = false, onCheckoutStarted, workspaceId }: {
+  workspaceId?: string;
   currentPlan: PlanTierId; billingEnabled?: boolean; canChangeSubscription?: boolean;
   subscription?: BillingSubscription | null;
   complimentary?: BillingState["complimentary"];
@@ -23,7 +24,7 @@ export function CloudPlanPicker({ currentPlan, subscription, complimentary, bill
   const [interval, setInterval] = useState<"monthly" | "annual">(subscription?.interval ?? "monthly");
   const canPurchase = !complimentary && billingEnabled && (currentPlan === "free" || canChangeSubscription);
   const { startCheckout, subscribing, error: checkoutError, checkoutUrl } = useCloudCheckout({
-    enabled: canPurchase, preserveProject, onCheckoutStarted,
+    enabled: canPurchase, preserveProject, onCheckoutStarted, workspaceId,
   });
   const selectedCurrentPlan = needsCloudPlan({ tier: currentPlan, subscription, complimentary })
     || (!complimentary && subscription && subscription.interval !== interval) ? null : currentPlan;

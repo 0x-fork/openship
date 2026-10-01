@@ -16,6 +16,9 @@ import { listLiveSubscriptions } from "./billing.repository";
 import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
 import { cloudAnalytics } from "../cloud-analytics";
+import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
+import { readCloudWorkspaceHost } from "../../lib/cloud-workspace-host";
+import { createTrackedWorkspaceCheckout } from "./workspace-checkout";
 
 export function assertBillingEnabled(): void {
   if (!env.BILLING_ENABLED) {
@@ -37,22 +40,12 @@ function checkoutKey(orgId: string, resource: string, requestKey?: string): stri
   return "openship:" + createHash("sha256").update(JSON.stringify([orgId, resource, nonce])).digest("hex");
 }
 
-async function assertNoLegacySubscription(orgId: string): Promise<void> {
-  if ((await listLiveSubscriptions(orgId)).length) {
+async function assertNoLegacySubscription(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
+  const owner = await cloudBillingOwner(orgId, workspaceId);
+  if (owner.workspace?.deletionInProgress) throw new AppError("This workspace is being deleted", 409, "CLOUD_WORKSPACE_DELETING");
+  if (!owner.workspaceId && (await listLiveSubscriptions(orgId)).length) {
     throw new AppError("This account's subscription needs to be migrated before making another purchase. Contact support.", 409, "BILLING_MIGRATION_REQUIRED");
   }
-}
-
-async function topupNamespace(orgId: string): Promise<string> {
-  const namespace = await ensureNamespace(orgId);
-  // Verify the namespace's current entitlement and subscription together. A
-  // raw active subscription row can outlive its paid period; only Oblien knows
-  // whether a top-up can restore spending. This read also verifies its contract.
-  const { subscription, entitlement } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
-  if (!canTopUpCloudSubscription(subscription, entitlement)) {
-    throw new AppError("An active Cloud subscription is required before adding credits", 402, "CLOUD_PLAN_REQUIRED");
-  }
-  return namespace;
 }
 
 export async function createCheckoutSession(
@@ -60,12 +53,24 @@ export async function createCheckoutSession(
   planTierId: PlanTierId,
   interval: "monthly" | "annual",
   requestKey?: string,
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
-  await assertNoLegacySubscription(ctx.organizationId);
+  await assertNoLegacySubscription(ctx.organizationId, workspaceId);
   const offer = subscriptionOffer(planTierId, interval);
-  const namespace = await ensureNamespace(ctx.organizationId);
+  const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
+  const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
+  const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
   return withCloudBillingLock(ctx.organizationId, async (sync) => {
+    await assertNoLegacySubscription(ctx.organizationId, owner.workspaceId);
+    const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
+    if (owner.workspace?.runtime === "docker") {
+      const { provider } = await readCloudWorkspaceHost(ctx.organizationId, owner.workspace.id);
+      const diskGb = offer.resourceLimits?.max_total_disk_gb;
+      if (provider && diskGb != null && diskGb * 1024 < provider.allocation.diskMb) {
+        throw new AppError("A workspace disk cannot be shrunk in place. Move its data to a smaller workspace before purchasing this plan.", 409, "CLOUD_WORKSPACE_DISK_SHRINK");
+      }
+    }
     // Serialize checkout creation with operator grants. Complimentary access must
     // be explicitly revoked before a customer starts a paid subscription.
     const { grant } = await sync({ syncResourceLimits: false });
@@ -75,47 +80,58 @@ export async function createCheckoutSession(
     await getOblienBillingApi().assertResellerSupport();
     // Oblien replaces only this namespace's subscription after payment. This
     // starts a full-price cycle without proration; disclose that before checkout.
-    const result = await getOblienBillingApi().createCheckout({
+    const result = await createTrackedWorkspaceCheckout(currentOwner.workspace, {
       namespace,
       kind: "subscription",
       offer,
-      metadata: subscriptionMetadata(planTierId, ctx.organizationId, namespace),
+      metadata: { ...subscriptionMetadata(planTierId, ctx.organizationId, namespace), ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}) },
       billingInterval: interval === "annual" ? "yearly" : "monthly",
-      successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled`,
+      successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&session_id={CHECKOUT_SESSION_ID}${selection}`,
+      cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled${selection}`,
       idempotencyKey: checkoutKey(
         ctx.organizationId,
-        `subscription:${offer.reference}:${interval}`,
+        `subscription:${owner.workspaceId ? `${namespace}:` : ""}${offer.reference}:${interval}`,
         requestKey,
       ),
     });
     // A checkout redirect is not proof of payment. Webhooks/polling mirror access.
     await cloudAnalytics.checkoutStarted(ctx, { checkoutId: result.checkoutId, kind: "subscription", amount: offer.unitAmount, plan: planTierId, interval });
     return { checkoutUrl: result.url };
-  });
+  }, owner.workspaceId);
 }
 
-export async function createTopupCheckoutSession(ctx: RequestContext, packId: string, requestKey?: string): Promise<{ checkoutUrl: string }> {
+export async function createTopupCheckoutSession(ctx: RequestContext, packId: string, requestKey?: string, workspaceId?: CloudWorkspaceScope): Promise<{ checkoutUrl: string }> {
   assertTopupsEnabled();
-  await assertNoLegacySubscription(ctx.organizationId);
+  await assertNoLegacySubscription(ctx.organizationId, workspaceId);
   const offer = topupOffer(packId);
-  const namespace = await topupNamespace(ctx.organizationId);
+  const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
+  const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
+  const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
+  return withCloudBillingLock(ctx.organizationId, async sync => {
+  await assertNoLegacySubscription(ctx.organizationId, owner.workspaceId);
+  const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
+  const { subscription, entitlement } = await sync({ syncResourceLimits: false });
+  if (!canTopUpCloudSubscription(subscription, entitlement)) {
+    throw new AppError("An active Cloud subscription is required before adding credits", 402, "CLOUD_PLAN_REQUIRED");
+  }
   await getOblienBillingApi().assertResellerSupport();
-  const result = await getOblienBillingApi().createCheckout({
+  const result = await createTrackedWorkspaceCheckout(currentOwner.workspace, {
     namespace,
     kind: "topup",
     offer,
     metadata: {
       openship_organization: ctx.organizationId,
       openship_namespace: namespace,
+      ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}),
       openship_pack: packId,
     },
-    successUrl: `${runtimeTarget.dashboard}/billing/overview?topup=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${runtimeTarget.dashboard}/billing/overview?topup=cancelled`,
-    idempotencyKey: checkoutKey(ctx.organizationId, `topup:${offer.reference}`, requestKey),
+    successUrl: `${runtimeTarget.dashboard}/billing/overview?topup=success&session_id={CHECKOUT_SESSION_ID}${selection}`,
+    cancelUrl: `${runtimeTarget.dashboard}/billing/overview?topup=cancelled${selection}`,
+    idempotencyKey: checkoutKey(ctx.organizationId, `topup:${owner.workspaceId ? `${namespace}:` : ""}${offer.reference}`, requestKey),
   });
   await cloudAnalytics.checkoutStarted(ctx, { checkoutId: result.checkoutId, kind: "topup", amount: offer.unitAmount });
   return { checkoutUrl: result.url };
+  }, owner.workspaceId);
 }
 
 export async function listActiveCreditPacks() {
@@ -129,9 +145,17 @@ export async function listActiveCreditPacks() {
   }));
 }
 
-export async function getCheckoutStatus(orgId: string, checkoutId: string) {
-  const namespace = await ensureNamespace(orgId);
+export async function getCheckoutStatus(orgId: string, checkoutId: string, workspaceId?: CloudWorkspaceScope) {
+  const namespace = await ensureNamespace(orgId, workspaceId);
   const { checkout } = await getOblienBillingApi().getCheckout(namespace, checkoutId);
+  if (checkout.fulfilled) {
+    const owner = await cloudBillingOwner(orgId, workspaceId);
+    if (owner.workspaceId) {
+      await syncOblienEntitlement(orgId, { workspaceId: owner.workspaceId });
+      const { requestPaidWorkspaceProvisioning } = await import("../cloud-workspaces/cloud-workspace.service");
+      await requestPaidWorkspaceProvisioning(orgId, owner.workspaceId);
+    }
+  }
   await cloudAnalytics.checkoutObserved(orgId, checkout);
   const { namespaceCreditsGranted, ...state } = checkout;
   return { ...state, creditsGranted: fromOblienCredits(namespaceCreditsGranted) };
@@ -139,18 +163,20 @@ export async function getCheckoutStatus(orgId: string, checkoutId: string) {
 
 // Disabling new purchases must not prevent existing customers from stopping
 // renewal or managing their invoices/payment details.
-export async function createPortalSession(orgId: string): Promise<{ portalUrl: string }> {
-  await assertNoLegacySubscription(orgId);
-  const namespace = await ensureNamespace(orgId);
+export async function createPortalSession(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<{ portalUrl: string }> {
+  await assertNoLegacySubscription(orgId, workspaceId);
+  const namespace = await ensureNamespace(orgId, workspaceId);
   const result = await getOblienBillingApi().createPortal({
-    namespace, returnUrl: `${runtimeTarget.dashboard}/billing/overview`,
+    namespace, returnUrl: `${runtimeTarget.dashboard}/billing/overview${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""}`,
   });
   return { portalUrl: result.url };
 }
 
-export async function cancelSubscription(orgId: string) {
-  await assertNoLegacySubscription(orgId);
-  const namespace = await ensureNamespace(orgId);
+export async function cancelSubscription(orgId: string, workspaceId?: CloudWorkspaceScope) {
+  await assertNoLegacySubscription(orgId, workspaceId);
+  const namespace = await ensureNamespace(orgId, workspaceId);
+  return withCloudBillingLock(orgId, async () => {
+  await assertNoLegacySubscription(orgId, workspaceId);
   const result = await getOblienBillingApi().cancelSubscription(namespace);
   subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);
@@ -158,11 +184,14 @@ export async function cancelSubscription(orgId: string) {
     throw new AppError("Cloud billing did not confirm cancellation. Please retry.", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
   }
   return { cancelAt: subscription.cancelAtPeriodEnd ? subscription.currentPeriod.end : subscription.canceledAt, subscription };
+  }, workspaceId);
 }
 
-export async function resumeSubscription(orgId: string) {
-  await assertNoLegacySubscription(orgId);
-  const namespace = await ensureNamespace(orgId);
+export async function resumeSubscription(orgId: string, workspaceId?: CloudWorkspaceScope) {
+  await assertNoLegacySubscription(orgId, workspaceId);
+  const namespace = await ensureNamespace(orgId, workspaceId);
+  return withCloudBillingLock(orgId, async () => {
+  await assertNoLegacySubscription(orgId, workspaceId);
   const result = await getOblienBillingApi().resumeSubscription(namespace);
   subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);
@@ -170,4 +199,5 @@ export async function resumeSubscription(orgId: string) {
     throw new AppError("Cloud billing did not confirm renewal. Please retry.", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
   }
   return { subscription };
+  }, workspaceId);
 }

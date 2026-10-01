@@ -25,18 +25,20 @@ import { effectiveServiceArtifacts } from "../deployments/retained-artifacts";
 import { withoutPinnedArtifacts } from "../deployments/pinned-artifacts";
 import { triggerDeployment, type DeploymentConfigSnapshot } from "../deployments/build.service";
 import { kickoffBuild } from "../deployments/build-pipeline";
+import { cloudBillingOwner } from "../../lib/cloud-workspace-scope";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-async function namespaceFor(organizationId: string) {
-  const org = await repos.organization.findById(organizationId);
-  if (!org?.oblienNamespace)
+async function namespaceFor(organizationId: string, workspaceId?: string | null) {
+  const owner = await cloudBillingOwner(organizationId, workspaceId);
+  if (owner.workspace?.runtime === "docker") throw new AppError("These projects share a subscribed host. Edit container limits in the service settings, or resize the workspace from Workspaces.", 409, "CLOUD_WORKSPACE_SHARED_CAPACITY");
+  if (!owner.namespace)
     throw new AppError(
       "Cloud capacity is not available until this workspace is connected.",
       409,
       "CLOUD_CAPACITY_UNAVAILABLE",
     );
-  return org.oblienNamespace;
+  return owner.namespace;
 }
 
 async function inspectProject(ctx: ExecutionContext, project: Project, namespace: string) {
@@ -148,18 +150,20 @@ async function inspectProject(ctx: ExecutionContext, project: Project, namespace
   };
 }
 
-export async function getCapacity(ctx: ExecutionContext) {
-  const namespace = await namespaceFor(ctx.organizationId);
+export async function getCapacity(ctx: ExecutionContext, input: { workspaceId?: string } = {}) {
+  const owner = await cloudBillingOwner(ctx.organizationId, input.workspaceId);
+  const namespace = await namespaceFor(ctx.organizationId, owner.workspaceId);
   const [pool, owned, plan] = await Promise.all([
     readCloudCapacityPool(namespace),
     listAuthorizedProjects(ctx, ctx.organizationId),
-    syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false }),
+    syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false, workspaceId: owner.workspaceId }),
   ]);
   const projects: CloudCapacityProject[] = [];
   // Bound provider fan-out; do not query every host in an organization at once.
-  for (let i = 0; i < owned.length; i += 4) {
+  const members = owned.filter(project => (project.workspaceId ?? null) === owner.workspaceId);
+  for (let i = 0; i < members.length; i += 4) {
     const inspected = await Promise.all(
-      owned.slice(i, i + 4).map((project) => inspectProject(ctx, project, namespace)),
+      members.slice(i, i + 4).map((project) => inspectProject(ctx, project, namespace)),
     );
     for (const item of inspected) {
       if (
@@ -187,7 +191,7 @@ async function prepare(ctx: ExecutionContext, input: CloudCapacityEdit) {
   });
   const project = await repos.project.findByIdInOrganization(input.projectId, ctx.organizationId);
   if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
-  const namespace = await namespaceFor(ctx.organizationId);
+  const namespace = await namespaceFor(ctx.organizationId, project.workspaceId ?? null);
   const state = await inspectProject(ctx, project, namespace);
   if (state.publicProject.revision !== input.revision)
     throw new AppError(
@@ -224,7 +228,7 @@ async function prepare(ctx: ExecutionContext, input: CloudCapacityEdit) {
       edit && (edit.cpuCores !== s.resources.cpuCores || edit.memoryMb !== s.resources.memoryMb)
     );
   });
-  const plan = await syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false });
+  const plan = await syncOblienEntitlement(ctx.organizationId, { syncResourceLimits: false, workspaceId: project.workspaceId ?? null });
   const services = state.publicProject.services.map((s) => {
     const edit = requested.get(s.id);
     if (!edit) return s;

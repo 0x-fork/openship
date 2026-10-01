@@ -62,6 +62,7 @@ export interface PermissionRepositories {
     findEnvVarById(id: string): Lookup<ProjectChild>;
   };
   server: { get(id: string): Lookup<Owned> };
+  cloudWorkspace?: { findById(id: string): Lookup<Owned> };
   backupDestination: { findById(id: string): Lookup<Owned> };
   deployment: {
     findById(id: string): Lookup<ProjectChild>;
@@ -146,6 +147,8 @@ export function createAuthorization(deps: AuthorizationDependencies) {
     switch (type) {
       case "project":
         return (await repos.project.findById(id))?.organizationId ?? null;
+      case "cloud_workspace":
+        return (await repos.cloudWorkspace?.findById(id))?.organizationId ?? null;
       case "server":
       case "mail_server":
         return (await repos.server.get(id).catch(() => null))?.organizationId ?? null;

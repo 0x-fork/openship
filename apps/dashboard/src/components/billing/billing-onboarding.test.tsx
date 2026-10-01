@@ -341,13 +341,13 @@ describe("customer credit limits", () => {
     expect(container.textContent).not.toContain(copy.resourcesGuide.poolHint);
     expect(container.textContent).not.toMatch(/No set limit|3,000 min/);
     expect(visibleText()).not.toMatch(/credits/i);
-    expect(visibleText()).toContain("2 vCPU · 3 GB");
+    expect(visibleText()).toContain("2 vCPU · 8 GB");
   });
   it("shows saved preset ceilings and fixed build allowances without using new catalog limits", async () => {
     await render(<PlanResources plan={{ ...hobby, limits: { ...hobby.limits,
       maxServiceResources: undefined, buildMinutesPerMonth: 3000 } }} />);
     expect(visibleText()).toContain("1 vCPU · 1 GB");
-    expect(visibleText()).not.toContain("2 vCPU · 3 GB");
+    expect(visibleText()).not.toContain("2 vCPU · 8 GB");
     expect(visibleText()).toContain("3,000 min / month");
     expect(visibleText()).not.toContain(copy.resourcesGuide.buildIncluded);
   });
@@ -393,7 +393,7 @@ describe("resource usage overview", () => {
   it("renders real usage, traffic remaining and request counts without inventing CPU-hour allowances", async () => {
     mocks.get.mockResolvedValue({ data: usage });
     await render(<BillingResourceUsage state={paid} />);
-    expect(mocks.get).toHaveBeenCalledWith("billing/resources");
+    expect(mocks.get).toHaveBeenCalledWith("billing/resources", { params: { workspaceId: undefined } });
     expect(visibleText()).toContain("2vCPU-h");
     expect(visibleText()).toContain("46.5 GB remaining");
     expect(visibleText()).toContain("130");

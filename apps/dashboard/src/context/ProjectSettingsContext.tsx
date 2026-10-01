@@ -102,6 +102,7 @@ interface BasicProjectData {
   clusterId?: string | null;
   clusterConfig?: import("@repo/core").ClusterWorkloadConfig | null;
   cloudWorkspaceId?: string | null;
+  workspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;
   /** Source metadata for prebuilt release/image projects. */

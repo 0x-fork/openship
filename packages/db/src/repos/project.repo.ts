@@ -11,6 +11,8 @@ import type { NewProjectGroup } from "./project-group.repo";
 import type { NewService } from "./service.repo";
 import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
 import { personalAccessToken } from "../schema/personal-access-token";
+import { assertCloudWorkspacePlacement } from "./cloud-workspace.repo";
+import { projectWorkspaceScope } from "./workspace-scope";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -163,11 +165,12 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
      * is reused while a differently-named install still creates a new instance
      * (multiple apps of the same type). Omit `slug` to match any draft of the type.
      */
-    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string) {
+    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string, workspaceId?: string | null) {
       return db.query.project.findFirst({
         where: and(
           eq(project.organizationId, organizationId),
           eq(project.appTemplateId, appTemplateId),
+          projectWorkspaceScope(workspaceId),
           isNull(project.activeDeploymentId),
           isNull(project.deletedAt),
           eq(project.environmentSlug, "production"),
@@ -368,27 +371,43 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       const { id: providedId, ...rest } = data;
       const id = providedId ?? generateId("proj");
       const row = { id, ...rest };
-      if (access) {
+      if (access || row.workspaceId) {
         // A create-only credential must acquire access in the same commit as
         // its new project. A revoked/missing token rolls back the project too.
         await db.transaction(async tx => {
+          await assertCloudWorkspacePlacement(tx, row);
+          if (access) {
           const [token] = await tx.select().from(personalAccessToken)
             .where(eq(personalAccessToken.id, access.tokenId)).for("update");
           if (!token || token.revokedAt || (token.expiresAt && token.expiresAt.getTime() <= Date.now()))
             throw new UnauthorizedError("Project creation credential is no longer valid");
           if (token.readOnly || (token.organizationId && token.organizationId !== row.organizationId))
             throw new ForbiddenError("Project creation credential cannot write to this organization");
+          }
           await tx.insert(project).values(row);
+          if (access) {
           await tx.insert(personalAccessTokenGrant).values({
             id: generateId("patgrant"), tokenId: access.tokenId,
             resourceType: "project", resourceId: id,
             permissionsJson: JSON.stringify(["read", "write", "admin"]),
           });
+          }
         });
       } else {
         await db.insert(project).values(row);
       }
       return { ...row, createdAt: new Date(), updatedAt: new Date() } as Project;
+    },
+
+    async listByWorkspace(workspaceId: string, organizationId: string) {
+      return db.select().from(project).where(and(eq(project.workspaceId, workspaceId), eq(project.organizationId, organizationId), isNull(project.deletedAt))).orderBy(project.createdAt, project.id);
+    },
+
+    async countGroupsForOrganization(organizationId: string, workspaceId?: string | null) {
+      const [row] = await db.select({ count: sql<number>`count(distinct ${project.groupId})::int` }).from(project).where(and(
+        eq(project.organizationId, organizationId), isNull(project.deletedAt), projectWorkspaceScope(workspaceId),
+      ));
+      return row?.count ?? 0;
     },
 
     /**
@@ -432,6 +451,7 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       const projectRow = { id: projectId, groupId, ...input.project };
 
       await db.transaction(async (tx) => {
+        await assertCloudWorkspacePlacement(tx, projectRow);
         await tx.insert(projectGroup).values({ id: groupId, ...input.group });
         await tx.insert(project).values(projectRow);
         if (input.services.length > 0) {
@@ -482,6 +502,10 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
     },
 
     async update(id: string, data: Partial<NewProject>) {
+      if (data.workspaceId !== undefined) {
+        const current = await db.query.project.findFirst({ where: eq(project.id, id) });
+        if (current && data.workspaceId !== current.workspaceId) throw new Error("Changing a project's Cloud workspace requires an explicit migration");
+      }
       await db
         .update(project)
         .set({ ...data, updatedAt: new Date() })

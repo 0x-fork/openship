@@ -6,7 +6,7 @@ export async function deploySourceWorkflow(ship: { projects: ProjectOperations; 
   const { source, signal, onStep } = input;
   const step = (message: string) => { signal?.throwIfAborted(); onStep?.(message); };
   step("Preparing source");
-  const session = await ship.sources.stage({ source, name: input.name, projectId: input.projectId }, { signal, onStep });
+  const session = await ship.sources.stage({ source, name: input.name, projectId: input.projectId, workspaceId: input.workspaceId }, { signal, onStep });
   step("Detecting build config");
   const scan = await ship.sources.scan(session.sessionId);
   const services = scan.services?.map(service => ({ ...service, commandArgv: service.commandArgv ?? undefined }));
@@ -14,6 +14,7 @@ export async function deploySourceWorkflow(ship: { projects: ProjectOperations; 
   const hasBuild = Boolean(scan.buildCommand), hasServer = scan.workloadType !== "worker" && Boolean(scan.startCommand);
   const ensured = await ship.projects.ensure(parseInput(EnsureProjectBody, {
     name: scan.name || input.name || "app", projectId: input.projectId, serverId: input.serverId,
+    workspaceId: scan.workspaceId ?? session.workspaceId ?? input.workspaceId,
     deploymentEnvironment: input.environment,
     gitProvider: "upload", uploadSessionId: session.sessionId,
     framework: scan.stack, projectType: scan.projectType, packageManager: scan.packageManager,

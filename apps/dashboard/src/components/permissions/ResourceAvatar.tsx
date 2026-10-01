@@ -33,6 +33,7 @@ const FALLBACK_ICON: Record<ResourceType, IconName> = {
   settings: "settings",
   updates: "arrow-up-circle",
   cloud: "cloud",
+  cloud_workspace: "cloud",
   audit: "file-text",
   billing: "credit-card",
 };

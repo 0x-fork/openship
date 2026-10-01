@@ -3,7 +3,7 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { billingApi, type BillingResources, type BillingState } from "@/lib/api/billing";
 import { ResourceMeter } from "./ResourceMeter";
@@ -22,14 +22,14 @@ export function BillingResourceUsage({ state }: { state: BillingState }) {
     setFailed(false);
     if (noPlan) { setLoading(false); return; }
     setLoading(true);
-    billingApi.getResources().then(value => {
+    billingApi.getResources(state.workspace?.id).then(value => {
       if (active) {
         setData(value);
         setFailed(value.compute.status !== "available" || value.edge.status !== "available");
       }
     }).catch(() => { if (active) setFailed(true); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [noPlan, state.tier, state.currentPeriod.start, state.currentPeriod.end, attempt]);
+  }, [state.workspace?.id, noPlan, state.tier, state.currentPeriod.start, state.currentPeriod.end, attempt]);
   const compute = data?.compute;
   const edge = data?.edge;
   const periodLabel = (period?: { start: string; end: string }) => period ? interpolate(copy.period, {

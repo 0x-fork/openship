@@ -9,13 +9,16 @@ import { Button } from "@/components/ui/button";
 import { billingApi, type BillingState } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
 import { cloudDeployRecovery, type CloudDeployRestriction } from "@/lib/cloud-deploy-pricing";
+import { workspaceBillingHref } from "./BillingWorkspaceContext";
 import { CloudPlanPicker } from "./CloudPlanPicker";
 
 export function CloudDeployPlanModal({
   restriction,
   onClose,
+  workspaceId,
 }: {
   restriction: CloudDeployRestriction;
+  workspaceId?: string;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -38,7 +41,7 @@ export function CloudDeployPlanModal({
     setLoading(true);
     setError(null);
     try {
-      const next = await billingApi.getBillingState();
+      const next = await billingApi.getBillingState(workspaceId);
       if (!mounted.current) return;
       initialTier.current ??= next.tier;
       setState(next);
@@ -51,7 +54,7 @@ export function CloudDeployPlanModal({
       busy.current = false;
       if (mounted.current) setLoading(false);
     }
-  }, []);
+  }, [workspaceId]);
 
   useEffect(() => {
     mounted.current = true;
@@ -141,6 +144,7 @@ export function CloudDeployPlanModal({
             <div className="space-y-5">
               {showPlans && (
                 <CloudPlanPicker
+                  workspaceId={state.workspace?.id ?? workspaceId}
                   currentPlan={state.tier}
                   subscription={state.subscription}
                   complimentary={state.complimentary}
@@ -157,7 +161,7 @@ export function CloudDeployPlanModal({
                 <div className="flex flex-wrap gap-3">
                   {recovery === "credits" && state.billing?.enabled && state.topups?.available && (
                     <Button asChild>
-                      <a href="/billing/topups" target="_blank" rel="noopener noreferrer">
+                      <a href={workspaceBillingHref("/billing/topups", state.workspace?.id ?? workspaceId)} target="_blank" rel="noopener noreferrer">
                         {copy.topups}
                         <UiIcon name="arrow-up-right" className="size-4" aria-hidden="true" />
                       </a>
@@ -165,7 +169,7 @@ export function CloudDeployPlanModal({
                   )}
                   <Button asChild variant="secondary">
                     <a
-                      href={recovery === "credits" ? "/billing/plans" : "/billing/overview"}
+                      href={workspaceBillingHref(recovery === "credits" ? "/billing/plans" : "/billing/overview", state.workspace?.id ?? workspaceId)}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

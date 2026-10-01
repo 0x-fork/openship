@@ -20,6 +20,7 @@ export async function hostFit(c: Context) {
         deployTarget: c.req.query("deployTarget") || undefined,
         serverId: c.req.query("serverId") || undefined,
         projectId: c.req.query("projectId") || undefined,
+        workspaceId: c.req.query("workspaceId") || undefined,
       }),
     ),
   });

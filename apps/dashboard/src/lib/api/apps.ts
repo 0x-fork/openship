@@ -161,7 +161,7 @@ export const appsApi = {
     api.get<{ data: AppTemplate; draft?: AppOpenDraft | null }>(endpoints.apps.catalogEntry(id)),
 
   /** Preview self-hosted recommendations or the Cloud plan, without writes. */
-  hostFit: (id: string, target: { deployTarget?: string; serverId?: string; projectId?: string }) =>
+  hostFit: (id: string, target: { deployTarget?: string; serverId?: string; projectId?: string; workspaceId?: string }) =>
     api.get<{ data: AppHostFitView }>(endpoints.apps.catalogHostFit(id), { params: target }),
 
   /** Install an app from the catalog. Template apps return the new project;
@@ -169,6 +169,7 @@ export const appsApi = {
    *  install wizard's per-endpoint routing choice — it is the ONLY way an app
    *  install gets a public hostname. */
   install: (body: {
+    workspaceId?: string;
     templateId: string;
     name?: string;
     config?: Record<string, string>;

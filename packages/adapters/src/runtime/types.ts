@@ -277,7 +277,7 @@ export interface RuntimeAdapter {
    */
   listProjectContainerIds?(projectId: string): Promise<string[]>;
   /** Remove an empty owned project scope after full project teardown (not one release). */
-  cleanupProject?(projectId: string): Promise<void>;
+  cleanupProject?(projectId: string, options?: { wipeVolumes?: boolean }): Promise<void>;
 
   /**
    * List the containers this runtime owns for `deploymentId`, matched by the

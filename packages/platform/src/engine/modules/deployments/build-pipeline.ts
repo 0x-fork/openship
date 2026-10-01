@@ -57,6 +57,7 @@ import {
   resolveDeploymentPlatform,
   resolveEffectiveTarget,
   hostChannelDeployNotice,
+  type DeploymentMeta,
 } from "../../lib/deployment-runtime";
 import { isRealContainerRef } from "../../lib/container-ref";
 import { ensureRoutingReady } from "../../lib/edge-reconcile";
@@ -209,8 +210,8 @@ export async function resolveServicePipelineMode(
   const targetsSpecificServices = (snapshot.targetServiceIds?.length ?? 0) > 0;
 
   if (snapshot.serviceDeploymentMode === "single" && !targetsSpecificServices) {
-    if (snapshot.cloudDockerWorkspace || (project.cloudWorkspaceId &&
-        await repos.cloudDockerWorkspace.find(project.id, project.organizationId))) {
+    if (!project.workspaceId && (snapshot.cloudDockerWorkspace || (project.cloudWorkspaceId &&
+        await repos.cloudDockerWorkspace.find(project.id, project.organizationId)))) {
       throw new AppError("This project uses a shared Docker workspace. Deploy its services to keep the existing containers and data.",
         409, "CLOUD_DOCKER_SERVICE_MODE_REQUIRED");
     }
@@ -303,7 +304,8 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
       // Session admission can fail at capacity. It belongs inside the worker's
       // failure/lease cleanup so the claimed deployment cannot remain stuck.
       sessionManager.createSession(dep.id, project.id);
-      await executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal);
+      const { withCloudWorkspaceActivity } = await import("../../lib/cloud-workspace-lock");
+      await withCloudWorkspaceActivity(project.workspaceId, () => executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal), cancellationSignal);
     } catch (err) {
       console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
       // executeBuildAndDeploy's inner try/catch only arms onFailure() after
@@ -356,7 +358,7 @@ async function markDeploymentFailedFromOutside(
       // `updateStatus(id, "failed")` below would erase that distinction.
       return;
     }
-    const capacityError = cloudCapacityFailure(error, dep.projectId);
+    const capacityError = cloudCapacityFailure(error, dep.projectId, undefined, (dep.meta as DeploymentMeta | null)?.managedWorkspaceId);
     await repos.deployment.updateStatus(deploymentId, "failed", {
       errorMessage: capacityError?.message ?? message,
       ...(capacityError ? { errorCode: capacityError.code, errorDetails: capacityError.details } : {}),
@@ -683,13 +685,13 @@ async function executeBuildAndDeploy(
     const serviceMode = await resolveServicePipelineMode(project, snapshot);
     const willRunServices = serviceMode.useServicePipeline;
     const dockerWorkspace =
-      willRunServices &&
+      (willRunServices || Boolean(project.workspaceId)) &&
       resolveEffectiveTarget(plat.target, snapshot) === "cloud" &&
       (await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode));
     await assertCloudDeploymentLimits(dep.organizationId, {
       projectId: project.id,
       resources: snapshot.resources, buildResources: snapshot.buildResources,
-      runsApplication: snapshotToClass(snapshot).workload !== "static",
+      runsApplication: dockerWorkspace || snapshotToClass(snapshot).workload !== "static",
       services: willRunServices ? serviceMode.servicePreflightServices : undefined,
       dockerWorkspace,
       retainedImages: strictRefreshImages(snapshot),
@@ -710,7 +712,7 @@ async function executeBuildAndDeploy(
           resources: service.advanced?.resources,
         })),
       });
-      logger.log("→ Preparing the project's shared Docker workspace on Openship Cloud.\n");
+      logger.log(project.workspaceId ? "→ Connecting to the project's Cloud workspace.\n" : "→ Preparing the project's Docker workspace on Openship Cloud.\n");
       snapshot.cloudDockerWorkspace = await ensureCloudDockerWorkspace({
         projectId: project.id, organizationId: dep.organizationId,
         resources: cloudBuild?.workspace ?? cloudDockerResources({
@@ -725,6 +727,7 @@ async function executeBuildAndDeploy(
         onProgress: message => logger.log(message),
       });
       snapshot.workspaceId = snapshot.cloudDockerWorkspace.workspaceId;
+      if (project.workspaceId) snapshot.managedWorkspaceId = project.workspaceId;
       snapshot.runtimeMode = "docker";
       snapshot.buildStrategy = "server";
       // Every subsequent service action/recovery uses the frozen host identity.
@@ -782,6 +785,7 @@ async function executeBuildAndDeploy(
     const deployRouting = resolveDeployRouting({
       workload,
       runtimeName: runtime.name,
+      dockerHost: runtime.supports("dockerHost"),
       outputDirectory: snapshot.outputDirectory,
     });
 
@@ -849,9 +853,20 @@ async function executeBuildAndDeploy(
     // on both is what pinned every self-hosted container to 512 MB.
     const isCloudDeploy = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
     const prodResources = resolveRuntimeResources(snapshot.resources, { isCloud: isCloudDeploy });
-    const buildResources = cloudBuild?.build ?? resolveBuildResources(snapshot.buildResources, {
+    let buildResources = cloudBuild?.build ?? resolveBuildResources(snapshot.buildResources, {
       isCloud: isCloudDeploy,
     });
+    const needsBuild = !snapshot.releaseImageRef && !snapshot.refreshAppDeploymentId &&
+      (willRunServices ? cloudDockerNeedsBuild(serviceMode.servicePreflightServices, strictRefreshImages(snapshot)) : !snapshot.handoverAppImage);
+    if (snapshot.cloudDockerWorkspace?.ownerWorkspaceId && needsBuild) {
+      const { sampleCloudWorkspaceResources, workspaceBuildResources } = await import("../../lib/cloud-workspace-host");
+      const id = snapshot.cloudDockerWorkspace.ownerWorkspaceId;
+      const { usage, capacity } = await sampleCloudWorkspaceResources(dep.organizationId, id);
+      buildResources = workspaceBuildResources(capacity, usage, snapshot.buildResources ?? undefined);
+      buildResourcesForRecovery = buildResources;
+      snapshot.buildResources = buildResources;
+      logger.log(`→ Building inside the workspace using available capacity: ${buildResources.cpuCores} vCPU · ${buildResources.memoryMb} MB.\n`);
+    }
 
     // Decrypt env vars from deployment (self-contained). decryptEnvMap
     // drops keys that fail decryption rather than leaking ciphertext into
@@ -1337,7 +1352,7 @@ async function executeBuildAndDeploy(
     }
 
     if (buildResult.status === "failed") {
-      const capacityError = cloudCapacityFailure(buildResult.errorCause, project.id, buildResourcesForRecovery);
+      const capacityError = cloudCapacityFailure(buildResult.errorCause, project.id, buildResourcesForRecovery, project.workspaceId);
       if (capacityError) throw capacityError;
       await onFailure(ctx, buildResult.errorMessage ?? "Build failed", buildResult.durationMs);
       return;
@@ -1431,7 +1446,7 @@ async function executeBuildAndDeploy(
     // Only an UNSETTLED error is a deploy failure. An error thrown after the
     // outcome was recorded is bookkeeping: reporting it as a failure would
     // invert a working deploy and tear its containers down.
-    const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery);
+    const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery, project.workspaceId);
     await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
       ? { errorCode: capacityError.code, errorDetails: capacityError.details } : undefined);
   } finally {
@@ -2070,7 +2085,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           );
         },
         ensurePorts: async (cfg, promptUser) => {
-          if (runtime.name === "kubernetes") return;
+          if (runtime.name === "kubernetes" || runtime.name === "cloud") return;
           const executor = phase.targetExecutor;
           if (!executor) return;
           // A published container binds exactly ONE host port — the loopback pin.

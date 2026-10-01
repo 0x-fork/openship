@@ -401,6 +401,8 @@ export interface DeploymentConfig {
    */
   rollbackWindow?: number | null;
   rollbackStrategy?: "git" | "snapshot";
+  /** Subscription-owned Cloud execution target. Immutable after project creation. */
+  workspaceId?: string;
   /** Which server to deploy to when deployTarget === "server" */
   serverId?: string;
   /**

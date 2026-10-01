@@ -318,6 +318,7 @@ export class DockerBackupExecutor implements BackupExecutor {
   }
 
   async listSources(service: ServiceHandle): Promise<BackupSource[]> {
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     // Two sources of truth:
     //  1. Live container's actual Mounts (authoritative when the
     //     service is deployed). Captures Docker's resolution of relative
@@ -356,6 +357,7 @@ export class DockerBackupExecutor implements BackupExecutor {
             type: mount.Type,
           });
         }
+        await this.runtime.assertBackupAccess(service.projectId, { sources: sources.map(source => source.source) });
         return sources;
       }
     }
@@ -388,6 +390,7 @@ export class DockerBackupExecutor implements BackupExecutor {
       })
       .filter((x): x is BackupSource => x !== null);
 
+    await this.runtime.assertBackupAccess(service.projectId, { sources: sources.map(source => source.source) });
     if (!sources.some((source) => source.type === "bind")) return sources;
     await this.ensureImage(HELPER_IMAGE);
 
@@ -411,6 +414,7 @@ export class DockerBackupExecutor implements BackupExecutor {
    */
   async readContainerEnv(service: ServiceHandle): Promise<Record<string, string>> {
     if (!service.containerId) return {};
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       const data = await this.dockerode.getContainer(service.containerId).inspect();
       const pairs = ((data.Config?.Env ?? []) as string[]) ?? [];
@@ -439,6 +443,7 @@ export class DockerBackupExecutor implements BackupExecutor {
       );
     }
 
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     const container = this.dockerode.getContainer(service.containerId);
     const exec = await container.exec({
       Cmd: cmd,
@@ -1050,6 +1055,7 @@ export class DockerBackupExecutor implements BackupExecutor {
         `Cannot exec in service ${service.name}: no containerId. Service must be deployed.`,
       );
     }
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     const container = this.dockerode.getContainer(service.containerId);
     const exec = await container.exec({
       Cmd: cmd,
@@ -1195,6 +1201,7 @@ export class DockerBackupExecutor implements BackupExecutor {
 
   async stopService(service: ServiceHandle): Promise<void> {
     if (!service.containerId) return;
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       await this.dockerode.getContainer(service.containerId).stop({ t: 30 });
     } catch (error) {
@@ -1207,6 +1214,7 @@ export class DockerBackupExecutor implements BackupExecutor {
     if (!service.containerId) {
       throw new Error(`Cannot start service ${service.name}: no containerId`);
     }
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       await this.dockerode.getContainer(service.containerId).start();
     } catch (err: unknown) {
@@ -1218,6 +1226,7 @@ export class DockerBackupExecutor implements BackupExecutor {
 
   async isRunning(service: ServiceHandle): Promise<boolean> {
     if (!service.containerId) return false;
+    await this.runtime.assertBackupAccess(service.projectId, { containerId: service.containerId });
     try {
       const data = await this.dockerode.getContainer(service.containerId).inspect();
       return !!data.State?.Running;

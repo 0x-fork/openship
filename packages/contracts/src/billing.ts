@@ -1,6 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
-import { CreateSubscriptionBody, CreateTopupBody } from "./billing-inputs";
+import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody } from "./billing-inputs";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
 import { ApplyCloudCapacitySchema, CloudCapacityEditSchema, CloudCapacityOverviewSchema, CloudCapacityPreviewSchema } from "./cloud-capacity";
 
@@ -82,6 +82,7 @@ export const BillingCreditAlertSchema = Type.Object({
   remaining: numberOrNull, balance: numberOrNull, limit: numberOrNull,
 });
 export const BillingStateSchema = Type.Object({
+  workspace: Type.Optional(Type.Union([Type.Object({ id: Type.String(), name: Type.String(), mode: Type.Union([Type.Literal("shared"), Type.Literal("dedicated")]), runtime: Type.Union([Type.Literal("docker"), Type.Literal("native")]) }), Type.Null()])),
   creditAlert: Type.Optional(Type.Union([BillingCreditAlertSchema, Type.Null()])),
   tier, status: Type.String(), currentPeriod,
   balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull, unlimited: Type.Optional(Type.Boolean()) }),
@@ -101,6 +102,7 @@ export const BillingCreditPackSchema = Type.Object({
   sortOrder: Type.Number(), explains: stringOrNull,
 });
 export const BillingUsageInputSchema = Type.Object({
+  ...BillingScopeSchema.properties,
   from: Type.Optional(Type.String({ maxLength: 64 })), to: Type.Optional(Type.String({ maxLength: 64 })),
   groupBy: Type.Optional(Type.Union([Type.Literal("hour"), Type.Literal("day")])),
 });
@@ -111,31 +113,31 @@ export const BillingOperationSchemas = {
   getCheckout: {
     action: "read",
     input: Type.Object(
-      { checkoutId: Type.String({ pattern: "^(?:cs_[A-Za-z0-9_]+|bco_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$", maxLength: 255 }) },
+      { ...BillingScopeSchema.properties, checkoutId: Type.String({ pattern: "^(?:cs_[A-Za-z0-9_]+|bco_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$", maxLength: 255 }) },
       { additionalProperties: false },
     ),
     output: BillingCheckoutStatusSchema,
   },
-  getState: { action: "read", output: BillingStateSchema },
-  getResources: { action: "read", output: BillingResourcesSchema },
-  getCapacity: { action: "read", output: CloudCapacityOverviewSchema },
+  getState: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingStateSchema },
+  getResources: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingResourcesSchema },
+  getCapacity: { action: "read", input: BillingScopeSchema, optionalInput: true, output: CloudCapacityOverviewSchema },
   previewCapacity: { action: "read", input: CloudCapacityEditSchema, output: CloudCapacityPreviewSchema },
   applyCapacity: { action: "write", input: ApplyCloudCapacitySchema,
     output: Type.Object({ deploymentId: Type.String(), projectId: Type.String() }) },
-  getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
+  getSubscription: { action: "read", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
-  cancelSubscription: { action: "admin", output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },
-  resumeSubscription: { action: "admin", output: Type.Object({ subscription: BillingSubscriptionSchema }) },
+  cancelSubscription: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },
+  resumeSubscription: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ subscription: BillingSubscriptionSchema }) },
   createTopup: { action: "write", input: CreateTopupBody, output: Type.Object({ checkoutUrl: Type.String() }) },
   listTopupPacks: { action: "read", output: Type.Array(BillingCreditPackSchema) },
   // The hosted portal can cancel renewal, so it requires the same grant as cancel.
-  createPortal: { action: "admin", output: Type.Object({ portalUrl: Type.String() }) },
+  createPortal: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ portalUrl: Type.String() }) },
   getUsage: { action: "read", input: BillingUsageInputSchema, optionalInput: true, output: Type.Object({
     from: Type.String(), to: Type.String(), groupBy: Type.Union([Type.Literal("hour"), Type.Literal("day")]),
     // Oblien's metering payload is forwarded without renaming its provider fields.
     usage: Type.Union([Type.Record(Type.String(), Type.Unknown()), Type.Null()]),
   }) },
-  listAllowanceDetail: { action: "read", output: Type.Object({ freeSubdomains: Type.Object({
+  listAllowanceDetail: { action: "read", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ freeSubdomains: Type.Object({
     used: Type.Number(), limit: numberOrNull, remaining: numberOrNull, suffix: Type.String(),
     items: Type.Array(Type.Object({ domainId: Type.String(), hostname: Type.String(), projectId: stringOrNull, projectName: Type.String(), projectSlug: stringOrNull, serviceId: stringOrNull, createdAt: Type.String() })),
   }) }) },

@@ -50,6 +50,7 @@ import { githubDependencies } from "../modules/github/github.operations";
 import { noticesDependencies } from "../modules/notices/notice.operations";
 
 import { billingDependencies } from "../modules/billing/billing.operations";
+import { cloudWorkspaceDependencies } from "../modules/cloud-workspaces/cloud-workspace.operations";
 
 let platform: PlatformKernel | undefined;
 
@@ -69,6 +70,7 @@ export function getPlatformKernel(): PlatformKernel {
     backupDestinations: backupDestinationDependencies,
     backups: backupDependencies,
     billing: billingDependencies,
+    cloudWorkspaces: cloudWorkspaceDependencies,
     notices: noticesDependencies,
     github: githubDependencies,
     permissions: permissionsDependencies,

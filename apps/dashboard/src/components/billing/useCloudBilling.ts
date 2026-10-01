@@ -1,5 +1,6 @@
 "use client";
 
+import { useBillingWorkspace } from "./BillingWorkspaceContext";
 import { useEffect, useRef, useState } from "react";
 import type { PlanTierId } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
@@ -37,12 +38,15 @@ export function useCloudPlans() {
 }
 
 /** Shared hosted checkout, including duplicate-click and uncertain-payment retries. */
-export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted }: {
+export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId }: {
   enabled: boolean;
+  workspaceId?: string;
   preserveProject?: boolean;
   onCheckoutStarted?: () => void;
 }) {
   const { t } = useI18n();
+  const billingWorkspaceId = useBillingWorkspace();
+  const workspaceId = selectedWorkspaceId ?? billingWorkspaceId;
   const [subscribing, setSubscribing] = useState<PlanTierId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -60,10 +64,10 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     setError(null);
     setCheckoutUrl(null);
     try {
-      const attempt = `${planTierId}:${interval}`;
+      const attempt = `${workspaceId ?? "dedicated"}:${planTierId}:${interval}`;
       if (!attempts.current.has(attempt)) attempts.current.set(attempt, randomUUID());
       const res = await api.post<{ data: { checkoutUrl: string } }>(endpoints.billing.subscription, {
-        planTierId, interval, idempotencyKey: attempts.current.get(attempt),
+        planTierId, interval, workspaceId, idempotencyKey: attempts.current.get(attempt),
       });
       const url = new URL(res.data.checkoutUrl);
       if (url.protocol !== "https:") throw new Error(t.billing.plansRoute.checkoutError);

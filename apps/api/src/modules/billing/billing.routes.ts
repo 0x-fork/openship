@@ -58,7 +58,7 @@ r.use("/allowances", authMiddleware);
 // The retired Stripe webhook always returns 410 and performs no mutation.
 
 /* ---------- Dashboard state snapshot ---------- */
-r.get("/state", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data." } }, billingController.getState);
+r.get("/state", { query: BillingOperationSchemas.getState.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data." } }, billingController.getState);
 r.get(
   "/checkout",
   { tag: "billing:read", authorizationHandledByOperation: true, mcpExcluded: "Browser checkout configuration; use the billing reads to inspect a plan and complete purchases in Settings → Billing." },
@@ -69,8 +69,8 @@ r.get(
 // Powers the dashboard usage chart. Reads only — no Stripe / Oblien
 // mutation, just a passthrough to namespaces.usageUnits.
 r.get("/usage", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read metered Cloud usage over the requested date range, grouped by hour or day. This is billing data, not live workload metrics." }, query: BillingOperationSchemas.getUsage.input }, billingController.getUsage);
-r.get("/resources", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List Cloud resources contributing to this workspace’s bill and usage." } }, billingController.getResources);
-r.get("/capacity", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the Cloud pool's allocated CPU, memory and disk, and authorized project allocations. Includes stopped workspaces. Read this again after an adjustment to verify capacity release." } }, billingController.getCapacity);
+r.get("/resources", { query: BillingOperationSchemas.getResources.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List Cloud resources contributing to this workspace’s bill and usage." } }, billingController.getResources);
+r.get("/capacity", { query: BillingOperationSchemas.getCapacity.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the Cloud pool's allocated CPU, memory and disk, and authorized project allocations. Includes stopped workspaces. Read this again after an adjustment to verify capacity release." } }, billingController.getCapacity);
 r.post("/capacity/preview", { tag: "billing:read", readOnly: true, authorizationHandledByOperation: true, body: BillingOperationSchemas.previewCapacity.input, mcp: { description: "Preview service resource edits and the services that may restart. Requires project and service write access, and the revision from capacity. Does not apply changes." } }, billingController.previewCapacity);
 r.post("/capacity/apply", { tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal", body: BillingOperationSchemas.applyCapacity.input, mcp: { description: "Apply a reviewed capacity adjustment with explicit restart confirmation. Reuses deployed images through normal deployment logs. Requires project and service write access. Reuse the idempotency key for retries; poll the returned deployment and capacity before retrying a blocked deploy." } }, billingController.applyCapacity);
 
@@ -78,12 +78,12 @@ r.post("/capacity/apply", { tag: "billing:write", authorizationHandledByOperatio
 // WHICH resources are consuming a quota, not just how many. The capacity meters
 // give a number; this gives the list a user can act on (each free subdomain with
 // the project holding it), which nothing else in the product exposes org-wide.
-r.get("/allowances", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List resources consuming workspace allowances, including the projects holding managed domains." } }, billingController.listAllowanceDetail);
+r.get("/allowances", { query: BillingOperationSchemas.listAllowanceDetail.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List resources consuming workspace allowances, including the projects holding managed domains." } }, billingController.listAllowanceDetail);
 
 /* ---------- Subscription ---------- */
 // GET returns the per-org subscription slice (tier + status + period).
 // POST requests an Oblien hosted checkout; provider entitlements confirm access.
-r.get("/subscription", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s current subscription tier, state and billing period." } }, billingController.getSubscription);
+r.get("/subscription", { query: BillingOperationSchemas.getSubscription.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s current subscription tier, state and billing period." } }, billingController.getSubscription);
 r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal", mcpExcluded: "Starts a paid browser checkout. Purchases and payment authorization are completed in Settings → Billing." }, billingController.createSubscription);
 
 /* ---------- Cancellation ---------- */

@@ -32,7 +32,7 @@ export const cloudResourceInput = z.discriminatedUnion("operation", [
 
 async function tenant(c: Context) {
   const { organizationId } = getRequestContext(c);
-  return createTenantCloudAdmin(organizationId, await ensureNamespace(organizationId));
+  return createTenantCloudAdmin(organizationId, await ensureNamespace(organizationId, null), null);
 }
 
 /** Each operation validates ownership through the same SaaS tenant delegate. */

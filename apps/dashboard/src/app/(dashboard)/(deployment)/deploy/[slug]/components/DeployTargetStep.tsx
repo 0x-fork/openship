@@ -15,6 +15,8 @@ import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import type { DeploymentConfig } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
+import { WorkspacePicker } from "@/components/cloud-workspaces/WorkspacePicker";
+import { useCloudWorkspaces } from "@/components/cloud-workspaces/useCloudWorkspaces";
 import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
 import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
@@ -713,12 +715,14 @@ interface CustomPowerModalContentProps {
     initial: { cpuCores: number; memoryMb: number; diskMb: number };
     onSave: (values: { cpuCores: number; memoryMb: number; diskMb: number }) => void;
     onCancel: () => void;
+    sharedHost?: boolean;
 }
 
 const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
     initial,
     onSave,
     onCancel,
+    sharedHost = false,
 }) => {
     const { t } = useI18n();
     const [values, setValues] = useState(initial);
@@ -729,10 +733,10 @@ const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
             <div className="space-y-1.5">
                 <h3 className="text-base font-semibold text-foreground">{t.deploy.power.modalTitle}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                    {t.deploy.power.modalSubtitle}
+                    {sharedHost ? t.billing.workspaces.poolHint : t.deploy.power.modalSubtitle}
                 </p>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className={`grid gap-3 ${sharedHost ? "grid-cols-2" : "grid-cols-3"}`}>
                 <label className="flex flex-col gap-1.5">
                     <span className="text-xs font-medium text-muted-foreground">{t.deploy.power.vcpuField}</span>
                     <input
@@ -757,7 +761,7 @@ const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
                         className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                 </label>
-                <label className="flex flex-col gap-1.5">
+                {!sharedHost && <label className="flex flex-col gap-1.5">
                     <span className="text-xs font-medium text-muted-foreground">{t.deploy.power.diskField}</span>
                     <input
                         type="number"
@@ -772,7 +776,7 @@ const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
                         }
                         className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
-                </label>
+                </label>}
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
                 <button
@@ -796,6 +800,8 @@ const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
 
 const CloudPowerPicker: React.FC = () => {
     const { config, updateConfig } = useDeployment();
+    const { data: workspaces } = useCloudWorkspaces(!!config.workspaceId);
+    const sharedHost = workspaces?.workspaces.find(row => row.id === config.workspaceId)?.runtime === "docker";
     const { t } = useI18n();
     const { showModal, hideModal } = useModal();
     const selected = config.cloudResourceTier ?? "low";
@@ -841,6 +847,7 @@ const CloudPowerPicker: React.FC = () => {
             maxWidth: "480px",
             customContent: (
                 <CustomPowerModalContent
+                    sharedHost={sharedHost}
                     initial={config.cloudResourceCustom ?? CUSTOM_DEFAULTS}
                     onCancel={() => hideModal(id)}
                     onSave={(values) => {
@@ -868,7 +875,7 @@ const CloudPowerPicker: React.FC = () => {
                     {t.deploy.power.heading}
                 </h3>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                    {t.deploy.power.subtitle}
+                    {sharedHost ? t.billing.workspaces.poolHint : t.deploy.power.subtitle}
                 </p>
             </div>
             {!expanded ? (
@@ -892,8 +899,8 @@ const CloudPowerPicker: React.FC = () => {
                         <span>{summary.cpu}</span>
                         <span className="text-muted-foreground/70">·</span>
                         <span>{t.deploy.power.ram} {summary.ram}</span>
-                        <span className="text-muted-foreground/70">·</span>
-                        <span>{t.deploy.power.disk} {summary.disk}</span>
+                        {!sharedHost && <><span className="text-muted-foreground/70">·</span>
+                        <span>{t.deploy.power.disk} {summary.disk}</span></>}
                     </div>
                 </button>
             ) : (
@@ -934,8 +941,8 @@ const CloudPowerPicker: React.FC = () => {
                                 <span>{tier.cpu}</span>
                                 <span className="text-muted-foreground/70">·</span>
                                 <span>{t.deploy.power.ram} {tier.ram}</span>
-                                <span className="text-muted-foreground/70">·</span>
-                                <span>{t.deploy.power.disk} {tier.disk}</span>
+                                {!sharedHost && <><span className="text-muted-foreground/70">·</span>
+                                <span>{t.deploy.power.disk} {tier.disk}</span></>}
                             </div>
                         </button>
                     );
@@ -979,8 +986,8 @@ const CloudPowerPicker: React.FC = () => {
                         <span>{custom.cpuCores} {t.deploy.power.vcpu}</span>
                         <span className="text-muted-foreground/70">·</span>
                         <span>{t.deploy.power.ram} {custom.memoryMb} MB</span>
-                        <span className="text-muted-foreground/70">·</span>
-                        <span>{t.deploy.power.disk} {Math.round(custom.diskMb / 1024)} GB</span>
+                        {!sharedHost && <><span className="text-muted-foreground/70">·</span>
+                        <span>{t.deploy.power.disk} {Math.round(custom.diskMb / 1024)} GB</span></>}
                     </div>
                 </button>
             </div>
@@ -1408,7 +1415,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // entirely (no flash of compact summary before onContinue fires).
   const baseLoading = !ready || !defaultsLoaded;
   const baseCompactEligible = !baseLoading && !expanded && canContinue;
-  const wouldAutoSkip = autoSkipAllowed && baseCompactEligible;
+  const wouldAutoSkip = autoSkipAllowed && baseCompactEligible && selfHosted;
 
   // Render flags. When we're about to auto-skip, keep showing the loading
   // spinner so the user sees a single transition (spinner → next step)
@@ -1680,6 +1687,8 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
           {ts.loadingCheck}
         </div>
       )}
+
+      {!selfHosted && config.deployTarget === "cloud" && <WorkspacePicker value={config.workspaceId} disabled={!!config.projectId || !!config.uploadSessionId} dockerOnly={config.projectType === "services" || config.projectType === "monorepo"} onChange={workspaceId => updateConfig({ workspaceId })} />}
 
       {/* Compact summary - saved default applied cleanly. The pill itself
           is the edit affordance: clicking expands the full picker so the

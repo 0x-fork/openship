@@ -114,8 +114,8 @@ const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
     try {
       // An uncertain response may already have created the hosted checkout.
       // Retry the same purchase key; a different pack is a different purchase.
-      if (!checkoutAttempts.current.has(packId)) checkoutAttempts.current.set(packId, randomUUID());
-      const res = await api.post<CheckoutResponse>("billing/topup", { packId, idempotencyKey: checkoutAttempts.current.get(packId) });
+      if (!checkoutAttempts.current.has(`${state.workspace?.id}:${packId}`)) checkoutAttempts.current.set(`${state.workspace?.id}:${packId}`, randomUUID());
+      const res = await api.post<CheckoutResponse>("billing/topup", { workspaceId: state.workspace?.id, packId, idempotencyKey: checkoutAttempts.current.get(`${state.workspace?.id}:${packId}`) });
       window.location.href = res.data.checkoutUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.topups.checkoutError);
@@ -128,7 +128,7 @@ const CreditPacks: React.FC<BillingTopupsProps> = ({ state }) => {
     setOpeningPortal(true);
     setError(null);
     try {
-      const res = await api.post<PortalResponse>("billing/portal");
+      const res = await api.post<PortalResponse>("billing/portal", { workspaceId: state.workspace?.id });
       window.location.href = res.data.portalUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : t.billing.topups.portalError);

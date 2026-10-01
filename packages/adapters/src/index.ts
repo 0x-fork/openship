@@ -124,6 +124,7 @@ export {
   type CloudDockerOptions,
 } from "./runtime/cloud/docker";
 export { cloudWorkspaceStatus, waitForCloudDockerWorkspace } from "./runtime/cloud/workspace-ready";
+export { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
 export { BuildLogger } from "./runtime/build-pipeline";
@@ -395,6 +396,8 @@ export type { Privileged, RootChecked } from "./system/privilege";
 export { privilegedExecutor, rootChecked, rootOrDegrade } from "./system/privilege";
 export { systemCatalog, MIN_DOCKER_VERSION } from "./system/catalog";
 export { SERVER_STATS_COMMAND } from "./system/server-stats";
+export { dockerProjectStorage, type DockerStorageSnapshot } from "./runtime/docker-storage";
+export { deleteCloudWorkspace } from "./runtime/cloud/workspace-delete";
 // Native-module versioning + migration framework (verify → reconcile).
 export {
   resolveVerifiedCatalog,

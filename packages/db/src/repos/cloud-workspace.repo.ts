@@ -1,0 +1,289 @@
+import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { AppError, generateId } from "@repo/core";
+import type { Database, DatabaseTransaction } from "../client";
+import {
+  cloudDockerWorkspace,
+  cloudWorkspace,
+  project,
+  type CloudWorkspaceOperation,
+} from "../schema";
+
+export type CloudWorkspace = typeof cloudWorkspace.$inferSelect;
+
+/** Call in the same transaction as project insertion. The workspace row serializes placements. */
+export async function assertCloudWorkspacePlacement(
+  tx: DatabaseTransaction,
+  input: {
+    workspaceId?: string | null;
+    organizationId: string;
+    serverId?: string | null;
+    clusterId?: string | null;
+  },
+) {
+  if (!input.workspaceId) return;
+  if (input.serverId || input.clusterId)
+    throw new AppError(
+      "Cloud workspace conflicts with the project's execution target",
+      400,
+      "CLOUD_WORKSPACE_TARGET_CONFLICT",
+    );
+  const [owner] = await tx
+    .select()
+    .from(cloudWorkspace)
+    .where(
+      and(
+        eq(cloudWorkspace.id, input.workspaceId),
+        eq(cloudWorkspace.organizationId, input.organizationId),
+      ),
+    )
+    .for("update");
+  if (!owner || owner.deletionInProgress)
+    throw new AppError("Cloud workspace is unavailable", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
+  if (owner.operation?.kind === "resize" && owner.operation.status !== "succeeded")
+    throw new AppError(
+      "Wait for the workspace resize before adding a project",
+      409,
+      "CLOUD_WORKSPACE_BUSY",
+    );
+  if (owner.mode === "dedicated") {
+    const [existing] = await tx
+      .select({ id: project.id })
+      .from(project)
+      .where(eq(project.workspaceId, owner.id))
+      .limit(1);
+    if (existing)
+      throw new AppError(
+        "This dedicated workspace already belongs to a project",
+        409,
+        "CLOUD_WORKSPACE_NOT_EMPTY",
+      );
+  }
+}
+
+export function createCloudWorkspaceRepo(db: Database) {
+  return {
+    async findById(id: string) {
+      return db.query.cloudWorkspace.findFirst({ where: eq(cloudWorkspace.id, id) });
+    },
+    async findByIdInOrganization(id: string, organizationId: string) {
+      return db.query.cloudWorkspace.findFirst({
+        where: and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId)),
+      });
+    },
+    async findByNamespace(namespace: string) {
+      return db.query.cloudWorkspace.findFirst({ where: eq(cloudWorkspace.namespace, namespace) });
+    },
+    async listByOrganization(organizationId: string) {
+      return db
+        .select()
+        .from(cloudWorkspace)
+        .where(eq(cloudWorkspace.organizationId, organizationId))
+        .orderBy(asc(cloudWorkspace.createdAt), asc(cloudWorkspace.id));
+    },
+    async create(input: Pick<CloudWorkspace, "organizationId" | "name" | "mode" | "runtime">) {
+      const [row] = await db
+        .insert(cloudWorkspace)
+        .values({ ...input, id: generateId("cws") })
+        .returning();
+      return row!;
+    },
+    async setNamespace(id: string, organizationId: string, namespace: string) {
+      const [row] = await db
+        .update(cloudWorkspace)
+        .set({ namespace, updatedAt: new Date() })
+        .where(
+          and(
+            eq(cloudWorkspace.id, id),
+            eq(cloudWorkspace.organizationId, organizationId),
+            isNull(cloudWorkspace.deletionInProgress),
+            or(isNull(cloudWorkspace.namespace), eq(cloudWorkspace.namespace, namespace)),
+          ),
+        )
+        .returning();
+      if (!row) throw new Error("Cloud workspace namespace cannot be reassigned");
+      return row;
+    },
+    async setBillingEntitlement(
+      id: string,
+      organizationId: string,
+      namespace: string,
+      data: Pick<
+        CloudWorkspace,
+        "planTierId" | "subscriptionStatus" | "currentPeriodStart" | "currentPeriodEnd"
+      >,
+    ) {
+      const [row] = await db
+        .update(cloudWorkspace)
+        .set({ ...data, updatedAt: new Date() })
+        .where(
+          and(
+            eq(cloudWorkspace.id, id),
+            eq(cloudWorkspace.organizationId, organizationId),
+            eq(cloudWorkspace.namespace, namespace),
+          ),
+        )
+        .returning();
+      if (!row) throw new Error("Cloud workspace billing owner changed");
+      return row;
+    },
+    async rename(id: string, organizationId: string, name: string) {
+      const [row] = await db
+        .update(cloudWorkspace)
+        .set({ name, updatedAt: new Date() })
+        .where(
+          and(
+            eq(cloudWorkspace.id, id),
+            eq(cloudWorkspace.organizationId, organizationId),
+            isNull(cloudWorkspace.deletionInProgress),
+          ),
+        )
+        .returning();
+      return row;
+    },
+    /** Caller holds the workspace billing lock across provider reconciliation. */
+    async setPendingCheckouts(
+      id: string,
+      organizationId: string,
+      pendingCheckouts: CloudWorkspace["pendingCheckouts"],
+    ) {
+      const [row] = await db
+        .update(cloudWorkspace)
+        .set({ pendingCheckouts, updatedAt: new Date() })
+        .where(and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId)))
+        .returning();
+      if (!row) throw new Error("Cloud workspace not found");
+      return row;
+    },
+    async requestOperation(id: string, organizationId: string, operation: CloudWorkspaceOperation) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(cloudWorkspace)
+          .where(and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId)))
+          .for("update");
+        if (!row) throw new Error("Cloud workspace not found");
+        const previous = row.operation;
+        if (previous?.id === operation.id) {
+          if (
+            previous.kind !== operation.kind ||
+            previous.revision !== operation.revision ||
+            JSON.stringify(previous.resources) !== JSON.stringify(operation.resources)
+          ) {
+            throw new AppError(
+              "This request key belongs to a different workspace operation",
+              409,
+              "IDEMPOTENCY_KEY_CONFLICT",
+            );
+          }
+          if (previous.status !== "failed") return row;
+        } else if (previous && previous.status !== "succeeded") {
+          if (
+            previous.kind === "ensure" &&
+            operation.kind === "ensure" &&
+            previous.status !== "failed"
+          )
+            return row;
+          if (previous.status !== "failed" || previous.restartContainerIds !== undefined) {
+            throw new AppError(
+              "Finish or retry the current workspace operation first",
+              409,
+              "CLOUD_WORKSPACE_BUSY",
+            );
+          }
+        }
+        if (row.deletionInProgress && operation.kind !== "delete")
+          throw new Error("Cloud workspace is being deleted");
+        if (operation.kind === "resize") {
+          const members = await tx
+            .select({ id: project.id })
+            .from(project)
+            .where(eq(project.workspaceId, id));
+          if (members.some((member) => !operation.restartProjectIds?.includes(member.id))) {
+            throw new AppError(
+              "Workspace membership changed. Review the resize again.",
+              409,
+              "CLOUD_WORKSPACE_CHANGED",
+            );
+          }
+        }
+        if (operation.kind === "delete") {
+          const [member] = await tx
+            .select({ id: project.id })
+            .from(project)
+            .where(eq(project.workspaceId, id))
+            .limit(1);
+          if (member)
+            throw new AppError(
+              "Delete or migrate this workspace's projects before deleting the workspace",
+              409,
+              "CLOUD_WORKSPACE_NOT_EMPTY",
+            );
+        }
+        const [updated] = await tx
+          .update(cloudWorkspace)
+          .set({
+            operation,
+            updatedAt: new Date(),
+            ...(operation.kind === "delete" ? { deletionInProgress: new Date() } : {}),
+          })
+          .where(eq(cloudWorkspace.id, id))
+          .returning();
+        return updated!;
+      });
+    },
+    async updateOperation(
+      id: string,
+      operation: CloudWorkspaceOperation,
+      expectedOperationId: string,
+    ) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(cloudWorkspace)
+          .where(eq(cloudWorkspace.id, id))
+          .for("update");
+        if (!row || row.operation?.id !== expectedOperationId)
+          throw new Error("Workspace operation changed");
+        const [updated] = await tx
+          .update(cloudWorkspace)
+          .set({ operation, updatedAt: new Date() })
+          .where(eq(cloudWorkspace.id, id))
+          .returning();
+        return updated!;
+      });
+    },
+    async listPendingOperations(limit = 50) {
+      return db
+        .select()
+        .from(cloudWorkspace)
+        .where(
+          and(
+            isNotNull(cloudWorkspace.operation),
+            sql`${cloudWorkspace.operation}->>'status' IN ('queued', 'running')`,
+          ),
+        )
+        .orderBy(asc(cloudWorkspace.updatedAt))
+        .limit(limit);
+    },
+    /** Only called after provider deletion is confirmed. Membership is blocked
+     * by deletionInProgress and independently protected by its RESTRICT FK. */
+    async finishDeletion(id: string, organizationId: string) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(cloudWorkspace)
+          .where(and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId)))
+          .for("update");
+        if (!row?.deletionInProgress) throw new Error("Workspace deletion was not requested");
+        const [member] = await tx
+          .select({ id: project.id })
+          .from(project)
+          .where(eq(project.workspaceId, id))
+          .limit(1);
+        if (member) throw new Error("Cloud workspace still contains projects");
+        await tx.delete(cloudDockerWorkspace).where(eq(cloudDockerWorkspace.ownerWorkspaceId, id));
+        await tx.delete(cloudWorkspace).where(eq(cloudWorkspace.id, id));
+      });
+    },
+  };
+}

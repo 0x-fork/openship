@@ -47,6 +47,7 @@ export type Permission = "read" | "write" | "admin" | "create";
  */
 export type ResourceType =
   | "project"
+  | "cloud_workspace"
   | "server"
   | "mail_server"
   | "backup_destination"
@@ -113,6 +114,7 @@ export function isOrgSingletonResourceType(type: string): boolean {
 export type GrantableResourceType = Extract<
   ResourceType,
   | "project"
+  | "cloud_workspace"
   | "server"
   | "mail_server"
   | "backup_destination"
@@ -142,6 +144,7 @@ export type GrantableResourceType = Extract<
  */
 export const GRANTABLE_RESOURCE_TYPES: readonly GrantableResourceType[] = [
   "project",
+  "cloud_workspace",
   // Authorized by canUseGitHubRepo, NOT by checkPermission — see github-access.ts.
   "github_installation",
   "github_repository",
@@ -226,7 +229,7 @@ export const SELF_HOSTED_ONLY_GRANT_TYPES: readonly GrantableResourceType[] = [
 ];
 
 /** Grantable types that exist only on the hosted control plane. */
-export const CLOUD_ONLY_GRANT_TYPES: readonly GrantableResourceType[] = ["billing"];
+export const CLOUD_ONLY_GRANT_TYPES: readonly GrantableResourceType[] = ["billing", "cloud_workspace"];
 
 const SELF_HOSTED_ONLY_SET: ReadonlySet<string> = new Set(SELF_HOSTED_ONLY_GRANT_TYPES);
 const CLOUD_ONLY_SET: ReadonlySet<string> = new Set(CLOUD_ONLY_GRANT_TYPES);
@@ -253,6 +256,7 @@ export function grantableTypesForMode(selfHosted: boolean): GrantableResourceTyp
 /** Plural label for a picker tab or a summary group heading. */
 export const RESOURCE_TYPE_LABELS: Record<GrantableResourceType, string> = {
   project: "Projects",
+  cloud_workspace: "Cloud workspaces",
   server: "Servers",
   mail_server: "Mail servers",
   backup_destination: "Backup destinations",
@@ -275,6 +279,7 @@ export const RESOURCE_TYPE_LABELS: Record<GrantableResourceType, string> = {
  */
 export const RESOURCE_TYPE_LABELS_SINGULAR: Record<GrantableResourceType, string> = {
   project: "Project",
+  cloud_workspace: "Cloud workspace",
   server: "Server",
   mail_server: "Mail server",
   backup_destination: "Backup destination",

@@ -54,6 +54,7 @@ export const appDependencies: AppDependencies = {
       return { template, draft };
     },
     async hostFit(ctx, id, input = {}) {
+      if (input.workspaceId) await authorization.authorize(ctx, { resourceType: "cloud_workspace", resourceId: input.workspaceId, action: "read" });
       if (input.projectId) {
         await authorization.authorize(
           { ...ctx, scopeMode: "fixed" },

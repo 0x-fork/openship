@@ -74,7 +74,8 @@ vi.mock("@repo/platform/engine/modules/deployments/build-pipeline", async origin
   ...await original<typeof import("@repo/platform/engine/modules/deployments/build-pipeline")>(),
   kickoffBuild: provider.kickoff,
 }));
-import { db, schema, repos, seedOwner, type SeededOwner } from "../jobs/_harness";
+import { db, schema, repos, seedOwner as seedBaseOwner, type SeededOwner } from "../jobs/_harness";
+import { ensureNamespace } from "@repo/platform/engine/lib/openship-cloud";
 import { AppError, CREDIT_PACKS, FREE_DOMAIN_SUFFIX, getAppTemplate } from "@repo/core";
 import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
@@ -92,6 +93,13 @@ const app = new Hono().onError(handleApiError)
   .use("*", async (c, next) => { c.set("clientIp", "192.0.2.64"); await next(); })
   .route("/api/health", healthRoutes).route("/api/billing", billingPlansRoutes).route("/api/billing", billingSaasRoutes);
 const fetcher = ((url, init) => app.request(url as string, init)) as typeof fetch;
+// This suite covers the original dedicated Cloud billing mode. Workspace
+// subscription onboarding and ownership use the lifecycle integration suite.
+async function seedOwner(options?: Parameters<typeof seedBaseOwner>[0]) {
+  const owner = await seedBaseOwner(options);
+  await ensureNamespace(owner.orgId, null);
+  return owner;
+}
 async function clients(actor: SeededOwner, organizationId = actor.orgId, limits: Partial<VerifiedIdentity> = {}) {
   const user = (await repos.user.findById(actor.userId))!;
   const ship = createShip({ platform: getPlatformKernel(), identity: { resolve: async () => ({ user, sessionId: "billing", ...limits }) } });
@@ -483,7 +491,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(await c.native.getResources()).toEqual(resource);
     expect(await c.remote.getResources()).toEqual(resource);
     expect(provider.resources).toHaveBeenCalledTimes(2);
-    expect(provider.resources).toHaveBeenLastCalledWith(owner.orgId);
+    expect(provider.resources).toHaveBeenLastCalledWith(owner.orgId, undefined);
     await expect(clients(stranger, owner.orgId)).rejects.toMatchObject({ statusCode: 404 });
     const forbidden = new OpenshipClient({ baseUrl: "http://openship.test", token: stranger.token, organizationId: owner.orgId, fetch: fetcher });
     // HTTP rejects the foreign organization at the PAT's organization binding;
@@ -630,7 +638,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.checkout).toHaveBeenCalledTimes(2);
     for (const [input] of provider.checkout.mock.calls) {
-      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
+      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 256, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 256 });
     }
   });
 
@@ -690,9 +698,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: org!.oblienNamespace,
         kind: "subscription",
-        offer: { reference: `openship:${tier}:v6`, unitAmount, credits },
+        offer: { reference: `openship:${tier}:v7`, unitAmount, credits },
         billingInterval: "monthly",
-        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "6" },
+        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "7" },
       });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");
@@ -764,7 +772,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
         method: "POST", headers: { Authorization: `Bearer ${owner.token}`, "X-Organization-Id": owner.orgId, "Content-Type": "application/json" },
         body: JSON.stringify({ namespace: otherNamespace, customerId: "cus_foreign", subscriptionId: "sub_foreign" }),
       });
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(400);
       expect(method).toHaveBeenLastCalledWith(endpoint === "portal" ? expect.objectContaining({ namespace }) : namespace);
     }
     expect(provider.checkout).not.toHaveBeenCalled();
@@ -896,6 +904,8 @@ describe("billing through the same SDK and HTTP application operations", () => {
 
   it("bounds usage ranges and hides projects a billing-only reader cannot access", async () => {
     const owner = await seedOwner(), member = await seedOwner({ bound: false });
+    // A not-yet-connected billing scope has no provider usage to fetch.
+    await db.update(schema.organization).set({ oblienNamespace: null }).where(eq(schema.organization.id, owner.orgId));
     const input = { organizationId: owner.orgId, name: "Private project", slug: `billing-${owner.userId.replaceAll("_", "-")}` };
     const group = await repos.projectGroup.create(input);
     const project = await repos.project.create({ ...input, groupId: group.id });
@@ -934,7 +944,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const legacy = new OpenshipClient({ baseUrl: "http://openship.test", token: owner.token, fetch: fetcher });
     provider.cloudRequest.mockImplementation(async () => Response.json({ data: state }));
     expect(await legacy.billing.getState()).toEqual(state);
-    expect(provider.cloudRequest).toHaveBeenCalledWith("/api/billing/state", { method: "GET", body: undefined });
+    expect(provider.cloudRequest).toHaveBeenCalledWith("/api/billing/state?workspaceId=organization", { method: "GET", body: undefined });
     const pack = CREDIT_PACKS[0]!;
     provider.cloudRequest.mockImplementation(async () => Response.json({ data: [{ id: pack.id, name: pack.name, creditsMilli: pack.credits_milli, priceCents: pack.price_cents, sortOrder: pack.sortOrder, explains: pack.explains, stripePriceId: "private-provider-field" }] }));
     expect(await legacy.billing.listTopupPacks()).toEqual([pack]);

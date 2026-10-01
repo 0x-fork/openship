@@ -220,7 +220,6 @@ export default function AppInstallPage() {
   // is the same for Cloud, self-hosted, and local targets.
   const { connected: cloudConnected, loading: cloudLoading, requireCloud } = useCloud();
   const { showModal, hideModal } = useModal();
-  const showCloudPricing = useCloudDeployPricing();
   // Desktop mode: apps can't run on this machine yet — see useLocalDeployGate.
   const localDeployGate = useLocalDeployGate();
 
@@ -364,6 +363,7 @@ export default function AppInstallPage() {
     });
   }, [appEndpoints, cloudConnected, cloudLoading]);
   const [destination, setDestination] = useState<AppDestination | null>(null);
+  const showCloudPricing = useCloudDeployPricing(destination?.workspaceId);
   const cloudDestination = destination?.deployTarget === "cloud" || (!destination && !selfHosted);
   const exposureModeLabels = {
     domain: { label: w.routeDomainLabel, description: w.routeDomainDesc },
@@ -484,6 +484,7 @@ export default function AppInstallPage() {
         deployTarget: cloudDestination ? "cloud" : destination?.deployTarget,
         serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
         projectId: capacityProjectId ?? undefined,
+        workspaceId: destination?.workspaceId,
       })
       .then((res) => {
         if (live) setHostFit(res.data);
@@ -556,14 +557,15 @@ export default function AppInstallPage() {
       setDraftRouting(null);
       return;
     }
-    if (appEndpoints.length === 0 || draftRouting?.projectId === targetDraftId) return;
+    if (draftRouting?.projectId === targetDraftId) return;
     let cancelled = false;
     void Promise.all([projectsApi.getInfo(targetDraftId), servicesApi.list(targetDraftId)])
       .then(([info, svcRes]) => {
         if (cancelled) return;
-        const project = info?.data?.project as { slug?: string; name?: string } | undefined;
+        const project = info?.data?.project as { slug?: string; name?: string; workspaceId?: string; serverId?: string; deployTarget?: string } | undefined;
         if (!project || !Array.isArray(svcRes?.services))
           throw new Error("Incomplete draft response");
+        if (!selfHosted) setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined });
         // A catalog update can cancel the pending read. Only mark the draft
         // restored after its routes are applied, including an empty service list.
         setExpo((prev) => ({
@@ -1225,6 +1227,7 @@ export default function AppInstallPage() {
       if (!pid) {
         const res = await appsApi.install({
           templateId: appId,
+          workspaceId: destination?.workspaceId,
           name: appName.trim() || undefined,
           routes,
         });
@@ -1352,6 +1355,7 @@ export default function AppInstallPage() {
       }
       const res = await appsApi.install({
         templateId: appId,
+          workspaceId: destination?.workspaceId,
         name: appName.trim() || undefined,
         routes,
       });
@@ -1853,7 +1857,7 @@ export default function AppInstallPage() {
               )}
 
               <div className="mt-4">
-                <AppDestinationPicker value={destination} onChange={setDestination} />
+                <AppDestinationPicker value={destination} onChange={setDestination} disabled={!!targetDraftId || !!projectId} />
               </div>
 
               {/* Declared minimum vs. the destination's measured capacity. Shown

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
 
 export type BillingUnavailableReason =
+  | "workspace-required"
   | "saas-not-enabled"
   | "billing-not-configured"
   | "billing-forbidden"
@@ -51,6 +52,8 @@ export function BillingUnavailable({ reason }: Props) {
       reload();
     }
   }, [reason, refresh]);
+
+  if (reason === "workspace-required") return <p className="rounded-2xl bg-card p-5 text-sm text-muted-foreground">{t.billing.workspaces.chooseBilling}</p>;
 
   if (reason === "cloud-not-connected") {
     return (

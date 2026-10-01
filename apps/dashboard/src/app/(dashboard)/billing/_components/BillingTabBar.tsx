@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import Link from "next/link";
+import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { BILLING_TABS, type BillingTab } from "./billing-shared";

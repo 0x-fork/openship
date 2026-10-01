@@ -862,13 +862,13 @@ async function stepRuntimeCleanup(
   // else goes through the normal destroy path.
   const unreachable = manifest.resources.filter((r) => r.type === "unreachable");
   const destroyable = manifest.resources.filter((r) => r.type !== "unreachable");
-  if (forceOrphan && manifest.runtimes?.some((runtime) => runtime.name === "kubernetes")) {
+  if (forceOrphan && (project.workspaceId || manifest.runtimes?.some((runtime) => runtime.name === "kubernetes"))) {
     disposeManifestRuntimes(manifest);
     push({
       step: "runtime_cleanup",
       status: "failed",
       error:
-        "Cluster workloads require confirmed cleanup. Retry deletion with the cluster reachable instead of orphaning its resources.",
+        "Managed workloads require confirmed cleanup. Retry deletion with the workspace or cluster reachable instead of orphaning its resources.",
     });
     return { orphans, forceOrphanEligible: false };
   }

@@ -8,6 +8,7 @@ import ServerSelector, { type ServerOption } from "@/components/shared/ServerSel
 import type { DeployTarget } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
 import { useCloud } from "@/context/CloudContext";
+import { WorkspacePicker } from "@/components/cloud-workspaces/WorkspacePicker";
 import { usePlatform } from "@/context/PlatformContext";
 
 export interface AppDestination {
@@ -19,6 +20,7 @@ export interface AppDestination {
    */
   deployTarget: Exclude<DeployTarget, "local" | "cluster">;
   serverId?: string;
+  workspaceId?: string;
   /** Host of the selected server (sshHost) — lets the app wizard build a
    *  reachable `http://host:port` URL for a port-only (no-domain) install. */
   serverHost?: string;
@@ -54,9 +56,11 @@ export interface AppDestination {
 export function AppDestinationPicker({
   value,
   onChange,
+  disabled = false,
 }: {
   value: AppDestination | null;
   onChange: (d: AppDestination) => void;
+  disabled?: boolean;
 }) {
   const { t } = useI18n();
   const opt = t.deploy.targetStep.options;
@@ -72,19 +76,7 @@ export function AppDestinationPicker({
   }, [selfHosted, value?.deployTarget, onChange]);
 
   if (!selfHosted) {
-    return (
-      <div className="flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/40">
-          <UiIcon name="cloud" className="size-4 text-muted-foreground" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{opt.cloud}</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            {opt.cloudConnectedDesc}
-          </p>
-        </div>
-      </div>
-    );
+    return <WorkspacePicker value={value?.workspaceId} disabled={disabled} dockerOnly onChange={workspaceId => onChange({ deployTarget: "cloud", workspaceId })} />;
   }
 
   return (

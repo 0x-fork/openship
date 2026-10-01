@@ -1,4 +1,4 @@
-import { Oblien, PAGE_CONTAINER_PREFIX, CloudInfraProvider, CloudDockerRuntime } from "@repo/adapters";
+import { Oblien, PAGE_CONTAINER_PREFIX, CloudInfraProvider, CloudDockerRuntime, cloudDockerProjectPaths } from "@repo/adapters";
 import { repos, type Deployment } from "@repo/db";
 import { AppError, SYSTEM, deploymentBelongsToProject } from "@repo/core";
 import { env } from "../config/env";
@@ -14,6 +14,7 @@ export interface CloudRouteProject {
   id: string;
   organizationId: string;
   cloudWorkspaceId: string | null;
+  workspaceId?: string | null;
   activeDeploymentId: string | null;
 }
 export interface CloudRouteInput {
@@ -22,11 +23,11 @@ export interface CloudRouteInput {
   isCustomDomain: boolean;
 }
 
-async function tenantClient(organizationId: string) {
-  const token = env.CLOUD_MODE ? await issueNamespaceToken(organizationId) : await getOrgCloudToken(organizationId);
+async function tenantClient(organizationId: string, workspaceId?: string | null) {
+  const token = env.CLOUD_MODE ? await issueNamespaceToken(organizationId, workspaceId ?? null) : await getOrgCloudToken(organizationId);
   if (!token) throw new AppError("Connect Openship Cloud before changing cloud routes", 503, "CLOUD_NOT_CONNECTED");
   const client = new Oblien({ token: token.token, baseUrl: env.OBLIEN_API_URL });
-  const adminProxy = env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, token.namespace) : createRemoteCloudAdmin(organizationId);
+  const adminProxy = env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, token.namespace, workspaceId ?? null) : createRemoteCloudAdmin(organizationId);
   return { client, namespace: token.namespace, adminProxy };
 }
 
@@ -49,13 +50,15 @@ export async function reapplyCloudProjectRoute(project: CloudRouteProject, input
       const rowByService = new Map(rows.map(row => [row.serviceId, row]));
       const owner = pickProjectPortOwner({ port: input.port, services, rowByService, domainRows });
       const row = owner && rowByService.get(owner.serviceId);
-      if (!owner || !row?.containerId) throw new Error("No deployed service owns this port");
-      const target = await resolved.platform.runtime.resolveRoutingTarget(row.containerId, owner.containerPort);
+      const singleApp = (deployment.meta as { serviceDeploymentMode?: string }).serviceDeploymentMode === "single";
+      const containerId = row?.containerId ?? (singleApp ? deployment.containerId : null);
+      if (!containerId) throw new Error("No deployed service owns this port");
+      const target = await resolved.platform.runtime.resolveRoutingTarget(containerId, owner?.containerPort ?? input.port);
       await resolved.platform.runtime.publishRoute(input.hostname, target.port, input.isCustomDomain);
     } finally { disposePlatform(resolved); }
     return;
   }
-  const { client, adminProxy } = await tenantClient(project.organizationId);
+  const { client, adminProxy } = await tenantClient(project.organizationId, project.workspaceId);
   const containerId = deployment.containerId;
   if (containerId.startsWith(PAGE_CONTAINER_PREFIX)) {
     const slug = containerId.slice(PAGE_CONTAINER_PREFIX.length);
@@ -88,8 +91,10 @@ export async function reapplyCloudProjectRoute(project: CloudRouteProject, input
 
 /** Resolve the actual route owner, including service workspaces in a compose deployment. */
 export async function removeCloudProjectRoute(project: CloudRouteProject, input: { hostname: string; isCustomDomain: boolean }): Promise<void> {
-  const { client, namespace, adminProxy } = await tenantClient(project.organizationId);
+  const { client, namespace, adminProxy } = await tenantClient(project.organizationId, project.workspaceId);
   const binding = await repos.cloudDockerWorkspace.find(project.id, project.organizationId);
   if (binding && binding.namespace !== namespace) throw new Error("Cloud workspace namespace changed");
-  await new CloudInfraProvider(client, { namespace, adminProxy, dockerWorkspaceId: binding?.workspaceId ?? undefined }).removeRoute(input.hostname);
+  await new CloudInfraProvider(client, { namespace, adminProxy, dockerWorkspaceId: binding?.workspaceId ?? undefined,
+    dockerRouteRoot: binding ? cloudDockerProjectPaths(project.id, binding.ownerWorkspaceId ?? undefined).routes : undefined,
+  }).removeRoute(input.hostname);
 }

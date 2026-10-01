@@ -23,6 +23,7 @@ export {
 // ─── Schema (table definitions) ──────────────────────────────────────────────
 export * as schema from "./schema";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
+export type { CloudWorkspaceOperation } from "./schema/cloud-workspace";
 export type { ServerContainerDetail } from "./schema/server-container-status";
 export type {
   IncomingWebhookActionType,
@@ -68,6 +69,8 @@ export {
   createProjectRepo,
   createCloudDockerWorkspaceRepo,
   type CloudDockerWorkspace,
+  createCloudWorkspaceRepo,
+  type CloudWorkspace,
   createDeploymentRepo,
   createDomainRepo,
   createDomainDnsChallengeRepo,

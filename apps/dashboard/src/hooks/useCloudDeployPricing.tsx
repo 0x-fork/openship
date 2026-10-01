@@ -5,11 +5,13 @@ import { useModal } from "@/context/ModalContext";
 import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
 import { CloudCapacityModal } from "@/components/billing/CloudCapacityModal";
 import { cloudDeployRestriction, cloudCapacityRestriction } from "@/lib/cloud-deploy-pricing";
+import { ApiError } from "@/lib/api/client";
+import { WorkspaceCapacityRecovery } from "@/components/cloud-workspaces/WorkspaceCapacityRecovery";
 
 /** Call from an explicit Deploy/Start/Redeploy catch, never from configuration
  * effects or Save. Reading billing first would incorrectly require billing:read
  * permission from every person who is otherwise allowed to deploy. */
-export function useCloudDeployPricing() {
+export function useCloudDeployPricing(selectedWorkspaceId?: string | null) {
   const { showModal, hideModal } = useModal();
   const openModal = useRef<string | null>(null);
 
@@ -21,18 +23,23 @@ export function useCloudDeployPricing() {
   return useCallback((error: unknown, onRetry?: () => Promise<unknown>): boolean => {
     const restriction = cloudDeployRestriction(error);
     const capacity = cloudCapacityRestriction(error);
-    if (!restriction && !capacity) return false;
+    const body = error instanceof ApiError ? error.body as { workspaceId?: unknown; code?: unknown; error?: unknown } | null : null;
+    const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : selectedWorkspaceId ?? undefined;
+    const workspaceCapacity = workspaceId && body?.code === "CLOUD_WORKSPACE_BUILD_CAPACITY";
+    if (!restriction && !capacity && !workspaceCapacity) return false;
     if (openModal.current) return true;
+    const retry = onRetry ? async () => {
+      const result = await onRetry();
+      openModal.current = null;
+      hideModal(id);
+      return result;
+    } : undefined;
     const id = showModal({
-      customContent: capacity
-        ? <CloudCapacityModal restriction={capacity} onClose={() => hideModal(id)} onRetry={onRetry ? async () => {
-          // Release this dialog before retrying: a second refusal must be free
-          // to open fresh recovery instead of being swallowed by the dedupe ref.
-          openModal.current = null;
-          hideModal(id);
-          return onRetry();
-        } : undefined} />
-        : <CloudDeployPlanModal restriction={restriction!} onClose={() => hideModal(id)} />,
+      customContent: workspaceId && (capacity || workspaceCapacity)
+        ? <WorkspaceCapacityRecovery workspaceId={workspaceId} restriction={capacity ?? undefined} message={typeof body?.error === "string" ? body.error : undefined} onClose={() => hideModal(id)} onRetry={retry} />
+        : capacity
+          ? <CloudCapacityModal restriction={capacity} onClose={() => hideModal(id)} onRetry={retry} />
+          : <CloudDeployPlanModal workspaceId={workspaceId} restriction={restriction!} onClose={() => hideModal(id)} />,
       width: "100%",
       maxWidth: capacity ? "880px" : "1440px",
       maxHeight: "calc(100dvh - 2rem)",
@@ -42,5 +49,5 @@ export function useCloudDeployPricing() {
     });
     openModal.current = id;
     return true;
-  }, [showModal, hideModal]);
+  }, [showModal, hideModal, selectedWorkspaceId]);
 }

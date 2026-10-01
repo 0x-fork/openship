@@ -90,8 +90,10 @@ export interface DeploymentMeta {
   buildStrategy?: "local" | "server";
   /** Cloud workspace this deployment provisioned (cloud target only). */
   workspaceId?: string;
+  /** Logical subscription target, distinct from a provider workspace/container id. */
+  managedWorkspaceId?: string;
   /** Container IDs in this deployment belong to this shared Docker host. */
-  cloudDockerWorkspace?: { projectId: string; workspaceId: string };
+  cloudDockerWorkspace?: { projectId: string; workspaceId: string; ownerWorkspaceId?: string };
   /**
    * Advisory post-deploy port probe — one entry per exposed port (single-app)
    * or exposed service (compose). Point-in-time; never gates the deploy. The
@@ -337,11 +339,11 @@ export function resolveEffectiveTarget(
   snapshot: DeploymentMeta,
 ): DeployTarget {
   if (snapshot.deployTarget === "cluster" || snapshot.clusterId) {
-    if (base === "cloud" || env.CLOUD_MODE || snapshot.serverId || snapshot.cloudDockerWorkspace || snapshot.workspaceId || (snapshot.deployTarget && snapshot.deployTarget !== "cluster"))
+    if (base === "cloud" || env.CLOUD_MODE || snapshot.serverId || snapshot.cloudDockerWorkspace || snapshot.managedWorkspaceId || snapshot.workspaceId || (snapshot.deployTarget && snapshot.deployTarget !== "cluster"))
       throw new AppError("Cluster metadata conflicts with the deployment target.", 409, "CLUSTER_TARGET_CONFLICT");
     return "cluster";
   }
-  if (snapshot.cloudDockerWorkspace) {
+  if (snapshot.cloudDockerWorkspace || snapshot.managedWorkspaceId) {
     if (snapshot.serverId || (snapshot.deployTarget && snapshot.deployTarget !== "cloud")) {
       throw new Error("Cloud Docker workspace metadata conflicts with the deployment target");
     }
@@ -398,13 +400,27 @@ export function usesManagedRouting(
  * has linked their Openship Cloud account and use their token to mint
  * cloud requests on behalf of the org.
  */
-async function resolveCloudPlatformForOrg(organizationId?: string, docker?: DeploymentMeta["cloudDockerWorkspace"]): Promise<Platform> {
+async function resolveCloudPlatformForOrg(organizationId?: string, docker?: DeploymentMeta["cloudDockerWorkspace"], managedWorkspaceId?: string): Promise<Platform> {
   if (!organizationId) {
     throw new Error("Cannot resolve cloud deployment platform without an organization ID");
   }
 
+  if (managedWorkspaceId && !docker) {
+    const { requireCloudWorkspace } = await import("./cloud-workspace-scope");
+    const owner = await requireCloudWorkspace(organizationId, managedWorkspaceId);
+    if (owner.runtime === "docker") throw new AppError(
+      "This deployment has no Docker host binding. Deploy the project to its Cloud workspace first.",
+      409, "CLOUD_DOCKER_BINDING_REQUIRED");
+  }
+  const binding = docker ? await repos.cloudDockerWorkspace.find(docker.projectId, organizationId) : undefined;
+  const workspaceScope = binding?.ownerWorkspaceId ?? managedWorkspaceId ?? null;
+  if (docker && (!binding || binding.workspaceId !== docker.workspaceId ||
+    (docker.ownerWorkspaceId && docker.ownerWorkspaceId !== binding.ownerWorkspaceId) ||
+    (managedWorkspaceId && binding.ownerWorkspaceId !== managedWorkspaceId))) {
+    throw new AppError("Cloud Docker host does not belong to this deployment", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+  }
   const result = env.CLOUD_MODE
-    ? await issueNamespaceToken(organizationId)
+    ? await issueNamespaceToken(organizationId, workspaceScope)
     : await getOrgCloudToken(organizationId);
   if (!result) {
     // getOrgCloudToken returns null for TWO different reasons — don't conflate
@@ -420,7 +436,6 @@ async function resolveCloudPlatformForOrg(organizationId?: string, docker?: Depl
   }
 
   if (docker) {
-    const binding = await repos.cloudDockerWorkspace.find(docker.projectId, organizationId);
     if (!binding || binding.workspaceId !== docker.workspaceId || binding.namespace !== result.namespace) {
       throw new AppError("Cloud Docker workspace does not belong to this project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
     }
@@ -430,11 +445,12 @@ async function resolveCloudPlatformForOrg(organizationId?: string, docker?: Depl
     cloudToken: result.token,
     cloudNamespace: result.namespace,
     cloudApiUrl: env.OBLIEN_API_URL,
-    cloudBeforeProvision: env.CLOUD_MODE ? () => assertCloudCanSpend(organizationId) : undefined,
+    cloudBeforeProvision: env.CLOUD_MODE ? () => assertCloudCanSpend(organizationId, workspaceScope) : undefined,
     allowHostBuild: !env.CLOUD_MODE && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
-    cloudAdminProxy: env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, result.namespace) : createRemoteCloudAdmin(organizationId),
+    cloudAdminProxy: env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, result.namespace, workspaceScope) : createRemoteCloudAdmin(organizationId),
     cloudDocker: docker ? {
       ...docker, provisionLock: createProvisionLock(`cloud:docker:${docker.workspaceId}`),
+      ownerWorkspaceId: binding?.ownerWorkspaceId ?? undefined,
       bridgeLock: createProvisionLock(`cloud:docker-bridge:${docker.workspaceId}`),
       resolveRegistryAuth: registryAuthResolver(organizationId),
     } : undefined,
@@ -522,7 +538,7 @@ export async function resolveDeploymentPlatform(
   // by a linked self-hosted installation; admin operations still go to the SaaS.
   // SaaS deployments must use the org's token too. The process-wide platform
   // has reseller credentials and is never a customer workload authority.
-  const resolvedPlatform = await resolveCloudPlatformForOrg(opts?.organizationId, snapshot.cloudDockerWorkspace);
+  const resolvedPlatform = await resolveCloudPlatformForOrg(opts?.organizationId, snapshot.cloudDockerWorkspace, snapshot.managedWorkspaceId);
 
   return {
     platform: resolvedPlatform,

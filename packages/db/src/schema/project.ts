@@ -8,6 +8,8 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  foreignKey,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type {
@@ -22,6 +24,7 @@ import { organization } from "./organization";
 import { service } from "./service";
 import { servers } from "./servers";
 import { computeCluster } from "./compute-cluster";
+import { cloudWorkspace } from "./cloud-workspace";
 
 // ─── Project apps ────────────────────────────────────────────────────────────
 
@@ -417,6 +420,9 @@ export const project = pgTable(
      */
     cloudWorkspaceId: text("cloud_workspace_id"),
 
+    /** Subscription-owned Cloud target. cloudWorkspaceId remains the dedicated provider identity. */
+    workspaceId: text("workspace_id"),
+
     /**
      * Durable owner of the SERVER this project deploys to (self-hosted). The
      * per-deployment `deployment.meta.serverId` is a volatile snapshot that a
@@ -510,6 +516,9 @@ export const project = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    check("project_workspace_target_check", sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NULL AND ${table.clusterId} IS NULL)`),
+    foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId], name: "project_workspace_owner_fk" }).onDelete("restrict"),
+    index("project_workspace_idx").on(table.workspaceId),
     index("project_cluster_idx").on(table.clusterId).where(sql`${table.clusterId} IS NOT NULL`),
     uniqueIndex("uq_project_app_environment_slug_active")
       .on(table.groupId, table.environmentSlug)

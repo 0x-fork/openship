@@ -7,11 +7,27 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 Billing covers plans, subscriptions, credits, and usage. Plan listing is public on every installation.
 Openship defines its prices, namespace credits, limits and checkout copy. Oblien
-collects the payment and applies the saved offer on payment and renewal. Every
-organization maps to one immutable provider namespace resolved by Openship.
+collects the payment and applies the saved offer on payment and renewal. Each
+subscription-owned Cloud workspace maps to an immutable provider namespace.
+Existing project-owned Cloud resources retain their organization namespace.
 Account operations require configured Cloud billing. Self-hosted HTTP routes can proxy a connected user's
 Cloud billing account; fixed SDK scopes require a direct compatible Cloud API connection.
 See [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
+
+## Select the billing owner
+
+Pass `workspaceId` on billing inputs (as a query parameter for reads and in the
+JSON body for writes). It selects the workspace's subscription, balance, usage,
+checkout and portal. Use `workspaceId: "organization"` for the existing
+organization-owned Cloud mode. Omission selects that existing organization
+namespace when present, otherwise the sole managed workspace. Multiple managed
+workspaces require an explicit choice. Reads do not create a workspace or buy a
+plan. See the [workspace lifecycle](/docs/api/cloud-workspaces).
+
+Shared Docker placement uses host measurements for live usage. Provider
+namespace allocation is its purchased host capacity, not project storage use.
+Resize that host through `cloudWorkspaces.previewResize` and `resize`; the
+older project-capacity editor applies to project-owned Cloud placement.
 
 ## List plans
 
@@ -52,7 +68,7 @@ Each entry in `plans` looks like:
 
 <TypeTable
   type={{
-    id: { type: 'string', description: 'Stable tier id — free, starter, pro, team, enterprise. Never localized; this is what you send back when starting a subscription.' },
+    id: { type: 'string', description: 'Stable tier id — free, hobby, starter, pro, team, enterprise. Never localized; this is what you send back when starting a subscription.' },
     name: { type: 'string', description: 'Openship display name. Do not key logic off this.' },
     description: { type: 'string', description: "Openship's checkout description." },
     popular: { type: 'boolean', description: 'Render the "most popular" badge on exactly this tier.' },
@@ -277,21 +293,21 @@ closure and resource cleanup.
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | Read the plan catalog, optionally localized. | `billing.listPlans(input?)` | `GET /api/billing/plans`<br />`Handler authentication` |
-| Read current billing state. | `billing.getState()` | `GET /api/billing/state`<br />`billing:read` |
+| Read current billing state. | `billing.getState(input?)` | `GET /api/billing/state`<br />`billing:read` |
 | Verify a checkout and its credit delivery for this organization. | `billing.getCheckout(input)` | `GET /api/billing/checkout`<br />`billing:read` |
-| Read compute usage, edge traffic, and bandwidth limits. | `billing.getResources()` | `GET /api/billing/resources`<br />`billing:read` |
-| Read verified Cloud pool and authorized project allocations. | `billing.getCapacity()` | `GET /api/billing/capacity`<br />`billing:read` |
+| Read compute usage, edge traffic, and bandwidth limits. | `billing.getResources(input?)` | `GET /api/billing/resources`<br />`billing:read` |
+| Read verified Cloud pool and authorized project allocations. | `billing.getCapacity(input?)` | `GET /api/billing/capacity`<br />`billing:read` |
 | Preview resource changes and affected restarts without applying them. | `billing.previewCapacity(input)` | `POST /api/billing/capacity/preview`<br />`billing:read` |
 | Apply a confirmed resource adjustment through the deployment queue. | `billing.applyCapacity(input)` | `POST /api/billing/capacity/apply`<br />`billing:write` |
-| Read subscription and renewal state. | `billing.getSubscription()` | `GET /api/billing/subscription`<br />`billing:read` |
+| Read subscription and renewal state. | `billing.getSubscription(input?)` | `GET /api/billing/subscription`<br />`billing:read` |
 | Create a subscription checkout or subscription change. | `billing.createSubscription(input)` | `POST /api/billing/subscription`<br />`billing:write` |
-| Stop subscription renewal at the end of the paid period. | `billing.cancelSubscription()` | `POST /api/billing/cancel`<br />`billing:admin` |
-| Resume a scheduled subscription renewal. | `billing.resumeSubscription()` | `POST /api/billing/resume`<br />`billing:admin` |
+| Stop subscription renewal at the end of the paid period. | `billing.cancelSubscription(input?)` | `POST /api/billing/cancel`<br />`billing:admin` |
+| Resume a scheduled subscription renewal. | `billing.resumeSubscription(input?)` | `POST /api/billing/resume`<br />`billing:admin` |
 | Create a credit top-up checkout. | `billing.createTopup(input)` | `POST /api/billing/topup`<br />`billing:write` |
 | List available credit packs. | `billing.listTopupPacks()` | `GET /api/billing/topup-packs`<br />`billing:read` |
-| Create a billing portal session. | `billing.createPortal()` | `POST /api/billing/portal`<br />`billing:admin` |
+| Create a billing portal session. | `billing.createPortal(input?)` | `POST /api/billing/portal`<br />`billing:admin` |
 | Read billable usage for the requested period. | `billing.getUsage(input?)` | `GET /api/billing/usage`<br />`billing:read` |
-| Read detailed allowance allocation and consumption. | `billing.listAllowanceDetail()` | `GET /api/billing/allowances`<br />`billing:read` |
+| Read detailed allowance allocation and consumption. | `billing.listAllowanceDetail(input?)` | `GET /api/billing/allowances`<br />`billing:read` |
 
 ### HTTP endpoints
 

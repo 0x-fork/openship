@@ -300,9 +300,9 @@ async function loadConnectionEnds(
  * `openship-<slug>` networks, so treating those as different machines refuses pairs
  * that are demonstrably co-located.
  */
-type ProjectHost = { kind: "cloud" } | { kind: "box" } | { kind: "server"; id: string };
+type ProjectHost = { kind: "cloud" } | { kind: "box" } | { kind: "server"; id: string } | { kind: "workspace"; id: string };
 
-const hostKey = (h: ProjectHost): string => (h.kind === "server" ? `server:${h.id}` : h.kind);
+const hostKey = (h: ProjectHost): string => (h.kind === "server" || h.kind === "workspace" ? `${h.kind}:${h.id}` : h.kind);
 
 /**
  * Resolve which machine a project's workload sits on.
@@ -326,6 +326,10 @@ const hostKey = (h: ProjectHost): string => (h.kind === "server" ? `server:${h.i
  * project that was about to deploy somewhere else entirely.
  */
 async function resolveProjectHost(project: Project): Promise<ProjectHost> {
+  if (project.workspaceId) {
+    const workspace = await repos.cloudWorkspace.findByIdInOrganization(project.workspaceId, project.organizationId);
+    return workspace?.runtime === "docker" ? { kind: "workspace", id: workspace.id } : { kind: "cloud" };
+  }
   const dep = project.activeDeploymentId
     ? await findActiveDeployment(project).catch(() => null)
     : null;

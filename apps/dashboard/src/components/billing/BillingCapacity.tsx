@@ -10,6 +10,8 @@ import { cloudUsagePercent, hasUnlimitedCloudCredits } from "@/lib/billing-prese
 import { ResourceLabel as MetricLabel, ResourceMeter, ResourceRing } from "./ResourceMeter";
 import { useModal } from "@/context/ModalContext";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { WorkspaceUsage } from "@/components/cloud-workspaces/WorkspaceUsage";
 import { CloudCapacityModal } from "./CloudCapacityModal";
 
 export type { BillingState };
@@ -22,6 +24,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   const onboarding = t.billing.onboarding;
   const limits = state.plan?.limits ?? PLANS[state.tier].limits;
   const cap = state.capacity;
+  const managedDocker = state.workspace?.runtime === "docker";
   const noPlan = state.tier === "free";
   const number = (value: number) => formatBillingNumber(value, locale);
   const serviceCeiling = planServiceResources(limits);
@@ -29,10 +32,10 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   const poolHint = copy.poolHint;
   const buildMeter = cap?.buildMinutes ?? { used: state.buildTimeMinutes, max: limits.buildMinutesPerMonth };
   const rows = [
-    ...(cap?.workspaces ? [{ label: t.billing.capacity.workspaces, hint: poolHint, meter: cap.workspaces, Icon: "cloud" as const }] : []),
-    ...(cap?.vcpus ? [{ label: t.billing.header.vcpus, hint: poolHint, meter: cap.vcpus, Icon: "cpu" as const }] : []),
-    ...(cap?.ramMb ? [{ label: t.billing.header.ram, hint: poolHint, meter: { used: cap.ramMb.used === null ? null : cap.ramMb.used / 1024, max: cap.ramMb.max === null ? null : cap.ramMb.max / 1024 }, unit: "GB", Icon: "memory" as const }] : []),
-    ...(cap?.diskGb ? [{ label: t.billing.header.diskCap, hint: poolHint, meter: cap.diskGb, unit: "GB", Icon: "cloud" as const }] : []),
+    ...(!managedDocker && cap?.workspaces ? [{ label: t.billing.capacity.workspaces, hint: poolHint, footnote: t.billing.capacityEditor.allocated, meter: cap.workspaces, Icon: "cloud" as const }] : []),
+    ...(!managedDocker && cap?.vcpus ? [{ label: t.billing.header.vcpus, hint: poolHint, footnote: t.billing.capacityEditor.allocated, meter: cap.vcpus, Icon: "cpu" as const }] : []),
+    ...(!managedDocker && cap?.ramMb ? [{ label: t.billing.header.ram, hint: poolHint, footnote: t.billing.capacityEditor.allocated, meter: { used: cap.ramMb.used === null ? null : cap.ramMb.used / 1024, max: cap.ramMb.max === null ? null : cap.ramMb.max / 1024 }, unit: "GB", Icon: "memory" as const }] : []),
+    ...(!managedDocker && cap?.diskGb ? [{ label: t.billing.header.diskCap, hint: poolHint, footnote: t.billing.capacityEditor.allocated, meter: cap.diskGb, unit: "GB", Icon: "cloud" as const }] : []),
     { label: copy.projects, hint: copy.projectsHint, meter: cap?.projects ?? { used: null, max: limits.maxProjects }, Icon: "folder-open" as const },
     { label: copy.apps, hint: copy.appsHint, meter: cap?.services ?? { used: null, max: limits.runningServices }, Icon: "layers" as const },
     { label: copy.buildTime, hint: copy.buildHint, meter: buildMeter, unit: t.billing.header.min, Icon: "clock" as const,
@@ -44,14 +47,17 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   const resetAt = state.buildMinutesResetAt ? new Date(state.buildMinutesResetAt) : null;
   const savedProjects = cap?.projects?.used ?? 0;
 
-  return <section className="rounded-2xl border border-border/40 bg-card p-5 sm:p-6">
+  return <>
+    {managedDocker && <WorkspaceUsage key={state.workspace!.id} workspaceId={state.workspace!.id} />}
+    <section className="rounded-2xl border border-border/40 bg-card p-5 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0 flex-1 basis-64">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">{noPlan ? copy.noPlan : copy.includedTitle}</h2>
         <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">{noPlan ? onboarding.workspaceDescription : t.billing.resourceOverview.overviewHint}</p>
       </div>
-      {!noPlan && <Button variant="secondary" onClick={() => {
-        const id = showModal({ customContent: <CloudCapacityModal onClose={() => hideModal(id)} />,
+      {managedDocker && <Button asChild variant="secondary"><Link href={`/workspaces/${encodeURIComponent(state.workspace!.id)}`}>{t.billing.workspaces.openWorkspace}</Link></Button>}
+      {!noPlan && !managedDocker && <Button variant="secondary" onClick={() => {
+        const id = showModal({ customContent: <CloudCapacityModal workspaceId={state.workspace?.id} onClose={() => hideModal(id)} />,
           width: "100%", maxWidth: "880px", maxHeight: "calc(100dvh - 2rem)", overflow: "hidden", showCloseButton: false });
       }}>{t.billing.capacityEditor.title}</Button>}
     </div>
@@ -104,7 +110,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
         </details>
       </div>
     </>}
-  </section>;
+  </section></>;
 }
 
 export default BillingCapacity;

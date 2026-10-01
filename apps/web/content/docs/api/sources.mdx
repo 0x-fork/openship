@@ -35,6 +35,7 @@ packed on the calling machine. A native directory must be inside an allowed `pol
 | `projectId` | Deploy into an existing authorized project. |
 | `environment` | `production` or `preview`. |
 | `serverId` | Authorized target server; omit to use the configured target. |
+| `workspaceId` | Subscription-owned Cloud workspace; cannot be combined with a self-hosted server target. |
 | `serviceIds` | Selected detected services. |
 | `onStep` | Source-workflow progress callback. |
 | `signal` | Abort supported source work; a submitted deployment requires explicit cancellation. |

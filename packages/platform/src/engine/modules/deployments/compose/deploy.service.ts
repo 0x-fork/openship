@@ -1921,7 +1921,7 @@ async function deployComposeServicesUnlocked(
     }
     const withHostPaths = resolvedFiles.map((file) => ({
       ...file,
-      hostPath: appConfigHostPath(project.id, service.name, file.containerPath),
+      hostPath: appConfigHostPath(project.id, service.name, file.containerPath, project.workspaceId),
     }));
     resolvedGeneratedConfigByServiceId.set(service.id, withHostPaths);
     return withHostPaths;
@@ -2041,7 +2041,7 @@ async function deployComposeServicesUnlocked(
             file.containerPath,
             {
               mode: 0o600,
-              privateDirectory: appConfigHostServiceRoot(project.id, service.name),
+              privateDirectory: appConfigHostServiceRoot(project.id, service.name, project.workspaceId),
             },
           );
         } catch (err) {
@@ -2986,7 +2986,7 @@ async function deployComposeServicesUnlocked(
               file.content,
               svc.name,
               file.containerPath,
-              { privateDirectory: appConfigHostServiceRoot(project.id, svc.name) },
+              { privateDirectory: appConfigHostServiceRoot(project.id, svc.name, project.workspaceId) },
             );
             binds.push(`${file.hostPath}:${file.containerPath}:ro`);
           }

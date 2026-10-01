@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **427 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **437 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -104,6 +104,21 @@ The current API has **427 unique tools**. Permission tags below describe the rou
 | --- | --- | --- |
 | `get_cloud_status`<br />`GET /api/cloud/status` | Openship Cloud connection status for this instance. | `cloud:read`<br />Self-hosted |
 | `get_cloud_workspaces`<br />`GET /api/cloud/workspaces` | List the org's Openship Cloud (Oblien) workspaces. | `cloud:read`<br />Self-hosted |
+
+### cloud-workspaces
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `delete_workspaces_by_id`<br />`DELETE /api/workspaces/:id` | Delete an empty workspace after its subscription has ended. Requires billing admin access and explicit deletion confirmation. Refuses while projects remain and confirms provider removal before deleting ownership. Deleting a project never calls this. | `cloud_workspace:admin` |
+| `get_workspaces`<br />`GET /api/workspaces` | List accessible subscription-owned Cloud workspaces, their runtime, provisioned capacity and current operation. Shared workspaces host multiple projects on one Docker host; projects do not reserve another VM. | `cloud_workspace:list` |
+| `get_workspaces_by_id`<br />`GET /api/workspaces/:id` | Read a Cloud workspace's live state and any provisioning, resize or deletion progress. Poll this after an asynchronous operation; failed operations include a reason and retry schedule. | `cloud_workspace:read` |
+| `get_workspaces_by_id_resize`<br />`GET /api/workspaces/:id/resize` | Preview applying this workspace's current purchased capacity. Returns a revision and every project that may restart. Does not resize or change billing; disk shrinking requires migration. | `cloud_workspace:read` |
+| `get_workspaces_by_id_usage`<br />`GET /api/workspaces/:id/usage` | Measure actual workspace CPU, memory and disk usage, with accessible projects' Docker data and shared image/cache/system storage. Allocated disk is capacity, not used bytes. Unreachable measurements are null. | `cloud_workspace:read` |
+| `patch_workspaces_by_id`<br />`PATCH /api/workspaces/:id` | Rename a Cloud workspace without changing its subscription or placement. | `cloud_workspace:write` |
+| `post_workspaces`<br />`POST /api/workspaces` | Create an empty Cloud workspace identity. Shared uses Docker; dedicated permits one project. This does not purchase a subscription or move existing projects. Subscribe in Billing, then provision with ensure. | `cloud_workspace:admin` |
+| `post_workspaces_by_id_ensure`<br />`POST /api/workspaces/:id/ensure` | Queue idempotent provisioning or resume of this subscribed Docker workspace. Uses provider-verified entitlement and preserves its existing disk. Poll the workspace for completion. Native resources are created by deploying their project. | `cloud_workspace:write` |
+| `post_workspaces_by_id_resize`<br />`POST /api/workspaces/:id/resize` | Queue the reviewed workspace resize using preview revision, idempotency key and explicit restart confirmation. Waits for deployments, saves the running containers and restores them after resizing. Poll get for progress. | `cloud_workspace:admin` |
+| `post_workspaces_by_id_retry`<br />`POST /api/workspaces/:id/retry` | Retry the workspace's saved failed operation without losing its provider identity or container recovery checkpoint. Poll get for the result. | `cloud_workspace:admin` |
 
 ### credentials
 

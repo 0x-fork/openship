@@ -197,6 +197,7 @@ export const OverviewTab = () => {
               loading={showProjectInfoSkeleton}
             />
           )}
+          {projectData.workspaceId && <div className="flex items-center justify-between gap-4 text-sm"><span className="text-muted-foreground">{t.billing.workspaces.singular}</span><Link href={`/workspaces/${encodeURIComponent(projectData.workspaceId)}`} className="font-medium hover:text-primary">{t.billing.workspaces.openWorkspace}</Link></div>}
           {/* Which self-hosted server this runs on — links to the server page. */}
           {deployTarget === "server" && (showProjectInfoSkeleton || projectData.serverName) && (
             <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">

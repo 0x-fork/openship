@@ -398,11 +398,36 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(stop).toHaveBeenCalledWith("old-container");
     expect(destroy).toHaveBeenCalledWith("old-container");
     expect(image).toHaveBeenCalledWith("openship/project-a:bld_old");
-    await expect(runtime.destroy("workspace-a")).rejects.toThrow("project teardown");
+    await expect(runtime.destroy("workspace-a")).rejects.toThrow("cannot delete their Docker workspace");
     expect(ws.stop).not.toHaveBeenCalled();
     expect(ws.delete).not.toHaveBeenCalled();
     expect(runtime.supports("unitRestore")).toBe(false);
     expect(resolveExecutor(runtime.name, runtime)).toBeInstanceOf(DockerBackupExecutor);
+  });
+  it.each(["api-container", "a".repeat(12), "a".repeat(64)])("retires only owned ingress when deleting by %s", async (reference) => {
+    runtime["options"].ownerWorkspaceId = "managed-a";
+    const id = "a".repeat(64);
+    const siblingId = "b".repeat(64);
+    rows = [
+      { Id: id, State: "running", Labels: { "openship.project": "project-a" }, Ports: [{ PrivatePort: 8080, PublicPort: 31001, Type: "tcp" }] },
+      { Id: siblingId, State: "running", Labels: { "openship.project": "project-b" }, Ports: [{ PrivatePort: 8080, PublicPort: 31002, Type: "tcp" }] },
+    ];
+    vi.spyOn(runtime, "docker", "get").mockReturnValue({
+      listContainers: async () => rows,
+      getContainer: (input: string) => ({ inspect: async () => ({
+        Id: input === siblingId ? siblingId : id,
+        Config: { Labels: { "openship.project": input === siblingId ? "project-b" : "project-a" } },
+      }) }),
+    } as never);
+    ws.network.get.mockResolvedValue({ ingress_ports: [31001, 31002, 443] });
+    const destroy = vi.spyOn(DockerRuntime.prototype, "destroy").mockResolvedValue();
+    await runtime.destroy(reference);
+    expect(ws.network.update).toHaveBeenCalledWith({ ingress_ports: [31002, 443] });
+    expect(destroy).toHaveBeenCalledWith(id);
+    expect(ws.delete).not.toHaveBeenCalled();
+    await expect(runtime.destroy(siblingId)).rejects.toMatchObject({ code: "CONTAINER_NOT_FOUND" });
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(ws.network.update).toHaveBeenCalledOnce();
   });
   it("route teardown deletes only this workspace's routing anchor", async () => {
     await runtime.publishRoute("project-a.opsh.io", 30001, false);

@@ -13,7 +13,7 @@ import type { DeploymentMeta } from "../../lib/deployment-runtime";
  * a Cloud-bound project back into a server project in the dashboard/API.
  */
 export function readDeployMeta(
-  project: Pick<Project, "cloudWorkspaceId" | "activeDeploymentId"> & Partial<Pick<Project, "serverId" | "clusterId">>,
+  project: Pick<Project, "cloudWorkspaceId" | "activeDeploymentId"> & Partial<Pick<Project, "serverId" | "clusterId" | "workspaceId">>,
   activeDeployment: Deployment | null | undefined,
 ): { deployTarget: DeployTarget | null; serverId: string | null } {
   const meta = (activeDeployment?.meta ?? null) as {
@@ -27,7 +27,7 @@ export function readDeployMeta(
       ? meta.deployTarget
       : null;
 
-  if (project.cloudWorkspaceId) {
+  if (project.workspaceId || project.cloudWorkspaceId) {
     return { deployTarget: "cloud", serverId: null };
   }
   if (project.clusterId) return { deployTarget: "cluster", serverId: null };
@@ -80,7 +80,7 @@ export function readDeployMeta(
 
 /** Canonical target resolver for callers that do not already hold the active deployment. */
 export async function resolveProjectDeployTarget(
-  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId"> & { clusterId?: string | null },
+  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "serverId" | "activeDeploymentId"> & Partial<Pick<Project, "clusterId" | "workspaceId">>,
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   const activeDeployment = project.activeDeploymentId
     ? ((await findActiveDeployment(project)) ?? null)
@@ -97,7 +97,7 @@ export async function resolveProjectDeployTarget(
  * deployment snapshot or they can mutate a future server after a target edit.
  */
 export async function resolveProjectLiveDeployTarget(
-  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "activeDeploymentId"> & Partial<Pick<Project, "serverId" | "clusterId">>,
+  project: Pick<Project, "id" | "organizationId" | "cloudWorkspaceId" | "activeDeploymentId"> & Partial<Pick<Project, "serverId" | "clusterId" | "workspaceId">>,
   deployment?: Deployment | null,
 ): Promise<{ deployTarget: DeployTarget | null; serverId: string | null }> {
   if (!project.activeDeploymentId) return { deployTarget: null, serverId: null };
@@ -111,6 +111,7 @@ export async function resolveProjectLiveDeployTarget(
     clusterId?: string;
     clusterRuntimeId?: string;
     cloudDockerWorkspace?: unknown;
+    managedWorkspaceId?: string;
   } | null;
 
   if (meta?.clusterId) {
@@ -121,7 +122,7 @@ export async function resolveProjectLiveDeployTarget(
 
   // Docker's durable workspace is also stamped on the release. The platform
   // resolver validates its project/namespace binding before any provider write.
-  if (meta?.cloudDockerWorkspace) return { deployTarget: "cloud", serverId: null };
+  if (meta?.cloudDockerWorkspace || meta?.managedWorkspaceId) return { deployTarget: "cloud", serverId: null };
 
   if (
     meta?.deployTarget === "local" ||
@@ -138,7 +139,7 @@ export async function resolveProjectLiveDeployTarget(
   // Legacy active deployments did not persist target metadata. Prefer their
   // durable binding, then use the same host default as runtime resolution. A
   // Cloud deployment with neither field must not become a local server here.
-  if (project.cloudWorkspaceId || project.serverId || project.clusterId) {
+  if (project.workspaceId || project.cloudWorkspaceId || project.serverId || project.clusterId) {
     return readDeployMeta(project, active);
   }
   const [{ resolveEffectiveTarget }, { platform }] = await Promise.all([

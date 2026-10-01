@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
-import Link from "next/link";
+import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { PLANS } from "@repo/core";
 import type { BillingState } from "@/lib/api/billing";
 import { needsCloudPlan } from "@/lib/billing-presentation";

@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import type { Oblien, Runtime, RoutesInput } from "oblien";
-import { AppError, SYSTEM } from "@repo/core";
+import { AppError, SYSTEM, safeErrorMessage, isHostPathSource } from "@repo/core";
 import { DockerRuntime } from "../docker";
 import { CloudRuntime, type CloudAdminProxy } from "../cloud";
 import { BuildLogger, sq } from "../build-pipeline";
-import type { BuildConfig, ContainerInfo, LogCallback, ProvisionLock } from "../../types";
+import type { BuildConfig, ContainerInfo, DeployConfig, LogCallback, ProvisionLock, RouteConfig } from "../../types";
 import type { DockerRegistryAuth } from "../docker-auth";
 import type { MultiServiceDeployConfig, MultiServiceDeployResult, MultiServiceGroupHandle } from "../types";
 import { CloudWorkspaceExecutor } from "./workspace-executor";
@@ -15,9 +15,11 @@ import { CLOUD_DOCKER_BRIDGE_PORT, CLOUD_DOCKER_BRIDGE_SOURCE, CLOUD_DOCKER_BRID
 import { assertDockerWorkspaceOwner, cloudWorkspaceStatus, isDockerWorkspaceRunning, waitForCloudDockerWorkspace } from "./workspace-ready";
 import { resolveEnvironment } from "../../system/environment";
 import { envOps, opScript } from "../../system/environment-ops";
+import { cloudDockerProjectPaths } from "./docker-paths";
+import { scopeVolumeBinds } from "../volume-namespace";
 
 export const CLOUD_DOCKER_IMAGE = "oblien/docker:29";
-export const CLOUD_DOCKER_ROUTE_ROOT = "/opt/openship/cloud-docker/routes";
+export { CLOUD_DOCKER_ROUTE_ROOT } from "./docker-paths";
 // Keep these installation identities stable when the bridge version changes,
 // so an upgrade replaces its process instead of creating a second port owner.
 const BRIDGE_SCRIPT = "/opt/openship/cloud-docker/bridge-v1.py";
@@ -26,6 +28,8 @@ const BRIDGE_WORKLOAD = "openship-docker-api-v1";
 export interface CloudDockerOptions {
   workspaceId: string;
   projectId: string;
+  /** Logical subscription owner. Omitted only for existing project-owned hosts. */
+  ownerWorkspaceId?: string;
   namespace: string;
   /** Provider-authorized domain; production uses Openship's configured domain. */
   publicDomain?: string;
@@ -90,7 +94,7 @@ export class CloudDockerRuntime extends DockerRuntime {
   }
 
   static async forWorkspace(client: Oblien, options: CloudDockerOptions): Promise<CloudDockerRuntime> {
-    if (!options.namespace || !options.workspaceId || !options.projectId) throw new Error("Cloud Docker requires a project-owned workspace");
+    if (!options.namespace || !options.workspaceId || !options.projectId) throw new Error("Cloud Docker requires a project and an owned workspace");
     const runtime = new CloudDockerRuntime(client, options);
     try { await runtime.initializeDocker(); return runtime; }
     catch (error) { await runtime.dispose(); throw error; }
@@ -192,7 +196,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       } else {
           await workspace.workloads.create({ name: BRIDGE_WORKLOAD,
             cmd: ["python3", BRIDGE_SCRIPT], restart_policy: "always", max_restarts: 0,
-            labels: { "openship.project": this.projectId, "openship.role": "docker-api" } });
+            labels: { "openship.workspace": this.workspaceId, "openship.role": "docker-api" } });
       }
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline) {
@@ -214,8 +218,150 @@ export class CloudDockerRuntime extends DockerRuntime {
     if (projectId !== this.projectId) throw new Error("Docker workspace belongs to a different project");
   }
 
+  private async inspectOwnedContainer(containerId: string) {
+    let container;
+    try { container = await this.docker.getContainer(containerId).inspect(); }
+    catch (error) { if (notFound(error)) return null; throw error; }
+    if (this.options.ownerWorkspaceId && container.Config?.Labels?.["openship.project"] !== this.projectId) {
+      throw new AppError("Container does not belong to this project", 404, "CONTAINER_NOT_FOUND");
+    }
+    return container;
+  }
+
+  protected override async assertContainerAccess(containerId: string): Promise<void> {
+    if (this.options.ownerWorkspaceId) await this.inspectOwnedContainer(containerId);
+  }
+
+  protected override networkLabels(slug: string): Record<string, string> {
+    return { ...super.networkLabels(slug), ...(this.options.ownerWorkspaceId ? { "openship.project": this.projectId } : {}) };
+  }
+  protected override eventLabelFilters() { return this.options.ownerWorkspaceId ? [`openship.project=${this.projectId}`] : []; }
+
+  override async assertBackupAccess(projectId: string, input: { containerId?: string | null; sources?: readonly string[] }) {
+    this.assertProject(projectId);
+    if (!this.options.ownerWorkspaceId) return;
+    if (input.containerId) await this.assertContainerAccess(input.containerId);
+    for (const source of input.sources ?? []) {
+      if (isHostPathSource(source)) {
+        if (!posix.isAbsolute(source) || !posix.resolve(source).startsWith(`${this.projectPaths.mounts}/`)) throw new AppError("Backup source does not belong to this project", 403, "CLOUD_STORAGE_FORBIDDEN");
+        const path = (await this.executor.exec(`readlink -f -- ${sq(source)}`)).trim();
+        if (!path.startsWith(`${this.projectPaths.mounts}/`)) throw new AppError("Backup source escapes this project's storage", 403, "CLOUD_STORAGE_FORBIDDEN");
+      } else {
+        const volume = await this.docker.getVolume(source).inspect();
+        if (volume.Labels?.["openship.project"] !== this.projectId) throw new AppError("Backup volume does not belong to this project", 403, "CLOUD_STORAGE_FORBIDDEN");
+      }
+    }
+  }
+
+  override async ensureNetwork(slug: string, signal?: AbortSignal) {
+    const id = await super.ensureNetwork(slug, signal);
+    if (this.options.ownerWorkspaceId) {
+      const info = await this.docker.getNetwork(id).inspect();
+      if (info.Labels?.["openship.project"] !== this.projectId) throw new AppError("Network belongs to another project", 409, "CLOUD_NETWORK_CONFLICT");
+    }
+    return id;
+  }
+
+  override async removeNetwork(slug: string) {
+    if (this.options.ownerWorkspaceId) {
+      try {
+        const network = await this.docker.getNetwork(`openship-${slug}`).inspect();
+        if (network.Labels?.["openship.project"] !== this.projectId) throw new AppError("Network belongs to another project", 409, "CLOUD_NETWORK_CONFLICT");
+      } catch (error) { if (notFound(error)) return; throw error; }
+    }
+    return super.removeNetwork(slug);
+  }
+
+  override async listProjectContainerIds(id: string) { this.assertProject(id); return super.listProjectContainerIds(id); }
+  override async listProjectImages(id: string) { this.assertProject(id); return super.listProjectImages(id); }
+  override async pruneProjectDanglingImages(id: string) { this.assertProject(id); return super.pruneProjectDanglingImages(id); }
+  override async listDeploymentContainers(id: string) {
+    const containers = await super.listDeploymentContainers(id);
+    if (!this.options.ownerWorkspaceId) return containers;
+    const owned = new Set(await this.listProjectContainerIds(this.projectId));
+    return containers.filter(container => owned.has(container.containerId));
+  }
+
+  private async accessibleImage(ref: string) {
+    const image = await this.docker.getImage(ref).inspect();
+    const owner = image.Config?.Labels?.["openship.project"];
+    if (this.options.ownerWorkspaceId && owner && owner !== this.projectId) throw new AppError("Image belongs to another project", 404, "IMAGE_NOT_FOUND");
+    return image;
+  }
+  override async removeImage(ref: string) {
+    if (this.options.ownerWorkspaceId) {
+      try { if ((await this.accessibleImage(ref)).Config?.Labels?.["openship.project"] !== this.projectId) return; }
+      catch (error) { if (notFound(error)) return; throw error; }
+    }
+    return super.removeImage(ref);
+  }
+  override async saveImage(...args: Parameters<DockerRuntime["saveImage"]>) { await this.accessibleImage(args[0]); return super.saveImage(...args); }
+  override async inspectImageEnv(...args: Parameters<DockerRuntime["inspectImageEnv"]>) {
+    try { await this.accessibleImage(args[0]); } catch (error) { if (error instanceof AppError || !notFound(error)) throw error; }
+    return super.inspectImageEnv(...args);
+  }
+  override async inspectImageCmd(ref: string) { await this.accessibleImage(ref); return super.inspectImageCmd(ref); }
+  override async tagImage(source: string, target: string) {
+    await this.accessibleImage(source);
+    try { await this.accessibleImage(target); } catch (error) { if (error instanceof AppError || !notFound(error)) throw error; }
+    return super.tagImage(source, target);
+  }
+  override async publishImage(...args: Parameters<DockerRuntime["publishImage"]>) { await this.accessibleImage(args[0]); return super.publishImage(...args); }
+  override async joinServiceGroupContainers(...args: Parameters<DockerRuntime["joinServiceGroupContainers"]>) {
+    for (const member of args[1]) await this.assertContainerAccess(member.containerId);
+    return super.joinServiceGroupContainers(...args);
+  }
+  override async leaveServiceGroupContainers(...args: Parameters<DockerRuntime["leaveServiceGroupContainers"]>) {
+    for (const id of args[1]) await this.assertContainerAccess(id);
+    return super.leaveServiceGroupContainers(...args);
+  }
+  override async attachToExternalNetworks(...args: Parameters<DockerRuntime["attachToExternalNetworks"]>) {
+    this.assertProject(args[0]);
+    for (const id of [...(args[2] ?? []), ...(args[3]?.onlyContainerIds ?? [])]) await this.assertContainerAccess(id);
+    return super.attachToExternalNetworks(...args);
+  }
+  override async listAllVolumes() {
+    const volumes = await super.listAllVolumes();
+    return this.options.ownerWorkspaceId ? volumes.filter(volume => volume.labels["openship.project"] === this.projectId) : volumes;
+  }
+  override async listAllNetworks() {
+    const networks = await super.listAllNetworks();
+    return this.options.ownerWorkspaceId ? networks.filter(network => network.labels["openship.project"] === this.projectId) : networks;
+  }
+  override async removeVolume(name: string) {
+    if (this.options.ownerWorkspaceId) {
+      try {
+        const volume = await this.docker.getVolume(name).inspect();
+        if (volume.Labels?.["openship.project"] !== this.projectId) throw new AppError("Volume belongs to another project", 409, "CLOUD_VOLUME_CONFLICT");
+      } catch (error) { if (notFound(error)) return; throw error; }
+    }
+    return super.removeVolume(name);
+  }
+
+  private async ownedVolumeBinds(slug: string, volumes: string[]) {
+    const scoped = scopeVolumeBinds(slug, volumes, true);
+    if (!this.options.ownerWorkspaceId) return scoped;
+    for (const spec of scoped) {
+      const source = spec.split(":")[0]!;
+      if (isHostPathSource(source)) continue;
+      try {
+        const volume = await this.docker.getVolume(source).inspect();
+        if (volume.Labels?.["openship.project"] !== this.projectId) throw new AppError("A volume with this name belongs to another project. Choose a different name.", 409, "CLOUD_VOLUME_CONFLICT");
+      } catch (error) {
+        if (!notFound(error)) throw error;
+        await this.docker.createVolume({ Name: source, Labels: { "openship.project": this.projectId } });
+        // Dockerode returns a volume handle, not the creation response. Inspect
+        // the persisted label too: creation can race a pre-existing volume.
+        const created = await this.docker.getVolume(source).inspect();
+        if (created.Labels?.["openship.project"] !== this.projectId) throw new AppError("Volume ownership changed during creation", 409, "CLOUD_VOLUME_CONFLICT");
+      }
+    }
+    return scoped;
+  }
+
   private async canSpend(): Promise<void> { await this.options.beforeProvision?.(); }
   private get publicDomain(): string { return this.options.publicDomain ?? SYSTEM.DOMAINS.CLOUD_DOMAIN; }
+  private get projectPaths() { return cloudDockerProjectPaths(this.projectId, this.options.ownerWorkspaceId); }
 
   /** Acquire source once, on the workspace. Also serves image-only Compose
    * stacks whose relative bind mounts need repository files. */
@@ -290,6 +436,32 @@ export class CloudDockerRuntime extends DockerRuntime {
     return { ...config, cloneOnServer: true, localPath: undefined, staticExtractOnly: false };
   }
 
+  protected override deploymentPorts(config: DeployConfig) {
+    this.assertProject(config.projectId);
+    const ports = config.portless ? [] : [...new Set([config.port, ...(config.publicEndpoints ?? []).map(endpoint => endpoint.port ?? config.port)])];
+    if (ports.some(port => !Number.isInteger(port) || port < 1 || port > 65535)) throw new Error("Invalid cloud service port");
+    // Docker allocates distinct host ports atomically. The provider exposes a
+    // port only when the normal deployment routing step publishes its route.
+    return ports.map(port => ({ port, hostIp: "0.0.0.0", hostPort: undefined }));
+  }
+
+  protected override async deploymentVolumeBinds(config: DeployConfig): Promise<string[]> {
+    this.assertProject(config.projectId);
+    const image = await this.accessibleImage(config.imageRef!);
+    const volumes = await this.persistentMounts({ ...config, volumes: config.volumes ?? [],
+      slug: config.slug || config.projectId, serviceName: config.networkAlias || "app",
+    }, Object.keys(image.Config?.Volumes ?? {}));
+    return this.ownedVolumeBinds(config.slug || config.projectId, volumes);
+  }
+
+  override async deploy(config: DeployConfig, onLog?: LogCallback) {
+    this.assertProject(config.projectId);
+    await this.canSpend();
+    await this.ensureBridge();
+    // Even a single web app/worker gets a project network on a subscribed host.
+    return super.deploy(this.options.ownerWorkspaceId ? { ...config, networkAlias: config.networkAlias || "app" } : config, onLog);
+  }
+
   override async ensureServiceGroup(config: Parameters<DockerRuntime["ensureServiceGroup"]>[0]) {
     this.assertProject(config.projectId);
     await this.canSpend();
@@ -297,8 +469,51 @@ export class CloudDockerRuntime extends DockerRuntime {
     return super.ensureServiceGroup(config);
   }
 
+  /** Stopped containers still own their bindings. Docker's list endpoint omits
+   * those ports, but allocating or validating routes must use the same inventory. */
+  private async publishedContainers(projectOnly = false) {
+    const containers = await this.docker.listContainers({ all: true,
+      ...(projectOnly ? { filters: { label: [`openship.project=${this.projectId}`] } } : {}) });
+    const reserved = await Promise.all(containers.map(async container => {
+      if (container.State === "running") return container;
+      try {
+        const info = await this.docker.getContainer(container.Id).inspect();
+        return { ...container, Ports: [...container.Ports,
+          ...Object.entries(info.HostConfig.PortBindings ?? {}).flatMap(([port, bindings]) => (Array.isArray(bindings) ? bindings : []).map((binding: { HostPort: string }) => ({
+            PrivatePort: Number(port.split("/")[0]), PublicPort: Number(binding.HostPort), Type: port.split("/")[1] ?? "tcp",
+          }))),
+        ] };
+      } catch (error) { if (notFound(error)) return null; throw error; }
+    }));
+    return reserved.filter((container): container is NonNullable<typeof container> => container !== null);
+  }
+
+  /** Only retire bindings we own. Preserve sibling, bridge and external ports,
+   * including a sibling that is intentionally stopped. Caller holds the host lock. */
+  private async reconcileIngress(add: number[], retire: number[] = [], removingContainer?: string) {
+    if (!add.length && !retire.length) return;
+    const used = retire.length ? new Set((await this.publishedContainers())
+      .filter(container => container.Id !== removingContainer)
+      .flatMap(container => container.Ports.map(port => port.PublicPort))) : new Set<number>();
+    const removable = new Set(retire.filter(port => port !== CLOUD_DOCKER_BRIDGE_PORT && !used.has(port)));
+    const workspace = this.client.workspace(this.workspaceId);
+    const network = await workspace.network.get();
+    const current = Array.isArray(network.ingress_ports) ? network.ingress_ports as number[] : [];
+    const next = [...new Set([...current.filter(port => !removable.has(port)), ...add])];
+    if (next.length !== current.length || next.some(port => !current.includes(port))) await workspace.network.update({ ingress_ports: next });
+  }
+
   override async deployServiceWorkload(group: MultiServiceGroupHandle, config: MultiServiceDeployConfig, onLog?: LogCallback): Promise<MultiServiceDeployResult> {
     this.assertProject(config.projectId);
+    if (this.options.ownerWorkspaceId) {
+      const network = await this.docker.getNetwork(group.id).inspect();
+      if (network.Labels?.["openship.project"] !== this.projectId) throw new AppError("Network belongs to another project", 409, "CLOUD_NETWORK_CONFLICT");
+      for (const mode of [config.namespaces?.network, config.namespaces?.pid]) {
+        if (!mode || mode === "none") continue;
+        if (!mode.startsWith("container:")) throw new Error("Shared Cloud workspaces do not expose host network or PID namespaces");
+        await this.assertContainerAccess(mode.slice("container:".length));
+      }
+    }
     await this.canSpend();
     await this.ensureBridge();
     const endpoints = config.cloudEndpoints ?? (config.expose && config.publicPort
@@ -309,19 +524,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     return this.options.provisionLock.run(async () => {
       const ports = [...new Set([...endpoints.map(endpoint => endpoint.port), ...(config.cloudProxyPorts ?? [])])];
       if (ports.some(port => !Number.isInteger(port) || port < 1 || port > 65535)) throw new Error("Invalid cloud service port");
-      const containers = await this.docker.listContainers({ all: true });
-      const reserved = await Promise.all(containers.map(async container => {
-        if (container.State === "running") return container;
-        // Docker's list response drops published ports for stopped containers.
-        // Shared inspection reads HostConfig.PortBindings too, so a new service
-        // cannot steal a stopped sibling's public endpoint.
-        const info = await super.getContainerInfo(container.Id);
-        return { ...container, Ports: [...container.Ports,
-          ...Object.entries(info.hostPortByContainerPort ?? {}).map(([port, hostPort]) => ({
-            PrivatePort: Number(port), PublicPort: hostPort, Type: "tcp",
-          })),
-        ] };
-      }));
+      const reserved = await this.publishedContainers();
       const used = new Set(reserved.flatMap(container => container.Ports.map(port => port.PublicPort).filter((port): port is number => Boolean(port))));
       const listeners = await this.executor.exec("ss -H -lnt");
       for (const line of listeners.split("\n")) {
@@ -346,30 +549,30 @@ export class CloudDockerRuntime extends DockerRuntime {
       // Internal database/worker ports remain on the project network. Only
       // approved public endpoints are published, with distinct workspace ports.
       if (!config.imageAlreadyPrepared) await this.pullImage(config.image, { force: config.forcePull });
-      const image = await this.docker.getImage(config.image).inspect();
-      const volumes = await this.persistentMounts(config, Object.keys(image.Config?.Volumes ?? {}));
+      const image = await this.accessibleImage(config.image);
+      const persistent = await this.persistentMounts(config, Object.keys(image.Config?.Volumes ?? {}));
+      const volumes = this.options.ownerWorkspaceId ? await this.ownedVolumeBinds(config.slug, persistent) : persistent;
       const result = await super.deployServiceWorkload(group, { ...config, volumes, imageAlreadyPrepared: true,
+        ...(this.options.ownerWorkspaceId ? { namespaceVolumes: true } : {}),
         ports: [...published].map(([port, hostPort]) => `0.0.0.0:${hostPort}:${port}`),
       }, onLog);
-      if (ports.length) {
+      const retired = previous?.Ports.filter(port => port.Type === "tcp" && port.PublicPort).map(port => port.PublicPort!) ?? [];
+      if (ports.length || retired.length) {
         try {
-          const workspace = this.client.workspace(this.workspaceId);
-          const current = await workspace.network.get();
-          const ingress = Array.isArray(current.ingress_ports) ? current.ingress_ports as number[] : [];
-          await workspace.network.update({ ingress_ports: [...new Set([...ingress, ...published.values()])] });
+          await this.reconcileIngress([...published.values()], retired);
           for (const endpoint of endpoints) {
-            try { await this.publishRoute(endpoint.hostname, published.get(endpoint.port)!, endpoint.custom); }
-            catch { (result.routeWarnings ??= []).push(`${endpoint.hostname}: cloud routing failed; retry from Domains`); }
+            try { await this.publishRouteUnlocked(endpoint.hostname, published.get(endpoint.port)!, endpoint.custom); }
+            catch (error) { (result.routeWarnings ??= []).push(`${endpoint.hostname}: ${safeErrorMessage(error)}`); }
           }
-        } catch {
-          (result.routeWarnings ??= []).push(`Service ${config.serviceName}: cloud ingress could not be applied; retry routing`);
+        } catch (error) {
+          (result.routeWarnings ??= []).push(`Service ${config.serviceName}: ${safeErrorMessage(error)}`);
         }
       }
       return result;
     });
   }
 
-  private async persistentMounts(config: MultiServiceDeployConfig, imageVolumes: string[]): Promise<string[]> {
+  private async persistentMounts(config: Pick<MultiServiceDeployConfig, "volumes" | "slug" | "deploymentId" | "serviceName">, imageVolumes: string[]): Promise<string[]> {
     const targets = new Set<string>();
     const volumes: string[] = [];
     for (const spec of config.volumes) {
@@ -379,15 +582,22 @@ export class CloudDockerRuntime extends DockerRuntime {
         continue;
       }
       const [source, target] = parts as [string, string];
+      if (this.options.ownerWorkspaceId && posix.isAbsolute(source) && !posix.resolve(source).startsWith(`${this.projectPaths.mounts}/`)) {
+        throw new Error("Shared Cloud mounts must use named volumes or repository paths. Host paths and the Docker socket are not available.");
+      }
       targets.add(target);
       if (source.startsWith(".") || source.startsWith("~")) {
         if (!this.sourcePath || !this.sourceBase || source.startsWith("~")) throw new Error("A relative Compose mount needs repository or uploaded source");
         const from = posix.resolve(this.sourceBase, source);
         if (from !== this.sourcePath && !from.startsWith(`${this.sourcePath}/`)) throw new Error("Compose mount escapes its source repository");
+        if (this.options.ownerWorkspaceId && await this.executor.exists(from)) {
+          const resolved = (await this.executor.exec(`readlink -f -- ${sq(from)}`)).trim();
+          if (resolved !== this.sourcePath && !resolved.startsWith(`${this.sourcePath}/`)) throw new Error("Compose mount symlink escapes its source repository");
+        }
         const readOnly = parts.slice(2).some(mode => mode.split(",").includes("ro"));
         const key = createHash("sha256").update(posix.relative(this.sourcePath, from)).digest("hex").slice(0, 24);
         const release = createHash("sha256").update(config.deploymentId).digest("hex").slice(0, 24);
-        const dest = `/opt/openship/cloud-docker/mounts/${readOnly ? `releases/${release}` : "data"}/${key}`;
+        const dest = `${this.projectPaths.mounts}/${readOnly ? `releases/${release}` : "data"}/${key}`;
         await this.executor.mkdir(posix.dirname(dest));
         // Writable relative mounts are initialized once, then retain application
         // data. Read-only configuration gets a release-specific copy.
@@ -397,6 +607,11 @@ export class CloudDockerRuntime extends DockerRuntime {
           else throw new Error(`Compose mount source is missing: ${source}`);
         }
         parts[0] = dest;
+      }
+      if (this.options.ownerWorkspaceId && posix.isAbsolute(parts[0]!)) {
+        if (!await this.executor.exists(parts[0]!)) throw new Error("This project's managed mount is missing. Use a named volume or a repository path for new storage.");
+        const resolved = (await this.executor.exec(`readlink -f -- ${sq(parts[0]!)}`)).trim();
+        if (!resolved.startsWith(`${this.projectPaths.mounts}/`)) throw new Error("Persistent mount escapes this project's storage");
       }
       volumes.push(parts.join(":"));
     }
@@ -421,7 +636,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       try { page = (await this.pages.get(summary.slug)).page; }
       catch (error) { if (notFound(error)) continue; throw error; }
       if (page.namespace === this.options.namespace && page.source_workspace_id === this.workspaceId &&
-          page.exported_path === `${CLOUD_DOCKER_ROUTE_ROOT}/${page.slug}`) hostnames.push(...cloudPageHostnames(page));
+          page.exported_path === `${this.projectPaths.routes}/${page.slug}`) hostnames.push(...cloudPageHostnames(page));
     }
     return [...new Set(hostnames)];
   }
@@ -430,17 +645,21 @@ export class CloudDockerRuntime extends DockerRuntime {
    * shared workspace. This supports several custom domains without repeatedly
    * overwriting the workspace API's single custom-domain binding. */
   async publishRoute(hostname: string, hostPort: number, custom: boolean, input?: RoutesInput): Promise<void> {
+    return this.options.provisionLock.run(() => this.publishRouteUnlocked(hostname, hostPort, custom, input));
+  }
+
+  private async publishRouteUnlocked(hostname: string, hostPort: number, custom: boolean, input?: RoutesInput): Promise<void> {
     hostname = hostname.trim().toLowerCase();
     if (!Number.isInteger(hostPort) || hostPort < 1 || hostPort > 65535 || hostPort === CLOUD_DOCKER_BRIDGE_PORT) throw new Error("Invalid cloud routing port");
     const suffix = `.${this.publicDomain}`;
     const slug = custom ? `route-${createHash("sha256").update(`${this.projectId}:${hostname}`).digest("hex").slice(0, 32)}`
       : hostname.endsWith(suffix) ? hostname.slice(0, -suffix.length) : "";
     if (!slug || !/^[a-z0-9-]+$/.test(slug)) throw new Error("Invalid cloud route hostname");
-    const workspace = this.client.workspace(this.workspaceId);
-    const network = await workspace.network.get();
-    const ingress = Array.isArray(network.ingress_ports) ? network.ingress_ports as number[] : [];
-    await workspace.network.update({ ingress_ports: [...new Set([...ingress, hostPort])] });
-    const path = `${CLOUD_DOCKER_ROUTE_ROOT}/${slug}`;
+    const routes = input ?? { routes: [{ match: { path: "/", type: "prefix" as const },
+      action: { kind: "proxy" as const, workspace: this.workspaceId, port: hostPort } }] };
+    await this.assertProxyTargets(routes, hostPort);
+    await this.reconcileIngress([hostPort]);
+    const path = `${this.projectPaths.routes}/${slug}`;
     let page;
     try { page = (await this.pages.get(slug)).page; }
     catch (error) { if (!notFound(error)) throw error; }
@@ -460,8 +679,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       if (page.custom_domain !== hostname) await this.pages.connectDomain(slug, { domain: hostname });
     }
     await this.pages.enable(slug);
-    await this.cloud.setDomainRoutes(hostname, input ?? { routes: [{ match: { path: "/", type: "prefix" },
-      action: { kind: "proxy", workspace: this.workspaceId, port: hostPort } }] });
+    await this.cloud.setDomainRoutes(hostname, routes);
   }
 
   async resolveRoutingTarget(containerId: string, port: number): Promise<{ workspace: string; port: number }> {
@@ -470,7 +688,37 @@ export class CloudDockerRuntime extends DockerRuntime {
     if (!published) throw new Error(`Service port ${port} is not published in its workspace`);
     return { workspace: this.workspaceId, port: published };
   }
-  async setDomainRoutes(hostname: string, input: RoutesInput) { return this.cloud.setDomainRoutes(hostname, input); }
+
+  /** Translate the normal Docker pipeline's container URL to managed ingress.
+   * The URL must identify a container of THIS project, never an arbitrary host. */
+  async registerRoute(route: RouteConfig): Promise<void> {
+    if (!route.targetUrl) throw new Error("Cloud Docker routing requires a container target");
+    const target = new URL(route.targetUrl);
+    if (target.protocol !== "http:" || target.username || target.password) throw new Error("Invalid Docker route target");
+    const containers = await this.listAllContainers();
+    const container = containers.find(item => item.labels["openship.project"] === this.projectId && item.ip === target.hostname);
+    if (!container) throw new Error("Route target does not belong to this project's Docker containers");
+    const resolved = await this.resolveRoutingTarget(container.id, Number(target.port || 80));
+    await this.publishRoute(route.domain, resolved.port, !route.domain.endsWith(`.${this.publicDomain}`));
+  }
+  async setDomainRoutes(hostname: string, input: RoutesInput) {
+    if (this.options.ownerWorkspaceId && !(await this.listProjectRouteHostnames()).includes(hostname.trim().toLowerCase())) {
+      throw new AppError("Domain does not belong to this project", 404, "DOMAIN_NOT_FOUND");
+    }
+    await this.assertProxyTargets(input);
+    return this.cloud.setDomainRoutes(hostname, input);
+  }
+  private async assertProxyTargets(input: RoutesInput, publishedPort?: number) {
+    if (!this.options.ownerWorkspaceId) return;
+    const containers = await this.publishedContainers(true);
+    const ports = new Set(containers.flatMap(container => container.Ports.filter(port => port.Type === "tcp").map(port => port.PublicPort)));
+    if (publishedPort !== undefined && !ports.has(publishedPort)) throw new AppError("Routing port does not belong to this project", 409, "CLOUD_ROUTE_TARGET_INVALID");
+    for (const route of input.routes) {
+      if (route.action.kind === "proxy" && (route.action.workspace !== this.workspaceId || typeof route.action.port !== "number" || !ports.has(route.action.port))) {
+        throw new AppError("Routing target does not belong to this project", 409, "CLOUD_ROUTE_TARGET_INVALID");
+      }
+    }
+  }
   async checkSlug(...args: Parameters<CloudRuntime["checkSlug"]>) { return this.cloud.checkSlug(...args); }
   async verifyDomain(...args: Parameters<CloudRuntime["verifyDomain"]>) { return this.cloud.verifyDomain(...args); }
   async getQuota() { return this.cloud.getQuota(); }
@@ -482,7 +730,8 @@ export class CloudDockerRuntime extends DockerRuntime {
       throw new AppError("The project's Docker workspace is stopped. Start a service or deploy to resume it.",
         409, "CLOUD_WORKSPACE_STOPPED");
     }
-    return super.listAllContainers();
+    const containers = await super.listAllContainers();
+    return this.options.ownerWorkspaceId ? containers.filter(container => container.labels["openship.project"] === this.projectId) : containers;
   }
 
   override async getContainerInfo(containerId: string): Promise<ContainerInfo> {
@@ -538,8 +787,36 @@ export class CloudDockerRuntime extends DockerRuntime {
   }
   override async pullImage(...args: Parameters<DockerRuntime["pullImage"]>) { await this.canSpend(); return super.pullImage(...args); }
   override async destroy(containerId: string) {
-    if (containerId === this.workspaceId) throw new Error("Use project teardown to delete a shared Docker workspace");
-    return super.destroy(containerId);
+    if (containerId === this.workspaceId) throw new Error("A project's containers cannot delete their Docker workspace");
+    if (this.options.ownerWorkspaceId && posix.isAbsolute(containerId)) throw new Error("A managed Docker deployment must identify a container, not a host path");
+    if (!this.options.ownerWorkspaceId) return super.destroy(containerId);
+    return this.options.provisionLock.run(async () => {
+      const owned = await this.inspectOwnedContainer(containerId);
+      if (!owned) return;
+      // Docker accepts names and shortened IDs. Resolve once so ingress cleanup
+      // and removal identify the same container even if its name is reused.
+      const container = (await this.publishedContainers(true)).find(row => row.Id === owned.Id);
+      const ports = container?.Ports.filter(port => port.Type === "tcp" && port.PublicPort).map(port => port.PublicPort!) ?? [];
+      // Revoke before removal: a failed provider write leaves the container and
+      // its ownership record available for the teardown retry.
+      await this.reconcileIngress([], ports, container?.Id);
+      await super.destroy(owned.Id);
+    });
+  }
+  async cleanupProject(projectId: string, options?: { wipeVolumes?: boolean }): Promise<void> {
+    this.assertProject(projectId);
+    if (!this.options.ownerWorkspaceId) return;
+    if ((await this.listProjectContainerIds(projectId)).length) throw new Error("Remove the project's containers before cleaning its storage");
+    if (options?.wipeVolumes) {
+      // Include detached volumes left by interrupted deployments. Inventory is
+      // label-scoped; retained data is removed only on the explicit wipe path.
+      for (const volume of await this.listAllVolumes()) await this.removeVolume(volume.name);
+      await this.executor.rm(this.projectPaths.mounts);
+    } else {
+      await this.executor.rm(`${this.projectPaths.mounts}/releases`);
+      await this.executor.rm(`${this.projectPaths.mounts}/config`);
+    }
+    await this.executor.rm(this.projectPaths.routes);
   }
   override async dispose() {
     await super.dispose();

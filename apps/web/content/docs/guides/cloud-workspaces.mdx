@@ -1,0 +1,97 @@
+---
+title: Cloud workspaces
+description: Share one subscribed Docker host across projects, with measured usage and independent billing.
+---
+
+A Cloud workspace is a managed place to run your projects. Each workspace has
+its own subscription, capacity and billing history. In a **shared workspace**,
+projects run as Docker containers on the same host. Adding a project uses that
+host; it does not allocate another VM or another full disk.
+
+## Choose a workspace
+
+New Cloud accounts start with **Production**, a shared Docker workspace. Choose
+a plan in Billing, complete checkout, and wait for workspace setup to finish.
+Payment is verified with the provider before provisioning starts. Setup progress
+and retry details are available under **Workspaces**.
+
+Choose that workspace when deploying a repository, uploading source files or
+installing a catalog app. Every project in it uses the same deployment engine as
+self-hosted Docker: services, environment variables, logs, routes, volumes,
+backups and retained deployment images stay attached to their project.
+
+You can add another workspace with an independent subscription. Projects show
+their selected workspace; moving a running project requires an explicit migration.
+Changing a name does not move workloads.
+
+| Placement                               | Execution and ownership                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Shared Docker workspace                 | Multiple projects share one subscribed host. Even a single-service project uses Docker.                                  |
+| Dedicated Docker workspace              | One project uses its own subscribed Docker host; suitable for a Compose stack.                                           |
+| Dedicated native workspace              | One compatible single application runs through the existing native Cloud runtime. Multi-service projects require Docker. |
+| Existing project-owned Cloud deployment | Keeps its existing runtime, organization billing and cleanup behavior until manually migrated.                           |
+
+Dedicated placement is a separate allocation; it does not promise exclusive
+physical hardware. Self-hosted servers and their billing behavior are unchanged.
+
+## Understand capacity and usage
+
+The workspace page separates **provisioned capacity** from **live usage**. A
+100 GB disk is a capacity ceiling, not a claim that your application stores
+100 GB. The disk breakdown measures project containers, named volumes and
+managed bind data, with a separate shared total for images, build cache and
+system files. Measurements can be temporarily unavailable; the UI shows an
+unknown value instead of substituting reserved capacity.
+
+CPU and memory settings limit individual containers. They do not reserve
+another machine. New offers let one service use the full purchased CPU and
+memory pool, while all services still compete for the actual host resources.
+The operating system and Docker also use some memory and disk. Project and
+running-service allowances still apply; an undeployed draft does not consume
+a running-service slot. See current offers on the [pricing page](/pricing).
+
+Source builds run on the workspace using measured available CPU and memory.
+An optional build size is an upper limit; automatic sizing uses current
+headroom. Host activity is coordinated so simultaneous builds or a resize do
+not each assume the same free resources. If too little memory is available,
+stop an idle service or upgrade the workspace and retry. Image-only installs
+do not create a source builder.
+
+Capacity and metered credits are separate. Running apps and builds consume the
+workspace's usage allowance under the provider's rate card. A capacity limit
+does not promise unlimited runtime hours. See [Cloud billing](/docs/guides/billing).
+
+## Upgrade and recover
+
+1. Open Billing for the workspace and purchase the desired plan.
+2. Open the workspace and choose **Apply plan capacity**.
+3. Review the current and purchased sizes and the affected projects.
+4. Confirm the restart. The operation waits for active work, records the
+   running containers, resizes the host and restores those containers.
+
+Allow for downtime during a host resize. Intentionally stopped services stay
+stopped. A failed operation retains its logs, reason and recovery checkpoint;
+retry it from the workspace page. Disk capacity cannot be shrunk in place.
+Moving to a smaller disk requires a separate data migration.
+
+Provisioning and resize operations survive an API restart. Transient failures
+have a displayed retry time; a settled failure requires an explicit retry.
+A billing connectivity error alone does not cancel an active subscription.
+
+## Delete safely
+
+Deleting a project in a shared workspace removes that project's resources and
+preserves the workspace and its other projects. The normal project deletion
+choice still controls whether persistent volumes are removed. An application
+rollback reuses project artifacts; it never restores or deletes the whole host.
+
+To delete a workspace, first remove or migrate its projects and end its
+subscription. Deletion is blocked while a paid period or unresolved checkout
+remains. Provider removal must be confirmed before Openship removes workspace
+ownership. Billing records remain with the payment provider. Cancellation by
+itself does not delete project data.
+
+Existing customers are not moved automatically. Keep the old deployment until
+its replacement, data and routes have been verified. The
+[workspace API](/docs/api/cloud-workspaces) exposes the same lifecycle to the
+SDK and MCP.

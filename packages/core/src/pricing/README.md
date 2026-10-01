@@ -6,29 +6,38 @@ same catalog to the dashboard, marketing and linked installations. Checkout uses
 a generic Oblien offer; the subscription belongs to the customer's namespace.
 The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
-## Version 6 offers
+## Version 7 offers
 
 | Plan | Monthly price | Included credits | Shared CPU / RAM / disk | Per service: CPU / RAM | Projects | Service slots |
 | --- | ---: | ---: | --- | --- | ---: | ---: |
-| Hobby | $5 | 400 | 1 / 4 GB / 25 GB | 1 / 2 GB | 3 | 1 |
-| Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 2 / 3 GB | 10 | 3 |
-| Pro | $39 | 3,500 | 4 / 8 GB / 128 GB | 4 / 4 GB | 50 | 10 |
-| Scale | $99 | 9,000 | 8 / 16 GB / 256 GB | 8 / 8 GB | No set limit | 50 |
+| Hobby | $5 | 400 | 1 / 4 GB / 25 GB | 1 / 4 GB | 3 | 1 |
+| Starter | $20 | 1,700 | 2 / 8 GB / 32 GB | 2 / 8 GB | 10 | 3 |
+| Pro | $39 | 3,500 | 4 / 16 GB / 128 GB | 4 / 16 GB | 50 | 10 |
+| Scale | $99 | 9,000 | 8 / 32 GB / 256 GB | 8 / 32 GB | No set limit | 50 |
 
 CPU values are vCPU. New retail offers allow one service up to the full shared
-CPU pool and half the shared RAM. `limits.maxServiceResources` records that ceiling explicitly,
+CPU and RAM pool. `limits.maxServiceResources` records that ceiling explicitly,
 including custom sizes; it does not change machine presets or workload defaults.
 Version 5 lowered Pro to $39/month. Version 6 raises Hobby storage to 25 GB and
 lets a Starter workspace use its 32 GB storage pool, so upgrading from Hobby does
 not require a smaller disk. Included credits, project/service counts and other
-capacity limits retain their v4 values.
+capacity limits retain their v4 values through v6. Version 7 raises Starter,
+Pro and Scale memory to 8 / 16 / 32 GB, permits one VM to hold the entire
+purchased pool, and permits one service to use the full CPU/RAM ceiling.
+Prices, credits and project/service counts are unchanged.
 
 | Plan | Workspace count | Per VM: vCPU / RAM / disk |
 | --- | ---: | --- |
 | Hobby | 1 | 1 / 4 GB / 25 GB |
-| Starter | 3 | 2 / 6 GB / 32 GB |
-| Pro | 6 | 4 / 8 GB / 32 GB |
-| Scale | 12 | 8 / 12 GB / 64 GB |
+| Starter | 3 | 2 / 8 GB / 32 GB |
+| Pro | 6 | 4 / 16 GB / 128 GB |
+| Scale | 12 | 8 / 32 GB / 256 GB |
+
+The workspace count above is the provider VM allowance for existing dedicated
+placement. A subscription-owned Docker workspace provisions one host with the
+full purchased capacity. Its projects share containers on that host; adding a
+project does not allocate another VM. Another subscribed workspace has its own
+namespace and independently purchased plan.
 
 Hobby includes a finite allowance for light use. A continuously running Docker
 host can need top-ups; $5 does not buy an unlimited always-on VM.
@@ -77,15 +86,18 @@ annual price and explicit funded annual allowance are published.
 
 Openship submits its chosen policy; it does not calculate the owner's remaining
 capacity. Oblien intersects configured, paid, account and platform limits and
-reserves capacity atomically on create/resize. `readCloudCapacity` supplies the
-dashboard with provider allocations instead of estimating them from services.
+reserves capacity atomically on create/resize. `readCloudCapacity` supplies
+provider allocations for dedicated placement. Shared workspace pages show
+provisioned capacity separately from actual host CPU, memory and disk
+measurements. Project data is attributed from Docker and managed binds;
+shared images/cache/system storage is counted once.
 
 Service slots include enabled services in deployed projects, active containers,
 and accepted deployment reservations. Saving an undeployed draft consumes no
 service slots. Reservations remain until activation or worker cleanup finishes;
 redeploying the same service does not consume a second slot.
 
-An image-only Compose app gets only its service allocation plus Docker/OS room:
+In existing project-owned Cloud placement, an image-only Compose app gets only its service allocation plus Docker/OS room:
 a default 0.5-vCPU / 512 MB service uses a 0.5-vCPU / 1 GB host with an 8 GB disk.
 Runtime and source builds share the same pool. The SaaS engine reads Oblien's
 effective limits and allocated usage before choosing temporary build CPU/RAM;
@@ -97,14 +109,21 @@ Disks never shrink automatically. Unknown/unbounded containers prevent automatic
 downsizing. Captured running services are restored after a resize; intentionally
 stopped services stay stopped.
 
+Subscribed Docker workspaces use the same Docker build/runtime engine. Source
+builds use measured free host memory and CPU, within an optional saved cap; they
+do not create a temporary provider VM. Workspace activity locks coordinate
+builds, deployment changes, backups and reviewed host resizes. A host resize
+requires an explicit revision and restart confirmation, with a durable container
+checkpoint for recovery. Shared projects cannot resize or delete the host.
+
 ## Existing subscriptions and upgrades
 
-`openship:<tier>:v6` saves the price, credits, grace, application limits and all
+`openship:<tier>:v7` saves the price, credits, grace, application limits and all
 seven capacity fields. Renewals use that snapshot, even after catalog edits.
-Unknown versions, missing v2–v6 capacity fields and organization/namespace mismatches
+Unknown versions, missing v2–v7 capacity fields and organization/namespace mismatches
 fail closed. Price and credit metadata never come from browser input.
 
-Saved v2/v3/v4/v5 subscriptions retain their original price, credits and capacity snapshot,
+Saved v2/v3/v4/v5/v6 subscriptions retain their original price, credits and capacity snapshot,
 including the $40 price on existing v4 Pro subscriptions. New v5 offers use a
 distinct checkout reference so retries cannot reuse the older price.
 Version 6 raises Hobby's per-workspace and total storage limit from 16 GB to

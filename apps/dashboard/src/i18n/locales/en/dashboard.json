@@ -83,7 +83,8 @@
       "delivery": "Delivery",
       "system": "System",
       "account": "Account"
-    }
+    },
+    "workspaces": "Workspaces"
   },
   "sidebar": {
     "expand": "Expand sidebar",

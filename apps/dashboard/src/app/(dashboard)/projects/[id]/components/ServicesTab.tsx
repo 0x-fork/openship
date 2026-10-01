@@ -394,6 +394,7 @@ export const ServicesTab = () => {
         {hasProjectId && <LinkedAppsCard projectId={id} />}
         <AddServiceModal
           projectId={id}
+          workspaceId={projectData.workspaceId}
           open={createOpen}
           projectName={projectSlugBase}
           isCloudProject={projectData?.deployTarget === "cloud"}
@@ -427,6 +428,7 @@ export const ServicesTab = () => {
           container={containerFor(selectedService.id)}
           containerChecking={containersLoading}
           projectId={id}
+          workspaceId={projectData.workspaceId}
           projectSlugBase={projectSlugBase}
           initialTab={slug?.[2]}
           onRefresh={fetchData}
@@ -571,6 +573,7 @@ export const ServicesTab = () => {
 
       <AddServiceModal
         projectId={id}
+        workspaceId={projectData.workspaceId}
         open={createOpen}
         projectName={projectSlugBase}
         isCloudProject={projectData?.deployTarget === "cloud"}

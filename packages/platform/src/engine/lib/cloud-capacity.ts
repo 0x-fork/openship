@@ -10,6 +10,7 @@ import { env } from "../config/env";
 import { getOblienClient } from "./oblien-client";
 import { readCloudCapacityPool } from "./cloud-resource-limits";
 import { z } from "zod";
+import { cloudBillingOwner } from "./cloud-workspace-scope";
 
 const workspaceResources = z.object({
   cpus: z.number().finite().positive(),
@@ -76,22 +77,24 @@ export async function assertCloudWorkspaceCapacity(input: {
   reuseDockerWorkspace: boolean;
 }): Promise<void> {
   if (!env.CLOUD_MODE) return;
-  const org = await repos.organization.findById(input.organizationId);
-  if (!org?.oblienNamespace) return; // Normal billing/provisioning owns onboarding.
+  const project = await repos.project.findByIdInOrganization(input.projectId, input.organizationId);
+  const owner = await cloudBillingOwner(input.organizationId, project?.workspaceId ?? null);
+  if (owner.workspace?.runtime === "docker") return; // Its purchased host is shared; project caps do not reserve another VM.
+  if (!owner.namespace) return; // Normal billing/provisioning owns onboarding.
   const binding = input.reuseDockerWorkspace
     ? await repos.cloudDockerWorkspace.find(input.projectId, input.organizationId)
     : null;
-  if (binding && binding.namespace !== org.oblienNamespace) {
+  if (binding && binding.namespace !== owner.namespace) {
     throw new AppError("Cloud workspace ownership changed", 409, "CLOUD_NAMESPACE_MISMATCH");
   }
   let existing: CloudAllocation | undefined;
   let pool: CloudCapacityPool;
   try {
     if (binding?.workspaceId) {
-      existing = (await readCloudWorkspaceAllocation(binding.workspaceId, org.oblienNamespace))
+      existing = (await readCloudWorkspaceAllocation(binding.workspaceId, owner.namespace))
         .allocation;
     }
-    pool = await readCloudCapacityPool(org.oblienNamespace);
+    pool = await readCloudCapacityPool(owner.namespace);
   } catch (error) {
     // Do not turn an optional preflight read into a new deployment dependency.
     // Normal provisioning still enforces the quota and reports its own errors;
@@ -117,6 +120,7 @@ export function cloudCapacityFailure(
   error: unknown,
   projectId: string,
   buildResources?: CloudAllocation | null,
+  workspaceId?: string | null,
 ): OperationError | null {
   const seen = new Set<unknown>();
   // Adapter context must not hide an actionable provider refusal. Inspect only
@@ -128,6 +132,13 @@ export function cloudCapacityFailure(
       current.code === "CLOUD_CAPACITY_REQUIRED" ||
       (current.code === "PLAN_UPGRADE_REQUIRED" && current.details?.capacity)
     )) return current;
+    if (current instanceof AppError && ["CLOUD_WORKSPACE_BUILD_CAPACITY", "CLOUD_WORKSPACE_USAGE_UNAVAILABLE", "CLOUD_BILLING_BLOCKED", "PLAN_UPGRADE_REQUIRED"].includes(current.code ?? "")) {
+      const plan = current as AppError & { reason?: string; planTierId?: string };
+      return new OperationError(current.message, current.statusCode, current.code, {
+        projectId, ...(workspaceId ? { workspaceId } : {}),
+        ...(plan.reason ? { reason: plan.reason } : {}), ...(plan.planTierId ? { planTierId: plan.planTierId } : {}),
+      });
+    }
     const value = current as { code?: unknown; requestId?: unknown; cause?: unknown };
     if (typeof value.code === "string" && value.code.toUpperCase() === "NAMESPACE_LIMIT_REACHED") {
       return new OperationError(
@@ -136,6 +147,7 @@ export function cloudCapacityFailure(
         "CLOUD_CAPACITY_REQUIRED",
         {
           projectId,
+          ...(workspaceId ? { workspaceId } : {}),
           ...(buildResources !== undefined ? { capacity: { buildResources } } : {}),
           ...(typeof value.requestId === "string" && /^[a-f0-9-]{36}$/i.test(value.requestId)
             ? { reference: value.requestId }

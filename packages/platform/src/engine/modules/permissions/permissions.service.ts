@@ -80,6 +80,10 @@ async function resourceBelongsToOrg(
 ): Promise<boolean> {
   try {
     switch (type) {
+      case "cloud_workspace": {
+        const row = await repos.cloudWorkspace.findByIdInOrganization(id, organizationId);
+        return !!row;
+      }
       case "project": {
         const row = await repos.project.findById(id);
         if (row) return row.organizationId === organizationId;
@@ -234,6 +238,11 @@ export async function listResources(ctx: ExecutionContext, input: { type: string
         label: d.name || d.id,
         meta: { kind: d.kind },
       }));
+  }
+
+  if (type === "cloud_workspace") {
+    const list = await permittedRows(ctx, "cloud_workspace", await repos.cloudWorkspace.listByOrganization(organizationId));
+    return list.map(row => ({ id: row.id, label: row.name, meta: { mode: row.mode, runtime: row.runtime } }));
   }
 
   if (type === "github_installation" || type === "github_repository") {

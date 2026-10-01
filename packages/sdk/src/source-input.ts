@@ -8,6 +8,7 @@ export interface DeploySourceInput {
   projectId?: string;
   environment?: "production" | "preview";
   serverId?: string;
+  workspaceId?: string;
   serviceIds?: string[];
   signal?: AbortSignal;
   onStep?: (message: string) => void;
@@ -22,10 +23,11 @@ export interface SourceDeploymentResult {
 /** Capture public inputs before asynchronous module loading, I/O, or identity checks. */
 export function snapshotSourceInput(input: DeploySourceInput): DeploySourceInput {
   if (!input || typeof input !== "object") throw new ValidationError("A deployment source is required");
-  const { source, name, projectId, environment, serverId, signal, onStep } = input ?? {};
-  for (const value of [name, projectId, serverId])
+  const { source, name, projectId, environment, serverId, workspaceId, signal, onStep } = input ?? {};
+  for (const value of [name, projectId, serverId, workspaceId])
     if (value !== undefined && (typeof value !== "string" || !value.trim()))
       throw new ValidationError("Names and identifiers must be nonempty strings");
+  if (serverId && workspaceId) throw new ValidationError("Select a server or a Cloud workspace, not both");
   if (environment !== undefined && environment !== "production" && environment !== "preview")
     throw new ValidationError("Invalid deployment environment");
   if (input.serviceIds !== undefined && (!Array.isArray(input.serviceIds) || input.serviceIds.some((id) => typeof id !== "string" || !id)))
@@ -43,5 +45,5 @@ export function snapshotSourceInput(input: DeploySourceInput): DeploySourceInput
   } else {
     throw new ValidationError("A directory or generated files source is required");
   }
-  return { source: snapshot, name, projectId, environment, serverId, signal, onStep, serviceIds: input.serviceIds ? [...input.serviceIds] : undefined };
+  return { source: snapshot, name, projectId, environment, serverId, workspaceId, signal, onStep, serviceIds: input.serviceIds ? [...input.serviceIds] : undefined };
 }

@@ -186,7 +186,7 @@ describe("Cloud Docker project teardown", () => {
   const destroyVm = vi.fn(async () => {});
   const listRoutes = vi.fn(async () => ["app.opsh.io", "console.opsh.io"]);
   const cloudDocker = Object.assign(Object.create(CloudDockerRuntime.prototype), {
-    name: "cloud", listProjectRouteHostnames: listRoutes,
+    name: "cloud", projectId: "p1", options: {}, listProjectRouteHostnames: listRoutes,
   });
   beforeEach(() => {
     h.cloudBinding = { projectId: "p1", namespace: "org-ns", workspaceId: "shared-vm" };

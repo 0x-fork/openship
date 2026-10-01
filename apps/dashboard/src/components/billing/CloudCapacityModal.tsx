@@ -17,6 +17,7 @@ import { billingApi } from "@/lib/api/billing";
 import { deployApi } from "@/lib/api/deploy";
 import { projectsApi } from "@/lib/api/projects";
 import { getApiErrorMessage } from "@/lib/api/client";
+import { workspaceBillingHref } from "./BillingWorkspaceContext";
 import { randomUUID } from "@/lib/random-uuid";
 import type { CloudCapacityRestriction } from "@/lib/cloud-deploy-pricing";
 
@@ -24,7 +25,9 @@ export function CloudCapacityModal({
   restriction,
   onClose,
   onRetry,
+  workspaceId,
 }: {
+  workspaceId?: string;
   restriction?: CloudCapacityRestriction;
   onClose: () => void;
   onRetry?: () => Promise<unknown>;
@@ -65,7 +68,7 @@ export function CloudCapacityModal({
       setLoading(true);
       setError(null);
       try {
-        const data = await billingApi.getCapacity();
+        const data = await billingApi.getCapacity(workspaceId);
         if (mounted.current) {
           setOverview(data);
           setPreview(null);
@@ -86,7 +89,7 @@ export function CloudCapacityModal({
         if (mounted.current) setLoading(false);
       }
     },
-    [copy.loadError],
+    [copy.loadError, workspaceId],
   );
 
   useEffect(() => {
@@ -122,7 +125,7 @@ export function CloudCapacityModal({
         }
         if (deploymentStatus === "ready") {
           setOperationState("verifying");
-          const fresh = await billingApi.getCapacity();
+          const fresh = await billingApi.getCapacity(workspaceId);
           if (disposed) return;
           setOverview(fresh);
           const project = fresh.projects.find((p) => p.id === operation.projectId);
@@ -161,7 +164,7 @@ export function CloudCapacityModal({
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [operation, pollVersion, copy.failed, copy.loadError, restriction?.projectId]);
+  }, [operation, pollVersion, copy.failed, copy.loadError, restriction?.projectId, workspaceId]);
 
   const working = !!operation && ["running", "verifying"].includes(operationState);
   const unsettled = working || (!!operation && operationState === "timeout");
@@ -237,7 +240,7 @@ export function CloudCapacityModal({
       setPreview(null);
       pending.current = null;
       // A new project revision invalidates any old runtime adjustment preview.
-      const fresh = await billingApi.getCapacity();
+      const fresh = await billingApi.getCapacity(workspaceId);
       if (mounted.current) setOverview(fresh);
     } catch (e) {
       if (mounted.current) setError(getApiErrorMessage(e, copy.buildSaveError));
@@ -556,7 +559,7 @@ export function CloudCapacityModal({
         )}
         <a
           className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-          href="/billing/plans"
+          href={workspaceBillingHref("/billing/plans", workspaceId)}
           target="_blank"
           rel="noopener noreferrer"
         >

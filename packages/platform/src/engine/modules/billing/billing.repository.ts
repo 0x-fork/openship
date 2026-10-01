@@ -19,6 +19,7 @@ import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
 import { env } from "@repo/platform/engine/config/env";
 import { readCloudCapacity } from "../../lib/cloud-resource-limits";
+import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
 
 const {
   billingCustomer,
@@ -59,15 +60,16 @@ export interface UpsertSubscriptionInput {
 // ─── getBillingState ─────────────────────────────────────────────────────────
 
 /** Mirror fresh provider entitlement and add Openship application usage. */
-export async function getBillingState(orgId: string): Promise<BillingState> {
-  await ensureNamespace(orgId);
+export async function getBillingState(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<BillingState> {
+  await ensureNamespace(orgId, workspaceId);
+  const owner = await cloudBillingOwner(orgId, workspaceId);
   const {
     entitlement,
     tier,
     limits: planLimitsForTier,
     subscription: providerSubscription,
     grant,
-  } = await syncOblienEntitlement(orgId, { syncResourceLimits: false });
+  } = await syncOblienEntitlement(orgId, { syncResourceLimits: false, workspaceId: owner.workspaceId });
   const [plan, legacySubscriptions] = await Promise.all([
     // A setup-only workspace has no product to look up. Catalog availability
     // must not hide a customer's balance, invoices or subscription controls.
@@ -79,7 +81,7 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
           );
           return null;
         }),
-    listLiveSubscriptions(orgId),
+    owner.workspaceId ? Promise.resolve([]) : listLiveSubscriptions(orgId),
   ]);
   const subscription = presentCloudSubscription(providerSubscription);
   const managed = legacySubscriptions.length === 0 && !grant;
@@ -96,20 +98,18 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
   // actually enforced, would have shown a user "3 of 15 used" while a different
   // window refused their deploy. One window, one number, one source.
   const [buildMinutes, freeSubdomains, servicesUsed, projectsUsed, providerCapacity] = await Promise.all([
-    getBuildMinuteUsage(orgId, { tier, limits: planLimitsForTier }),
-    getFreeSubdomainUsage(orgId, { tier, limits: planLimitsForTier }),
+    getBuildMinuteUsage(orgId, { tier, limits: planLimitsForTier }, owner.workspaceId),
+    getFreeSubdomainUsage(orgId, { tier, limits: planLimitsForTier }, owner.workspaceId),
     // Several services may share one Docker workspace.
-    repos.service.countRunningForOrg(orgId).catch(() => null),
-    repos.projectGroup
-      .listByOrganization(orgId, { page: 1, perPage: 1 })
-      .then((r) => r.total)
-      .catch(() => null),
+    repos.service.countRunningForOrg(orgId, [], undefined, undefined, owner.workspaceId).catch(() => null),
+    repos.project.countGroupsForOrganization(orgId, owner.workspaceId).catch(() => null),
     readCloudCapacity(entitlement.namespace).catch(() => ({})),
   ]);
   const buildTimeMinutes = buildMinutes.usedMinutes;
   const serviceResources = tier === "free" ? null : planServiceResources(planLimitsForTier);
 
   return {
+    workspace: owner.workspace ? { id: owner.workspace.id, name: owner.workspace.name, mode: owner.workspace.mode, runtime: owner.workspace.runtime } : null,
     tier,
     creditAlert: entitlement.quota.alert ? {
       namespace: entitlement.namespace,

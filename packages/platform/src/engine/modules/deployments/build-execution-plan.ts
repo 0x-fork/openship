@@ -85,6 +85,8 @@ export function resolveBuildRuntimeModes(input: {
 export function resolveDeployRouting(input: {
   workload: WorkloadType;
   runtimeName: string; // "bare" | "docker" | "cloud"
+  /** Cloud transport can run either native Pages or a real Docker host. */
+  dockerHost?: boolean;
   outputDirectory: string;
 }): DeployRouting {
   if (input.workload === "web") {
@@ -96,6 +98,9 @@ export function resolveDeployRouting(input: {
     return { buildMode: "normal", deployMode: "worker", staticServeOutputDir: "" };
   }
   // Static, cloud target → Oblien Pages (executeStaticEdgeDeploy); build via CloudRuntime.
+  if (input.runtimeName === "cloud" && input.dockerHost) {
+    return { buildMode: "normal", deployMode: "server", staticServeOutputDir: "" };
+  }
   if (input.runtimeName === "cloud") {
     return { buildMode: "normal", deployMode: "static-edge", staticServeOutputDir: "" };
   }

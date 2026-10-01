@@ -94,6 +94,7 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
     infraItems.push({ key: "emails", href: "/emails", icon: "mail" });
     infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
   }
+  if (!selfHosted) infraItems.push({ key: "workspaces", href: "/workspaces", icon: "cloud" });
   // infraItems.push(
   //   { key: "monitoring", href: "/monitoring", icon: Activity },
   //   { key: "domains",    href: "/domains",    icon: Globe },

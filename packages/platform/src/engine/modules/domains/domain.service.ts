@@ -205,7 +205,7 @@ export async function addDomain(
   // already owns — never off-site, never at itself, never round a loop.
   const redirect = normalizeRedirect(data);
   if (redirect.redirectTo) {
-    assertRedirectSupported({ isCloudProject: !!project?.cloudWorkspaceId, hostname });
+    assertRedirectSupported({ isCloudProject: !!(project?.workspaceId || project?.cloudWorkspaceId), hostname });
     const peers = await repos.domain.listByProject(data.projectId).catch(() => []);
     assertRedirectTargets([
       ...peers
@@ -734,7 +734,7 @@ export async function reuseServerCertForDomain(
     const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
     if (domain.verified) return true; // already good — nothing to reuse
     // Cloud domains verify via Oblien (CNAME); reuse is a self-hosted concept.
-    if (platform().target === "cloud" || project.cloudWorkspaceId) return false;
+    if (platform().target === "cloud" || project.workspaceId || project.cloudWorkspaceId) return false;
     // Can't reach the host from inside the container → nothing to reuse here; the
     // manual Verify surfaces the actionable host-channel hint.
     if (await edgeHostUnreachable(ctx, project)) {
@@ -1201,7 +1201,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
     });
   } catch (err) {
     console.error(`[DOMAIN] Failed to remove route for ${domain.hostname}:`, err);
-    if (project.cloudWorkspaceId) {
+    if (project.workspaceId || project.cloudWorkspaceId) {
       throw new AppError("Could not remove the cloud route. The domain was kept so you can retry.", 502, "CLOUD_ROUTE_REMOVAL_FAILED");
     }
   }
@@ -1241,7 +1241,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
   // here would orphan the slug with nothing left to retry against — the one
   // outcome that is unrecoverable for the user. Idempotent upstream (an unknown
   // slug reports removed:false), so a retry after a partial failure is safe.
-  const { failures: edgeFailures } = project.cloudWorkspaceId
+  const { failures: edgeFailures } = project.workspaceId || project.cloudWorkspaceId
     ? { failures: [] }
     : await releaseManagedHostnames([domain.hostname], { organizationId: ctx.organizationId });
   if (edgeFailures.length > 0) {

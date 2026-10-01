@@ -822,7 +822,7 @@ export async function onSuccess(
     !env.CLOUD_MODE &&
     mergedMeta?.deployTarget === "cloud" &&
     mergedMeta?.buildStrategy === "local";
-  if (mergedMeta?.workspaceId && !isLocalOrchestratedCloud) {
+  if (mergedMeta?.workspaceId && !mergedMeta.cloudDockerWorkspace?.ownerWorkspaceId && !isLocalOrchestratedCloud) {
     await repos.project
       .setCloudWorkspaceId(project.id, mergedMeta.workspaceId)
       .catch((err) =>

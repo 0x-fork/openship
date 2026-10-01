@@ -15,15 +15,16 @@ import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { LOCAL_SERVICE_CATALOG } from "./local-service-catalog";
 import { ProjectConnectionForm } from "../UseInProjectModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useCloudWorkspaces } from "@/components/cloud-workspaces/useCloudWorkspaces";
+import { Button } from "@/components/ui/button";
 
 interface AddServiceModalProps {
   open: boolean;
   projectId?: string;
+  workspaceId?: string | null;
   projectName: string;
-  // True when the *project itself* deploys to openship cloud, regardless of
-  // the dashboard install mode. A self-hosted dashboard can still manage a
-  // cloud project — in that case only cloud (Oblien) images are valid and
-  // the local upstream-image catalog must be hidden.
+  // A self-hosted dashboard can also manage a Cloud project. Its placement,
+  // rather than the dashboard's install mode, selects the compatible catalog.
   isCloudProject?: boolean;
   onClose: () => void;
   onSubmit: (data: ServiceInput) => Promise<void>;
@@ -219,16 +220,14 @@ function CatalogIcon({ entry, className = "size-5" }: { entry: ImageCatalogEntry
   return <UiIcon name={Icon} className={className} />;
 }
 
-export function AddServiceModal({ open, projectId, projectName, isCloudProject, onClose, onSubmit }: AddServiceModalProps) {
+export function AddServiceModal({ open, projectId, workspaceId, projectName, isCloudProject, onClose, onSubmit }: AddServiceModalProps) {
   const { t } = useI18n();
   const { deployMode } = usePlatform();
   const cloud = useCloud();
   const newEndpointDomainType = defaultDomainType(cloud.connected);
-  // Cloud-only catalog when EITHER the install is the SaaS dashboard
-  // (deployMode === "cloud") OR this specific project is deployed to
-  // openship cloud (isCloudProject). In either case the local upstream-
-  // image catalog isn't applicable and we pin the source to "cloud".
   const cloudOnly = deployMode === "cloud" || !!isCloudProject;
+  const placement = useCloudWorkspaces(open && Boolean(workspaceId));
+  const workspace = placement.data?.workspaces.find(row => row.id === workspaceId);
 
   // Step state - "pick" shows the catalog, "configure" shows the form.
   const [step, setStep] = useState<"pick" | "configure">("pick");
@@ -243,14 +242,12 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
   const [catalog, setCatalog] = useState<ImageCatalogEntry[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [cloudConnected, setCloudConnected] = useState<boolean | null>(null);
-  // Catalog source: "local" = curated upstream Docker images, "cloud" = Oblien
-  // managed images. Cloud-only contexts (SaaS install OR cloud-deployed
-  // project) are pinned to "cloud" — it's the only valid source. Local
-  // projects on local installs default to "local" but can flip via the
-  // switcher when the user wants a managed image.
-  const [catalogSource, setCatalogSource] = useState<"local" | "cloud">(
-    cloudOnly ? "cloud" : "local",
-  );
+  // Subscribed Docker hosts use the same upstream images as a self-hosted
+  // Docker server. The existing native Cloud path keeps its provider catalog.
+  const [preferredCatalog, setCatalogSource] = useState<"local" | "cloud">("local");
+  const catalogSource = cloudOnly
+    ? workspace?.runtime === "docker" ? "local" : "cloud"
+    : preferredCatalog;
 
   // Configure step state. Ports is a single-line, comma-separated string -
   // 95% of services have one port and the old textarea wasted vertical space.
@@ -277,7 +274,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
     setSourceMode("new");
     setSearchQuery("");
     setActiveCategory(null);
-    setCatalogSource(cloudOnly ? "cloud" : "local");
+    setCatalogSource("local");
     setName("");
     setImage("");
     setPorts("");
@@ -301,7 +298,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
   // Either way "no catalog" never blocks the user - Custom image is always
   // an escape hatch.
   useEffect(() => {
-    if (!open) return;
+    if (!open || (workspaceId && (!workspace || workspace.runtime === "native"))) return;
 
     // Reset filters when the source changes so we don't keep a category
     // active that doesn't exist in the new catalog.
@@ -334,7 +331,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
     return () => { cancelled = true; };
     // Re-fetch when the cloud connection flips (e.g. the user connects from the
     // empty-state CTA) so the catalog + connected flag refresh without reopening.
-  }, [open, catalogSource, cloud.connected]);
+  }, [open, catalogSource, cloud.connected, workspaceId, workspace?.runtime]);
 
   // Bucket every catalog entry once into a curated category. We memoize
   // the assignments so search/filter doesn't re-run bucketEntry per render.
@@ -511,8 +508,8 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
                 the deploy-mode context, not buried in the right pane. Only
                 shown on the picker step (configure is already scoped to a
                 single selected service) and only when the user has a real
-                choice - cloud-only contexts (SaaS install OR cloud-deployed
-                project) are pinned to the cloud catalog. */}
+                choice. Cloud projects use the catalog supported by their
+                workspace runtime. */}
             {sourceMode === "new" && step === "pick" && !cloudOnly ? (
               <SourceSwitcher value={catalogSource} onChange={setCatalogSource} />
             ) : sourceMode === "new" ? (
@@ -546,6 +543,19 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
 
         {sourceMode === "existing" && projectId ? (
           <div className="overflow-y-auto"><ProjectConnectionForm targetProjectId={projectId} onClose={onClose} hideHeader /></div>
+        ) : workspaceId && !workspace ? (
+          <div className="p-6">
+            {placement.error || placement.data ? (
+              <div role="alert" className="space-y-3 text-sm text-danger">
+                <p>{placement.error ?? t.billing.workspaces.noneAvailable}</p>
+                <Button variant="secondary" onClick={placement.refresh}>{t.billing.plansRoute.tryAgain}</Button>
+              </div>
+            ) : (
+              <div aria-busy="true" aria-label={t.billing.workspaces.loading} className="h-40 animate-pulse rounded-xl bg-muted/50" />
+            )}
+          </div>
+        ) : workspace?.runtime === "native" ? (
+          <p className="p-6 text-sm text-muted-foreground">{t.billing.workspaces.nativeHint}</p>
         ) : step === "pick" ? (
           <CatalogPickStep
             catalog={visibleCatalog}

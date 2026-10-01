@@ -2705,6 +2705,66 @@
       "section": "Operations",
       "description": "Read a recorded run, result, and captured output.",
       "route": "GET /api/jobs/runs/:runId"
+    },
+    "cloudWorkspaces.list": {
+      "page": "cloud-workspaces",
+      "section": "Observe",
+      "description": "List accessible subscribed workspaces, their placement and saved operation state.",
+      "route": "GET /api/workspaces"
+    },
+    "cloudWorkspaces.create": {
+      "page": "cloud-workspaces",
+      "section": "Setup",
+      "description": "Create a workspace identity without purchasing or provisioning resources.",
+      "route": "POST /api/workspaces"
+    },
+    "cloudWorkspaces.get": {
+      "page": "cloud-workspaces",
+      "section": "Observe",
+      "description": "Read live workspace state and durable operation logs, errors and retry timing.",
+      "route": "GET /api/workspaces/:id"
+    },
+    "cloudWorkspaces.getUsage": {
+      "page": "cloud-workspaces",
+      "section": "Observe",
+      "description": "Measure host usage and accessible project disk data separately from provisioned capacity.",
+      "route": "GET /api/workspaces/:id/usage"
+    },
+    "cloudWorkspaces.rename": {
+      "page": "cloud-workspaces",
+      "section": "Control",
+      "description": "Rename a workspace without moving projects or changing billing.",
+      "route": "PATCH /api/workspaces/:id"
+    },
+    "cloudWorkspaces.ensure": {
+      "page": "cloud-workspaces",
+      "section": "Setup",
+      "description": "Queue idempotent provisioning or resume of the subscribed Docker host.",
+      "route": "POST /api/workspaces/:id/ensure"
+    },
+    "cloudWorkspaces.retry": {
+      "page": "cloud-workspaces",
+      "section": "Control",
+      "description": "Retry a failed workspace operation using its saved provider identity and recovery checkpoint.",
+      "route": "POST /api/workspaces/:id/retry"
+    },
+    "cloudWorkspaces.previewResize": {
+      "page": "cloud-workspaces",
+      "section": "Control",
+      "description": "Preview purchased capacity and projects that may restart, without changing the host.",
+      "route": "GET /api/workspaces/:id/resize"
+    },
+    "cloudWorkspaces.resize": {
+      "page": "cloud-workspaces",
+      "section": "Control",
+      "description": "Queue a reviewed resize with a revision, request key and explicit restart confirmation.",
+      "route": "POST /api/workspaces/:id/resize"
+    },
+    "cloudWorkspaces.remove": {
+      "page": "cloud-workspaces",
+      "section": "Control",
+      "description": "Remove an empty workspace after its subscription ends and provider cleanup is confirmed.",
+      "route": "DELETE /api/workspaces/:id"
     }
   },
   "http": {

@@ -35,7 +35,7 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
     setBusy(true);
     setError(null);
     try {
-      const result = action === "cancel" ? await billingApi.cancelSubscription() : await billingApi.resumeSubscription();
+      const result = action === "cancel" ? await billingApi.cancelSubscription(state.workspace?.id) : await billingApi.resumeSubscription(state.workspace?.id);
       setSubscription(result.subscription);
       setConfirming(false);
       router.refresh();
