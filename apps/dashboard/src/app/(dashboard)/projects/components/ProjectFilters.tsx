@@ -51,7 +51,7 @@ export interface ProjectFilterOption {
  * projects. The page uses the option count to decide whether the sidebar is
  * worth showing (≥2 real groups).
  */
-export function buildProjectFilterOptions(projects: Project[], t: Dictionary, allLabel = t.projects.filters.allProjects): ProjectFilterOption[] {
+export function buildProjectFilterOptions(projects: Project[], t: Dictionary): ProjectFilterOption[] {
   let cloud = 0;
   let local = 0;
   const servers = new Map<string, number>();
@@ -69,7 +69,7 @@ export function buildProjectFilterOptions(projects: Project[], t: Dictionary, al
     {
       key: "all",
       filter: { kind: "all" },
-      label: allLabel,
+      label: t.projects.filters.allProjects,
       icon: <UiIcon name="grid" className="size-4" />,
       count: projects.length,
     },

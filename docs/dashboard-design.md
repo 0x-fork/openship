@@ -45,7 +45,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   the shared picker. Keep the create-server action visible in both cases. Cloud deployments
   can reuse a server's plan or create a separate server and subscription from the same flow.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
-  same project data and cards. Keep Home's project list and the sidebar counts separate too.
+  same project data and status handling. Apps uses a compact installed list with catalog
+  suggestions alongside it; its empty state shows connected app logos and popular install
+  shortcuts. Keep Home's project list and the sidebar counts separate too.
 - Persistent Cloud credit warnings use a compact floating disclosure at the bottom end of the
   viewport. Keep server-specific billing actions inside it, remember dismissal for the warning,
   and allow reopening without a page-wide banner or an automatic modal.

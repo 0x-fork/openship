@@ -106,8 +106,6 @@
       "countOther": "{count} apps",
       "emptyTitle": "Install your first app",
       "emptyDescription": "Deploy databases, tools and services from the app catalog.",
-      "noTargetApps": "No apps on this destination",
-      "noTargetDescription": "Choose another destination or install an app.",
       "popular": "Popular apps",
       "alsoDeploy": "You can also deploy",
       "browseAll": "Browse all apps",
