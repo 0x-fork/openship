@@ -496,6 +496,13 @@
     "toastInvalidIp": "Invalid IP/CIDR format",
     "toastAlreadyWhitelisted": "Already in whitelist",
     "ports": {
+      "managedTitle": "Listening ports",
+      "managedSubtitle": "Processes listening inside this server",
+      "managedHint": "These listeners are inside your managed server. Public access is controlled by Networking and each project’s domains.",
+      "managedSummary": "{total} listening ports · {exposed} bound to network interfaces",
+      "managedLoopbackSummary": "{total} listening ports · localhost only",
+      "managedListener": "Network listener",
+      "managedInconclusiveHint": "Couldn’t read the socket table. Retry or check the server connection in Terminal.",
       "title": "Port exposure",
       "subtitle": "See which listening ports are reachable from the network",
       "introHint": "Scan every port listening on this machine and flag the ones bound to a public interface instead of loopback.",

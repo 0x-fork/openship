@@ -566,7 +566,7 @@ shared storage before removing the cluster runtime.
 | Remove a server using the requested workload cleanup policy. | `servers.remove(id, input?)` | `DELETE /api/system/servers/:id`<br />`server:admin` · Self-hosted |
 | Execute an authorized command on the server. | `servers.exec(id, input)` | `POST /api/system/servers/:id/exec`<br />`server:admin` |
 | Run a server health check. | `servers.check(id, input?)` | `POST /api/system/check`<br />`server:admin` |
-| Scan ports on an authorized server. | `servers.scanPorts(id)` | `POST /api/system/servers/:id/ports/scan`<br />`server:read` · Self-hosted |
+| Scan ports on an authorized server. | `servers.scanPorts(id)` | `POST /api/system/servers/:id/ports/scan`<br />`server:read` |
 
 ### Private networks
 

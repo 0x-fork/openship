@@ -367,6 +367,9 @@
     "liveFeedHint": "Show the recent-hit list on the map (the Logs tab has the full detail)"
   },
   "services": {
+    "application": "Application",
+    "applicationHint": "Managed through this project’s deployments.",
+    "companionsTitle": "Add another app or service",
     "failedLoad": "Failed to load services",
     "retry": "Retry",
     "refresh": "Refresh",

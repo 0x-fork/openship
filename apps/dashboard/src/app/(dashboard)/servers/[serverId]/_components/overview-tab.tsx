@@ -218,7 +218,7 @@ export function OverviewTab({
                   {comp.label || comp.name}
                 </span>
                 {comp.version && (
-                  <span className="text-[11px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                  <span className="text-xs font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
                     v{comp.version}
                   </span>
                 )}

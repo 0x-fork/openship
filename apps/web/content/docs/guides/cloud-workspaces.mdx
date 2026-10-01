@@ -18,8 +18,8 @@ Cloud uses the same Docker engine as self-hosted deployments. Services,
 environments, logs, volumes, backups and rollback artifacts belong to their
 projects. Execution runs inside your managed server; edge routing uses Oblien.
 
-Open **Servers** when you want usage, terminal access, network settings or
-operation logs. This is optional administration, not a setup checklist. Cloud
+Open **Servers** when you want usage, component health, listening ports, terminal access,
+network settings or operation logs. This is optional administration, not a setup checklist. Cloud
 shows supported capabilities, without SSH setup, edge installation or host
 component maintenance.
 
@@ -48,9 +48,9 @@ unknown value instead of substituting reserved capacity.
 CPU and memory settings limit individual containers. They do not reserve
 another machine. New offers let one service use the full purchased CPU and
 memory pool, while all services still compete for the actual host resources.
-The operating system and Docker also use some memory and disk. Project and
-running-service allowances still apply; an undeployed draft does not consume
-a running-service slot. See current offers on the [pricing page](/pricing).
+The operating system and Docker also use some memory and disk. New managed-server
+offers do not cap project or service counts; their workloads share the server's
+resources. Saved subscription terms remain unchanged. See current offers on the [pricing page](/pricing).
 
 Source builds run on the server using measured available CPU and memory.
 An optional build size is an upper limit; automatic sizing uses current

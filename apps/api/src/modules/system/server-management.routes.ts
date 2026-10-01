@@ -819,18 +819,6 @@ r.post(
 );
 
 r.post(
-  "/servers/:id/ports/scan",
-  {
-    tag: "server:read",
-    readOnly: true,
-    mcp: {
-      description:
-        "Inspect exposed listening ports on the server. Returns protocol, address, process and known service information without changing listeners.",
-    },
-  },
-  serverCheck.scanExposedPorts,
-);
-r.post(
   "/test-connection",
   {
     tag: "server:write",

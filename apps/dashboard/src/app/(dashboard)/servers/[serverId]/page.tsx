@@ -116,6 +116,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const managed = server?.managed;
   const hostConfiguration = server?.capabilities?.hostConfiguration ?? !managed;
   const ready = !managed || ["ready", "running", "active"].includes(managed.state);
+  const canInspect = !!server && (server.capabilities?.exec ?? !managed) && ready;
   const canMonitor = (server?.capabilities?.monitor ?? !managed) && ready;
   const canTerminal = (server?.capabilities?.terminal ?? !managed) && ready;
   const managedActions = useManagedServerActions(serverId, row => {
@@ -125,6 +126,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const deleting = useRef(false);
   deleting.current = managed?.state === "deleting" || (pending && managed?.operation?.kind === "delete");
   const [checking, setChecking] = useState(false);
+  const healthCheckPending = useRef(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checkErrorKind, setCheckErrorKind] = useState<ConnectionErrorKind | null>(null);
   /** Endpoint + remedy the API attached to the failure (host-channel case). */
@@ -135,6 +137,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
     if (tab.desktopOnly && !isDesktop) return false;
     if (tab.key === "terminal") return canTerminal;
     if (tab.key === "networking") return !!server?.capabilities?.networkSettings;
+    if (tab.key === "components" || tab.key === "security") return canInspect;
     return tab.key === "overview" || hostConfiguration;
   });
   const activeTab = visibleTabs.some(tab => tab.key === requestedTab) ? requestedTab : "overview";
@@ -288,15 +291,18 @@ function ServerDetail({ serverId }: { serverId: string }) {
   }, [pending, fetchData]);
 
   const runHealthCheck = useCallback(async () => {
-    if (!serverId || !hostConfiguration) return;
+    if (!serverId || !canInspect || healthCheckPending.current) return;
+    healthCheckPending.current = true;
     setChecking(true);
     setCheckError(null);
     setCheckErrorKind(null);
     setCheckDiagnosis(undefined);
     try {
       const result = await systemApi.checkServer(serverId);
+      if (!mounted.current) return;
       setComponents(result.components);
     } catch (err) {
+      if (!mounted.current) return;
       const message = getApiErrorMessage(err, t.servers.detail.toastHealthCheckFailed);
       const body = err instanceof ApiError ? err.body : undefined;
       const kind = classifyConnectionError(body, message);
@@ -307,13 +313,14 @@ function ServerDetail({ serverId }: { serverId: string }) {
       // The inline banner is the primary surface - only toast for unexpected
       // shapes so the user isn't getting both a toast and a banner for the
       // same problem.
-      if (kind === "unknown") {
+      if (hostConfiguration && kind === "unknown") {
         showToast(message, "error", t.servers.toastTitles.serverCheck);
       }
     } finally {
-      setChecking(false);
+      healthCheckPending.current = false;
+      if (mounted.current) setChecking(false);
     }
-  }, [serverId, hostConfiguration, showToast, t]);
+  }, [serverId, canInspect, hostConfiguration, showToast, t]);
 
   const installMissingComponents = useCallback(async () => {
     const missing = components.filter(
@@ -526,9 +533,12 @@ function ServerDetail({ serverId }: { serverId: string }) {
   }, [hideModal, serverId, showModal, showToast, t]);
 
   useEffect(() => {
-    if (!server || !hostConfiguration) return;
+    if (!canInspect) return;
     void runHealthCheck();
+  }, [canInspect, runHealthCheck]);
 
+  useEffect(() => {
+    if (!server || !hostConfiguration) return;
     // Check for active install session (page reload recovery)
     void (async () => {
       try {
@@ -546,7 +556,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
         // No active session
       }
     })();
-  }, [server?.id, hostConfiguration, runHealthCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [server?.id, hostConfiguration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [removeOpen, setRemoveOpen] = useState(searchParams.get("remove") === "true");
   const handleDelete = useCallback(() => setRemoveOpen(true), []);
@@ -671,7 +681,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
               <UiIcon name="sliders" className="size-4" />
               <span className="hidden sm:inline">{t.servers.detail.edit}</span>
             </button>
-            <Button variant="ghost" size="icon" disabled={refreshing} aria-label={t.servers.networks.refresh} onClick={() => { void fetchData(); if (hostConfiguration) void runHealthCheck(); monitor.reconnect(); }}><UiIcon name="refresh" className={`size-4 ${refreshing ? "animate-spin" : ""}`} /></Button>
+            <Button variant="ghost" size="icon" disabled={refreshing || checking} aria-label={t.servers.networks.refresh} onClick={() => { void fetchData(); void runHealthCheck(); monitor.reconnect(); }}><UiIcon name="refresh" className={`size-4 ${refreshing || checking ? "animate-spin" : ""}`} /></Button>
             {!server.isLocal && <DropdownMenu triggerLabel={t.servers.detail.removeServer} actions={[{ id: "remove", label: t.servers.detail.removeServer, icon: <UiIcon name="trash" className="size-4" />, variant: "danger", onClick: handleDelete }]} />}
           </div>
           <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-center gap-2 [.is-desktop_&]:col-start-1">
@@ -696,6 +706,14 @@ function ServerDetail({ serverId }: { serverId: string }) {
             onRetry={runHealthCheck}
             diagnosis={checkDiagnosis}
           />
+        )}
+        {!hostConfiguration && checkError && activeTab !== "components" && (
+          <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning-bg p-4">
+            <p className="min-w-0 break-words text-sm text-foreground">{checkError}</p>
+            <Button size="sm" variant="secondary" disabled={checking || !canInspect} onClick={runHealthCheck}>
+              {checking ? t.servers.components.checking : t.servers.components.recheck}
+            </Button>
+          </div>
         )}
 
         {/* Tabs — the SHARED <Tabs> component, the same one the servers LIST uses,
@@ -733,15 +751,15 @@ function ServerDetail({ serverId }: { serverId: string }) {
                 monitorConnected={monitor.isConnected}
                 monitorError={monitor.error}
                 onReconnectMonitor={monitor.reconnect}
-                showComponents={hostConfiguration}
+                showComponents={canInspect}
               />}
               <ServerUsage key={`${serverId}:${managed?.state ?? "connected"}`} serverId={serverId} resources={managed?.resources} showProjects metrics={!canMonitor} />
             </>}
 
             {activeTab === "components" && (
               <>
-              {serverId && <ServerContainerUpdates serverId={serverId} />}
-              {serverId && <ServerModuleUpdates serverId={serverId} />}
+              {hostConfiguration && <ServerContainerUpdates serverId={serverId} />}
+              {hostConfiguration && <ServerModuleUpdates serverId={serverId} />}
               <ComponentsTab
                 components={components}
                 checking={checking}
@@ -774,8 +792,8 @@ function ServerDetail({ serverId }: { serverId: string }) {
 
             {activeTab === "security" && (
               <div className="space-y-6">
-                <ExposedPortsCard serverId={serverId} />
-                <RateLimitSettings serverId={serverId} />
+                <ExposedPortsCard serverId={serverId} managedIngress={!!managed} />
+                {hostConfiguration && <RateLimitSettings serverId={serverId} />}
               </div>
             )}
             {activeTab === "networking" && <ManagedServerNetwork key={serverId} serverId={serverId} />}

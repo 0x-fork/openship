@@ -547,31 +547,30 @@ export async function removeComponent(ctx: ExecutionContext, serverId: string, b
  * Enumerate every listening socket on the server and classify each exposed
  * (bound to a wildcard / real interface) vs loopback-only. Read-only.
  *
- * Runs through the shared executor middleware (`sshManager.withExecutor`) so the
+ * Runs through the shared server executor so the
  * socket table is read INSIDE the target — the API itself may be containerized
  * and only sees the host's real ports via that server's executor, not a direct
  * exec. A `probeReachable` fast-fail keeps an offline box from hanging the tab
  * on the full SSH-connect timeout.
  */
 export async function scanExposedPorts(ctx: ExecutionContext, serverId: string) {
-  if (env.CLOUD_MODE) return failSystem({ error: "Not available" }, 404);
-
   const organizationId = ctx.organizationId;
-  
-
   const server = await repos.server.getInOrganization(serverId, organizationId);
-  if (!server) return failSystem({ error: "Server not found" }, 404);
+  if (!server || env.CLOUD_MODE !== !!server.workspaceId) return failSystem({ error: "Server not found" }, 404);
 
-  await assertServerExecution(server);
-  const reachable = await sshManager.probeReachable(serverId).catch(() => false);
-  if (!reachable) {
-    return failSystem({ error: "unreachable", message: "Server is not reachable over SSH right now." }, 502);
+  if (!server.workspaceId) {
+    await assertServerExecution(server);
+    const reachable = await sshManager.probeReachable(serverId).catch(() => false);
+    if (!reachable) {
+      return failSystem({ error: "unreachable", message: "Server is not reachable over SSH right now." }, 502);
+    }
   }
 
   try {
-    const result = await sshManager.withExecutor(serverId, (executor) => scanPorts(executor));
-    const enriched = await confirmPortScanReachability(result, server.sshHost);
-    return enriched;
+    const result = await withServerExecution(organizationId, serverId, scanPorts);
+    // A managed listener is inside the provider VM. Its public ingress address
+    // is not an SSH host, and a bound socket alone does not prove public access.
+    return await confirmPortScanReachability(result, server.workspaceId ? null : server.sshHost);
   } catch (err) {
     if (err instanceof OperationError) throw err;
     const message = safeErrorMessage(err);

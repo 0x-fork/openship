@@ -22,7 +22,7 @@ r.get(
     authorizationHandledByOperation: true,
     mcp: {
       description:
-        "Read accessible servers for project placement and whether the existing dedicated Cloud target is available.",
+        "Read accessible deployment servers and their capabilities. Use serverId to place a project on a connected or managed Cloud server.",
     },
   },
   serversCtrl.serverDestinations,
@@ -125,6 +125,19 @@ r.get(
 );
 
 r.post(
+  "/servers/:id/ports/scan",
+  {
+    tag: "server:read",
+    readOnly: true,
+    mcp: {
+      description:
+        "Inspect listening ports through this server's execution connection. Returns protocol, bound address and process without changing listeners. Managed Cloud listeners are inside the server; public access is controlled by provider networking and project routes.",
+    },
+  },
+  serverCheck.scanExposedPorts,
+);
+
+r.post(
   "/servers/managed",
   {
     tag: "server:admin",
@@ -134,7 +147,7 @@ r.post(
     body: ServerCollectionSchemas.createManaged.input,
     mcp: {
       description:
-        "Create a managed Cloud server identity. Shared Docker runs multiple projects on its purchased capacity; dedicated permits one project. This does not charge or provision. Subscribe to this server in Billing, then ensure it. Use the returned serverId for management and deployment.",
+        "Create a managed Cloud server identity. Projects share its purchased capacity and use the Docker or bare runtime. This does not charge or provision. Subscribe to this server in Billing, then ensure it. Use the returned serverId for management and deployment.",
     },
   },
   serversCtrl.createManagedServer,
@@ -159,7 +172,7 @@ r.post(
     auditHandledByOperation: true,
     mcp: {
       description:
-        "Queue idempotent provisioning or resume of a subscribed managed Docker server. Checks provider entitlement and preserves existing data. Poll server get for operation progress. Native instances are created by project deployment.",
+        "Queue idempotent provisioning or resume of a subscribed managed Cloud server. Checks provider entitlement and preserves existing data. Docker and bare projects reuse this server. Poll server get for operation progress.",
     },
   },
   serversCtrl.ensureServer,
