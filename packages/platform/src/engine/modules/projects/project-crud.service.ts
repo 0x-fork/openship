@@ -95,7 +95,7 @@ import { UpdateProjectBody } from "@repo/contracts";
 import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { requireOrgServer } from "../../lib/server-target";
-import { ensureDefaultCloudWorkspace, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
+import { resolveCloudProjectServer, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
 export { resolveProjectDeployTarget } from "./project-deploy-target";
 
 /** A retention edit and its cleanup share the admission lock. A concurrent
@@ -597,7 +597,9 @@ function environmentNameFromSlug(slug: string) {
   );
 }
 
-async function ensureProjectApp(data: TCreateProjectBody, slug: string, organizationId: string) {
+type ResolvedCreateProjectBody = TCreateProjectBody & { workspaceId?: string };
+
+async function ensureProjectApp(data: ResolvedCreateProjectBody, slug: string, organizationId: string) {
   return withProjectCreationLock(organizationId, async () => {
     let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
     if (app) return { app, created: false };
@@ -672,7 +674,7 @@ function resolveWorkloadColumns(intent: {
 
 function buildProductionProjectInput(
   groupId: string,
-  data: TCreateProjectBody,
+  data: ResolvedCreateProjectBody,
   slug: string,
   routing: ProjectRouteState,
   organizationId: string,
@@ -887,7 +889,7 @@ async function persistComposeServices(
 }
 
 async function createProductionProject(
-  data: TCreateProjectBody,
+  data: ResolvedCreateProjectBody,
   slug: string,
   organizationId: string,
   access?: { tokenId: string },
@@ -905,20 +907,22 @@ async function createProductionProject(
   // it through the same org-scoped repository used by deployment preflight,
   // and do it before ensureProjectApp writes anything so a rejected binding is
   // atomic (no orphan project-group row).
-  if (data.serverId) {
-    await requireOrgServer(data.serverId, organizationId);
+  if (data.serverId && !env.CLOUD_MODE) {
+    const server = await requireOrgServer(data.serverId, organizationId);
+    if (server.workspaceId) throw new AppError("Cloud workspace placement is managed by Openship Cloud", 400, "CLOUD_WORKSPACE_TARGET_UNAVAILABLE");
   }
-  if (data.workspaceId && !env.CLOUD_MODE) throw new AppError("Cloud workspace placement is managed by Openship Cloud", 400, "CLOUD_WORKSPACE_TARGET_UNAVAILABLE");
+  // Workspace ownership is always derived from the selected server.
+  data = { ...data, workspaceId: undefined };
   if (env.CLOUD_MODE) {
-    const workspace = data.workspaceId ? await requireCloudWorkspace(organizationId, data.workspaceId) : await ensureDefaultCloudWorkspace(organizationId);
+    const { workspace, server } = await resolveCloudProjectServer(organizationId, data.serverId);
     if (workspace) {
       if (!ctx) throw new AppError("Workspace placement requires an authenticated execution context", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
       const { authorization } = await import("../../lib/authorization");
       await authorization.authorize(ctx, { resourceType: "cloud_workspace", resourceId: workspace.id, action: "write" });
-      if (data.serverId || workspace.deletionInProgress) throw new AppError("Cloud workspace is unavailable for this project", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
+      if (workspace.deletionInProgress) throw new AppError("Cloud workspace is unavailable for this project", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
       if (workspace.runtime === "native" && ["services", "monorepo"].includes(data.projectType ?? ""))
         throw new AppError("Choose a Docker workspace for a multi-service project", 400, "CLOUD_WORKSPACE_RUNTIME_CONFLICT");
-      data = { ...data, workspaceId: workspace.id };
+      data = { ...data, workspaceId: workspace.id, serverId: server!.id };
     }
   }
 
@@ -1475,7 +1479,7 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (project && project.organizationId !== organizationId) {
     throw new NotFoundError("Project", data.projectId ?? desiredSlug);
   }
-  if (project && data.workspaceId && data.workspaceId !== project.workspaceId) throw new AppError(
+  if (project?.workspaceId && data.serverId && data.serverId !== project.serverId) throw new AppError(
     "This project belongs to another execution target. Move its data explicitly before changing workspaces.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
   if (data.deploymentEnvironment !== undefined) {
     // Source deployments ensure config before asking for build access. Reject a

@@ -265,6 +265,19 @@ describe("deploy branch detection", () => {
     expect(current.config.releaseCommands).toEqual(["node migrate.js"]);
   });
 
+  it.each([false, true])("keeps the managed server on Cloud draft restoration (empty service read: %s)", async empty => {
+    api.getInfo.mockResolvedValueOnce({ data: { project: {
+      id: "project-1", name: "Cloud app", framework: "docker-compose", gitOwner: "example", gitRepo: "demo",
+      gitBranch: "main", deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", serverName: "Production",
+    } } });
+    api.listServices.mockResolvedValueOnce({ services: empty ? [] : services });
+    await act(async () => { await current.initializeFromProject("project-1"); });
+    expect(current.config).toMatchObject({ deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", serverName: "Production" });
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ serverId: "managed-server" }));
+    expect(api.buildAccess).toHaveBeenCalledWith(expect.objectContaining({ deployTarget: "cloud", serverId: "managed-server" }));
+  });
+
   it("seeds a new project from openship.json and lets the operator remove a command", async () => {
     api.prepare.mockResolvedValueOnce(scan("main", { releaseCommands: ["node migrate.js"] }));
     await act(async () => { await current.initializeFromRepo("example", "fresh"); });

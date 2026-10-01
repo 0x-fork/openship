@@ -17,7 +17,7 @@ const workspace = await ship.cloudWorkspaces.create({
   mode: "shared",
   runtime: "docker",
 });
-console.log(workspace.id, workspace.state);
+console.log(workspace.id, workspace.serverId, workspace.state);
 
 const checkout = await ship.billing.createSubscription({
   workspaceId: workspace.id,
@@ -33,12 +33,15 @@ move projects. Complete the returned checkout and verify its fulfillment using
 the [billing workflow](/docs/api/billing). Verified payment queues Docker host
 provisioning. `ensure(id)` can also provision or resume that same host.
 
-Pass `workspaceId` when creating a project, staging source files or installing
-a catalog app. For example, after the workspace is ready:
+Each workspace owns a managed execution server. Pass its `serverId` when
+creating a project, staging source files or installing a catalog app. Billing
+and workspace lifecycle operations use the workspace's `id`. For example,
+after the workspace is ready:
 
 ```ts
+const workspace = await ship.cloudWorkspaces.get("cws_production");
 const submitted = await ship.deploy({
-  workspaceId: "cws_production",
+  serverId: workspace.serverId,
   name: "status-page",
   source: { type: "files", files: { "index.html": "<h1>Ready</h1>" } },
 });
@@ -94,7 +97,7 @@ shared project never deletes its workspace.
 Use the tools returned by your Cloud instance's `tools/list`; the
 [generated tool catalog](/docs/api/mcp-tools) includes each workspace operation.
 List targets, choose an accessible workspace, verify subscription and setup,
-then create the project with its ID. For capacity recovery, read usage, preview
+then create the project with the returned `serverId`. For capacity recovery, read usage, preview
 the resize, obtain approval for the listed restarts, apply once and poll until
 settled. Do not treat a timeout as permission to submit a new purchase or resize
 with a new key. The tools enforce the same resource ownership as the dashboard.

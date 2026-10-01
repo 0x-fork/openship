@@ -34,7 +34,6 @@ export const AppCatalogEntrySchema = Type.Object({
 export const AppHostFitInputSchema = Type.Object(
   {
     deployTarget: Type.Optional(Type.String()),
-    workspaceId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     serverId: Type.Optional(Type.String({ minLength: 1 })),
     projectId: Type.Optional(Type.String({ minLength: 1 })),
   },

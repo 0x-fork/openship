@@ -36,6 +36,7 @@ vi.mock("@/lib/api/cloud-workspaces", () => ({ cloudWorkspacesApi: h }));
 const copy = baseDictionary.billing.workspaces;
 const row = {
   id: "cws-a",
+  serverId: "managed-a",
   name: "Production",
   mode: "shared",
   runtime: "docker",
@@ -104,7 +105,7 @@ afterEach(async () => {
 it("selects the only available workspace and presents a summary without a redundant choice", async () => {
   const change = vi.fn();
   await render(<WorkspacePicker onChange={change} />);
-  expect(change).toHaveBeenCalledExactlyOnceWith("cws-a");
+  expect(change).toHaveBeenCalledExactlyOnceWith("cws-a", "managed-a");
   expect(host.querySelector('[role="combobox"]')).toBeNull();
   expect(host.textContent).toContain("Production");
 });
@@ -133,7 +134,7 @@ it("ignores a workspace-list response from the previous organization", async () 
   await render(<WorkspacePicker onChange={change} />);
   h.organizationId = "org-b";
   h.list.mockResolvedValue({
-    workspaces: [{ ...row, id: "cws-b", name: "Other team" }],
+    workspaces: [{ ...row, id: "cws-b", serverId: "managed-b", name: "Other team" }],
     dedicatedBilling: false,
   });
   await render(<WorkspacePicker onChange={change} />);
@@ -142,7 +143,7 @@ it("ignores a workspace-list response from the previous organization", async () 
   );
   expect(host.textContent).toContain("Other team");
   expect(host.textContent).not.toContain("Previous team");
-  expect(change).toHaveBeenCalledExactlyOnceWith("cws-b");
+  expect(change).toHaveBeenCalledExactlyOnceWith("cws-b", "managed-b");
 });
 it("resumes a stopped workspace once and polls its saved operation", async () => {
   h.get.mockResolvedValue({ ...row, state: "stopped" });

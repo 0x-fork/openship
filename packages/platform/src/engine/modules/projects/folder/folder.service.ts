@@ -29,7 +29,7 @@ import { AppError, getBuildImage, safeErrorMessage, RESOURCE_TIER_SPECS, type St
 import { repos } from "@repo/db";
 import type { ExecutionContext } from "../../../../context";
 import { authorization } from "../../../lib/authorization";
-import { ensureDefaultCloudWorkspace, requireCloudWorkspace } from "../../../lib/cloud-workspace-scope";
+import { resolveCloudProjectServer, workspaceForServer } from "../../../lib/cloud-workspace-scope";
 import { DEFAULT_BUILD_RESOURCE_CONFIG, provisionCloudWorkspace } from "@repo/adapters";
 import { env } from "../../../config/env";
 import { getNamespaceClient } from "../../../lib/openship-cloud";
@@ -72,7 +72,7 @@ export interface CreateFolderSessionInput {
   orgId: string;
   userId: string;
   projectId?: string;
-  workspaceId?: string;
+  serverId?: string;
   /** Client-detected stack — picks the workspace image for the cloud path. */
   stack?: string;
   packageManager?: string;
@@ -116,6 +116,7 @@ export interface UploadTarget {
 }
 
 export interface FolderSessionResult {
+  serverId?: string;
   workspaceId?: string;
   sessionId: string;
   expiresAt: number;
@@ -138,13 +139,17 @@ export async function createFolderSession(
   const expiresAt = now + SESSION_TTL_MS;
 
   let managedWorkspaceId: string | null = null;
+  let serverId = input.serverId;
   let managedDocker = false;
   if (env.CLOUD_MODE) {
     const project = input.projectId ? await repos.project.findByIdInOrganization(input.projectId, input.orgId) : null;
     if (input.projectId && !project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
-    if (project && input.workspaceId && project.workspaceId !== input.workspaceId) throw new AppError("Upload target differs from this project's workspace", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
-    const selected = project ? project.workspaceId : input.workspaceId;
-    const owner = selected ? await requireCloudWorkspace(input.orgId, selected) : project ? null : await ensureDefaultCloudWorkspace(input.orgId);
+    if (project && input.serverId && project.serverId !== input.serverId) throw new AppError("Upload target differs from this project's server", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+    const selected = project
+      ? project.serverId ? await workspaceForServer(input.orgId, project.serverId) : { workspace: null, server: null }
+      : await resolveCloudProjectServer(input.orgId, input.serverId);
+    const owner = selected.workspace;
+    serverId = selected.server?.id;
     if (owner) {
       if (!ctx) throw new AppError("An authenticated workspace context is required", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
       await authorization.authorize(ctx, { resourceType: "cloud_workspace", resourceId: owner.id, action: "write" });
@@ -212,6 +217,7 @@ export async function createFolderSession(
       orgId: input.orgId,
       userId: input.userId,
       projectId: input.projectId,
+      serverId,
       managedWorkspaceId,
       mode: "oblien-direct",
       createdAt: now,
@@ -224,6 +230,7 @@ export async function createFolderSession(
     const workspaceUploadUrl = `${OBLIEN_RUNTIME_URL}/files/transfer/upload?dest=/app`;
     return {
       sessionId: id,
+      serverId,
       workspaceId: managedWorkspaceId ?? undefined,
       expiresAt,
       upload: {
@@ -251,6 +258,7 @@ export async function createFolderSession(
     orgId: input.orgId,
     userId: input.userId,
     projectId: input.projectId,
+    serverId,
     managedWorkspaceId,
     mode: "api-relay",
     createdAt: now,
@@ -263,6 +271,7 @@ export async function createFolderSession(
 
   return {
     sessionId: id,
+    serverId,
     workspaceId: managedWorkspaceId ?? undefined,
     expiresAt,
     upload: {

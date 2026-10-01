@@ -11,6 +11,7 @@ const nullableNumber = Type.Union([Type.Number({ minimum: 0 }), Type.Null()]);
 const resourceSize = Type.Union([CloudAllocationSchema, Type.Null()]);
 export const CloudWorkspaceSchema = Type.Object({
   id: Type.String(),
+  serverId: Type.String(),
   name: Type.String(),
   mode: Type.Union([Type.Literal("shared"), Type.Literal("dedicated")]),
   runtime: Type.Union([Type.Literal("docker"), Type.Literal("native")]),

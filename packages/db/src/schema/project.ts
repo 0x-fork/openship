@@ -409,36 +409,29 @@ export const project = pgTable(
      * mirror. Like `gitOwner/gitRepo` points at GitHub, this points
      * at Oblien. Runtime state, files, logs all live on Oblien.
      *
-     * `cloudWorkspaceId IS NOT NULL` is the canonical "this is a
-     * cloud project" test. The per-deployment `deployTarget` already
-     * lives in `deployment.meta` (snapshot per deploy); duplicating
-     * it on the project row creates two sources of truth for the
-     * same fact. Set by build.service after a successful workspace
-     * provision. Unique-per-project (the partial unique index below
-     * enforces that we never bind two local projects to the same
-     * workspace).
+     * Used by dedicated/direct Cloud deployments. Shared projects reach their
+     * host through serverId and its managed workspace owner instead of each
+     * claiming the provider VM. Set after successful provision and unique per
+     * active project; deployment.meta holds the frozen execution target.
      */
     cloudWorkspaceId: text("cloud_workspace_id"),
 
-    /** Subscription-owned Cloud target. cloudWorkspaceId remains the dedicated provider identity. */
+    /** Billing owner, derived from the managed server by project_server_owner.
+     * It is not an independently selectable execution target. */
     workspaceId: text("workspace_id"),
 
     /**
-     * Durable owner of the SERVER this project deploys to (self-hosted). The
+     * Durable reference to the execution server (local, SSH or managed Cloud). The
      * per-deployment `deployment.meta.serverId` is a volatile snapshot that a
      * fresh/partial redeploy could fail to re-derive, which then let the deploy
      * fall back to "local" and null the project's verified custom-domain ports —
      * the Access-URL-regressed-to-localhost bug. This column is the single
      * durable binding; `resolveSnapshotTarget` reads it first and re-stamps meta.
      *
-     * Unlike a `deployTarget` column (which we deliberately do NOT add — see
-     * cloudWorkspaceId above), this doesn't duplicate a source of truth: the
-     * effective target is DERIVED — `cloudWorkspaceId ? "cloud" : serverId ?
-     * "server" : "local"`. That derivation lives in ONE function,
-     * `deriveProjectDeployTarget` in @repo/core, so this rule has a single
-     * implementation to change; read surfaces reach it through
-     * `projectService.resolveProjectDeployTarget`. ON DELETE SET NULL so removing a
-     * server unbinds its projects rather than cascade-deleting them.
+     * The host connection and managed owner determine its execution transport;
+     * read surfaces use resolveProjectDeployTarget. Removing a connected server
+     * unbinds its projects. Managed servers cannot be removed while projects
+     * belong to them (the ownership trigger and composite FK enforce this).
      */
     serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
     /** Kubernetes deployment binding; independent from the Edge/build host. */
@@ -516,8 +509,9 @@ export const project = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
-    check("project_workspace_target_check", sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NULL AND ${table.clusterId} IS NULL)`),
+    check("project_workspace_target_check", sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NOT NULL AND ${table.clusterId} IS NULL)`),
     foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId], name: "project_workspace_owner_fk" }).onDelete("restrict"),
+    foreignKey({ columns: [table.serverId, table.workspaceId, table.organizationId], foreignColumns: [servers.id, servers.workspaceId, servers.organizationId], name: "project_server_workspace_fk" }).onDelete("restrict"),
     index("project_workspace_idx").on(table.workspaceId),
     index("project_cluster_idx").on(table.clusterId).where(sql`${table.clusterId} IS NOT NULL`),
     uniqueIndex("uq_project_app_environment_slug_active")

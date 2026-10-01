@@ -138,6 +138,7 @@ export {
   type UserSettings,
   type NewUserSettings,
   type Server,
+  type ConnectedServer,
   type NewServer,
   type ServerGithubAuth,
   type NewServerGithubAuth,

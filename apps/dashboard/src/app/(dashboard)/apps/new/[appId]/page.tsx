@@ -482,9 +482,8 @@ export default function AppInstallPage() {
     void appsApi
       .hostFit(templateId, {
         deployTarget: cloudDestination ? "cloud" : destination?.deployTarget,
-        serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+        serverId: destination?.serverId,
         projectId: capacityProjectId ?? undefined,
-        workspaceId: destination?.workspaceId,
       })
       .then((res) => {
         if (live) setHostFit(res.data);
@@ -562,10 +561,14 @@ export default function AppInstallPage() {
     void Promise.all([projectsApi.getInfo(targetDraftId), servicesApi.list(targetDraftId)])
       .then(([info, svcRes]) => {
         if (cancelled) return;
-        const project = info?.data?.project as { slug?: string; name?: string; workspaceId?: string; serverId?: string; deployTarget?: string } | undefined;
+        const project = info?.data?.project as { slug?: string; name?: string; workspaceId?: string; serverId?: string; serverName?: string; deployTarget?: string } | undefined;
         if (!project || !Array.isArray(svcRes?.services))
           throw new Error("Incomplete draft response");
-        if (!selfHosted) setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined });
+        if (!selfHosted || project.deployTarget === "cloud" || project.workspaceId) {
+          setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined, serverId: project.workspaceId ? project.serverId : undefined });
+        } else if (project.serverId) {
+          setDestination({ deployTarget: "server", serverId: project.serverId, serverName: project.serverName });
+        }
         // A catalog update can cancel the pending read. Only mark the draft
         // restored after its routes are applied, including an empty service list.
         setExpo((prev) => ({
@@ -584,7 +587,7 @@ export default function AppInstallPage() {
     return () => {
       cancelled = true;
     };
-  }, [targetDraftId, appEndpoints, draftRouting, cloudConnected]);
+  }, [targetDraftId, appEndpoints, draftRouting, cloudConnected, selfHosted]);
 
   /**
    * The URL an endpoint is ACTUALLY reachable at, read back from the service rows
@@ -1227,7 +1230,7 @@ export default function AppInstallPage() {
       if (!pid) {
         const res = await appsApi.install({
           templateId: appId,
-          workspaceId: destination?.workspaceId,
+          serverId: destination?.serverId,
           name: appName.trim() || undefined,
           routes,
         });
@@ -1274,7 +1277,7 @@ export default function AppInstallPage() {
             // Where to install — reuses the deploy wizard's target selection.
             // Undefined falls back to the project/meta default server-side.
             deployTarget: destination?.deployTarget,
-            serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
+            serverId: destination?.serverId,
           });
           attachDeployment(dep, targetPid);
           started = true;
@@ -1355,7 +1358,7 @@ export default function AppInstallPage() {
       }
       const res = await appsApi.install({
         templateId: appId,
-          workspaceId: destination?.workspaceId,
+        serverId: destination?.serverId,
         name: appName.trim() || undefined,
         routes,
       });

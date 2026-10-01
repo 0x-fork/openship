@@ -81,20 +81,43 @@ export function transferUniqueKeys(name: string): string[][] {
 
 export const transferReferences = topoOrderedTables().flatMap((spec) => {
   const columns = getTableColumns(spec.table);
-  return getTableConfig(spec.table).foreignKeys.flatMap((fk) => {
+  const references = new Map<
+    string,
+    {
+      table: string;
+      column: string;
+      parent: string;
+      parentColumn: string;
+      nullable: boolean;
+    }
+  >();
+  for (const fk of getTableConfig(spec.table).foreignKeys) {
     const ref = fk.reference();
     const parent = getTableConfig(ref.foreignTable).name;
     const parentColumns = getTableColumns(ref.foreignTable);
-    return ref.columns.map((column, i) => ({
-      table: spec.sqlName,
-      column: Object.keys(columns).find((key) => columns[key] === column)!,
-      parent,
-      parentColumn: Object.keys(parentColumns).find(
-        (key) => parentColumns[key] === ref.foreignColumns[i],
-      )!,
-      nullable: !column.notNull,
-    }));
-  });
+    // Owner-scoped composite FKs include an identity plus scope columns. Only
+    // the identity is a dependency: following organizationId independently
+    // would export every parent's row in that organization and mistake scope
+    // values for resource IDs during import. The full FK still guards restore.
+    const identity = ref.foreignColumns.findIndex((column) => column.primary);
+    for (const [i, column] of ref.columns.entries()) {
+      if (ref.columns.length > 1 && identity >= 0 && i !== identity) continue;
+      // Drizzle's table-level constraints use distinct column objects from
+      // getTableColumns; SQL names identify both inline and composite FKs.
+      const columnKey = Object.keys(columns).find((key) => columns[key]!.name === column.name)!;
+      const parentColumn = Object.keys(parentColumns).find(
+        (key) => parentColumns[key]!.name === ref.foreignColumns[i]!.name,
+      )!;
+      references.set(`${columnKey}:${parent}:${parentColumn}`, {
+        table: spec.sqlName,
+        column: columnKey,
+        parent,
+        parentColumn,
+        nullable: !column.notNull,
+      });
+    }
+  }
+  return [...references.values()];
 });
 
 /** Bounded parameter batches, shared by project exports and import preflight. */

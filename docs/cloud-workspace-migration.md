@@ -22,7 +22,7 @@ commercial adjustment with the customer before checkout or an audited grant.
 
 ## Stage and verify
 
-1. Create replacement projects with the target `workspaceId`; preserve the source
+1. Create replacement projects with the workspace's returned `serverId`; preserve the source
    projects. Placement is immutable, so do not rewrite project IDs or deployment
    snapshots directly in the database.
 2. Recreate service settings and saved environment values through the normal
@@ -65,8 +65,12 @@ retired namespace and subscription IDs for later billing support.
 
 ## Release verification
 
-- Apply `0155_cloud_workspaces.sql` through the normal migration runner. Do not
-  use a production database for development tests.
+- Apply `0155_cloud_workspaces.sql` and `0156_managed_servers.sql` through the
+  normal migration runner. The latter registers a managed server for each
+  existing logical workspace and derives its projects' billing owner from that
+  server; it does not provision or move provider resources. Existing direct
+  Cloud projects and connected SSH/local hosts keep their bindings. Do not use
+  a production database for development tests.
 - Boot both Cloud and self-hosted route registries; both must have zero critical
   scanner errors.
 - Run workspace lifecycle integration tests, including signed payment events,

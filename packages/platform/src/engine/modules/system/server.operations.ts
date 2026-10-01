@@ -132,6 +132,7 @@ async function getServer(ctx: ExecutionContext, id: string) {
   // Org-scoped: out-of-org server ids 404 indistinguishably from missing.
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
+  if (server.workspaceId) return failServer({ error: "Manage this server through its Cloud workspace", code: "MANAGED_SERVER_LIFECYCLE_REQUIRED" }, 409);
 
   await primeGeo();
   // Same name, same source, same meaning as the list's `projectCount` — the detail
@@ -167,6 +168,7 @@ async function probeReachability(ctx: ExecutionContext, id: string) {
 
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
+  if (server.workspaceId) return failServer({ error: "Check this server through its Cloud workspace", code: "MANAGED_SERVER_CONTEXT_REQUIRED" }, 409);
 
   const d: ReachabilityDiagnosis = await sshManager
     .diagnoseReachability(id)
@@ -312,6 +314,7 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   // Org-scoped: refuse to update a server outside the caller's org.
   const existing = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!existing) return failServer({ error: "Server not found" }, 404);
+  if (existing.workspaceId) return failServer({ error: "Manage this server through its Cloud workspace", code: "MANAGED_SERVER_LIFECYCLE_REQUIRED" }, 409);
 
   // #527: an isLocal row's ssh* fields are DISPLAY-ONLY. Every operation on this box goes
   // through the container→host channel, whose credentials come from OPENSHIP_HOST_SSH_*
@@ -424,6 +427,7 @@ async function serverDeletionPreview(ctx: ExecutionContext, id: string) {
 
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
+  if (server.workspaceId) return failServer({ error: "Delete this server through its Cloud workspace", code: "MANAGED_SERVER_LIFECYCLE_REQUIRED" }, 409);
 
   const [workloads, mail, tunnels, github, destinations] = await Promise.all([
     repos.project.listActiveByServer(ctx.organizationId, id).catch(() => []),

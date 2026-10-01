@@ -225,13 +225,14 @@ describeDockerE2E("multiple projects on one subscribed Docker workspace", () => 
     await db
       .insert(schema.cloudWorkspace)
       .values({ id: ownerWorkspaceId, organizationId, name: "Production", namespace });
+    await db.insert(schema.servers).values({ organizationId, workspaceId: ownerWorkspaceId, name: "Production", sshHost: null });
     for (const id of ids) {
       const group = await repos.projectGroup.create({ organizationId, name: id, slug: id });
       await repos.project.create({
         id,
         organizationId,
         groupId: group.id,
-        workspaceId: ownerWorkspaceId,
+        serverId: (await repos.server.findByWorkspace(ownerWorkspaceId, organizationId))!.id,
         name: id,
         slug: id,
       });

@@ -86,6 +86,8 @@ import { getCheckoutStatus } from "@repo/platform/engine/modules/billing/billing
 import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
+import { deleteFolderSession } from "@repo/platform/engine/modules/projects/folder/session-store";
+import { rm } from "node:fs/promises";
 
 // Real HTTP authorization, SQL ownership, billing reconciliation, provisioning
 // and operation workers. Only provider transport/execution is simulated here;
@@ -116,14 +118,17 @@ async function request(method: string, suffix = "", body?: unknown, actor = owne
   });
   return { status: response.status, body: (await response.json()) as any };
 }
-async function clients(actor = owner, credential?: VerifiedIdentity["credential"]) {
+async function nativeShip(actor = owner, credential?: VerifiedIdentity["credential"]) {
   const user = (await repos.user.findById(actor.userId))!;
   const ship = createShip({
     platform: getPlatformKernel(),
     identity: { resolve: async () => ({ user, sessionId: "workspace-test", credential }) },
   });
+  return ship.scope({ identity: "verified", organizationId: actor.orgId });
+}
+async function clients(actor = owner, credential?: VerifiedIdentity["credential"]) {
   return [
-    (await ship.scope({ identity: "verified", organizationId: actor.orgId })).cloudWorkspaces,
+    (await nativeShip(actor, credential)).cloudWorkspaces,
     new OpenshipClient({
       baseUrl: "http://openship.test",
       token: actor.token,
@@ -154,7 +159,7 @@ async function addProject(name: string) {
   });
   return repos.project.create({
     organizationId: owner.orgId,
-    workspaceId: workspace.id,
+    serverId: (await repos.server.findByWorkspace(workspace.id, owner.orgId))!.id,
     groupId: group.id,
     name,
     slug: group.slug,
@@ -377,6 +382,8 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     await drainBackgroundWork();
     const a = await addProject("A"),
       b = await addProject("B");
+    expect(a.serverId).toBeTruthy();
+    expect(a.serverId).toBe(b.serverId);
     const targets = await Promise.all(
       [a, b].map((project) =>
         ensureCloudDockerWorkspace({
@@ -400,6 +407,113 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
       targets[0]?.workspaceId,
     );
     expect(h.client.delete).not.toHaveBeenCalled();
+  });
+  it("creates projects through the public server selector and pins their Cloud owner", async () => {
+    const sdk = await nativeShip();
+    const server = (await repos.server.findByWorkspace(workspace.id, owner.orgId))!;
+    const project = await sdk.projects.create({ name: "Managed project", serverId: server.id });
+    const saved = (await repos.project.findById(project.id))!;
+    expect(saved).toMatchObject({ serverId: server.id, workspaceId: workspace.id });
+    const { resolveSnapshotTarget } =
+      await import("@repo/platform/engine/modules/deployments/build.service");
+    expect(
+      await resolveSnapshotTarget(saved, { serverId: server.id, deployTarget: "server" }),
+    ).toMatchObject({ serverId: server.id, deployTarget: "cloud" });
+    const other = await repos.cloudWorkspace.create({
+      organizationId: owner.orgId,
+      name: "Other",
+      mode: "shared",
+      runtime: "docker",
+    });
+    const otherServer = (await repos.server.findByWorkspace(other.id, owner.orgId))!;
+    await expect(
+      resolveSnapshotTarget(saved, { serverId: otherServer.id, deployTarget: "server" }),
+    ).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_TARGET_CONFLICT" });
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("keeps dedicated native projects on their managed server without provisioning Docker", async () => {
+    const sdk = await nativeShip();
+    const dedicated = await sdk.cloudWorkspaces.create({
+      name: "Native",
+      mode: "dedicated",
+      runtime: "native",
+    });
+    await ensureNamespace(owner.orgId, dedicated.id);
+    workspace = (await repos.cloudWorkspace.findById(dedicated.id))!;
+    subscribe();
+    const project = await sdk.projects.create({ name: "Native app", serverId: dedicated.serverId });
+    expect(await repos.project.findById(project.id)).toMatchObject({
+      serverId: dedicated.serverId,
+      workspaceId: dedicated.id,
+    });
+    expect(
+      await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: dedicated.id }, owner.orgId),
+    ).toBeUndefined();
+    await expect(
+      sdk.projects.create({ name: "Second app", serverId: dedicated.serverId }),
+    ).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_EMPTY" });
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("installs and previews catalog apps on the selected managed server without creating a project VM", async () => {
+    subscribe("starter");
+    const sdk = await nativeShip();
+    const server = (await repos.server.findByWorkspace(workspace.id, owner.orgId))!;
+    const preview = await sdk.apps.hostFit("redis", { serverId: server.id });
+    expect(preview.cloud?.status, preview.cloud?.message).toBe("ready");
+    const result = await sdk.apps.install({ templateId: "redis", serverId: server.id });
+    if (result.kind !== "template") throw new Error("Expected a catalog project");
+    expect(await repos.project.findById(result.projectId)).toMatchObject({
+      serverId: server.id,
+      workspaceId: workspace.id,
+      isApp: true,
+    });
+    expect(await repos.service.listByProject(result.projectId)).toHaveLength(2);
+    expect((await sdk.apps.hostFit("redis", { projectId: result.projectId })).cloud?.status).toBe(
+      "ready",
+    );
+    await expect(
+      sdk.apps.hostFit("redis", { projectId: result.projectId, serverId: "another-host" }),
+    ).rejects.toMatchObject({ code: "PROJECT_SERVER_TARGET_CONFLICT" });
+    const stranger = await nativeShip(await seedOwner());
+    await expect(
+      stranger.apps.install({ templateId: "redis", serverId: server.id }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("carries one managed server through source staging, scan and project creation", async () => {
+    const sdk = await nativeShip();
+    const server = (await repos.server.findByWorkspace(workspace.id, owner.orgId))!;
+    const staged = await sdk.sources.stage({
+      serverId: server.id,
+      source: {
+        type: "files",
+        files: {
+          "package.json": JSON.stringify({
+            name: "managed-source",
+            scripts: { start: "node index.js" },
+          }),
+          "index.js": "console.log('source fixture');",
+        },
+      },
+    });
+    try {
+      expect(staged).toMatchObject({ serverId: server.id, workspaceId: workspace.id });
+      const scan = await sdk.sources.scan(staged.sessionId);
+      expect(scan).toMatchObject({ serverId: server.id, workspaceId: workspace.id });
+      const project = await sdk.projects.create({ name: "Source app", serverId: scan.serverId });
+      expect(await repos.project.findById(project.id)).toMatchObject({
+        serverId: server.id,
+        workspaceId: workspace.id,
+      });
+      const stranger = await nativeShip(await seedOwner());
+      await expect(stranger.sources.scan(staged.sessionId)).rejects.toMatchObject({
+        statusCode: 404,
+      });
+      expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    } finally {
+      const session = deleteFolderSession(staged.sessionId);
+      if (session?.stagingDir) await rm(session.stagingDir, { recursive: true, force: true });
+    }
   });
   it("recovers a lost provider create response with the same request and disk", async () => {
     const create = h.client.workspaces.create.getMockImplementation()!;

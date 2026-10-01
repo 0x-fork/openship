@@ -28,7 +28,7 @@ export function readDeployMeta(
       : null;
 
   if (project.workspaceId || project.cloudWorkspaceId) {
-    return { deployTarget: "cloud", serverId: null };
+    return { deployTarget: "cloud", serverId: project.workspaceId ? project.serverId ?? null : null };
   }
   if (project.clusterId) return { deployTarget: "cluster", serverId: null };
 
@@ -70,8 +70,7 @@ export function readDeployMeta(
     serverId: null,
   });
 
-  // A cloud target and a server id must never be emitted together. The server
-  // may be stale state from before a move to cloud or from an old snapshot.
+  // This unbound fallback has no execution server to emit.
   return {
     deployTarget,
     serverId: null,
@@ -122,7 +121,7 @@ export async function resolveProjectLiveDeployTarget(
 
   // Docker's durable workspace is also stamped on the release. The platform
   // resolver validates its project/namespace binding before any provider write.
-  if (meta?.cloudDockerWorkspace || meta?.managedWorkspaceId) return { deployTarget: "cloud", serverId: null };
+  if (meta?.cloudDockerWorkspace || meta?.managedWorkspaceId) return { deployTarget: "cloud", serverId: meta.managedWorkspaceId ? meta.serverId ?? project.serverId ?? null : null };
 
   if (
     meta?.deployTarget === "local" ||

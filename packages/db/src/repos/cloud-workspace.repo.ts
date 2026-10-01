@@ -5,6 +5,7 @@ import {
   cloudDockerWorkspace,
   cloudWorkspace,
   project,
+  servers,
   type CloudWorkspaceOperation,
 } from "../schema";
 
@@ -20,8 +21,11 @@ export async function assertCloudWorkspacePlacement(
     clusterId?: string | null;
   },
 ) {
-  if (!input.workspaceId) return;
-  if (input.serverId || input.clusterId)
+  const [server] = input.serverId ? await tx.select().from(servers)
+    .where(and(eq(servers.id, input.serverId), eq(servers.organizationId, input.organizationId))) : [];
+  const workspaceId = server?.workspaceId ?? input.workspaceId;
+  if (!workspaceId) return;
+  if (!server?.workspaceId || (input.workspaceId && input.workspaceId !== server.workspaceId) || input.clusterId)
     throw new AppError(
       "Cloud workspace conflicts with the project's execution target",
       400,
@@ -32,7 +36,7 @@ export async function assertCloudWorkspacePlacement(
     .from(cloudWorkspace)
     .where(
       and(
-        eq(cloudWorkspace.id, input.workspaceId),
+        eq(cloudWorkspace.id, workspaceId),
         eq(cloudWorkspace.organizationId, input.organizationId),
       ),
     )
@@ -81,11 +85,15 @@ export function createCloudWorkspaceRepo(db: Database) {
         .orderBy(asc(cloudWorkspace.createdAt), asc(cloudWorkspace.id));
     },
     async create(input: Pick<CloudWorkspace, "organizationId" | "name" | "mode" | "runtime">) {
-      const [row] = await db
-        .insert(cloudWorkspace)
-        .values({ ...input, id: generateId("cws") })
-        .returning();
-      return row!;
+      return db.transaction(async (tx) => {
+        const [row] = await tx.insert(cloudWorkspace)
+          .values({ ...input, id: generateId("cws") }).returning();
+        await tx.insert(servers).values({
+          organizationId: input.organizationId, workspaceId: row!.id,
+          name: input.name, sshHost: null, sshPort: null, sshUser: null,
+        });
+        return row!;
+      });
     },
     async setNamespace(id: string, organizationId: string, namespace: string) {
       const [row] = await db
@@ -127,18 +135,23 @@ export function createCloudWorkspaceRepo(db: Database) {
       return row;
     },
     async rename(id: string, organizationId: string, name: string) {
-      const [row] = await db
-        .update(cloudWorkspace)
-        .set({ name, updatedAt: new Date() })
-        .where(
-          and(
-            eq(cloudWorkspace.id, id),
-            eq(cloudWorkspace.organizationId, organizationId),
-            isNull(cloudWorkspace.deletionInProgress),
-          ),
-        )
-        .returning();
-      return row;
+      return db.transaction(async (tx) => {
+        const updatedAt = new Date();
+        const [row] = await tx
+          .update(cloudWorkspace)
+          .set({ name, updatedAt })
+          .where(
+            and(
+              eq(cloudWorkspace.id, id),
+              eq(cloudWorkspace.organizationId, organizationId),
+              isNull(cloudWorkspace.deletionInProgress),
+            ),
+          )
+          .returning();
+        if (row) await tx.update(servers).set({ name, updatedAt })
+          .where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
+        return row;
+      });
     },
     /** Caller holds the workspace billing lock across provider reconciliation. */
     async setPendingCheckouts(
@@ -282,6 +295,7 @@ export function createCloudWorkspaceRepo(db: Database) {
           .limit(1);
         if (member) throw new Error("Cloud workspace still contains projects");
         await tx.delete(cloudDockerWorkspace).where(eq(cloudDockerWorkspace.ownerWorkspaceId, id));
+        await tx.delete(servers).where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
         await tx.delete(cloudWorkspace).where(eq(cloudWorkspace.id, id));
       });
     },

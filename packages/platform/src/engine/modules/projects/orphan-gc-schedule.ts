@@ -200,7 +200,7 @@ async function assertOrphanTargetStillMatches(
   if (candidates.has(stored)) return;
   if (o.serverId) {
     const server = await repos.server.getInOrganization(o.serverId, o.organizationId);
-    if (server) {
+    if (server?.sshHost && !server.workspaceId) {
       candidates.add(
         server.isLocal
           ? "local"

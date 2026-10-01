@@ -40,7 +40,7 @@ export function FolderUpload() {
   const { t } = useI18n();
   const router = useRouter();
   const { selfHosted } = usePlatform();
-  const [workspaceId, setWorkspaceId] = useState<string>();
+  const [destination, setDestination] = useState<{ workspaceId?: string; serverId?: string }>({});
   const fileRef = useRef<HTMLInputElement>(null);
   const [stack, setStack] = useState<FrameworkConfig | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
@@ -88,7 +88,7 @@ export function FolderUpload() {
 
       setPhase("uploading");
       const session = await folderApi.createSession({
-        workspaceId,
+        serverId: destination.serverId,
         stack: stack.id,
         packageManager: picked.packageManager,
         name: picked.name,
@@ -162,7 +162,7 @@ export function FolderUpload() {
       </div>
 
       <div className="px-5 py-4">
-        {!selfHosted && <div className="mb-4"><WorkspacePicker value={workspaceId} onChange={setWorkspaceId} disabled={busy} /></div>}
+        {!selfHosted && <div className="mb-4"><WorkspacePicker value={destination.workspaceId} onChange={(workspaceId, serverId) => setDestination({ workspaceId, serverId })} disabled={busy} /></div>}
         {!picked ? (
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}

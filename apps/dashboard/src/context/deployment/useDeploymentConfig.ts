@@ -1389,7 +1389,7 @@ export function useDeploymentConfig() {
 
         setConfig((prev) =>
           buildPreparedConfig(
-            { ...seedLoadedProjectEnv(prev, context?.projectId, projectEnvState, false), workspaceId: scan.workspaceId },
+            { ...seedLoadedProjectEnv(prev, context?.projectId, projectEnvState, false), workspaceId: scan.workspaceId, serverId: scan.serverId },
             {
               response,
               project,
@@ -1474,6 +1474,14 @@ export function useDeploymentConfig() {
         // page. The API already resolves it (`server.name || server.sshHost`).
         const savedServerName =
           typeof project.serverName === "string" && project.serverName ? project.serverName : null;
+        const savedWorkspaceId = typeof project.workspaceId === "string" ? project.workspaceId : undefined;
+        const hasSavedServer = savedTarget === "server" || (savedTarget === "cloud" && !!savedWorkspaceId);
+        const savedPlacement = savedTarget ? {
+          deployTarget: savedTarget,
+          workspaceId: savedWorkspaceId,
+          serverId: hasSavedServer ? savedServerId ?? undefined : undefined,
+          serverName: hasSavedServer ? savedServerName ?? undefined : undefined,
+        } : {};
 
         setConfig((prev) => {
           // Guard: don't let an EMPTY service-row fetch collapse an already-loaded
@@ -1495,15 +1503,7 @@ export function useDeploymentConfig() {
               // stale rows here would turn a later save into unintended upserts.
               envVars: envState.rows,
               projectEnvBaseline: envState.baseline,
-              ...(savedTarget
-                ? {
-                    deployTarget: savedTarget,
-                    workspaceId: typeof project.workspaceId === "string" ? project.workspaceId : undefined,
-                    serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
-                    serverName:
-                      savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
-                  }
-                : null),
+              ...savedPlacement,
             };
           }
 
@@ -1536,14 +1536,7 @@ export function useDeploymentConfig() {
             // DEFAULT_CONFIG's "cloud" standing. The page's target seeders are gated on
             // this having landed; before it existed they were gated on a comment that
             // claimed it, and a saved project's deploy went out addressed to "cloud".
-            ...(savedTarget
-              ? {
-                  deployTarget: savedTarget,
-                    workspaceId: typeof project.workspaceId === "string" ? project.workspaceId : undefined,
-                  serverId: savedTarget === "server" ? (savedServerId ?? undefined) : undefined,
-                  serverName: savedTarget === "server" ? (savedServerName ?? undefined) : undefined,
-                }
-              : null),
+            ...savedPlacement,
           };
         });
 

@@ -10,7 +10,7 @@ import type {
 import type { ExecutionContext } from "../../../context";
 import { env } from "../../config/env";
 import { authorization } from "../../lib/authorization";
-import { requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
+import { requireCloudWorkspace, requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
 import {
   ensureCloudWorkspaceHost,
   cloudSubscriptionWorkspaceResources,
@@ -46,9 +46,10 @@ function requireSaas() {
 const digest = (data: unknown) => createHash("sha256").update(JSON.stringify(data)).digest("hex");
 
 async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspaceSummary> {
-  const [binding, projects] = await Promise.all([
+  const [binding, projects, server] = await Promise.all([
     repos.cloudDockerWorkspace.find({ ownerWorkspaceId: row.id }, row.organizationId),
     repos.project.listByWorkspace(row.id, row.organizationId),
+    requireWorkspaceServer(row.organizationId, row.id),
   ]);
   const unfinished = row.operation && row.operation.status !== "succeeded";
   let state = row.deletionInProgress
@@ -89,6 +90,7 @@ async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspac
     : null;
   return {
     id: row.id,
+    serverId: server.id,
     name: row.name,
     mode: row.mode,
     runtime: row.runtime,

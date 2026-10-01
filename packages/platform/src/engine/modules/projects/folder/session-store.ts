@@ -26,6 +26,7 @@ export interface FolderSession {
   userId: string;
   /** Optional resource binding for a project-scoped credential. */
   projectId?: string;
+  serverId?: string;
   /** Subscription that owns the upload, independent of a temporary provider VM. */
   managedWorkspaceId?: string | null;
   mode: FolderUploadMode;

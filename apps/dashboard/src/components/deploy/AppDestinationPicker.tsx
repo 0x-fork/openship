@@ -76,7 +76,7 @@ export function AppDestinationPicker({
   }, [selfHosted, value?.deployTarget, onChange]);
 
   if (!selfHosted) {
-    return <WorkspacePicker value={value?.workspaceId} disabled={disabled} dockerOnly onChange={workspaceId => onChange({ deployTarget: "cloud", workspaceId })} />;
+    return <WorkspacePicker value={value?.workspaceId} disabled={disabled} dockerOnly onChange={(workspaceId, serverId) => onChange({ deployTarget: "cloud", workspaceId, serverId })} />;
   }
 
   return (

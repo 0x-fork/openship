@@ -1,6 +1,7 @@
 import { repos, type Project } from "@repo/db";
 import { AppError, type AppTemplate } from "@repo/core";
 import { getTemplateForOrg } from "./catalog-source";
+import { workspaceForServer } from "../../lib/cloud-workspace-scope";
 
 /** Failed installs can be retried directly, without reopening the app installer.
  * Persist defaults before the deployment freezes its service configuration. */
@@ -36,7 +37,7 @@ export async function appCloudConfiguration(
   organizationId: string,
   template: AppTemplate,
   projectId?: string,
-  workspaceId?: string,
+  serverId?: string,
 ) {
   const project = projectId
     ? await repos.project.findByIdInOrganization(projectId, organizationId)
@@ -50,6 +51,13 @@ export async function appCloudConfiguration(
   ) {
     throw new AppError("App project not found", 404, "PROJECT_NOT_FOUND");
   }
+  if (project && serverId && serverId !== project.serverId)
+    throw new AppError("The selected server differs from this project", 409, "PROJECT_SERVER_TARGET_CONFLICT");
+  const selectedServerId = project?.serverId ?? serverId;
+  const selected = selectedServerId ? await workspaceForServer(organizationId, selectedServerId) : null;
+  if (selected && !selected.workspace)
+    throw new AppError("Choose a managed Cloud server", 400, "CLOUD_WORKSPACE_TARGET_UNAVAILABLE");
+  const workspaceId = selected?.workspace?.id ?? project?.workspaceId ?? undefined;
   const saved = project ? await repos.service.listByProject(project.id) : [];
   const savedByName = new Map(saved.map((service) => [service.name, service]));
   const profiles = new Map((template.services ?? []).map((service) => [service.name, service]));

@@ -246,7 +246,7 @@ export async function collectProjectManifest(
     dep: Deployment,
   ): CollectedTarget => {
     const runtimeMode =
-      resolved.runtime.name === "cloud"
+      resolved.effectiveTarget === "cloud"
         ? "cloud"
         : resolved.runtime.name === "bare"
           ? "bare"
@@ -254,11 +254,9 @@ export async function collectProjectManifest(
     return {
       key:
         resolved.hostPortTarget?.targetKey ??
-        (resolved.serverId
-          ? `server:${resolved.serverId}`
-          : runtimeMode === "cloud"
-            ? `cloud:${((dep.meta ?? {}) as DeploymentMeta).cloudDockerWorkspace?.workspaceId ?? dep.containerId ?? ((dep.meta ?? {}) as DeploymentMeta).workspaceId ?? dep.id}`
-            : `local:${runtimeMode}`),
+        (runtimeMode === "cloud"
+          ? `cloud:${((dep.meta ?? {}) as DeploymentMeta).cloudDockerWorkspace?.workspaceId ?? dep.containerId ?? ((dep.meta ?? {}) as DeploymentMeta).workspaceId ?? dep.id}`
+          : resolved.serverId ? `server:${resolved.serverId}` : `local:${runtimeMode}`),
       serverId: resolved.serverId,
       runtimeMode,
     };
@@ -458,10 +456,10 @@ export async function collectProjectManifest(
     // and the delete still completes. Skip entirely if the server was removed.
     {
       const meta = (dep.meta ?? {}) as DeploymentMeta;
-      const serverId = meta.serverId;
+      const serverId = meta.managedWorkspaceId || meta.deployTarget === "cloud" ? undefined : meta.serverId;
       if (serverId && !(await reachProbe.isReachable(serverId))) {
         const server = await repos.server.getInOrganization(serverId, dep.organizationId);
-        if (server) {
+        if (server?.sshHost && !server.workspaceId) {
           const mode = meta.runtimeMode === "bare" ? "bare" : "docker";
           const targetKey = server.isLocal
             ? "local"
@@ -526,7 +524,7 @@ export async function collectProjectManifest(
       const server = meta.serverId
         ? await repos.server.getInOrganization(meta.serverId, dep.organizationId)
         : null;
-      if (server && meta.serverId) {
+      if (server?.sshHost && !server.workspaceId && meta.serverId) {
         const serverId = meta.serverId!;
         const mode = meta.runtimeMode === "bare" ? "bare" : "docker";
         const targetKey = server.isLocal
@@ -545,7 +543,7 @@ export async function collectProjectManifest(
         });
         const serviceRows = await repos.service.listByDeployment(dep.id);
         recordUnreachableDeployment(serverId, targetKey, mode, dep, serviceRows);
-      } else if (!meta.serverId) {
+      } else if (!meta.serverId || server?.workspaceId) {
         // A local/cloud target has no removable server row that could explain
         // the failure. Silently skipping its known refs would let teardown drop
         // the only DB record for a workload/artifact we never even attempted to

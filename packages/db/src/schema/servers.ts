@@ -1,13 +1,15 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, boolean, check } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, boolean, check, foreignKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
+import { cloudWorkspace } from "./cloud-workspace";
 
 // ─── Servers ─────────────────────────────────────────────────────────────────
 
 /**
- * SSH server configurations.
+ * Execution hosts. Existing hosts use local/SSH connections; a workspace-bound
+ * host uses the owning Cloud workspace's provider connection and runtime.
  *
- * One row per configured host. There's no kind / role flag - any server
+ * One row per configured host. There's no workload role flag - any server
  * can host apps, the mail stack, or both. Whether mail is installed on a
  * given host is derived at runtime from the mail-state.json the install
  * pipeline writes, not from a schema column.
@@ -25,6 +27,9 @@ export const servers = pgTable("servers", {
   organizationId: text("organization_id")
     .references(() => organization.id, { onDelete: "cascade" }),
 
+  /** Managed host owner. Its subscription and provider VM lifecycle stay on the workspace. */
+  workspaceId: text("workspace_id"),
+
   /** Human-readable label - defaults to sshHost when not set */
   name: text("name"),
 
@@ -36,7 +41,7 @@ export const servers = pgTable("servers", {
 
   // ── SSH credentials ────────────────────────────────────────────────────────
 
-  sshHost: text("ssh_host").notNull(),
+  sshHost: text("ssh_host"),
   sshPort: integer("ssh_port").default(22),
   sshUser: text("ssh_user").default("root"),
   sshAuthMethod: text("ssh_auth_method"), // "password" | "key"
@@ -61,4 +66,19 @@ export const servers = pgTable("servers", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
   check("servers_ssh_transport_check", sql`${table.sshTransport} IN ('direct', 'cloudflare')`),
+  uniqueIndex("servers_workspace_unique").on(table.workspaceId),
+  uniqueIndex("servers_workspace_owner_unique").on(table.id, table.workspaceId, table.organizationId),
+  foreignKey({
+    name: "servers_workspace_owner_fk",
+    columns: [table.workspaceId, table.organizationId],
+    foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId],
+  }).onDelete("restrict"),
+  check("servers_connection_check", sql`
+    (${table.workspaceId} IS NULL AND ${table.sshHost} IS NOT NULL)
+    OR (${table.workspaceId} IS NOT NULL AND ${table.organizationId} IS NOT NULL
+      AND NOT ${table.isLocal} AND ${table.sshHost} IS NULL
+      AND ${table.sshPassword} IS NULL AND ${table.sshKeyPath} IS NULL
+      AND ${table.sshPrivateKey} IS NULL AND ${table.sshKeyPassphrase} IS NULL
+      AND ${table.sshJumpHost} IS NULL AND ${table.sshArgs} IS NULL)
+  `),
 ]);

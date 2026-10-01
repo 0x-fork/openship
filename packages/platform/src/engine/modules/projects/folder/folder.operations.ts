@@ -25,7 +25,7 @@ export const sourceDependencies: SourceDependencies = {
     const source = await prepareSourceDirectory(input.source, { temporaryRoot: root, validatePath: assertNativeSourcePath });
     let id: string | undefined;
     try {
-      const result = await createFolderSession({ orgId: ctx.organizationId, userId: ctx.userId, projectId: input.projectId, workspaceId: input.workspaceId, name: input.name ?? (source.temporary ? "app" : basename(source.directory)), stack: input.stack, packageManager: input.packageManager }, ctx);
+      const result = await createFolderSession({ orgId: ctx.organizationId, userId: ctx.userId, projectId: input.projectId, serverId: input.serverId, name: input.name ?? (source.temporary ? "app" : basename(source.directory)), stack: input.stack, packageManager: input.packageManager }, ctx);
       id = result.sessionId;
       const session = sessionFor(id, ctx.organizationId);
       if (session.mode === "api-relay") {
@@ -45,7 +45,7 @@ export const sourceDependencies: SourceDependencies = {
           session.uploaded = true;
         } finally { stream.destroy(); await archive.dispose(); }
       }
-      return { sessionId: id, workspaceId: result.workspaceId, expiresAt: result.expiresAt };
+      return { sessionId: id, serverId: result.serverId, workspaceId: result.workspaceId, expiresAt: result.expiresAt };
     } catch (error) {
       if (id) {
         const session = deleteFolderSession(id);
@@ -57,7 +57,7 @@ export const sourceDependencies: SourceDependencies = {
   async scan(ctx, id, options) {
     const [{ projectInfoToScanResponse }, { scanFolderSession }] = await Promise.all([import("../../deployments/prepare.service"), import("./folder.service")]);
     const session = sessionFor(id, ctx.organizationId);
-    return { ...projectInfoToScanResponse(await scanFolderSession(session), options), workspaceId: session.managedWorkspaceId ?? undefined };
+    return { ...projectInfoToScanResponse(await scanFolderSession(session), options), serverId: session.serverId, workspaceId: session.managedWorkspaceId ?? undefined };
   },
   async upload(ctx, id, ticket, body) {
     const session = sessionFor(id, ctx.organizationId);

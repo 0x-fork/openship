@@ -15,7 +15,7 @@ export function WorkspacePicker({
   dockerOnly = false,
 }: {
   value?: string;
-  onChange: (id: string | undefined) => void;
+  onChange: (id: string | undefined, serverId?: string) => void;
   disabled?: boolean;
   purpose?: "placement" | "billing";
   dockerOnly?: boolean;
@@ -33,7 +33,7 @@ export function WorkspacePicker({
     ) ?? [];
   useEffect(() => {
     if (!value && data && !data.dedicatedBilling && rows.length === 1 && !disabled)
-      onChange(rows[0]!.id);
+      onChange(rows[0]!.id, rows[0]!.serverId);
   }, [data, value, disabled, onChange, rows.length]);
   if (loading)
     return (
@@ -82,7 +82,7 @@ export function WorkspacePicker({
           aria-label={copy.singular}
           value={value ?? (data?.dedicatedBilling ? "dedicated" : "")}
           options={options}
-          onChange={(id) => onChange(id === "dedicated" ? undefined : id)}
+          onChange={(id) => onChange(id === "dedicated" ? undefined : id, rows.find(row => row.id === id)?.serverId)}
           disabled={disabled}
           variant="filled"
           triggerClassName="bg-muted/60 hover:bg-muted"

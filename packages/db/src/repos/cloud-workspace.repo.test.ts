@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import * as schema from "../schema";
 import { assertCloudWorkspacePlacement, createCloudWorkspaceRepo } from "./cloud-workspace.repo";
 import { createCloudDockerWorkspaceRepo } from "./cloud-docker-workspace.repo";
+import { createServerRepo } from "./server.repo";
 
 const client = new PGlite("memory://");
 const db = drizzle(client, { schema });
@@ -35,6 +36,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.delete(schema.cloudDockerWorkspace);
   await db.delete(schema.project);
+  await db.delete(schema.servers);
   await db.delete(schema.cloudWorkspace);
   await db.delete(schema.organization);
   await db.insert(schema.organization).values([
@@ -58,10 +60,12 @@ async function createWorkspace(
   return workspaces.setNamespace(workspace.id, "org-a", `ns-${workspace.id}`);
 }
 async function addProject(id: string, workspaceId: string) {
+  const server = await createServerRepo(db).findByWorkspace(workspaceId, "org-a");
   return db.transaction(async (tx) => {
     const row = {
       id,
       workspaceId,
+      serverId: server!.id,
       organizationId: "org-a",
       groupId: "group",
       name: id,
@@ -73,6 +77,42 @@ async function addProject(id: string, workspaceId: string) {
   });
 }
 describe("subscription workspace ownership", () => {
+  it("registers one managed execution server for both shared and dedicated workspaces", async () => {
+    const shared = await createWorkspace();
+    const dedicated = await createWorkspace("dedicated", "native");
+    for (const owner of [shared, dedicated]) {
+      const server = await createServerRepo(db).findByWorkspace(owner.id, "org-a");
+      expect(server).toMatchObject({ organizationId: "org-a", workspaceId: owner.id, sshHost: null, isLocal: false });
+      await expect(createServerRepo(db).delete(server!.id)).rejects.toMatchObject({ code: "MANAGED_SERVER_LIFECYCLE_REQUIRED" });
+    }
+    expect(await db.select().from(schema.servers)).toHaveLength(2);
+  });
+  it("renames the workspace and its execution host together within the owning organization", async () => {
+    const workspace = await createWorkspace();
+    const servers = createServerRepo(db);
+    const server = (await servers.findByWorkspace(workspace.id, "org-a"))!;
+    expect(await workspaces.rename(workspace.id, "org-b", "Wrong owner")).toBeUndefined();
+    expect((await servers.get(server.id))?.name).toBe("Production");
+    await workspaces.rename(workspace.id, "org-a", "Customer apps");
+    expect((await workspaces.findById(workspace.id))?.name).toBe("Customer apps");
+    expect((await servers.get(server.id))?.name).toBe("Customer apps");
+    expect(await servers.listByOrganization("org-a")).toEqual([]);
+  });
+  it("derives the project billing owner from its server and rejects conflicting owners", async () => {
+    const first = await createWorkspace();
+    const second = await createWorkspace();
+    const server = (await createServerRepo(db).findByWorkspace(first.id, "org-a"))!;
+    const [created] = await db.insert(schema.project).values({
+      id: "derived", organizationId: "org-a", groupId: "group", name: "Derived", slug: "derived", serverId: server.id,
+    }).returning();
+    expect(created.workspaceId).toBe(first.id);
+    await expect(db.update(schema.project).set({ workspaceId: second.id }).where(eq(schema.project.id, "derived"))).rejects.toThrow();
+    await expect(db.update(schema.project).set({ serverId: null }).where(eq(schema.project.id, "derived"))).rejects.toThrow();
+    await expect(db.update(schema.servers).set({ workspaceId: second.id }).where(eq(schema.servers.id, server.id))).rejects.toThrow();
+    await expect(db.insert(schema.project).values({
+      id: "foreign-server", organizationId: "org-b", groupId: "group", name: "Foreign", slug: "foreign-server", serverId: server.id,
+    })).rejects.toThrow();
+  });
   it("concurrent projects share one durable host and deleting either preserves it", async () => {
     const workspace = await createWorkspace();
     await Promise.all([addProject("a", workspace.id), addProject("b", workspace.id)]);

@@ -139,7 +139,7 @@ export {
   type InstanceSettings,
   type NewInstanceSettings,
 } from "./instance-settings.repo";
-export { createServerRepo, type Server, type NewServer } from "./server.repo";
+export { createServerRepo, type Server, type ConnectedServer, type NewServer } from "./server.repo";
 export {
   createServerClusterRepo,
   type ServerClusterRecord,

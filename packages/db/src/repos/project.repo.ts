@@ -371,7 +371,8 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       const { id: providedId, ...rest } = data;
       const id = providedId ?? generateId("proj");
       const row = { id, ...rest };
-      if (access || row.workspaceId) {
+      let inserted: Project;
+      if (access || row.workspaceId || row.serverId) {
         // A create-only credential must acquire access in the same commit as
         // its new project. A revoked/missing token rolls back the project too.
         await db.transaction(async tx => {
@@ -384,7 +385,7 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
           if (token.readOnly || (token.organizationId && token.organizationId !== row.organizationId))
             throw new ForbiddenError("Project creation credential cannot write to this organization");
           }
-          await tx.insert(project).values(row);
+          [inserted] = await tx.insert(project).values(row).returning();
           if (access) {
           await tx.insert(personalAccessTokenGrant).values({
             id: generateId("patgrant"), tokenId: access.tokenId,
@@ -394,9 +395,9 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
           }
         });
       } else {
-        await db.insert(project).values(row);
+        [inserted] = await db.insert(project).values(row).returning();
       }
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Project;
+      return inserted!;
     },
 
     async listByWorkspace(workspaceId: string, organizationId: string) {
@@ -449,11 +450,12 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       for (const svc of input.services) serviceIdBySourceId[svc.sourceId] = generateId("svc");
 
       const projectRow = { id: projectId, groupId, ...input.project };
+      let inserted: Project;
 
       await db.transaction(async (tx) => {
         await assertCloudWorkspacePlacement(tx, projectRow);
         await tx.insert(projectGroup).values({ id: groupId, ...input.group });
-        await tx.insert(project).values(projectRow);
+        [inserted] = await tx.insert(project).values(projectRow).returning();
         if (input.services.length > 0) {
           await tx.insert(service).values(
             input.services.map((svc) => ({
@@ -496,7 +498,7 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       });
 
       return {
-        project: { ...projectRow, createdAt: new Date(), updatedAt: new Date() } as Project,
+        project: inserted!,
         serviceIdBySourceId,
       };
     },

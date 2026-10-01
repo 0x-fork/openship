@@ -1688,7 +1688,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         </div>
       )}
 
-      {!selfHosted && config.deployTarget === "cloud" && <WorkspacePicker value={config.workspaceId} disabled={!!config.projectId || !!config.uploadSessionId} dockerOnly={config.projectType === "services" || config.projectType === "monorepo"} onChange={workspaceId => updateConfig({ workspaceId })} />}
+      {!selfHosted && config.deployTarget === "cloud" && <WorkspacePicker value={config.workspaceId} disabled={!!config.projectId || !!config.uploadSessionId} dockerOnly={config.projectType === "services" || config.projectType === "monorepo"} onChange={(workspaceId, serverId) => updateConfig({ workspaceId, serverId })} />}
 
       {/* Compact summary - saved default applied cleanly. The pill itself
           is the edit affordance: clicking expands the full picker so the

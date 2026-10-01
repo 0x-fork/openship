@@ -13,6 +13,22 @@ Approved implementation scope: shared Docker execution targets alongside the exi
 - Provider calls are idempotent and recoverable. A failed billing read does not suspend an active workspace. Suspensions preserve data.
 - Disk usage is measured; provisioned disk is capacity. Shared image/cache/system bytes are not repeatedly charged to projects.
 
+## Managed server refinement
+
+Projects use `serverId` for their execution host, including Cloud. Each Cloud
+workspace owns one managed server identity; the workspace still owns billing,
+provisioning and host deletion. The server's workspace binding selects Oblien
+transport and the workspace's Docker or dedicated native runtime. Local and SSH
+servers retain their existing connections. Project workspace ownership is an
+immutable, database-checked billing scope, not another execution selector.
+
+- [x] Atomic managed server creation and database ownership constraints
+- [x] Central destination resolution for local, SSH, shared Cloud Docker and dedicated Cloud
+- [x] Project/app placement through server IDs and unchanged subscription scoping
+- [x] Guards against SSH fallback and ordinary server deletion for managed hosts
+- [x] Updated contracts, UI, SDK/MCP documentation and manual migration guidance
+- [x] Ownership, lifecycle and self-hosted regression tests; release verification
+
 ## Delivery checklist
 
 - [x] Workspace schema, ownership constraints and repository integration tests
@@ -27,22 +43,26 @@ Approved implementation scope: shared Docker execution targets alongside the exi
 
 ## Validation
 
-- Full API: 616 files / 7,741 tests passed. The complete Cloud and self-hosted
+- Full API: 617 files / 7,755 tests passed. The complete Cloud and self-hosted
   production routers both pass the startup permission scanner and MCP discovery.
-- Full dashboard: 230 files / 2,486 tests passed. Browser fixtures cover light,
+- Full dashboard: 230 files / 2,490 tests passed. Browser fixtures cover light,
   dim, dark, narrow and Arabic RTL layouts, placement, resize review and progress.
 - Adapter suite: 4,755 tests passed, including container-name cleanup and omitted
   zero-byte layer sizes in Docker's disk-usage response. Reintroducing the faulty
   lookup in a temporary copy fails both name/short-ID cases; the disk-accounting
   regression also fails before its fix and passes afterward.
-- Core (1,408), contracts (14), database (598), platform (170), SDK (186), CLI (581)
+- Core (1,408), contracts (14), database (603), platform (170), SDK (187), CLI (581)
   and repository script (67) tests passed. Database tests apply the migration chain
   to fresh and populated databases and verify cross-organization constraints.
+- Managed-server regressions cover project/app/source placement, historical
+  snapshots, immutable billing ownership, and unchanged SSH/local/direct Cloud
+  bindings during upgrade. Project transfers follow each FK identity once,
+  without including unrelated servers through composite ownership columns.
 - Both Cloud Docker release suites pass against a disposable real Docker daemon:
   10 tests covering ports/routes, mounts, private links, environment reapply,
   data backup/restore, image replay, sibling-safe cleanup, container limits and
   build success/failure/cancellation cleanup.
-- API, dashboard, adapters, platform, SDK and CLI typechecks pass. The public
+- API, dashboard, database, adapters, platform, SDK and CLI typechecks pass. The public
   package builds and passes its installed Node 22 lifecycle/CLI/type checks.
 - Website build and documentation checks pass: 167 pages, 461 SDK methods,
   680 HTTP routes, 437 MCP tools, 214 CLI paths and all documented examples.

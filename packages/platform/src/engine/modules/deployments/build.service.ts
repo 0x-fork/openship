@@ -288,7 +288,7 @@ export interface DeploymentConfigSnapshot {
   clusterRuntimeId?: string;
   clusterProjectId?: string;
   clusterConfig?: import("@repo/core").ClusterWorkloadConfig;
-  /** Target server ID when deployTarget is "server" */
+  /** Execution host identity for a connected server or managed Cloud workspace. */
   serverId?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode?: "bare" | "docker";
@@ -483,12 +483,8 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     // change.
     ...deploymentClass,
     localPath: deploymentClass.source === "upload" ? project.localPath || undefined : undefined,
-    // Per packages/db/src/schema/project.ts:231 — `cloudWorkspaceId IS
-    // NOT NULL` is THE canonical "is this a cloud project?" test.
-    // Default the snapshot's deployTarget from that so preflight,
-    // pipeline, and rollback all see "cloud" without depending on the
-    // UI to pass it on every redeploy. The desktop picker still wins
-    // when it does pass an explicit deployTarget (see line ~773).
+    // Both a managed owner and a direct provider binding identify Cloud.
+    // Resolve the full execution identity below, independently of UI input.
     deployTarget: project.workspaceId || project.cloudWorkspaceId ? "cloud" : project.clusterId ? "cluster" : undefined,
     ...(project.workspaceId ? { managedWorkspaceId: project.workspaceId } : {}),
     ...(project.clusterId ? { clusterId: project.clusterId, clusterProjectId: project.id, clusterConfig: project.clusterConfig ?? { replicas: 1 } } : {}),
@@ -1023,15 +1019,14 @@ export async function resolveRollbackContext(
  * and triggerDeployment) so they can never diverge on where a project deploys.
  *
  * Precedence:
- *   - deployTarget: explicit per-deploy override (the wizard picker)
- *       > cloudWorkspaceId (the canonical "is a cloud project" primitive)
+ *   - deployTarget: managed workspace binding (immutable without a migration)
+ *       > explicit per-deploy override (the wizard picker) > cloudWorkspaceId
  *       > project.serverId (the DURABLE server binding — survives a fresh/partial
  *         snapshot that a redeploy would otherwise resolve to "local")
  *       > the project's ACTIVE deployment's last target (what it runs on now)
  *       > undefined (host default, resolved later by the pipeline's resolver).
- *   - serverId: ONLY kept when the resolved target is "server". For cloud/local
- *       it is dropped, so a non-server deploy can't carry a stale serverId and
- *       mis-route (the bug the unconditional inheritance had).
+ *   - serverId: kept for connected servers and managed Cloud hosts. Direct
+ *       Cloud/local targets discard stale server IDs from older snapshots.
  *   - runtimeMode: override > project.runtimeMode column > active-meta.
  */
 export async function resolveSnapshotTarget(
@@ -1043,22 +1038,15 @@ export async function resolveSnapshotTarget(
         ?.meta as DeploymentConfigSnapshot | null)
     : null;
 
-  // Target priority, highest first:
-  //   1. explicit override (the caller chose a target for this deploy)
-  //   2. cloud — a promoted project (canonical on the SaaS)
-  //   3. project.serverId — the DURABLE server binding
-  //   4. the active deployment's stamped target
-  //   5. inferred "server" when the active meta carries a serverId
-  // Step 3 is why a server-hosted project can no longer regress to "local" on a
-  // fresh/partial snapshot (which then nulled its custom-domain ports). Steps 4–5
-  // remain for legacy rows not yet backfilled: step 5 matches resolveEffectiveTarget
-  // (which routes ANY serverId over SSH) and repairs migrated (adopt/reattach) metas
-  // that set serverId but historically omitted deployTarget.
+  // Managed ownership pins the host. Otherwise preserve the existing override,
+  // durable binding and historical snapshot precedence described above.
   let deployTarget: DeployTarget | undefined;
-  if (project.workspaceId && (override?.serverId || (override?.deployTarget && override.deployTarget !== "cloud")))
+  if (project.workspaceId && ((override?.serverId && override.serverId !== project.serverId) ||
+    (override?.deployTarget && override.deployTarget !== "cloud" && !(override.deployTarget === "server" && override.serverId === project.serverId))))
     throw new AppError("Changing this project's Cloud workspace requires a migration", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
-  if (override?.deployTarget) deployTarget = override.deployTarget;
-  else if (project.workspaceId || project.cloudWorkspaceId) deployTarget = "cloud";
+  if (project.workspaceId) deployTarget = "cloud";
+  else if (override?.deployTarget) deployTarget = override.deployTarget;
+  else if (project.cloudWorkspaceId) deployTarget = "cloud";
   else if (project.clusterId) deployTarget = "cluster";
   else if (project.serverId) deployTarget = "server";
   else if (activeMeta?.deployTarget) deployTarget = activeMeta.deployTarget === "cluster" ? "local" : activeMeta.deployTarget;
@@ -1075,7 +1063,7 @@ export async function resolveSnapshotTarget(
   }
 
   const serverId =
-    deployTarget === "server"
+    project.workspaceId ? project.serverId ?? undefined : deployTarget === "server"
       ? (override?.serverId ?? project.serverId ?? activeMeta?.serverId ?? undefined)
       : undefined;
 
@@ -2793,8 +2781,8 @@ export async function triggerDeployment(
   // last deployed to — that lives in the deployment meta), so without this a
   // redeploy/webhook of a self-hosted *server* project loses its target and, on a
   // SaaS instance, defaults to cloud → wrong cloud preflight → 403. The resolver
-  // gates serverId on target==="server" so a non-server deploy can't carry a stale
-  // serverId. (reuse/rollback already carries the frozen target — leave it.)
+  // retains serverId for connected and managed hosts while discarding stale
+  // identities on direct Cloud targets. Reuse/rollback carries its frozen target.
   if (!reuse) {
     const resolvedTarget = await resolveSnapshotTarget(
       project,
