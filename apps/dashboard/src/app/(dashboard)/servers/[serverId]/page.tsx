@@ -44,13 +44,14 @@ import { Button } from "@/components/ui/button";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { ManagedServerPlan } from "@/components/servers/managed/ManagedServerPlan";
 import { ManagedServerActivity } from "@/components/servers/managed/ManagedServerActivity";
+import { ManagedServerActionFeedback } from "@/components/servers/managed/ManagedServerActionFeedback";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
 import { useManagedServerActions } from "@/components/servers/managed/useManagedServerActions";
 import { ServerUsage } from "@/components/servers/ServerUsage";
 import { ManagedServerNetwork } from "@/components/servers/managed/ManagedServerNetwork";
 
 
-type Tab = "overview" | "migrations" | "components" | "github" | "security" | "networking" | "ports" | "terminal";
+type Tab = "overview" | "activity" | "migrations" | "components" | "github" | "security" | "networking" | "ports" | "terminal";
 type ManualActionMode = "remove" | null;
 
 interface TabDef {
@@ -65,6 +66,7 @@ interface TabDef {
 // its mail-install state at runtime. We don't repeat that UI here.
 const TABS: TabDef[] = [
   { key: "overview",   icon: "grid" },
+  { key: "activity",   icon: "history" },
   { key: "migrations", icon: "migration" },
   { key: "components", icon: "server-settings" },
   { key: "github",     icon: "git-branch" },
@@ -135,6 +137,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const [requestedTab, setActiveTab] = useState<Tab>("overview");
   const visibleTabs = TABS.filter(tab => {
     if (tab.desktopOnly && !isDesktop) return false;
+    if (tab.key === "activity") return !!managed;
     if (tab.key === "terminal") return canTerminal;
     if (tab.key === "networking") return !!server?.capabilities?.networkSettings;
     if (tab.key === "components" || tab.key === "security") return canInspect;
@@ -741,8 +744,9 @@ function ServerDetail({ serverId }: { serverId: string }) {
           {/* Left column */}
           <div className="min-w-0 space-y-5">
             {loadError && <p role="alert" className="rounded-xl bg-danger/5 p-4 text-sm text-danger">{loadError}</p>}
-            {managed && <ManagedServerActivity server={managed} actions={managedActions} deleting={removeOpen} onCancelDelete={() => setRemoveOpen(false)} />}
+            {managed && <ManagedServerActionFeedback server={managed} actions={managedActions} deleting={removeOpen} onCancelDelete={() => setRemoveOpen(false)} />}
             {/* Tab content */}
+            {activeTab === "activity" && managed && <ManagedServerActivity server={managed} actions={managedActions} />}
             {activeTab === "overview" && <>
               {canMonitor && <OverviewTab
                 stats={monitor.stats}

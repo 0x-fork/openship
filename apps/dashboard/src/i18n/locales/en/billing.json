@@ -556,6 +556,17 @@
     "resume": "Resume server",
     "resize": "Apply plan capacity",
     "operation": "Server activity",
+    "activity": {
+      "empty": "No server operations yet.",
+      "waitingForLogs": "Waiting for operation logs…",
+      "noLogs": "No logs were recorded for this operation.",
+      "status": {
+        "queued": "Queued",
+        "running": "In progress",
+        "succeeded": "Completed",
+        "failed": "Failed"
+      }
+    },
     "nextAttempt": "Next retry:",
     "resizeConfirm": "Apply the current plan’s capacity?",
     "before": "Current host",

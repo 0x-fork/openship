@@ -25,6 +25,8 @@ The list shows each server's state, placement, and project count. Open one for:
 - **Overview** — measured CPU, memory, and disk use, purchased capacity, and the projects sharing it.
   Project storage represents measured application data; shared images, cache, and system files are counted
   once. Reserved disk capacity is shown separately from used storage.
+- **Activity** — the latest server operation, its status and logs. Queued work shows its next retry;
+  failed work offers **Try again**. Completed logs stay here without covering the other tabs.
 - **Components** — inspect Docker and Git health and run a fresh check. Software on managed servers
   is maintained by the platform; the page does not offer host package installation or removal.
 - **Security** — scan listening ports through the server's existing execution connection. A listener
@@ -47,7 +49,7 @@ server use its existing capacity; creating a project does not reserve another VM
 
 **Resume server** checks the current entitlement before starting a stopped host. **Apply plan capacity**
 previews the purchased size and all projects that may restart. Disk shrinking is unavailable. Operations
-show their progress and logs inline; queued work shows its next retry, and failed work offers **Try again**.
+show their progress and logs in **Activity**; action confirmations remain visible on the current tab.
 Refreshing or reopening the page observes the same operation without starting another one.
 
 Renaming a server preserves its placement and subscription. Deleting a project preserves the shared

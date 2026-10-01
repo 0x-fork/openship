@@ -260,6 +260,7 @@
   "detail": {
     "tabs": {
       "overview": "Overview",
+      "activity": "Activity",
       "migrations": "Migrations",
       "components": "Components",
       "github": "Git auth",
