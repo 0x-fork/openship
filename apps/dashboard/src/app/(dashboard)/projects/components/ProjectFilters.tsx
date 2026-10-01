@@ -51,7 +51,7 @@ export interface ProjectFilterOption {
  * projects. The page uses the option count to decide whether the sidebar is
  * worth showing (≥2 real groups).
  */
-export function buildProjectFilterOptions(projects: Project[], t: Dictionary): ProjectFilterOption[] {
+export function buildProjectFilterOptions(projects: Project[], t: Dictionary, allLabel = t.projects.filters.allProjects): ProjectFilterOption[] {
   let cloud = 0;
   let local = 0;
   const servers = new Map<string, number>();
@@ -69,7 +69,7 @@ export function buildProjectFilterOptions(projects: Project[], t: Dictionary): P
     {
       key: "all",
       filter: { kind: "all" },
-      label: t.projects.filters.allProjects,
+      label: allLabel,
       icon: <UiIcon name="grid" className="size-4" />,
       count: projects.length,
     },
@@ -119,7 +119,7 @@ export function ProjectFilters({ options, active, onChange }: ProjectFiltersProp
   const activeKey = projectFilterKey(active);
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50">
+    <div className="bg-card rounded-2xl">
       <div className="px-5 py-4 border-b border-border/50">
         <h2 className="font-semibold text-foreground text-[15px]">{t.projects.filters.title}</h2>
         <p className="text-xs text-muted-foreground">{t.projects.filters.subtitle}</p>
@@ -132,6 +132,7 @@ export function ProjectFilters({ options, active, onChange }: ProjectFiltersProp
               key={opt.key}
               type="button"
               onClick={() => onChange(opt.filter)}
+              aria-pressed={isActive}
               className={
                 "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors " +
                 (isActive

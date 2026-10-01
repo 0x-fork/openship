@@ -1,14 +1,5 @@
-"use client";
-
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { ProjectCollectionPage } from "../projects/components/ProjectCollectionPage";
 
 export default function AppsPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace("/projects");
-  }, [router]);
-
-  return null;
+  return <ProjectCollectionPage kind="apps" />;
 }

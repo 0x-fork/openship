@@ -130,7 +130,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Button asChild variant="ghost" size="icon" className="app-nav-fallback shrink-0">
-            <Link href="/projects" aria-label={t.dashboard.nav.projects}>
+            <Link href={isApp ? "/apps" : "/projects"} aria-label={isApp ? t.dashboard.nav.apps : t.dashboard.nav.projects}>
               <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
             </Link>
           </Button>

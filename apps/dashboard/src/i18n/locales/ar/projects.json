@@ -28,7 +28,7 @@
   },
   "filters": {
     "title": "التصفية حسب الهدف",
-    "subtitle": "أين يتم نشر المشاريع",
+    "subtitle": "اختر وجهة النشر",
     "allProjects": "جميع المشاريع",
     "cloud": "سحابة Openship",
     "local": "محلي"

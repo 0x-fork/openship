@@ -28,7 +28,7 @@
   },
   "filters": {
     "title": "Filter by target",
-    "subtitle": "Where projects are deployed",
+    "subtitle": "Choose a deployment destination",
     "allProjects": "All projects",
     "cloud": "Openship Cloud",
     "local": "Local"
