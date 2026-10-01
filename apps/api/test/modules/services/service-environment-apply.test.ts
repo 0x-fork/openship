@@ -329,8 +329,8 @@ describe("apply service environment operation", () => {
   it("keeps Cloud quota and allocation checks ahead of the runtime replacement", async () => {
     h.cloud.CLOUD_MODE = true;
     await applyServiceEnvironment(ctx, "p1", "api");
-    expect(h.plan).toHaveBeenCalledExactlyOnceWith("org1", null);
-    expect(h.quota).toHaveBeenCalledExactlyOnceWith("org1", 1, ["api"], null);
+    expect(h.plan).toHaveBeenCalledExactlyOnceWith("org1");
+    expect(h.quota).toHaveBeenCalledExactlyOnceWith("org1", 1, ["api"]);
     expect(h.limits).toHaveBeenCalledExactlyOnceWith("org1", runtime, [
       { containerId: "old-api", allocatedResources: row.allocatedResources },
     ]);

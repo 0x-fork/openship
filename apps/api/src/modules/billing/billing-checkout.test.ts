@@ -16,9 +16,6 @@ const h = vi.hoisted(() => ({
   env: { CLOUD_MODE: true, BILLING_ENABLED: true, BILLING_TOPUPS_ENABLED: true },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env, runtimeTarget: { dashboard: "https://app.openship.io" } }));
-vi.mock("@repo/db", () => ({ repos: { organization: {
-  findById: async (id: string) => ({ id, oblienNamespace: `ns-${id}` }),
-} } }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienClient: () => ({ workspaces: { getQuota: h.quota } }),
   getOblienBillingApi: () => ({
@@ -95,11 +92,11 @@ describe("Cloud customer checkout", () => {
       kind: "subscription",
       billingInterval: "monthly",
       offer: {
-        reference: "openship:starter:v7",
+        reference: "openship:starter:v6",
         unitAmount: 2000,
         credits: 1700,
         policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" },
-        resourceLimits: { max_workspaces: 3, max_disk_gb: 32, max_total_vcpus: 2, max_total_ram_mb: 8192, max_total_disk_gb: 32 },
+        resourceLimits: { max_workspaces: 3, max_disk_gb: 32, max_total_vcpus: 2, max_total_ram_mb: 6144, max_total_disk_gb: 32 },
       },
       metadata: {
         openship_plan: "starter",
@@ -121,7 +118,7 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({
       namespace: "ns-org-a",
       offer: expect.objectContaining({
-        reference: "openship:hobby:v7", unitAmount: 500, credits: 400,
+        reference: "openship:hobby:v6", unitAmount: 500, credits: 400,
         resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 4096, max_disk_gb: 25,
           max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 25 },
       }),
@@ -144,7 +141,7 @@ describe("Cloud customer checkout", () => {
     const input = h.checkout.mock.calls[0]![0];
     expect(input.offer).toMatchObject({
       unitAmount: 9900, credits: 9000,
-      resourceLimits: { max_workspaces: 12, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 256, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 256 },
+      resourceLimits: { max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 },
     });
     expect(JSON.parse(input.metadata.openship_limits).runningServices).toBe(50);
     expect(h.quota).not.toHaveBeenCalled();
@@ -220,7 +217,7 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: "ns-org-a",
-        offer: expect.objectContaining({ reference: "openship:team:v7", unitAmount: 9900 }),
+        offer: expect.objectContaining({ reference: "openship:team:v6", unitAmount: 9900 }),
         billingInterval: "monthly",
       }),
     );

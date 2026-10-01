@@ -736,8 +736,7 @@ describe("app HTTP/native parity through retained catalog, installer, and settin
     expect(result).toMatchObject({ kind: "template", projectId: "installed-app" });
     expect(h.projectCreate).toHaveBeenCalledTimes(2);
     for (const args of h.projectCreate.mock.calls) {
-      expect(args).toEqual([expect.objectContaining({ appTemplateId: definition.id, projectType: "services" }), "org-a", { tokenId: "app-token" },
-        expect.objectContaining({ organizationId: "org-a", role: "restricted", tokenScope: { tokenId: "app-token" } })]);
+      expect(args).toEqual([expect.objectContaining({ appTemplateId: definition.id, projectType: "services" }), "org-a", { tokenId: "app-token" }]);
     }
     expect(h.serviceCreate.mock.calls.every(([ctx]) => ctx.role === "restricted" && !ctx.hono)).toBe(true);
     expect(h.audit).toHaveBeenCalledTimes(2);

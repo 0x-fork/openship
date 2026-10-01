@@ -39,7 +39,7 @@ describe("admin-only cloud delegation", () => {
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
     await proxy.pages!.create({ workspace_id: "ws-own", path: "/app/dist", name: "test", slug: "test", namespace: "ns-other" });
     expect(h.pageCreate).toHaveBeenCalledWith(expect.objectContaining({ namespace: "ns-own" }));
-    expect(h.spend).toHaveBeenCalledWith("org-one", undefined);
+    expect(h.spend).toHaveBeenCalledWith("org-one");
   });
   it("cannot read, replace or delete another customer's page", async () => {
     const pages = createTenantCloudAdmin("org-one", "ns-own").pages!;

@@ -568,20 +568,6 @@ it("applies the confirmed port-only choice to an adopted draft without recreatin
   expect(h.build).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ projectId: "draft" }));
 });
 
-it.each([
-  { cloud: true, deployTarget: "cloud", serverId: "managed-host", workspaceId: "paid-workspace" },
-  { cloud: false, deployTarget: "server", serverId: "saved-host", workspaceId: undefined },
-])("restores the saved $deployTarget host when installing a draft", async ({ cloud, ...placement }) => {
-  h.info.mockResolvedValue({ data: { project: { slug: "saved-app", ...placement } } });
-  await renderApp({ cloud, draft: true });
-  await click("Install");
-  await click("Continue without domains");
-  expect(h.install).not.toHaveBeenCalled();
-  expect(h.build).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-    projectId: "draft", serverId: placement.serverId, deployTarget: placement.deployTarget,
-  }));
-});
-
 it("offers an upgrade before Cloud installation, then refreshes after returning from billing", async () => {
   const capacity = {
     minResources: null,

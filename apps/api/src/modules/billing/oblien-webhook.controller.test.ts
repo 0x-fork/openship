@@ -72,7 +72,6 @@ vi.mock("@repo/db", () => {
       oblienWebhookEvent: { kind: "event", oblienEventId: {}, processedAt: {} },
     },
     repos: {
-      cloudWorkspace: { findByNamespace: async () => undefined },
       billingUsageSnapshot: { upsert: h.usageUpsert },
       organization: { findById: h.orgFindById },
     },

@@ -19,7 +19,7 @@ describe("funded Cloud offers and isolated capacity", () => {
       expect(Object.values(offer.resourceLimits!).every(value => Number.isInteger(value) && value! > 0)).toBe(true);
       expect(offer.policy).toMatchObject({ overdraft: 0, suspendThreshold: 0 });
       expect(presentCloudPlans().plans.find(plan => plan.id === tier)?.resourceLimits).toEqual(offer.resourceLimits);
-      expect(offer.reference).toBe(`openship:${tier}:v7`);
+      expect(offer.reference).toBe(`openship:${tier}:v6`);
       const saved = subscriptionPlan({ ...savedPro(), offer, metadata: subscriptionMetadata(tier, "org-a", "ns-a") });
       const published = presentCloudPlans().plans.find(plan => plan.id === tier)!;
       expect(planServiceResources(saved.limits)).toEqual(planServiceResources(published.limits));
@@ -100,7 +100,7 @@ describe("funded Cloud offers and isolated capacity", () => {
     expect(saved.resourceLimits).toEqual(subscription.offer!.resourceLimits);
     expect(planServiceResources(saved.limits)).toEqual({ cpuCores: 2, memoryMb: 2048 });
     expect(planServiceResources(presentCloudPlans().plans.find(plan => plan.id === "pro")!.limits))
-      .toEqual({ cpuCores: 4, memoryMb: 16384 });
+      .toEqual({ cpuCores: 4, memoryMb: 4096 });
     const displayed = await cloudPlan("pro", subscription);
     expect(displayed).toMatchObject({ price: { monthly: 4000 }, monthlyCredits: 3_500_000,
       limits: saved.limits, resourceLimits: subscription.offer!.resourceLimits });
@@ -125,11 +125,11 @@ describe("funded Cloud offers and isolated capacity", () => {
     const saved = subscriptionPlan(subscription, "org-a", "ns-a");
     expect(await cloudPlan("pro", subscription)).toMatchObject({ price: { monthly: 4000 }, monthlyCredits: 3_500_000,
       limits: saved.limits, resourceLimits: subscription.offer.resourceLimits });
-    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v7", unitAmount: 3900, credits: 3500,
+    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v6", unitAmount: 3900, credits: 3500,
       resourceLimits: saved.resourceLimits });
     expect(subscription).toEqual(before);
   });
-  it.each(["4", "5", "6", "7"])("rejects unverifiable service ceilings in v%s", version => {
+  it.each(["4", "5", "6"])("rejects unverifiable service ceilings in v%s", version => {
     for (const maxServiceResources of [null, undefined, { cpuCores: 0, memoryMb: 4096 }]) {
       const subscription = savedPro();
       subscription.offer!.reference = `openship:pro:v${version}`;
@@ -156,28 +156,13 @@ describe("funded Cloud offers and isolated capacity", () => {
   });
   it("publishes Hobby with 25 GB while preserving the paid v5 storage and credits", async () => {
     const offer = subscriptionOffer("hobby", "monthly");
-    expect(offer).toMatchObject({ reference: "openship:hobby:v7", unitAmount: 500, credits: 400,
+    expect(offer).toMatchObject({ reference: "openship:hobby:v6", unitAmount: 500, credits: 400,
       resourceLimits: { max_disk_gb: 25, max_total_disk_gb: 25 } });
     const subscription = { ...savedPro(), offer: savedOffer("hobby", "monthly"), metadata: savedMetadata("hobby", "org-a", "ns-a") };
     const before = structuredClone(subscription);
     expect(subscriptionPlan(subscription, "org-a", "ns-a").resourceLimits).toMatchObject({ max_disk_gb: 16, max_total_disk_gb: 16 });
     expect(await cloudPlan("hobby", subscription)).toMatchObject({ price: { monthly: 500 }, monthlyCredits: 400_000,
       resourceLimits: { max_disk_gb: 16, max_total_disk_gb: 16 } });
-    expect(subscription).toEqual(before);
-  });
-  it("keeps a v6 subscriber's purchased RAM and service ceiling after publishing full-workspace v7 offers", async () => {
-    const subscription = { ...savedPro(),
-      offer: { ...savedOffer("pro", "monthly"), reference: "openship:pro:v6" },
-      metadata: { ...savedMetadata("pro", "org-a", "ns-a"), openship_offer_version: "6" },
-    };
-    const before = structuredClone(subscription);
-    expect(await cloudPlan("pro", subscription)).toMatchObject({
-      price: { monthly: 3900 }, monthlyCredits: 3_500_000,
-      limits: { maxServiceResources: { cpuCores: 4, memoryMb: 4096 } },
-      resourceLimits: { max_ram_mb: 8192, max_total_ram_mb: 8192, max_disk_gb: 32 },
-    });
-    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v7",
-      resourceLimits: { max_ram_mb: 16384, max_total_ram_mb: 16384, max_disk_gb: 128 } });
     expect(subscription).toEqual(before);
   });
 });

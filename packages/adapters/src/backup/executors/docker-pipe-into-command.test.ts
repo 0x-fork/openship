@@ -41,7 +41,6 @@ let inspect: () => Promise<Inspection>;
 
 function makeExecutor(): DockerBackupExecutor {
   return new DockerBackupExecutor({
-      assertBackupAccess: async () => {},
     docker: {
       getContainer: () => ({
         exec: async () => ({

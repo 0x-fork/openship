@@ -122,9 +122,7 @@ beforeEach(() => {
   h.authorize.mockImplementation(async (context) => context);
   h.permission.mockResolvedValue(true);
   h.server.mockImplementation(async (id: string, org: string) =>
-    id === "foreign" ? undefined : {
-      id, organizationId: org, isLocal: false, workspaceId: null, sshHost: "203.0.113.10",
-    },
+    id === "foreign" ? undefined : { id, organizationId: org, isLocal: false },
   );
   h.get.mockResolvedValue(storedCluster());
   h.create.mockResolvedValue(storedCluster());

@@ -80,7 +80,6 @@ vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: {}, getO
 vi.mock("@repo/platform/engine/lib/cloud/transport", () => ({ resolveOrgCloudUserId: async () => null }));
 vi.mock("@repo/db", () => ({
   repos: {
-    cloudDockerWorkspace: { find: async () => ({ projectId: "p1", workspaceId: "vm1", namespace: "ns1" }) },
     server: {
       getInOrganization: async (id: string) => {
         h.serverGets.push(id);

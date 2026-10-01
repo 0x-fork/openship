@@ -151,10 +151,6 @@ async function seedOneRowPerTable(): Promise<Map<string, Record<string, unknown>
       else if (field === "id") row[field] = `${spec.sqlName}_1`;
     }
 
-    // A project chooses exactly one execution target. Other instance parents
-    // still get their own rows and are independently round-tripped.
-    if (spec.sqlName === "project") { row.clusterId = null; }
-    if (spec.sqlName === "cloud_docker_workspace") row.projectId = null;
     await db.insert(spec.table).values(row as never);
 
     const bySqlColumn: Record<string, unknown> = {};

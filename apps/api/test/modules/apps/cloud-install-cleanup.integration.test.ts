@@ -23,20 +23,13 @@ vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (original) => ({
   ...(await original<object>()),
   assertCloudCanSpend: async () => {},
-  syncOblienEntitlement: async (organizationId: string) => {
-    const { repos } = await import("@repo/db");
-    const { planLimits, resolvePlan } = await import("@repo/core");
-    const { cloudNamespaceLimits } = await import("@repo/platform/engine/lib/cloud-resource-limits");
-    const tier = resolvePlan((await repos.organization.findById(organizationId))?.planTierId).id;
-    return { tier, limits: planLimits(tier), resourceLimits: cloudNamespaceLimits(tier) };
-  },
 }));
 
 import {
   db,
   schema,
   repos,
-  seedOwner as seedBaseOwner,
+  seedOwner,
   installFakeRunner,
   type SeededOwner,
 } from "../jobs/_harness";
@@ -178,13 +171,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// These regression cases exercise the original project-owned Cloud mode.
-async function seedOwner() {
-  const owner = await seedBaseOwner();
-  await db.update(schema.organization).set({ oblienNamespace: `ns-${owner.orgId}` }).where(eq(schema.organization.id, owner.orgId));
-  return owner;
-}
-
 async function installSupabase(tier: "pro" | "starter" = "pro") {
   const owner = await seedOwner();
   await db
@@ -311,7 +297,7 @@ describe("Supabase Cloud installation failure and deletion", () => {
     expect(requests.some((request) => request.startsWith("POST "))).toBe(false);
   });
   it("previews the plan and actual draft resources without provisioning or changing saved settings", async () => {
-    const { owner, projectId, secrets } = await installSupabase("starter");
+    const { owner, projectId, secrets } = await installSupabase();
     const preview = async () => {
       const response = await app.request(
         `/api/apps/catalog/supabase/host-fit?deployTarget=cloud&projectId=${projectId}`,

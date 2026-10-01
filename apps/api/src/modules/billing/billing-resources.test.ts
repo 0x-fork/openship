@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ org: vi.fn(), guard: vi.fn(), build: vi.fn() }));
-vi.mock("@repo/db", () => ({ repos: { organization: { findById: h.org }, cloudWorkspace: { listByOrganization: async () => [] }, deployment: { sumBuildMillisForOrg: h.build } } }));
+vi.mock("@repo/db", () => ({ repos: { organization: { findById: h.org }, deployment: { sumBuildMillisForOrg: h.build } } }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: {
   CLOUD_MODE: true, OBLIEN_CLIENT_ID: "test-owner", OBLIEN_CLIENT_SECRET: "test-secret", OBLIEN_API_URL: "https://provider.test",
 } }));
