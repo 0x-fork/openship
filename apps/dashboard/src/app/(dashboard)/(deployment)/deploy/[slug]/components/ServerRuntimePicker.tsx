@@ -32,7 +32,7 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
   // Only stream the server's live stats while actually visible — the picker is
   // now always mounted (inside the accordion) so the panel can animate its
   // height, but we don't want a background stats stream when it's collapsed.
-  const { stats } = useMonitorStream(config.serverId ?? null, enabled);
+  const { stats } = useMonitorStream(config.serverId ?? null, enabled && !!config.serverId);
 
   const runtimeOptions: Array<{
     value: RuntimeMode;

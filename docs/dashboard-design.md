@@ -41,8 +41,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Keep section spacing consistent (`gap-6` between main columns, `space-y-4` for sidebar items).
   Match action sizes within the same flow. The install action is 44px tall; shared buttons retain
   their established sizes (the default `Button` is 40px).
-- A destination with one valid choice, such as Openship Cloud on the hosted service, uses a
-  compact summary row. Show a picker when the user has a choice.
+- A destination with one existing server uses a compact summary row; multiple servers use
+  the shared picker. Keep the create-server action visible in both cases. Cloud deployments
+  can reuse a server's plan or create a separate server and subscription from the same flow.
 - Plan comparisons lead with CPU, memory, storage and service/project limits. Keep build
   time separate from runtime capacity; show minutes only when the offer defines a time
   allowance. Put metering and shared-capacity explanations once below the plans. Keep

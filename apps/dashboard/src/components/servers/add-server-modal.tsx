@@ -1,12 +1,28 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, type ComponentProps } from "react";
 import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { usePlatform } from "@/context/PlatformContext";
-import { useI18n } from "@/components/i18n-provider";
 import { CreateManagedServerForm } from "./managed/CreateManagedServerForm";
+import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
+import { useI18n } from "@/components/i18n-provider";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useModal } from "@/context/ModalContext";
 import { ServerForm } from "./server-form";
+
+function CreateManagedServerDialog({
+  onCancel,
+  onCreated,
+}: Required<Pick<ComponentProps<typeof CreateManagedServerForm>, "onCancel" | "onCreated">>) {
+  const { t } = useI18n();
+  const { dialog, onKeyDown } = useDialogFocus(onCancel);
+  return (
+    <div ref={dialog} role="dialog" aria-modal="true" aria-label={t.billing.workspaces.create}
+      tabIndex={-1} onKeyDown={onKeyDown} className="outline-none">
+      <CreateManagedServerForm onCancel={onCancel} onCreated={onCreated} autoFocus={false} />
+    </div>
+  );
+}
 
 /**
  * Open the add-server panel as a modal from anywhere a server is required.
@@ -26,29 +42,54 @@ import { ServerForm } from "./server-form";
 export function useAddServerModal() {
   const { showModal, hideModal } = useModal();
   const { selfHosted } = usePlatform();
-  const { t } = useI18n();
 
   return useCallback(
     (onCreated?: (server: ServerInfo) => void) => {
       let id = "";
+      let active = true;
       id = showModal({
         width: "720px",
         maxWidth: "92vw",
         showCloseButton: false,
+        onClose: () => { active = false; },
         // Pickers live inside other modals (backup destination, adopt mail,
         // the migration wizard), and a plain <Modal> defaults to z-10000 — the
         // same value ModalContext hands out first, which would leave this panel
         // tied with its own host. Sit deliberately above it.
         zIndex: 10500,
-        customContent: !selfHosted ? <CreateManagedServerForm submitLabel={t.servers.list.addServer} onCancel={() => hideModal(id)} onCreated={async managed => {
-          const server = await systemApi.getServerById(managed.serverId);
-          hideModal(id);
-          onCreated?.(server);
-        }} /> : (
+        customContent: !selfHosted ? (
+          <CreateManagedServerDialog
+            onCancel={() => hideModal(id)}
+            onCreated={async (managed) => {
+              if (!active) return;
+              const server = await systemApi.getServerById(managed.serverId);
+              if (!active) return;
+              onCreated?.(server);
+              hideModal(id);
+              let plansId = "";
+              plansId = showModal({
+                width: "100%",
+                maxWidth: "1440px",
+                maxHeight: "calc(100dvh - 2rem)",
+                overflow: "hidden",
+                showCloseButton: false,
+                zIndex: 10500,
+                customContent: (
+                  <CloudDeployPlanModal
+                    workspaceId={managed.id}
+                    serverName={managed.name}
+                    onClose={() => hideModal(plansId)}
+                  />
+                ),
+              });
+            }}
+          />
+        ) : (
           <ServerForm
             variant="modal"
             onCancel={() => hideModal(id)}
             onSaved={({ server }) => {
+              if (!active) return;
               hideModal(id);
               onCreated?.(server);
             }}
@@ -57,6 +98,6 @@ export function useAddServerModal() {
       });
       return id;
     },
-    [showModal, hideModal, selfHosted, t.servers.list.addServer],
+    [showModal, hideModal, selfHosted],
   );
 }

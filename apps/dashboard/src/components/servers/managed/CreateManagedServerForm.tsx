@@ -13,10 +13,12 @@ export function CreateManagedServerForm({
   onCreated,
   onCancel,
   submitLabel,
+  autoFocus = true,
 }: {
   onCreated: (server: CloudWorkspaceSummary) => void | Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
+  autoFocus?: boolean;
 }) {
   const { t } = useI18n();
   const copy = t.billing.workspaces;
@@ -52,7 +54,7 @@ export function CreateManagedServerForm({
       <label className="block space-y-2 text-sm font-medium">
         <span>{t.dashboard.pages.apps.nameLabel}</span>
         <Input
-          autoFocus
+          autoFocus={autoFocus}
           variant="filled"
           value={name}
           placeholder={copy.defaultName}

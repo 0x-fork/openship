@@ -402,7 +402,7 @@ const DeployRepository: React.FC = () => {
                     DeployTargetStep owns its own max-width: it widens to two columns
                     when a right-hand panel (cloud power / server runtime) is shown, and
                     stays narrow single-column otherwise. The page just centers it. */}
-                {step === "target" && canPickTarget && (
+                {step === "target" && (canPickTarget || !selfHosted) && (
                     <div className="flex items-center justify-center min-h-[calc(100vh-8rem)] py-8">
                         <DeployTargetStep
                             targets={targets}
@@ -456,7 +456,10 @@ const DeployRepository: React.FC = () => {
                             <ConfigDiagnostics />
                             {deploymentSections}
                         </div>
-                        <Sidebar />
+                        <Sidebar onEditTarget={() => {
+                            autoSkipTargetRef.current = false;
+                            setStep("target");
+                        }} />
                     </div>
                 )}
         </PageContainer>

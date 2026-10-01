@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import type { ServerDetail } from "@repo/contracts";
+import { formatCpuCores, formatMemoryMb } from "@repo/core";
 import { Icon } from "@repo/ui/icons";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { ServerInfo } from "@/lib/api/system";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
@@ -25,11 +25,15 @@ export interface ServerSelectorProps {
   value?: string | null;
   label?: string;
   disabled?: boolean;
+  /** Saved bindings can deploy without permission to list other servers. */
+  readOnly?: boolean;
+  selectedName?: string;
+  disabledReason?: string;
+  onReadyChange?: (ready: boolean) => void;
   compact?: boolean;
   autoSelectFirst?: boolean;
   excludeIds?: string[];
   emptyHint?: string;
-  dockerOnly?: boolean;
   forDeployment?: boolean;
   requiredCapability?: keyof NonNullable<ServerDetail["capabilities"]>;
 }
@@ -45,17 +49,29 @@ function option(server: ServerDetail | ServerInfo): ServerOption {
   };
 }
 
+function ServerSummary({ name, description }: { name: string; description?: string }) {
+  return (
+    <div className="rounded-xl bg-muted/30 px-4 py-3">
+      <p className="break-words text-sm font-medium">{name}</p>
+      {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
+    </div>
+  );
+}
+
 /** One picker for connected and managed servers; deployments select serverId. */
 export default function ServerSelector({
   onSelect,
   value,
   label,
   disabled = false,
+  readOnly = false,
+  selectedName,
+  disabledReason,
+  onReadyChange,
   compact = false,
   autoSelectFirst = false,
   excludeIds,
   emptyHint,
-  dockerOnly = false,
   forDeployment = false,
   requiredCapability,
 }: ServerSelectorProps) {
@@ -63,7 +79,7 @@ export default function ServerSelector({
   const copy = t.widgets.shared.serverSelector;
   const managedCopy = t.billing.workspaces;
   const { selfHosted } = usePlatform();
-  const { data, loading, error, refresh, organizationId } = useServerDestinations();
+  const { data, loading, error, refresh, organizationId } = useServerDestinations(!readOnly);
   const [internalId, setInternalId] = useState<string | null>(null);
   const autoSelected = useRef(false);
   const openAddServer = useAddServerModal();
@@ -87,21 +103,33 @@ export default function ServerSelector({
     );
   });
   const ids = rows.map((row) => row.id).join(",");
+  const automaticCloud =
+    !selfHosted && forDeployment && data?.servers.length === 0 && !selectedId;
   useEffect(() => {
     if (
-      disabled ||
+      disabled || readOnly ||
       selectedId ||
       (!autoSelectFirst && value === null) ||
       autoSelected.current
     )
       return;
-    if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
+    if (automaticCloud) {
+      autoSelected.current = true;
+      onSelectRef.current(null);
+    } else if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
       autoSelected.current = true;
       const selected = option(rows[0]!);
       setInternalId(selected.id);
       onSelectRef.current(selected);
     }
-  }, [ids, disabled, selectedId, autoSelectFirst, value, organizationId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, disabled, readOnly, selectedId, autoSelectFirst, value, organizationId, automaticCloud]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectionReady = readOnly ? Boolean(selectedId) : !loading && !error && (
+    automaticCloud || rows.some((server) => server.id === selectedId && server.managed?.state !== "deleting")
+  );
+  useEffect(() => {
+    onReadyChange?.(selectionReady);
+  }, [selectionReady, onReadyChange]);
 
   function addServer() {
     openAddServer((server) => {
@@ -111,12 +139,18 @@ export default function ServerSelector({
       refresh();
     });
   }
-  const describe = (server: ServerDetail) =>
-    server.managed
-      ? managedCopy.poolHint
-      : server.isLocal
-        ? t.servers.list.currentHost
-        : `${server.sshUser ?? "root"}@${server.sshHost}:${server.sshPort ?? 22}`;
+  const describe = (server: ServerDetail) => {
+    if (!server.managed) return server.isLocal
+      ? t.servers.list.currentHost
+      : `${server.sshUser ?? "root"}@${server.sshHost}:${server.sshPort ?? 22}`;
+    const { resources, projectCount, state } = server.managed;
+    return [
+      interpolate(projectCount === 1 ? managedCopy.oneProject : managedCopy.projectCount, { count: String(projectCount) }),
+      resources
+        ? `${formatCpuCores(resources.cpuCores)} · ${formatMemoryMb(resources.memoryMb)} ${t.deploy.power.ram}`
+        : state === "needs_plan" ? managedCopy.states.needs_plan : null,
+    ].filter(Boolean).join(" · ");
+  };
   const options = [
     ...rows.map((server) => ({
       value: server.id,
@@ -125,8 +159,6 @@ export default function ServerSelector({
     })),
   ];
   const effective = selectedId ?? "";
-  const automaticCloud =
-    !selfHosted && forDeployment && data?.servers.length === 0 && !selectedId;
   const select = (id: string) => {
     autoSelected.current = true;
     setInternalId(id);
@@ -140,7 +172,12 @@ export default function ServerSelector({
           {label ?? copy.serverLabel}
         </label>
       )}
-      {loading ? (
+      {readOnly ? (
+        <ServerSummary
+          name={selectedName || (selectedId ? managedCopy.singular : copy.loadingServers)}
+          description={disabledReason}
+        />
+      ) : loading ? (
         <div
           aria-busy="true"
           aria-label={copy.loadingServers}
@@ -154,17 +191,11 @@ export default function ServerSelector({
           </Button>
         </div>
       ) : automaticCloud ? (
-        <div className="rounded-xl bg-muted/30 px-4 py-3">
-          <p className="text-sm font-medium">{t.deploy.targetStep.options.cloud}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{managedCopy.defaultHint}</p>
-        </div>
+        <ServerSummary name={t.deploy.targetStep.options.cloud} description={managedCopy.defaultHint} />
       ) : options.length > 0 ? (
         <>
           {options.length === 1 && effective === options[0]!.value ? (
-            <div className="rounded-xl bg-muted/30 px-4 py-3">
-              <p className="text-sm font-medium">{options[0]!.label}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{options[0]!.description}</p>
-            </div>
+            <ServerSummary name={options[0]!.label} description={options[0]!.description} />
           ) : (
             <CustomSelect
               aria-label={label ?? copy.serverLabel}
@@ -177,22 +208,6 @@ export default function ServerSelector({
               onChange={select}
             />
           )}
-          {!disabled &&
-            (selfHosted ? (
-              <Button type="button" variant="ghost" size="sm" onClick={addServer}>
-                <Icon name="plus" className="size-3.5" aria-hidden />
-                {copy.addNewServer}
-              </Button>
-            ) : (
-              <Link
-                href="/servers"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex text-xs text-muted-foreground hover:text-foreground"
-              >
-                {managedCopy.manage}
-              </Link>
-            ))}
         </>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/30 p-4">
@@ -210,6 +225,24 @@ export default function ServerSelector({
             {copy.addServer}
           </Button>
         </div>
+      )}
+      {!readOnly && !loading && !error && (automaticCloud || options.length > 0) && (
+        disabledReason ? (
+          <p className="text-xs text-muted-foreground">{disabledReason}</p>
+        ) : !disabled && (
+          <div className="space-y-2">
+            {!selfHosted && forDeployment && !automaticCloud && (
+              <p className="text-xs text-muted-foreground">{managedCopy.existingServerHint}</p>
+            )}
+            <Button type="button" variant="secondary" size="sm" onClick={addServer}>
+              <Icon name="plus" className="size-3.5" aria-hidden />
+              {!selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer}
+            </Button>
+            {!selfHosted && (
+              <p className="text-xs text-muted-foreground">{managedCopy.subscriptionHint}</p>
+            )}
+          </div>
+        )
       )}
     </div>
   );

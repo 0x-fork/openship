@@ -296,6 +296,7 @@ async function runWebmailInstall(
     const installed = await installApp(ctx, {
       templateId: WEBMAIL_TEMPLATE_ID,
       name: plan.name,
+      serverId: plan.serverId,
       routes: plan.routeAfterLink ? [] : plan.routes,
     });
     if (installed.kind !== "template") {
@@ -340,7 +341,7 @@ async function runWebmailInstall(
     projectId,
     serviceDeploymentMode: "services",
     deployTarget: plan.deployTarget,
-    serverId: plan.deployTarget === "server" ? plan.serverId : undefined,
+    serverId: plan.serverId,
   });
 
   return { projectId, deploymentId: dep.deployment_id };

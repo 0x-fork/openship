@@ -2,7 +2,6 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import React from "react";
 import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
 import type { DeployTarget } from "@/context/deployment/types";
@@ -29,7 +28,8 @@ export interface AppDestination {
 }
 
 /**
- * "Where to install" picker for the app wizards. Hosted Cloud only offers Cloud.
+ * "Where to install" picker for the app wizards. Cloud uses managed server rows
+ * and the same add-server flow as the source deployment wizard.
  * Self-hosted instances also offer a SERVER ROW (the shared mail-style
  * `ServerSelector` dropdown — pre-selects the
  * first/only server so the wizard opens with a destination already chosen,
@@ -56,10 +56,16 @@ export function AppDestinationPicker({
   value,
   onChange,
   disabled = false,
+  readOnly = false,
+  disabledReason,
+  onReadyChange,
 }: {
   value: AppDestination | null;
   onChange: (d: AppDestination) => void;
   disabled?: boolean;
+  readOnly?: boolean;
+  disabledReason?: string;
+  onReadyChange?: (ready: boolean) => void;
 }) {
   const { t } = useI18n();
   const opt = t.deploy.targetStep.options;
@@ -68,14 +74,26 @@ export function AppDestinationPicker({
 
   const serverActive = value?.deployTarget === "server";
 
-  React.useEffect(() => {
-    if (!selfHosted && value?.deployTarget !== "cloud") {
-      onChange({ deployTarget: "cloud" });
-    }
-  }, [selfHosted, value?.deployTarget, onChange]);
-
   if (!selfHosted) {
-    return <ServerSelector value={value?.serverId} disabled={disabled} forDeployment dockerOnly onSelect={server => onChange({ deployTarget: "cloud", serverId: server?.id, workspaceId: server?.raw.managed?.id, serverName: server?.name })} />;
+    return (
+      <ServerSelector
+        value={value?.serverId}
+        disabled={disabled}
+        readOnly={readOnly}
+        selectedName={value?.serverName}
+        disabledReason={disabledReason}
+        onReadyChange={onReadyChange}
+        label={t.billing.workspaces.destination}
+        forDeployment
+        compact
+        onSelect={(server) => onChange({
+          deployTarget: "cloud",
+          serverId: server?.id,
+          workspaceId: server?.raw.managed?.id,
+          serverName: server?.name,
+        })}
+      />
+    );
   }
 
   return (
@@ -106,6 +124,7 @@ export function AppDestinationPicker({
       <OptionCard
         value="cloud"
         selected={value?.deployTarget === "cloud"}
+        disabled={disabled}
         onSelect={() => onChange({ deployTarget: "cloud" })}
         icon={<UiIcon name="cloud" className="size-4" />}
         label={opt.cloud}

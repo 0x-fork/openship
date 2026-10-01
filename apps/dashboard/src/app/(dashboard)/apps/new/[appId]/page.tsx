@@ -48,6 +48,7 @@ import {
   AppDestinationPicker,
   type AppDestination,
 } from "@/components/deploy/AppDestinationPicker";
+import { workspaceBillingHref } from "@/components/billing/BillingWorkspaceContext";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { resolvePublicEndpointHostname } from "@/lib/public-endpoint-payload";
@@ -363,6 +364,7 @@ export default function AppInstallPage() {
     });
   }, [appEndpoints, cloudConnected, cloudLoading]);
   const [destination, setDestination] = useState<AppDestination | null>(null);
+  const [destinationReady, setDestinationReady] = useState(selfHosted);
   const showCloudPricing = useCloudDeployPricing(destination?.workspaceId);
   const cloudDestination = destination?.deployTarget === "cloud" || (!destination && !selfHosted);
   const exposureModeLabels = {
@@ -471,7 +473,7 @@ export default function AppInstallPage() {
   const capacityProjectId = adoptedProjectId ?? projectId ?? targetDraftId;
   useEffect(() => {
     const templateId = template?.id;
-    if (!templateId || (selfHosted && (!declaresResources || !destination))) {
+    if (!templateId || (!selfHosted && !destinationReady) || (selfHosted && (!declaresResources || !destination))) {
       setHostFit(null);
       setCapacityLoading(false);
       return;
@@ -502,6 +504,7 @@ export default function AppInstallPage() {
     declaresResources,
     template?.id,
     destination,
+    destinationReady,
     cloudDestination,
     selfHosted,
     capacityProjectId,
@@ -565,7 +568,7 @@ export default function AppInstallPage() {
         if (!project || !Array.isArray(svcRes?.services))
           throw new Error("Incomplete draft response");
         if (!selfHosted || project.deployTarget === "cloud" || project.workspaceId) {
-          setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined, serverId: project.serverId ?? undefined });
+          setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined, serverId: project.serverId ?? undefined, serverName: project.serverName });
         } else if (project.serverId) {
           setDestination({ deployTarget: "server", serverId: project.serverId, serverName: project.serverName });
         }
@@ -1161,6 +1164,7 @@ export default function AppInstallPage() {
   };
 
   const install = withSubmission(async () => {
+    if (!selfHosted && !destinationReady) return;
     // Business-field validity gate (required + per-field rules). The form reports
     // this; block with a clear message rather than shipping an invalid install.
     if (formValidity && !formValidity.valid) {
@@ -1347,6 +1351,7 @@ export default function AppInstallPage() {
    *  picked so far travels with the create write — the /deploy wizard then edits
    *  real stored routes instead of ones the server guessed. */
   const goAdvanced = withSubmission(async () => {
+    if (!selfHosted && !destinationReady) return;
     const routes = await validatedRouteChoices();
     if (!routes) return;
     try {
@@ -1419,10 +1424,10 @@ export default function AppInstallPage() {
     // destination after a mid-install refresh — only the routing pickers
     // rehydrate) is left out rather than guessed.
     const summary: DeploySummaryRow[] = [];
-    const destinationValue =
+    const destinationValue = destination?.serverName || (
       destination?.deployTarget === "cloud"
         ? t.deploy.targetStep.options.cloud
-        : (destination?.serverName || destination?.serverHost || "");
+        : (destination?.serverHost || ""));
     if (destinationValue) {
       summary.push({
         id: "destination",
@@ -1830,7 +1835,7 @@ export default function AppInstallPage() {
           {/* RIGHT — destination + deploy action (sticky) */}
           <div className="min-w-0 space-y-4 @5xl/app-install:sticky @5xl/app-install:top-6">
             {/* Destination — where to install (reuses the deploy target picker) */}
-            <div className="rounded-2xl border border-border/50 bg-card p-5">
+            <div className="rounded-2xl bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
               {selfHosted && (
                 <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
@@ -1860,7 +1865,14 @@ export default function AppInstallPage() {
               )}
 
               <div className="mt-4">
-                <AppDestinationPicker value={destination} onChange={setDestination} disabled={!!targetDraftId || !!projectId} />
+                <AppDestinationPicker
+                  value={destination}
+                  onChange={setDestination}
+                  onReadyChange={setDestinationReady}
+                  readOnly={!!targetDraftId || !!projectId}
+                  disabled={busy || !!targetDraftId || !!projectId}
+                  disabledReason={targetDraftId || projectId ? t.billing.workspaces.savedDestinationHint : undefined}
+                />
               </div>
 
               {/* Declared minimum vs. the destination's measured capacity. Shown
@@ -1925,7 +1937,7 @@ export default function AppInstallPage() {
               {configurationNotice}
               {needsCloudUpgrade ? (
                 <a
-                  href="/billing/plans"
+                  href={workspaceBillingHref("/billing/plans", destination?.workspaceId)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-primary"
@@ -1939,6 +1951,7 @@ export default function AppInstallPage() {
                   onClick={install}
                   disabled={
                     busy ||
+                    (!selfHosted && !destinationReady) ||
                     checkingCloudCapacity ||
                     !exposureReady ||
                     (formValidity ? !formValidity.valid : false)
@@ -1956,7 +1969,7 @@ export default function AppInstallPage() {
               <button
                 type="button"
                 onClick={goAdvanced}
-                disabled={busy || !exposureReady}
+                disabled={busy || !exposureReady || (!selfHosted && !destinationReady)}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
               >
                 <UiIcon name="sliders" className="size-4" /> {w.advanced}

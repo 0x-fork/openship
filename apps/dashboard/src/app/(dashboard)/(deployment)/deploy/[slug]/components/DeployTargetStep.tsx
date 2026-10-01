@@ -35,6 +35,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 interface OptionCardProps {
   value: string;
   selected: boolean;
+  disabled?: boolean;
   onSelect: () => void;
   icon: React.ReactNode;
   label: string;
@@ -47,6 +48,7 @@ interface OptionCardProps {
 
 export const OptionCard: React.FC<OptionCardProps> = ({
   selected,
+  disabled = false,
   onSelect,
   icon,
   label,
@@ -58,6 +60,7 @@ export const OptionCard: React.FC<OptionCardProps> = ({
     <button
       type="button"
       onClick={onSelect}
+      disabled={disabled}
       className={`
         relative w-full h-full text-start p-4 rounded-xl border transition-all
         ${selected
@@ -346,7 +349,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
       : deployTarget === "cloud"
         ? { label: t.deploy.summary.targetCloud, icon: <UiIcon name="cloud" className="size-4" /> }
         : buildLabels.server;
-  const deployLabel = deployTarget === "server" && serverName
+  const deployLabel = (deployTarget === "server" || deployTarget === "cloud") && serverName
     ? serverName
     : target.label;
 
@@ -972,6 +975,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const { config, updateConfig } = useDeployment();
   const { requireCloud } = useCloud();
   const { selfHosted, deployMode } = usePlatform();
+  const [destinationReady, setDestinationReady] = useState(selfHosted);
   // Git credential forwarding is desktop-only — the relay forwards the
   // operator's machine-local `gh`, which only exists on a desktop host.
   const isDesktop = deployMode === "desktop";
@@ -1074,7 +1078,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     // perpetual spinner. (The parent seeds NEW deploys via useSeedDeployTarget;
     // this step now only mounts when the user opens the picker via the summary
     // bar, so seeding here would fight the user's own reason for opening it.)
-    if (config.projectId) {
+    if (!selfHosted || config.projectId) {
       setDefaultsLoaded(true);
       return;
     }
@@ -1142,10 +1146,13 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     // Excluded `servers` / `updateConfig` on purpose: this is a one-shot
     // seed keyed off `ready`. The dep array is intentionally tight.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, [ready, selfHosted]);
 
   // Auto-set deploy target when there's only one option
   useEffect(() => {
+    // Cloud placement is owned by ServerSelector. A generic Cloud default must
+    // never erase the selected managed server when this step mounts.
+    if (!selfHosted) return;
     if (config.deployTarget === "cluster") return;
     if (!ready || hasChoice) {
       return;
@@ -1159,7 +1166,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     if (hasCloudOption) {
       updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
     }
-  }, [ready, hasChoice, hasServers, hasCloudOption, servers, updateConfig]);
+  }, [ready, hasChoice, hasServers, hasCloudOption, servers, updateConfig, selfHosted]);
 
   // When switching TO cloud, AUTO-PRESELECT "server" as the build strategy.
   // Cloud builds belong in the cloud runtime — they get the right toolchain
@@ -1378,7 +1385,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const hasAnyDeployTarget = deployTargetOptions.length > 0;
   const canContinue = ready && (
     (config.deployTarget === "cluster" && !!config.projectId) ||
-    config.deployTarget === "cloud" ||
+    (config.deployTarget === "cloud" && (selfHosted || destinationReady)) ||
     (config.deployTarget === "server" && !!config.serverId && hasServers)
   );
 
@@ -1412,7 +1419,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const selectedServer = config.deployTarget === "server" && config.serverId
     ? servers.find((s) => s.id === config.serverId)
     : null;
-  const summaryServerName = selectedServer
+  const summaryServerName = config.deployTarget === "cloud" ? config.serverName : selectedServer
     ? (selectedServer.name || selectedServer.sshHost)
     : null;
 
@@ -1424,7 +1431,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // id and the servers list, rather than appended to each of those call sites: that
   // list only grows, and the next one added would forget.
   useEffect(() => {
-    if (config.deployTarget !== "server") {
+    if (config.deployTarget !== "server" && config.deployTarget !== "cloud") {
       // Not a server deploy: a name left over from a previous pick would outlive the
       // target it described.
       if (config.serverName !== undefined) updateConfig({ serverName: undefined });
@@ -1507,7 +1514,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // main screen is just "where to deploy", details one click away. Default is
   // Sandbox; most users never open this. Only cloud keeps a right-hand panel
   // (its resource/power picker).
-  const showServerAdvanced = showFullPicker && !!config.serverId &&
+  const showServerAdvanced = showFullPicker && (!!config.serverId || !selfHosted) &&
     (config.deployTarget === "server" || config.deployTarget === "cloud");
   // Runtime-isolation (Sandbox/Direct) applies only to a self-hosted server APP
   // that runs a process: docker/compose always run sandboxed, and a static app
@@ -1546,7 +1553,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // column layout, or move into the right column — above the Advanced/Cloud
   // panel — when a right panel is shown: Continue → save-default → Advanced).
   const saveDefaultCheckbox =
-    showFullPicker && canContinue ? (
+    selfHosted && showFullPicker && canContinue ? (
       <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
         <input
           type="checkbox"
@@ -1660,7 +1667,25 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         </div>
       )}
 
-      {!selfHosted && config.deployTarget === "cloud" && <ServerSelector value={config.serverId} disabled={!!config.projectId || !!config.uploadSessionId} forDeployment dockerOnly={config.projectType === "services" || config.projectType === "monorepo"} onSelect={server => updateConfig({ workspaceId: server?.raw.managed?.id, serverId: server?.id })} />}
+      {!selfHosted && config.deployTarget === "cloud" && (
+        <ServerSelector
+          value={config.serverId}
+          label={t.billing.workspaces.destination}
+          readOnly={!!config.projectId || !!config.uploadSessionId}
+          selectedName={config.serverName}
+          disabled={!!config.projectId || !!config.uploadSessionId}
+          disabledReason={config.uploadSessionId
+            ? t.billing.workspaces.uploadDestinationHint
+            : config.projectId ? t.billing.workspaces.savedDestinationHint : undefined}
+          onReadyChange={setDestinationReady}
+          forDeployment
+          onSelect={(server) => updateConfig({
+            workspaceId: server?.raw.managed?.id,
+            serverId: server?.id,
+            serverName: server?.name,
+          })}
+        />
+      )}
 
       {/* Compact summary - saved default applied cleanly. The pill itself
           is the edit affordance: clicking expands the full picker so the
@@ -1679,7 +1704,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       )}
 
       {/* Deploy target */}
-      {showFullPicker && hasAnyDeployTarget && (
+      {selfHosted && showFullPicker && hasAnyDeployTarget && (
         <div className="space-y-3">
           <div className="space-y-2">
             {deployTargetOptions.map((opt) => (
@@ -1721,7 +1746,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         </div>
       )}
 
-      {showFullPicker && !hasAnyDeployTarget && (
+      {selfHosted && showFullPicker && !hasAnyDeployTarget && (
         <div className="space-y-3">
           <div className="rounded-xl border border-border/50 bg-card px-4 py-4 text-sm text-muted-foreground leading-relaxed">
             {ts.noTargetBody}

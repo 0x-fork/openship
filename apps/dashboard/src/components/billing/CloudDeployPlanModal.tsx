@@ -4,7 +4,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { billingApi, type BillingState } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
@@ -13,16 +13,20 @@ import { workspaceBillingHref } from "./BillingWorkspaceContext";
 import { CloudPlanPicker } from "./CloudPlanPicker";
 
 export function CloudDeployPlanModal({
-  restriction,
+  restriction = { code: "CLOUD_BILLING_BLOCKED" },
   onClose,
   workspaceId,
+  serverName,
 }: {
-  restriction: CloudDeployRestriction;
+  restriction?: CloudDeployRestriction;
   workspaceId?: string;
+  /** Explicit server setup reuses checkout without presenting a deployment failure. */
+  serverName?: string;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const copy = t.billing.deployGate;
+  const closeLabel = serverName !== undefined ? t.billing.workspaces.returnToSetup : copy.close;
   const titleId = useId();
   const descriptionId = useId();
   const { dialog, onKeyDown } = useDialogFocus(onClose);
@@ -68,9 +72,11 @@ export function CloudDeployPlanModal({
   const planChanged =
     recovery === "upgrade" && state && !state.overQuota && state.tier !== initialTier.current;
   const ready = recovery === "ready" || planChanged;
+  const readyTitle = serverName !== undefined ? t.billing.workspaces.serverPlanReadyTitle : copy.readyTitle;
   const showPlans = !ready && (recovery === "subscribe" || recovery === "upgrade");
-  const title =
-    recovery === "credits"
+  const title = serverName !== undefined
+    ? interpolate(t.billing.workspaces.serverPlanTitle, { name: serverName })
+    : recovery === "credits"
       ? copy.creditsTitle
       : recovery === "upgrade"
         ? copy.upgradeTitle
@@ -82,16 +88,18 @@ export function CloudDeployPlanModal({
       ? copy.reasons[restriction.reason as keyof typeof copy.reasons]
       : undefined;
   const description = ready
-    ? copy.ready
-    : recovery === "credits"
-      ? copy.creditsDescription
-      : recovery === "payment"
-        ? copy.paymentDescription
-        : recovery === "paused"
-          ? copy.pausedDescription
-          : recovery === "upgrade"
-            ? (reason ?? copy.upgradeDescription)
-            : copy.description;
+    ? (serverName !== undefined ? t.billing.workspaces.serverPlanReady : copy.ready)
+    : serverName !== undefined && recovery === "subscribe"
+      ? t.billing.workspaces.serverPlanDescription
+      : recovery === "credits"
+        ? copy.creditsDescription
+        : recovery === "payment"
+          ? copy.paymentDescription
+          : recovery === "paused"
+            ? copy.pausedDescription
+            : recovery === "upgrade"
+              ? (reason ?? copy.upgradeDescription)
+              : copy.description;
 
   return (
     <div
@@ -109,14 +117,14 @@ export function CloudDeployPlanModal({
           id={titleId}
           className="min-w-0 text-lg font-semibold leading-6 tracking-tight text-foreground"
         >
-          {ready ? copy.readyTitle : title}
+          {ready ? readyTitle : title}
         </h2>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           onClick={onClose}
-          aria-label={copy.close}
+          aria-label={closeLabel}
           className="shrink-0"
         >
           <UiIcon name="close" className="size-4" aria-hidden="true" />
@@ -224,7 +232,7 @@ export function CloudDeployPlanModal({
           onClick={onClose}
           className="h-auto min-h-10 min-w-0 flex-1 whitespace-normal px-3 sm:flex-none"
         >
-          {copy.close}
+          {closeLabel}
         </Button>
       </footer>
     </div>

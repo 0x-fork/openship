@@ -28,6 +28,8 @@ import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { projectsApi, githubApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { attachDeploymentDomainIds, deploymentDnsTargets } from "@/lib/deployment-dns";
+import { AppDestinationPicker } from "@/components/deploy/AppDestinationPicker";
+import { Button } from "@/components/ui/button";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
 
@@ -152,12 +154,13 @@ const ComposeChecklist: React.FC = () => {
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
-const Sidebar: React.FC = () => {
+const Sidebar: React.FC<{ onEditTarget?: () => void }> = ({ onEditTarget }) => {
   const { config, state, updateConfig, startDeployment, rescanWithBranch, isRescanning } =
     useDeployment();
   const { t } = useI18n();
   const { requireCloud } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
+  const [destinationReady, setDestinationReady] = useState(selfHosted);
   // Desktop mode: the workload can't run on this machine yet (builds still can).
   const localDeployGate = useLocalDeployGate();
   const { showModal, hideModal } = useModal();
@@ -259,6 +262,7 @@ const Sidebar: React.FC = () => {
   }, [doDeploy, config, showModal, hideModal]);
 
   const handleDeploy = useCallback(async () => {
+    if (!selfHosted && !destinationReady) return;
     // TODO: temporary desktop gate (useLocalDeployGate). Desktop mode controls
     // remote servers; the workload can't run on this machine yet. Scoped to NEW
     // projects on purpose — a project that already lives locally stays fully
@@ -378,7 +382,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy(buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined);
-  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
+  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, destinationReady, hideModal, isServices, localDeployGate, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
 
   // Edit mode (opened from project Settings with ?mode=config): the
   // finish button SAVES the config to the project and returns — no deploy, no
@@ -388,6 +392,7 @@ const Sidebar: React.FC = () => {
   const isConfigMode = searchParams.get("mode") === "config";
   const [isSaving, setIsSaving] = React.useState(false);
   const handleSave = useCallback(async () => {
+    if (!selfHosted && !destinationReady) return;
     setIsSaving(true);
     try {
       const projectId = await startDeployment({ saveConfigOnly: true });
@@ -400,7 +405,7 @@ const Sidebar: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [startDeployment, router]);
+  }, [startDeployment, router, selfHosted, destinationReady]);
 
   return (
     <div className="lg:sticky lg:top-6 h-fit space-y-4">
@@ -524,13 +529,51 @@ const Sidebar: React.FC = () => {
         />
       )}
 
+      {!selfHosted && (
+        <section className="space-y-3 rounded-2xl bg-card p-5" aria-label={t.billing.workspaces.destination}>
+          <h3 className="text-sm font-medium">{t.billing.workspaces.destination}</h3>
+          <AppDestinationPicker
+            value={{
+              deployTarget: "cloud",
+              serverId: config.serverId,
+              workspaceId: config.workspaceId,
+              serverName: config.serverName,
+            }}
+            onChange={(destination) => updateConfig({
+              deployTarget: destination.deployTarget,
+              serverId: destination.serverId,
+              workspaceId: destination.workspaceId,
+              serverName: destination.serverName,
+            })}
+            onReadyChange={setDestinationReady}
+            readOnly={!!config.projectId || !!config.uploadSessionId}
+            disabled={isSaving || state.isDeploying || !!config.projectId || !!config.uploadSessionId}
+            disabledReason={config.uploadSessionId
+              ? t.billing.workspaces.uploadDestinationHint
+              : config.projectId ? t.billing.workspaces.savedDestinationHint : undefined}
+          />
+          {onEditTarget && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isSaving || state.isDeploying}
+              onClick={onEditTarget}
+            >
+              <UiIcon name="sliders" className="size-4" aria-hidden />
+              {t.deploy.targetStep.build.advanced}
+            </Button>
+          )}
+        </section>
+      )}
+
       {/* Finish: Save (edit mode) or Deploy (create/first-deploy). Editing
           config from the project Runtime page SAVES without deploying — deploy
           is the separate "Redeploy" action. */}
       {isConfigMode ? (
         <button
           onClick={handleSave}
-          disabled={isSaving || isRescanning}
+          disabled={isSaving || isRescanning || (!selfHosted && !destinationReady)}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? (
@@ -548,7 +591,7 @@ const Sidebar: React.FC = () => {
       ) : (
         <button
           onClick={handleDeploy}
-          disabled={state.isDeploying || isRescanning}
+          disabled={state.isDeploying || isRescanning || (!selfHosted && !destinationReady)}
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {state.isDeploying ? (
