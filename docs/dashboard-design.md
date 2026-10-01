@@ -44,6 +44,11 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - A destination with one existing server uses a compact summary row; multiple servers use
   the shared picker. Keep the create-server action visible in both cases. Cloud deployments
   can reuse a server's plan or create a separate server and subscription from the same flow.
+- Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
+  same project data and cards. Keep Home's project list and the sidebar counts separate too.
+- Persistent Cloud credit warnings use a compact floating disclosure at the bottom end of the
+  viewport. Keep server-specific billing actions inside it, remember dismissal for the warning,
+  and allow reopening without a page-wide banner or an automatic modal.
 - Plan comparisons lead with CPU, memory, storage and service/project limits. Keep build
   time separate from runtime capacity; show minutes only when the offer defines a time
   allowance. Put metering and shared-capacity explanations once below the plans. Keep
