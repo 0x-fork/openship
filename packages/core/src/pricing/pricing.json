@@ -87,8 +87,8 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 1,
-        "maxProjects": 3,
+        "runningServices": null,
+        "maxProjects": null,
         "maxResourceTier": "low",
         "maxServiceResources": {
           "cpuCores": 1,
@@ -106,9 +106,9 @@
         "namespaceCapacity",
         "meteredBuilds",
         "anyWorkload",
-        "oneRunningService",
+        "runningServices",
         "power",
-        "projects",
+        "projectsUnlimited",
         "finiteUsage",
         "communitySupport"
       ],
@@ -150,8 +150,8 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 3,
-        "maxProjects": 10,
+        "runningServices": null,
+        "maxProjects": null,
         "maxResourceTier": "medium",
         "maxServiceResources": {
           "cpuCores": 2,
@@ -170,7 +170,7 @@
         "meteredBuilds",
         "runningServices",
         "power",
-        "projects",
+        "projectsUnlimited",
         "emailSupport"
       ],
       "billing": {
@@ -180,7 +180,7 @@
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 3,
+          "max_workspaces": 1,
           "max_vcpus": 2,
           "max_ram_mb": 8192,
           "max_disk_gb": 32,
@@ -211,8 +211,8 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 10,
-        "maxProjects": 50,
+        "runningServices": null,
+        "maxProjects": null,
         "maxResourceTier": "high",
         "maxServiceResources": {
           "cpuCores": 4,
@@ -231,7 +231,7 @@
         "meteredBuilds",
         "runningServices",
         "power",
-        "projects",
+        "projectsUnlimited",
         "prioritySupport"
       ],
       "billing": {
@@ -241,7 +241,7 @@
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 6,
+          "max_workspaces": 1,
           "max_vcpus": 4,
           "max_ram_mb": 16384,
           "max_disk_gb": 128,
@@ -272,7 +272,7 @@
           "worker"
         ],
         "services": true,
-        "runningServices": 50,
+        "runningServices": null,
         "maxProjects": null,
         "maxResourceTier": "xlarge",
         "maxServiceResources": {
@@ -303,7 +303,7 @@
         "suspendThreshold": 0,
         "onOverdraftAction": "stop_workspaces",
         "resourceLimits": {
-          "max_workspaces": 12,
+          "max_workspaces": 1,
           "max_vcpus": 8,
           "max_ram_mb": 32768,
           "max_disk_gb": 256,

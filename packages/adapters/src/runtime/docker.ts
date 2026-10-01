@@ -56,7 +56,7 @@ import type { PortProbeExecutor } from "../system/port-listen";
 import { PassThrough, Writable, type Readable } from "node:stream";
 import { relative, sep } from "node:path";
 import { resolveDockerBuildArgs } from "./docker-build-args";
-import { dockerPublishedPortInfo } from "./docker-container-info";
+import { dockerContainerStatus, dockerPublishedPortInfo } from "./docker-container-info";
 import { applyDockerEnvironment, type DockerEnvironmentOptions } from "./docker-environment";
 import { DEFAULT_CONTAINER_LOG_CONFIG } from "../container-logging";
 import { demuxDockerStream } from "./docker-demux";
@@ -4107,20 +4107,9 @@ export class DockerRuntime implements RuntimeAdapter {
       all: true,
       filters: { label: [`openship.deployment=${deploymentId}`] },
     });
-    const stateMap: Record<string, ContainerStatus> = {
-      running: "running",
-      healthy: "running",
-      starting: "running",
-      restarting: "running",
-      exited: "stopped",
-      paused: "stopped",
-      created: "stopped",
-      dead: "failed",
-      unhealthy: "failed",
-    };
     return containers.map((c) => ({
       containerId: c.Id,
-      status: stateMap[(c.State ?? "").toLowerCase().trim()] ?? "stopped",
+      status: dockerContainerStatus(c.State ?? "", { statusLine: c.Status }),
       serviceName: c.Labels?.[OPENSHIP_LABEL.service],
     }));
   }
@@ -4614,36 +4603,21 @@ export class DockerRuntime implements RuntimeAdapter {
       throw err;
     }
 
-    const statusMap: Record<string, ContainerInfo["status"]> = {
-      running: "running",
-      healthy: "running",
-      starting: "running",
-      restarting: "running",
-      exited: "stopped",
-      paused: "stopped",
-      created: "stopped",
-      dead: "failed",
-      unhealthy: "failed",
-    };
+    const status = dockerContainerStatus(data.State.Status ?? "", {
+      running: data.State.Running,
+      paused: data.State.Paused,
+      restarting: data.State.Restarting,
+      health: data.State.Health?.Status,
+    });
 
     const startedAt = data.State.StartedAt;
     const uptimeSeconds =
-      startedAt && data.State.Running
+      startedAt && status === "running"
         ? Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
         : undefined;
 
     const { ip, hostPort, hostPortByContainerPort } = extractNetworkInfo(data);
     const limits = inspectResourceLimits(data.HostConfig);
-
-    let status: ContainerInfo["status"];
-    if (data.State.Running) {
-      status = "running";
-    } else if (data.State.Paused) {
-      status = "stopped";
-    } else {
-      const rawStatus = (data.State.Status ?? "").toLowerCase().trim();
-      status = statusMap[rawStatus] ?? "stopped";
-    }
 
     return {
       containerId,

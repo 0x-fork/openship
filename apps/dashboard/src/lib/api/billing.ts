@@ -2,9 +2,9 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
-import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingState as BillingStateContract } from "@repo/contracts";
+import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingCreditAlerts, BillingState as BillingStateContract } from "@repo/contracts";
 import { trackCloudEvent } from "../cloud-analytics";
-export type { BillingResources } from "@repo/contracts";
+export type { BillingResources, BillingCreditAlerts } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -185,6 +185,11 @@ export const billingApi = {
   /** Dashboard overview snapshot — tier, status, period, credit balance. */
   getBillingState: async (workspaceId?: string): Promise<BillingState> => {
     const res = await api.get<Envelope<BillingState>>(endpoints.billing.state, { params: { workspaceId } });
+    return res.data;
+  },
+
+  getCreditAlerts: async (): Promise<BillingCreditAlerts> => {
+    const res = await api.get<Envelope<BillingCreditAlerts>>(endpoints.billing.creditAlerts);
     return res.data;
   },
 

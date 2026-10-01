@@ -1854,6 +1854,12 @@
       "description": "Read current billing state.",
       "route": "GET /api/billing/state"
     },
+    "billing.getCreditAlerts": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read provider credit alerts across the organization's managed servers, with unavailable subscriptions identified separately.",
+      "route": "GET /api/billing/credit-alerts"
+    },
     "billing.getCheckout": {
       "page": "billing",
       "section": "Operations",

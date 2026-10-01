@@ -37,6 +37,7 @@ const r = secureRouter(billingLocalRoutes, {
 // the orphan routes here just routed dashboard calls into 404 HTML
 // pages from the SaaS proxy, breaking dashboard error handling.
 r.use("/state", authMiddleware);
+r.use("/credit-alerts", authMiddleware);
 r.use("/checkout", authMiddleware);
 r.use("/subscription", authMiddleware);
 r.use("/cancel", authMiddleware);
@@ -51,6 +52,7 @@ r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
 
 /* ---------- Dashboard state snapshot ---------- */
+r.get("/credit-alerts", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read provider credit alerts across this organization's managed servers. Each result identifies its subscription; unavailable balances remain unknown." } }, billingLocal.getCreditAlerts);
 r.get("/state", { query: BillingOperationSchemas.getState.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data." } }, billingLocal.getState);
 r.get(
   "/checkout",

@@ -52,6 +52,7 @@ const TEARDOWN_MATCH_TIERS: readonly LiveMatchKind[] = ["label", "name", "tracke
  *  rejects — it hangs. Without a timeout the deletion-preview handler (and the
  *  "Scanning attached services and volumes…" UI) loads forever. */
 const INSPECT_TIMEOUT_MS = 10_000;
+const CONNECT_TIMEOUT_MS = 60_000;
 
 // ─── Resource Manifest ───────────────────────────────────────────────────────
 
@@ -383,6 +384,13 @@ export async function collectProjectManifest(
         resolvedRuntimes.add(runtime);
         if (!(runtime instanceof CloudDockerRuntime) && !(runtime instanceof BareRuntime))
           throw new Error("Managed server cleanup resolved to an unexpected runtime");
+        // A failed first deployment may never have opened its Docker bridge.
+        // Establish it once before starting the short per-resource read timers.
+        // This connects only to the existing running server; it never starts a VM.
+        if (runtime instanceof CloudDockerRuntime) {
+          await withTimeout(runtime.docker.ping(), CONNECT_TIMEOUT_MS,
+            "connect to managed server for cleanup", () => disposeRuntime(runtime));
+        }
         const routing = resolved.platform.routing;
         if (!(routing instanceof CloudInfraProvider)) throw new Error("Managed server routing is unavailable");
         if (!cloudRouteContexts.length) {

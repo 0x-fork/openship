@@ -197,7 +197,7 @@ export async function handleOblienWebhook(
       // Workspace billing reads its own provider usage; never overwrite siblings.
       if (eventType === "credits.usage" && !owner.workspaceId) await handleCreditsUsage(orgId, payload, entitlement.quota.balance);
       const alert = creditAlertNotification({ eventType, eventId, data: payload.data ?? {},
-        timestamp: payload.timestamp, organizationId: orgId, entitlement, dashboardUrl: localDashboardUrl });
+        timestamp: payload.timestamp, organizationId: orgId, workspaceId: owner.workspaceId ?? undefined, entitlement, dashboardUrl: localDashboardUrl });
       await observeVerifiedBillingEvent(orgId, eventType, payload.data, payload.timestamp);
       const enqueue = alert ? await notification.prepare(alert) : null;
       // No email is sent while holding this transaction. The receiver only ACKs

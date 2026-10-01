@@ -14,6 +14,7 @@ export async function listPlans(c: Context) {
   return c.json({ data });
 }
 export async function getState(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.getState(operationContext(c), billingScope(c))) }); }
+export async function getCreditAlerts(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.getCreditAlerts(operationContext(c))) }); }
 export async function getCheckout(c: Context) {
   return c.json({
     data: await operationData(

@@ -48,7 +48,10 @@ export function managedProcessPorts(workload: WorkloadInfo): number[] {
 export function managedProcessState(workload: WorkloadInfo): ContainerStatus {
   const state = String(workload.state ?? workload.status ?? "").toLowerCase();
   if (["running", "active"].includes(state)) return "running";
-  if (["failed", "error", "crashed"].includes(state)) return "failed";
+  // Stopping a provider workload can record its signal exit as failed. Only a
+  // terminal process with persisted enabled=false is intentionally stopped.
+  if (["failed", "error", "crashed"].includes(state))
+    return workload.enabled === false ? "stopped" : "failed";
   if (["starting", "pending", "created", "restarting"].includes(state)) return "deploying";
   if (["stopped", "exited", "disabled", "completed"].includes(state)) return "stopped";
   throw new Error("The provider did not return a recognized application process state");

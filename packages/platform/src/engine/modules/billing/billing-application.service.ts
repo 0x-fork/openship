@@ -52,6 +52,10 @@ export async function getState(ctx: ExecutionContext, input: BillingScopeInput =
   return state;
 }
 
+export async function getCreditAlerts(ctx: ExecutionContext) {
+  return billingRepository.getCreditAlerts(ctx.organizationId);
+}
+
 export async function getCheckout(ctx: ExecutionContext, input: { checkoutId: string; workspaceId?: string }) {
   return billingService.getCheckoutStatus(ctx.organizationId, input.checkoutId, input.workspaceId);
 }

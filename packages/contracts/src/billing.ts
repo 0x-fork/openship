@@ -100,6 +100,13 @@ export const BillingCreditPackSchema = Type.Object({
   id: Type.String(), name: Type.String(), credits_milli: Type.Number(), price_cents: Type.Number(),
   sortOrder: Type.Number(), explains: stringOrNull,
 });
+export const BillingCreditStateSchema = Type.Pick(BillingStateSchema, [
+  "workspace", "creditAlert", "tier", "currentPeriod", "balance", "billing", "topups",
+]);
+export const BillingCreditAlertsSchema = Type.Object({
+  items: Type.Array(BillingCreditStateSchema),
+  unavailableWorkspaceIds: Type.Array(Type.String()),
+});
 export const BillingUsageInputSchema = Type.Object({
   ...BillingScopeSchema.properties,
   from: Type.Optional(Type.String({ maxLength: 64 })), to: Type.Optional(Type.String({ maxLength: 64 })),
@@ -118,6 +125,7 @@ export const BillingOperationSchemas = {
     output: BillingCheckoutStatusSchema,
   },
   getState: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingStateSchema },
+  getCreditAlerts: { action: "read", output: BillingCreditAlertsSchema },
   getResources: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingResourcesSchema },
   getSubscription: { action: "read", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
@@ -138,6 +146,8 @@ export const BillingOperationSchemas = {
   }) }) },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export type BillingState = Static<typeof BillingStateSchema>;
+export type BillingCreditState = Static<typeof BillingCreditStateSchema>;
+export type BillingCreditAlerts = Static<typeof BillingCreditAlertsSchema>;
 export type BillingResources = Static<typeof BillingResourcesSchema>;
 export type BillingSubscription = Static<typeof BillingSubscriptionSchema>;
 export type BillingCheckoutStatus = Static<typeof BillingCheckoutStatusSchema>;

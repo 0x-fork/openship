@@ -34,12 +34,12 @@ export const CLOUD_EDGE_BANDWIDTH_GB: Readonly<Record<PlanTierId, number | null>
 };
 
 // Version price/term changes so checkout retries cannot reuse an earlier quote.
-export const OFFER_VERSION = "7";
+export const OFFER_VERSION = "8";
 const TOPUP_OFFER_VERSION = "3";
 export const offerReference = (tier: PlanTierId) => `openship:${tier}:v${OFFER_VERSION}`;
 
 export function supportedOfferReference(reference: string | undefined, tier: PlanTierId): boolean {
-  return reference === offerReference(tier) || reference === `openship:${tier}:v6` || reference === `openship:${tier}:v5` || reference === `openship:${tier}:v4` || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
+  return reference === offerReference(tier) || reference === `openship:${tier}:v7` || reference === `openship:${tier}:v6` || reference === `openship:${tier}:v5` || reference === `openship:${tier}:v4` || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
     (reference === `openship:${tier}:v1` || reference === `openship:${tier}:v2`));
 }
 
@@ -47,9 +47,9 @@ export function supportedOfferReference(reference: string | undefined, tier: Pla
  * These contracts cannot inherit the larger v7 RAM/disk from the public catalog. */
 function inheritedResourceLimits(tier: PlanTierId): ReturnType<typeof cloudNamespaceLimits> {
   const limits = cloudNamespaceLimits(tier);
-  if (tier === "starter") Object.assign(limits, { max_ram_mb: 6144, max_total_ram_mb: 6144 });
-  if (tier === "pro") Object.assign(limits, { max_vcpus: 2, max_ram_mb: 8192, max_total_ram_mb: 8192, max_disk_gb: 32 });
-  if (tier === "team") Object.assign(limits, { max_vcpus: 4, max_ram_mb: 12288, max_total_ram_mb: 16384, max_disk_gb: 64 });
+  if (tier === "starter") Object.assign(limits, { max_workspaces: 3, max_ram_mb: 6144, max_total_ram_mb: 6144 });
+  if (tier === "pro") Object.assign(limits, { max_workspaces: 6, max_vcpus: 2, max_ram_mb: 8192, max_total_ram_mb: 8192, max_disk_gb: 32 });
+  if (tier === "team") Object.assign(limits, { max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_total_ram_mb: 16384, max_disk_gb: 64 });
   return limits;
 }
 

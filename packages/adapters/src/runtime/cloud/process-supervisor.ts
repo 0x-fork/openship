@@ -127,7 +127,7 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
       const assertConfig = (saved: WorkloadInfo) => {
         if (
           saved.working_dir !== params.working_dir ||
-          JSON.stringify(saved.cmd) !== JSON.stringify(params.cmd) ||
+          JSON.stringify(saved.command ?? saved.cmd) !== JSON.stringify(params.cmd) ||
           JSON.stringify(normalizedEnv(saved.env)) !== JSON.stringify(normalizedEnv(params.env)) ||
           JSON.stringify(managedProcessPorts(saved).sort((a, b) => a - b)) !==
             JSON.stringify([...ports].sort((a, b) => a - b))
@@ -194,9 +194,8 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
     const saved = await this.read(deploymentId);
     if (!saved) return;
     const workloads = this.server.workspace().workloads;
-    // Retired releases must also stay stopped after a server restart.
-    const updated = await workloads.update(saved.id, { enabled: false });
-    if (!updated.success) throw new Error("Could not disable the saved application process");
+    // The provider's Stop action persists enabled=false with the transition.
+    // A separate settings update is not part of its lifecycle contract.
     const stopped = await workloads.stop(saved.id);
     if (!stopped.success) throw new Error("Could not stop the application process");
     await this.waitForState(deploymentId, "stopped");
@@ -215,12 +214,8 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
     if (running && saved.enabled === true) return;
     if (!running) await this.assertPortsAvailable(managedProcessPorts(saved));
     const workloads = this.server.workspace().workloads;
-    const updated = await workloads.update(saved.id, { enabled: true });
-    if (!updated.success) throw new Error("Could not enable the saved application process");
-    if (!running) {
-      const started = await workloads.start(saved.id);
-      if (!started.success) throw new Error("Could not start the application process");
-    }
+    const started = await workloads.start(saved.id);
+    if (!started.success) throw new Error("Could not start the application process");
     await this.waitForState(deploymentId, "running");
     if ((await this.require(deploymentId)).enabled !== true)
       throw new Error("The provider did not persist the application's enabled state");

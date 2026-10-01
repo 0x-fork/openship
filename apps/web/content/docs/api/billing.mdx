@@ -8,8 +8,7 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 Billing covers plans, subscriptions, credits, and usage. Plan listing is public on every installation.
 Openship defines its prices, namespace credits, limits and checkout copy. Oblien
 collects the payment and applies the saved offer on payment and renewal. Each
-subscription-owned Cloud workspace maps to an immutable provider namespace.
-Existing project-owned Cloud resources retain their organization namespace.
+subscription owns a managed server and maps to an immutable provider namespace.
 Account operations require configured Cloud billing. Self-hosted HTTP routes can proxy a connected user's
 Cloud billing account; fixed SDK scopes require a direct compatible Cloud API connection.
 See [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
@@ -17,17 +16,16 @@ See [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
 ## Select the billing owner
 
 Pass `workspaceId` on billing inputs (as a query parameter for reads and in the
-JSON body for writes). It selects the workspace's subscription, balance, usage,
-checkout and portal. Use `workspaceId: "organization"` for the existing
-organization-owned Cloud mode. Omission selects that existing organization
-namespace when present, otherwise the sole managed workspace. Multiple managed
-workspaces require an explicit choice. Reads do not create a workspace or buy a
-plan. See the [managed server lifecycle](/docs/api/servers#managed-cloud-servers).
+JSON body for writes). It selects one managed server's subscription, balance,
+usage, checkout and portal. The server's `cloud.id` is this billing selector;
+application placement uses `serverId`. Omission is valid when the organization
+has a single managed server. Multiple servers require an explicit choice.
+Reads do not create a server or buy a plan. See the
+[managed server lifecycle](/docs/api/servers#managed-cloud-servers).
 
 Shared Docker placement uses host measurements for live usage. Provider
 namespace allocation is its purchased host capacity, not project storage use.
-Resize that host through `cloudWorkspaces.previewResize` and `resize`; the
-older project-capacity editor applies to project-owned Cloud placement.
+Resize that host through `servers.previewResize` and `servers.resize`.
 
 ## List plans
 
@@ -109,13 +107,11 @@ do not change existing customers' terms. Grace defaults to zero and can be
 configured in the catalog. Credits are independent of USD price and are not a
 promise of fixed CPU minutes.
 
-Workspace count and aggregate CPU, RAM and disk are namespace allowances. A
-subscription can also limit each VM and each service. Openship submits the saved
-offer's `billing.resourceLimits`; Oblien resolves and enforces the effective
-limits. Admission reads provider allocations before queueing and provisioning,
-while the provider's atomic reservation remains authoritative. Openship does not
-rewrite saved purchase terms on renewal. One Compose project shares one VM;
-services can span multiple projects.
+Each subscription purchases one managed server with its advertised CPU, RAM
+and disk. Projects and services share that server, with no count cap on new
+paid offers. Container limits are ceilings inside the server, not additional
+VM reservations. Oblien enforces the saved offer's host limits. Openship does
+not rewrite saved purchase terms on renewal.
 
 ## Subscription and usage
 
@@ -123,7 +119,7 @@ services can span multiple projects.
 <Tab value="SDK">
 
 ```ts
-const state = await ship.billing.getState();
+const state = await ship.billing.getState({ workspaceId: 'cws_...' });
 console.log(state);
 ```
 
@@ -131,7 +127,7 @@ console.log(state);
 <Tab value="REST API">
 
 ```bash
-curl "$OPENSHIP_URL/api/billing/state" \
+curl "$OPENSHIP_URL/api/billing/state?workspaceId=cws_..." \
   -H "Authorization: Bearer $OPENSHIP_TOKEN"
 ```
 
@@ -147,9 +143,15 @@ a `subscription` object, or `null` if never subscribed. The object includes
 `cancelAtPeriodEnd`, and `canceledAt`. A scheduled cancellation can still have
 an active entitlement until the paid period ends.
 
-`POST /subscription` accepts `{ planTierId, interval, idempotencyKey? }` and returns
+`billing.getCreditAlerts()` (`GET /api/billing/credit-alerts`) reads credit state
+across the current organization's managed servers without selecting one. Its
+`items` identify each subscription and preserve Oblien's alert state and
+thresholds. `unavailableWorkspaceIds` identifies failed reads; those balances
+are unknown, not zero. The read does not provision servers or buy credits.
+
+`POST /subscription` accepts `{ planTierId, interval, workspaceId?, idempotencyKey? }` and returns
 `{ checkoutUrl }`. Use a stable request key when retrying the same purchase.
-Oblien replaces only this organization's subscription after payment and starts
+Oblien replaces only the selected server's subscription after payment and starts
 a new cycle at the full selected price, without automatic proration. A browser
 return URL does not grant access: signed Oblien events and fresh entitlement
 reads confirm the current plan.
@@ -271,6 +273,7 @@ closure and resource cleanup.
 | --- | --- | --- |
 | Read the plan catalog, optionally localized. | `billing.listPlans(input?)` | `GET /api/billing/plans`<br />`Handler authentication` |
 | Read current billing state. | `billing.getState(input?)` | `GET /api/billing/state`<br />`billing:read` |
+| Read provider credit alerts across the organization's managed servers, with unavailable subscriptions identified separately. | `billing.getCreditAlerts()` | `GET /api/billing/credit-alerts`<br />`billing:read` |
 | Verify a checkout and its credit delivery for this organization. | `billing.getCheckout(input)` | `GET /api/billing/checkout`<br />`billing:read` |
 | Read compute usage, edge traffic, and bandwidth limits. | `billing.getResources(input?)` | `GET /api/billing/resources`<br />`billing:read` |
 | Read subscription and renewal state. | `billing.getSubscription(input?)` | `GET /api/billing/subscription`<br />`billing:read` |

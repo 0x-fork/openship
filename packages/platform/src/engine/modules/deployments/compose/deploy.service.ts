@@ -953,10 +953,11 @@ export async function deployComposeServices(
       ? opts.executor.runWithAbortSignal(opts.signal, run)
       : run();
   };
-  const needsHostPortLock = usesHostLoopbackUpstream(
-    resolveRouteStrategy(project.routeStrategy),
-    runtime,
-  );
+  // Provider ingress owns Cloud port allocation. Keep this boundary consistent
+  // with the topology below; a shared Docker runtime does not imply a local edge.
+  const needsHostPortLock =
+    !(opts?.routing instanceof CloudInfraProvider) &&
+    usesHostLoopbackUpstream(resolveRouteStrategy(project.routeStrategy), runtime);
   if (!needsHostPortLock) {
     return runUnlocked();
   }

@@ -600,6 +600,7 @@ export const endpoints = {
     checkout: "billing/checkout",
     plans: "billing/plans",
     state: "billing/state",
+    creditAlerts: "billing/credit-alerts",
     usage: "billing/usage",
     resources: "billing/resources",
     topupPacks: "billing/topup-packs",

@@ -8,11 +8,22 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/Modal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
-import { billingApi, type BillingState } from "@/lib/api/billing";
+import { billingApi, type BillingState, type BillingCreditAlerts } from "@/lib/api/billing";
 import { getActiveOrganizationId, subscribeActiveOrganization } from "@/lib/api/client";
 import { formatMilliCredits } from "@/lib/billing-usage";
 
-type Snapshot = { scope: string; value: BillingState };
+type CreditState = Pick<BillingState, "workspace" | "creditAlert" | "tier" | "currentPeriod" | "balance" | "billing" | "topups">;
+type Snapshot = { scope: string; value: BillingCreditAlerts };
+
+function alertPriority(state: CreditState): number {
+  const alert = state.creditAlert;
+  const funded = state.tier !== "free" || (alert?.limit ?? 0) > 0 || state.balance.quotaUsed > 0;
+  if (!funded || !alert) return 0;
+  if (alert.state === "depleted") return 4;
+  if (alert.state === "grace") return 3;
+  if (alert.state !== "low") return 0;
+  return alert.threshold != null && alert.threshold === alert.thresholds.at(-1) ? 2 : 1;
+}
 
 /** Read-only warnings. Oblien alone computes the alert and enforces the balance. */
 export function CloudCreditAlert() {
@@ -37,7 +48,7 @@ export function CloudCreditAlert() {
       if (pending || document.visibilityState === "hidden") return;
       pending = true;
       try {
-        const value = await billingApi.getBillingState();
+        const value = await billingApi.getCreditAlerts();
         if (!disposed && organizationId === getActiveOrganizationId())
           setSnapshot({ scope, value });
       } catch {
@@ -63,13 +74,20 @@ export function CloudCreditAlert() {
   }, [enabled, scope, organizationId]);
 
   if (!enabled || snapshot?.scope !== scope || !organizationId || !user) return null;
+  const alerts = snapshot.value.items.filter(state => alertPriority(state) > 0)
+    .sort((a, b) => alertPriority(b) - alertPriority(a));
   return (
-    <CreditAlertNotice
-      key={scope}
-      state={snapshot.value}
-      organizationId={organizationId}
-      userId={user.id}
-    />
+    <>
+      {alerts.map((state, index) => (
+        <CreditAlertNotice
+          key={`${scope}:${state.workspace?.id ?? state.creditAlert?.namespace}`}
+          state={state}
+          organizationId={organizationId}
+          userId={user.id}
+          showDialog={index === 0}
+        />
+      ))}
+    </>
   );
 }
 
@@ -77,25 +95,19 @@ export function CreditAlertNotice({
   state,
   organizationId,
   userId,
+  showDialog = true,
 }: {
-  state: BillingState;
+  state: CreditState;
   organizationId: string;
   userId: string;
+  showDialog?: boolean;
 }) {
   const { t, locale } = useI18n();
   const copy = t.billing.creditAlert;
   const alert = state.creditAlert;
-  // Explicit allowances and purchased credits can exist without a hosted plan.
-  // Only a fresh, unfunded setup namespace should suppress the zero-credit prompt.
-  const hasCreditHistory =
-    state.tier !== "free" || (alert?.limit ?? 0) > 0 || (state.balance.quotaUsed ?? 0) > 0;
-  const visible = hasCreditHistory && alert && ["low", "grace", "depleted"].includes(alert.state);
-  const attention =
-    alert?.state === "depleted" ||
-    alert?.state === "grace" ||
-    (alert?.state === "low" &&
-      alert.threshold != null &&
-      alert.threshold === alert.thresholds.at(-1));
+  const priority = alertPriority(state);
+  const visible = priority > 0 && alert;
+  const attention = priority >= 2;
   const key = visible
     ? JSON.stringify([
         userId,
@@ -110,7 +122,7 @@ export function CreditAlertNotice({
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   useEffect(() => {
-    if (!key || !attention) {
+    if (!key || !attention || !showDialog) {
       setOpenKey(null);
       return;
     }
@@ -121,7 +133,7 @@ export function CreditAlertNotice({
       /* memory fallback */
     }
     if (!dismissed) setOpenKey(key);
-  }, [key, attention, dismissedKey]);
+  }, [key, attention, dismissedKey, showDialog]);
   if (!visible || !alert || !key) return null;
   const close = () => {
     setOpenKey(null);
@@ -132,12 +144,13 @@ export function CreditAlertNotice({
       /* memory fallback */
     }
   };
-  const title =
+  const statusTitle =
     alert.state === "depleted"
       ? copy.exhaustedTitle
       : alert.state === "grace"
         ? copy.graceTitle
         : copy.lowTitle;
+  const title = state.workspace?.name ? `${state.workspace.name} · ${statusTitle}` : statusTitle;
   const description =
     alert.state === "depleted"
       ? copy.exhaustedDescription
@@ -149,7 +162,9 @@ export function CreditAlertNotice({
           ),
         });
   const canTopUp = state.billing?.enabled && state.topups?.available;
-  const href = `/cloud-billing?organizationId=${encodeURIComponent(organizationId)}&tab=${canTopUp ? "topups" : "overview"}`;
+  const query = new URLSearchParams({ organizationId, tab: canTopUp ? "topups" : "overview" });
+  if (state.workspace?.id) query.set("workspaceId", state.workspace.id);
+  const href = `/cloud-billing?${query}`;
   const action = canTopUp ? copy.buyCredits : copy.openBilling;
   return (
     <>
@@ -165,7 +180,7 @@ export function CreditAlertNotice({
           <a href={href}>{action}</a>
         </Button>
       </div>
-      {openKey === key && (
+      {showDialog && openKey === key && (
         <AlertDialog
           title={title}
           description={description}

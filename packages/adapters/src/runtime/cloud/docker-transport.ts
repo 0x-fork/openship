@@ -143,7 +143,15 @@ export function createCloudDockerTransport(open: () => Promise<Duplex>): DockerT
     unreachableHint: "Check that the project's Oblien Docker workspace is running and reachable.",
     async establish() {
       if (closed) throw new Error("Cloud Docker transport is closed");
-      directory = await mkdtemp(join(tmpdir(), "openship-cloud-docker-"));
+      const prefix = "openship-cloud-docker-";
+      // Unix socket addresses have a byte limit (103 on macOS). A caller's
+      // nested TMPDIR can exceed it even though ordinary files work there.
+      // Keep the fallback private with mkdtemp, rather than using public TCP.
+      const temporaryRoot = process.platform !== "win32" &&
+        Buffer.byteLength(join(tmpdir(), `${prefix}XXXXXX`, "docker.sock")) > 103
+        ? "/tmp"
+        : tmpdir();
+      directory = await mkdtemp(join(temporaryRoot, prefix));
       const socketPath = process.platform === "win32"
         ? `\\\\.\\pipe\\openship-cloud-docker-${randomUUID()}`
         : join(directory, "docker.sock");

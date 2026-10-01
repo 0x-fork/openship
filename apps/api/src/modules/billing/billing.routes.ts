@@ -43,6 +43,7 @@ const r = secureRouter(billingSaasRoutes, {
 });
 
 r.use("/state", authMiddleware);
+r.use("/credit-alerts", authMiddleware);
 r.use("/checkout", authMiddleware);
 r.use("/subscription", authMiddleware);
 r.use("/topup", authMiddleware);
@@ -58,6 +59,7 @@ r.use("/allowances", authMiddleware);
 // The retired Stripe webhook always returns 410 and performs no mutation.
 
 /* ---------- Dashboard state snapshot ---------- */
+r.get("/credit-alerts", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read provider credit alerts across this organization's managed servers. Each result identifies its subscription; unavailable balances remain unknown." } }, billingController.getCreditAlerts);
 r.get("/state", { query: BillingOperationSchemas.getState.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data." } }, billingController.getState);
 r.get(
   "/checkout",

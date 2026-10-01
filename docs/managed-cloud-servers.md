@@ -27,7 +27,9 @@ until the server, subscription, namespace and project ownership are resolved.
 Checkout provisions the purchased server once. A sole destination is selected
 automatically; adding another server starts an independent subscription. Container
 CPU and memory values are ceilings within that host, not reservations of another
-VM. Disk usage is measured from the filesystem and Docker inventory. Shared
+VM. New v8 offers impose no project or service-count limit within the purchased
+server; the provider namespace permits one VM. Saved paid contracts keep their
+own limits. Disk usage is measured from the filesystem and Docker inventory. Shared
 images, caches and system files are reported separately from project data.
 
 A source build uses measured free CPU and memory, with operating-system headroom.
@@ -77,7 +79,8 @@ staging smoke script requires separate test credentials and explicit execution.
 Before release, run `packages/adapters/scripts/verify-cloud-docker.ts` against a
 disposable staging namespace. It checks the authenticated Docker bridge, source
 builds, routes, retained-image rollback, volumes and server restart. It also
-checks the provider's process contract: workload reads return saved command,
-environment and labels; updates persist `enabled`; stopped processes stay stopped
+checks the provider's process contract: creation preserves the requested workload
+ID; reads return saved command, environment and labels; Start/Stop persist
+`enabled`; stopped processes stay stopped
 after restarting the server. SDK type checking and simulated responses do not
 prove these live provider guarantees.

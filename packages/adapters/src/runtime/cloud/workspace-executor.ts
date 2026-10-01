@@ -169,7 +169,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
       const message = data.toString("utf8");
       // Preserve a bounded tail for failures; large builds stream to their log sink.
       output = (output + message).slice(-2 * 1024 * 1024);
-      onLog({ timestamp: new Date().toISOString(), message, level });
+      onLog({ timestamp: new Date().toISOString(), message, level, rawData: data.toString("base64") });
     };
     child.stdout.on("data", data => collect(data, "info"));
     child.stderr.on("data", data => collect(data, "error"));

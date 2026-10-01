@@ -19,15 +19,17 @@ const organizations = (
 export function CloudBillingLink({
   organizationId,
   tab,
+  workspaceId,
 }: {
   organizationId: string;
   tab: "overview" | "topups";
+  workspaceId?: string;
 }) {
   const { t } = useI18n();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let disposed = false;
-    if (!organizationId || organizationId.length > 255) {
+    if (!organizationId || organizationId.length > 255 || (workspaceId?.length ?? 0) > 255) {
       setFailed(true);
       return;
     }
@@ -40,7 +42,8 @@ export function CloudBillingLink({
           return;
         }
         setActiveOrganizationId(organizationId);
-        window.location.assign(`/billing/${tab}`);
+        const query = workspaceId ? `?${new URLSearchParams({ workspaceId })}` : "";
+        window.location.assign(`/billing/${tab}${query}`);
       })
       .catch(() => {
         if (!disposed) setFailed(true);
@@ -48,7 +51,7 @@ export function CloudBillingLink({
     return () => {
       disposed = true;
     };
-  }, [organizationId, tab]);
+  }, [organizationId, tab, workspaceId]);
   return (
     <div role={failed ? "alert" : "status"} className="p-6 text-sm">
       {failed ? t.billing.creditAlert.wrongOrganization : t.billing.creditAlert.opening}
