@@ -45,9 +45,9 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
   }
 
   private assertOwned(workload: WorkloadInfo, deploymentId: string) {
-    const labels = workload.labels as Record<string, unknown> | undefined;
+    const labels = workload?.labels as Record<string, unknown> | undefined;
     if (
-      workload.id !== this.id(deploymentId) ||
+      workload?.id !== this.id(deploymentId) ||
       labels?.["openship.project"] !== this.projectId ||
       labels?.["openship.deployment"] !== deploymentId
     ) {
@@ -77,6 +77,32 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
         "PROCESS_NOT_FOUND",
       );
     return workload;
+  }
+
+  /** A successful create can still return an identity we cannot manage. Only
+   * remove that new process when a fresh read matches the exact create request;
+   * missing ownership metadata must never authorize deleting an unrelated one. */
+  private async removeRejectedCreation(
+    created: WorkloadInfo,
+    matchesRequest: (workload: WorkloadInfo) => boolean,
+  ): Promise<boolean> {
+    if (typeof created?.id !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(created.id))
+      return false;
+    const workloads = this.server.workspace().workloads;
+    try {
+      const saved = await workloads.get(created.id);
+      if (saved.id !== created.id || !matchesRequest(created) || !matchesRequest(saved))
+        return false;
+      if (!(await workloads.delete(saved.id)).success) return false;
+      try {
+        await workloads.get(saved.id);
+      } catch (error) {
+        return isMissing(error);
+      }
+    } catch {
+      // A failed initial read is not proof a just-created process was removed.
+    }
+    return false;
   }
 
   async deploy(options: SupervisorDeployOpts) {
@@ -124,11 +150,13 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
     // The saved workload reserves its listeners even while stopped. Inspect,
     // create and start share the server mutation lock with Docker allocation.
     await this.server.runExclusive(async () => {
+      const matchesCommand = (saved: WorkloadInfo) =>
+        saved.working_dir === params.working_dir &&
+        JSON.stringify(saved.command ?? saved.cmd) === JSON.stringify(params.cmd) &&
+        JSON.stringify(normalizedEnv(saved.env)) === JSON.stringify(normalizedEnv(params.env));
       const assertConfig = (saved: WorkloadInfo) => {
         if (
-          saved.working_dir !== params.working_dir ||
-          JSON.stringify(saved.command ?? saved.cmd) !== JSON.stringify(params.cmd) ||
-          JSON.stringify(normalizedEnv(saved.env)) !== JSON.stringify(normalizedEnv(params.env)) ||
+          !matchesCommand(saved) ||
           JSON.stringify(managedProcessPorts(saved).sort((a, b) => a - b)) !==
             JSON.stringify([...ports].sort((a, b) => a - b))
         )
@@ -145,17 +173,40 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
         return;
       }
       await this.assertPortsAvailable(ports);
+      let created: WorkloadInfo;
       try {
-        this.assertOwned(
-          await this.server.workspace().workloads.create(params),
-          options.deploymentId,
-        );
+        created = await this.server.workspace().workloads.create(params);
       } catch (error) {
         if ((error as { status?: number })?.status !== 409) throw error;
         assertConfig(await this.require(options.deploymentId));
         await this.startUnlocked(options.deploymentId);
+        return;
       }
-      await this.waitForState(options.deploymentId, "running");
+      try {
+        this.assertOwned(created, options.deploymentId);
+        await this.waitForState(options.deploymentId, "running");
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== "PROCESS_NOT_FOUND") throw error;
+        const cleaned = await this.removeRejectedCreation(created, (saved) => {
+          const labels = saved.labels as Record<string, unknown> | undefined;
+          return (
+            saved.name === params.name &&
+            matchesCommand(saved) &&
+            (labels?.["openship.project"] === undefined ||
+              labels["openship.project"] === this.projectId) &&
+            (labels?.["openship.deployment"] === undefined ||
+              labels["openship.deployment"] === options.deploymentId)
+          );
+        });
+        throw new AppError(
+          "The Cloud provider did not preserve the application's requested process ID and ownership metadata. " +
+            (cleaned
+              ? "The new process was removed. Contact support to update the managed runtime before retrying."
+              : "Cleanup could not be confirmed. Contact support to check this server before retrying."),
+          502,
+          cleaned ? "PROCESS_IDENTITY_UNSUPPORTED" : "PROCESS_CLEANUP_REQUIRED",
+        );
+      }
     });
   }
 
