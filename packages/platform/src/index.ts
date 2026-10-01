@@ -15,7 +15,6 @@ export * from "./apps";
 export * from "./backup-destinations";
 export * from "./backups";
 export * from "./billing";
-export * from "./cloud-workspaces";
 export * from "./notices";
 export * from "./github";
 export * from "./permissions";
@@ -74,7 +73,6 @@ import { createGitHubOperations, type PlatformGitHubOperations, type GitHubDepen
 import { createNoticeOperations, type PlatformNoticeOperations, type NoticeDependencies } from "./notices";
 
 import { createBillingOperations, type PlatformBillingOperations, type BillingDependencies } from "./billing";
-import { createCloudWorkspaceOperations, type PlatformCloudWorkspaceOperations, type CloudWorkspaceDependencies } from "./cloud-workspaces";
 
 export interface PlatformKernel {
   readonly resolveScope: Authorization["resolveScope"];
@@ -91,7 +89,6 @@ export interface PlatformKernel {
   readonly backupDestinations: PlatformBackupDestinationOperations;
   readonly backups: PlatformBackupOperations;
   readonly billing: PlatformBillingOperations;
-  readonly cloudWorkspaces: PlatformCloudWorkspaceOperations;
   readonly notices: PlatformNoticeOperations;
   readonly github: PlatformGitHubOperations;
   readonly permissions: PlatformPermissionOperations;
@@ -107,7 +104,7 @@ export interface PlatformKernel {
 }
 
 /** Composition boundary. It acquires no resources and owns no implicit global state. */
-export function createPlatform(deps: DeploymentDependencies & { cloudWorkspaces?: CloudWorkspaceDependencies; projects?: ProjectDependencies; sources?: SourceDependencies; services?: ServiceDependencies; domains?: DomainDependencies; dns?: DnsDependencies; credentials?: CredentialDependencies; servers?: ServerDependencies; system?: SystemDependencies; apps?: AppDependencies; backupDestinations?: BackupDestinationDependencies; backups?: BackupDependencies; billing?: BillingDependencies; notices?: NoticeDependencies; github?: GitHubDependencies; permissions?: PermissionDependencies; tokens?: TokenDependencies; webhooks?: WebhookDependencies; updates?: UpdateDependencies; audit?: AuditDependencies; settings?: UserSettingsDependencies; notifications?: NotificationDependencies; issues?: IssueDependencies; analytics?: AnalyticsDependencies; jobs?: JobDependencies }): PlatformKernel {
+export function createPlatform(deps: DeploymentDependencies & { projects?: ProjectDependencies; sources?: SourceDependencies; services?: ServiceDependencies; domains?: DomainDependencies; dns?: DnsDependencies; credentials?: CredentialDependencies; servers?: ServerDependencies; system?: SystemDependencies; apps?: AppDependencies; backupDestinations?: BackupDestinationDependencies; backups?: BackupDependencies; billing?: BillingDependencies; notices?: NoticeDependencies; github?: GitHubDependencies; permissions?: PermissionDependencies; tokens?: TokenDependencies; webhooks?: WebhookDependencies; updates?: UpdateDependencies; audit?: AuditDependencies; settings?: UserSettingsDependencies; notifications?: NotificationDependencies; issues?: IssueDependencies; analytics?: AnalyticsDependencies; jobs?: JobDependencies }): PlatformKernel {
   return Object.freeze({
     resolveScope: deps.authorization.resolveScope,
     deployments: createDeploymentOperations(deps),
@@ -123,7 +120,6 @@ export function createPlatform(deps: DeploymentDependencies & { cloudWorkspaces?
     backupDestinations: createBackupDestinationOperations(deps.authorization, deps.backupDestinations),
     backups: createBackupOperations(deps.authorization, deps.backups),
     billing: createBillingOperations(deps.authorization, deps.billing),
-    cloudWorkspaces: createCloudWorkspaceOperations(deps.authorization, deps.cloudWorkspaces),
     notices: createNoticeOperations(deps.authorization, deps.notices),
     github: createGitHubOperations(deps.authorization, deps.github),
     permissions: createPermissionOperations(deps.authorization, deps.permissions),

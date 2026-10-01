@@ -18,7 +18,6 @@ import * as billingRepository from "@repo/platform/engine/modules/billing/billin
 import { getNamespaceUsage } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
 import { presentCloudPlans } from "./billing-catalog";
 import { getBillingResources } from "./billing-resources.service";
-export { getCapacity, previewCapacity, applyCapacity } from "./billing-capacity.service";
 
 /* ---------- Plans (public) ---------- */
 

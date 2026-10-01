@@ -391,7 +391,6 @@ export async function installApp(
   if (env.CLOUD_MODE) {
     const { workspace, server } = await resolveCloudProjectServer(ctx.organizationId, input.serverId);
     if (workspace) {
-      if (workspace.runtime !== "docker") throw new AppError("Catalog apps use Docker services. Choose a Docker workspace.", 400, "CLOUD_WORKSPACE_RUNTIME_CONFLICT");
       workspaceId = workspace.id;
       input = { ...input, serverId: server!.id };
     }

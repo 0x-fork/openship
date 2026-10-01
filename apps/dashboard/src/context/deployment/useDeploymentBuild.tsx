@@ -786,7 +786,7 @@ export function useDeploymentBuild(
       // Step 1: Ensure project exists
       const projectData = await projectsApi.ensure({
         projectId: ensuredProjectId || undefined,
-        serverId: config.deployTarget === "server" || (config.deployTarget === "cloud" && config.workspaceId) ? config.serverId : undefined,
+        serverId: config.deployTarget === "server" || config.deployTarget === "cloud" ? config.serverId : undefined,
         name: config.projectName || config.repo || config.localPath?.split("/").pop() || "project",
         gitOwner: isSourceless ? undefined : config.owner || undefined,
         gitRepo: isSourceless ? undefined : config.repo || undefined,
@@ -922,7 +922,7 @@ export function useDeploymentBuild(
             : (overrides?.buildStrategy ?? config.buildStrategy),
         deployTarget: config.deployTarget,
         // Managed Cloud workspaces and SSH hosts share the execution reference.
-        serverId: config.deployTarget === "server" || (config.deployTarget === "cloud" && config.workspaceId) ? config.serverId : undefined,
+        serverId: config.deployTarget === "server" || config.deployTarget === "cloud" ? config.serverId : undefined,
         // Git-credential forwarding is no longer a per-deploy choice — it's a
         // generic per-operator setting (Settings → GitHub) the API reads directly.
         // Clone location — only meaningful for a server target. Clone-on-server

@@ -441,7 +441,7 @@
   },
   "terminal": {
     "title": "ターミナル",
-    "description": "WebSocket 経由のライブ SSH シェル。最大 3 つまで同時利用可能 — 選択でコピーできます。"
+    "description": "サーバーのライブターミナル。同時セッション数の上限: {count} — 選択でコピーできます。"
   },
   "setup": {
     "editServer": "サーバーを編集",

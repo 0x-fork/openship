@@ -3525,26 +3525,49 @@ export class DockerRuntime implements RuntimeAdapter {
 
   /** Transport policy, never a caller-controlled bind address. Cloud's managed
    * ingress reaches workspace ports; self-hosted edge reaches loopback only. */
-  protected deploymentPorts(config: DeployConfig) {
-    return config.portless ? [] : [{ port: config.port, hostIp: "127.0.0.1", hostPort: config.hostPort }];
+  protected async deploymentPorts(config: DeployConfig) {
+    return config.portless
+      ? []
+      : [{ port: config.port, hostIp: "127.0.0.1", hostPort: config.hostPort }];
   }
 
   protected async deploymentVolumeBinds(config: DeployConfig): Promise<string[]> {
-    return scopeVolumeBinds(config.slug || config.runtimeName || config.projectId, config.volumes ?? [], true);
+    return scopeVolumeBinds(
+      config.slug || config.runtimeName || config.projectId,
+      config.volumes ?? [],
+      true,
+    );
   }
 
   /** A managed host can narrow container operations to its project. Local and
    * operator-owned Docker hosts retain their existing discovery semantics. */
-  protected async assertContainerAccess(containerId: string): Promise<void> { void containerId; }
+  protected async assertContainerAccess(containerId: string): Promise<void> {
+    void containerId;
+  }
 
   /** Backup helpers use raw Docker APIs too. Managed hosts can enforce the same
    * project boundary before a helper reads environment, mounts or database data. */
-  async assertBackupAccess(projectId: string, input: { containerId?: string | null; sources?: readonly string[] }): Promise<void> {
-    void projectId; void input;
+  async assertBackupAccess(
+    projectId: string,
+    input: { containerId?: string | null; sources?: readonly string[] },
+  ): Promise<void> {
+    void projectId;
+    void input;
   }
 
-  protected networkLabels(slug: string): Record<string, string> { return { "openship.network": slug }; }
-  protected eventLabelFilters(): string[] { return []; }
+  protected networkLabels(slug: string): Record<string, string> {
+    return { "openship.network": slug };
+  }
+
+  /** Scope inventory and events at the daemon, before transferring results. */
+  protected containerLabelFilters(): string[] {
+    return [];
+  }
+
+  /** Host transports may serialize port selection through container creation. */
+  protected withDeploymentLock<T>(work: () => Promise<T>): Promise<T> {
+    return work();
+  }
 
   async deploy(config: DeployConfig, onLog?: LogCallback): Promise<DeploymentResult> {
     const log = onLog ?? (() => {});
@@ -3577,7 +3600,6 @@ export class DockerRuntime implements RuntimeAdapter {
     // land on one daemon-level volume; bind mounts pass through.
     const scopedBinds = await this.deploymentVolumeBinds(config);
     const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
-    const ports = this.deploymentPorts(config);
 
     log({
       timestamp: new Date().toISOString(),
@@ -3627,6 +3649,8 @@ export class DockerRuntime implements RuntimeAdapter {
       }
     }
 
+    return this.withDeploymentLock<DeploymentResult>(async () => {
+    const ports = await this.deploymentPorts(config);
     const container = await this.docker.createContainer({
       name: containerName,
       Image: imageRef,
@@ -3690,6 +3714,7 @@ export class DockerRuntime implements RuntimeAdapter {
       containerId: container.id,
       status: "running",
     };
+    });
   }
 
   /**
@@ -4194,14 +4219,19 @@ export class DockerRuntime implements RuntimeAdapter {
 
   // ── Docker discovery (label-agnostic) ────────────────────────────────────
   //
-  // Enumerate the ENTIRE daemon, not just openship-labeled resources. Powers
+  // Unscoped runtimes enumerate the entire daemon, including unlabeled resources. Powers
   // "migrate an existing Docker deployment": read whatever already runs on a
   // server (a compose stack or hand-run containers) so it can be adopted as an
   // Openship project. Strictly read-only.
 
-  /** Every container on the host (running or stopped), summarized. */
+  /** Running and stopped containers visible to this runtime. Unscoped hosts
+   * retain label-agnostic discovery for adopting existing applications. */
   async listAllContainers(): Promise<DockerContainerSummary[]> {
-    const containers = await this.docker.listContainers({ all: true });
+    const labels = this.containerLabelFilters();
+    const containers = await this.docker.listContainers({
+      all: true,
+      ...(labels.length ? { filters: { label: labels } } : {}),
+    });
     return containers.map((c) => {
       const labels = c.Labels ?? {};
       // The list view already carries the network map, so the live-state read
@@ -4722,10 +4752,14 @@ export class DockerRuntime implements RuntimeAdapter {
     (openDeadline as unknown as { unref?: () => void }).unref?.();
 
     let stream: NodeJS.ReadableStream;
+    const labels = this.containerLabelFilters();
     try {
       stream = (await events.getEvents({
-        filters: { type: ["container"], event: [...CONTAINER_EVENT_ACTIONS],
-          ...(this.eventLabelFilters().length ? { label: this.eventLabelFilters() } : {}) },
+        filters: {
+          type: ["container"],
+          event: [...CONTAINER_EVENT_ACTIONS],
+          ...(labels.length ? { label: labels } : {}),
+        },
         // Not in @types/dockerode's GetEventsOptions, but docker-modem 5 reads it
         // (modem.js: `optionsf.signal = options.abortSignal`).
         abortSignal: opening.signal,

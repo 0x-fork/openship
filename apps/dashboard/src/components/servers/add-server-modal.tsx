@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback } from "react";
-import type { ServerInfo } from "@/lib/api/system";
+import { systemApi, type ServerInfo } from "@/lib/api/system";
+import { usePlatform } from "@/context/PlatformContext";
+import { useI18n } from "@/components/i18n-provider";
+import { CreateManagedServerForm } from "./managed/CreateManagedServerForm";
 import { useModal } from "@/context/ModalContext";
 import { ServerForm } from "./server-form";
 
@@ -22,6 +25,8 @@ import { ServerForm } from "./server-form";
  */
 export function useAddServerModal() {
   const { showModal, hideModal } = useModal();
+  const { selfHosted } = usePlatform();
+  const { t } = useI18n();
 
   return useCallback(
     (onCreated?: (server: ServerInfo) => void) => {
@@ -35,7 +40,11 @@ export function useAddServerModal() {
         // same value ModalContext hands out first, which would leave this panel
         // tied with its own host. Sit deliberately above it.
         zIndex: 10500,
-        customContent: (
+        customContent: !selfHosted ? <CreateManagedServerForm submitLabel={t.servers.list.addServer} onCancel={() => hideModal(id)} onCreated={async managed => {
+          const server = await systemApi.getServerById(managed.serverId);
+          hideModal(id);
+          onCreated?.(server);
+        }} /> : (
           <ServerForm
             variant="modal"
             onCancel={() => hideModal(id)}
@@ -48,6 +57,6 @@ export function useAddServerModal() {
       });
       return id;
     },
-    [showModal, hideModal],
+    [showModal, hideModal, selfHosted, t.servers.list.addServer],
   );
 }

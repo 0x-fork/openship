@@ -3,7 +3,9 @@ import { AppError, safeErrorMessage } from "@repo/core";
 import { repos, type CloudWorkspace, type CloudWorkspaceOperation } from "@repo/db";
 import { cloudWorkspaceStatus, deleteCloudWorkspace } from "@repo/adapters";
 import type {
-  CloudWorkspaceOperations,
+  CreateManagedServerInput,
+  ResizeManagedServerInput,
+  RemoveManagedServerInput,
   CloudWorkspaceSummary,
   CloudWorkspaceResizePreview,
 } from "@repo/contracts";
@@ -38,14 +40,14 @@ import { assertWorkspaceCheckoutsSettled } from "../billing/workspace-checkout";
 function requireSaas() {
   if (!env.CLOUD_MODE)
     throw new AppError(
-      "Managed workspaces are available in Openship Cloud",
+      "Managed servers are available in Openship Cloud",
       400,
       "CLOUD_WORKSPACE_TARGET_UNAVAILABLE",
     );
 }
 const digest = (data: unknown) => createHash("sha256").update(JSON.stringify(data)).digest("hex");
 
-async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspaceSummary> {
+export async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspaceSummary> {
   const [binding, projects, server] = await Promise.all([
     repos.cloudDockerWorkspace.find({ ownerWorkspaceId: row.id }, row.organizationId),
     repos.project.listByWorkspace(row.id, row.organizationId),
@@ -75,8 +77,6 @@ async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspac
       state = "unreachable";
     }
   }
-  if (row.runtime === "native" && !unfinished)
-    state = projects.some((project) => project.activeDeploymentId) ? "ready" : "not_deployed";
   const operation = row.operation
     ? {
         id: row.operation.id,
@@ -92,8 +92,6 @@ async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspac
     id: row.id,
     serverId: server.id,
     name: row.name,
-    mode: row.mode,
-    runtime: row.runtime,
     planTierId: row.planTierId,
     subscriptionStatus: row.subscriptionStatus,
     projectCount: projects.length,
@@ -104,44 +102,20 @@ async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspac
   };
 }
 
-export async function list(ctx: ExecutionContext) {
-  requireSaas();
-  const rows = await repos.cloudWorkspace.listByOrganization(ctx.organizationId);
-  const visible = [];
-  for (const row of rows)
-    if (
-      await authorization.checkPermissionOnResource(ctx, {
-        resourceType: "cloud_workspace",
-        resourceId: row.id,
-        action: "read",
-      })
-    )
-      visible.push(await summary(row));
-  const organization = await repos.organization.findById(ctx.organizationId);
-  return { workspaces: visible, dedicatedBilling: !!organization?.oblienNamespace };
-}
 export async function get(ctx: ExecutionContext, id: string) {
   requireSaas();
   return summary(await requireCloudWorkspace(ctx.organizationId, id), true);
 }
 export async function create(
   ctx: ExecutionContext,
-  input: Parameters<CloudWorkspaceOperations["create"]>[0],
+  input: CreateManagedServerInput,
 ) {
   requireSaas();
-  const mode = input.mode ?? "shared",
-    runtime = input.runtime ?? "docker";
-  if (mode === "shared" && runtime !== "docker")
-    throw new AppError(
-      "Shared workspaces use Docker for every project",
-      400,
-      "CLOUD_WORKSPACE_RUNTIME_CONFLICT",
-    );
   const rows = await repos.cloudWorkspace.listByOrganization(ctx.organizationId);
   // Draft identities don't reserve machines. Bound abandoned checkout drafts.
   if (rows.filter((row) => !row.namespace && row.planTierId === "free").length >= 10)
     throw new AppError(
-      "Finish or remove an unused workspace before adding another",
+      "Finish setup or remove an unused server before adding another",
       409,
       "CLOUD_WORKSPACE_DRAFT_LIMIT",
     );
@@ -149,15 +123,13 @@ export async function create(
     await repos.cloudWorkspace.create({
       organizationId: ctx.organizationId,
       name: input.name.trim(),
-      mode,
-      runtime,
     }),
   );
 }
 export async function rename(ctx: ExecutionContext, id: string, input: { name: string }) {
   requireSaas();
   const row = await repos.cloudWorkspace.rename(id, ctx.organizationId, input.name.trim());
-  if (!row) throw new AppError("Cloud workspace not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+  if (!row) throw new AppError("Managed server not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
   return summary(row);
 }
 export async function getUsage(ctx: ExecutionContext, id: string) {
@@ -198,7 +170,7 @@ function operation(
     attempts: 0,
     nextAttemptAt: null,
     error: null,
-    logs: ["Waiting for the workspace to finish its current operation…"],
+    logs: ["Waiting for the server to finish its current operation…"],
   };
 }
 function dispatch(id: string) {
@@ -209,12 +181,6 @@ function dispatch(id: string) {
 export async function ensure(ctx: ExecutionContext, id: string) {
   requireSaas();
   const row = await requireCloudWorkspace(ctx.organizationId, id);
-  if (row.runtime !== "docker")
-    throw new AppError(
-      "Native workspace resources are created by deploying their project",
-      409,
-      "CLOUD_WORKSPACE_NATIVE",
-    );
   await assertCloudCanSpend(ctx.organizationId, id);
   const requested = await repos.cloudWorkspace.requestOperation(
     id,
@@ -230,7 +196,6 @@ export async function ensure(ctx: ExecutionContext, id: string) {
 export async function requestPaidWorkspaceProvisioning(organizationId: string, id: string) {
   const row = await requireCloudWorkspace(organizationId, id);
   if (
-    row.runtime !== "docker" ||
     row.deletionInProgress ||
     (row.operation && row.operation.status !== "succeeded") ||
     row.planTierId === "free" ||
@@ -249,9 +214,9 @@ export async function previewResize(
 ): Promise<CloudWorkspaceResizePreview> {
   requireSaas();
   const host = await readCloudWorkspaceHost(ctx.organizationId, id);
-  if (host.owner.runtime !== "docker" || !host.provider || !host.binding?.workspaceId)
+  if (!host.provider || !host.binding?.workspaceId)
     throw new AppError(
-      "Provision this Docker workspace before resizing it",
+      "Start this managed server before resizing it",
       409,
       "CLOUD_WORKSPACE_NOT_READY",
     );
@@ -259,10 +224,10 @@ export async function previewResize(
   if (
     pending &&
     pending.status !== "succeeded" &&
-    (pending.status !== "failed" || pending.restartContainerIds !== undefined)
+    (pending.status !== "failed" || pending.restartWorkloads !== undefined)
   ) {
     throw new AppError(
-      "Finish or retry the current workspace operation first",
+      "Finish or retry the current server operation first",
       409,
       "CLOUD_WORKSPACE_BUSY",
     );
@@ -271,7 +236,7 @@ export async function previewResize(
   const after = await cloudSubscriptionWorkspaceResources(ctx.organizationId, id);
   if (after.diskMb < before.diskMb)
     throw new AppError(
-      "A workspace disk cannot be shrunk in place. Move its data to a smaller workspace before changing to that plan.",
+      "A server disk cannot be shrunk in place. Move its data to a smaller server before changing to that plan.",
       409,
       "CLOUD_WORKSPACE_DISK_SHRINK",
     );
@@ -300,14 +265,14 @@ export async function previewResize(
 export async function resize(
   ctx: ExecutionContext,
   id: string,
-  input: Parameters<CloudWorkspaceOperations["resize"]>[1],
+  input: ResizeManagedServerInput,
 ) {
   requireSaas();
   const owner = await requireCloudWorkspace(ctx.organizationId, id);
   if (owner.operation?.id === input.idempotencyKey) {
     if (owner.operation.kind !== "resize" || owner.operation.revision !== input.revision) {
       throw new AppError(
-        "This request key belongs to a different workspace operation",
+        "This request key belongs to a different server operation",
         409,
         "IDEMPOTENCY_KEY_CONFLICT",
       );
@@ -319,7 +284,7 @@ export async function resize(
     const plan = await previewResize(ctx, id);
     if (plan.revision !== input.revision)
       throw new AppError(
-        "The workspace changed. Review its resize again.",
+        "The server changed. Review its resize again.",
         409,
         "CLOUD_WORKSPACE_CHANGED",
       );
@@ -338,7 +303,7 @@ export async function resize(
 export async function remove(
   ctx: ExecutionContext,
   id: string,
-  input: Parameters<CloudWorkspaceOperations["remove"]>[1],
+  input: RemoveManagedServerInput,
 ) {
   requireSaas();
   await authorization.authorize(ctx, { resourceType: "billing", resourceId: "*", action: "admin" });
@@ -369,7 +334,7 @@ async function hostForDeletion(row: CloudWorkspace) {
   const recovered = await findOwnedDockerWorkspace(getOblienClient(), row.id, binding.namespace);
   if (!recovered)
     throw new AppError(
-      "Host provisioning has not been confirmed. Retry workspace setup before deleting it so its disk can be located safely.",
+      "Server setup has not been confirmed. Retry setup before deleting it so its disk can be located safely.",
       409,
       "CLOUD_WORKSPACE_PROVISIONING_UNCONFIRMED",
     );
@@ -386,7 +351,7 @@ async function hostForDeletion(row: CloudWorkspace) {
 function assertSubscriptionEnded(state: Awaited<ReturnType<typeof syncOblienEntitlement>>) {
   if (state.grant || (state.subscription && state.subscription.status !== "canceled")) {
     throw new AppError(
-      "Cancel this workspace's subscription and wait for its paid period to end before deleting it. Projects and data are retained meanwhile.",
+      "Cancel this server's subscription and wait for its paid period to end before deleting it. Projects and data are retained meanwhile.",
       409,
       "CLOUD_WORKSPACE_SUBSCRIPTION_ACTIVE",
     );
@@ -402,7 +367,7 @@ async function withMemberRuntimeLocks<T>(row: CloudWorkspace, work: () => Promis
     ids.some((id) => !row.operation?.restartProjectIds?.includes(id))
   ) {
     throw new AppError(
-      "Workspace membership changed. Review the resize again.",
+      "The projects on this server changed. Review the resize again.",
       409,
       "CLOUD_WORKSPACE_CHANGED",
     );
@@ -435,7 +400,7 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
         if (message) op.logs = [...op.logs, message.trim()].slice(-40);
         await repos.cloudWorkspace.updateOperation(id, op, op.id);
       };
-      await save("Checking the workspace and its current subscription…");
+      await save("Checking the server and its current subscription…");
       try {
         if (op.kind === "ensure") {
           await save("Preparing the subscribed Docker host…");
@@ -447,7 +412,7 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
           await assertCloudCanSpend(row.organizationId, id);
           const { binding, provider } = await readCloudWorkspaceHost(row.organizationId, id);
           if (!binding?.workspaceId || !provider || !op.resources)
-            throw new Error("The workspace resize target is unavailable");
+            throw new Error("The server resize target is unavailable");
           const allowed = await cloudSubscriptionWorkspaceResources(row.organizationId, id);
           if (
             Object.entries(op.resources).some(
@@ -455,22 +420,22 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
             )
           )
             throw new Error(
-              "The workspace plan changed. Review its capacity before retrying the resize.",
+              "The server plan changed. Review its capacity before retrying the resize.",
             );
           const { client, namespace } = await getNamespaceClient(row.organizationId, id);
-          await save("Resizing the workspace; running projects will briefly restart…");
+          await save("Resizing the server; running projects will briefly restart…");
           await withMemberRuntimeLocks(row, () =>
-            createProvisionLock(`cloud:docker:${binding.workspaceId}`).run(() =>
+            createProvisionLock(`cloud:server:${binding.workspaceId}`).run(() =>
               resizeDockerWorkspace({
                 client,
                 namespace,
                 workspaceId: binding.workspaceId!,
                 resources: op.resources!,
                 restartCheckpoint: {
-                  containerIds: op.restartContainerIds,
+                  workloads: op.restartWorkloads,
                   save: async (ids) => {
-                    op.restartContainerIds = ids;
-                    await save("Saved the running containers for recovery.");
+                    op.restartWorkloads = ids;
+                    await save("Saved the running applications for recovery.");
                   },
                 },
               }),
@@ -492,11 +457,11 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
               if (row.namespace) assertSubscriptionEnded(await sync({ syncResourceLimits: false }));
               if ((await repos.project.listByWorkspace(id, row.organizationId)).length)
                 throw new AppError(
-                  "The workspace still has projects",
+                  "The server still has projects",
                   409,
                   "CLOUD_WORKSPACE_NOT_EMPTY",
                 );
-              await save("Confirming provider cleanup before removing this empty workspace…");
+              await save("Confirming provider cleanup before removing this empty server…");
               const binding = await hostForDeletion(row);
               if (binding?.workspaceId) {
                 const client = getOblienClient();
@@ -528,8 +493,8 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
         };
         await save(
           op.kind === "resize"
-            ? "Workspace capacity applied; previously running services restored."
-            : "Workspace is ready for projects.",
+            ? "Server capacity applied; previously running services restored."
+            : "Server is ready for projects.",
         );
       } catch (error) {
         const terminal = op.attempts >= 3 || (error instanceof AppError && error.statusCode < 500);

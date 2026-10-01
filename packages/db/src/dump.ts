@@ -53,8 +53,8 @@ export interface DumpOptions {
    * `servers` and `mail_servers` are declared instance-scope only, so they never
    * travel in an organization or project dump — but their CHILDREN do, carrying a
    * dangling reference. On a receiver where those tables are permanently empty (the
-   * SaaS never registers a server row) the FKs are not DEFERRABLE, so the insert
-   * takes a raw FK violation and promote-to-cloud / migrate-to-cloud fails outright.
+   * destination has its own server ownership) the FKs cannot be reused. A
+   * project selects a destination server after the configuration is imported.
    *
    * Scrubbing rather than rejecting, because a local project legitimately HAS a
    * serverId — it just means nothing on the destination. Once scrubbed, any non-null
@@ -420,11 +420,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
   {
     sqlName: "cloud_docker_workspace",
     table: schema.cloudDockerWorkspace,
-    scopes: [
-      { in: "instance", via: "all-rows" },
-      { in: "organization", via: "fk", column: "projectId" },
-      { in: "project", via: "fk", column: "projectId" },
-    ],
+    scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
   {
@@ -1183,13 +1179,6 @@ function pickResolver(spec: TableSpec, scope: SubgraphScope): ScopeResolver | nu
  * the same rule.
  */
 export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
-  const managedProjects = new Set((tables.project ?? []).filter(row => row.workspaceId).map(row => row.id));
-  const managedDeployments = new Set<unknown>();
-  for (const row of tables.deployment ?? []) {
-    const meta = row.meta as Record<string, unknown> | null;
-    const binding = meta?.cloudDockerWorkspace as Record<string, unknown> | undefined;
-    if (meta?.managedWorkspaceId || binding?.ownerWorkspaceId) managedProjects.add(row.projectId);
-  }
   for (const [table, columns] of Object.entries(INSTANCE_SCOPED_REFS)) {
     const rows = tables[table];
     if (!rows || rows.length === 0) continue;
@@ -1199,27 +1188,50 @@ export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
       }
     }
   }
-  // Provider execution ownership never moves with a project export. A restore
-  // must select its new target and redeploy; historical snapshots are not host credentials.
+  // Execution ownership never moves with a configuration export, for connected
+  // or managed servers. Keep environment/build snapshots, but discard runtime
+  // handles and source paths that are meaningful only on the original instance.
   for (const row of tables.project ?? []) {
-    if (!managedProjects.has(row.id)) continue;
     row.activeDeploymentId = null;
-    row.cloudWorkspaceId = null;
     row.hostPort = null;
+    row.localPath = null;
   }
   for (const row of tables.deployment ?? []) {
     const meta = row.meta as Record<string, unknown> | null;
-    if (managedProjects.has(row.projectId)) {
-      managedDeployments.add(row.id);
-      row.meta = { ...meta, managedWorkspaceId: undefined, cloudDockerWorkspace: undefined, workspaceId: undefined, deployTarget: undefined };
-      row.containerId = null;
-      row.artifactRetainedAt = null;
-      row.pinned = false;
-    }
+    const next = { ...meta };
+    for (const key of [
+      "managedWorkspaceId",
+      "managedServer",
+      "serverId",
+      "deployTarget",
+      "clusterId",
+      "localPath",
+      "uploadSessionId",
+      "hostPort",
+      "hostPortByContainerPort",
+      "staticRoot",
+      "handoverImages",
+      "handoverAppImage",
+      "handoverStaticDir",
+      "adopt",
+    ])
+      delete next[key];
+    row.meta = next;
+    row.containerId = null;
+    row.imageRef = null;
+    row.artifactRetainedAt = null;
+    row.pinned = false;
   }
   for (const row of tables.service_deployment ?? []) {
-    if (!managedDeployments.has(row.deploymentId)) continue;
-    for (const field of ["containerId", "allocatedResources", "hostPort", "hostPorts", "ip"]) row[field] = null;
+    for (const field of [
+      "containerId",
+      "imageRef",
+      "allocatedResources",
+      "hostPort",
+      "hostPorts",
+      "ip",
+    ])
+      row[field] = null;
   }
 }
 
@@ -1471,10 +1483,6 @@ export async function restoreSubgraphInTransaction(
   // Remap path (cloud ingest / project transfer) is the only place an untrusted
   // caller supplies a dump for a DIFFERENT org — reject cross-tenant FKs there.
   if (opts.remapOrgId) assertDumpSelfContained(dump);
-  if (opts.remapOrgId && (dump.tables.cloud_docker_workspace?.length ?? 0) > 0 &&
-      dump.tables.project?.some(row => row.organizationId !== opts.remapOrgId)) {
-    throw new Error("Cloud Docker workspaces are bound to their billing organization. Migrate the volume data to a new workspace before transferring ownership.");
-  }
 
   // Kept for the day the schema declares its FKs DEFERRABLE — but DO NOT rely on
   // it. Postgres applies this only to constraints declared DEFERRABLE, and none of

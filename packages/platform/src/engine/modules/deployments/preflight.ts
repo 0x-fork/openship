@@ -798,7 +798,7 @@ async function resolveCloudPreflight(
   // Resolve the effective target through the single authority so this matches
   // exactly where the build pipeline will land the deploy (resolveDeploymentPlatform
   // uses the same function). buildConfigSnapshot derives deployTarget from
-  // `project.cloudWorkspaceId`, the canonical "is this a cloud project" test.
+  // `project.workspaceId`, the canonical "is this a cloud project" test.
   const effectiveTarget = resolveEffectiveTarget(plat.target, snapshot);
 
   // Managed routing = "the deploy lands on the operator's own server,
@@ -872,13 +872,12 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
     return { id: "config", label: "Build configuration", status: "pass" };
   }
 
-  // A folder-upload deploy has no git and no host path — its source is the
-  // pre-staged upload workspace (`sourceStaged`, set by requestBuildAccess).
-  // That's a valid source, so it satisfies both the source and branch checks.
-  if (!snapshot.repoUrl && !snapshot.localPath && !snapshot.sourceStaged && !releaseImageRef) {
+  // An upload uses a validated staging path. Cloud authorizes its upload
+  // capability again when transferring the source to the selected server.
+  if (!snapshot.repoUrl && !snapshot.localPath && !releaseImageRef) {
     missing.push("repository URL or local path");
   }
-  if (!snapshot.branch && !snapshot.localPath && !snapshot.sourceStaged && !releaseImageRef) {
+  if (!snapshot.branch && !snapshot.localPath && !releaseImageRef) {
     missing.push("branch");
   }
 
@@ -1464,21 +1463,6 @@ export async function runPreflightChecks(
       ? { id: "stack", label: "Service stack", status: "pass" }
       : checkStack(snapshot),
   ];
-  if (effectiveTarget === "cloud" && (snapshot.volumes?.length || opts?.composeServices?.some((service) => service.volumes?.length))) {
-    const project = opts?.projectId && snapshot.organizationId
-      ? await repos.project.findByIdInOrganization(opts.projectId, snapshot.organizationId) : null;
-    const { usesCloudDockerWorkspace } = await import("../../lib/cloud-docker-workspace");
-    const docker = (opts?.multiService || Boolean(project?.workspaceId)) && (project
-      ? await usesCloudDockerWorkspace(project, snapshot.serviceDeploymentMode)
-      : snapshot.serviceDeploymentMode !== "single");
-    checks.push(docker ? {
-      id: "cloud-storage", label: "Persistent storage", status: "pass",
-      message: "Volumes stay on the project's Docker workspace across deployments.",
-    } : {
-      id: "cloud-storage", label: "Persistent storage", status: "fail", code: "CLOUD_VOLUMES_UNSUPPORTED",
-      message: "Persistent Compose volumes require a Docker workspace. Existing native cloud projects need a data migration before switching.",
-    });
-  }
 
   // Does this machine meet what the app says it needs? Cloud is sized from the
   // tier table, not from host hardware, so there is nothing to match there (and

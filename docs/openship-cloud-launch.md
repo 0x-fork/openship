@@ -262,7 +262,12 @@ nine dashboard locales. Both API and dashboard must be rebuilt and deployed for
 these changes. See [production-path verification](openship-cloud-production-verification.md)
 for test coverage and the remaining live payment/webhook verification.
 
-## Compose on Docker workspaces, 2026-09-17
+## Historical validation: Compose workspaces, 2026-09-17
+
+This section records the model and staging results from that date. It does not
+describe or certify the current subscription-owned server implementation; see
+[Managed Cloud servers](managed-cloud-servers.md) for its architecture and
+verification boundaries.
 
 Oblien's live image catalog now includes `oblien/docker:29` (`id: docker`,
 label: Docker + Compose). The entry advertises Docker Engine 29 running at boot,

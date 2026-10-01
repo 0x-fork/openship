@@ -7,7 +7,7 @@ export async function createCloudPage(
   input: { workspace_id: string; path: string; name: string; slug: string; domain?: string },
 ): Promise<unknown> {
   const namespace = await ensureNamespace(ctx.organizationId, null);
-  return createTenantCloudAdmin(ctx.organizationId, namespace, null).createPage(input);
+  return createTenantCloudAdmin(ctx.organizationId, namespace, null).pages!.create(input);
 }
 
 export type CloudPageAction = "disable" | "enable" | "delete";

@@ -15,8 +15,7 @@ import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import type { DeploymentConfig } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
-import { WorkspacePicker } from "@/components/cloud-workspaces/WorkspacePicker";
-import { useCloudWorkspaces } from "@/components/cloud-workspaces/useCloudWorkspaces";
+import ServerSelector from "@/components/shared/ServerSelector";
 import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
 import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
@@ -388,14 +387,14 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
       <UiIcon name="globe" className="size-4" />
       {t.deploy.summary.runtimeStatic}
     </span>
-  ) : deployTarget === "cloud" ? (
+  ) : deployTarget === "cloud" && runtimeMode !== "bare" ? (
     cloudResourceTier ? (
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
         <UiIcon name="bolt" className="size-4" />
         <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
       </span>
     ) : null
-  ) : deployTarget === "server" && runtimeMode === "bare" ? (
+  ) : (deployTarget === "server" || deployTarget === "cloud") && runtimeMode === "bare" ? (
     <span
       className="inline-flex items-center gap-1.5 text-xs font-medium text-warning shrink-0"
       title={t.deploy.summary.runtimeDirectHint}
@@ -403,7 +402,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
       <UiIcon name="shield-alert" className="size-4" />
       {t.deploy.summary.runtimeDirectWarning}
     </span>
-  ) : deployTarget === "server" && runtimeMode === "docker" ? (
+  ) : (deployTarget === "server" || deployTarget === "cloud") && runtimeMode === "docker" ? (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
       <UiIcon name="shield-check" className="size-4" />
       {t.deploy.summary.runtimeSandboxed}
@@ -715,14 +714,12 @@ interface CustomPowerModalContentProps {
     initial: { cpuCores: number; memoryMb: number; diskMb: number };
     onSave: (values: { cpuCores: number; memoryMb: number; diskMb: number }) => void;
     onCancel: () => void;
-    sharedHost?: boolean;
 }
 
 const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
     initial,
     onSave,
     onCancel,
-    sharedHost = false,
 }) => {
     const { t } = useI18n();
     const [values, setValues] = useState(initial);
@@ -733,10 +730,10 @@ const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
             <div className="space-y-1.5">
                 <h3 className="text-base font-semibold text-foreground">{t.deploy.power.modalTitle}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                    {sharedHost ? t.billing.workspaces.poolHint : t.deploy.power.modalSubtitle}
+                    {t.billing.workspaces.poolHint}
                 </p>
             </div>
-            <div className={`grid gap-3 ${sharedHost ? "grid-cols-2" : "grid-cols-3"}`}>
+            <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1.5">
                     <span className="text-xs font-medium text-muted-foreground">{t.deploy.power.vcpuField}</span>
                     <input
@@ -761,22 +758,6 @@ const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
                         className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                 </label>
-                {!sharedHost && <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">{t.deploy.power.diskField}</span>
-                    <input
-                        type="number"
-                        inputMode="numeric"
-                        step="1"
-                        min="1"
-                        // Stored in MB internally; display as GB so the
-                        // input matches what an operator types.
-                        value={Math.round(values.diskMb / 1024)}
-                        onChange={(e) =>
-                            set({ diskMb: Math.max(0, Number(e.target.value) || 0) * 1024 })
-                        }
-                        className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                </label>}
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
                 <button
@@ -800,8 +781,6 @@ const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
 
 const CloudPowerPicker: React.FC = () => {
     const { config, updateConfig } = useDeployment();
-    const { data: workspaces } = useCloudWorkspaces(!!config.workspaceId);
-    const sharedHost = workspaces?.workspaces.find(row => row.id === config.workspaceId)?.runtime === "docker";
     const { t } = useI18n();
     const { showModal, hideModal } = useModal();
     const selected = config.cloudResourceTier ?? "low";
@@ -847,7 +826,6 @@ const CloudPowerPicker: React.FC = () => {
             maxWidth: "480px",
             customContent: (
                 <CustomPowerModalContent
-                    sharedHost={sharedHost}
                     initial={config.cloudResourceCustom ?? CUSTOM_DEFAULTS}
                     onCancel={() => hideModal(id)}
                     onSave={(values) => {
@@ -875,7 +853,7 @@ const CloudPowerPicker: React.FC = () => {
                     {t.deploy.power.heading}
                 </h3>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                    {sharedHost ? t.billing.workspaces.poolHint : t.deploy.power.subtitle}
+                    {t.billing.workspaces.poolHint}
                 </p>
             </div>
             {!expanded ? (
@@ -899,8 +877,6 @@ const CloudPowerPicker: React.FC = () => {
                         <span>{summary.cpu}</span>
                         <span className="text-muted-foreground/70">·</span>
                         <span>{t.deploy.power.ram} {summary.ram}</span>
-                        {!sharedHost && <><span className="text-muted-foreground/70">·</span>
-                        <span>{t.deploy.power.disk} {summary.disk}</span></>}
                     </div>
                 </button>
             ) : (
@@ -941,8 +917,6 @@ const CloudPowerPicker: React.FC = () => {
                                 <span>{tier.cpu}</span>
                                 <span className="text-muted-foreground/70">·</span>
                                 <span>{t.deploy.power.ram} {tier.ram}</span>
-                                {!sharedHost && <><span className="text-muted-foreground/70">·</span>
-                                <span>{t.deploy.power.disk} {tier.disk}</span></>}
                             </div>
                         </button>
                     );
@@ -986,8 +960,6 @@ const CloudPowerPicker: React.FC = () => {
                         <span>{custom.cpuCores} {t.deploy.power.vcpu}</span>
                         <span className="text-muted-foreground/70">·</span>
                         <span>{t.deploy.power.ram} {custom.memoryMb} MB</span>
-                        {!sharedHost && <><span className="text-muted-foreground/70">·</span>
-                        <span>{t.deploy.power.disk} {Math.round(custom.diskMb / 1024)} GB</span></>}
                     </div>
                 </button>
             </div>
@@ -1274,7 +1246,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       deployTargetOptions.push({
         value: "server",
         icon: <UiIcon name="server" className="size-5" />,
-        label: servers[0].name || servers[0].sshHost,
+        label: servers[0].name || servers[0].sshHost || servers[0].id,
         description: ts.options.serverViaSsh,
       });
     } else {
@@ -1328,7 +1300,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // pnpm/bun/etc.) and is environment-sensitive, so we surface it as an
   // opt-in option, not the first card. Static-app stacks (no `hasBuild`)
   // can't use local-build because there's no artifact to transfer; skip.
-  const cloudSupportsLocalBuild = config.options?.hasBuild === true;
+  const cloudSupportsLocalBuild = selfHosted && config.options?.hasBuild === true;
   const visibleBuildOptions = config.deployTarget === "cloud"
     ? [
         {
@@ -1535,14 +1507,14 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // main screen is just "where to deploy", details one click away. Default is
   // Sandbox; most users never open this. Only cloud keeps a right-hand panel
   // (its resource/power picker).
-  const showServerAdvanced =
-    showFullPicker && config.deployTarget === "server" && !!config.serverId;
+  const showServerAdvanced = showFullPicker && !!config.serverId &&
+    (config.deployTarget === "server" || config.deployTarget === "cloud");
   // Runtime-isolation (Sandbox/Direct) applies only to a self-hosted server APP
   // that runs a process: docker/compose always run sandboxed, and a static app
   // (files served by the edge) has nothing to isolate. A worker runs a process,
   // so it isolates like a web app. Shown in the Advanced panel (right column).
   const showRuntimeIsolation =
-    workloadOf(config.options) !== "static" &&
+    (config.deployTarget === "cloud" || workloadOf(config.options) !== "static") &&
     config.projectType !== "docker" &&
     !isServiceDeployment;
   const showRightPanel = showCloudPicker || showServerAdvanced;
@@ -1553,7 +1525,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // transition). So the screen leads with "where to deploy" and the build/clone/
   // runtime detail expands into the space only when asked for. Cloud keeps its own
   // right-hand power panel; single-column onboarding is untouched.
-  const serverLayout = showServerAdvanced;
+  const serverLayout = showServerAdvanced && !showCloudPicker;
 
   // Advanced-panel summary line. Says WHAT'S INSIDE, not just the build location:
   // a collapsed panel labelled only "Build on Remote" hides the rollback window
@@ -1688,7 +1660,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         </div>
       )}
 
-      {!selfHosted && config.deployTarget === "cloud" && <WorkspacePicker value={config.workspaceId} disabled={!!config.projectId || !!config.uploadSessionId} dockerOnly={config.projectType === "services" || config.projectType === "monorepo"} onChange={(workspaceId, serverId) => updateConfig({ workspaceId, serverId })} />}
+      {!selfHosted && config.deployTarget === "cloud" && <ServerSelector value={config.serverId} disabled={!!config.projectId || !!config.uploadSessionId} forDeployment dockerOnly={config.projectType === "services" || config.projectType === "monorepo"} onSelect={server => updateConfig({ workspaceId: server?.raw.managed?.id, serverId: server?.id })} />}
 
       {/* Compact summary - saved default applied cleanly. The pill itself
           is the edit affordance: clicking expands the full picker so the
@@ -1799,9 +1771,9 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
           {/* Cloud carries the save-default toggle here; the swap moved it into
               the server rail (left cell above). */}
           {!serverLayout && saveDefaultCheckbox}
-          {showCloudPicker && <CloudPowerPicker />}
+          {showCloudPicker && (config.runtimeMode !== "bare" || isServiceDeployment || config.projectType === "docker") && <CloudPowerPicker />}
           {showServerAdvanced && (
-            <div className="rounded-2xl border border-border/50 bg-card">
+            <div className="rounded-2xl bg-card">
               <button
                 type="button"
                 onClick={() => setAdvancedOpen((v) => !v)}
@@ -1821,7 +1793,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                       {advancedSections.map((section) => (
                         <span
                           key={section}
-                          className="rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground"
+                          className="rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground"
                         >
                           {section}
                         </span>
@@ -1854,7 +1826,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                   {showRuntimeIsolation && <ServerRuntimePicker enabled={advancedOpen} />}
 
                   {/* Build location — where the clone + build run. */}
-                  {showBuildStrategy && (
+                  {showBuildStrategy && visibleBuildOptions.length > 1 && (
                     <div className="space-y-3">
                       <div>
                         <h3 className="text-sm font-semibold text-foreground">

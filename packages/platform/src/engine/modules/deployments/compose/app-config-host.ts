@@ -42,7 +42,7 @@ function safeHostSegment(value: string): string {
 }
 
 export function appConfigHostServiceRoot(projectId: string, serviceName: string, workspaceId?: string | null): string {
-  const root = workspaceId ? `${cloudDockerProjectPaths(projectId, workspaceId).mounts}/config` : `${APP_CONFIG_HOST_ROOT}/${safeHostSegment(projectId)}`;
+  const root = workspaceId ? `${cloudDockerProjectPaths(projectId).mounts}/config` : `${APP_CONFIG_HOST_ROOT}/${safeHostSegment(projectId)}`;
   return `${root}/${safeHostSegment(serviceName)}`;
 }
 

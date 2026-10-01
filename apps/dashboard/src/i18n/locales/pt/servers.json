@@ -441,7 +441,7 @@
   },
   "terminal": {
     "title": "Terminal",
-    "description": "Shells SSH ao vivo via WebSocket. Até 3 simultâneos — copia ao selecionar."
+    "description": "Terminal do servidor ao vivo. Limite de sessões: {count} — copia ao selecionar."
   },
   "setup": {
     "editServer": "Editar Servidor",

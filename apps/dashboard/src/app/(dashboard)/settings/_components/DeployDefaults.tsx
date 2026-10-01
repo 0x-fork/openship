@@ -238,7 +238,7 @@ function labelFor(
 ): string {
   if (target === "server") {
     const s = servers.find((srv) => srv.id === serverId);
-    return s ? (s.name || s.sshHost) : labels.yourServer;
+    return s ? (s.name || s.sshHost || s.id) : labels.yourServer;
   }
   return labels.cloud;
 }

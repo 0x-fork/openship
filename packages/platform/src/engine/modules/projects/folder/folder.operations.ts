@@ -1,10 +1,8 @@
 import { cp, rm } from "node:fs/promises";
-import { createReadStream } from "node:fs";
 import { basename, join } from "node:path";
-import { Readable } from "node:stream";
 import { AppError, NotFoundError } from "@repo/core";
 import type { SourceDependencies } from "../../../../sources";
-import { prepareSourceDirectory, archiveSourceDirectory, validateSourceDirectory, SOURCE_EXCLUSIONS } from "../../../../source-files";
+import { prepareSourceDirectory, validateSourceDirectory, SOURCE_EXCLUSIONS } from "../../../../source-files";
 import { assertNativeSourcePath } from "../../../native/source-policy";
 import { getFolderSession, deleteFolderSession } from "./session-store";
 import { audit } from "../../../lib/audit-emitter";
@@ -28,23 +26,12 @@ export const sourceDependencies: SourceDependencies = {
       const result = await createFolderSession({ orgId: ctx.organizationId, userId: ctx.userId, projectId: input.projectId, serverId: input.serverId, name: input.name ?? (source.temporary ? "app" : basename(source.directory)), stack: input.stack, packageManager: input.packageManager }, ctx);
       id = result.sessionId;
       const session = sessionFor(id, ctx.organizationId);
-      if (session.mode === "api-relay") {
-        await cp(source.directory, session.stagingDir!, {
-          recursive: true, dereference: true,
-          filter: path => !SOURCE_EXCLUSIONS.has(basename(path)),
-        });
-        await validateSourceDirectory(session.stagingDir!);
-        session.uploaded = true;
-      } else {
-        const archive = await archiveSourceDirectory(source.directory, { temporaryRoot: root });
-        const stream = createReadStream(archive.path);
-        try {
-          const response = await fetch(result.upload.url, { method: "POST", headers: result.upload.headers, body: Readable.toWeb(stream) as ReadableStream<Uint8Array>, duplex: "half", signal: AbortSignal.timeout(120_000) } as RequestInit);
-          if (!response.ok) throw new AppError(`Provider source upload failed (${response.status})`, 502, "SOURCE_UPLOAD_FAILED");
-          await response.body?.cancel();
-          session.uploaded = true;
-        } finally { stream.destroy(); await archive.dispose(); }
-      }
+      await cp(source.directory, session.stagingDir!, {
+        recursive: true, dereference: true,
+        filter: path => !SOURCE_EXCLUSIONS.has(basename(path)),
+      });
+      await validateSourceDirectory(session.stagingDir!);
+      session.uploaded = true;
       return { sessionId: id, serverId: result.serverId, workspaceId: result.workspaceId, expiresAt: result.expiresAt };
     } catch (error) {
       if (id) {

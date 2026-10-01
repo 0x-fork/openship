@@ -1,4 +1,4 @@
-import { createPlatform, type CloudRuntime } from "@repo/adapters";
+import { createPlatform, type CloudInfraProvider } from "@repo/adapters";
 import { ensureNamespace, getOblienClient, issueNamespaceToken } from "./openship-cloud";
 import { env } from "../config/env";
 import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
@@ -88,7 +88,7 @@ export async function runCloudPreflight(
   const baseDomain = getRoutingBaseDomain();
 
   // ── Namespace-scoped checks: quota + custom domain DNS ──
-  let cloud: CloudRuntime | null = null;
+  let cloud: CloudInfraProvider | null = null;
   let runtimeError: string | null = null;
   try {
     const token = await issueNamespaceToken(organizationId, opts.workspaceId);
@@ -97,7 +97,7 @@ export async function runCloudPreflight(
       target: "cloud", cloudToken: token.token, cloudNamespace: token.namespace,
       cloudApiUrl: env.OBLIEN_API_URL,
     });
-    cloud = cloudPlatform.runtime as CloudRuntime;
+    cloud = cloudPlatform.routing as CloudInfraProvider;
   } catch (err) {
     runtimeError = safeErrorMessage(err);
   }

@@ -14,14 +14,14 @@ async function resolveOwner(db: Database | DatabaseTransaction, target: CloudDoc
   const [member] = projectQuery ? await (lock ? projectQuery.for("update") : projectQuery) : [];
   if (typeof target === "string" && !member) return null;
   const ownerWorkspaceId = typeof target === "string" ? member?.workspaceId : target.ownerWorkspaceId;
-  if (ownerWorkspaceId) {
+  if (!ownerWorkspaceId) return null;
+  {
     const query = db.select().from(cloudWorkspace).where(and(eq(cloudWorkspace.id, ownerWorkspaceId), eq(cloudWorkspace.organizationId, organizationId)));
     const [workspace] = await (lock ? query.for("update") : query);
-    if (!workspace || workspace.runtime !== "docker") return null;
-    return { member, workspace, projectId: null, ownerWorkspaceId, condition: eq(cloudDockerWorkspace.ownerWorkspaceId, ownerWorkspaceId) };
+    if (!workspace) return null;
+    return { member, workspace, ownerWorkspaceId, condition: eq(cloudDockerWorkspace.ownerWorkspaceId, ownerWorkspaceId) };
   }
-  if (!member) return null;
-  return { member, workspace: undefined, projectId: member.id, ownerWorkspaceId: null, condition: eq(cloudDockerWorkspace.projectId, member.id) };
+
 }
 
 function assertAvailable(owner: Awaited<ReturnType<typeof resolveOwner>>, forCleanup = false) {
@@ -53,13 +53,13 @@ export function createCloudDockerWorkspaceRepo(db: Database) {
         eq(cloudDockerWorkspace.provisionKey, provisionKey), isNull(cloudDockerWorkspace.workspaceId)));
     },
     async reserve(input: Pick<CloudDockerWorkspace, "namespace" | "image" | "resources"> &
-      ({ projectId: string } | { ownerWorkspaceId: string }), organizationId: string): Promise<CloudDockerWorkspace> {
+      { ownerWorkspaceId: string }, organizationId: string): Promise<CloudDockerWorkspace> {
       return db.transaction(async tx => {
-        const target = "projectId" in input ? input.projectId : { ownerWorkspaceId: input.ownerWorkspaceId };
+        const target = { ownerWorkspaceId: input.ownerWorkspaceId };
         const owner = assertAvailable(await resolveOwner(tx, target, organizationId, true));
         if (owner.workspace && owner.workspace.namespace !== input.namespace) throw new Error("Cloud workspace namespace does not match its owner");
         await tx.insert(cloudDockerWorkspace).values({
-          projectId: owner.projectId, ownerWorkspaceId: owner.ownerWorkspaceId,
+          ownerWorkspaceId: owner.ownerWorkspaceId,
           namespace: input.namespace, image: input.image, resources: input.resources, provisionKey: randomUUID(),
         }).onConflictDoNothing();
         const row = await tx.query.cloudDockerWorkspace.findFirst({ where: owner.condition });
@@ -75,11 +75,7 @@ export function createCloudDockerWorkspaceRepo(db: Database) {
             or(isNull(cloudDockerWorkspace.workspaceId), eq(cloudDockerWorkspace.workspaceId, workspaceId))))
           .returning();
         if (!row) throw new Error("Cloud workspace binding cannot be reassigned");
-        // Subscription-owned provider identity stays on its host, never on each project.
-        if (owner.projectId && owner.member) {
-          if (owner.member.cloudWorkspaceId && owner.member.cloudWorkspaceId !== workspaceId) throw new Error("Project already owns a different cloud workspace");
-          await tx.update(project).set({ cloudWorkspaceId: workspaceId, updatedAt: new Date() }).where(eq(project.id, owner.projectId));
-        }
+
       });
     },
     async markReady(target: CloudDockerOwner, organizationId: string, workspaceId: string): Promise<void> {

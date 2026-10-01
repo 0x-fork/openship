@@ -33,10 +33,6 @@ export function createRemoteCloudAdmin(organizationId: string): CloudAdminProxy 
   };
   return {
     pages,
-    createPage: (input) => pages.create(input),
-    enablePage: async (slug) => { await pages.enable(slug); },
-    disablePage: async (slug) => { await pages.disable(slug); },
-    deletePage: async (slug) => { await pages.delete(slug); },
     domainRoutes: () => request("/api/cloud/route-registry"),
     setRoutes: (hostname, input) => request("/api/cloud/resource-proxy", { operation: "setRoutes", hostname, input }),
   };

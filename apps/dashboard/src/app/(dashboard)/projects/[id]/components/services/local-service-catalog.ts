@@ -1,7 +1,7 @@
 /**
  * Curated upstream catalog for Docker deployments, including managed Cloud hosts.
  *
- * The Oblien `images.list()` catalog is for native provider runtimes.
+ * The Oblien `images.list()` catalog provides server images.
  * Docker servers use these upstream images regardless of who hosts the server.
  *
  * This list is hand-curated to the things people actually add to apps:

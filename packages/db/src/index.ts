@@ -50,6 +50,7 @@ export {
   EXCLUDED_TABLES,
   topoOrderedTables,
   stripEncryptedInPlace,
+  stripInstanceRefsInPlace,
   type DatabaseDump,
   type DumpOptions,
   type RestoreOptions,

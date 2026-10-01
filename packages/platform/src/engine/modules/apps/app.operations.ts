@@ -68,9 +68,7 @@ export const appDependencies: AppDependencies = {
       if (input.serverId) {
         const server = await repos.server.getInOrganization(input.serverId, ctx.organizationId);
         if (!server) throw new NotFoundError("Server", input.serverId);
-        await authorization.authorize({ ...ctx, scopeMode: "fixed" }, server.workspaceId
-          ? { resourceType: "cloud_workspace", resourceId: server.workspaceId, action: "read" }
-          : { resourceType: "server", resourceId: server.id, action: "read" });
+        await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "server", resourceId: server.id, action: "read" });
         if (server.workspaceId && input.deployTarget && input.deployTarget !== "cloud")
           throw new AppError("This managed server is a Cloud destination", 409, "PROJECT_SERVER_TARGET_CONFLICT");
         if (!server.workspaceId) await assertServerExecution(server);

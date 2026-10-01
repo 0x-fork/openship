@@ -72,10 +72,6 @@ export function createTenantCloudAdmin(organizationId: string, namespace: string
   };
   return {
     pages,
-    createPage: (input) => pages.create(input),
-    disablePage: async (slug) => { await pages.disable(slug); },
-    enablePage: async (slug) => { await pages.enable(slug); },
-    deletePage: async (slug) => { await pages.delete(slug); },
     domainRoutes,
     domainSsls: async () => {
       const result = await admin.domain.ssls({ namespace });

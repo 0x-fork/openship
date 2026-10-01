@@ -1,42 +1,44 @@
 ---
-title: Cloud workspaces
+title: Managed Cloud servers
 description: Share one subscribed Docker host across projects, with measured usage and independent billing.
 ---
 
-A Cloud workspace is a managed place to run your projects. Each workspace has
-its own subscription, capacity and billing history. In a **shared workspace**,
-projects run as Docker containers on the same host. Adding a project uses that
-host; it does not allocate another VM or another full disk.
+Choose a plan and deploy. Openship Cloud creates and manages a server for your
+projects automatically, including Docker and routing through Oblien. You do not
+need to connect SSH credentials or install an edge proxy.
 
-## Choose a workspace
+## Deploy to your managed server
 
-New Cloud accounts start with **Production**, a shared Docker workspace. Choose
-a plan in Billing, complete checkout, and wait for workspace setup to finish.
-Payment is verified with the provider before provisioning starts. Setup progress
-and retry details are available under **Workspaces**.
+New Cloud accounts start with **Production**, a shared Docker server. Complete
+checkout in Billing and setup starts after the provider confirms payment. The
+server is selected automatically when it is your only destination. Install a
+catalog app, deploy a repository or upload source files using the normal flow.
 
-Choose that workspace when deploying a repository, uploading source files or
-installing a catalog app. Every project in it uses the same deployment engine as
-self-hosted Docker: services, environment variables, logs, routes, volumes,
-backups and retained deployment images stay attached to their project.
+Cloud uses the same Docker engine as self-hosted deployments. Services,
+environments, logs, volumes, backups and rollback artifacts belong to their
+projects. Execution runs inside your managed server; edge routing uses Oblien.
 
-You can add another workspace with an independent subscription. Projects show
-their selected workspace; moving a running project requires an explicit migration.
-Changing a name does not move workloads.
+Open **Servers** when you want usage, terminal access, network settings or
+operation logs. This is optional administration, not a setup checklist. Cloud
+shows supported capabilities, without SSH setup, edge installation or host
+component maintenance.
 
-| Placement                               | Execution and ownership                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Shared Docker workspace                 | Multiple projects share one subscribed host. Even a single-service project uses Docker.                                  |
-| Dedicated Docker workspace              | One project uses its own subscribed Docker host; suitable for a Compose stack.                                           |
-| Dedicated native workspace              | One compatible single application runs through the existing native Cloud runtime. Multi-service projects require Docker. |
-| Existing project-owned Cloud deployment | Keeps its existing runtime, organization billing and cleanup behavior until manually migrated.                           |
+You can add another managed server with an independent subscription. Projects
+select it through the same `serverId` used for connected servers. Changing a
+server name does not move its workloads; moving projects requires an explicit
+migration. Provider workspace IDs remain internal provisioning and billing
+identities.
 
-Dedicated placement is a separate allocation; it does not promise exclusive
-physical hardware. Self-hosted servers and their billing behavior are unchanged.
+Choose **Docker** for isolated services, catalog apps and Compose stacks.
+Compatible source applications can choose **Direct** to run as a supervised
+process on the same server. Sidecars still use Docker. Both choices share the
+subscription's capacity; an additional server has its own subscription.
+
+Self-hosted SSH servers keep their existing setup and management controls.
 
 ## Understand capacity and usage
 
-The workspace page separates **provisioned capacity** from **live usage**. A
+The server page separates **provisioned capacity** from **live usage**. A
 100 GB disk is a capacity ceiling, not a claim that your application stores
 100 GB. The disk breakdown measures project containers, named volumes and
 managed bind data, with a separate shared total for images, build cache and
@@ -50,48 +52,59 @@ The operating system and Docker also use some memory and disk. Project and
 running-service allowances still apply; an undeployed draft does not consume
 a running-service slot. See current offers on the [pricing page](/pricing).
 
-Source builds run on the workspace using measured available CPU and memory.
+Source builds run on the server using measured available CPU and memory.
 An optional build size is an upper limit; automatic sizing uses current
 headroom. Host activity is coordinated so simultaneous builds or a resize do
 not each assume the same free resources. If too little memory is available,
-stop an idle service or upgrade the workspace and retry. Image-only installs
+stop an idle service or upgrade the server and retry. Image-only installs
 do not create a source builder.
 
 Capacity and metered credits are separate. Running apps and builds consume the
-workspace's usage allowance under the provider's rate card. A capacity limit
+server's usage allowance under the provider's rate card. A capacity limit
 does not promise unlimited runtime hours. See [Cloud billing](/docs/guides/billing).
 
 ## Upgrade and recover
 
-1. Open Billing for the workspace and purchase the desired plan.
-2. Open the workspace and choose **Apply plan capacity**.
+1. Open Billing for the server and purchase the desired plan.
+2. Open the server and choose **Apply plan capacity**.
 3. Review the current and purchased sizes and the affected projects.
 4. Confirm the restart. The operation waits for active work, records the
-   running containers, resizes the host and restores those containers.
+   running applications, resizes the host and restores them.
 
 Allow for downtime during a host resize. Intentionally stopped services stay
 stopped. A failed operation retains its logs, reason and recovery checkpoint;
-retry it from the workspace page. Disk capacity cannot be shrunk in place.
+retry it from the server page. Disk capacity cannot be shrunk in place.
 Moving to a smaller disk requires a separate data migration.
 
 Provisioning and resize operations survive an API restart. Transient failures
 have a displayed retry time; a settled failure requires an explicit retry.
 A billing connectivity error alone does not cancel an active subscription.
 
+## Terminal and networking
+
+Docker servers expose a host terminal through the same authenticated terminal
+interface as connected servers. Oblien allows one host terminal socket per
+server; a second session is refused until the existing session closes. Service
+terminals use Docker and remain independent. Terminal activity has idle and
+maximum-lifetime limits.
+
+The **Networking** tab controls outbound internet access through Oblien. The
+confirmation explains that disabling it affects downloads, builds and external
+integrations for all projects. Published ports and domains stay in each project's
+routing settings, so a server setting cannot overwrite their rules. Provider
+private-link and edge configuration is managed automatically.
+
 ## Delete safely
 
-Deleting a project in a shared workspace removes that project's resources and
-preserves the workspace and its other projects. The normal project deletion
+Deleting a project in a shared server removes that project's resources and
+preserves the server and its other projects. The normal project deletion
 choice still controls whether persistent volumes are removed. An application
 rollback reuses project artifacts; it never restores or deletes the whole host.
 
-To delete a workspace, first remove or migrate its projects and end its
+To delete a server, first remove or migrate its projects and end its
 subscription. Deletion is blocked while a paid period or unresolved checkout
 remains. Provider removal must be confirmed before Openship removes workspace
 ownership. Billing records remain with the payment provider. Cancellation by
 itself does not delete project data.
 
-Existing customers are not moved automatically. Keep the old deployment until
-its replacement, data and routes have been verified. The
-[workspace API](/docs/api/cloud-workspaces) exposes the same lifecycle to the
-SDK and MCP.
+The [server API](/docs/api/servers) exposes the same lifecycle to the SDK and MCP.

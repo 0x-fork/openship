@@ -9,7 +9,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { RuntimeMode } from "@/context/deployment/types";
 
 /**
- * Inline runtime-isolation picker for a self-hosted SERVER target — the
+ * Shared runtime-isolation picker for connected and managed servers — the
  * right-column "how it runs" panel, symmetric with CloudPowerPicker. Replaces
  * the old deploy-time modal: the choice is now a visible setting on the target
  * step, persisted to the project (see requestBuildAccess) so it sticks across
@@ -78,9 +78,9 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
   return (
     // Header outside the cards to match CloudPowerPicker / the left column's
     // heading rhythm, so the first card aligns across the grid row.
-    <div className="space-y-3">
+    <div className="@container space-y-3">
       <div>
-        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <UiIcon name="server" className="size-4 text-muted-foreground" />
           {t.deploy.runtime.heading}
         </h3>
@@ -91,7 +91,7 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 items-stretch">
+      <div className="grid grid-cols-1 gap-2 @lg:grid-cols-2 items-stretch">
         {runtimeOptions.map((option) => {
           const isSelected = selected === option.value;
           const isRecommended = option.value === recommendedMode;
@@ -99,11 +99,12 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
             <button
               key={option.value}
               type="button"
+              aria-pressed={isSelected}
               onClick={() => updateConfig({ runtimeMode: option.value })}
-              className={`h-full w-full rounded-xl border p-4 text-start transition-all ${
+              className={`h-full w-full rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 isSelected
-                  ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                  : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]"
+                  ? "bg-primary/10 ring-1 ring-primary/25"
+                  : "bg-muted/40 hover:bg-muted/60"
               }`}
             >
               <div className="flex items-start gap-3">
@@ -111,12 +112,12 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
                   {option.icon}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <p className={`text-sm font-medium ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
                       {option.label}
                     </p>
                     {isRecommended && (
-                      <span className="inline-flex items-center rounded-full bg-success-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-success">
+                      <span className="inline-flex items-center rounded-md bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success">
                         {t.deploy.runtime.recommended}
                       </span>
                     )}
@@ -136,7 +137,7 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
       {selected === "bare" && (
         <div className="flex items-start gap-2.5 rounded-xl border border-warning-border bg-warning-bg px-3 py-2.5">
           <UiIcon name="shield-alert" className="size-4 text-warning shrink-0 mt-0.5" />
-          <p className="text-[12px] leading-relaxed text-warning">
+          <p className="text-xs leading-relaxed text-warning">
             {lowRam ? t.deploy.runtime.caveatLowRam : t.deploy.runtime.caveat}
           </p>
         </div>

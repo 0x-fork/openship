@@ -13,7 +13,7 @@ export type NewServer = typeof servers.$inferInsert;
 
 export function createServerRepo(db: Database) {
   return {
-    /** Host-administration inventory. Managed hosts are listed with their workspaces. */
+    /** Connected-host inventory for SSH maintenance and infrastructure jobs. */
     async list(): Promise<ConnectedServer[]> {
       return db.query.servers.findMany({
         where: isNull(servers.workspaceId),
@@ -50,15 +50,22 @@ export function createServerRepo(db: Database) {
     },
 
     /**
-     * Org-scoped list. Returns only servers whose organization_id exactly
-     * matches the caller's org. NULL-org rows are NOT returned and remain
-     * invisible from the dashboard.
+     * Org-scoped inventory. Host-maintenance callers keep the connected-only
+     * default; the shared management API explicitly includes managed servers.
+     * NULL-org rows are never returned.
      */
-    async listByOrganization(organizationId: string): Promise<ConnectedServer[]> {
-      return db.query.servers.findMany({
-        where: and(eq(servers.organizationId, organizationId), isNull(servers.workspaceId)),
+    async listByOrganization<IncludeManaged extends boolean = false>(
+      organizationId: string,
+      includeManaged?: IncludeManaged,
+    ): Promise<IncludeManaged extends true ? Server[] : ConnectedServer[]> {
+      const rows = await db.query.servers.findMany({
+        where: and(
+          eq(servers.organizationId, organizationId),
+          includeManaged ? undefined : isNull(servers.workspaceId),
+        ),
         orderBy: (s, { asc }) => [asc(s.createdAt)],
-      }) as Promise<ConnectedServer[]>;
+      });
+      return rows as IncludeManaged extends true ? Server[] : ConnectedServer[];
     },
 
     /** Org-scoped get. Strict equality — NULL-org rows are invisible. */

@@ -69,7 +69,6 @@ export async function appCloudConfiguration(
     workspaceId,
     resources: project?.resources as Record<string, unknown> | null | undefined,
     buildResources: project?.buildResources as Record<string, unknown> | null | undefined,
-    dockerWorkspace: true,
     services: [...names].map((name) => {
       const stored = savedByName.get(name);
       const spec = profiles.get(name);

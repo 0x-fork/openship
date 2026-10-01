@@ -1119,7 +1119,7 @@
     "servers.list": {
       "page": "servers",
       "section": "Server lifecycle",
-      "description": "List registered servers.",
+      "description": "List accessible connected or managed servers with their supported capabilities.",
       "route": "GET /api/system/servers"
     },
     "servers.create": {
@@ -1503,7 +1503,7 @@
     "servers.get": {
       "page": "servers",
       "section": "Server lifecycle",
-      "description": "Read a server’s configuration and state.",
+      "description": "Read server details, managed plan, live provider state and durable operation progress.",
       "route": "GET /api/system/servers/:id"
     },
     "servers.reachability": {
@@ -1865,24 +1865,6 @@
       "section": "Operations",
       "description": "Read compute usage, edge traffic, and bandwidth limits.",
       "route": "GET /api/billing/resources"
-    },
-    "billing.getCapacity": {
-      "page": "billing",
-      "section": "Operations",
-      "description": "Read verified Cloud pool and authorized project allocations.",
-      "route": "GET /api/billing/capacity"
-    },
-    "billing.previewCapacity": {
-      "page": "billing",
-      "section": "Operations",
-      "description": "Preview resource changes and affected restarts without applying them.",
-      "route": "POST /api/billing/capacity/preview"
-    },
-    "billing.applyCapacity": {
-      "page": "billing",
-      "section": "Operations",
-      "description": "Apply a confirmed resource adjustment through the deployment queue.",
-      "route": "POST /api/billing/capacity/apply"
     },
     "billing.getSubscription": {
       "page": "billing",
@@ -2706,65 +2688,65 @@
       "description": "Read a recorded run, result, and captured output.",
       "route": "GET /api/jobs/runs/:runId"
     },
-    "cloudWorkspaces.list": {
-      "page": "cloud-workspaces",
-      "section": "Observe",
-      "description": "List accessible subscribed workspaces, their placement and saved operation state.",
-      "route": "GET /api/workspaces"
+    "servers.createManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Create a server identity without purchasing or provisioning resources.",
+      "route": "POST /api/system/servers/managed"
     },
-    "cloudWorkspaces.create": {
-      "page": "cloud-workspaces",
-      "section": "Setup",
-      "description": "Create a workspace identity without purchasing or provisioning resources.",
-      "route": "POST /api/workspaces"
-    },
-    "cloudWorkspaces.get": {
-      "page": "cloud-workspaces",
-      "section": "Observe",
-      "description": "Read live workspace state and durable operation logs, errors and retry timing.",
-      "route": "GET /api/workspaces/:id"
-    },
-    "cloudWorkspaces.getUsage": {
-      "page": "cloud-workspaces",
-      "section": "Observe",
+    "servers.usage": {
+      "page": "servers",
+      "section": "Managed servers",
       "description": "Measure host usage and accessible project disk data separately from provisioned capacity.",
-      "route": "GET /api/workspaces/:id/usage"
+      "route": "GET /api/system/servers/:id/usage"
     },
-    "cloudWorkspaces.rename": {
-      "page": "cloud-workspaces",
-      "section": "Control",
-      "description": "Rename a workspace without moving projects or changing billing.",
-      "route": "PATCH /api/workspaces/:id"
-    },
-    "cloudWorkspaces.ensure": {
-      "page": "cloud-workspaces",
-      "section": "Setup",
+    "servers.ensure": {
+      "page": "servers",
+      "section": "Managed servers",
       "description": "Queue idempotent provisioning or resume of the subscribed Docker host.",
-      "route": "POST /api/workspaces/:id/ensure"
+      "route": "POST /api/system/servers/:id/ensure"
     },
-    "cloudWorkspaces.retry": {
-      "page": "cloud-workspaces",
-      "section": "Control",
-      "description": "Retry a failed workspace operation using its saved provider identity and recovery checkpoint.",
-      "route": "POST /api/workspaces/:id/retry"
+    "servers.retry": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Retry a failed server operation using its saved provider identity and recovery checkpoint.",
+      "route": "POST /api/system/servers/:id/retry"
     },
-    "cloudWorkspaces.previewResize": {
-      "page": "cloud-workspaces",
-      "section": "Control",
+    "servers.previewResize": {
+      "page": "servers",
+      "section": "Managed servers",
       "description": "Preview purchased capacity and projects that may restart, without changing the host.",
-      "route": "GET /api/workspaces/:id/resize"
+      "route": "GET /api/system/servers/:id/resize"
     },
-    "cloudWorkspaces.resize": {
-      "page": "cloud-workspaces",
-      "section": "Control",
+    "servers.resize": {
+      "page": "servers",
+      "section": "Managed servers",
       "description": "Queue a reviewed resize with a revision, request key and explicit restart confirmation.",
-      "route": "POST /api/workspaces/:id/resize"
+      "route": "POST /api/system/servers/:id/resize"
     },
-    "cloudWorkspaces.remove": {
-      "page": "cloud-workspaces",
-      "section": "Control",
-      "description": "Remove an empty workspace after its subscription ends and provider cleanup is confirmed.",
-      "route": "DELETE /api/workspaces/:id"
+    "servers.removeManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Remove an empty server after its subscription ends and provider cleanup is confirmed.",
+      "route": "DELETE /api/system/servers/:id/managed"
+    },
+    "servers.destinations": {
+      "page": "servers",
+      "section": "Observe",
+      "description": "Read accessible deployment servers and availability of the existing dedicated Cloud target.",
+      "route": "GET /api/system/servers/destinations"
+    },
+    "servers.getNetworkSettings": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Read provider outbound internet settings and route-managed ingress ports without starting the server.",
+      "route": "GET /api/system/servers/:id/network-settings"
+    },
+    "servers.updateNetworkSettings": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity.",
+      "route": "PATCH /api/system/servers/:id/network-settings"
     }
   },
   "http": {
@@ -3019,10 +3001,6 @@
     "POST /api/cloud/token": {
       "page": "cloud",
       "description": "Mint a namespace-scoped Oblien token for the caller's org."
-    },
-    "GET /api/cloud/workspaces": {
-      "page": "cloud",
-      "description": "List the org's Openship Cloud (Oblien) workspaces, with drift (orphaned cloud/local)."
     },
     "GET /api/github/connect/redirect": {
       "page": "github",

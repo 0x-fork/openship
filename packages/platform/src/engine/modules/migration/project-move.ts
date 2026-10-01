@@ -57,7 +57,7 @@ export class ProjectMoveRefused extends Error {
 /**
  * The project fields this decision needs — a subset, so tests need no full row.
  *
- * `cloudWorkspaceId` + `serverId` rather than a target string: the project table
+ * `workspaceId` + `serverId` rather than a target string: the project table
  * deliberately has NO `deployTarget` column, because the effective target is derived from
  * exactly these two by `deriveProjectDeployTarget`, and that rule is meant to have one
  * implementation. Taking the raw fields keeps this module a caller of that rule instead of
@@ -67,7 +67,7 @@ export interface MovableProject {
   id: string;
   name: string;
   slug: string;
-  cloudWorkspaceId?: string | null;
+  workspaceId?: string | null;
   clusterId?: string | null;
   serverId?: string | null;
 }

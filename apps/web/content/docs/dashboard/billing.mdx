@@ -4,7 +4,7 @@ description: The Billing area (Openship Cloud only) shows your plan, usage, and 
 ---
 
 <Callout title="Openship Cloud only">
-Billing manages **Openship Cloud** resources for the selected workspace.
+Billing manages **Openship Cloud** resources for the selected managed server.
 Self-hosted resources are free; linked installations can manage Cloud billing.
 </Callout>
 
@@ -17,12 +17,12 @@ the Billing area simply doesn't appear. You only pay for your own infrastructure
 
 On Cloud, **Billing** is where you watch usage, change plan, and pull invoices.
 Plans, prices, and per-plan limits are published on the
-[pricing page](/pricing). Select the workspace to inspect its plan, metered
-credits and usage. Shared Docker workspaces show actual host measurements
+[pricing page](/pricing). Select the server to inspect its plan, metered
+credits and usage. Shared Docker servers show actual host measurements
 separately from provisioned capacity. A reserved disk size is not used storage;
 credits are not minutes.
 Cloud traffic is measured, but an unknown traffic ceiling is not displayed as
-unlimited. Openship owns plan pricing and limits; each workspace's purchased
+unlimited. Openship owns plan pricing and limits; each server's purchased
 terms are kept for renewals.
 
 | Tab | What it does |
@@ -41,20 +41,20 @@ renewal before that period ends. Cancellation does not delete resources.
 Plan replacement starts a new full-price cycle without automatic proration.
 The return page verifies the specific checkout and credit delivery. It shows
 pending, refunded, disputed or failed states instead of inferring success from
-the browser URL. Invoices and payment methods open the selected workspace's
+the browser URL. Invoices and payment methods open the selected server's
 portal, isolated from other customers and the reseller account.
 
 For the endpoints behind this screen, see the [billing API](/docs/api/billing).
 
 ## Make room for another deployment
 
-For a **shared Docker workspace**, open the workspace to see live usage and its
+For a **shared Docker server**, open the server to see live usage and its
 projects. Container sizes are limits within that host. A new project does not
 reserve another VM or disk. Source builds use available host capacity, and
 image-only installs do not create a source builder. Stop an idle service if
 memory is tight, or purchase a larger plan and choose **Apply plan capacity**.
 The resize preview lists every project that may restart and requires confirmation.
-See [Workspaces](/docs/dashboard/workspaces) for progress, logs and recovery.
+See [Servers](/docs/dashboard/servers) for progress, logs and recovery.
 
 ### Existing project-owned Cloud resources
 
@@ -91,7 +91,7 @@ production settings. A smaller build may be slower or run out of memory.
 
 ## Credit warnings and recovery
 
-When Cloud credits run low, a persistent dashboard banner links to the affected workspace's
+When Cloud credits run low, a persistent dashboard banner links to the affected server's
 billing page. The final warning level, grace credits, and exhaustion also show a dismissible
 dialog. Credit-pack purchases appear only when top-ups are available.
 

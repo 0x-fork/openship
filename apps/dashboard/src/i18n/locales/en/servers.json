@@ -525,7 +525,7 @@
   },
   "terminal": {
     "title": "Terminal",
-    "description": "Live SSH shells over WebSocket. Up to 3 concurrent — copy on select."
+    "description": "Live server terminal. Session limit: {count} — copy on select."
   },
   "setup": {
     "editServer": "Edit Server",

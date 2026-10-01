@@ -49,19 +49,7 @@ export async function assertCloudWorkspacePlacement(
       409,
       "CLOUD_WORKSPACE_BUSY",
     );
-  if (owner.mode === "dedicated") {
-    const [existing] = await tx
-      .select({ id: project.id })
-      .from(project)
-      .where(eq(project.workspaceId, owner.id))
-      .limit(1);
-    if (existing)
-      throw new AppError(
-        "This dedicated workspace already belongs to a project",
-        409,
-        "CLOUD_WORKSPACE_NOT_EMPTY",
-      );
-  }
+
 }
 
 export function createCloudWorkspaceRepo(db: Database) {
@@ -84,7 +72,7 @@ export function createCloudWorkspaceRepo(db: Database) {
         .where(eq(cloudWorkspace.organizationId, organizationId))
         .orderBy(asc(cloudWorkspace.createdAt), asc(cloudWorkspace.id));
     },
-    async create(input: Pick<CloudWorkspace, "organizationId" | "name" | "mode" | "runtime">) {
+    async create(input: Pick<CloudWorkspace, "organizationId" | "name">) {
       return db.transaction(async (tx) => {
         const [row] = await tx.insert(cloudWorkspace)
           .values({ ...input, id: generateId("cws") }).returning();
@@ -196,7 +184,7 @@ export function createCloudWorkspaceRepo(db: Database) {
             previous.status !== "failed"
           )
             return row;
-          if (previous.status !== "failed" || previous.restartContainerIds !== undefined) {
+          if (previous.status !== "failed" || previous.restartWorkloads !== undefined) {
             throw new AppError(
               "Finish or retry the current workspace operation first",
               409,

@@ -16,7 +16,7 @@ export interface CloudWorkspaceOperation {
   completedAt?: string;
   revision?: string;
   resources?: { cpuCores: number; memoryMb: number; diskMb: number };
-  restartContainerIds?: string[];
+  restartWorkloads?: { wasRunning: boolean; containers: string[]; processes: string[] };
   /** Membership approved by the operator before the host restart. */
   restartProjectIds?: string[];
 }
@@ -30,8 +30,6 @@ export const cloudWorkspace = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
-    mode: text("mode").$type<"shared" | "dedicated">().notNull().default("shared"),
-    runtime: text("runtime").$type<"docker" | "native">().notNull().default("docker"),
     namespace: text("namespace"),
     // Mirrors only. Provider reads authorize billing and execution.
     planTierId: text("plan_tier_id").notNull().default("free"),
@@ -53,10 +51,6 @@ export const cloudWorkspace = pgTable(
     uniqueIndex("cloud_workspace_namespace_unique").on(table.namespace),
     uniqueIndex("cloud_workspace_id_org_unique").on(table.id, table.organizationId),
     index("cloud_workspace_org_idx").on(table.organizationId),
-    check("cloud_workspace_mode_check", sql`${table.mode} IN ('shared', 'dedicated')`),
-    check(
-      "cloud_workspace_runtime_check",
-      sql`${table.runtime} IN ('docker', 'native') AND (${table.mode} <> 'shared' OR ${table.runtime} = 'docker')`,
-    ),
+
   ],
 );

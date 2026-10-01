@@ -28,14 +28,14 @@ limits. Your subscription's purchased terms are saved for renewals, even if the
 catalog later changes. Credits are metered; capacity limits do not promise a
 fixed number of runtime hours.
 
-Each [Cloud workspace](/docs/guides/cloud-workspaces) has its own subscription.
+Each [managed Cloud server](/docs/guides/cloud-workspaces) has its own subscription.
 In shared Docker placement, projects use the same host and disk. Project and
-running-service allowances apply within that workspace. One service can use the
+running-service allowances apply on that server. One service can use the
 plan's full CPU/RAM ceiling, but the operating system, builds and other services
 also need resources. Another project does not allocate another provider VM.
 
 Current resource sizes, credit allowances and counts are published on the
-[pricing page](/pricing) and shown before checkout. The workspace page separates
+[pricing page](/pricing) and shown before checkout. The server page separates
 provisioned capacity from actual CPU, memory and disk usage, including a project
 disk breakdown. Unavailable measurements are shown as unknown.
 
@@ -44,7 +44,7 @@ cap on these offers. Credits renew each billing cycle; they do not promise a
 full month at maximum capacity. Existing subscriptions keep their purchased terms,
 which are shown in Billing.
 
-Shared workspace source builds use available host capacity without reserving
+Shared-server source builds use available host capacity without reserving
 another VM. Existing project-owned Cloud deployments keep their organization
 pool and temporary builder behavior. In that mode, stopped VMs and pending
 resource changes still count toward provider allocation. In both modes, service
@@ -53,8 +53,8 @@ Undeployed drafts do not use service slots.
 
 Credit packs add 400 credits for $5, 1,700 for $20, or 4,500 for $50. A credit is not a minute: consumption depends on CPU, memory and transfer under the active Oblien rate card. Extra credits extend usage; upgrading the plan increases capacity. Previously purchased credit grants and prices remain attached to their saved subscription.
 
-Every plan includes **unlimited team members**: the price you see covers your
-whole organisation, not a head count.
+Every server plan includes **unlimited team members**. The subscription covers
+that server and its allowances, without a per-seat charge.
 
 ## Managing your plan
 
@@ -71,7 +71,7 @@ The **Billing** area in the dashboard is organised as tabs:
 
 Cancelling keeps the plan active until the end of the period you've already paid
 for, then blocks new billable work. You can undo a scheduled cancellation before
-the paid period ends. Nothing is deleted by cancelling. Choose the workspace in
+the paid period ends. Nothing is deleted by cancelling. Choose the managed server in
 Billing to see its own portal, payment history and namespace allowance. Existing
 organization-owned deployments keep a separate billing selection.
 
@@ -102,5 +102,5 @@ it is visible. Buying credits does not increase a plan's CPU, memory, or other r
 
 Billing alerts use your notification preferences. Email requires a verified address and a
 working email connection; the dashboard warning remains available independently. Links in
-alerts select the workspace the alert belongs to. If you cannot access it, sign in with an
-account that belongs to that workspace.
+alerts select the server subscription the alert belongs to. If you cannot access it, sign in with an
+account with access to that server.

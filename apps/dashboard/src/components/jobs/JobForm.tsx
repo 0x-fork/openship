@@ -252,7 +252,7 @@ export function JobForm({
           ) : (
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {servers.map((s) => (
-                <Choice key={s.id} checked={serverIds.includes(s.id)} onToggle={() => toggle(serverIds, s.id, setServerIds)} label={s.name || s.sshHost} />
+                <Choice key={s.id} checked={serverIds.includes(s.id)} onToggle={() => toggle(serverIds, s.id, setServerIds)} label={s.name || s.sshHost || s.id} />
               ))}
             </div>
           )}

@@ -7,7 +7,7 @@
  * Three implementations:
  *   - DockerRuntime → Docker Engine via dockerode
  *   - BareRuntime   → Direct processes via child_process
- *   - CloudRuntime  → Oblien cloud API
+ *   - Managed Cloud → the same Docker/bare engines through Oblien transport
  */
 
 import type {
@@ -583,11 +583,6 @@ export interface MultiServiceDeployConfig {
   cloudEndpoints?: Array<{ hostname: string; port: number; custom: boolean }>;
   /** Ports needed by project/composite edge routes, without a service hostname. */
   cloudProxyPorts?: number[];
-  /** Cloud only: the workspace id this service used in the PREVIOUS deployment.
-   *  Reused so its permanent-workspace disk — the only persistence Oblien
-   *  offers (no volume primitive) — survives a redeploy. A fresh workspace each
-   *  deploy = silent data loss for stateful services (Postgres, Redis, …). */
-  previousWorkspaceId?: string;
   /** Service names this service depends on (compose `depends_on`). Used for
    *  readiness ordering on runtimes with no native healthcheck. */
   dependsOn?: string[];

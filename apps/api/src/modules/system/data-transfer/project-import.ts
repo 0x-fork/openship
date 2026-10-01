@@ -342,7 +342,7 @@ export async function planProjectImport(
         (row.organizationId === context.organizationId &&
           !row.deletedAt &&
           ((row.groupId === groupId && row.environmentSlug === project.environmentSlug) ||
-            (!!project.cloudWorkspaceId && row.cloudWorkspaceId === project.cloudWorkspaceId))),
+            (!!project.workspaceId && row.workspaceId === project.workspaceId))),
     );
     const match = matches[0];
     const selected = requested.includes(String(project.id));
@@ -445,7 +445,7 @@ export async function planProjectImport(
     if (!sourceServers.has(String(row.id))) sourceServers.set(String(row.id), transferServer(row));
   }
   const neededServerIds = new Set(graph.serverIds);
-  if ((graph.tables.project ?? []).some((row) => !row.serverId && !row.cloudWorkspaceId))
+  if ((graph.tables.project ?? []).some((row) => !row.serverId && !row.workspaceId))
     neededServerIds.add("local");
   if (
     (graph.tables.deployment ?? []).some(
@@ -512,7 +512,7 @@ export async function planProjectImport(
     (row) => !retargetedServerIds.has(typeof row.serverId === "string" ? row.serverId : "local"),
   );
 
-  const cloudProjects = (graph.tables.project ?? []).filter((row) => row.cloudWorkspaceId);
+  const cloudProjects = (graph.tables.project ?? []).filter((row) => row.workspaceId);
   if (cloudProjects.length) {
     const connection = cloud ?? (await getCloudConnectionStatusForOrg(context.organizationId));
     const expected = new Set(
@@ -578,7 +578,7 @@ export async function planProjectImport(
       }
       if (name === "project") {
         row.deletionInProgress = false;
-        if (!source.serverId && !source.cloudWorkspaceId)
+        if (!source.serverId && !source.workspaceId)
           row.serverId = maps.get("servers")?.get("local") ?? null;
       }
       return row;
@@ -684,7 +684,7 @@ export async function planProjectImport(
   const retargetedProjects = new Set<string>();
   for (const project of graph.tables.project ?? []) {
     const serverId = typeof project.serverId === "string" ? project.serverId : "local";
-    if (!project.cloudWorkspaceId && retargetedServerIds.has(serverId)) {
+    if (!project.workspaceId && retargetedServerIds.has(serverId)) {
       retargetedProjects.add(maps.get("project")?.get(String(project.id)) ?? String(project.id));
     }
   }

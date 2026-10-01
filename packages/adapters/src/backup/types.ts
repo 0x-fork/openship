@@ -185,7 +185,7 @@ export interface ReceiveStreamOpts {
  *  Oblien cloud, or an SSH host. */
 export interface BackupExecutor {
   /** Identifies which RuntimeAdapter this executor pairs with. */
-  readonly runtimeName: "docker" | "bare" | "cloud";
+  readonly runtimeName: "docker" | "bare";
   /** False when stopping the service also stops access to its filesystem. */
   readonly supportsOfflineVolumeRestore?: boolean;
 

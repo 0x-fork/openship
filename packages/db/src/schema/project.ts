@@ -392,30 +392,6 @@ export const project = pgTable(
      * upstreams live. Null/[] = no fan-out. Widening needs no migration (jsonb).
      */
     compositeRoutes: jsonb("composite_routes").$type<ProjectCompositeRoute[] | null>(),
-    /**
-     * How Cloud deployments preserve their rollback artifact:
-     *   - "inplace"  → Oblien `snapshots.createArchive` + `workspace.stop`.
-     *                  Disk + archive remain attached to the workspace;
-     *                  compute paused. Rollback starts it back up.
-     *   - "offload"  → Reserved for future self-hosted external-S3
-     *                  shipping. Not implemented on Openship Cloud.
-     *
-     * Bare/Docker runtimes ignore this column.
-     */
-    cloudArchiveStrategy: text("cloud_archive_strategy").notNull().default("inplace"),
-
-    /**
-     * Oblien workspace id this project deploys to — the LINK, not a
-     * mirror. Like `gitOwner/gitRepo` points at GitHub, this points
-     * at Oblien. Runtime state, files, logs all live on Oblien.
-     *
-     * Used by dedicated/direct Cloud deployments. Shared projects reach their
-     * host through serverId and its managed workspace owner instead of each
-     * claiming the provider VM. Set after successful provision and unique per
-     * active project; deployment.meta holds the frozen execution target.
-     */
-    cloudWorkspaceId: text("cloud_workspace_id"),
-
     /** Billing owner, derived from the managed server by project_server_owner.
      * It is not an independently selectable execution target. */
     workspaceId: text("workspace_id"),
@@ -517,13 +493,6 @@ export const project = pgTable(
     uniqueIndex("uq_project_app_environment_slug_active")
       .on(table.groupId, table.environmentSlug)
       .where(sql`${table.deletedAt} IS NULL`),
-    // One local project per Oblien workspace. Two project rows pointing
-    // at the same workspace would race on deploy + confuse drift
-    // detection. Partial unique — NULL allowed (self-hosted projects
-    // or pre-first-deploy), but any non-null value is unique.
-    uniqueIndex("uq_project_cloud_workspace_id")
-      .on(table.cloudWorkspaceId)
-      .where(sql`${table.cloudWorkspaceId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
   ],
 );
 

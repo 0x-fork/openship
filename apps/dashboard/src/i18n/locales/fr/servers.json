@@ -441,7 +441,7 @@
   },
   "terminal": {
     "title": "Terminal",
-    "description": "Shells SSH en direct via WebSocket. Jusqu'à 3 simultanés — copie à la sélection."
+    "description": "Terminal du serveur en direct. Limite de sessions : {count} — copie à la sélection."
   },
   "setup": {
     "editServer": "Modifier le serveur",

@@ -8,7 +8,6 @@ import ServerSelector, { type ServerOption } from "@/components/shared/ServerSel
 import type { DeployTarget } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
 import { useCloud } from "@/context/CloudContext";
-import { WorkspacePicker } from "@/components/cloud-workspaces/WorkspacePicker";
 import { usePlatform } from "@/context/PlatformContext";
 
 export interface AppDestination {
@@ -76,7 +75,7 @@ export function AppDestinationPicker({
   }, [selfHosted, value?.deployTarget, onChange]);
 
   if (!selfHosted) {
-    return <WorkspacePicker value={value?.workspaceId} disabled={disabled} dockerOnly onChange={(workspaceId, serverId) => onChange({ deployTarget: "cloud", workspaceId, serverId })} />;
+    return <ServerSelector value={value?.serverId} disabled={disabled} forDeployment dockerOnly onSelect={server => onChange({ deployTarget: "cloud", serverId: server?.id, workspaceId: server?.raw.managed?.id, serverName: server?.name })} />;
   }
 
   return (
@@ -89,6 +88,8 @@ export function AppDestinationPicker({
         <ServerSelector
           compact
           autoSelectFirst
+          disabled={disabled}
+          forDeployment
           value={serverActive ? (value?.serverId ?? null) : null}
           onSelect={(s: ServerOption | null) => {
             if (s)

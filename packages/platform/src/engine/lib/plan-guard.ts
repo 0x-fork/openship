@@ -46,7 +46,6 @@ import {
   type CloudServiceResourceInput,
 } from "./resources";
 import type { ResourceConfig, RuntimeAdapter } from "@repo/adapters";
-import { assertCloudWorkspaceCapacity } from "./cloud-capacity";
 import { cloudBillingOwner, requireCloudWorkspace, type CloudWorkspaceScope } from "./cloud-workspace-scope";
 
 /**
@@ -268,16 +267,14 @@ type CloudDeploymentLimits = {
   resources?: ResourceConfig | Record<string, unknown> | null;
   buildResources?: ResourceConfig | Record<string, unknown> | null;
   runsApplication?: boolean;
-  /** A native main app may also have separately managed auxiliary services. */
-  nativeApplication?: boolean;
-  /** Docker service stacks share one VM; its aggregate allocation also has to fit. */
-  dockerWorkspace?: boolean;
+  /** A single app may also have separately managed auxiliary services. */
+  mainApplication?: boolean;
   /** Internally pinned images use the same no-build decision as the deployer. */
   retainedImages?: Readonly<Record<string, string>>;
   services?: CloudServiceResourceInput[];
 };
 
-type CloudServiceAllowance = Pick<CloudDeploymentLimits, "projectId" | "workspaceId" | "runsApplication" | "nativeApplication" | "services">;
+type CloudServiceAllowance = Pick<CloudDeploymentLimits, "projectId" | "workspaceId" | "runsApplication" | "mainApplication" | "services">;
 
 async function workspaceForProject(organizationId: string, projectId?: string, selectedWorkspaceId?: string) {
   if (!projectId) return (await cloudBillingOwner(organizationId, selectedWorkspaceId)).workspaceId;
@@ -295,7 +292,7 @@ async function assertServiceAllowance(
   workspaceId?: CloudWorkspaceScope,
 ): Promise<void> {
   const services = input.services?.filter((service) => service.enabled !== false);
-  const nativeApplication = input.nativeApplication ?? (!services && input.runsApplication);
+  const mainApplication = input.mainApplication ?? (!services && input.runsApplication);
   if (services?.length && !limits.services) {
     throw new PlanUpgradeRequiredError("Your plan can deploy static sites only. Service stacks need a paid plan.", "static-only", tier);
   }
@@ -304,12 +301,12 @@ async function assertServiceAllowance(
     if (limit !== null) {
       // A failed count is unknown, never zero. Include a frozen/imported stack
       // even when its service definitions have not reached the database yet.
-      const nativeProject = nativeApplication ? input.projectId : undefined;
+      const mainProject = mainApplication ? input.projectId : undefined;
       const prospective = input.projectId && services?.every(service => !!service.name)
         ? { projectId: input.projectId, serviceNames: services.map(service => service.name!) }
         : undefined;
-      const counted = await repos.service.countRunningForOrg(organizationId, [], nativeProject, prospective, workspaceId);
-      const used = nativeApplication
+      const counted = await repos.service.countRunningForOrg(organizationId, [], mainProject, prospective, workspaceId);
+      const used = mainApplication
         ? counted + 1
         : !input.projectId
           ? counted + (services?.length ?? 1)
@@ -338,8 +335,7 @@ export async function assertCloudServiceAllowance(organizationId: string, input:
 export async function assertCloudDeploymentLimits(organizationId: string, input: CloudDeploymentLimits): Promise<void> {
   if (!env.CLOUD_MODE) return;
   const workspaceId = await workspaceForProject(organizationId, input.projectId, input.workspaceId);
-  const workspace = workspaceId ? await requireCloudWorkspace(organizationId, workspaceId) : null;
-  const { tier, limits, resourceLimits: policy } = await planFor(organizationId, workspaceId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
   await assertServiceAllowance(organizationId, tier, input, limits, workspaceId);
   const services = input.services?.filter(service => service.enabled !== false);
   for (const service of services ?? []) {
@@ -349,51 +345,13 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
       limits,
     );
   }
-  if (input.nativeApplication ?? (!services && input.runsApplication)) {
+  if (input.mainApplication ?? (!services && input.runsApplication)) {
     assertResourcesFitPlan(
       tier,
       resolveRuntimeResources(input.resources, { isCloud: true }),
       limits,
     );
   }
-  if (input.dockerWorkspace && services?.length && !workspace) {
-    const allocation = cloudDockerResources({
-      resources: input.resources,
-      services: services.map((service) => ({ resources: service.advanced?.resources })),
-    });
-    assertWorkspaceResourcesFitPlan(tier, allocation, policy);
-    // Source builders use Oblien's current headroom in prepareCloudBuildResources.
-    // Image-only actions need no build allocation, even with saved build settings.
-    if (input.projectId && !cloudDockerNeedsBuild(services, input.retainedImages)) {
-      await assertCloudWorkspaceCapacity({ organizationId, projectId: input.projectId,
-        requested: allocation, reuseDockerWorkspace: true,
-        buildResources: null });
-    }
-  }
-}
-
-/** Shared by adjustment previews and deployment admission. A namespace's total
- * capacity is separate from the purchased limit on one workspace. */
-export function assertWorkspaceResourcesFitPlan(
-  tier: PlanTierId,
-  allocation: { cpuCores: number; memoryMb: number; diskMb: number },
-  policy: OblienLimits,
-): void {
-  const shortages = [
-    policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
-      ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
-      : null,
-    policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
-      ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
-      : null,
-    policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
-      ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
-      : null,
-  ].filter(Boolean);
-  if (shortages.length) throw new PlanUpgradeRequiredError(
-    `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
-    "workspace-capacity", tier,
-  );
 }
 
 /** Starting an existing container applies its OLD limits, not editable settings.
@@ -407,7 +365,7 @@ export async function assertCloudRuntimeLimits(organizationId: string,
 ): Promise<void> {
   if (!env.CLOUD_MODE || containers.length === 0) return;
   const { tier, limits } = await planFor(organizationId, workspaceId);
-  if (planServiceResources(limits) === null) return;
+  if (runtime.supports("dockerHost") === false || planServiceResources(limits) === null) return;
   for (const container of containers) {
     const info = await runtime.getContainerInfo(container.containerId);
     const recorded = container.allocatedResources;

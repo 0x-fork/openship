@@ -6,12 +6,15 @@ import {
   cloudCpus,
   cloudWorkspaceCreationFailure,
   cloudWorkspaceStatus,
+  managedProcessState,
+  waitForManagedProcess,
   sq,
   waitForCloudDockerWorkspace,
+  waitForCloudWorkspaceStopped,
   updateCloudWorkspaceResources,
   type ResourceConfig,
 } from "@repo/adapters";
-import { repos, type Project } from "@repo/db";
+import { repos, type Project, type CloudWorkspaceOperation } from "@repo/db";
 import { AppError, deploymentBelongsToProject } from "@repo/core";
 import { env } from "../config/env";
 import { issueNamespaceToken } from "./openship-cloud";
@@ -25,27 +28,27 @@ import type { DeploymentMeta } from "./deployment-runtime";
 import { withProjectRuntimeLock } from "./project-runtime-lock";
 import { requireCloudWorkspace } from "./cloud-workspace-scope";
 
-function workspaceSlug(projectId: string): string {
-  return `os-docker-${createHash("sha256").update(projectId).digest("hex").slice(0, 24)}`;
+function workspaceSlug(ownerWorkspaceId: string): string {
+  return `os-docker-${createHash("sha256").update(ownerWorkspaceId).digest("hex").slice(0, 24)}`;
 }
 
-/** Recover provider identity by the exact project slug within its namespace.
+/** Recover provider identity by the exact subscription slug within its namespace.
  * A negative lookup cannot rule out an earlier POST still in progress. */
 export async function findOwnedDockerWorkspace(
   client: Oblien,
-  projectId: string,
+  ownerWorkspaceId: string,
   namespace: string,
 ) {
   let found: Awaited<ReturnType<typeof client.workspaces.get>> | undefined;
   for (let page = 1; ; page++) {
     const result = await client.workspaces.list({ page, limit: 100 });
     const matches = result.workspaces.filter(
-      (item) => item.slug === workspaceSlug(projectId) && item.namespace === namespace,
+      (item) => item.slug === workspaceSlug(ownerWorkspaceId) && item.namespace === namespace,
     );
     for (const workspace of matches) {
       if (found && found.id !== workspace.id)
         throw new Error(
-          "Multiple Cloud workspaces match this project. Contact support@openship.io to verify its workspace before retrying.",
+          "Multiple Cloud servers match this subscription. Contact support@openship.io to verify its workspace before retrying.",
         );
       found = workspace;
     }
@@ -53,137 +56,67 @@ export async function findOwnedDockerWorkspace(
   }
 }
 
-/** Reconcile an interrupted create before teardown. This only reads provider
- * state; it never provisions or starts a workspace in order to delete it. */
+/** Project cleanup only reads its server binding. Host lifecycle belongs to the subscription. */
 export async function cloudDockerWorkspaceForCleanup(projectId: string, organizationId: string) {
-  const project = await repos.project.findByIdInOrganization(projectId, organizationId);
-  // Project teardown never reconciles or deletes its subscribed host. That
-  // host remains recoverable through the workspace even when this member goes.
-  if (project?.workspaceId) return repos.cloudDockerWorkspace.find(projectId, organizationId);
-  return createProvisionLock(`cloud:docker-project:${projectId}`).run(async () => {
-    const binding = await repos.cloudDockerWorkspace.find(projectId, organizationId);
-    if (!binding || binding.workspaceId) return binding;
-    const credentials = env.CLOUD_MODE
-      ? await issueNamespaceToken(organizationId, null)
-      : await getOrgCloudToken(organizationId);
-    if (!credentials || credentials.namespace !== binding.namespace)
-      throw new Error("Cannot verify the project's cloud namespace for cleanup");
-    const client = new Oblien({ token: credentials.token, baseUrl: env.OBLIEN_API_URL });
-    const workspace = await findOwnedDockerWorkspace(client, projectId, binding.namespace);
-    if (workspace) {
-      await repos.cloudDockerWorkspace.attach(
-        projectId,
-        organizationId,
-        binding.namespace,
-        workspace.id,
-        true,
-      );
-      return { ...binding, workspaceId: workspace.id };
-    }
-    throw new Error(
-      `Cloud Docker provisioning is not yet confirmed. Retry deletion; if it keeps failing, contact support@openship.io with project ${projectId}.`,
-    );
-  });
-}
-
-/** Existing native cloud projects need an explicit data migration. Added services
- * on a single-app project retain their own native workspaces. */
-export async function usesCloudDockerWorkspace(
-  project: Project,
-  mode?: "single" | "services",
-): Promise<boolean> {
-  if (project.workspaceId) {
-    const workspace = await requireCloudWorkspace(project.organizationId, project.workspaceId);
-    if (workspace.runtime === "native" && mode === "services")
-      throw new AppError(
-        "This dedicated workspace runs one native application. Move the project to a Docker workspace to deploy multiple services.",
-        409,
-        "CLOUD_WORKSPACE_RUNTIME_CONFLICT",
-      );
-    return workspace.runtime === "docker";
-  }
-  const binding = await repos.cloudDockerWorkspace.find(project.id, project.organizationId);
-  if (binding) return true;
-  if (mode === "single" || project.cloudWorkspaceId) return false;
-  if (project.activeDeploymentId) {
-    const active = await repos.deployment.findById(project.activeDeploymentId);
-    if (active && !deploymentBelongsToProject(project, active))
-      throw new Error("Active deployment belongs to a different project");
-    if (
-      active &&
-      ((active.meta as DeploymentMeta | null)?.deployTarget === "cloud" ||
-        (env.CLOUD_MODE && !(active.meta as DeploymentMeta | null)?.deployTarget))
-    )
-      return false;
-  }
-  return true;
+  return repos.cloudDockerWorkspace.find(projectId, organizationId);
 }
 
 export { cloudDockerNeedsBuild, cloudDockerResources } from "./resources";
-
-/** Only selected, non-secret inspect fields enter this parser. Unknown or
- * unbounded containers forbid automatic downsizing. Never guess their needs. */
-export function runningDockerAllocation(output: string, projectId: string): ResourceConfig {
-  let cpu = 0,
-    memory = 0;
-  for (const line of output.trim().split(/\r?\n/).filter(Boolean)) {
-    const row: unknown = JSON.parse(line);
-    if (
-      !Array.isArray(row) ||
-      row.length !== 6 ||
-      row[1] !== projectId ||
-      typeof row[0] !== "string" ||
-      !/^[a-f0-9]{12,64}$/.test(row[0])
-    ) {
-      throw new Error("Cannot safely reduce a Cloud workspace with an unverified container");
-    }
-    const [, , bytes, nanoCpu, quota, period] = row;
-    if (![bytes, nanoCpu, quota, period].every(Number.isSafeInteger)) {
-      throw new Error("Cannot verify the running container's resource allocation");
-    }
-    const cores = nanoCpu > 0 ? nanoCpu / 1e9 : quota > 0 && period > 0 ? quota / period : 0;
-    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isFinite(cores) || cores <= 0) {
-      throw new Error(
-        "Set explicit container CPU and memory limits before reducing this Cloud workspace",
-      );
-    }
-    cpu += cores;
-    memory += bytes / 1048576;
-  }
-  return {
-    cpuCores: cloudCpus(cpu),
-    memoryMb: Math.max(1024, Math.ceil((memory + 512) / 256) * 256),
-    diskMb: 8192,
-  };
-}
 
 export async function resizeDockerWorkspace(input: {
   client: Oblien;
   workspaceId: string;
   namespace: string;
-  projectId?: string;
   resources: ResourceConfig;
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
-  restartCheckpoint?: { containerIds?: string[]; save(ids: string[]): Promise<void> };
+  restartCheckpoint?: {
+    workloads?: NonNullable<CloudWorkspaceOperation["restartWorkloads"]>;
+    save(workloads: NonNullable<CloudWorkspaceOperation["restartWorkloads"]>): Promise<void>;
+  };
 }) {
   const ws = input.client.workspace(input.workspaceId);
   const executor = new CloudWorkspaceExecutor(() => ws.runtime());
   try {
     const inspect = () =>
-      executor.exec(
-        `docker ps ${input.projectId ? `--filter ${sq(`label=openship.project=${input.projectId}`)} ` : ""}--filter status=running --format '{{.ID}}'`,
-        { timeout: 30_000 },
-      );
-    const previous = input.restartCheckpoint?.containerIds
-      ? ""
-      : await (input.signal ? executor.runWithAbortSignal(input.signal, inspect) : inspect());
-    const running =
-      input.restartCheckpoint?.containerIds ?? previous.trim().split(/\s+/).filter(Boolean);
-    if (running.some((id) => !/^[a-f0-9]{12,64}$/.test(id)))
-      throw new Error("Invalid container identity during Cloud workspace resizing");
-    if (input.restartCheckpoint && !input.restartCheckpoint.containerIds)
-      await input.restartCheckpoint.save(running);
+      executor.exec("docker ps --filter status=running --no-trunc --format '{{.ID}}'", {
+        timeout: 30_000,
+      });
+    const initial = await ws.get();
+    if (initial.namespace !== input.namespace) throw new Error("Cloud workspace namespace changed");
+    let running = input.restartCheckpoint?.workloads;
+    if (!running) {
+      const state = cloudWorkspaceStatus(initial);
+      if (!["running", "stopped", "paused", "suspended"].includes(state))
+        throw new Error(
+          "Wait for the managed server to finish its current transition before resizing",
+        );
+      const wasRunning = state === "running";
+      const containers = wasRunning
+        ? await (input.signal ? executor.runWithAbortSignal(input.signal, inspect) : inspect())
+        : "";
+      const processes = (wasRunning ? await ws.workloads.list() : [])
+        .filter((workload) => {
+          const labels = workload.labels as Record<string, unknown> | undefined;
+          return (
+            labels?.["openship.project"] &&
+            labels["openship.deployment"] &&
+            managedProcessState(workload) === "running"
+          );
+        })
+        .map((workload) => workload.id);
+      running = {
+        wasRunning,
+        containers: containers.trim().split(/\s+/).filter(Boolean),
+        processes,
+      };
+      if (input.restartCheckpoint) await input.restartCheckpoint.save(running);
+    }
+    if (
+      running.containers.some((id) => !/^[a-f0-9]{12,64}$/.test(id)) ||
+      running.processes.some((id) => !/^openship-[A-Za-z0-9_-]{1,160}$/.test(id))
+    )
+      throw new Error("Invalid workload identity during Cloud server resizing");
     input.signal?.throwIfAborted();
     let failure: { error: unknown } | undefined;
     try {
@@ -205,9 +138,80 @@ export async function resizeDockerWorkspace(input: {
     }
     // Finish restoration even after cancellation or a lost provider response.
     try {
-      await waitForCloudDockerWorkspace(input.client, input.workspaceId, input.namespace);
-      ws.invalidateRuntime();
-      if (running.length) await executor.exec(`docker start ${running.map(sq).join(" ")}`);
+      const changed = await ws.get();
+      if (changed.namespace !== input.namespace)
+        throw new Error("Cloud workspace namespace changed");
+      if (!running.wasRunning) {
+        // A resize of an intentionally stopped server must not start its apps.
+        if (
+          ["starting", "creating", "provisioning", "resuming"].includes(
+            cloudWorkspaceStatus(changed),
+          )
+        )
+          await waitForCloudDockerWorkspace(input.client, input.workspaceId, input.namespace);
+        const current = await ws.get();
+        if (current.namespace !== input.namespace)
+          throw new Error("Cloud workspace namespace changed");
+        if (cloudWorkspaceStatus(current) === "running" && !(await ws.stop()).success)
+          throw new Error("Could not restore the server's stopped state");
+        await waitForCloudWorkspaceStopped(input.client, input.workspaceId, input.namespace);
+      } else {
+        if (cloudWorkspaceStatus(changed) === "stopped") {
+          if (!(await ws.start()).success)
+            throw new Error("Could not restart the managed server after resizing");
+        } else if (["paused", "suspended"].includes(cloudWorkspaceStatus(changed))) {
+          if (!(await ws.resume()).success)
+            throw new Error("Could not resume the managed server after resizing");
+        }
+        await waitForCloudDockerWorkspace(input.client, input.workspaceId, input.namespace);
+        ws.invalidateRuntime();
+        const recovery = await Promise.allSettled([
+          ...(running.containers.length
+            ? [
+                (async () => {
+                  await executor.exec(`docker start ${running.containers.map(sq).join(" ")}`);
+                  const states = await executor.exec(
+                    `docker inspect --format '{{json .State.Running}}' ${running!.containers.map(sq).join(" ")}`,
+                  );
+                  if (
+                    states.trim().split(/\s+/).length !== running!.containers.length ||
+                    states
+                      .trim()
+                      .split(/\s+/)
+                      .some((state) => state !== "true")
+                  )
+                    throw new Error("Some application containers did not restart after resizing");
+                })(),
+              ]
+            : []),
+          ...running.processes.map(async (id) => {
+            const read = async () => {
+              const workload = await ws.workloads.get(id);
+              const labels = workload.labels as Record<string, unknown> | undefined;
+              if (
+                workload.id !== id ||
+                !labels?.["openship.project"] ||
+                id !== `openship-${labels["openship.deployment"]}`
+              )
+                throw new Error("Process ownership changed during server resizing");
+              return workload;
+            };
+            const workload = await read();
+            if (managedProcessState(workload) === "running") return;
+            const started = await ws.workloads.start(id);
+            if (!started.success) throw new Error(`Could not restore application process ${id}`);
+            await waitForManagedProcess(read, "running");
+          }),
+        ]);
+        const errors = recovery.filter(
+          (item): item is PromiseRejectedResult => item.status === "rejected",
+        );
+        if (errors.length)
+          throw new AggregateError(
+            errors.map((item) => item.reason),
+            "Application recovery failed",
+          );
+      }
     } catch (error) {
       throw new AggregateError(
         failure ? [failure.error, error] : [error],
@@ -222,101 +226,6 @@ export async function resizeDockerWorkspace(input: {
   }
 }
 
-/** Release temporary CPU/RAM on an existing, running project host. The caller
- * holds deployment admission for this project; the provider serializes actual
- * namespace capacity. Disks, stopped services and other projects are preserved. */
-export async function reconcileCloudDockerWorkspace(input: {
-  projectId: string;
-  organizationId: string;
-  workspaceId: string;
-  resources: ResourceConfig;
-  deploymentId?: string;
-  onProgress?: (message: string) => void;
-}): Promise<boolean> {
-  return withProjectRuntimeLock(input.projectId, () =>
-    createProvisionLock(`cloud:docker-project:${input.projectId}`).run(async () => {
-      const project = await repos.project.findByIdInOrganization(
-        input.projectId,
-        input.organizationId,
-      );
-      // A subscribed VM has stable purchased capacity. Builds never resize it or
-      // release another project's resources when their own deployment finishes.
-      if (project?.workspaceId) return false;
-      const binding = await repos.cloudDockerWorkspace.find(input.projectId, input.organizationId);
-      if (
-        !project ||
-        project.deletedAt ||
-        project.deletionInProgress ||
-        !binding ||
-        binding.workspaceId !== input.workspaceId
-      )
-        return false;
-      const inFlight = await repos.deployment.listInFlightByProject(input.projectId);
-      if (inFlight.some((dep) => dep.id !== input.deploymentId)) return false;
-      const credentials = env.CLOUD_MODE
-        ? await issueNamespaceToken(input.organizationId, null)
-        : await getOrgCloudToken(input.organizationId);
-      if (!credentials || credentials.namespace !== binding.namespace)
-        throw new Error("Cloud workspace namespace binding does not match this project");
-      const client = new Oblien({ token: credentials.token, baseUrl: env.OBLIEN_API_URL });
-      const ws = client.workspace(input.workspaceId);
-      const current = await ws.get();
-      if (current.namespace !== binding.namespace)
-        throw new Error("Cloud workspace namespace changed");
-      if (cloudWorkspaceStatus(current) !== "running" && cloudWorkspaceStatus(current) !== "active")
-        return false;
-      const allocated = current.resources;
-      if (!allocated || !allocated.cpus || !allocated.memory_mb || !allocated.disk_size_mb)
-        return false;
-      const executor = new CloudWorkspaceExecutor(() => ws.runtime());
-      let running: ResourceConfig;
-      try {
-        const ids = (await executor.exec("docker ps --quiet --no-trunc", { timeout: 30_000 }))
-          .trim()
-          .split(/\s+/)
-          .filter(Boolean);
-        if (ids.some((id) => !/^[a-f0-9]{12,64}$/.test(id)))
-          throw new Error("Invalid container identity during Cloud workspace resizing");
-        const format =
-          '[{{json .Id}},{{json (index .Config.Labels "openship.project")}},{{json .HostConfig.Memory}},{{json .HostConfig.NanoCpus}},{{json .HostConfig.CpuQuota}},{{json .HostConfig.CpuPeriod}}]';
-        const output = ids.length
-          ? await executor.exec(`docker inspect --format ${sq(format)} ${ids.map(sq).join(" ")}`, {
-              timeout: 30_000,
-            })
-          : "";
-        if (output.trim().split(/\r?\n/).filter(Boolean).length !== ids.length)
-          throw new Error("Cloud container allocation changed during inspection");
-        running = runningDockerAllocation(output, input.projectId);
-      } finally {
-        await executor.dispose();
-      }
-      const next = {
-        cpuCores: Math.max(input.resources.cpuCores, running.cpuCores),
-        memoryMb: Math.max(input.resources.memoryMb, running.memoryMb),
-        diskMb: allocated.disk_size_mb,
-      };
-      // This path only reduces CPU/RAM, never asks a resize to grow capacity.
-      if (
-        next.cpuCores > allocated.cpus ||
-        next.memoryMb > allocated.memory_mb ||
-        (next.cpuCores === allocated.cpus && next.memoryMb === allocated.memory_mb)
-      )
-        return false;
-      input.onProgress?.(
-        "Releasing unused Cloud build resources; running services will briefly restart.\n",
-      );
-      await resizeDockerWorkspace({
-        ...input,
-        client,
-        namespace: binding.namespace,
-        resources: next,
-      });
-      return true;
-    }),
-  );
-}
-
-/** Purchased resources come from the verified provider subscription, never a sum of project limits. */
 export async function cloudSubscriptionWorkspaceResources(
   organizationId: string,
   ownerWorkspaceId: string,
@@ -347,7 +256,6 @@ export async function cloudSubscriptionWorkspaceResources(
 
 interface EnsureDockerInput {
   organizationId: string;
-  resources?: ResourceConfig;
   signal?: AbortSignal;
   existingWorkspaceId?: string;
   onProgress?: (message: string) => void;
@@ -356,19 +264,21 @@ interface EnsureDockerInput {
 /** Deployment entry: freeze project membership while returning the shared provider host. */
 export async function ensureCloudDockerWorkspace(
   input: EnsureDockerInput & { projectId: string },
-): Promise<NonNullable<DeploymentMeta["cloudDockerWorkspace"]>> {
+): Promise<NonNullable<DeploymentMeta["managedServer"]>> {
   const project = await repos.project.findByIdInOrganization(input.projectId, input.organizationId);
   if (!project || project.deletedAt || project.deletionInProgress)
     throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
-  const workspaceId = await ensureDockerHost({
-    ...input,
-    project,
-    ownerWorkspaceId: project.workspaceId ?? undefined,
-  });
+  if (!project.workspaceId || !project.serverId)
+    throw new AppError(
+      "Select a managed server before deploying",
+      409,
+      "DEPLOYMENT_SERVER_REQUIRED",
+    );
+  const workspaceId = await ensureDockerHost({ ...input, ownerWorkspaceId: project.workspaceId });
   return {
     projectId: project.id,
     workspaceId,
-    ...(project.workspaceId ? { ownerWorkspaceId: project.workspaceId } : {}),
+    ownerWorkspaceId: project.workspaceId,
   };
 }
 
@@ -379,37 +289,17 @@ export async function ensureCloudWorkspaceHost(
   return ensureDockerHost(input);
 }
 
-/** One provider lifecycle for project-owned and subscription-owned Docker hosts. */
+/** Provision or resume one subscribed server. Application deploys never resize it. */
 async function ensureDockerHost(
-  input: EnsureDockerInput & { ownerWorkspaceId?: string; project?: Project },
+  input: EnsureDockerInput & { ownerWorkspaceId: string },
 ): Promise<string> {
-  const owner = input.ownerWorkspaceId
-    ? { ownerWorkspaceId: input.ownerWorkspaceId }
-    : input.project!.id;
-  const ownerId = input.ownerWorkspaceId ?? input.project!.id;
-  const lock = input.ownerWorkspaceId
-    ? `cloud:docker-workspace:${ownerId}`
-    : `cloud:docker-project:${ownerId}`;
-  return createProvisionLock(lock).run(async () => {
+  const owner = { ownerWorkspaceId: input.ownerWorkspaceId };
+  const ownerId = input.ownerWorkspaceId;
+  return createProvisionLock(`cloud:server-owner:${ownerId}`).run(async () => {
     input.signal?.throwIfAborted();
-    const managed = input.ownerWorkspaceId
-      ? await requireCloudWorkspace(input.organizationId, input.ownerWorkspaceId)
-      : null;
-    if (managed && (managed.runtime !== "docker" || managed.deletionInProgress)) {
-      throw new AppError(
-        "This Cloud workspace cannot provision a Docker host",
-        409,
-        "CLOUD_WORKSPACE_UNAVAILABLE",
-      );
-    }
-    if (!managed) {
-      const project = await repos.project.findByIdInOrganization(
-        input.project!.id,
-        input.organizationId,
-      );
-      if (!project || project.deletedAt || project.deletionInProgress)
-        throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
-    }
+    const managed = await requireCloudWorkspace(input.organizationId, input.ownerWorkspaceId);
+    if (managed.deletionInProgress)
+      throw new AppError("Managed server is being deleted", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
     const existing = await repos.cloudDockerWorkspace.find(owner, input.organizationId);
     if (
       input.existingWorkspaceId !== undefined &&
@@ -421,27 +311,23 @@ async function ensureDockerHost(
         "CLOUD_WORKSPACE_NOT_FOUND",
       );
     }
-    if (env.CLOUD_MODE) await assertCloudCanSpend(input.organizationId, managed?.id ?? null);
+    if (env.CLOUD_MODE) await assertCloudCanSpend(input.organizationId, managed.id);
     const credentials = env.CLOUD_MODE
-      ? await issueNamespaceToken(input.organizationId, managed?.id ?? null)
+      ? await issueNamespaceToken(input.organizationId, managed.id)
       : await getOrgCloudToken(input.organizationId);
     if (!credentials)
       throw new AppError("Connect Openship Cloud before deploying", 503, "CLOUD_NOT_CONNECTED");
     const { namespace, token } = credentials;
     const client = new Oblien({ token, baseUrl: env.OBLIEN_API_URL });
-    if (!existing?.workspaceId && input.project?.cloudWorkspaceId)
-      throw new Error("An existing native workspace must be migrated before enabling Docker");
-    // Existing subscribed hosts keep their capacity until a reviewed resize.
-    const requested = managed
-      ? (existing?.resources ??
-        (await cloudSubscriptionWorkspaceResources(input.organizationId, managed.id)))
-      : input.resources;
+    const requested =
+      existing?.resources ??
+      (await cloudSubscriptionWorkspaceResources(input.organizationId, managed.id));
     if (!requested) throw new Error("Docker host capacity is required");
     const binding =
       existing ??
       (await repos.cloudDockerWorkspace.reserve(
         {
-          ...(managed ? { ownerWorkspaceId: managed.id } : { projectId: input.project!.id }),
+          ownerWorkspaceId: managed.id,
           namespace,
           image: CLOUD_DOCKER_IMAGE,
           resources: requested,
@@ -463,7 +349,7 @@ async function ensureDockerHost(
       }
       const workspace = await client.workspaces
         .create({
-          name: managed ? managed.name : `Openship Compose ${input.project!.id}`,
+          name: managed.name,
           slug: workspaceSlug(ownerId),
           namespace,
           image: binding.image,
@@ -524,7 +410,7 @@ async function ensureDockerHost(
     const provisioning = current.provisioning as { state?: string } | undefined;
     if (binding.state === "provisioning" && provisioning?.state === "failed") {
       input.onProgress?.(
-        "Retrying the Docker workspace's initial provisioning with its existing disk.\n",
+        "Retrying the managed server's initial provisioning with its existing disk.\n",
       );
       const retried = await client.workspaces.retryCreation(workspaceId);
       if (retried.id !== workspaceId || retried.namespace !== namespace)
@@ -535,30 +421,6 @@ async function ensureDockerHost(
       signal: input.signal,
     });
     await ws.lifecycle.makePermanent();
-    const allocated = ready.resources;
-    if (
-      !managed &&
-      allocated &&
-      (requested.cpuCores > (allocated.cpus ?? binding.resources.cpuCores) ||
-        requested.memoryMb > (allocated.memory_mb ?? binding.resources.memoryMb) ||
-        requested.diskMb > (allocated.disk_size_mb ?? binding.resources.diskMb))
-    ) {
-      input.onProgress?.(
-        "Increasing the project's Cloud allocation; its services will briefly restart.\n",
-      );
-      await resizeDockerWorkspace({
-        ...input,
-        projectId: input.project!.id,
-        client,
-        workspaceId,
-        namespace,
-        resources: {
-          cpuCores: Math.max(requested.cpuCores, allocated.cpus ?? binding.resources.cpuCores),
-          memoryMb: Math.max(requested.memoryMb, allocated.memory_mb ?? binding.resources.memoryMb),
-          diskMb: Math.max(requested.diskMb, allocated.disk_size_mb ?? binding.resources.diskMb),
-        },
-      });
-    }
     await repos.cloudDockerWorkspace.markReady(owner, input.organizationId, workspaceId);
     return workspaceId;
   }, input.signal);

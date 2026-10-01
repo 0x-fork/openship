@@ -1,3 +1,4 @@
+import { requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
 /** Live provider billing state plus read access to historical billing records. */
 
 import { eq, and, desc, inArray, db, schema, repos } from "@repo/db";
@@ -109,7 +110,7 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
   const serviceResources = tier === "free" ? null : planServiceResources(planLimitsForTier);
 
   return {
-    workspace: owner.workspace ? { id: owner.workspace.id, name: owner.workspace.name, mode: owner.workspace.mode, runtime: owner.workspace.runtime } : null,
+    workspace: owner.workspace ? { id: owner.workspace.id, serverId: (await requireWorkspaceServer(orgId, owner.workspace.id)).id, name: owner.workspace.name } : null,
     tier,
     creditAlert: entitlement.quota.alert ? {
       namespace: entitlement.namespace,

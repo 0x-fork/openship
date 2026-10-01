@@ -565,7 +565,7 @@ export default function AppInstallPage() {
         if (!project || !Array.isArray(svcRes?.services))
           throw new Error("Incomplete draft response");
         if (!selfHosted || project.deployTarget === "cloud" || project.workspaceId) {
-          setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined, serverId: project.workspaceId ? project.serverId : undefined });
+          setDestination({ deployTarget: "cloud", workspaceId: project.workspaceId ?? undefined, serverId: project.serverId ?? undefined });
         } else if (project.serverId) {
           setDestination({ deployTarget: "server", serverId: project.serverId, serverName: project.serverName });
         }
@@ -1206,7 +1206,7 @@ export default function AppInstallPage() {
               setDestination({
                 deployTarget: "server",
                 serverId: server.id,
-                serverHost: server.sshHost,
+                serverHost: server.sshHost ?? undefined,
                 serverName: server.name ?? undefined,
               })
             }

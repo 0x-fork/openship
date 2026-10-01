@@ -510,7 +510,7 @@ async function assertProjectMoveAllowed(
         name: string;
         slug: string;
         serverId: string;
-        cloudWorkspaceId: string | null;
+        workspaceId: string | null;
         isControlPlane: boolean;
       };
     }
@@ -537,7 +537,7 @@ async function assertProjectMoveAllowed(
       name: project.name,
       slug: project.slug,
       serverId: project.serverId,
-      cloudWorkspaceId: project.cloudWorkspaceId ?? null,
+      workspaceId: project.workspaceId ?? null,
       isControlPlane: isControlPlaneProject(project),
     },
   };
@@ -604,7 +604,7 @@ export async function startProjectMove(c: Context) {
         name: guard.project.name,
         slug: guard.project.slug,
         serverId: guard.project.serverId,
-        cloudWorkspaceId: guard.project.cloudWorkspaceId,
+        workspaceId: guard.project.workspaceId,
       },
       targetServerId: body.targetServerId,
       isControlPlane: guard.project.isControlPlane,

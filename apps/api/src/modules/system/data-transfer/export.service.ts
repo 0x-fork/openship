@@ -76,7 +76,7 @@ async function buildManifest(
   const cloudOrgs = [
     ...new Set(
       projects
-        .filter((project) => project.cloudWorkspaceId)
+        .filter((project) => project.workspaceId)
         .map((project) => project.organizationId),
     ),
   ];
@@ -99,7 +99,7 @@ async function buildManifest(
     );
   if (
     servers.some(needsExplicitServerMapping) ||
-    projects.some((project) => !project.serverId && !project.cloudWorkspaceId)
+    projects.some((project) => !project.serverId && !project.workspaceId)
   ) {
     warnings.push(
       "Projects on the source control-plane host need an explicit server mapping at the destination.",
@@ -151,7 +151,7 @@ export async function previewInstanceExport(
         slug: schema.project.slug,
         environmentName: schema.project.environmentName,
         serverId: schema.project.serverId,
-        cloudWorkspaceId: schema.project.cloudWorkspaceId,
+        workspaceId: schema.project.workspaceId,
         localPath: schema.project.localPath,
         deletedAt: schema.project.deletedAt,
       })

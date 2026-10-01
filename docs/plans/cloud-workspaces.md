@@ -71,7 +71,7 @@ immutable, database-checked billing scope, not another execution selector.
 
 Provider transport and edge responses are simulated in local lifecycle/release
 tests. A paid checkout, provisioning and resize smoke test against the deployed
-Oblien API remains part of the [manual rollout](../cloud-workspace-migration.md).
+Oblien API remains part of the [managed server architecture](../managed-cloud-servers.md).
 No production subscription or customer workload was changed during development.
 
 ## Separate earlier audit findings

@@ -235,7 +235,7 @@ export function cloudDockerResources(input: {
   // Image pulls need no source-build reservation. Include bounded Docker/OS
   // overhead; a source build receives temporary resources released after deployment.
   // Oblien accepts fractional CPU, including on Docker hosts. Use the same
-  // normalization as native Cloud workspaces instead of reserving whole cores.
+  // normalization used by the provider instead of rounding up to whole cores.
   return {
     cpuCores: cloudCpus(
       Math.max(

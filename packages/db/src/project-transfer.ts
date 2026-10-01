@@ -15,7 +15,6 @@ export type TransferRowReader = (
 export const PROJECT_TRANSFER_TABLES = new Set([
   "project_app",
   "project",
-  "cloud_docker_workspace",
   "env_var",
   "deployment",
   "domain",
@@ -138,7 +137,7 @@ export function createTransferReader(
       "environmentName",
       "groupId",
       "deletedAt",
-      "cloudWorkspaceId",
+      "workspaceId",
       "localPath",
       "gitOwner",
       "gitRepo",
@@ -188,7 +187,7 @@ export function transferProject(row: Row): TransferProject {
     slug: String(row.slug ?? row.id),
     environmentName: String(row.environmentName ?? "Production"),
     serverId: typeof row.serverId === "string" ? row.serverId : null,
-    cloudWorkspaceId: typeof row.cloudWorkspaceId === "string" ? row.cloudWorkspaceId : null,
+    workspaceId: typeof row.workspaceId === "string" ? row.workspaceId : null,
     localPath: typeof row.localPath === "string" ? row.localPath : null,
   };
 }
@@ -409,7 +408,7 @@ export async function selectProjectTransfer(
     );
   }
   if (selection.includeDomains !== false) {
-    const hasLocalProjects = tables.project!.some((row) => !row.serverId && !row.cloudWorkspaceId);
+    const hasLocalProjects = tables.project!.some((row) => !row.serverId && !row.workspaceId);
     const verifications = await read("edge_target_verification", "organizationId", organizations);
     add(
       "edge_target_verification",

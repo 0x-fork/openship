@@ -101,7 +101,6 @@ interface BasicProjectData {
   deployTarget?: "cloud" | "server" | "local" | "cluster";
   clusterId?: string | null;
   clusterConfig?: import("@repo/core").ClusterWorkloadConfig | null;
-  cloudWorkspaceId?: string | null;
   workspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;
@@ -598,7 +597,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       }
     }
 
-    const target = projectData.cloudWorkspaceId
+    const target = projectData.workspaceId
       ? "cloud"
       : (projectData as any).serverId
         ? "server"

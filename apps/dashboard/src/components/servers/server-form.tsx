@@ -9,6 +9,8 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { SshTransportField } from "./ssh-transport-field";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 const INPUT =
   "w-full px-3.5 py-2.5 rounded-xl border border-border/50 bg-muted/30 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none transition-all focus:ring-2 focus:ring-primary/20";
@@ -37,7 +39,37 @@ interface ServerFormProps {
 // validation and the test/save calls live here exactly once - only the chrome
 // differs (see `variant`). The surrounding page header and sidebars stay in the
 // pages.
-export function ServerForm({
+export function ServerForm(props: ServerFormProps) {
+  if (props.server && (props.server.managed || props.server.isLocal)) {
+    return <ServerNameForm {...props} server={props.server} />;
+  }
+  return <ConnectedServerForm {...props} />;
+}
+
+/** Managed connections and the current host only allow a display-name edit. */
+function ServerNameForm({ server, onSaved, onCancel, submitLabel }: ServerFormProps & { server: ServerInfo }) {
+  const { t } = useI18n();
+  const [name, setName] = useState(server.name ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy = useRef(false);
+  return <form className="space-y-4 rounded-2xl bg-card p-5" onSubmit={async event => {
+    event.preventDefault();
+    if (busy.current || !name.trim()) return;
+    busy.current = true; setSaving(true); setError(null);
+    try {
+      const updated = await systemApi.updateServerEntry(server.id, { name: name.trim() });
+      onSaved({ server: updated, isEditing: true });
+    } catch (error) { setError(getApiErrorMessage(error, t.servers.form.toastSaveFailed)); }
+    finally { busy.current = false; setSaving(false); }
+  }}>
+    <label className="block space-y-2 text-sm font-medium"><span>{t.servers.form.serverName}</span><Input variant="filled" value={name} onChange={event => setName(event.target.value)} maxLength={80} required disabled={saving} /></label>
+    {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+    <div className="flex justify-end gap-2">{onCancel && <Button type="button" variant="secondary" disabled={saving} onClick={onCancel}>{t.servers.detail.cancel}</Button>}<Button type="submit" disabled={saving || !name.trim()}>{saving && <UiIcon name="spinner" className="size-4 animate-spin" />}{submitLabel ?? t.servers.form.saveChanges}</Button></div>
+  </form>;
+}
+
+function ConnectedServerForm({
   server,
   onSaved,
   submitLabel,

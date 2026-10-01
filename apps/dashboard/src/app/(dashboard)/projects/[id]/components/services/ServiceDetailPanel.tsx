@@ -401,9 +401,8 @@ export function ServiceDetailPanel({
   const handleDeployStart = async () => {
     setDeploying(true);
     try {
-      // Start provisions this service in its existing runtime layout. Compose
-      // reuses the project Docker workspace, which may need a larger allocation;
-      // native Cloud uses a separate service workspace. No build page is needed.
+      // Start provisions this image service on the project's selected server
+      // through the shared Docker deployer. No source build is needed.
       const res = await servicesApi.start(projectId, service.id);
       if ((res as any)?.success === false) {
         setDeploying(false);

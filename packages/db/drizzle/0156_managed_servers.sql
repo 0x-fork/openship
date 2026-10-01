@@ -23,7 +23,7 @@ INSERT INTO "servers" ("id", "organization_id", "workspace_id", "name", "ssh_por
 SELECT gen_random_uuid()::text, "organization_id", "id", "name", NULL, NULL
 FROM "cloud_workspace";
 --> statement-breakpoint
-ALTER TABLE "project" DROP CONSTRAINT "project_workspace_target_check";
+ALTER TABLE "project" DROP CONSTRAINT IF EXISTS "project_workspace_target_check";
 --> statement-breakpoint
 UPDATE "project" AS p SET "server_id" = s."id"
 FROM "servers" AS s WHERE p."workspace_id" = s."workspace_id";

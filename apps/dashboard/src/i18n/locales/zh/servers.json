@@ -441,7 +441,7 @@
   },
   "terminal": {
     "title": "终端",
-    "description": "基于 WebSocket 的实时 SSH 会话。最多 3 个并发——选中即复制。"
+    "description": "服务器实时终端。并发会话上限：{count}——选中即复制。"
   },
   "setup": {
     "editServer": "编辑服务器",

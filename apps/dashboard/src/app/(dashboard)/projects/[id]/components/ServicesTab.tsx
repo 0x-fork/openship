@@ -169,9 +169,8 @@ export const ServicesTab = () => {
       return;
     }
 
-    // Start just this service. Cloud Compose reuses its project workspace;
-    // native Cloud services get independent workspaces. Keep the saved service
-    // on failure: a lost response may mean the provider already started it.
+    // Start this service on the project's selected server. Keep its saved
+    // configuration on failure so the user can inspect and retry the operation.
     showToast(interpolate(t.projects.services.toastAddedDeploying, { name: data.name }), "success", t.projects.services.toastServiceTitle);
     const showStartFailure = async (message: string) => {
       await fetchData();
@@ -394,7 +393,6 @@ export const ServicesTab = () => {
         {hasProjectId && <LinkedAppsCard projectId={id} />}
         <AddServiceModal
           projectId={id}
-          workspaceId={projectData.workspaceId}
           open={createOpen}
           projectName={projectSlugBase}
           isCloudProject={projectData?.deployTarget === "cloud"}
@@ -573,7 +571,6 @@ export const ServicesTab = () => {
 
       <AddServiceModal
         projectId={id}
-        workspaceId={projectData.workspaceId}
         open={createOpen}
         projectName={projectSlugBase}
         isCloudProject={projectData?.deployTarget === "cloud"}

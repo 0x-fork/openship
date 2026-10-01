@@ -1,23 +1,22 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { cloudWorkspacesApi } from "@/lib/api/cloud-workspaces";
+import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { getApiErrorMessage } from "@/lib/api/client";
 import type { CloudCapacityRestriction } from "@/lib/cloud-deploy-pricing";
-import { CloudCapacityModal } from "@/components/billing/CloudCapacityModal";
 
-export function WorkspaceCapacityRecovery({
+export function ServerCapacityRecovery({
   workspaceId,
   restriction,
   message,
   onClose,
   onRetry,
 }: {
-  workspaceId: string;
+  workspaceId?: string;
   restriction?: CloudCapacityRestriction;
   message?: string;
   onClose: () => void;
@@ -27,7 +26,8 @@ export function WorkspaceCapacityRecovery({
   const copy = t.billing.workspaces;
   const title = useId();
   const { dialog, onKeyDown } = useDialogFocus(onClose);
-  const [runtime, setRuntime] = useState<string | null>(null);
+  const { data, error: fetchError, loading } = useServerDestinations();
+  const server = data?.servers.find((row) => workspaceId ? row.managed?.id === workspaceId : data.servers.length === 1 && !!row.managed);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   async function retry() {
@@ -42,29 +42,6 @@ export function WorkspaceCapacityRecovery({
       setRetrying(false);
     }
   }
-  useEffect(() => {
-    let active = true;
-    void cloudWorkspacesApi
-      .get(workspaceId)
-      .then((row) => {
-        if (active) setRuntime(row.runtime);
-      })
-      .catch((error) => {
-        if (active) setError(getApiErrorMessage(error));
-      });
-    return () => {
-      active = false;
-    };
-  }, [workspaceId]);
-  if (runtime === "native")
-    return (
-      <CloudCapacityModal
-        workspaceId={workspaceId}
-        restriction={restriction}
-        onClose={onClose}
-        onRetry={onRetry}
-      />
-    );
   return (
     <div
       ref={dialog}
@@ -80,23 +57,30 @@ export function WorkspaceCapacityRecovery({
       </h2>
       {message && <p className="text-sm">{message}</p>}
       <p className="text-sm text-muted-foreground">{copy.buildCapacityHint}</p>
-      {error && (
+      {(error || fetchError) && (
         <p role="alert" className="text-sm text-danger">
-          {error}
+          {error || fetchError}
+        </p>
+      )}
+      {!loading && !fetchError && !server && (
+        <p role="alert" className="text-sm text-danger">
+          {copy.noneAvailable}
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button asChild>
-          <Link
-            href={`/workspaces/${encodeURIComponent(workspaceId)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {copy.openWorkspace}
-          </Link>
-        </Button>
+        {server && (
+          <Button asChild>
+            <Link
+              href={`/servers/${encodeURIComponent(server.id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {copy.openWorkspace}
+            </Link>
+          </Button>
+        )}
         {onRetry && (
-          <Button variant="secondary" disabled={retrying} onClick={() => void retry()}>
+          <Button variant="secondary" disabled={retrying || loading} onClick={() => void retry()}>
             {copy.retryDeployment}
           </Button>
         )}

@@ -122,11 +122,7 @@ function CheckoutConfirmation({
       {kind === "subscription" && status === "active" && confirmed && checkoutId && (
         <CloudSubscriptionWelcome state={confirmed} checkoutId={checkoutId} />
       )}
-      <div
-        role="status"
-        aria-live="polite"
-        className="mb-6 rounded-lg border border-border bg-muted/30 p-4 text-sm"
-      >
+      <div role="status" aria-live="polite" className="mb-5 rounded-xl bg-muted/40 p-4 text-sm">
         <p>
           {status === "active" && kind === "topup"
             ? t.billing.checkout.topupComplete

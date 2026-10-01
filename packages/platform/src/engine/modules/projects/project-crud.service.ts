@@ -742,7 +742,6 @@ function buildProductionProjectInput(
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
       data.rollbackWindow != null ? normalizeRollbackWindow(data.rollbackWindow) : null,
-    cloudArchiveStrategy: data.cloudArchiveStrategy ?? undefined,
     defaultRollbackStrategy: data.defaultRollbackStrategy ?? undefined,
     // Edge→app upstream addressing. Omitted → schema default "auto" (loopback-
     // port). The wizard seeds this from the user's route-strategy default.
@@ -918,10 +917,8 @@ async function createProductionProject(
     if (workspace) {
       if (!ctx) throw new AppError("Workspace placement requires an authenticated execution context", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
       const { authorization } = await import("../../lib/authorization");
-      await authorization.authorize(ctx, { resourceType: "cloud_workspace", resourceId: workspace.id, action: "write" });
+      await authorization.authorize(ctx, { resourceType: "server", resourceId: server!.id, action: "write" });
       if (workspace.deletionInProgress) throw new AppError("Cloud workspace is unavailable for this project", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
-      if (workspace.runtime === "native" && ["services", "monorepo"].includes(data.projectType ?? ""))
-        throw new AppError("Choose a Docker workspace for a multi-service project", 400, "CLOUD_WORKSPACE_RUNTIME_CONFLICT");
       data = { ...data, workspaceId: workspace.id, serverId: server!.id };
     }
   }
@@ -1560,9 +1557,6 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
       update.rollbackWindow =
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
     }
-    if (data.cloudArchiveStrategy !== undefined) {
-      update.cloudArchiveStrategy = data.cloudArchiveStrategy;
-    }
 
     if (Object.keys(update).length > 0) {
       await persistProjectFields(project.id, update);
@@ -2009,9 +2003,9 @@ export async function createProjectEnvironment(
   assertResourceInOrg(base, "Project", organizationId, projectId);
   if (base.workspaceId) {
     const { authorization } = await import("../../lib/authorization");
-    await authorization.authorize(ctx, { resourceType: "cloud_workspace", resourceId: base.workspaceId, action: "write" });
-    const workspace = await requireCloudWorkspace(organizationId, base.workspaceId);
-    if (workspace.mode === "dedicated") throw new AppError("A dedicated workspace has one project environment. Use a shared workspace for additional environments.", 409, "CLOUD_WORKSPACE_DEDICATED");
+    const { requireWorkspaceServer } = await import("../../lib/cloud-workspace-scope");
+    const server = await requireWorkspaceServer(organizationId, base.workspaceId);
+    await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
   }
 
   const environmentSlug = normalizeEnvironmentSlug(
@@ -2105,7 +2099,6 @@ export async function createProjectEnvironment(
     buildResources: base.buildResources,
     sleepMode: base.sleepMode,
     rollbackWindow: base.rollbackWindow,
-    cloudArchiveStrategy: base.cloudArchiveStrategy,
     defaultRollbackStrategy: base.defaultRollbackStrategy,
     webhookId: null,
     webhookDomain: null,

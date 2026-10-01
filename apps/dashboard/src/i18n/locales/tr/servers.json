@@ -432,7 +432,7 @@
   },
   "terminal": {
     "title": "Terminal",
-    "description": "WebSocket üzerinden canlı SSH kabukları. Aynı anda en fazla 3 oturum açılabilir; seçilen metin panoya kopyalanır."
+    "description": "Canlı sunucu terminali. Oturum sınırı: {count}; seçilen metin panoya kopyalanır."
   },
   "setup": {
     "editServer": "Sunucuyu Düzenle",

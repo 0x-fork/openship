@@ -303,6 +303,14 @@ setupWebSocket(app);
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
+// Host resources resolve their own connection; machine-local setup remains self-hosted.
+{
+  const { serverResourceRoutes } = await import("./modules/system/server-resource.routes");
+  app.route("/api/system", serverResourceRoutes);
+  const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
+  app.route("/api/terminal", terminalRoutes);
+}
+
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
   const { cloudSupportRoutes } = await import("./modules/cloud-support/cloud-support.routes");
@@ -314,8 +322,6 @@ if (env.CLOUD_MODE) {
 
   const { billingSaasRoutes } = await import("./modules/billing/billing.routes");
   app.route("/api/billing", billingSaasRoutes);
-  const { cloudWorkspaceRoutes } = await import("./modules/cloud-workspaces/cloud-workspace.routes");
-  app.route("/api/workspaces", cloudWorkspaceRoutes);
 } else {
   /**
    * System routes - filesystem browse, instance setup, user provisioning.
@@ -335,15 +341,6 @@ if (env.CLOUD_MODE) {
   /** Docker migration - inspect a server's Docker and adopt it as a project */
   const { migrationRoutes } = await import("./modules/migration/migration.routes");
   app.route("/api/migration", migrationRoutes);
-
-  /**
-   * Interactive SERVER terminal (xterm.js ↔ WebSocket ↔ ssh2 PTY).
-   * Self-hosted only — exposes the host's SSH-managed servers.
-   * setupWebSocket(app) already ran unconditionally above; this
-   * branch only mounts the SSH-flavored routes.
-   */
-  const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
-  app.route("/api/terminal", terminalRoutes);
 
   /** Cloud account management - connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
@@ -444,18 +441,6 @@ if (env.CLOUD_MODE) {
   void ensureOblienDefaultQuota().catch((err) =>
     console.warn("[boot] ensureOblienDefaultQuota failed:", err),
   );
-
-  // Retry incomplete namespace onboarding, bounded per boot.
-  void import("@repo/platform/engine/modules/billing/billing-namespace.provision")
-    .then(({ backfillOrgNamespaces }) => backfillOrgNamespaces())
-    .then((stats) => {
-      if (stats.done > 0 || stats.failed > 0) {
-        console.log(
-          `[boot] Oblien namespaces backfilled: ${stats.done} provisioned, ${stats.failed} failed`,
-        );
-      }
-    })
-    .catch((err) => console.warn("[boot] backfillOrgNamespaces failed:", err));
 
   if (env.CLOUD_MODE) {
     void import("@repo/platform/engine/modules/cloud-support/index")

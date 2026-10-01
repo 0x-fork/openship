@@ -441,7 +441,7 @@
   },
   "terminal": {
     "title": "Terminal",
-    "description": "Live-SSH-Shells über WebSocket. Bis zu 3 gleichzeitig – Kopieren bei Auswahl."
+    "description": "Live-Serverterminal. Sitzungslimit: {count} – Kopieren bei Auswahl."
   },
   "setup": {
     "editServer": "Server bearbeiten",

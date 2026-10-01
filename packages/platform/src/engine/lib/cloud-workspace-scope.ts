@@ -2,7 +2,7 @@ import { AppError } from "@repo/core";
 import { repos, type CloudWorkspace } from "@repo/db";
 import { createProvisionLock } from "./provision-lock";
 
-/** null explicitly means the existing organization-scoped dedicated Cloud mode. */
+/** Optional selector; absent selection is valid only when the organization has one server. */
 export type CloudWorkspaceScope = string | null | undefined;
 
 export async function requireCloudWorkspace(
@@ -42,13 +42,11 @@ export async function resolveCloudProjectServer(organizationId: string, serverId
 
 /** Read-only resolution. Never guesses between independent paid subscriptions. */
 export async function cloudBillingOwner(organizationId: string, workspaceId?: CloudWorkspaceScope) {
-  // Explicit wire selector used by linked instances and the original Cloud mode.
-  if (workspaceId === "organization") workspaceId = null;
   const org = await repos.organization.findById(organizationId);
   if (!org) throw new AppError("Organization not found", 404, "ORGANIZATION_NOT_FOUND");
   let workspace: CloudWorkspace | undefined;
   if (workspaceId) workspace = await requireCloudWorkspace(organizationId, workspaceId);
-  else if (workspaceId !== null && !org.oblienNamespace) {
+  else {
     const rows = await repos.cloudWorkspace.listByOrganization(organizationId);
     if (rows.length > 1)
       throw new AppError(
@@ -63,28 +61,25 @@ export async function cloudBillingOwner(organizationId: string, workspaceId?: Cl
     workspace,
     workspaceId: workspace?.id ?? null,
     key: workspace ? `workspace:${workspace.id}` : organizationId,
-    namespace: workspace?.namespace ?? (workspace ? null : org.oblienNamespace),
-    planTierId: workspace ? workspace.planTierId : org.planTierId,
-    subscriptionStatus: workspace ? workspace.subscriptionStatus : org.subscriptionStatus,
-    currentPeriodStart: workspace ? workspace.currentPeriodStart : org.currentPeriodStart,
-    currentPeriodEnd: workspace ? workspace.currentPeriodEnd : org.currentPeriodEnd,
+    namespace: workspace?.namespace ?? null,
+    planTierId: workspace?.planTierId ?? "free",
+    subscriptionStatus: workspace?.subscriptionStatus ?? "active",
+    currentPeriodStart: workspace?.currentPeriodStart ?? null,
+    currentPeriodEnd: workspace?.currentPeriodEnd ?? null,
     createdAt: workspace?.createdAt ?? org.createdAt,
   };
 }
 
-/** A fresh organization starts with one shared Docker workspace. Existing targets are untouched. */
+/** The first deployment or checkout creates a single managed server identity. */
 export async function ensureDefaultCloudWorkspace(
   organizationId: string,
-): Promise<CloudWorkspace | null> {
+): Promise<CloudWorkspace> {
   return createProvisionLock(`cloud:default-workspace:${organizationId}`).run(async () => {
     const owner = await cloudBillingOwner(organizationId);
     if (owner.workspace) return owner.workspace;
-    if (owner.namespace) return null;
     return repos.cloudWorkspace.create({
       organizationId,
       name: "Production",
-      mode: "shared",
-      runtime: "docker",
     });
   });
 }

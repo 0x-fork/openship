@@ -542,7 +542,7 @@ export async function checkEdgeVerification(c: Context) {
  *   - `workspace_id` must belong to the caller's namespace (or 404)
  *   - `slug` must be free on the shared zone (or 409 SLUG_TAKEN)
  *
- * Returns the raw Oblien SDK shape so the caller's CloudRuntime code
+ * Returns the raw Oblien SDK shape so the caller's infrastructure adapter
  * path stays unchanged.
  */
 export async function pagesProxy(c: Context) {

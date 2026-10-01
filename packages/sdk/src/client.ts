@@ -41,8 +41,6 @@ import { createRemoteNoticeOperations } from "./notices-client";
 import type { NoticeOperations } from "@repo/contracts";
 import { createRemoteBillingOperations } from "./billing-client";
 import type { BillingOperations } from "@repo/contracts";
-import type { CloudWorkspaceOperations } from "@repo/contracts";
-import { createRemoteCloudWorkspaceOperations } from "./cloud-workspace-client";
 import type { BackupOperations } from "@repo/contracts";
 import type { BackupDestinationOperations } from "@repo/contracts";
 import { deploySourceWorkflow } from "./source-workflow";
@@ -76,7 +74,6 @@ export class OpenshipClient {
   readonly backupDestinations: BackupDestinationOperations;
   readonly backups: BackupOperations;
   readonly billing: BillingOperations;
-  readonly cloudWorkspaces: CloudWorkspaceOperations;
   readonly notices: NoticeOperations;
   readonly github: GitHubOperations;
   readonly permissions: PermissionOperations;
@@ -107,7 +104,6 @@ export class OpenshipClient {
     this.backupDestinations = createRemoteBackupDestinationOperations(http);
     this.backups = createRemoteBackupOperations(http);
     this.billing = createRemoteBillingOperations(http);
-    this.cloudWorkspaces = createRemoteCloudWorkspaceOperations(http);
     this.notices = createRemoteNoticeOperations(http);
     this.github = createRemoteGitHubOperations(http);
     this.permissions = createRemotePermissionOperations(http);

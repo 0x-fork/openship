@@ -354,7 +354,7 @@ async function teardownProjectLocked(
     // the Openship record. NEVER honored for a cloud project — its resources
     // live on Oblien and must be reclaimed; this is the security boundary, not
     // the UI toggle. (CLOUD_MODE = the SaaS itself, where nothing is "kept".)
-    const recordOnly = !!opts.recordOnly && !project.cloudWorkspaceId && !env.CLOUD_MODE;
+    const recordOnly = !!opts.recordOnly && !project.workspaceId && !env.CLOUD_MODE;
 
     // ── Step 1: Cancel in-flight work (force=true or forceOrphan). ───────
     // Cancellation only requests/records the stop here. Runtime cleanup happens
@@ -878,7 +878,7 @@ async function stepRuntimeCleanup(
       serverId: r.serverId ?? null,
       targetKey: r.targetKey ?? null,
       resourceType:
-        r.deferredResourceType ?? (r.runtimeMode === "cloud" ? "cloud_workspace" : "container"),
+        r.deferredResourceType ?? "container",
       ref: r.ref,
       label: r.label,
       runtimeMode: r.runtimeMode ?? null,
@@ -999,13 +999,11 @@ async function stepRuntimeCleanup(
         label: r.label,
         runtimeMode:
           r.runtimeMode ??
-          (r.runtime?.name === "cloud"
-            ? "cloud"
-            : r.runtime?.name === "bare"
-              ? "bare"
-              : r.runtime?.name === "docker"
-                ? "docker"
-                : (legacyTarget?.runtimeMode ?? null)),
+          (r.runtime?.name === "bare"
+            ? "bare"
+            : r.runtime?.name === "docker"
+              ? "docker"
+              : (legacyTarget?.runtimeMode ?? null)),
         payload: r.payload ?? null,
       });
     }

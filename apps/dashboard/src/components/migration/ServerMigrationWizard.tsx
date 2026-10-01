@@ -1739,7 +1739,6 @@ export function ServerMigrationWizard({
                     value={targetId}
                     onSelect={(s) => setTargetId(s?.id ?? null)}
                     compact
-                    dropUp
                   />
                 </div>
                 <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
@@ -2693,14 +2692,12 @@ export function ServerMigrationWizard({
                           {m.wizard.targetLabel}
                         </span>
                       </div>
-                      {/* dropUp: this card is `overflow-hidden` and the picker sits at its
-                          bottom, so a down-opening menu is hard-clipped. */}
+
                       <ServerSelector
                         value={targetId}
                         onSelect={(s) => setTargetId(s?.id ?? null)}
                         compact
-                        dropUp
-                      />
+                          />
                       <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
                         <input
                           type="checkbox"

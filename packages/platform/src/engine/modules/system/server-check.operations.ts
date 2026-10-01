@@ -1,3 +1,4 @@
+import { withServerExecution } from "../../lib/server-execution";
 /** Retained server diagnostics and component installers behind shared authorization. */
 import { OperationError, type CreateServerInput, type ServerOperations } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
@@ -66,9 +67,10 @@ function resolveInfraComponents(): string[] {
     .map((c) => c.name);
 }
 
-async function checkServerComponents(serverId: string, names: string[]) {
-  return sshManager.withExecutor(serverId, async (executor) => {
+async function checkServerComponents(ctx: ExecutionContext, serverId: string, names: string[], managed = false) {
+  return withServerExecution(ctx.organizationId, serverId, async (executor) => {
     const components = await checkComponents(executor, names);
+    if (managed) return components.map(component => ({ ...component, installable: false, removable: false }));
     if (await needsDockerGroupRefresh(executor, components)) {
       const fresh = await sshManager.refreshAuthentication(serverId, executor);
       if (fresh !== executor) {
@@ -220,8 +222,9 @@ async function buildEphemeralSshConfig(body: CreateServerInput) {
  * Returns: { components: ComponentStatus[], ready: boolean, missing: string[] }
  */
 export async function checkServer(ctx: ExecutionContext, serverId: string, body: Parameters<ServerOperations["check"]>[1] = {}) {
-  if (env.CLOUD_MODE) return failSystem({ error: "Not available" }, 404);
-
+  const server = await repos.server.getInOrganization(serverId, ctx.organizationId);
+  if (!server || env.CLOUD_MODE !== !!server.workspaceId) return failSystem({ error: "Server not found" }, 404);
+  const managed = !!server.workspaceId;
   const startedAt = Date.now();
 
 
@@ -247,7 +250,9 @@ export async function checkServer(ctx: ExecutionContext, serverId: string, body:
     return failSystem({ error: "Invalid component names" }, 400);
   }
 
-  await assertServerExecution(await requireSelfHostedServer(ctx, serverId));
+  if (!managed) await assertServerExecution(await requireSelfHostedServer(ctx, serverId));
+  if (managed && valid?.some(name => !["docker", "git"].includes(name)))
+    return failSystem({ error: "Host software is managed by Openship Cloud", code: "CAPABILITY_UNAVAILABLE" }, 409);
   try {
     systemDebug("system-check",
       `check:start server=${serverId} ${valid?.length ? valid.join(",") : "all"}`,
@@ -255,17 +260,17 @@ export async function checkServer(ctx: ExecutionContext, serverId: string, body:
 
     let components;
     if (valid) {
-      components = await checkServerComponents(serverId, valid);
+      components = await checkServerComponents(ctx, serverId, valid, managed);
     } else {
       // Check core required + all infrastructure components
       // Remote requirements come from the shared system policy. DEPLOY_MODE is
       // how this control plane runs, not what this target server needs.
-      const required = [...REMOTE_SERVER_REQUIRED_COMPONENTS];
-      const infra = resolveInfraComponents();
+      const required = managed ? ["docker", "git"] : [...REMOTE_SERVER_REQUIRED_COMPONENTS];
+      const infra = managed ? [] : resolveInfraComponents();
       const requiredSet = new Set<string>(required);
       const allToCheck = [...required, ...infra.filter((n) => !requiredSet.has(n))];
 
-      const allResults = await checkServerComponents(serverId, allToCheck);
+      const allResults = await checkServerComponents(ctx, serverId, allToCheck, managed);
 
       // Required components always shown; infra only shown when installed
       components = allResults
@@ -291,6 +296,7 @@ export async function checkServer(ctx: ExecutionContext, serverId: string, body:
     };
   } catch (err) {
     if (err instanceof OperationError) throw err;
+    if (managed) return failSystem({ error: safeErrorMessage(err), code: "MANAGED_SERVER_UNAVAILABLE" }, 502);
     const message =
       err instanceof Error ? err.message : "Failed to connect to server";
     systemDebug("system-check", `check:failed ${message} (${formatDuration(startedAt)})`);

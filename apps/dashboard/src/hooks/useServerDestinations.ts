@@ -1,29 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { CloudWorkspaceOperations } from "@repo/contracts";
-import { cloudWorkspacesApi } from "@/lib/api/cloud-workspaces";
+import type { ServerOperations } from "@repo/contracts";
+import { systemApi } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useSession } from "@/lib/auth-client";
 
-export function useCloudWorkspaces(enabled = true) {
+export function useServerDestinations(enabled = true) {
   const { data: session } = useSession();
-  const organizationId = session?.session.activeOrganizationId;
-  const [data, setData] = useState<Awaited<ReturnType<CloudWorkspaceOperations["list"]>> | null>(
+  const organizationId = session?.session.activeOrganizationId ?? undefined;
+  const [data, setData] = useState<Awaited<ReturnType<ServerOperations["destinations"]>> | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [owner, setOwner] = useState<string | undefined>(organizationId);
   const [loading, setLoading] = useState(enabled);
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   useEffect(() => {
     let active = true;
+    setOwner(organizationId);
     setData(null);
     setError(null);
     setLoading(enabled);
     if (enabled)
-      void cloudWorkspacesApi
-        .list()
+      void systemApi
+        .listServerDestinations()
         .then((value) => {
           if (active) setData(value);
         })
@@ -37,5 +39,12 @@ export function useCloudWorkspaces(enabled = true) {
       active = false;
     };
   }, [enabled, organizationId, revision]);
-  return { data, error, loading, refresh };
+  const current = enabled && owner === organizationId;
+  return {
+    data: current ? data : null,
+    error: current ? error : null,
+    loading: enabled && (!current || loading),
+    refresh,
+    organizationId,
+  };
 }

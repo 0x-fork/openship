@@ -314,7 +314,7 @@ const hostKey = (h: ProjectHost): string => (h.kind === "server" || h.kind === "
  * invert this — they answer "where would the NEXT deploy go", a different question.)
  *
  * Cloud is the UNION of both signals, mirroring project-resources.service: the
- * `cloudWorkspaceId` column alone is not enough, because a self-hosted instance
+ * `workspaceId` column alone is not enough, because a self-hosted instance
  * orchestrating a cloud deploy deliberately leaves it null to stay local-canonical
  * (deployment-lifecycle, `isLocalOrchestratedCloud`) — for that shape the snapshot is
  * the only cloud signal there is, and reading the column alone declares it local.
@@ -328,13 +328,14 @@ const hostKey = (h: ProjectHost): string => (h.kind === "server" || h.kind === "
 async function resolveProjectHost(project: Project): Promise<ProjectHost> {
   if (project.workspaceId) {
     const workspace = await repos.cloudWorkspace.findByIdInOrganization(project.workspaceId, project.organizationId);
-    return workspace?.runtime === "docker" ? { kind: "workspace", id: workspace.id } : { kind: "cloud" };
+    if (!workspace) throw new Error("Managed server is unavailable");
+    return { kind: "workspace", id: workspace.id };
   }
   const dep = project.activeDeploymentId
     ? await findActiveDeployment(project).catch(() => null)
     : null;
   const meta = (dep?.meta ?? null) as { deployTarget?: string; serverId?: string } | null;
-  if (meta?.deployTarget === "cloud" || project.cloudWorkspaceId) return { kind: "cloud" };
+  if (meta?.deployTarget === "cloud" || project.workspaceId) return { kind: "cloud" };
 
   const serverId = meta?.serverId ?? project.serverId ?? null;
   if (!serverId) return { kind: "box" };

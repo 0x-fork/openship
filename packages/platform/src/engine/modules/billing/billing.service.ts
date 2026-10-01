@@ -40,12 +40,10 @@ function checkoutKey(orgId: string, resource: string, requestKey?: string): stri
   return "openship:" + createHash("sha256").update(JSON.stringify([orgId, resource, nonce])).digest("hex");
 }
 
-async function assertNoLegacySubscription(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
+async function assertBillingOwnerAvailable(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
   const owner = await cloudBillingOwner(orgId, workspaceId);
   if (owner.workspace?.deletionInProgress) throw new AppError("This workspace is being deleted", 409, "CLOUD_WORKSPACE_DELETING");
-  if (!owner.workspaceId && (await listLiveSubscriptions(orgId)).length) {
-    throw new AppError("This account's subscription needs to be migrated before making another purchase. Contact support.", 409, "BILLING_MIGRATION_REQUIRED");
-  }
+
 }
 
 export async function createCheckoutSession(
@@ -56,15 +54,15 @@ export async function createCheckoutSession(
   workspaceId?: CloudWorkspaceScope,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
-  await assertNoLegacySubscription(ctx.organizationId, workspaceId);
+  await assertBillingOwnerAvailable(ctx.organizationId, workspaceId);
   const offer = subscriptionOffer(planTierId, interval);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
   const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
   const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
   return withCloudBillingLock(ctx.organizationId, async (sync) => {
-    await assertNoLegacySubscription(ctx.organizationId, owner.workspaceId);
+    await assertBillingOwnerAvailable(ctx.organizationId, owner.workspaceId);
     const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
-    if (owner.workspace?.runtime === "docker") {
+    if (owner.workspace) {
       const { provider } = await readCloudWorkspaceHost(ctx.organizationId, owner.workspace.id);
       const diskGb = offer.resourceLimits?.max_total_disk_gb;
       if (provider && diskGb != null && diskGb * 1024 < provider.allocation.diskMb) {
@@ -102,13 +100,13 @@ export async function createCheckoutSession(
 
 export async function createTopupCheckoutSession(ctx: RequestContext, packId: string, requestKey?: string, workspaceId?: CloudWorkspaceScope): Promise<{ checkoutUrl: string }> {
   assertTopupsEnabled();
-  await assertNoLegacySubscription(ctx.organizationId, workspaceId);
+  await assertBillingOwnerAvailable(ctx.organizationId, workspaceId);
   const offer = topupOffer(packId);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
   const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
   const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
   return withCloudBillingLock(ctx.organizationId, async sync => {
-  await assertNoLegacySubscription(ctx.organizationId, owner.workspaceId);
+  await assertBillingOwnerAvailable(ctx.organizationId, owner.workspaceId);
   const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
   const { subscription, entitlement } = await sync({ syncResourceLimits: false });
   if (!canTopUpCloudSubscription(subscription, entitlement)) {
@@ -164,7 +162,7 @@ export async function getCheckoutStatus(orgId: string, checkoutId: string, works
 // Disabling new purchases must not prevent existing customers from stopping
 // renewal or managing their invoices/payment details.
 export async function createPortalSession(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<{ portalUrl: string }> {
-  await assertNoLegacySubscription(orgId, workspaceId);
+  await assertBillingOwnerAvailable(orgId, workspaceId);
   const namespace = await ensureNamespace(orgId, workspaceId);
   const result = await getOblienBillingApi().createPortal({
     namespace, returnUrl: `${runtimeTarget.dashboard}/billing/overview${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""}`,
@@ -173,10 +171,10 @@ export async function createPortalSession(orgId: string, workspaceId?: CloudWork
 }
 
 export async function cancelSubscription(orgId: string, workspaceId?: CloudWorkspaceScope) {
-  await assertNoLegacySubscription(orgId, workspaceId);
+  await assertBillingOwnerAvailable(orgId, workspaceId);
   const namespace = await ensureNamespace(orgId, workspaceId);
   return withCloudBillingLock(orgId, async () => {
-  await assertNoLegacySubscription(orgId, workspaceId);
+  await assertBillingOwnerAvailable(orgId, workspaceId);
   const result = await getOblienBillingApi().cancelSubscription(namespace);
   subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);
@@ -188,10 +186,10 @@ export async function cancelSubscription(orgId: string, workspaceId?: CloudWorks
 }
 
 export async function resumeSubscription(orgId: string, workspaceId?: CloudWorkspaceScope) {
-  await assertNoLegacySubscription(orgId, workspaceId);
+  await assertBillingOwnerAvailable(orgId, workspaceId);
   const namespace = await ensureNamespace(orgId, workspaceId);
   return withCloudBillingLock(orgId, async () => {
-  await assertNoLegacySubscription(orgId, workspaceId);
+  await assertBillingOwnerAvailable(orgId, workspaceId);
   const result = await getOblienBillingApi().resumeSubscription(namespace);
   subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);

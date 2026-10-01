@@ -39,49 +39,27 @@ export async function ensureOblienWebhook(): Promise<void> {
   }
 }
 
-const NAMESPACE_CACHE_TTL_S = 3600;
-
-/** Hash exact identity: case-folding and stripping prefixes can alias two orgs. */
-export function namespaceSlugForOrg(orgId: string): string {
-  return `os-${createHash("sha256").update(orgId).digest("hex").slice(0, 40)}`;
-}
-
+/** Every subscribed server owns one immutable provider namespace. */
 export async function ensureNamespace(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<string> {
-  if (workspaceId === "organization") workspaceId = null;
   let owner = await cloudBillingOwner(organizationId, workspaceId);
-  if (!owner.namespace && !owner.workspace && workspaceId !== null) {
+  if (!owner.workspace) {
     const initial = await ensureDefaultCloudWorkspace(organizationId);
-    owner = await cloudBillingOwner(organizationId, initial?.id ?? null);
+    owner = await cloudBillingOwner(organizationId, initial.id);
   }
-  const selected = owner.workspaceId;
-  return createProvisionLock(`cloud:namespace:${owner.key}`).run(async () => {
+  const selected = owner.workspace!.id;
+  return createProvisionLock(`cloud:namespace:workspace:${selected}`).run(async () => {
     const existing = await cloudBillingOwner(organizationId, selected);
+    if (!existing.workspace || existing.workspace.deletionInProgress)
+      throw new AppError("Managed server is unavailable", 409, "CLOUD_WORKSPACE_DELETING");
     if (existing.namespace) return existing.namespace;
-    if (existing.workspace?.deletionInProgress) throw new AppError("Cloud workspace is being deleted", 409, "CLOUD_WORKSPACE_DELETING");
-
-    const store = await cacheStore<string>("oblien-namespaces");
-    const cached = selected ? null : await store.get(organizationId);
-    if (cached) {
-      // Recover older persisted mappings, but never issue a token if recording
-      // ownership fails. The database enforces one org per namespace.
-      await repos.organization.setOblienNamespace(organizationId, cached);
-      return cached;
-    }
-
     await ensureOblienDefaultQuota();
-    const slug = selected ? `os-w-${createHash("sha256").update(selected).digest("hex").slice(0, 40)}` : namespaceSlugForOrg(organizationId);
+    const slug = `os-w-${createHash("sha256").update(selected).digest("hex").slice(0, 40)}`;
     const ensured = await getOblienClient().namespaces.ensure({
-      name: `Openship ${existing.workspace?.name ?? organizationId}`, slug,
+      name: `Openship ${existing.workspace.name}`, slug,
       resource_limits: await initialCloudNamespaceLimits(),
     });
-    if (ensured.data.slug !== slug) {
-      throw new AppError("Cloud returned an unexpected namespace", 502, "CLOUD_NAMESPACE_MISMATCH");
-    }
-    if (selected) await repos.cloudWorkspace.setNamespace(selected, organizationId, slug);
-    else {
-      await repos.organization.setOblienNamespace(organizationId, slug);
-      await store.set(organizationId, slug, NAMESPACE_CACHE_TTL_S);
-    }
+    if (ensured.data.slug !== slug) throw new AppError("Cloud returned an unexpected namespace", 502, "CLOUD_NAMESPACE_MISMATCH");
+    await repos.cloudWorkspace.setNamespace(selected, organizationId, slug);
     return slug;
   });
 }

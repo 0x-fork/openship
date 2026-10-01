@@ -351,7 +351,7 @@ export async function importPreparedInstance(opts: {
   // Resolve cloud identity before opening the DB transaction. PGlite has one
   // connection; a global repo query inside its transaction would deadlock.
   const cloud =
-    projectScope && file.dump.tables.project?.some((row) => row.cloudWorkspaceId)
+    projectScope && file.dump.tables.project?.some((row) => row.workspaceId)
       ? await getCloudConnectionStatusForOrg(opts.context!.organizationId)
       : undefined;
 

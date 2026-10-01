@@ -4,14 +4,16 @@ import { PassThrough } from "node:stream";
 import { once } from "node:events";
 import { posix } from "node:path";
 import type { Runtime } from "oblien";
-import type { CommandExecutor, LogCallback } from "../../types";
+import type { CommandExecutor, LogCallback, ShellOptions, ShellSession } from "../../types";
 import { BuildLogger, sq } from "../build-pipeline";
 import { transferLocalDirectory } from "../transfer";
+import { openCloudShell } from "./shell";
 
 /** Files, builds, and streams execute only inside the bound customer workspace. */
 export class CloudWorkspaceExecutor implements CommandExecutor {
   private readonly abortScope = new AsyncLocalStorage<AbortSignal>();
   private readonly tasks = new Set<() => void>();
+  private readonly shells = new Set<ShellSession>();
   private disposed = false;
 
   constructor(private readonly runtime: () => Promise<Runtime>) {}
@@ -214,8 +216,19 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     const logger = new BuildLogger(onLog);
     await transferLocalDirectory(localPath, { kind: "cloud-runtime", runtime: await this.rt(), path: remotePath }, logger, options);
   }
+  async openShell(options?: ShellOptions): Promise<ShellSession> {
+    const shell = await openCloudShell(await this.rt(), options);
+    if (this.disposed) { await shell.close(); throw new Error("Cloud workspace connection is closed"); }
+    this.shells.add(shell);
+    shell.onClose(() => this.shells.delete(shell));
+    return shell;
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
+    const shells = [...this.shells];
+    this.shells.clear();
     for (const kill of this.tasks) kill();
+    await Promise.allSettled(shells.map(shell => shell.close()));
   }
 }

@@ -1,6 +1,6 @@
 import {
   CloudDockerRuntime,
-  SERVER_STATS_COMMAND,
+  CloudWorkspaceExecutor,
   cloudDockerProjectPaths,
   cloudWorkspaceStatus,
   dockerProjectStorage,
@@ -15,6 +15,8 @@ import { getNamespaceClient } from "./openship-cloud";
 import { readCloudWorkspaceAllocation } from "./cloud-capacity";
 import { createProvisionLock } from "./provision-lock";
 import { cacheStore } from "./cache-store/index";
+import { sampleServerUsage, unavailableServerUsage } from "./server-usage";
+export { unavailableServerUsage as unavailableWorkspaceUsage } from "./server-usage";
 
 /** Inspect the persisted host only. A read must never create/resume a VM. */
 export async function readCloudWorkspaceHost(organizationId: string, id: string) {
@@ -27,82 +29,59 @@ export async function readCloudWorkspaceHost(organizationId: string, id: string)
   return { owner, binding, provider };
 }
 
-export function unavailableWorkspaceUsage(reason: string): CloudWorkspaceUsage {
-  return {
-    measuredAt: new Date().toISOString(),
-    available: false,
-    reason,
-    cpuPercent: null,
-    memoryUsedMb: null,
-    memoryAvailableMb: null,
-    diskUsedMb: null,
-    diskAvailableMb: null,
-    diskTotalMb: null,
-    sharedDiskMb: null,
-    projects: [],
-  };
-}
-
-async function measuredHost(organizationId: string, id: string) {
+export async function readCloudWorkspaceConnection(organizationId: string, id: string) {
   const { owner, binding, provider } = await readCloudWorkspaceHost(organizationId, id);
-  if (owner.runtime !== "docker" || !binding?.workspaceId || !provider)
+  if (!binding?.workspaceId || !provider)
     throw new AppError(
-      "The Docker workspace has not been provisioned yet",
+      "The managed server has not been provisioned yet",
       409,
       "CLOUD_WORKSPACE_NOT_READY",
     );
-  if (!["running", "active"].includes(cloudWorkspaceStatus(provider.workspace)))
+  const { client, namespace } = await getNamespaceClient(organizationId, id);
+  if (namespace !== binding.namespace) throw new Error("Cloud workspace namespace changed");
+  return { client, namespace, binding, provider };
+}
+
+async function runningConnection(organizationId: string, id: string) {
+  const connection = await readCloudWorkspaceConnection(organizationId, id);
+  if (!["running", "active"].includes(cloudWorkspaceStatus(connection.provider.workspace)))
     throw new AppError(
-      "The workspace is stopped; saved disk capacity is not a usage measurement",
+      "The server is stopped. Resume it to read live usage.",
       409,
       "CLOUD_WORKSPACE_NOT_RUNNING",
     );
-  const { client, namespace } = await getNamespaceClient(organizationId, id);
-  if (namespace !== binding.namespace) throw new Error("Cloud workspace namespace changed");
+  return connection;
+}
+
+/** Commands use the same owned provider connection as Docker, without starting
+ * a host or installing the Docker API bridge just to read metrics/open a shell. */
+export async function openCloudWorkspaceExecutor(organizationId: string, id: string) {
+  const { client, binding } = await runningConnection(organizationId, id);
+  return new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime());
+}
+
+async function measuredHost(organizationId: string, id: string) {
+  const { client, namespace, binding, provider } = await runningConnection(organizationId, id);
   const runtime = await CloudDockerRuntime.forWorkspace(client, {
-    workspaceId: binding.workspaceId,
+    workspaceId: binding.workspaceId!,
     ownerWorkspaceId: id,
     projectId: `workspace:${id}`,
     namespace,
-    provisionLock: createProvisionLock(`cloud:docker:${binding.workspaceId}`),
+    provisionLock: createProvisionLock(`cloud:server:${binding.workspaceId}`),
     bridgeLock: createProvisionLock(`cloud:docker-bridge:${binding.workspaceId}`),
     resolveRegistryAuth: async () => undefined,
   });
   return { runtime, capacity: provider.allocation };
 }
 
-async function hostSample(runtime: CloudDockerRuntime) {
-  const stats = JSON.parse(
-    await runtime.executor.exec(SERVER_STATS_COMMAND, { timeout: 15_000 }),
-  ) as Record<string, unknown>;
-  for (const field of ["cpu", "memUsed", "memAvail", "diskUsed", "diskAvail", "diskTotal"]) {
-    if (
-      typeof stats[field] !== "number" ||
-      !Number.isFinite(stats[field]) ||
-      (stats[field] as number) < 0
-    )
-      throw new Error("Workspace returned incomplete resource measurements");
-  }
-  return {
-    ...unavailableWorkspaceUsage(""),
-    available: true,
-    reason: null,
-    cpuPercent: stats.cpu as number,
-    memoryUsedMb: (stats.memUsed as number) / 1048576,
-    memoryAvailableMb: (stats.memAvail as number) / 1048576,
-    diskUsedMb: (stats.diskUsed as number) / 1048576,
-    diskAvailableMb: (stats.diskAvail as number) / 1048576,
-    diskTotalMb: (stats.diskTotal as number) / 1048576,
-  };
-}
-
 /** Build admission needs only a cheap host sample, never a filesystem scan. */
 export async function sampleCloudWorkspaceResources(organizationId: string, id: string) {
-  const { runtime, capacity } = await measuredHost(organizationId, id);
+  const { client, binding, provider } = await runningConnection(organizationId, id);
+  const executor = new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime());
   try {
-    return { capacity, usage: await hostSample(runtime) };
+    return { capacity: provider.allocation, usage: await sampleServerUsage(executor) };
   } finally {
-    await runtime.dispose();
+    await executor.dispose();
   }
 }
 
@@ -112,9 +91,8 @@ export async function measureCloudWorkspace(
   id: string,
   fresh = false,
 ): Promise<CloudWorkspaceUsage> {
-  const owner = await requireCloudWorkspace(organizationId, id);
-  if (owner.runtime !== "docker")
-    return unavailableWorkspaceUsage("Live host metrics apply to Docker workspaces.");
+  await requireCloudWorkspace(organizationId, id);
+
   const cache = await cacheStore<CloudWorkspaceUsage>("cloud-workspace-usage", { maxSize: 500 });
   const key = `${organizationId}:${id}`;
   if (!fresh) {
@@ -124,12 +102,12 @@ export async function measureCloudWorkspace(
   const { runtime } = await measuredHost(organizationId, id);
   try {
     const [sample, storage, projects] = await Promise.all([
-      hostSample(runtime),
+      sampleServerUsage(runtime.executor),
       withTimeout(runtime.docker.df(), 15_000, "Storage inventory timed out").catch(() => null),
       repos.project.listByWorkspace(id, organizationId),
     ]);
     const disk = storage ? dockerProjectStorage(storage, projects) : [];
-    const paths = projects.map((project) => cloudDockerProjectPaths(project.id, id).mounts);
+    const paths = projects.map((project) => cloudDockerProjectPaths(project.id).mounts);
     const bindSizes = paths.length
       ? await runtime.executor
           .exec(
@@ -142,7 +120,7 @@ export async function measureCloudWorkspace(
     const members = [];
     for (const [index, project] of projects.entries()) {
       let bytes = disk.find((item) => item.id === project.id)?.bytes ?? null;
-      // Named volumes are in Docker's measurement; repository bind data is not.
+      // The project mount root includes Docker binds and bare releases/shared data.
       const kb = Number(bindSizes[index]?.trim().split(/\s+/)[0] ?? NaN);
       bytes = bytes !== null && Number.isFinite(kb) && kb >= 0 ? bytes + kb * 1024 : null;
       members.push({
@@ -151,10 +129,10 @@ export async function measureCloudWorkspace(
         diskMb: bytes === null ? null : bytes / 1048576,
       });
     }
-    const diskUsedMb = sample.diskUsedMb!;
+    const diskUsedMb = sample.diskUsedMb;
     const result: CloudWorkspaceUsage = {
       ...sample,
-      sharedDiskMb: members.some((item) => item.diskMb === null)
+      sharedDiskMb: diskUsedMb === null || members.some((item) => item.diskMb === null)
         ? null
         : Math.max(0, diskUsedMb - members.reduce((sum, item) => sum + item.diskMb!, 0)),
       projects: members,
@@ -175,7 +153,7 @@ export function workspaceBuildResources(
 ): ResourceConfig {
   if (!usage.available || usage.memoryAvailableMb === null || usage.cpuPercent === null)
     throw new AppError(
-      "Couldn't measure the workspace's available build capacity. Retry after the workspace is reachable.",
+      "Couldn't measure the server's available build capacity. Retry after the server is reachable.",
       503,
       "CLOUD_WORKSPACE_USAGE_UNAVAILABLE",
     );
@@ -183,7 +161,7 @@ export function workspaceBuildResources(
   const availableMb = Math.floor(Math.min(capacity.memoryMb, usage.memoryAvailableMb) - headroomMb);
   if (availableMb < 128)
     throw new AppError(
-      "The workspace has too little free memory to build safely. Stop an idle app or upgrade this workspace, then retry.",
+      "The server has too little free memory to build safely. Stop an idle app or increase the server's capacity, then retry.",
       409,
       "CLOUD_WORKSPACE_BUILD_CAPACITY",
     );

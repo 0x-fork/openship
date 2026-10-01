@@ -69,7 +69,7 @@ const PROJECT_FIELDS_NOT_CLONED = [
   // promises exactly this) — the originals stay with the project still serving them.
   "compositeRoutes",
   // A server-hosted copy is not a cloud project, whatever the source was.
-  "cloudWorkspaceId",
+  "workspaceId",
   "workspaceId",
   "clusterId",
 ] as const;

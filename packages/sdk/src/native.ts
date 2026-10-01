@@ -16,7 +16,6 @@ import {
   type BackupDestinationOperations,
   type BackupOperations,
   type BillingOperations,
-  type CloudWorkspaceOperations,
   type NoticeOperations,
   type GitHubOperations,
   type PermissionOperations,
@@ -100,7 +99,6 @@ export interface ScopedShip {
   readonly backupDestinations: BackupDestinationOperations;
   readonly backups: BackupOperations;
   readonly billing: BillingOperations;
-  readonly cloudWorkspaces: CloudWorkspaceOperations;
   readonly notices: NoticeOperations;
   readonly github: GitHubOperations;
   readonly permissions: PermissionOperations;
@@ -540,7 +538,6 @@ function createAttachedShip<Assertion>({
         backupDestinations: bindGroup(platform.backupDestinations),
         backups,
         billing: bindGroup(platform.billing),
-        cloudWorkspaces: bindGroup(platform.cloudWorkspaces),
         notices: bindGroup(platform.notices),
         github: bindGroup(platform.github),
         permissions: bindGroup(platform.permissions),

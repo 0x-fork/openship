@@ -4,6 +4,10 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePlatform } from "@/context/PlatformContext";
+import { CreateManagedServerForm } from "@/components/servers/managed/CreateManagedServerForm";
+import { workspaceBillingHref } from "@/components/billing/BillingWorkspaceContext";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ComponentStatus, ServerInfo } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -63,6 +67,14 @@ function getMissingComponentNames(components: ComponentState[]): string[] {
 }
 
 export default function AddServerPage() {
+  const { selfHosted } = usePlatform();
+  const router = useRouter();
+  const { t } = useI18n();
+  if (selfHosted) return <ConnectedServerSetup />;
+  return <PageContainer className="@container/server-create space-y-6"><Link href="/servers" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />{t.servers.setup.goToServers}</Link><div className="grid items-start gap-6 @min-[60rem]/server-create:grid-cols-[minmax(0,1fr)_340px]"><CreateManagedServerForm onCreated={server => router.push(workspaceBillingHref("/billing/plans", server.id))} /><aside className="space-y-3 rounded-2xl bg-card p-5"><h2 className="text-base font-medium">{t.billing.workspaces.shared}</h2><p className="text-sm text-muted-foreground">{t.billing.workspaces.poolHint}</p><p className="text-sm text-muted-foreground">{t.billing.workspaces.placementHint}</p></aside></div></PageContainer>;
+}
+
+function ConnectedServerSetup() {
   const router = useRouter();
   const { showToast } = useToast();
   const { t } = useI18n();

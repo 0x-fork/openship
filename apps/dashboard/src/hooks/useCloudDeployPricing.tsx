@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useModal } from "@/context/ModalContext";
 import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
-import { CloudCapacityModal } from "@/components/billing/CloudCapacityModal";
 import { cloudDeployRestriction, cloudCapacityRestriction } from "@/lib/cloud-deploy-pricing";
 import { ApiError } from "@/lib/api/client";
-import { WorkspaceCapacityRecovery } from "@/components/cloud-workspaces/WorkspaceCapacityRecovery";
+import { ServerCapacityRecovery } from "@/components/servers/managed/ServerCapacityRecovery";
 
 /** Call from an explicit Deploy/Start/Redeploy catch, never from configuration
  * effects or Save. Reading billing first would incorrectly require billing:read
@@ -35,11 +34,9 @@ export function useCloudDeployPricing(selectedWorkspaceId?: string | null) {
       return result;
     } : undefined;
     const id = showModal({
-      customContent: workspaceId && (capacity || workspaceCapacity)
-        ? <WorkspaceCapacityRecovery workspaceId={workspaceId} restriction={capacity ?? undefined} message={typeof body?.error === "string" ? body.error : undefined} onClose={() => hideModal(id)} onRetry={retry} />
-        : capacity
-          ? <CloudCapacityModal restriction={capacity} onClose={() => hideModal(id)} onRetry={retry} />
-          : <CloudDeployPlanModal workspaceId={workspaceId} restriction={restriction!} onClose={() => hideModal(id)} />,
+      customContent: capacity || workspaceCapacity
+        ? <ServerCapacityRecovery workspaceId={workspaceId} message={typeof body?.error === "string" ? body.error : undefined} onClose={() => hideModal(id)} onRetry={retry} />
+        : <CloudDeployPlanModal workspaceId={workspaceId} restriction={restriction!} onClose={() => hideModal(id)} />,
       width: "100%",
       maxWidth: capacity ? "880px" : "1440px",
       maxHeight: "calc(100dvh - 2rem)",

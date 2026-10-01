@@ -1,10 +1,9 @@
 import { Type, type Static } from "@sinclair/typebox";
-import type {
-  ResourceOperationSchema,
-  ResourceOperations,
-  ScopedOperations,
-} from "./resource-operations";
-import { CloudAllocationSchema } from "./cloud-capacity";
+const CloudAllocationSchema = Type.Object({
+  cpuCores: Type.Number({ minimum: 0.25, maximum: 1024 }),
+  memoryMb: Type.Integer({ minimum: 128, maximum: 1048576 }),
+  diskMb: Type.Integer({ minimum: 0, maximum: 1073741824 }),
+});
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 const nullableNumber = Type.Union([Type.Number({ minimum: 0 }), Type.Null()]);
@@ -13,8 +12,6 @@ export const CloudWorkspaceSchema = Type.Object({
   id: Type.String(),
   serverId: Type.String(),
   name: Type.String(),
-  mode: Type.Union([Type.Literal("shared"), Type.Literal("dedicated")]),
-  runtime: Type.Union([Type.Literal("docker"), Type.Literal("native")]),
   planTierId: Type.String(),
   subscriptionStatus: Type.String(),
   projectCount: Type.Integer({ minimum: 0 }),
@@ -57,64 +54,27 @@ export const CloudWorkspaceResizePreviewSchema = Type.Object({
 });
 const operationKey = Type.String({ minLength: 16, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" });
 const name = Type.String({ minLength: 1, maxLength: 80, pattern: "\\S" });
-export const CloudWorkspaceCollectionSchemas = {
-  list: {
-    action: "read",
-    scope: "list",
-    output: Type.Object({
-      workspaces: Type.Array(CloudWorkspaceSchema),
-      dedicatedBilling: Type.Boolean(),
-    }),
+export const CreateManagedServerInputSchema = Type.Object(
+  {
+    name,
   },
-  create: {
-    action: "admin",
-    input: Type.Object(
-      {
-        name,
-        mode: Type.Optional(Type.Union([Type.Literal("shared"), Type.Literal("dedicated")])),
-        runtime: Type.Optional(Type.Union([Type.Literal("docker"), Type.Literal("native")])),
-      },
-      { additionalProperties: false },
-    ),
-    output: CloudWorkspaceSchema,
+  { additionalProperties: false },
+);
+export const ResizeManagedServerInputSchema = Type.Object(
+  {
+    revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    confirmRestart: Type.Literal(true),
+    idempotencyKey: operationKey,
   },
-} as const satisfies Record<string, ResourceOperationSchema>;
-export const CloudWorkspaceResourceSchemas = {
-  get: { action: "read", output: CloudWorkspaceSchema },
-  getUsage: { action: "read", output: CloudWorkspaceUsageSchema },
-  rename: {
-    action: "write",
-    input: Type.Object({ name }, { additionalProperties: false }),
-    output: CloudWorkspaceSchema,
-  },
-  ensure: { action: "write", output: CloudWorkspaceSchema },
-  retry: { action: "admin", output: CloudWorkspaceSchema },
-  previewResize: { action: "read", output: CloudWorkspaceResizePreviewSchema },
-  resize: {
-    action: "admin",
-    input: Type.Object(
-      {
-        revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
-        confirmRestart: Type.Literal(true),
-        idempotencyKey: operationKey,
-      },
-      { additionalProperties: false },
-    ),
-    output: CloudWorkspaceSchema,
-  },
-  remove: {
-    action: "admin",
-    input: Type.Object(
-      { confirmDelete: Type.Literal(true), idempotencyKey: operationKey },
-      { additionalProperties: false },
-    ),
-    output: CloudWorkspaceSchema,
-  },
-} as const satisfies Record<string, ResourceOperationSchema>;
+  { additionalProperties: false },
+);
+export const RemoveManagedServerInputSchema = Type.Object(
+  { confirmDelete: Type.Literal(true), idempotencyKey: operationKey },
+  { additionalProperties: false },
+);
 export type CloudWorkspaceSummary = Static<typeof CloudWorkspaceSchema>;
 export type CloudWorkspaceUsage = Static<typeof CloudWorkspaceUsageSchema>;
 export type CloudWorkspaceResizePreview = Static<typeof CloudWorkspaceResizePreviewSchema>;
-export interface CloudWorkspaceOperations
-  extends
-    ScopedOperations<typeof CloudWorkspaceCollectionSchemas>,
-    ResourceOperations<typeof CloudWorkspaceResourceSchemas> {}
+export type CreateManagedServerInput = Static<typeof CreateManagedServerInputSchema>;
+export type ResizeManagedServerInput = Static<typeof ResizeManagedServerInputSchema>;
+export type RemoveManagedServerInput = Static<typeof RemoveManagedServerInputSchema>;

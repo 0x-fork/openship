@@ -88,13 +88,11 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
   // Last on purpose: it is consulted after the fact, never on the way to a task.
   settingsItems.push({ key: "audit", href: "/audit", icon: "clipboard-list" });
 
-  const infraItems: NavItem[] = [];
+  const infraItems: NavItem[] = [{ key: "servers", href: "/servers", icon: "server" }];
   if (selfHosted) {
-    infraItems.push({ key: "servers", href: "/servers", icon: "server" });
     infraItems.push({ key: "emails", href: "/emails", icon: "mail" });
     infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
   }
-  if (!selfHosted) infraItems.push({ key: "workspaces", href: "/workspaces", icon: "cloud" });
   // infraItems.push(
   //   { key: "monitoring", href: "/monitoring", icon: Activity },
   //   { key: "domains",    href: "/domains",    icon: Globe },
@@ -102,7 +100,7 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
 
   // Infrastructure ahead of settings: self-hosted, Servers is the second thing you
   // reach for after Projects, and it used to sit below Backups/Settings/Billing.
-  // On the SaaS the group is empty and filters out, so the rail there is unchanged.
+  // Cloud uses the same server entry, with provider-supported capabilities.
   return [
     { section: "main", items: MAIN_ITEMS },
     { section: "infrastructure", items: infraItems },
