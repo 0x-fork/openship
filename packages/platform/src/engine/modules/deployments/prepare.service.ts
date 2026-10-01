@@ -83,6 +83,8 @@ export type Source =
       ctx?: RequestContext;
       /** See {@link ResolveOptions.composePath}. */
       composePath?: string;
+      /** See {@link ResolveOptions.rootDirectory}. */
+      rootDirectory?: string;
       /** See {@link ResolveOptions.env}. */
       env?: Record<string, string>;
     }
@@ -90,6 +92,7 @@ export type Source =
       source: "local";
       path: string;
       composePath?: string;
+      rootDirectory?: string;
       /** See {@link ResolveOptions.env}. */
       env?: Record<string, string>;
     };
@@ -107,6 +110,12 @@ export interface ResolveOptions {
    * buildpack build (the confusing behaviour this option exists to replace).
    */
   composePath?: string;
+  /**
+   * The project's own directory, for a project already deployed from a subpath.
+   * Pins the scan there, its `openship.json` included, instead of re-detecting
+   * a root from the repository.
+   */
+  rootDirectory?: string;
   /**
    * Env the caller already holds for this deploy (the values configured on the
    * project / entered in the wizard). Compose interpolation resolves against
@@ -852,6 +861,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     }
     return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
       composePath: input.composePath,
+      rootDirectory: input.rootDirectory,
       env: input.env,
     });
   }
@@ -862,7 +872,11 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
 
   // Dynamic import keeps local-source (node:fs) out of the cloud module graph.
   const { resolveFromLocal } = await import("./local-source");
-  return resolveFromLocal(input.path, { composePath: input.composePath, env: input.env });
+  return resolveFromLocal(input.path, {
+    composePath: input.composePath,
+    rootDirectory: input.rootDirectory,
+    env: input.env,
+  });
 }
 
 /**
@@ -952,7 +966,7 @@ export async function resolveFromReader(
   selectedBranch: string,
   opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
-  const rootSnapshot = await readProjectSnapshot(reader);
+  const rootSnapshot = await readProjectSnapshot(reader, opts.rootDirectory);
   const routing = extractRootRouting(rootSnapshot.fileContents ?? {});
   const openship = extractOpenshipConfig(rootSnapshot.fileContents ?? {});
 
@@ -963,7 +977,13 @@ export async function resolveFromReader(
   const declaredComposePath = opts.composePath?.trim() || openship.config?.composePath?.trim();
   const root = declaredComposePath
     ? await resolveDeclaredRoot(reader, declaredComposePath)
-    : await resolveDetectedRoot(reader, rootSnapshot);
+    : rootSnapshot.rootDirectory
+      ? {
+          selected: buildProjectRootSnapshot(rootSnapshot),
+          monorepo: null,
+          composeFiles: presentComposeFiles(rootSnapshot.files, COMPOSE_FILES),
+        }
+      : await resolveDetectedRoot(reader, rootSnapshot);
 
   // `.env` sits next to the compose file, which is what compose itself resolves
   // against — for a declared root that is the pinned directory, not the repo root.

@@ -174,6 +174,23 @@ describe("resolveProjectInfo", () => {
     });
   });
 
+  it("scans a subpath project's own openship.json when its rootDirectory is pinned", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-subpath-services-"));
+    tempDirs.push(tempDir);
+    await writeFile(join(tempDir, "openship.json"), JSON.stringify({ framework: "fastapi" }));
+    await mkdir(join(tempDir, "go-api"));
+    await writeFile(join(tempDir, "go-api", "Dockerfile"), "FROM golang:1.25-alpine\n");
+    await writeFile(
+      join(tempDir, "go-api", "openship.json"),
+      JSON.stringify({ framework: "docker-compose", services: [{ name: "backend", build: "." }] }),
+    );
+
+    expect((await resolveProjectInfo({ source: "local", path: tempDir })).services ?? []).toEqual([]);
+    const info = await resolveProjectInfo({ source: "local", path: tempDir, rootDirectory: "go-api" });
+    expect(info.rootDirectory).toBe("go-api");
+    expect(info.services).toEqual([expect.objectContaining({ name: "backend", build: "." })]);
+  });
+
   it("#795 retains a Compose build-arg template alongside openship.json env", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-compose-build-args-"));
     tempDirs.push(tempDir);

@@ -1111,6 +1111,7 @@ describe("triggerDeployment", () => {
         gitOwner: "acme",
         gitRepo: "app",
         localPath: null,
+        rootDirectory: "deploy",
       }),
     );
 
@@ -1129,6 +1130,7 @@ describe("triggerDeployment", () => {
         repo: "app",
         branch: "main",
         composePath: "deploy/stack.yml",
+        rootDirectory: "deploy",
       }),
     );
     expect(repos.service.reconcileFromCompose).toHaveBeenCalledWith("project-1", composeServices);
