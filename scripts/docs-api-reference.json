@@ -1878,6 +1878,12 @@
       "description": "Read subscription and renewal state.",
       "route": "GET /api/billing/subscription"
     },
+    "billing.quoteCustomPlan": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Quote a Custom server's monthly price and usage allowance without purchasing it.",
+      "route": "GET /api/billing/subscription/quote"
+    },
     "billing.createSubscription": {
       "page": "billing",
       "section": "Operations",

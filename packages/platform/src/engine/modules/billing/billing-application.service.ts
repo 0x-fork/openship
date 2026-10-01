@@ -18,6 +18,7 @@ import * as billingRepository from "@repo/platform/engine/modules/billing/billin
 import { getNamespaceUsage } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
 import { presentCloudPlans } from "./billing-catalog";
 import { getBillingResources } from "./billing-resources.service";
+import { customSubscriptionOffer } from "./billing-custom-offer";
 
 /* ---------- Plans (public) ---------- */
 
@@ -66,6 +67,10 @@ export async function getResources(ctx: ExecutionContext, input: BillingScopeInp
 
 /* ---------- Subscriptions ---------- */
 
+export async function quoteCustomPlan(_ctx: ExecutionContext, input: Parameters<BillingOperations["quoteCustomPlan"]>[0]) {
+  return customSubscriptionOffer(input).quote;
+}
+
 export async function createSubscription(ctx: ExecutionContext, input: NonNullable<Parameters<BillingOperations["createSubscription"]>[0]>) {
   const { planTierId, interval } = input;
 
@@ -75,6 +80,7 @@ export async function createSubscription(ctx: ExecutionContext, input: NonNullab
     interval,
     input.idempotencyKey,
     input.workspaceId,
+    input.custom,
   );
 
   return { checkoutUrl };

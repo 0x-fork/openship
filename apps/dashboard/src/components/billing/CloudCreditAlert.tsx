@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
@@ -10,6 +11,7 @@ import { Icon } from "@repo/ui/icons";
 import { billingApi, type BillingState, type BillingCreditAlerts } from "@/lib/api/billing";
 import { getActiveOrganizationId, subscribeActiveOrganization } from "@/lib/api/client";
 import { formatMilliCredits } from "@/lib/billing-usage";
+import { scopedBillingHref } from "@/lib/billing-links";
 
 type CreditState = Pick<BillingState, "workspace" | "creditAlert" | "tier" | "currentPeriod" | "balance" | "billing" | "topups">;
 type Snapshot = { scope: string; value: BillingCreditAlerts };
@@ -174,8 +176,10 @@ function CreditAlertNotice({ state, organizationId }: { state: CreditState; orga
       credits: formatMilliCredits(Math.max(0, (alert.state === "grace" ? alert.balance : alert.remaining) ?? 0), locale),
     });
   const canTopUp = state.billing?.enabled && state.topups?.available;
-  const query = new URLSearchParams({ organizationId, tab: canTopUp ? "topups" : "overview" });
-  if (state.workspace?.id) query.set("workspaceId", state.workspace.id);
+  const href = scopedBillingHref(canTopUp ? "/billing/topups" : "/billing/overview", {
+    organizationId,
+    workspaceId: state.workspace?.id,
+  });
 
   return (
     <article className="rounded-xl bg-muted/40 p-3">
@@ -183,7 +187,7 @@ function CreditAlertNotice({ state, organizationId }: { state: CreditState; orga
       <p role="status" className={`mt-1 text-sm font-medium ${alert.state === "depleted" ? "text-danger" : "text-warning"}`}>{title}</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
       <Button asChild variant="secondary" size="sm" className="mt-3">
-        <a href={`/cloud-billing?${query}`}>{canTopUp ? copy.buyCredits : copy.openBilling}</a>
+        <Link href={href}>{canTopUp ? copy.buyCredits : copy.openBilling}</Link>
       </Button>
     </article>
   );

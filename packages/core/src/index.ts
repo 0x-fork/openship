@@ -60,6 +60,7 @@ export {
 export * from "./apps/install-phases";
 export * from "./apps/install-routing";
 export * from "./pricing";
+export * from "./pricing/custom";
 export {
   pricingCatalogSchema,
   pricingCopySchema,

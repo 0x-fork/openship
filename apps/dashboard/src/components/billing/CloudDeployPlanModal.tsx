@@ -30,7 +30,7 @@ export function CloudDeployPlanModal({
   const titleId = useId();
   const descriptionId = useId();
   const { dialog, onKeyDown } = useDialogFocus(onClose);
-  const initialTier = useRef<BillingState["tier"] | null>(null);
+  const initialOffer = useRef<string | null>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
   const [state, setState] = useState<BillingState | null>(null);
@@ -47,7 +47,7 @@ export function CloudDeployPlanModal({
     try {
       const next = await billingApi.getBillingState(workspaceId);
       if (!mounted.current) return;
-      initialTier.current ??= next.tier;
+      initialOffer.current ??= next.subscription?.offerReference ?? next.tier;
       setState(next);
     } catch (err) {
       if (mounted.current) {
@@ -70,7 +70,8 @@ export function CloudDeployPlanModal({
 
   const recovery = state ? cloudDeployRecovery(state, restriction) : "subscribe";
   const planChanged =
-    recovery === "upgrade" && state && !state.overQuota && state.tier !== initialTier.current;
+    recovery === "upgrade" && state && !state.overQuota &&
+    (state.subscription?.offerReference ?? state.tier) !== initialOffer.current;
   const ready = recovery === "ready" || planChanged;
   const readyTitle = serverName !== undefined ? t.billing.workspaces.serverPlanReadyTitle : copy.readyTitle;
   const showPlans = !ready && (recovery === "subscribe" || recovery === "upgrade");
@@ -154,6 +155,8 @@ export function CloudDeployPlanModal({
                 <CloudPlanPicker
                   workspaceId={state.workspace?.id ?? workspaceId}
                   currentPlan={state.tier}
+                  currentOffer={state.plan}
+                  allocatedDiskGb={state.capacity?.diskGb?.used}
                   subscription={state.subscription}
                   complimentary={state.complimentary}
                   billingEnabled={state.billing?.enabled === true}

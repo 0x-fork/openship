@@ -28,6 +28,14 @@ export async function getCheckout(c: Context) {
 }
 export async function getResources(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.getResources(operationContext(c), billingScope(c))) }); }
 export async function getSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.getSubscription(operationContext(c), billingScope(c))) }); }
+export async function quoteCustomPlan(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.quoteCustomPlan(operationContext(c), {
+    cpuCores: Number(c.req.query("cpuCores")),
+    memoryMb: Number(c.req.query("memoryMb")),
+    diskGb: Number(c.req.query("diskGb")),
+  })) });
+}
 export async function createSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.createSubscription(operationContext(c), await c.req.json())) }, 201); }
 export async function cancelSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.cancelSubscription(operationContext(c), await optionalBody(c))) }); }
 export async function resumeSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.resumeSubscription(operationContext(c), await optionalBody(c))) }); }

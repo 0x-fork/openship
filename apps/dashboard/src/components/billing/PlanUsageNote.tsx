@@ -11,10 +11,12 @@ export function PlanUsageNote({
   plans,
   interval = "monthly",
   workspaceScoped = false,
+  showCapacityNote = true,
 }: {
   plans: ApiPlan[];
   interval?: "monthly" | "annual";
   workspaceScoped?: boolean;
+  showCapacityNote?: boolean;
 }) {
   const { t, locale } = useI18n();
   const copy = t.billing.resourcesGuide;
@@ -28,7 +30,7 @@ export function PlanUsageNote({
       <p>
         <span className="font-medium text-foreground">{copy.usageNote}</span> {copy.planUsageNote}
       </p>
-      {metered.some((plan) => planCapacity(plan) !== null) && (
+      {showCapacityNote && metered.some((plan) => planCapacity(plan) !== null) && (
         <p>{workspaceScoped ? t.billing.workspaces.description : copy.poolNote}</p>
       )}
       <details className="group pt-1">

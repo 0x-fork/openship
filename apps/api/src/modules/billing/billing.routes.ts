@@ -46,6 +46,7 @@ r.use("/state", authMiddleware);
 r.use("/credit-alerts", authMiddleware);
 r.use("/checkout", authMiddleware);
 r.use("/subscription", authMiddleware);
+r.use("/subscription/quote", authMiddleware);
 r.use("/topup", authMiddleware);
 r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
@@ -80,6 +81,7 @@ r.get("/resources", { query: BillingOperationSchemas.getResources.input, tag: "b
 r.get("/allowances", { query: BillingOperationSchemas.listAllowanceDetail.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List resources consuming workspace allowances, including the projects holding managed domains." } }, billingController.listAllowanceDetail);
 
 /* ---------- Subscription ---------- */
+r.get("/subscription/quote", { query: BillingOperationSchemas.quoteCustomPlan.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Quote a Custom Cloud server's monthly retail price and included usage allowance from CPU, memory in MB, and disk in GB. This read does not create a server or start a purchase. Complete checkout in Billing." } }, billingController.quoteCustomPlan);
 // GET returns the per-org subscription slice (tier + status + period).
 // POST requests an Oblien hosted checkout; provider entitlements confirm access.
 r.get("/subscription", { query: BillingOperationSchemas.getSubscription.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s current subscription tier, state and billing period." } }, billingController.getSubscription);

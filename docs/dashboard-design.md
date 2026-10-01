@@ -55,6 +55,14 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   time separate from runtime capacity; show minutes only when the offer defines a time
   allowance. Put metering and shared-capacity explanations once below the plans. Keep
   benefits visible, and use catalog feature keys to avoid repeating resource facts.
+- Cloud billing keeps its header and tabs mounted when switching servers. Use a compact
+  context chip for one server and the shared picker for several. In-app credit alerts
+  link directly to the scoped billing tab; only a genuine organization change needs
+  authorization and a context reload.
+- Custom resources sit beside the preset plan choice. Keep CPU, RAM and disk controls
+  with a compact monthly total, wait for a matching server quote before enabling
+  checkout, and expose bundle pricing details on demand. Applying a paid resource
+  change reuses the server's affected-project review and restart confirmation.
 - Plan cards respond to their container: one column on phones, two at intermediate widths,
   and four when readable. Offer links to each plan above a stacked comparison; never rely
   on hidden horizontal overflow to reveal additional plans.

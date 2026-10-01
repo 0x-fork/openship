@@ -13,6 +13,7 @@ interface CheckoutReturn {
   checkoutId?: string;
   expectedTier?: string;
   expectedInterval?: "monthly" | "annual";
+  expectedOffer?: string;
 }
 
 /** A different return URL must never reuse the previous checkout's confirmation. */
@@ -27,6 +28,7 @@ export function BillingCheckoutStatus(props: CheckoutReturn) {
     props.checkoutId,
     props.expectedTier,
     props.expectedInterval,
+    props.expectedOffer,
   ]);
   return <CheckoutConfirmation key={key} {...props} />;
 }
@@ -37,6 +39,7 @@ function CheckoutConfirmation({
   checkoutId,
   expectedTier,
   expectedInterval,
+  expectedOffer,
 }: CheckoutReturn) {
   const router = useRouter();
   const workspaceId = useBillingWorkspace();
@@ -93,6 +96,7 @@ function CheckoutConfirmation({
             (expectedTier &&
               state.tier === expectedTier &&
               state.status === "active" &&
+              (!expectedOffer || state.subscription?.offerReference === expectedOffer) &&
               (!expectedInterval || state.subscription?.interval === expectedInterval)))
         ) {
           setConfirmed(state);
@@ -115,7 +119,7 @@ function CheckoutConfirmation({
       disposed = true;
       clearTimeout(timer);
     };
-  }, [workspaceId, kind, checkoutId, expectedTier, expectedInterval, router]);
+  }, [workspaceId, kind, checkoutId, expectedTier, expectedInterval, expectedOffer, router]);
 
   return (
     <>

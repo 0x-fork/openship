@@ -6,6 +6,7 @@ export function createRemoteBillingOperations(http: HttpClient): BillingOperatio
   return Object.freeze({
     ...createRemoteScopedOperations(http, BillingPublicSchemas, { listPlans: { method: "GET", path: () => "/billing/plans", envelope: "data" } }),
     ...createRemoteScopedOperations(http, BillingOperationSchemas, {
+      quoteCustomPlan: { method: "GET", path: () => "/billing/subscription/quote", envelope: "data" },
       getCheckout: { method: "GET", path: () => "/billing/checkout", envelope: "data" },
       getState: { method: "GET", path: () => "/billing/state", envelope: "data" },
       getCreditAlerts: { method: "GET", path: () => "/billing/credit-alerts", envelope: "data" },

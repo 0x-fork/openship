@@ -36,6 +36,8 @@ export interface ApiCampaign {
 
 export interface ApiPlan {
   id: PlanTierId;
+  configuration?: "preset" | "custom";
+  offerReference?: string;
   name: string;
   description: string;
   popular: boolean;

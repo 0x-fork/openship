@@ -29,6 +29,35 @@ own namespace and independently purchased subscription.
 Hobby includes a finite allowance for light use. A continuously running Docker
 host can need top-ups; $5 does not buy an unlimited always-on VM.
 
+## Custom server resources
+
+Custom is a resource configuration of the existing subscription, not another
+deployment or billing engine. `pricing.json#custom` owns the supported ranges
+and monthly additions: $5 per extra vCPU, $2.50 per extra GB RAM, and $0.10 per
+extra GB disk. It starts at Hobby's $5 for 1 vCPU, 4 GB RAM and 25 GB disk.
+
+The quote compares every retail bundle plus its resource additions and chooses
+the lowest total. A smaller configuration cannot cost more than a covering
+preset, and a bundle discount does not silently enlarge the selected server.
+For example, 1 vCPU / 4 GB / 50 GB costs $7.50; 3 vCPU / 12 GB / 80 GB receives
+Pro's bundle price of $39. Application allowances and support follow that bundle.
+80% of the additional resource charge funds additional credits at 100 credits
+per USD, on top of the bundle allowance. This remains finite metered usage,
+not guaranteed full-load runtime for the month.
+
+`GET /api/billing/subscription/quote` returns the price and a fingerprint of the
+complete offer. Checkout accepts only resources and that fingerprint; it
+recalculates all terms before invoking the existing tracked provider checkout.
+The saved Custom contract includes price, credits, application limits and
+single-server capacity. Renewals verify the saved snapshot, without reading
+new retail prices. Existing paid subscriptions are not rewritten.
+
+After a replacement subscription is paid, Billing exposes the existing server
+resize review: current and new resources, affected projects, and explicit
+restart confirmation. It uses the same revision check and durable worker as
+the server page. Disk shrinking is rejected before checkout and before resize.
+Creating a new server still follows the existing paid provisioning flow.
+
 All limits apply together. Containers cannot all use the server's maximum
 size at the same time. CPU is shared
 virtual CPU quota, not a dedicated physical core. An unpaid namespace has zero

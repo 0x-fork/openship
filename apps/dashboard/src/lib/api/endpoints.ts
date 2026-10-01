@@ -597,6 +597,7 @@ export const endpoints = {
   /*  Billing (Oblien-managed — SaaS + local proxy)                  */
   /* ---------------------------------------------------------------- */
   billing: {
+    customQuote: "billing/subscription/quote",
     checkout: "billing/checkout",
     plans: "billing/plans",
     state: "billing/state",

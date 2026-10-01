@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **434 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **435 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -93,6 +93,7 @@ The current API has **434 unique tools**. Permission tags below describe the rou
 | `get_billing_resources`<br />`GET /api/billing/resources` | List Cloud resources contributing to this workspace’s bill and usage. | `billing:read` |
 | `get_billing_state`<br />`GET /api/billing/state` | Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data. | `billing:read` |
 | `get_billing_subscription`<br />`GET /api/billing/subscription` | Read the workspace’s current subscription tier, state and billing period. | `billing:read` |
+| `get_billing_subscription_quote`<br />`GET /api/billing/subscription/quote` | Quote a Custom Cloud server's monthly retail price and included usage allowance from CPU, memory in MB, and disk in GB. This read does not create a server or start a purchase. Complete checkout in Billing. | `billing:read` |
 | `get_billing_topup_packs`<br />`GET /api/billing/topup-packs` | List available Cloud credit packs and prices. Reading this does not buy credits. | `billing:read` |
 | `get_billing_usage`<br />`GET /api/billing/usage` | Read metered Cloud usage over the requested date range, grouped by hour or day. This is billing data, not live workload metrics. | `billing:read` |
 

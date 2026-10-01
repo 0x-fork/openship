@@ -1,8 +1,8 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { PlanTierId, CreditPackDefinition } from "@repo/core";
+import type { PlanTierId, CreditPackDefinition, CustomServerResources } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
-import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingCreditAlerts, BillingState as BillingStateContract } from "@repo/contracts";
+import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingCreditAlerts, BillingCustomQuote, BillingState as BillingStateContract } from "@repo/contracts";
 import { trackCloudEvent } from "../cloud-analytics";
 export type { BillingResources, BillingCreditAlerts } from "@repo/contracts";
 
@@ -176,6 +176,10 @@ interface Envelope<T> {
 /* ------------------------------------------------------------------ */
 
 export const billingApi = {
+  quoteCustomPlan: async (resources: CustomServerResources): Promise<BillingCustomQuote> => {
+    const res = await api.get<Envelope<BillingCustomQuote>>(endpoints.billing.customQuote, { params: { ...resources } });
+    return res.data;
+  },
   getCheckoutStatus: async (checkoutId: string, workspaceId?: string): Promise<BillingCheckoutStatus> => {
     const res = await api.get<Envelope<BillingCheckoutStatus>>(endpoints.billing.checkout, {
       params: { checkoutId, workspaceId },

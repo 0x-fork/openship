@@ -12,6 +12,8 @@ import type { BillingState } from "@/lib/api/billing";
 import { needsCloudPlan } from "@/lib/billing-presentation";
 import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
 import { useBillingWorkspace } from "./BillingWorkspaceContext";
+import { CustomPlanConfigurator } from "./CustomPlanConfigurator";
+import type { ApiPlan } from "./PricingCards";
 
 export function CloudPlanPicker({
   currentPlan,
@@ -22,9 +24,13 @@ export function CloudPlanPicker({
   preserveProject = false,
   onCheckoutStarted,
   workspaceId,
+  currentOffer,
+  allocatedDiskGb,
 }: {
   workspaceId?: string;
   currentPlan: PlanTierId;
+  currentOffer?: ApiPlan | null;
+  allocatedDiskGb?: number | null;
   billingEnabled?: boolean;
   canChangeSubscription?: boolean;
   subscription?: BillingSubscription | null;
@@ -40,6 +46,9 @@ export function CloudPlanPicker({
   const [interval, setInterval] = useState<"monthly" | "annual">(
     subscription?.interval ?? "monthly",
   );
+  const [configuration, setConfiguration] = useState<"plans" | "custom">(
+    subscription?.configuration === "custom" ? "custom" : "plans",
+  );
   const canPurchase =
     !complimentary && billingEnabled && (currentPlan === "free" || canChangeSubscription);
   const {
@@ -47,6 +56,7 @@ export function CloudPlanPicker({
     subscribing,
     error: checkoutError,
     checkoutUrl,
+    quoteRevision,
   } = useCloudCheckout({
     enabled: canPurchase,
     preserveProject,
@@ -54,6 +64,7 @@ export function CloudPlanPicker({
     workspaceId,
   });
   const selectedCurrentPlan =
+    subscription?.configuration === "custom" ||
     needsCloudPlan({ tier: currentPlan, subscription, complimentary }) ||
     (!complimentary && subscription && subscription.interval !== interval)
       ? null
@@ -99,7 +110,20 @@ export function CloudPlanPicker({
             </p>
           </div>
         )}
-        {payload.annual.enabled && (
+        {payload.custom && (
+          <div role="group" aria-label={t.billing.custom.configuration} className="inline-flex gap-1 rounded-xl bg-muted/40 p-1">
+            {(["plans", "custom"] as const).map(value => (
+              <Button
+                key={value} type="button" size="sm" variant={configuration === value ? "secondary" : "ghost"}
+                aria-pressed={configuration === value} disabled={subscribing !== null}
+                onClick={() => setConfiguration(value)}
+              >
+                {value === "plans" ? t.billing.custom.presets : t.billing.custom.name}
+              </Button>
+            ))}
+          </div>
+        )}
+        {configuration === "plans" && payload.annual.enabled && (
           <div
             className="inline-flex gap-1 rounded-xl bg-muted/40 p-1"
             role="group"
@@ -156,16 +180,29 @@ export function CloudPlanPicker({
           </a>
         </p>
       )}
-      <PricingCards
-        plans={purchasable}
-        ui={payload.ui}
-        currentPlan={selectedCurrentPlan}
-        onSelectPlan={handleSelectPlan}
-        subscribingPlan={subscribing}
-        purchasesDisabled={!canPurchase}
-        interval={interval}
-        workspaceScoped={workspaceScoped}
-      />
+      {configuration === "custom" && payload.custom ? (
+        <CustomPlanConfigurator
+          catalog={payload.custom} plans={purchasable} ui={payload.ui}
+          currentOffer={currentOffer} subscription={subscription}
+          allocatedDiskGb={allocatedDiskGb}
+          disabled={!canPurchase} busy={subscribing !== null}
+          quoteRevision={quoteRevision}
+          onSelect={quote => void startCheckout(quote.basePlanTierId, "monthly", {
+            resources: quote.resources, quoteReference: quote.reference,
+          })}
+        />
+      ) : (
+        <PricingCards
+          plans={purchasable}
+          ui={payload.ui}
+          currentPlan={selectedCurrentPlan}
+          onSelectPlan={handleSelectPlan}
+          subscribingPlan={subscribing}
+          purchasesDisabled={!canPurchase}
+          interval={interval}
+          workspaceScoped={workspaceScoped}
+        />
+      )}
     </div>
   );
 }

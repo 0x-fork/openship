@@ -19,6 +19,10 @@ under the Apache 2.0 license — free forever, with no seat caps and no metering
 Openship Cloud is the managed option: we run the servers, the edge, the backups.
 Choose a paid plan to create Cloud projects, build and run workloads. Monthly
 plans are $5 / $20 / $39 / $99, with custom Enterprise terms available through sales.
+Choose **Custom** in Billing → Plans to configure CPU, RAM and disk yourself,
+with a monthly price before checkout. Custom starts at $5 for 1 vCPU, 4 GB RAM
+and 25 GB disk. Bundle discounts apply automatically; Enterprise remains
+available for negotiated terms.
 An account without a plan has no included Cloud compute. Hobby is a finite allowance for light use; continuous hosting can require top-ups.
 
 The plans, their prices, and each plan's limits live in one place — see the
@@ -45,10 +49,9 @@ full month at maximum capacity. Existing subscriptions keep their purchased term
 which are shown in Billing.
 
 Shared-server source builds use available host capacity without reserving
-another VM. Existing project-owned Cloud deployments keep their organization
-pool and temporary builder behavior. In that mode, stopped VMs and pending
-resource changes still count toward provider allocation. In both modes, service
-counts do not promise every service can run at its maximum size simultaneously.
+another VM. Stopped servers and pending resource changes still count toward
+provider allocation. Service counts do not promise every service can run at its
+maximum size simultaneously.
 Undeployed drafts do not use service slots.
 
 Credit packs add 400 credits for $5, 1,700 for $20, or 4,500 for $50. A credit is not a minute: consumption depends on CPU, memory and transfer under the active Oblien rate card. Extra credits extend usage; upgrading the plan increases capacity. Previously purchased credit grants and prices remain attached to their saved subscription.
@@ -72,16 +75,17 @@ The **Billing** area in the dashboard is organised as tabs:
 Cancelling keeps the plan active until the end of the period you've already paid
 for, then blocks new billable work. You can undo a scheduled cancellation before
 the paid period ends. Nothing is deleted by cancelling. Choose the managed server in
-Billing to see its own portal, payment history and namespace allowance. Existing
-organization-owned deployments keep a separate billing selection.
+Billing to see its own portal, payment history and namespace allowance.
 
 Top-ups remain available when an eligible paid plan runs out of credits, including
 before a scheduled cancellation takes effect. They cannot restart an ended or
 past-due plan; restore the subscription before buying more credits.
 
 Plan changes start a new full-price billing cycle after payment, without
-automatic proration or a refund of the old period. Stop/resize or remove any
-resources that exceed the new plan before moving to smaller limits. The checkout
+automatic proration or a refund of the old period. After payment, Billing lets
+you review the new server resources and affected projects before confirming a
+restart. Existing disks can grow; shrinking requires moving data to a new server.
+The checkout
 return page waits for payment and credit delivery; pending fulfillment is not
 shown as a successful purchase.
 
@@ -91,9 +95,9 @@ actions.
 ## Credit warnings and recovery
 
 Cloud warnings use your workspace's current credit balance, including purchased credits.
-The default warning levels are 80% and 95%. A banner stays visible while credits are low;
-a dismissible dialog appears at the final warning level, when grace credits begin, or when
-credits are exhausted.
+The default warning levels are 80% and 95%. A compact notice in the bottom corner
+can be opened or dismissed. It identifies the affected server without covering
+the page. More severe warnings and a new billing period can show a new notice.
 
 Choose **Buy more credits** to open credit packs when top-ups are available, or **Open billing**
 to review your plan and options. After a purchase, wait for checkout to confirm that credits

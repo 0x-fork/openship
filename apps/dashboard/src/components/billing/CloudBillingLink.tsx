@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import { useI18n } from "@/components/i18n-provider";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { PageContainer } from "@/components/ui/PageContainer";
+import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
+import BillingTabSkeleton from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
+import { scopedBillingHref } from "@/lib/billing-links";
 
 const organizations = (
   authClient as unknown as {
@@ -20,10 +26,12 @@ export function CloudBillingLink({
   organizationId,
   tab,
   workspaceId,
+  embedded = false,
 }: {
   organizationId: string;
   tab: "overview" | "topups";
   workspaceId?: string;
+  embedded?: boolean;
 }) {
   const { t } = useI18n();
   const [failed, setFailed] = useState(false);
@@ -42,8 +50,7 @@ export function CloudBillingLink({
           return;
         }
         setActiveOrganizationId(organizationId);
-        const query = workspaceId ? `?${new URLSearchParams({ workspaceId })}` : "";
-        window.location.assign(`/billing/${tab}${query}`);
+        window.location.assign(scopedBillingHref(`/billing/${tab}`, { workspaceId, organizationId }));
       })
       .catch(() => {
         if (!disposed) setFailed(true);
@@ -52,9 +59,17 @@ export function CloudBillingLink({
       disposed = true;
     };
   }, [organizationId, tab, workspaceId]);
-  return (
-    <div role={failed ? "alert" : "status"} className="p-6 text-sm">
-      {failed ? t.billing.creditAlert.wrongOrganization : t.billing.creditAlert.opening}
+  const content = failed ? (
+    <div role="alert" className="space-y-4 rounded-2xl bg-card p-5">
+      <p className="text-sm text-muted-foreground">{t.billing.creditAlert.wrongOrganization}</p>
+      <Button asChild variant="secondary"><Link href="/billing">{t.billing.creditAlert.backToBilling}</Link></Button>
     </div>
+  ) : <BillingTabSkeleton />;
+
+  return embedded ? content : (
+    <PageContainer className="space-y-6">
+      <BillingHeader showServerPicker={false} />
+      {content}
+    </PageContainer>
   );
 }

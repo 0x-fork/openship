@@ -12,6 +12,8 @@ import { getBillingPageState } from "../_components/billing-state";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingContent } from "../_components/BillingContent";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
+import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
+import { getSession } from "@/lib/server/session";
 
 export default async function BillingTabPage({
   params,
@@ -29,6 +31,10 @@ export default async function BillingTabPage({
   }
 
   const workspaceId = typeof query.workspaceId === "string" ? query.workspaceId : undefined;
+  const organizationId = typeof query.organizationId === "string" ? query.organizationId : undefined;
+  if (organizationId && (await getSession())?.session.activeOrganizationId !== organizationId) {
+    return <CloudBillingLink organizationId={organizationId} tab={activeTab === "topups" ? "topups" : "overview"} workspaceId={workspaceId} embedded />;
+  }
   const result = await getBillingPageState(workspaceId);
 
   if (result.kind === "unavailable") {
@@ -47,6 +53,8 @@ export default async function BillingTabPage({
         return (
           <BillingPlansRoute
             currentPlan={state.tier as PlanTierId}
+            currentOffer={state.plan}
+            allocatedDiskGb={state.capacity?.diskGb?.used}
             subscription={state.subscription}
             complimentary={state.complimentary}
             billingEnabled={state.billing?.enabled === true}
@@ -77,6 +85,7 @@ export default async function BillingTabPage({
   return (
     <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
       <BillingContent
+        key={state.workspace?.id ?? "unsubscribed"}
         sidebar={
           activeTab === "plans" ? null : (
             <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} />
@@ -88,6 +97,7 @@ export default async function BillingTabPage({
             kind={query.topup === "success" ? "topup" : "subscription"}
             checkoutId={typeof query.session_id === "string" ? query.session_id : undefined}
             expectedTier={typeof query.tier === "string" ? query.tier : undefined}
+            expectedOffer={typeof query.offer === "string" ? query.offer : undefined}
             expectedInterval={
               query.interval === "monthly" || query.interval === "annual"
                 ? query.interval

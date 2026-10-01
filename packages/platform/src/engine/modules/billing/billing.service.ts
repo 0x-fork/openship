@@ -1,5 +1,6 @@
 /** Customer billing delegates to Oblien Mode B; no Stripe SDK or credit writes. */
 import { createHash } from "node:crypto";
+import type { CustomSubscriptionSelection } from "@repo/contracts";
 import { AppError, PRICING, type PlanTierId } from "@repo/core";
 import { runtimeTarget, env } from "../../config/env";
 import type { ExecutionContext as RequestContext } from "../../../context";
@@ -19,6 +20,7 @@ import { cloudAnalytics } from "../cloud-analytics";
 import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
 import { readCloudWorkspaceHost } from "../../lib/cloud-workspace-host";
 import { createTrackedWorkspaceCheckout } from "./workspace-checkout";
+import { customSubscriptionOffer } from "./billing-custom-offer";
 
 export function assertBillingEnabled(): void {
   if (!env.BILLING_ENABLED) {
@@ -52,10 +54,15 @@ export async function createCheckoutSession(
   interval: "monthly" | "annual",
   requestKey?: string,
   workspaceId?: CloudWorkspaceScope,
+  custom?: CustomSubscriptionSelection,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
+  const customTerms = custom ? customSubscriptionOffer(custom.resources) : null;
+  if (customTerms && (interval !== "monthly" || planTierId !== customTerms.quote.basePlanTierId || custom?.quoteReference !== customTerms.quote.reference)) {
+    throw new AppError("This resource quote has changed. Refresh the price before continuing to checkout.", 409, "BILLING_QUOTE_CHANGED");
+  }
   await assertBillingOwnerAvailable(ctx.organizationId, workspaceId);
-  const offer = subscriptionOffer(planTierId, interval);
+  const offer = customTerms?.offer ?? subscriptionOffer(planTierId, interval);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
   const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
   const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
@@ -82,9 +89,9 @@ export async function createCheckoutSession(
       namespace,
       kind: "subscription",
       offer,
-      metadata: { ...subscriptionMetadata(planTierId, ctx.organizationId, namespace), ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}) },
+      metadata: { ...subscriptionMetadata(planTierId, ctx.organizationId, namespace, customTerms?.limits), ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}) },
       billingInterval: interval === "annual" ? "yearly" : "monthly",
-      successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&session_id={CHECKOUT_SESSION_ID}${selection}`,
+      successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&offer=${encodeURIComponent(offer.reference!)}&session_id={CHECKOUT_SESSION_ID}${selection}`,
       cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled${selection}`,
       idempotencyKey: checkoutKey(
         ctx.organizationId,
