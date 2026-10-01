@@ -564,11 +564,30 @@ describeDockerE2E("multiple projects on one subscribed Docker workspace", () => 
       {},
     );
     expect(single.containerId).not.toBe(worker.containerId);
+    const inventory = await local.docker.df();
     const storage = dockerProjectStorage(
-      await local.docker.df(),
+      inventory,
       ids.map((id) => ({ id, slug: id })),
     );
-    expect(storage.every((row) => row.bytes !== null && row.bytes > 0)).toBe(true);
+    const measurements = {
+      storage,
+      containers: inventory.Containers?.filter((container) =>
+        ids.includes(container.Labels?.["openship.project"] ?? ""),
+      ).map((container) => ({
+        project: container.Labels?.["openship.project"],
+        bytes: container.SizeRw,
+      })),
+      volumes: inventory.Volumes?.filter((volume) =>
+        ids.includes(volume.Labels?.["openship.project"] ?? ""),
+      ).map((volume) => ({
+        project: volume.Labels?.["openship.project"],
+        usage: volume.UsageData,
+      })),
+    };
+    expect(
+      storage.every((row) => row.bytes !== null && row.bytes > 0),
+      JSON.stringify(measurements),
+    ).toBe(true);
     // Exercise the same manifest and cleanup engine as Delete project, including
     // orphans with no deployment row. Only target transport selection is supplied
     // by the fixture; ownership repositories and every Docker action are real.
