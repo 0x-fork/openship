@@ -1,5 +1,6 @@
-/** Docker's writable layers and named volumes are application data. Image
- * layers, build cache and the OS are shared; never add them once per project. */
+/** Docker /system/df's writable layers and named volumes are application data.
+ * Image layers, build cache and the OS are shared; never add them per project.
+ * This consumes the sized disk-usage response, not an unsized container list. */
 export interface DockerStorageSnapshot {
   Containers?: Array<{
     SizeRw?: number;
@@ -27,7 +28,9 @@ export function dockerProjectStorage(
   for (const container of snapshot.Containers ?? []) {
     const id = container.Labels?.["openship.project"];
     if (!id || !bytes.has(id)) continue;
-    add(id, container.SizeRw);
+    // Engines using an omitempty integer omit SizeRw for an empty writable
+    // layer. /system/df still measured it; negative sizes remain unavailable.
+    add(id, container.SizeRw === undefined ? 0 : container.SizeRw);
     for (const mount of container.Mounts ?? [])
       if (mount.Type === "volume" && mount.Name) {
         const set = owners.get(mount.Name) ?? new Set<string>();

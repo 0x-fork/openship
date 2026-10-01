@@ -78,4 +78,23 @@ describe("workspace disk accounting", () => {
       { id: "b", bytes: 0 },
     ]);
   });
+  it("counts volume data when the daemon omits a zero-byte writable layer", () => {
+    // Docker /system/df uses an omitempty integer for SizeRw. A read-only
+    // container can therefore have no SizeRw key while its volume holds data.
+    expect(
+      dockerProjectStorage(
+        {
+          Containers: [
+            { Labels: { "openship.project": "a" }, Mounts: [{ Type: "volume", Name: "data" }] },
+            { Labels: { "openship.project": "b" } },
+          ],
+          Volumes: [{ Name: "data", UsageData: { Size: 8192 } }],
+        },
+        projects,
+      ),
+    ).toEqual([
+      { id: "a", bytes: 8192 },
+      { id: "b", bytes: 0 },
+    ]);
+  });
 });

@@ -31,9 +31,10 @@ Approved implementation scope: shared Docker execution targets alongside the exi
   production routers both pass the startup permission scanner and MCP discovery.
 - Full dashboard: 230 files / 2,486 tests passed. Browser fixtures cover light,
   dim, dark, narrow and Arabic RTL layouts, placement, resize review and progress.
-- Adapter suite: 4,751 tests passed; the subsequent container-name cleanup change
-  passes all 40 focused Cloud Docker tests, including three new regression cases.
-  Reintroducing the faulty lookup in a temporary copy fails both name/short-ID cases.
+- Adapter suite: 4,755 tests passed, including container-name cleanup and omitted
+  zero-byte layer sizes in Docker's disk-usage response. Reintroducing the faulty
+  lookup in a temporary copy fails both name/short-ID cases; the disk-accounting
+  regression also fails before its fix and passes afterward.
 - Core (1,408), contracts (14), database (598), platform (170), SDK (186), CLI (581)
   and repository script (67) tests passed. Database tests apply the migration chain
   to fresh and populated databases and verify cross-organization constraints.
