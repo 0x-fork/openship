@@ -59,6 +59,8 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - A destination with one existing server uses a compact summary row; multiple servers use
   the shared picker. Keep the create-server action visible in both cases. Cloud deployments
   can reuse a server's plan or create a separate server and subscription from the same flow.
+- The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
+  Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
   same project data and status handling. Apps uses a compact installed list with at most
   three catalog suggestions alongside it, Home's app illustration and a link to the full

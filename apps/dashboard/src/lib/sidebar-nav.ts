@@ -58,7 +58,7 @@ export interface NavSection {
 const MAIN_ITEMS: NavItem[] = [
   { key: "home", href: "/", icon: "home" },
   { key: "projects", href: "/projects", icon: "project" },
-  { key: "apps", href: "/apps", icon: "layers" },
+  { key: "apps", href: "/apps", icon: "grid" },
   { key: "deployments", href: "/deployments", icon: "rocket" },
   // MAIN, not infrastructure: `/api/issues` reports project, domain and update items on
   // the SaaS too (only the server/container sources resolve empty there), and the
@@ -74,19 +74,11 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
     { key: "backups", href: "/backups", icon: "database-backup" },
     { key: "settings", href: "/settings", icon: "settings" },
   ];
-  // LAST row of the LAST section, deliberately. `isSaaS` is true on a self-hosted box
-  // the moment it links a cloud account (`!selfHosted || cloudConnected` in
-  // sidebar.tsx), and Billing sitting mid-rail there read as "this install is
-  // metered" — above Servers, which is what an operator on their own machine
-  // actually came for. Cloud credits are real, so the entry stays; it just stops
-  // outranking the infrastructure.
+  // Billing is available on Cloud and on installations linked to a Cloud account.
   if (isSaaS) {
     settingsItems.push({ key: "billing", href: "/billing", icon: "credit-card" });
   }
-  // Audit log, last row of the rail. Promoted out of Settings: it is not a setting — you
-  // never change anything here, you READ what already happened, and burying a
-  // review surface three clicks deep behind a settings tab is how it goes unread.
-  // Last on purpose: it is consulted after the fact, never on the way to a task.
+  // Keep audit history alongside account settings and billing.
   settingsItems.push({ key: "audit", href: "/audit", icon: "clipboard-list" });
 
   const infraItems: NavItem[] = [{ key: "servers", href: "/servers", icon: "server" }];
@@ -99,13 +91,12 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
   //   { key: "domains",    href: "/domains",    icon: Globe },
   // );
 
-  // Infrastructure ahead of settings: self-hosted, Servers is the second thing you
-  // reach for after Projects, and it used to sit below Backups/Settings/Billing.
-  // Cloud uses the same server entry, with provider-supported capabilities.
+  const settings: NavSection = { section: "settings", items: settingsItems };
+  const infrastructure: NavSection = { section: "infrastructure", items: infraItems };
+  // Linked Cloud accounts keep the self-hosted navigation order.
   return [
     { section: "main", items: MAIN_ITEMS },
-    { section: "infrastructure", items: infraItems },
-    { section: "settings", items: settingsItems },
+    ...(selfHosted ? [infrastructure, settings] : [settings, infrastructure]),
   ].filter((s) => s.items.length > 0);
 }
 
