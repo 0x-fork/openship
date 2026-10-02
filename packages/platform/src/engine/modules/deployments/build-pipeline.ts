@@ -298,7 +298,15 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
       // failure/lease cleanup so the claimed deployment cannot remain stuck.
       sessionManager.createSession(dep.id, project.id);
       const { withCloudWorkspaceActivity } = await import("../../lib/cloud-workspace-lock");
-      await withCloudWorkspaceActivity(project.workspaceId, () => executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal), cancellationSignal, { scope: `project:${project.id}` });
+      await withCloudWorkspaceActivity(project.workspaceId, async () => {
+        // Cancellation/recovery can win while this worker waits for the server.
+        // Re-read after admission so a recovered lease cannot start late work.
+        if (project.workspaceId) {
+          const current = await repos.deployment.findById(dep.id);
+          if (!current || !["building", "deploying"].includes(current.status)) return;
+        }
+        await executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal);
+      }, cancellationSignal, { scope: `project:${project.id}` });
     } catch (err) {
       console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
       // executeBuildAndDeploy's inner try/catch only arms onFailure() after

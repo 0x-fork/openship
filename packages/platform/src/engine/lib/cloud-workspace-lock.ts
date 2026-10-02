@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { AppError, safeErrorMessage } from "@repo/core";
 import { repos, type CloudWorkspace, type CloudWorkspaceActivity } from "@repo/db";
 import { withManagedCommandTracking } from "@repo/adapters";
-import { createProvisionLock } from "./provision-lock";
+import { createProvisionLock, tryWithProvisionLock } from "./provision-lock";
 import { remoteCloudRequest, requireLinkedCloudServer } from "./cloud/server-link";
 
 const held = new AsyncLocalStorage<ReadonlyMap<string, { active: boolean }>>();
@@ -70,65 +70,86 @@ export async function withCloudWorkspaceActivity<T>(
   options: { scope?: string; lifecycle?: boolean } = {},
 ): Promise<T> {
   if (!workspaceId || held.getStore()?.get(workspaceId)?.active) return work();
-  return createProvisionLock(`cloud:workspace-activity:${workspaceId}`).run(async () => {
-    let row = await repos.cloudWorkspace.findById(workspaceId);
-    if (!row) throw new AppError("Managed server not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
-    if (row.remote && options.lifecycle) throw new Error("Linked server lifecycle belongs to Cloud");
-    if (row.activity?.settled && row.remote) {
-      await reconcileSettledCloudActivity(row);
-      row = (await repos.cloudWorkspace.findById(workspaceId))!;
+  return createProvisionLock(`cloud:workspace-activity:${workspaceId}`).run(
+    () => runCloudWorkspaceActivity(workspaceId, work, signal, options), signal,
+  );
+}
+
+/** An idle host lock proves that the original controller is no longer in its
+ * critical section. Recorded remote commands still have to be recovered. */
+export async function tryWithCloudWorkspaceActivity<T>(
+  workspaceId: string,
+  work: () => Promise<T>,
+  scope: string,
+): Promise<T | undefined> {
+  if (held.getStore()?.get(workspaceId)?.active) return undefined;
+  return tryWithProvisionLock(`cloud:workspace-activity:${workspaceId}`,
+    () => runCloudWorkspaceActivity(workspaceId, work, undefined, { scope }));
+}
+
+async function runCloudWorkspaceActivity<T>(
+  workspaceId: string,
+  work: () => Promise<T>,
+  signal: AbortSignal | undefined,
+  options: { scope?: string; lifecycle?: boolean },
+): Promise<T> {
+  let row = await repos.cloudWorkspace.findById(workspaceId);
+  if (!row) throw new AppError("Managed server not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+  if (row.remote && options.lifecycle) throw new Error("Linked server lifecycle belongs to Cloud");
+  if (row.activity?.settled && row.remote) {
+    await reconcileSettledCloudActivity(row);
+    row = (await repos.cloudWorkspace.findById(workspaceId))!;
+  }
+  const controllerId = row.remote ? `installation:${row.id}` : "saas";
+  const scope = options.scope ?? "server";
+  const previous = row.activity;
+  // The advisory lock fences local callers, not remote children. Recover any
+  // recorded commands before the interrupted scope can resume after a crash.
+  const activity = await repos.cloudWorkspace.claimActivity(row.id, row.organizationId,
+    previous?.controllerId === controllerId && previous.scope === scope ? previous : {
+      id: randomUUID(), controllerId, scope, startedAt: new Date().toISOString(),
+    }, options.lifecycle);
+  let admitted = !row.remote;
+  const state = { active: true };
+  const next = new Map(held.getStore());
+  next.set(workspaceId, state);
+  try {
+    if (row.remote) {
+      await remoteActivity(row, activity, false);
+      admitted = true;
     }
-    const controllerId = row.remote ? `installation:${row.id}` : "saas";
-    const scope = options.scope ?? "server";
-    const previous = row.activity;
-    // The advisory lock fences local callers, not remote children. Recover any
-    // recorded commands before the interrupted scope can resume after a crash.
-    const activity = await repos.cloudWorkspace.claimActivity(row.id, row.organizationId,
-      previous?.controllerId === controllerId && previous.scope === scope ? previous : {
-        id: randomUUID(), controllerId, scope, startedAt: new Date().toISOString(),
-      }, options.lifecycle);
-    let admitted = !row.remote;
-    const state = { active: true };
-    const next = new Map(held.getStore());
-    next.set(workspaceId, state);
+    await recoverCommands(row);
+    signal?.throwIfAborted();
+    return await held.run(next, () => withManagedCommandTracking({
+      async record(command) {
+        if (!state.active) throw new AppError("The server operation has ended", 409, "CLOUD_WORKSPACE_ACTIVITY_CHANGED");
+        const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: row.id }, row.organizationId);
+        if (binding?.workspaceId !== command.workspaceId)
+          throw new AppError("The command belongs to a different managed server", 409, "CLOUD_SERVER_IDENTITY_MISMATCH");
+        await repos.cloudWorkspace.recordActivityCommand(row.id, activity.id, command);
+      },
+      complete: marker => repos.cloudWorkspace.completeActivityCommand(row.id, activity.id, marker),
+    }, work));
+  } catch (error) {
+    // A definitive refusal happened before any work. A lost response may
+    // have acquired remotely, so retain the local outbox for release recovery.
+    if (!admitted && error instanceof AppError && error.statusCode < 500)
+      await repos.cloudWorkspace.releaseActivity(row.id, row.organizationId, activity.id, controllerId);
+    throw error;
+  } finally {
+    state.active = false;
+    const remaining = (await repos.cloudWorkspace.findById(row.id))?.activity;
+    if (remaining?.id === activity.id && remaining.commands?.length)
+      throw new AppError("A server command has not confirmed its exit. Retry this operation to recover it before changing the server.",
+        503, "CLOUD_COMMAND_EXIT_UNCONFIRMED");
     try {
-      if (row.remote) {
-        await remoteActivity(row, activity, false);
-        admitted = true;
-      }
-      await recoverCommands(row);
-      signal?.throwIfAborted();
-      return await held.run(next, () => withManagedCommandTracking({
-        async record(command) {
-          if (!state.active) throw new AppError("The server operation has ended", 409, "CLOUD_WORKSPACE_ACTIVITY_CHANGED");
-          const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: row.id }, row.organizationId);
-          if (binding?.workspaceId !== command.workspaceId)
-            throw new AppError("The command belongs to a different managed server", 409, "CLOUD_SERVER_IDENTITY_MISMATCH");
-          await repos.cloudWorkspace.recordActivityCommand(row.id, activity.id, command);
-        },
-        complete: marker => repos.cloudWorkspace.completeActivityCommand(row.id, activity.id, marker),
-      }, work));
+      await repos.cloudWorkspace.settleActivity(row.id, activity.id);
+      if (row.remote) await remoteActivity(row, activity, true);
+      await repos.cloudWorkspace.releaseActivity(row.id, row.organizationId, activity.id, controllerId);
     } catch (error) {
-      // A definitive refusal happened before any work. A lost response may
-      // have acquired remotely, so retain the local outbox for release recovery.
-      if (!admitted && error instanceof AppError && error.statusCode < 500)
-        await repos.cloudWorkspace.releaseActivity(row.id, row.organizationId, activity.id, controllerId);
-      throw error;
-    } finally {
-      state.active = false;
-      const remaining = (await repos.cloudWorkspace.findById(row.id))?.activity;
-      if (remaining?.id === activity.id && remaining.commands?.length)
-        throw new AppError("A server command has not confirmed its exit. Retry this operation to recover it before changing the server.",
-          503, "CLOUD_COMMAND_EXIT_UNCONFIRMED");
-      try {
-        await repos.cloudWorkspace.settleActivity(row.id, activity.id);
-        if (row.remote) await remoteActivity(row, activity, true);
-        await repos.cloudWorkspace.releaseActivity(row.id, row.organizationId, activity.id, controllerId);
-      } catch (error) {
-        // Persisted completion is retried by recovery; it never unlocks another
-        // activity or turns a successful deployment into a failed one.
-        console.warn(`[cloud-activity] release pending for ${row.id}: ${safeErrorMessage(error)}`);
-      }
+      // Persisted completion is retried by recovery; it never unlocks another
+      // activity or turns a successful deployment into a failed one.
+      console.warn(`[cloud-activity] release pending for ${row.id}: ${safeErrorMessage(error)}`);
     }
-  }, signal);
+  }
 }

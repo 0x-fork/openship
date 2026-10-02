@@ -1266,6 +1266,12 @@ export async function checkNoActiveBuild(projectId: string) {
   // its claimed build worker is still unwinding. Status-only history paging can
   // neither prove worker completion nor guarantee the active row is on page 1.
   const [active] = await repos.deployment.listInFlightByProject(projectId);
+  if (active && !["queued", "building", "deploying"].includes(active.status) &&
+      (active.meta as { managedWorkspaceId?: string } | null)?.managedWorkspaceId) {
+    const project = await repos.project.findById(projectId);
+    const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
+    if (project && await recoverManagedDeploymentExecution(active, project)) return;
+  }
   if (active) {
     const cancelling = active.status === "cancelled";
     throw new ForbiddenError(
@@ -2131,23 +2137,28 @@ export async function cancelBuildSession(
 ) {
   const { dep, project } = await loadDeployment(deploymentId);
 
-  if (!["queued", "building", "deploying"].includes(dep.status)) {
+  const retryingCancellation = dep.status === "cancelled" &&
+    await repos.deployment.hasLiveBuildExecution(dep.id, dep.projectId);
+  if (!["queued", "building", "deploying"].includes(dep.status) && !retryingCancellation) {
     throw new ForbiddenError("Cannot cancel a deployment that is not in progress");
   }
+
+  const keepProvisioned = opts.keepProvisioned === true || (retryingCancellation &&
+    (dep.meta as { cancellation?: { keepProvisioned?: boolean } } | null)?.cancellation?.keepProvisioned === true);
 
   // Win the outcome in the database BEFORE cleanup or transport cancellation.
   // This closes the read→cancel race where the worker could publish `ready`
   // while this handler was still collecting its cleanup manifest. The repo
   // transition only accepts queued/building/deploying; a release that became
   // ready first is left untouched.
-  const cancellationMeta = opts.keepProvisioned
+  const cancellationMeta = keepProvisioned
     ? {
         ...((dep.meta as Record<string, unknown> | null) ?? {}),
         cancellation: { keepProvisioned: true },
       }
     : undefined;
   if (
-    !(await repos.deployment.cancelInFlight(
+    !retryingCancellation && !(await repos.deployment.cancelInFlight(
       dep.id,
       cancellationMeta ? { meta: cancellationMeta } : undefined,
     ))
@@ -2159,7 +2170,7 @@ export async function cancelBuildSession(
   // The image may already be complete while the worker is blocked in a prompt,
   // preflight, or a host-scoped provisioning lock; changing the DB row alone
   // leaves that worker holding the project lease indefinitely.
-  requestDeploymentCancellation(dep.id, { keepProvisioned: opts.keepProvisioned });
+  requestDeploymentCancellation(dep.id, { keepProvisioned: keepProvisioned || undefined });
   sessionManager.cancelPendingPrompt(dep.id);
 
   // Read after the cancellation transition: a queued worker may have claimed
@@ -2180,7 +2191,7 @@ export async function cancelBuildSession(
   //    bookkeeping steps. Only a queued/unstarted deployment has no worker, so
   //    the handler owns that manifest. Volumes are never cleaned: cancel !=
   //    delete, and the user may retry.
-  if (opts.keepProvisioned) {
+  if (keepProvisioned) {
     console.log(`[CANCEL] ${dep.id}: keeping provisioned resources (record-only delete)`);
   } else if (!buildSession?.startedAt) {
     // protectRetained: a cancelled compose deploy carries the LIVE release's
@@ -2237,15 +2248,25 @@ export async function cancelBuildSession(
   // lease. If it cannot do so in the cooperative window, keep the result
   // explicitly pending: callers must not claim cancellation completed or offer
   // an immediate redeploy while the old worker may still touch the target host.
-  const quiescent = await waitForDeploymentQuiescence(dep.id, dep.projectId);
+  let quiescent = await waitForDeploymentQuiescence(dep.id, dep.projectId);
+  let recoveryWarning: string | undefined;
+  if (!quiescent && project.workspaceId) {
+    try {
+      const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
+      quiescent = await recoverManagedDeploymentExecution({ ...dep, status: "cancelled" }, project);
+    } catch (error) {
+      recoveryWarning = safeErrorMessage(error);
+      console.warn(`[CANCEL] ${dep.id}: recovery pending: ${recoveryWarning}`);
+    }
+  }
   if (!quiescent) {
     return {
       success: false,
       pending: true,
       status: "cancelling" as const,
       message:
-        "Cancellation was requested, but the deployment worker is still stopping. " +
-        "Redeploy remains blocked until cancellation finishes.",
+        recoveryWarning ?? ("Cancellation was requested, but the deployment worker is still stopping. " +
+        "Redeploy remains blocked until cancellation finishes."),
     };
   }
 

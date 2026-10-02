@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   convergeTargetHostPortClaims: vi.fn(),
   convergeTargetHostPortClaimsUnlocked: vi.fn(),
   withHostPortTargetLock: vi.fn((_target, fn: () => unknown) => fn()),
+  withWorkspaceActivity: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -66,6 +67,10 @@ vi.mock("@repo/db", () => ({
     },
     project: { update: vi.fn(async () => undefined) },
   },
+}));
+
+vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({
+  withCloudWorkspaceActivity: (...args: unknown[]) => mocks.withWorkspaceActivity(...args),
 }));
 
 vi.mock("@repo/adapters", () => {
@@ -383,6 +388,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(false);
     vi.mocked(isMultiServiceRuntime).mockReturnValue(false);
     mocks.findCloudDockerBinding.mockResolvedValue(undefined);
+    mocks.withWorkspaceActivity.mockImplementation(async (_id, work) => work());
     const adapter = runtime();
     resolvedRuntime = adapter;
 
@@ -959,6 +965,20 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.withHostPortTargetLock).not.toHaveBeenCalled();
     expect(mocks.prepareTargetPinnedHostPorts).not.toHaveBeenCalled();
     expect(mocks.reserveVerifiedTargetPinnedHostPort).not.toHaveBeenCalled();
+  });
+
+  it("cannot start a managed deployment cancelled while it waited for the server", async () => {
+    mocks.withWorkspaceActivity.mockImplementationOnce(async (_id, work) => {
+      mocks.findDeploymentById.mockResolvedValue(deployment({ status: "cancelled" }));
+      return work();
+    });
+    await run(deployment(), { workspaceId: "managed-server" });
+    await drainDeploymentExecutions();
+    expect(mocks.prepareImage).not.toHaveBeenCalled();
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.deploy).not.toHaveBeenCalled();
+    expect(mocks.onSuccess).not.toHaveBeenCalled();
+    expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledWith("build-session-1");
   });
 
   it("does not reclaim the foreign Docker image when deployment fails after preparation", async () => {

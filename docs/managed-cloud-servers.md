@@ -76,6 +76,12 @@ has ended can enter host deletion. Financial history remains with the provider.
   mutation requires a provider-console server restart and retry of the original
   operation; only a changed host epoch proves old work cannot still run. Completed
   request journals and cancellation tombstones are retained on the server.
+- Cancelling an interrupted deployment can recover its worker completion record.
+  Recovery first tries the same in-process and Postgres server locks, then confirms
+  recorded remote commands have ended. It never takes a live replica's work.
+  Retrying a terminal deployment uses the same recovery; a worker still queued
+  for the server rechecks cancellation before starting. Cleanup protects live
+  releases and volumes and preserves a recorded keep-resources cancellation.
 - Oblien ingress and certificates are provider-owned. Route writes validate
   project listeners and replace the complete desired rule table. Operation logs
   and failures remain visible; an HTTP acknowledgement alone is not proof that

@@ -61,6 +61,7 @@ describe("getNavSections (the platform rail)", () => {
     expect(keysOf(find(s, "main"))).toEqual([
       "home",
       "projects",
+      "apps",
       "deployments",
       "issues",
     ]);
@@ -68,11 +69,10 @@ describe("getNavSections (the platform rail)", () => {
     expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "audit"]);
   });
 
-  it("adds Billing on the SaaS and drops the infrastructure section there", () => {
+  it("keeps managed servers and jobs available alongside SaaS billing", () => {
     const s = getNavSections(true, false);
     expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing", "audit"]);
-    // Empty sections are filtered out, not rendered as a bare heading.
-    expect(find(s, "infrastructure")).toBeUndefined();
+    expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "jobs"]);
   });
 
   it("keeps Billing at the very bottom, below Servers, on a cloud-linked self-hosted box", () => {
