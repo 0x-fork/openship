@@ -8,6 +8,7 @@ import type {
   RemoveManagedServerInput,
   CloudWorkspaceSummary,
   CloudWorkspaceResizePreview,
+  ServerDetail,
 } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { env } from "../../config/env";
@@ -31,11 +32,12 @@ import {
   measureCloudWorkspace,
   unavailableWorkspaceUsage,
 } from "../../lib/cloud-workspace-host";
-import { withCloudWorkspaceActivity } from "../../lib/cloud-workspace-lock";
+import { withCloudWorkspaceActivity, reconcileSettledCloudActivity } from "../../lib/cloud-workspace-lock";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { assertWorkspaceCheckoutsSettled } from "../billing/workspace-checkout";
+import { createLinkedCloudServer, linkedServerRequest, linkedServerSummary, localizeCloudSummary, requireLinkedCloudServer, confirmLinkedServerDeletion } from "../../lib/cloud/server-link";
 
 function requireSaas() {
   if (!env.CLOUD_MODE)
@@ -47,7 +49,66 @@ function requireSaas() {
 }
 const digest = (data: unknown) => createHash("sha256").update(JSON.stringify(data)).digest("hex");
 
+async function linkedSummaryOperation(
+  ctx: Pick<ExecutionContext, "organizationId">,
+  id: string,
+  suffix: string,
+  method = "POST",
+  input?: unknown,
+) {
+  const row = await requireLinkedCloudServer(ctx.organizationId, id);
+  const result = await linkedServerRequest<CloudWorkspaceSummary>(ctx.organizationId, id, suffix, {
+    method, ...(input === undefined ? {} : { body: JSON.stringify(input) }),
+  });
+  return localizeCloudSummary(row, result);
+}
+
+async function linkedResizePreview(ctx: ExecutionContext, id: string) {
+  const remote = await linkedServerRequest<CloudWorkspaceResizePreview>(ctx.organizationId, id, "/resize");
+  const projects = await repos.project.listByWorkspace(id, ctx.organizationId);
+  for (const project of projects) await authorization.authorize(ctx, {
+    resourceType: "project", resourceId: project.id, action: "write",
+  });
+  return {
+    ...remote,
+    remoteRevision: remote.revision,
+    revision: digest({ remote: remote.revision, projects: projects.map(project => [project.id, project.updatedAt]) }),
+    restartProjects: [...new Map([...remote.restartProjects, ...projects.map(project => ({ id: project.id, name: project.name }))].map(project => [project.id, project])).values()],
+  };
+}
+
+async function resizeLinked(ctx: ExecutionContext, id: string, input: ResizeManagedServerInput) {
+  return createProvisionLock(`cloud:workspace-activity:${id}`).run(async () => {
+    let owner = await requireLinkedCloudServer(ctx.organizationId, id);
+    if (owner.operation?.id === input.idempotencyKey) {
+      if (owner.operation.kind !== "resize" || owner.operation.revision !== input.revision || !owner.operation.remoteRevision)
+        throw new AppError("This request key belongs to a different server operation", 409, "IDEMPOTENCY_KEY_CONFLICT");
+    } else {
+      const preview = await linkedResizePreview(ctx, id);
+      if (preview.revision !== input.revision)
+        throw new AppError("The server changed. Review its resize again.", 409, "CLOUD_WORKSPACE_CHANGED");
+      await repos.cloudWorkspace.requestOperation(id, ctx.organizationId, {
+        ...operation("resize", input.idempotencyKey), revision: input.revision,
+        remoteRevision: preview.remoteRevision, resources: preview.after,
+        restartProjectIds: preview.restartProjects.map(project => project.id),
+      });
+      owner = await requireLinkedCloudServer(ctx.organizationId, id);
+    }
+    try {
+      return await linkedSummaryOperation(ctx, id, "/resize", "POST", {
+        ...input, revision: owner.operation!.remoteRevision,
+      });
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode < 500)
+        await repos.cloudWorkspace.rejectLinkedOperation(id, ctx.organizationId, input.idempotencyKey, error.message);
+      throw error;
+    }
+  });
+}
+
 export async function summary(row: CloudWorkspace, live = false): Promise<CloudWorkspaceSummary> {
+  if (row.remote) return linkedServerSummary(row);
+  requireSaas();
   const [binding, projects, server] = await Promise.all([
     repos.cloudDockerWorkspace.find({ ownerWorkspaceId: row.id }, row.organizationId),
     repos.project.listByWorkspace(row.id, row.organizationId),
@@ -94,7 +155,7 @@ export async function summary(row: CloudWorkspace, live = false): Promise<CloudW
     name: row.name,
     planTierId: row.planTierId,
     subscriptionStatus: row.subscriptionStatus,
-    projectCount: projects.length,
+    projectCount: projects.length + row.linkedProjects.reduce((count, link) => count + link.projects.length, 0),
     state,
     resources,
     operation,
@@ -103,13 +164,17 @@ export async function summary(row: CloudWorkspace, live = false): Promise<CloudW
 }
 
 export async function get(ctx: ExecutionContext, id: string) {
-  requireSaas();
+  if (!env.CLOUD_MODE) {
+    await reconcileLinkedOperation(id).catch(error =>
+      console.warn(`[cloud-workspace] ${id}: ${safeErrorMessage(error)}`));
+  }
   return summary(await requireCloudWorkspace(ctx.organizationId, id), true);
 }
 export async function create(
   ctx: ExecutionContext,
   input: CreateManagedServerInput,
 ) {
+  if (!env.CLOUD_MODE) return createLinkedCloudServer(ctx.organizationId, input);
   requireSaas();
   const rows = await repos.cloudWorkspace.listByOrganization(ctx.organizationId);
   // Draft identities don't reserve machines. Bound abandoned checkout drafts.
@@ -127,13 +192,18 @@ export async function create(
   );
 }
 export async function rename(ctx: ExecutionContext, id: string, input: { name: string }) {
+  if (!env.CLOUD_MODE) {
+    await linkedServerRequest(ctx.organizationId, id, "", { method: "PATCH", body: JSON.stringify(input) });
+    const row = await repos.cloudWorkspace.rename(id, ctx.organizationId, input.name.trim());
+    if (!row) throw new AppError("Managed server not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+    return summary(row);
+  }
   requireSaas();
   const row = await repos.cloudWorkspace.rename(id, ctx.organizationId, input.name.trim());
   if (!row) throw new AppError("Managed server not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
   return summary(row);
 }
 export async function getUsage(ctx: ExecutionContext, id: string) {
-  requireSaas();
   let usage;
   try {
     usage = await measureCloudWorkspace(ctx.organizationId, id);
@@ -179,6 +249,7 @@ function dispatch(id: string) {
   );
 }
 export async function ensure(ctx: ExecutionContext, id: string) {
+  if (!env.CLOUD_MODE) return linkedSummaryOperation(ctx, id, "/ensure");
   requireSaas();
   const row = await requireCloudWorkspace(ctx.organizationId, id);
   await assertCloudCanSpend(ctx.organizationId, id);
@@ -194,6 +265,7 @@ export async function ensure(ctx: ExecutionContext, id: string) {
 /** Called only after a provider entitlement read; the worker checks it again.
  * The persisted intent survives lost webhook responses and process restarts. */
 export async function requestPaidWorkspaceProvisioning(organizationId: string, id: string) {
+  requireSaas();
   const row = await requireCloudWorkspace(organizationId, id);
   if (
     row.deletionInProgress ||
@@ -212,6 +284,10 @@ export async function previewResize(
   ctx: ExecutionContext,
   id: string,
 ): Promise<CloudWorkspaceResizePreview> {
+  if (!env.CLOUD_MODE) {
+    const { remoteRevision: _remoteRevision, ...preview } = await linkedResizePreview(ctx, id);
+    return preview;
+  }
   requireSaas();
   const host = await readCloudWorkspaceHost(ctx.organizationId, id);
   if (!host.provider || !host.binding?.workspaceId)
@@ -250,12 +326,14 @@ export async function previewResize(
     });
     restartProjects.push({ id: project.id, name: project.name });
   }
+  restartProjects.push(...host.owner.linkedProjects.flatMap(link => link.projects));
   return {
     revision: digest({
       id,
       before,
       after,
       projects: projects.map((project) => [project.id, project.updatedAt]),
+      linkedProjects: host.owner.linkedProjects,
     }),
     before,
     after,
@@ -267,6 +345,7 @@ export async function resize(
   id: string,
   input: ResizeManagedServerInput,
 ) {
+  if (!env.CLOUD_MODE) return resizeLinked(ctx, id, input);
   requireSaas();
   const owner = await requireCloudWorkspace(ctx.organizationId, id);
   if (owner.operation?.id === input.idempotencyKey) {
@@ -295,7 +374,7 @@ export async function resize(
       restartProjectIds: plan.restartProjects.map((project) => project.id),
     });
     return row;
-  });
+  }, undefined, { lifecycle: true, scope: "lifecycle" });
   // Start detached work after releasing the caller's activity/advisory locks.
   dispatch(id);
   return summary(requested);
@@ -305,6 +384,21 @@ export async function remove(
   id: string,
   input: RemoveManagedServerInput,
 ) {
+  if (!env.CLOUD_MODE) {
+    await authorization.authorize(ctx, { resourceType: "billing", resourceId: "*", action: "admin" });
+    return createProvisionLock(`cloud:workspace-activity:${id}`).run(async () => {
+      await requireLinkedCloudServer(ctx.organizationId, id);
+      await repos.cloudWorkspace.requestOperation(id, ctx.organizationId, operation("delete", input.idempotencyKey));
+      try {
+        return await linkedSummaryOperation(ctx, id, "/managed", "DELETE", input);
+      } catch (error) {
+        if (error instanceof AppError && error.statusCode < 500 && error.statusCode !== 404) {
+          await repos.cloudWorkspace.rejectLinkedOperation(id, ctx.organizationId, input.idempotencyKey, error.message);
+        }
+        throw error;
+      }
+    });
+  }
   requireSaas();
   await authorization.authorize(ctx, { resourceType: "billing", resourceId: "*", action: "admin" });
   const requested = await withCloudBillingLock(
@@ -377,11 +471,48 @@ async function withMemberRuntimeLocks<T>(row: CloudWorkspace, work: () => Promis
   return acquire(0);
 }
 
+/** Replays only the persisted request key. Cloud owns the provider worker;
+ * this installation reconciles its local barrier after network/process loss. */
+async function reconcileLinkedOperation(id: string): Promise<void> {
+  return createProvisionLock(`cloud:workspace-worker:${id}`).run(async () => {
+    const row = await repos.cloudWorkspace.findById(id);
+    const op = row?.operation;
+    if (!row?.remote || !op || !["queued", "running"].includes(op.status)) return;
+    await requireLinkedCloudServer(row.organizationId, id);
+    if (op.kind === "delete" && await confirmLinkedServerDeletion(row)) return;
+    const server = await linkedServerRequest<ServerDetail>(row.organizationId, id, "");
+    if (!server.managed) throw new AppError("Managed server not found", 404, "SERVER_NOT_FOUND");
+    if (server.managed.operation?.id === op.id) {
+      await localizeCloudSummary(row, server.managed);
+      return;
+    }
+    try {
+      if (op.kind === "resize") {
+        if (!op.remoteRevision) throw new Error("The server resize has no Cloud revision");
+        await linkedSummaryOperation(row, id, "/resize", "POST", {
+          revision: op.remoteRevision, confirmRestart: true, idempotencyKey: op.id,
+        });
+      } else if (op.kind === "delete") {
+        await linkedSummaryOperation(row, id, "/managed", "DELETE", {
+          confirmDelete: true, idempotencyKey: op.id,
+        });
+      }
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode < 500 && error.statusCode !== 404)
+        await repos.cloudWorkspace.rejectLinkedOperation(id, row.organizationId, op.id, error.message);
+      throw error;
+    }
+  });
+}
+
 /** One durable worker for HTTP, signed billing events and scheduled recovery. */
 export async function processWorkspaceOperation(id: string): Promise<void> {
-  if (!env.CLOUD_MODE) return;
-  return createProvisionLock(`cloud:workspace-worker:${id}`).run(() =>
-    withCloudWorkspaceActivity(id, async () => {
+  if (!env.CLOUD_MODE) return reconcileLinkedOperation(id);
+  return createProvisionLock(`cloud:workspace-worker:${id}`).run(async () => {
+    const pending = await repos.cloudWorkspace.findById(id);
+    // Provisioning never stops/replaces a host and is independently idempotent.
+    // It can prepare the host while a linked deployment holds activity admission.
+    return withCloudWorkspaceActivity(pending?.operation?.kind === "ensure" ? null : id, async () => {
       const row = await repos.cloudWorkspace.findById(id);
       if (
         !row?.operation ||
@@ -461,6 +592,8 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
                   409,
                   "CLOUD_WORKSPACE_NOT_EMPTY",
                 );
+              if ((await requireCloudWorkspace(row.organizationId, id)).linkedProjects.some(link => link.projects.length))
+                throw new AppError("The server still has projects on a connected installation", 409, "CLOUD_WORKSPACE_NOT_EMPTY");
               await save("Confirming provider cleanup before removing this empty server…");
               const binding = await hostForDeletion(row);
               if (binding?.workspaceId) {
@@ -508,11 +641,12 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
         };
         await save(op.error!);
       }
-    }),
-  );
+    }, undefined, { lifecycle: true, scope: "lifecycle" });
+  });
 }
 
 export async function retry(ctx: ExecutionContext, id: string) {
+  if (!env.CLOUD_MODE) return linkedSummaryOperation(ctx, id, "/retry");
   requireSaas();
   const row = await requireCloudWorkspace(ctx.organizationId, id);
   if (!row.operation || row.operation.status !== "failed") return summary(row);
@@ -544,8 +678,12 @@ export async function retry(ctx: ExecutionContext, id: string) {
 }
 
 export async function runCloudWorkspaceRecovery() {
-  if (!env.CLOUD_MODE) return { attempted: 0 };
+  for (const row of await repos.cloudWorkspace.listSettledLinkedActivities()) {
+    await reconcileSettledCloudActivity(row).catch(error =>
+      console.warn(`[cloud-activity] ${row.id}: ${safeErrorMessage(error)}`));
+  }
   const rows = await repos.cloudWorkspace.listPendingOperations();
-  for (const row of rows) await processWorkspaceOperation(row.id);
+  for (const row of rows) await processWorkspaceOperation(row.id).catch(error =>
+    console.warn(`[cloud-workspace] ${row.id}: ${safeErrorMessage(error)}`));
   return { attempted: rows.length };
 }

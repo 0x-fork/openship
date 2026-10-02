@@ -123,6 +123,7 @@ export { cloudWorkspaceStatus, waitForCloudDockerWorkspace, waitForCloudWorkspac
 export { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
+export { withManagedCommandTracking } from "./runtime/cloud/command-tracking";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
@@ -613,4 +614,7 @@ export { databaseArchiveName } from "./cluster/redis-backups";
 export * from "./runtime/kubernetes";
 export { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime/runtime-env";
 
-export { managedProcessState, waitForManagedProcess } from "./runtime/cloud/server-connection";
+export { managedProcessState, readManagedProcessStatus, waitForManagedProcess } from "./runtime/cloud/server-connection";
+
+export { resolveSshAuthSock } from "./system/ssh-support";
+export { probeLocalGitHubToken } from "./system/local-github";

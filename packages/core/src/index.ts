@@ -90,6 +90,7 @@ export type { ExecutionAuthority } from "./execution-authority";
 export * from "./sse";
 export * from "./infrastructure";
 export * from "./managed-network";
+export type { ManagedCommandRef } from "./managed-command";
 export * from "./network-firewall";
 export * from "./network-access";
 

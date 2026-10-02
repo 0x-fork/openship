@@ -532,7 +532,7 @@ try {
     "provider returns saved process configuration",
     savedProcess.enabled === true &&
       savedProcess.working_dir === processDirectory &&
-      Array.isArray(savedProcess.cmd) &&
+      Array.isArray(savedProcess.command ?? savedProcess.cmd) &&
       Array.isArray(savedProcess.env) &&
       savedProcess.env.includes("OPENSHIP_SMOKE_PROCESS=saved"),
   );

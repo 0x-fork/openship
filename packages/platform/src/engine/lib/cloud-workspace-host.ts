@@ -4,11 +4,15 @@ import {
   cloudDockerProjectPaths,
   cloudWorkspaceStatus,
   dockerProjectStorage,
+  Oblien,
   sq,
   type ResourceConfig,
 } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { AppError, withTimeout } from "@repo/core";
+import { env } from "../config/env";
+import { remoteServerConnection } from "./cloud/server-connection";
+import { requireLinkedCloudServer } from "./cloud/server-link";
 import type { CloudWorkspaceUsage } from "@repo/contracts";
 import { requireCloudWorkspace } from "./cloud-workspace-scope";
 import { getNamespaceClient } from "./openship-cloud";
@@ -21,23 +25,34 @@ export { unavailableServerUsage as unavailableWorkspaceUsage } from "./server-us
 /** Inspect the persisted host only. A read must never create/resume a VM. */
 export async function readCloudWorkspaceHost(organizationId: string, id: string) {
   const owner = await requireCloudWorkspace(organizationId, id);
+  if (!env.CLOUD_MODE) {
+    const connection = await remoteServerConnection(organizationId, id);
+    const client = new Oblien({ token: connection.token, baseUrl: connection.providerApiUrl });
+    const workspace = await client.workspaces.get(connection.workspaceId);
+    if (workspace.namespace !== connection.namespace) throw new AppError("Cloud server namespace changed", 409, "CLOUD_NAMESPACE_MISMATCH");
+    if (workspace.id !== connection.workspaceId)
+      throw new AppError("Cloud returned a different managed server", 502, "CLOUD_SERVER_IDENTITY_MISMATCH");
+    const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: id }, organizationId);
+    return { owner, binding, provider: { workspace, allocation: connection.resources }, credentials: { client, namespace: connection.namespace } };
+  }
+  if (owner.remote) throw new AppError("Invalid Cloud server authority", 409, "CLOUD_SERVER_LINK_INVALID");
   const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: id }, organizationId);
-  if (!binding?.workspaceId) return { owner, binding, provider: null };
+  if (!binding?.workspaceId) return { owner, binding, provider: null, credentials: null };
   if (!owner.namespace || binding.namespace !== owner.namespace)
     throw new AppError("Cloud workspace ownership changed", 409, "CLOUD_NAMESPACE_MISMATCH");
   const provider = await readCloudWorkspaceAllocation(binding.workspaceId, binding.namespace);
-  return { owner, binding, provider };
+  return { owner, binding, provider, credentials: null };
 }
 
 export async function readCloudWorkspaceConnection(organizationId: string, id: string) {
-  const { owner, binding, provider } = await readCloudWorkspaceHost(organizationId, id);
+  const { owner, binding, provider, credentials } = await readCloudWorkspaceHost(organizationId, id);
   if (!binding?.workspaceId || !provider)
     throw new AppError(
       "The managed server has not been provisioned yet",
       409,
       "CLOUD_WORKSPACE_NOT_READY",
     );
-  const { client, namespace } = await getNamespaceClient(organizationId, id);
+  const { client, namespace } = credentials ?? await getNamespaceClient(organizationId, id);
   if (namespace !== binding.namespace) throw new Error("Cloud workspace namespace changed");
   return { client, namespace, binding, provider };
 }
@@ -57,7 +72,7 @@ async function runningConnection(organizationId: string, id: string) {
  * a host or installing the Docker API bridge just to read metrics/open a shell. */
 export async function openCloudWorkspaceExecutor(organizationId: string, id: string) {
   const { client, binding } = await runningConnection(organizationId, id);
-  return new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime());
+  return new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime(), binding.workspaceId!);
 }
 
 async function measuredHost(organizationId: string, id: string) {
@@ -77,7 +92,7 @@ async function measuredHost(organizationId: string, id: string) {
 /** Build admission needs only a cheap host sample, never a filesystem scan. */
 export async function sampleCloudWorkspaceResources(organizationId: string, id: string) {
   const { client, binding, provider } = await runningConnection(organizationId, id);
-  const executor = new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime());
+  const executor = new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime(), binding.workspaceId!);
   try {
     return { capacity: provider.allocation, usage: await sampleServerUsage(executor) };
   } finally {
@@ -91,7 +106,8 @@ export async function measureCloudWorkspace(
   id: string,
   fresh = false,
 ): Promise<CloudWorkspaceUsage> {
-  await requireCloudWorkspace(organizationId, id);
+  const owner = await requireCloudWorkspace(organizationId, id);
+  if (owner.remote) await requireLinkedCloudServer(organizationId, id);
 
   const cache = await cacheStore<CloudWorkspaceUsage>("cloud-workspace-usage", { maxSize: 500 });
   const key = `${organizationId}:${id}`;
@@ -101,11 +117,15 @@ export async function measureCloudWorkspace(
   }
   const { runtime } = await measuredHost(organizationId, id);
   try {
-    const [sample, storage, projects] = await Promise.all([
+    const [sample, storage, localProjects] = await Promise.all([
       sampleServerUsage(runtime.executor),
       withTimeout(runtime.docker.df(), 15_000, "Storage inventory timed out").catch(() => null),
       repos.project.listByWorkspace(id, organizationId),
     ]);
+    const projects = [...new Map([
+      ...owner.linkedProjects.flatMap(link => link.projects),
+      ...localProjects,
+    ].map(project => [project.id, project])).values()];
     const disk = storage ? dockerProjectStorage(storage, projects) : [];
     const paths = projects.map((project) => cloudDockerProjectPaths(project.id).mounts);
     const bindSizes = paths.length

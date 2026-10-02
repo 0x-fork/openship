@@ -2706,6 +2706,18 @@
       "description": "Create a server identity without purchasing or provisioning resources.",
       "route": "POST /api/system/servers/managed"
     },
+    "servers.availableManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "List servers available through the connected Cloud account without creating resources or copying projects.",
+      "route": "GET /api/system/servers/managed/available"
+    },
+    "servers.connectManaged": {
+      "page": "servers",
+      "section": "Managed servers",
+      "description": "Link an existing Cloud server to this organization after verifying its administrator and account identity; return the local serverId for deployments.",
+      "route": "POST /api/system/servers/managed/connect"
+    },
     "servers.usage": {
       "page": "servers",
       "section": "Managed servers",
@@ -2745,7 +2757,7 @@
     "servers.destinations": {
       "page": "servers",
       "section": "Observe",
-      "description": "Read accessible deployment servers and availability of the existing dedicated Cloud target.",
+      "description": "Read accessible deployment servers, including linked managed servers, with their capabilities and readiness.",
       "route": "GET /api/system/servers/destinations"
     },
     "servers.getNetworkSettings": {
@@ -2762,6 +2774,31 @@
     }
   },
   "http": {
+    "POST /api/cloud/servers/:id/authorize": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Verify the connected Cloud user's administration of a server in the exact requested organization before linking an installation."
+    },
+    "POST /api/cloud/servers/:id/connection": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Issue namespace-scoped server credentials after ownership checks; work admission also verifies the subscription. Credentials stay on the installation's server and must not be exposed to a browser."
+    },
+    "POST /api/cloud/servers/:id/activity": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Claim durable server activity for a linked installation and synchronize its project registry before execution; a disconnected claim does not expire."
+    },
+    "POST /api/cloud/servers/:id/activity/release": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Release the same user's exact controller and activity claim after work finishes, and update its registered projects."
+    },
+    "GET /api/cloud/server-deletions/:id": {
+      "page": "cloud",
+      "section": "Managed server connections",
+      "description": "Read a durable deletion receipt using billing administration, the original organization and exact operationId after the server row has been removed."
+    },
     "POST /api/cloud/support": {
       "page": "support",
       "description": "Save a Cloud support ticket and queue acknowledgement and team email. Public intake returns only a receipt and deduplicates retries."

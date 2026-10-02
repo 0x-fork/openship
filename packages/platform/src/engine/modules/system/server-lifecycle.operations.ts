@@ -7,6 +7,7 @@ import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { withServerExecution } from "../../lib/server-execution";
 import { sampleServerUsage, unavailableServerUsage } from "../../lib/server-usage";
 import * as managed from "../cloud-workspaces/cloud-workspace.service";
+import { availableCloudServers, connectCloudServer } from "../../lib/cloud/server-link";
 
 /** Provider lifecycle stays with its subscription worker. Server operations
  * resolve ownership once and delegate, so project cleanup cannot delete a host. */
@@ -27,7 +28,15 @@ function record(ctx: ExecutionContext, id: string, action: "write" | "admin", op
   });
 }
 
-export const managedServerCollection: Pick<ServerDependencies["collection"], "createManaged"> = {
+export const managedServerCollection: Pick<ServerDependencies["collection"], "createManaged" | "availableManaged" | "connectManaged"> = {
+  async availableManaged(ctx) {
+    return { servers: await availableCloudServers(ctx.organizationId) };
+  },
+  async connectManaged(ctx, input) {
+    const result = await connectCloudServer(ctx.organizationId, input.serverId);
+    record(ctx, result.serverId, "admin", "connect");
+    return result;
+  },
   async createManaged(ctx, input) {
     const result = await managed.create(ctx, input);
     record(ctx, result.serverId, "admin", "create");

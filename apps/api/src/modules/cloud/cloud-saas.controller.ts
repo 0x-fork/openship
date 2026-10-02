@@ -145,11 +145,21 @@ export async function getToken(c: Context) {
 export async function preflight(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{ slug?: string; customDomain?: string }>();
+  let workspaceId: string | null = null;
+  const serverId = c.req.query("serverId");
+  if (serverId) {
+    const { workspaceForServer } = await import("@repo/platform/engine/lib/cloud-workspace-scope");
+    const { authorization } = await import("@repo/platform/engine/lib/authorization");
+    const { workspace } = await workspaceForServer(ctx.organizationId, serverId);
+    if (!workspace) return c.json({ error: "Managed server not found" }, 404);
+    await authorization.authorize(ctx, { resourceType: "server", resourceId: serverId, action: "write" });
+    workspaceId = workspace.id;
+  }
   const result = await runCloudPreflight(ctx.organizationId, {
     slug: body.slug,
     customDomain: body.customDomain,
     // This relay serves linked instances, whose provider token has this scope.
-    workspaceId: null,
+    workspaceId,
   });
   return c.json({ data: result });
 }
@@ -196,6 +206,8 @@ export async function account(c: Context) {
 
   return c.json({
     user: {
+      id: getRequestContext(c).userId,
+      organizationId: getRequestContext(c).organizationId,
       name: user.name ?? user.email,
       email: user.email,
       image: user.image ?? null,

@@ -814,7 +814,10 @@ async function prepareServiceRoutes(opts: {
     project,
     service,
     runtimeName,
-    usesManagedRouting: routeContext.usesManagedRouting,
+    // Provider ingress supports the same free hostnames as a connected server.
+    // Keep the external OpenResty forwarding flag separate: Cloud does not need
+    // that second sync, but its Docker services still need their public ports.
+    usesManagedRouting: routeContext.usesManagedRouting || routeContext.routing instanceof CloudInfraProvider,
     certificateManagement: routeContext.certificateManagement,
     domainByHostname: routeContext.domainByHostname,
   });

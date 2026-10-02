@@ -304,6 +304,7 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
   const { CloudServerConnection } = await import("./runtime/cloud/server-connection");
   const { CloudProcessSupervisor } = await import("./runtime/cloud/process-supervisor");
   const { prepareManagedSource } = await import("./runtime/cloud/source");
+  const { managedProjectRoutingScope } = await import("./runtime/cloud/routing-scope");
   const connection = new CloudServerConnection(client, {
     ...config.cloudServer,
     namespace: config.cloudNamespace,
@@ -337,21 +338,11 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
         beforeProvision: config.cloudBeforeProvision,
       }),
     );
-    return (await routingRuntime).routingScope();
+    return (await routingRuntime).containerRouteTargets();
   };
   const infra = new CloudInfraProvider(client, {
     ...common,
-    scope: {
-      workspaceId: config.cloudServer.workspaceId,
-      projectId: config.cloudServer.projectId,
-      routeRoot: paths.routes,
-      staticReleaseRoot: `${paths.bare}/releases`,
-      executor: connection.executor,
-      lock: config.cloudServer.provisionLock,
-      ownedPorts: async () => (await projectRoutes()).ownedPorts(),
-      resolveTarget: async (id, port) => (await projectRoutes()).resolveTarget(id, port),
-      resolveUrl: async (url) => (await projectRoutes()).resolveUrl(url),
-    },
+    scope: managedProjectRoutingScope(connection, config.cloudServer, projectRoutes),
   });
   const dispose = runtime.dispose.bind(runtime);
   runtime.dispose = async () => {

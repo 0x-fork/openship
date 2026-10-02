@@ -2,7 +2,6 @@ import { AppError, NotFoundError } from "@repo/core";
 import { repos } from "@repo/db";
 import type { ServerDependencies } from "../../../servers";
 import type { ExecutionContext } from "../../../context";
-import { env } from "../../config";
 import { authorization } from "../../lib/authorization";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { readCloudWorkspaceConnection } from "../../lib/cloud-workspace-host";
@@ -11,7 +10,7 @@ import { withCloudWorkspaceActivity } from "../../lib/cloud-workspace-lock";
 async function managedServer(ctx: ExecutionContext, id: string) {
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) throw new NotFoundError("Server", id);
-  if (!env.CLOUD_MODE || !server.workspaceId)
+  if (!server.workspaceId)
     throw new AppError(
       "Network settings are managed by this server's owner",
       409,

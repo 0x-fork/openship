@@ -7,6 +7,7 @@ import {
   cloudWorkspaceCreationFailure,
   cloudWorkspaceStatus,
   managedProcessState,
+  readManagedProcessStatus,
   waitForManagedProcess,
   sq,
   waitForCloudDockerWorkspace,
@@ -18,7 +19,7 @@ import { repos, type Project, type CloudWorkspaceOperation } from "@repo/db";
 import { AppError, deploymentBelongsToProject } from "@repo/core";
 import { env } from "../config/env";
 import { issueNamespaceToken } from "./openship-cloud";
-import { getOrgCloudToken } from "./cloud/client";
+import { ensureLinkedCloudServer } from "./cloud/server-connection";
 import { createProvisionLock } from "./provision-lock";
 import {
   assertCloudCanSpend,
@@ -76,7 +77,7 @@ export async function resizeDockerWorkspace(input: {
   };
 }) {
   const ws = input.client.workspace(input.workspaceId);
-  const executor = new CloudWorkspaceExecutor(() => ws.runtime());
+  const executor = new CloudWorkspaceExecutor(() => ws.runtime(), input.workspaceId);
   try {
     const inspect = () =>
       executor.exec("docker ps --filter status=running --no-trunc --format '{{.ID}}'", {
@@ -95,16 +96,16 @@ export async function resizeDockerWorkspace(input: {
       const containers = wasRunning
         ? await (input.signal ? executor.runWithAbortSignal(input.signal, inspect) : inspect())
         : "";
-      const processes = (wasRunning ? await ws.workloads.list() : [])
+      const managed = (wasRunning ? await ws.workloads.list() : [])
         .filter((workload) => {
           const labels = workload.labels as Record<string, unknown> | undefined;
           return (
             labels?.["openship.project"] &&
-            labels["openship.deployment"] &&
-            managedProcessState(workload) === "running"
+            labels["openship.deployment"]
           );
-        })
-        .map((workload) => workload.id);
+        });
+      const live = await Promise.all(managed.map(workload => readManagedProcessStatus(ws.workloads, workload)));
+      const processes = live.filter(workload => managedProcessState(workload) === "running").map(workload => workload.id);
       running = {
         wasRunning,
         containers: containers.trim().split(/\s+/).filter(Boolean),
@@ -194,7 +195,7 @@ export async function resizeDockerWorkspace(input: {
                 id !== `openship-${labels["openship.deployment"]}`
               )
                 throw new Error("Process ownership changed during server resizing");
-              return workload;
+              return readManagedProcessStatus(ws.workloads, workload);
             };
             const workload = await read();
             if (managedProcessState(workload) === "running") return;
@@ -293,6 +294,7 @@ export async function ensureCloudWorkspaceHost(
 async function ensureDockerHost(
   input: EnsureDockerInput & { ownerWorkspaceId: string },
 ): Promise<string> {
+  if (!env.CLOUD_MODE) return ensureLinkedCloudServer(input);
   const owner = { ownerWorkspaceId: input.ownerWorkspaceId };
   const ownerId = input.ownerWorkspaceId;
   return createProvisionLock(`cloud:server-owner:${ownerId}`).run(async () => {
@@ -311,12 +313,9 @@ async function ensureDockerHost(
         "CLOUD_WORKSPACE_NOT_FOUND",
       );
     }
-    if (env.CLOUD_MODE) await assertCloudCanSpend(input.organizationId, managed.id);
-    const credentials = env.CLOUD_MODE
-      ? await issueNamespaceToken(input.organizationId, managed.id)
-      : await getOrgCloudToken(input.organizationId);
-    if (!credentials)
-      throw new AppError("Connect Openship Cloud before deploying", 503, "CLOUD_NOT_CONNECTED");
+    if (managed.remote) throw new AppError("A Cloud server cannot delegate its subscription", 409, "CLOUD_SERVER_LINK_INVALID");
+    await assertCloudCanSpend(input.organizationId, managed.id);
+    const credentials = await issueNamespaceToken(input.organizationId, managed.id);
     const { namespace, token } = credentials;
     const client = new Oblien({ token, baseUrl: env.OBLIEN_API_URL });
     const requested =

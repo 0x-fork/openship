@@ -7,7 +7,7 @@ import { Duplex, PassThrough } from "node:stream";
 import type { DockerTransport } from "../docker-transport";
 
 /** Binary, bounded, half-close-aware stream over the provider's authenticated proxy. */
-export async function dockerWebSocketStream(socket: WebSocket): Promise<Duplex> {
+export async function dockerWebSocketStream(socket: WebSocket, onComplete?: () => void): Promise<Duplex> {
   socket.binaryType = "arraybuffer";
   let ended = false;
   let pendingWrite: ReturnType<typeof setTimeout> | undefined;
@@ -82,7 +82,9 @@ export async function dockerWebSocketStream(socket: WebSocket): Promise<Duplex> 
   // Connection failures are reported without the WebSocket URL (which carries auth).
   stream.on("error", () => {});
   socket.addEventListener("message", ({ data }) => {
-    if (data === "eof") {
+    if (data === "complete") {
+      onComplete?.();
+    } else if (data === "eof") {
       ended = true;
       stream.push(null);
     } else if (typeof data === "string" && data.startsWith("ack:")) {

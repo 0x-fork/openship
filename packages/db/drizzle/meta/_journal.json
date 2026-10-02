@@ -1107,6 +1107,27 @@
       "when": 1790857200000,
       "tag": "0157_project_runtime_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1790942000000,
+      "tag": "0158_linked_managed_servers",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1790944000000,
+      "tag": "0159_managed_server_coordination",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1790945000000,
+      "tag": "0160_linked_server_projects",
+      "breakpoints": true
     }
   ]
 }

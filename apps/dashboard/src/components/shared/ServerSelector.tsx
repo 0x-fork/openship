@@ -10,6 +10,9 @@ import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { ServerPicker, ServerRowContent } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
 import { usePlatform } from "@/context/PlatformContext";
+import { settingsApi } from "@/lib/api/settings";
+import { serverPreference } from "@/lib/server-preference";
+import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
 
 export interface ServerOption {
   id: string;
@@ -31,6 +34,7 @@ export interface ServerSelectorProps {
   onReadyChange?: (ready: boolean) => void;
   compact?: boolean;
   autoSelectFirst?: boolean;
+  useSavedDefault?: boolean;
   excludeIds?: string[];
   emptyHint?: string;
   forDeployment?: boolean;
@@ -67,23 +71,40 @@ export function useServerSelection({
   disabledReason,
   onReadyChange,
   autoSelectFirst = false,
+  useSavedDefault = false,
   excludeIds,
   forDeployment = false,
   requiredCapability,
 }: ServerSelectorProps, enabled = true) {
-  const { selfHosted } = usePlatform();
-  const { data, loading, error, refresh, organizationId } = useServerDestinations(enabled && !readOnly);
+  const { selfHosted, deployMode } = usePlatform();
+  const { data, loading: destinationsLoading, error, refresh, contextKey } = useServerDestinations(enabled && !readOnly);
+  const [preference, setPreference] = useState<{ contextKey: string; serverId: string | null } | null>(null);
+  const loadingPreference = useSavedDefault && !readOnly && preference?.contextKey !== contextKey;
+  const loading = destinationsLoading || loadingPreference;
   const [internalId, setInternalId] = useState<string | null>(null);
   const autoSelected = useRef(false);
-  const openAddServer = useAddServerModal();
+  const canAddServer = selfHosted || requiredCapability !== "ssh";
+  const openAddServer = useAddServerModal({ connectedOnly: requiredCapability === "ssh" });
   const selectedId = value === undefined ? internalId : value;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const selectionContext = useRef(contextKey);
+  selectionContext.current = contextKey;
 
   useEffect(() => {
     autoSelected.current = false;
     setInternalId(null);
-  }, [organizationId]);
+  }, [contextKey]);
+
+  useEffect(() => {
+    if (!enabled || readOnly || !useSavedDefault) return;
+    let active = true;
+    void settingsApi.get().then(
+      (settings) => { if (active) setPreference({ contextKey, serverId: settings.defaultServerId }); },
+      () => { if (active) setPreference({ contextKey, serverId: null }); },
+    );
+    return () => { active = false; };
+  }, [enabled, readOnly, useSavedDefault, contextKey]);
 
   const rows = (data?.servers ?? []).filter((server) => {
     if (requiredCapability && !server.capabilities?.[requiredCapability]) return false;
@@ -100,7 +121,7 @@ export function useServerSelection({
     !selfHosted && forDeployment && data?.servers.length === 0 && !selectedId;
   useEffect(() => {
     if (
-      !enabled || disabled || readOnly ||
+      !enabled || disabled || readOnly || loading || error ||
       selectedId ||
       (!autoSelectFirst && value === null) ||
       autoSelected.current
@@ -111,11 +132,16 @@ export function useServerSelection({
       onSelectRef.current(null);
     } else if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
       autoSelected.current = true;
-      const selected = option(rows[0]!);
+      const remembered = useSavedDefault ? serverPreference(contextKey).read() : null;
+      const preferred = rows.find(row => row.id === preference?.serverId)
+        ?? rows.find(row => row.id === remembered)
+        ?? (useSavedDefault ? rows.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
+        ?? rows[0]!;
+      const selected = option(preferred);
       setInternalId(selected.id);
       onSelectRef.current(selected);
     }
-  }, [ids, enabled, disabled, readOnly, selectedId, autoSelectFirst, value, organizationId, automaticCloud]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, useSavedDefault, preference, deployMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && (
     automaticCloud || rows.some((server) => server.id === selectedId && server.managed?.state !== "deleting")
@@ -125,7 +151,14 @@ export function useServerSelection({
   }, [selectionReady, onReadyChange]);
 
   function addServer() {
+    if (!canAddServer) return;
+    const owner = contextKey;
     openAddServer((server) => {
+      if (selectionContext.current !== owner) return;
+      if ((requiredCapability && !server.capabilities?.[requiredCapability]) || excludeIds?.includes(server.id)) {
+        refresh();
+        return;
+      }
       autoSelected.current = true;
       setInternalId(server.id);
       onSelectRef.current(option(server));
@@ -141,7 +174,8 @@ export function useServerSelection({
   return {
     rows, selectedId, selected: rows.find(server => server.id === selectedId),
     loading, error, refresh, automaticCloud, ready: selectionReady,
-    disabled, readOnly, selectedName, disabledReason, forDeployment, addServer, select,
+    disabled, readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
+    remember: () => { if (selectionReady && selectedId) serverPreference(contextKey).write(selectedId); },
   };
 }
 
@@ -160,7 +194,7 @@ export function ServerSelectorView({
   const { selfHosted } = usePlatform();
   const {
     rows, selectedId, loading, error, refresh, automaticCloud, disabled,
-    readOnly, selectedName, disabledReason, forDeployment, addServer, select,
+    readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
   } = selection;
   const effective = selectedId ?? "";
   const addLabel = !selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer;
@@ -205,7 +239,7 @@ export function ServerSelectorView({
               servers={rows}
               disabled={disabled}
               onSelect={server => select(server.id)}
-              onAddServer={!disabled && !disabledReason ? addServer : undefined}
+              onAddServer={canAddServer && !disabled && !disabledReason ? addServer : undefined}
               addServerLabel={addLabel}
             />
           )}
@@ -219,7 +253,7 @@ export function ServerSelectorView({
             type="button"
             variant="secondary"
             size="sm"
-            disabled={disabled}
+            disabled={disabled || !canAddServer}
             onClick={addServer}
           >
             <Icon name="plus" className="size-3.5" aria-hidden />
@@ -237,7 +271,7 @@ export function ServerSelectorView({
                 {forDeployment && !automaticCloud ? managedCopy.existingServerHint : managedCopy.subscriptionHint}
               </p>
             )}
-            {(automaticCloud || rows.length === 1) && (
+            {canAddServer && (automaticCloud || rows.length === 1) && (
               <Button type="button" variant="secondary" size="sm" onClick={addServer}>
                 <Icon name="plus" className="size-3.5" aria-hidden />
                 {addLabel}

@@ -74,7 +74,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     key: "cloud:workspace-recovery",
     label: "Cloud workspace operations",
     defaultCron: "* * * * *",
-    available: () => platform().target === "cloud",
+    available: () => true,
     run: async () => (await import("../cloud-workspaces/cloud-workspace.service")).runCloudWorkspaceRecovery(),
   },
   {

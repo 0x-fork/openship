@@ -91,7 +91,7 @@ async function buildManifest(
   );
   if (cloudAccounts.length)
     warnings.push(
-      "Cloud projects will work only when the destination workspace is connected to the same Openship Cloud account. A cloud server cannot be transferred in this file.",
+      "Managed server subscriptions and running resources are not transferred. Choose an existing destination server; imported Cloud projects stay disabled until deployed.",
     );
   if (servers.some((server) => !server.included))
     warnings.push(

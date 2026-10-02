@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import ProjectSettings from "@/components/import-project/ProjectSettings";
 import BuildSettings from "@/components/import-project/BuildSettings";
@@ -13,7 +13,7 @@ import MonorepoApps from "@/components/import-project/MonorepoApps";
 import RoutingSection from "@/components/import-project/RoutingSection";
 import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import Sidebar from "./components/Sidebar";
-import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets, useSeedDeployTarget } from "./components/DeployTargetStep";
+import DeployTargetStep, { DeployTargetSummary } from "./components/DeployTargetStep";
 // Clone-strategy gate moved from inline render to a preflight modal
 // triggered from <Sidebar>'s handleDeploy. The inline placement was
 // wrong (showed before the user clicked Deploy). See
@@ -21,7 +21,7 @@ import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets
 import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
-import { usePlatform, canUseCloudConnection } from "@/context/PlatformContext";
+import { usePlatform } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
 import { useServerSelection } from "@/components/shared/ServerSelector";
@@ -65,7 +65,7 @@ const DeployRepository: React.FC = () => {
     const params = useParams();
     const slug = params.slug as string;
     const { config, state, isRescanning, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, updateConfig } = useDeployment();
-    const { deployMode, selfHosted } = usePlatform();
+    const { selfHosted } = usePlatform();
     const { t } = useI18n();
     const searchParams = useSearchParams();
     const force = searchParams.get("force") || undefined;
@@ -77,10 +77,6 @@ const DeployRepository: React.FC = () => {
     const uploadName = searchParams.get("name") || undefined;
     // Edit-from-Runtime-tab: hydrate from SAVED settings, skip repo re-detection.
     const isConfigEdit = searchParams.get("mode") === "config" && !!projectId;
-    // Self-hosted connection defaults and Cloud server selection feed the same
-    // summary/editor. Only connection defaults use this self-hosted gate.
-    const canUseConnectionDefaults = canUseCloudConnection({ selfHosted, deployMode });
-
     // Decode the slug at render time so the skeleton can name the source
     // ("Fetching owner/repo from GitHub") on the very first paint, before the
     // async initialize call resolves.
@@ -113,9 +109,6 @@ const DeployRepository: React.FC = () => {
     const hasInitialized = useRef<boolean>(false);
     const { toast } = useToast();
 
-    // Resolve self-hosted connection choices; managed servers use the shared selector below.
-    const targets = useDesktopTargets();
-
     // A saved project pins the deploy target only if it actually HAS one, so the gate is
     // the hydration RESULT, not the fact that a project is being loaded:
     //   "pending" — config-edit or a repo-less project/services deploy, target not read
@@ -134,102 +127,29 @@ const DeployRepository: React.FC = () => {
     const [savedTargetState, setSavedTargetState] = useState<"pending" | "saved" | "none">(
         loadsSavedTarget ? "pending" : "none",
     );
-    // applyLastPick is re-run synchronously the instant hydration resolves — before that
-    // setState has re-rendered — so its gate reads the ref, not the state.
-    const savedTargetRef = useRef<"pending" | "saved" | "none">(loadsSavedTarget ? "pending" : "none");
-
     // Own the selector state above both views. Switching between the summary and
     // target settings must not refetch, reseed or replace the chosen Cloud server.
     const serverSelection = useServerSelection({
         value: config.serverId,
         selectedName: config.serverName,
-        readOnly: !!config.projectId || !!config.uploadSessionId,
+        readOnly: !!config.serverId && (!!config.uploadSessionId || (!!config.projectId && !!config.workspaceId)),
         disabled: loading || isRescanning || state.isDeploying,
         disabledReason: config.uploadSessionId
             ? t.billing.workspaces.uploadDestinationHint
-            : config.projectId ? t.billing.workspaces.savedDestinationHint : undefined,
+            : config.projectId && config.workspaceId ? t.billing.workspaces.savedDestinationHint : undefined,
         forDeployment: true,
+        autoSelectFirst: savedTargetState === "none",
+        useSavedDefault: savedTargetState === "none",
         onSelect: (server) => updateConfig({
-            deployTarget: "cloud",
+            deployTarget: server ? (server.raw.managed ? "cloud" : "server") : (selfHosted ? "server" : "cloud"),
             serverId: server?.id,
             workspaceId: server?.raw.managed?.id,
             serverName: server?.name,
+            buildStrategy: "server",
         }),
-    }, !selfHosted && !loading && savedTargetState !== "pending");
+    }, !loading && savedTargetState !== "pending" && config.deployTarget !== "cluster");
 
-    // Seed the deploy target SILENTLY so the config view's summary bar is correct
-    // without ever mounting the full target step.
-    useSeedDeployTarget(targets, canUseConnectionDefaults && savedTargetState === "none");
-
-    // The wizard ALWAYS lands on the config step. The deploy target is seeded
-    // silently — applyLastPick (below, useLayoutEffect) for the fast localStorage
-    // path, useSeedDeployTarget (above) for the settings/server default — and is
-    // shown in the DeployTargetSummary bar at the top of the config view.
-    // Clicking that bar (onEdit) is the only way into the full target picker.
-    //
-    // Previously first-time users (no soft last-pick) started on "target", which
-    // can't know the servers/default synchronously: the step mounted, showed a
-    // centered spinner while listServers() / settingsApi.get() / cloud resolved,
-    // then auto-advanced by calling onContinue() — the visible "spin then bounce"
-    // flash. Landing on config and seeding silently removes it entirely.
     const [step, setStep] = useState<"target" | "config">("config");
-
-    // Apply the soft last-pick to config so step="config" renders with the
-    // correct target/serverId. Runs TWICE:
-    //   Pass 1: pre-paint (useLayoutEffect) so the summary bar doesn't
-    //           flash with DEFAULT_CONFIG.deployTarget="cloud".
-    //   Pass 2: AFTER initializeFromRepo's setConfig settles — that path
-    //           goes through buildPreparedConfig which overwrites
-    //           buildStrategy / runtimeMode based on stack defaults,
-    //           clobbering the user's last pick. The applied flag is
-    //           reset right before pass 2 so it fires once more.
-    const appliedLastPickRef = useRef(false);
-
-    const applyLastPick = useCallback(() => {
-        // Don't override a SAVED project's hydrated target, and don't guess ahead of
-        // hydration either (same gate as useSeedDeployTarget) — the last-pick memory
-        // applies to deploys with no target of their own.
-        if (!canUseConnectionDefaults || savedTargetRef.current !== "none" || appliedLastPickRef.current) return;
-        const last = typeof window !== "undefined" ? lastPickStore.read() : null;
-        if (!last) return;
-        if (last.target === "server") {
-            // lastPickStore is a browser-GLOBAL key, so this serverId may be from
-            // another project/org or a since-removed server. Replay it ONLY when
-            // it's a live target in THIS org's list (mirrors useSeedDeployTarget's
-            // gate) — otherwise leave appliedLastPickRef UNconsumed so pass-2 (after
-            // targets load) can retry, and fall through to the validated seed rather
-            // than submitting a serverId the deploy's org doesn't own.
-            if (!last.serverId || !targets.servers.some((s) => s.id === last.serverId)) return;
-            appliedLastPickRef.current = true;
-            updateConfig({ deployTarget: "server", serverId: last.serverId });
-        } else if (last.target === "cloud") {
-            appliedLastPickRef.current = true;
-            updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
-        }
-        // No "local" branch: the memory only stores a pickable target, and a legacy
-        // stored one fails lastPickStore's validation — so it falls through to the
-        // seeded auto-pick, which lands on this box's own server row rather than on a
-        // target with no card and no address.
-    }, [canUseConnectionDefaults, targets.servers, updateConfig]);
-
-    useLayoutEffect(() => {
-        applyLastPick();
-    }, [applyLastPick]);
-
-    // Single-server safety net. The picker's own auto-select (DeployTargetStep)
-    // only runs while that step is MOUNTED — so on the auto-skip path (one
-    // server → picker skipped), config.serverId stays unset and both the summary
-    // ("My Server" fallback) and the deploy lose the target. Mirror the
-    // auto-select here so the lone server's id is always wired, picker or not.
-    useEffect(() => {
-        if (
-            config.deployTarget === "server" &&
-            !config.serverId &&
-            targets.servers.length === 1
-        ) {
-            updateConfig({ serverId: targets.servers[0].id });
-        }
-    }, [config.deployTarget, config.serverId, targets.servers, updateConfig]);
 
     // Cloud always builds in the cloud runtime. The full target step enforces
     // buildStrategy="server" for a cloud target while it's open; replicate just
@@ -241,11 +161,6 @@ const DeployRepository: React.FC = () => {
             updateConfig({ buildStrategy: "server" });
         }
     }, [config.deployTarget, config.buildStrategy, updateConfig]);
-
-    // Track whether the user explicitly came back to step 1 via the edit
-    // affordance. If they did, we must NOT auto-skip past it again - they
-    // came here to make a change. Reset to true only on initial mount.
-    const autoSkipTargetRef = useRef(true);
 
     useEffect(() => {
         const initialize = async () => {
@@ -292,22 +207,8 @@ const DeployRepository: React.FC = () => {
                 });
             }
 
-            // Re-apply last-pick: initializeFromRepo's buildPreparedConfig
-            // overwrites buildStrategy + runtimeMode from the detected stack's
-            // defaults, which clobbers what useLayoutEffect set above. Reset
-            // the guard and re-apply so the summary bar (and the rest of the
-            // page) reflects the user's actual saved preference.
-            if (result.success) {
-                // Hydration is authoritative for a saved project's target — settle the
-                // gate BEFORE re-applying last-pick, or the browser-global memory
-                // overwrites the destination this project already had.
-                if (loadsSavedTarget) {
-                    const pinned = "savedTarget" in result && result.savedTarget ? "saved" : "none";
-                    savedTargetRef.current = pinned;
-                    setSavedTargetState(pinned);
-                }
-                appliedLastPickRef.current = false;
-                applyLastPick();
+            if (result.success && loadsSavedTarget) {
+                setSavedTargetState("savedTarget" in result && result.savedTarget ? "saved" : "none");
             }
 
             if (!result.success) {
@@ -419,9 +320,7 @@ const DeployRepository: React.FC = () => {
                 {/* Destination settings share the page's normal content/sidebar layout. */}
                 {step === "target" && (
                     <DeployTargetStep
-                        targets={targets}
                         serverSelection={serverSelection}
-                        autoSkipAllowed={autoSkipTargetRef.current}
                         onContinue={() => setStep("config")}
                         onBack={() => setStep("config")}
                         projectId={projectId}
@@ -443,31 +342,15 @@ const DeployRepository: React.FC = () => {
                                 isServices={usesServiceDeployment(config)}
                                 rollbackWindow={config.rollbackWindow}
                                 rollbackStrategy={config.rollbackStrategy}
-                                serverName={(() => {
-                                    if (!selfHosted) return serverSelection.selected?.name || config.serverName || (
-                                        serverSelection.loading ? t.widgets.shared.serverSelector.loadingServers
-                                            : serverSelection.readOnly && config.serverId ? t.billing.workspaces.singular
-                                            : serverSelection.automaticCloud ? t.deploy.summary.targetCloud
-                                            : t.widgets.shared.serverSelector.selectServer
-                                    );
-                                    // Resolve the selected server by id; if id isn't set yet but
-                                    // there's exactly one server, use it (covers the paint before
-                                    // the single-server auto-select effect wires serverId).
-                                    const s = config.serverId
-                                        ? targets.servers.find((x) => x.id === config.serverId)
-                                        : targets.servers.length === 1
-                                            ? targets.servers[0]
-                                            : undefined;
-                                    return s?.name ?? s?.sshHost ?? null;
-                                })()}
-                                onEdit={() => {
-                                    // User explicitly came back to change something - don't
-                                    // auto-skip them past the picker again.
-                                    autoSkipTargetRef.current = false;
-                                    setStep("target");
-                                }}
+                                serverName={serverSelection.selected?.name || config.serverName || (
+                                    serverSelection.loading ? t.widgets.shared.serverSelector.loadingServers
+                                        : serverSelection.readOnly && config.serverId ? t.billing.workspaces.singular
+                                        : serverSelection.automaticCloud ? t.deploy.summary.targetCloud
+                                        : t.widgets.shared.serverSelector.selectServer
+                                )}
+                                onEdit={() => setStep("target")}
                             />
-                            {!selfHosted && serverSelection.error && <p role="alert" className="text-sm text-danger">{serverSelection.error}</p>}
+                            {serverSelection.error && <p role="alert" className="text-sm text-danger">{serverSelection.error}</p>}
 
                             {/* Above every type-specific section: a refused
                                 openship.json field can belong to any of them, and
@@ -476,7 +359,7 @@ const DeployRepository: React.FC = () => {
                             <ConfigDiagnostics />
                             {deploymentSections}
                         </div>
-                        <Sidebar destinationReady={selfHosted || serverSelection.ready} />
+                        <Sidebar destinationReady={(config.deployTarget === "cluster" && !!config.projectId) || serverSelection.ready} />
                     </div>
                 )}
         </PageContainer>

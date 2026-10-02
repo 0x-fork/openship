@@ -34,6 +34,25 @@ payment queues server setup. Use `managed.serverId` for project placement,
 server usage, terminal access and lifecycle operations. `managed.id` is the
 subscription owner identifier used only for billing.
 
+Self-hosted and desktop installations can use these same managed servers after
+connecting an Openship Cloud account. Create a new server with `createManaged`,
+or list and link an existing server:
+
+```ts
+const available = await ship.servers.availableManaged();
+const selected = available.servers[0];
+if (selected) {
+  const linked = await ship.servers.connectManaged({ serverId: selected.id });
+  console.log(linked.serverId); // This installation's deployment destination.
+}
+```
+
+Linking requires administration of the server in Cloud and permission to add a
+server locally. The link pins the Cloud API, account and organization. Changing
+the connected account cannot silently redirect existing projects. Project
+configuration stays on the installation that created it; the managed server's
+subscription and host lifecycle remain controlled by Cloud.
+
 `servers.ensure(id)`, `resize(id, input)`, `retry(id)` and `removeManaged(id, input)`
 queue durable work. Poll `servers.get(id)` and read `managed.operation` for logs,
 errors and retry timing. An HTTP 202 means accepted; inspect operation completion
@@ -50,6 +69,13 @@ membership requires a fresh preview. Disk shrinking requires migration. Deleting
 a managed server also requires billing administration, no projects, no unsettled
 checkout and an ended subscription. Deleting one project never deletes a shared
 server or its siblings.
+
+Cloud includes projects registered by linked installations when checking whether
+a server is empty or safe to resize. A linked installation must finish or recover
+its active operation before another controller can change that server. Cloud
+cannot report complete service counts or build minutes for projects whose records
+live on another installation; those billing counters are `null` rather than a
+partial total. Host measurements and provider billing remain available.
 
 `servers.getNetworkSettings(id)` reads the supported provider network fields.
 `updateNetworkSettings(id, { internetAccess, expectedInternetAccess, confirm: true })`
@@ -667,6 +693,8 @@ shared storage before removing the cluster runtime.
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | Create a server identity without purchasing or provisioning resources. | `servers.createManaged(input)` | `POST /api/system/servers/managed`<br />`server:admin` |
+| List servers available through the connected Cloud account without creating resources or copying projects. | `servers.availableManaged()` | `GET /api/system/servers/managed/available`<br />`server:admin` |
+| Link an existing Cloud server to this organization after verifying its administrator and account identity; return the local serverId for deployments. | `servers.connectManaged(input)` | `POST /api/system/servers/managed/connect`<br />`server:admin` |
 | Measure host usage and accessible project disk data separately from provisioned capacity. | `servers.usage(id)` | `GET /api/system/servers/:id/usage`<br />`server:read` |
 | Queue idempotent provisioning or resume of the subscribed Docker host. | `servers.ensure(id)` | `POST /api/system/servers/:id/ensure`<br />`server:write` |
 | Retry a failed server operation using its saved provider identity and recovery checkpoint. | `servers.retry(id)` | `POST /api/system/servers/:id/retry`<br />`server:admin` |
@@ -680,7 +708,7 @@ shared storage before removing the cluster runtime.
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Read accessible deployment servers and availability of the existing dedicated Cloud target. | `servers.destinations()` | `GET /api/system/servers/destinations`<br />`server:list` |
+| Read accessible deployment servers, including linked managed servers, with their capabilities and readiness. | `servers.destinations()` | `GET /api/system/servers/destinations`<br />`server:list` |
 
 ### Legacy network URLs
 

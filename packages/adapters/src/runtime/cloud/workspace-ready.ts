@@ -2,8 +2,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Oblien, WorkspaceData } from "oblien";
 import { AppError } from "@repo/core";
 
-export function assertDockerWorkspaceOwner(workspace: WorkspaceData, namespace: string): void {
-  if (workspace.namespace !== namespace) throw new Error("Cloud workspace namespace does not match its project");
+export function assertDockerWorkspaceOwner(workspace: WorkspaceData, namespace: string, workspaceId: string): void {
+  if (workspace.namespace !== namespace || workspace.id !== workspaceId)
+    throw new AppError("Cloud workspace identity does not match its server", 502, "CLOUD_SERVER_IDENTITY_MISMATCH");
 }
 
 /** `status: active` describes the workspace record, even after a VM stop.
@@ -35,7 +36,7 @@ export async function waitForCloudWorkspaceStopped(client: Oblien, workspaceId: 
   const deadline = Date.now() + 60_000;
   for (;;) {
     const workspace = await client.workspaces.get(workspaceId);
-    assertDockerWorkspaceOwner(workspace, namespace);
+    assertDockerWorkspaceOwner(workspace, namespace, workspaceId);
     if (["stopped", "paused", "suspended"].includes(cloudWorkspaceStatus(workspace))) return;
     if (Date.now() >= deadline) throw new Error("The managed server has not returned to its stopped state");
     await delay(500);
@@ -51,7 +52,7 @@ export async function waitForCloudDockerWorkspace(
   while (true) {
     options.signal?.throwIfAborted();
     const workspace = await client.workspaces.get(workspaceId);
-    assertDockerWorkspaceOwner(workspace, namespace);
+    assertDockerWorkspaceOwner(workspace, namespace, workspaceId);
     const provisioning = workspace.provisioning as { state?: string; error?: unknown } | undefined;
     if (provisioning?.state === "failed" || ["error", "failed"].includes(cloudWorkspaceStatus(workspace))) {
       throw new Error("Oblien could not start the Docker workspace. Its existing disk has been retained. Retry the deployment; contact Openship support if it still cannot start.");

@@ -5,6 +5,7 @@ import { AppError, SYSTEM, safeErrorMessage, isHostPathSource } from "@repo/core
 import { DockerRuntime } from "../docker";
 import { CloudServerConnection } from "./server-connection";
 import { CloudProcessSupervisor } from "./process-supervisor";
+import { managedProjectRoutingScope, type ManagedContainerRouteTargets } from "./routing-scope";
 import type { CloudProjectRoutingScope } from "../../infra/cloud";
 import { BuildLogger, sq } from "../build-pipeline";
 import type {
@@ -674,68 +675,36 @@ export class CloudDockerRuntime extends DockerRuntime {
   }
   /** The infrastructure provider translates application targets to managed ingress. */
   routingScope(): CloudProjectRoutingScope {
-    const processes = new CloudProcessSupervisor(
-      this.connection,
-      this.projectId,
-      this.projectPaths.bare,
-    );
-    const ownedPorts = async () => [
-      ...new Set([
-        ...(await this.publishedContainers(true)).flatMap((item) =>
-          item.Ports.filter((port) => port.Type === "tcp" && port.PublicPort).map(
-            (port) => port.PublicPort!,
-          ),
-        ),
-        ...(await processes.ports()),
-      ]),
-    ];
+    return managedProjectRoutingScope(this.connection, this.options, async () => this.containerRouteTargets());
+  }
+  containerRouteTargets(): ManagedContainerRouteTargets {
+    const resolveTarget = async (containerId: string, port: number) => {
+      const info = await this.getContainerInfo(containerId);
+      const published = info.hostPortByContainerPort?.[port];
+      if (!published) throw new Error(`Service port ${port} is not published on its server`);
+      return published;
+    };
     return {
-      workspaceId: this.workspaceId,
-      projectId: this.projectId,
-      routeRoot: this.projectPaths.routes,
-      staticReleaseRoot: `${this.projectPaths.bare}/releases`,
-      executor: this.executor,
-      lock: this.options.provisionLock,
-      publicDomain: this.options.publicDomain,
-      ownedPorts,
-      resolveTarget: async (containerId, port) => {
-        if ((await processes.listProjectDeploymentIds(this.projectId)).includes(containerId)) {
-          const info = await processes.getInfo(containerId);
-          if (info.hostPortByContainerPort?.[port] !== port)
-            throw new Error("Routing port does not belong to this project's process");
-          return port;
-        }
-        const info = await this.getContainerInfo(containerId);
-        const published = info.hostPortByContainerPort?.[port];
-        if (!published) throw new Error(`Service port ${port} is not published on its server`);
-        return published;
-      },
+      resolveTarget,
       resolveUrl: async (url) => {
         const target = new URL(url);
-        if (target.protocol !== "http:" || target.username || target.password)
-          throw new Error("Invalid application route target");
         const targetPort = Number(target.port || 80);
         if (["127.0.0.1", "localhost"].includes(target.hostname)) {
-          if (!(await ownedPorts()).includes(targetPort))
-            throw new Error("Published routing port does not belong to this project");
+          const containers = await this.publishedContainers(true);
+          const owned = containers.some(item => item.Labels["openship.project"] === this.projectId &&
+            item.Ports.some(port => port.Type === "tcp" && port.PublicPort === targetPort));
+          if (!owned) throw new Error("Published routing port does not belong to this project");
           return targetPort;
         }
-        const container = (await this.listAllContainers()).find(
-          (item) => item.ip === target.hostname,
-        );
-        if (!container)
-          throw new Error("Route target does not belong to this project's containers");
-        const info = await this.getContainerInfo(container.id);
-        const published = info.hostPortByContainerPort?.[Number(target.port || 80)];
-        if (!published)
-          throw new Error("The application's route port is not published on its server");
-        return published;
+        const container = (await this.listAllContainers()).find(item => item.ip === target.hostname);
+        if (!container) throw new Error("Route target does not belong to this project's containers");
+        return resolveTarget(container.id, targetPort);
       },
     };
   }
   override async listAllContainers() {
     const workspace = await this.client.workspaces.get(this.workspaceId);
-    assertDockerWorkspaceOwner(workspace, this.options.namespace);
+    assertDockerWorkspaceOwner(workspace, this.options.namespace, this.workspaceId);
     assertCloudWorkspaceRunning(workspace);
     const containers = await super.listAllContainers();
     return containers.filter(
@@ -752,7 +721,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       if (notFound(error)) return { containerId, status: "missing" };
       throw error;
     }
-    assertDockerWorkspaceOwner(workspace, this.options.namespace);
+    assertDockerWorkspaceOwner(workspace, this.options.namespace, this.workspaceId);
     if (!isDockerWorkspaceRunning(workspace)) {
       const status = cloudWorkspaceStatus(workspace);
       return {
@@ -787,7 +756,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     if (containerId === this.workspaceId)
       throw new Error("A Docker workspace is not a service container");
     const workspace = await this.client.workspaces.get(this.workspaceId);
-    assertDockerWorkspaceOwner(workspace, this.options.namespace);
+    assertDockerWorkspaceOwner(workspace, this.options.namespace, this.workspaceId);
     if (!isDockerWorkspaceRunning(workspace)) return;
     return super.stop(containerId);
   }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isValidElement, type ReactElement } from "react";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), getDeploymentInfo: vi.fn() }));
@@ -29,6 +29,21 @@ function loadPage() {
   return BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve({}) });
 }
 
+async function unavailablePage() {
+  const page = await loadPage();
+  expect(page.type).toBe(BillingUnavailable);
+  return page as ReactElement<{ reason: string }>;
+}
+
+function findElement<P>(node: ReactNode, type: unknown): ReactElement<P> | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement<{ children?: ReactNode }>(child)) continue;
+    if (child.type === type) return child as ReactElement<P>;
+    const match = findElement<P>(child.props.children, type);
+    if (match) return match;
+  }
+}
+
 describe("billing page failure recovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,10 +67,11 @@ describe("billing page failure recovery", () => {
     [403, "FORBIDDEN", "billing-forbidden"],
     [401, undefined, "billing-sign-in-required"],
     [429, undefined, "billing-unreachable"],
+    [400, "CLOUD_WORKSPACE_REQUIRED", "workspace-required"],
   ])("classifies HTTP %s / %s as %s", async (status, code, reason) => {
     mocks.get.mockRejectedValue(new ServerApiError(status, "Request failed", { code }));
 
-    const page = await loadPage();
+    const page = await unavailablePage();
 
     expect(page.type).toBe(BillingUnavailable);
     expect(page.props.reason).toBe(reason);
@@ -64,10 +80,10 @@ describe("billing page failure recovery", () => {
 
   it("does not call an empty response or transport failure disabled billing", async () => {
     mocks.get.mockResolvedValueOnce({});
-    expect((await loadPage()).props.reason).toBe("billing-unreachable");
+    expect((await unavailablePage()).props.reason).toBe("billing-unreachable");
 
     mocks.get.mockRejectedValueOnce(new Error("fetch failed"));
-    expect((await loadPage()).props.reason).toBe("billing-unreachable");
+    expect((await unavailablePage()).props.reason).toBe("billing-unreachable");
   });
 
   it("renders billing state when purchases are disabled", async () => {
@@ -75,7 +91,7 @@ describe("billing page failure recovery", () => {
     mocks.get.mockResolvedValue({ data: state });
 
     const page = await loadPage();
-    const overview = page.props.children.find((child: unknown) => isValidElement(child) && child.type === BillingOverview) as ReactElement<{ state: unknown }>;
+    const overview = findElement<{ state: unknown }>(page, BillingOverview)!;
 
     expect(overview.props.state).toBe(state);
     expect(console.warn).not.toHaveBeenCalled();
@@ -86,7 +102,7 @@ describe("billing page failure recovery", () => {
     mocks.get.mockResolvedValue({ data: { tier: "team", subscription: null, complimentary, billing: { enabled: true }, capabilities: { subscriptionChange: false } } });
 
     const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({}) });
-    const plans = page.props.children.find((child: unknown) => isValidElement(child) && child.type === BillingPlansRoute) as ReactElement<Record<string, unknown>>;
+    const plans = findElement<Record<string, unknown>>(page, BillingPlansRoute)!;
 
     expect(plans.props).toMatchObject({ currentPlan: "team", subscription: null, complimentary, canChangeSubscription: false });
   });
@@ -98,7 +114,7 @@ describe("billing page failure recovery", () => {
     mocks.getDeploymentInfo.mockResolvedValue({ selfHosted: true });
     mocks.get.mockRejectedValue(new ServerApiError(status, "Request failed", { code }));
 
-    expect((await loadPage()).props.reason).toBe(reason);
+    expect((await unavailablePage()).props.reason).toBe(reason);
     expect(mocks.get).toHaveBeenCalledTimes(1);
   });
 
@@ -106,7 +122,7 @@ describe("billing page failure recovery", () => {
     mocks.getDeploymentInfo.mockResolvedValue({ selfHosted: true });
     mocks.get.mockRejectedValueOnce(new ServerApiError(502, "Bad Gateway", {})).mockResolvedValueOnce({ connected });
 
-    expect((await loadPage()).props.reason).toBe(connected ? "cloud-unreachable" : "cloud-not-connected");
+    expect((await unavailablePage()).props.reason).toBe(connected ? "cloud-unreachable" : "cloud-not-connected");
     expect(mocks.get).toHaveBeenLastCalledWith("cloud/status", { cache: "no-store" });
   });
 
@@ -120,6 +136,14 @@ describe("billing page failure recovery", () => {
     expect(console.warn).toHaveBeenCalledExactlyOnceWith("[billing] GET /billing/state failed", {
       status: 503, code: "BILLING_NOT_CONFIGURED",
     });
+  });
+
+  it("keeps the selected workspace available during billing recovery", async () => {
+    mocks.get.mockRejectedValue(new ServerApiError(503, "Unavailable", {}));
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve({ workspaceId: "cws_production" }) });
+    expect(page.type).toBe(BillingUnavailable);
+    expect(page.props.reason).toBe("billing-unreachable");
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/state?workspaceId=cws_production", { cache: "no-store", timeout: 45_000 });
   });
 
   it("does not copy malformed error codes into logs", async () => {

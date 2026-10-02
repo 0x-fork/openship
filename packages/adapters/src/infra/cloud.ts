@@ -49,8 +49,6 @@ export interface CloudProjectRoutingScope {
   executor: CommandExecutor;
   lock: ProvisionLock;
   publicDomain?: string;
-  /** Every owned listener, including stopped releases that retain their binding. */
-  ownedPorts(): Promise<number[]>;
   resolveTarget(containerId: string, port: number): Promise<number>;
   resolveUrl(targetUrl: string): Promise<number>;
 }
@@ -517,26 +515,26 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
           "CLOUD_ROUTE_TARGET_INVALID",
         );
     }
-    const ports = new Set(await this.scope.ownedPorts());
-    if (publishedPort !== undefined && !ports.has(publishedPort))
-      throw new AppError(
-        "Routing port does not belong to this project",
-        409,
-        "CLOUD_ROUTE_TARGET_INVALID",
-      );
+    const ports = new Set<number>();
+    if (publishedPort !== undefined) ports.add(publishedPort);
     for (const route of input.routes) {
       if (
         route.action.kind === "proxy" &&
         !route.action.origin &&
         (route.action.workspace !== this.workspaceId ||
-          typeof route.action.port !== "number" ||
-          !ports.has(route.action.port))
+          typeof route.action.port !== "number")
       )
         throw new AppError(
           "Routing target does not belong to this project",
           409,
           "CLOUD_ROUTE_TARGET_INVALID",
         );
+      if (route.action.kind === "proxy" && !route.action.origin) ports.add(route.action.port!);
+    }
+    for (const port of ports) {
+      if (!Number.isInteger(port) || port < 1 || port > 65535)
+        throw new AppError("Invalid routing port", 409, "CLOUD_ROUTE_TARGET_INVALID");
+      await this.scope.resolveUrl(`http://127.0.0.1:${port}`);
     }
   }
 
@@ -569,6 +567,8 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       ) {
         throw new Error("Cloud route is not owned by this project");
       }
+      if (page.custom_domain && normalizeHostname(page.custom_domain) === normalizeHostname(domain))
+        await this.pageDomain(page.slug, domain);
       opts?.signal?.throwIfAborted();
       if (!(await this.pages.delete(page.slug)).success)
         throw new Error("Could not remove the managed route");

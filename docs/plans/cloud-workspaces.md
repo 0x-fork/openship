@@ -1,82 +1,76 @@
-# Subscription-owned Cloud workspaces
+# Managed Cloud servers
 
-Approved implementation scope: shared Docker execution targets alongside the existing dedicated native and Docker targets. Existing customers migrate manually; no automatic moves, billing replacements, or resource deletion.
+Approved scope: one subscription provisions one managed server. Projects select
+it through `serverId` and use the existing Docker or bare application engine.
+Self-hosted, desktop and SaaS share the server acquisition, destination and
+application flows. Existing customer migration is performed outside this code.
 
 ## Invariants
 
-- Organization owns workspace; workspace owns its namespace, subscription and runtime resources. Projects are members, never owners of a shared host.
-- Shared targets always use Docker, including the first single-app project. Dedicated native targets remain native until an explicit migration.
-- Reuse the existing engine, Docker runtime, build pipeline and Cloud transport. Provider-only lifecycle and edge behavior stay in adapters.
-- Each subscription has an independent namespace. Oblien authorizes billing and provisioned capacity; Docker reports actual runtime usage.
-- Snapshot execution identity. Project cleanup and rollback cannot delete, resize or restore the shared VM.
-- Project resource limits are container limits. Creating a project does not reserve another provider VM or disk. Builds share the host with coordinated admission.
-- Provider calls are idempotent and recoverable. A failed billing read does not suspend an active workspace. Suspensions preserve data.
-- Disk usage is measured; provisioned disk is capacity. Shared image/cache/system bytes are not repeatedly charged to projects.
+- The organization owns the subscription and managed server. Projects are members;
+  deleting an application cannot delete, resize or restore the server.
+- `serverId` is the execution selector. Its managed binding determines the
+  subscription and provider namespace; clients cannot supply an unrelated scope.
+- `DockerRuntime` runs containers. `BareRuntime` runs host processes or serves
+  static releases. A separate server provides a dedicated destination; choosing
+  bare alone does not purchase or isolate another VM.
+- Oblien supplies provisioning, scoped transport, process supervision, networking,
+  billing and ingress. There is no parallel native Cloud application engine.
+- Workload commands use the destination adapter. An unbound or disconnected Cloud
+  destination cannot fall back to the control plane's Docker socket or filesystem.
+- Each subscription owns one provider VM. Projects share its CPU, memory and disk;
+  optional container limits do not reserve another VM. Builds use available host
+  capacity. Stored bytes are measured separately from purchased disk capacity.
+- Host operations coordinate across API replicas and linked installations. Intent,
+  command completion and deletion receipts are durable; an uncertain remote
+  mutation cannot be blindly replayed or unlocked after a timer.
+- A linked installation pins the Cloud API, user, organization, subscription and
+  server. Switching or disconnecting the account invalidates access and caches.
+- Configuration transfers require explicit destination mapping and do not copy
+  execution credentials or silently tear down the source deployment.
 
-## Managed server refinement
+## Delivered work
 
-Projects use `serverId` for their execution host, including Cloud. Each Cloud
-workspace owns one managed server identity; the workspace still owns billing,
-provisioning and host deletion. The server's workspace binding selects Oblien
-transport and the workspace's Docker or dedicated native runtime. Local and SSH
-servers retain their existing connections. Project workspace ownership is an
-immutable, database-checked billing scope, not another execution selector.
+- Managed ownership constraints, namespace credentials, subscription reconciliation
+  and recoverable provisioning/resize/deletion.
+- Common Add Server and destination selection, including acquisition/linking from
+  self-hosted and desktop installations without reseller credentials.
+- Shared builds, services, environments, jobs, terminals, monitoring, backups,
+  rollback and project cleanup; provider-specific routing validates project-owned
+  container and process listeners.
+- Independent billing for additional servers, measured storage, capability-based
+  server controls and activity history.
+- Permission-gated HTTP, SDK and MCP operations and generated website references.
+- Restored regression tests, complete production-router boot scans, real Docker
+  release tests and explicit live-provider verification.
 
-- [x] Atomic managed server creation and database ownership constraints
-- [x] Central destination resolution for local, SSH, shared Cloud Docker and dedicated Cloud
-- [x] Project/app placement through server IDs and unchanged subscription scoping
-- [x] Guards against SSH fallback and ordinary server deletion for managed hosts
-- [x] Updated contracts, UI, SDK/MCP documentation and manual migration guidance
-- [x] Ownership, lifecycle and self-hosted regression tests; release verification
+## Verification and limits
 
-## Delivery checklist
+Full API, dashboard, adapters, database, core, contracts, platform, SDK, CLI and
+script suites pass locally. Cloud and self-hosted production route graphs pass
+the startup permission scanner with no unregistered routes. Typechecks,
+documentation validation, the website build and public SDK packaging also pass.
+The new managed-bare regression reproduces the self-hosted edge-claim error before
+its fix; the same suite retains self-hosted collision protections.
 
-- [x] Workspace schema, ownership constraints and repository integration tests
-- [x] Workspace-scoped namespace, credentials, subscriptions and entitlement reconciliation
-- [x] Common Docker host provisioning and target resolution; native target preservation
-- [x] Build capacity, project/app creation, services and routing integration
-- [x] Host-safe project deletion, retention, rollback and backups
-- [x] Workspace API, SDK and MCP lifecycle operations with permission gates
-- [x] Workspace UI, placement, billing and pricing explanations
-- [x] Manual migration runbook and website documentation
-- [x] Release integration tests, production route scan, typechecks and regression suite
+The real Docker release suites exercise source-build success/failure/cancellation,
+ports/routes, mounts, private links, environment reapply, backups/restores,
+retained-image rollback and sibling-safe cleanup. Separate-account Oblien tests
+exercise provider transport, process identity, restart/stop/start and teardown.
+Local SaaS testing uses a temporary complimentary grant, not a paid checkout.
 
-## Validation
-
-- Full API: 617 files / 7,755 tests passed. The complete Cloud and self-hosted
-  production routers both pass the startup permission scanner and MCP discovery.
-- Full dashboard: 230 files / 2,490 tests passed. Browser fixtures cover light,
-  dim, dark, narrow and Arabic RTL layouts, placement, resize review and progress.
-- Adapter suite: 4,755 tests passed, including container-name cleanup and omitted
-  zero-byte layer sizes in Docker's disk-usage response. Reintroducing the faulty
-  lookup in a temporary copy fails both name/short-ID cases; the disk-accounting
-  regression also fails before its fix and passes afterward.
-- Core (1,408), contracts (14), database (603), platform (170), SDK (187), CLI (581)
-  and repository script (67) tests passed. Database tests apply the migration chain
-  to fresh and populated databases and verify cross-organization constraints.
-- Managed-server regressions cover project/app/source placement, historical
-  snapshots, immutable billing ownership, and unchanged SSH/local/direct Cloud
-  bindings during upgrade. Project transfers follow each FK identity once,
-  without including unrelated servers through composite ownership columns.
-- Both Cloud Docker release suites pass against a disposable real Docker daemon:
-  10 tests covering ports/routes, mounts, private links, environment reapply,
-  data backup/restore, image replay, sibling-safe cleanup, container limits and
-  build success/failure/cancellation cleanup.
-- API, dashboard, database, adapters, platform, SDK and CLI typechecks pass. The public
-  package builds and passes its installed Node 22 lifecycle/CLI/type checks.
-- Website build and documentation checks pass: 167 pages, 461 SDK methods,
-  680 HTTP routes, 437 MCP tools, 214 CLI paths and all documented examples.
-- All 75 new English translation keys exist in the other eight locales with
-  translated prose. The global i18n check still reports pre-existing drift.
-
-Provider transport and edge responses are simulated in local lifecycle/release
-tests. A paid checkout, provisioning and resize smoke test against the deployed
-Oblien API remains part of the [managed server architecture](../managed-cloud-servers.md).
-No production subscription or customer workload was changed during development.
+Actual payment capture, renewal and externally delivered billing webhooks require
+staging validation. Simulated billing tests do not certify the payment processor.
+An unfinished mutation after a bridge crash requires a provider-console server
+restart before recovery; the application does not restart customer services
+automatically. Linked application counters may be unknown when records belong to
+another installation. These boundaries are documented in
+[Managed Cloud servers](../managed-cloud-servers.md).
 
 ## Separate earlier audit findings
 
-This change protects the shared host during image rollback; it does not resolve
-the earlier rollback environment-preview count, general Compose rollback
-transactionality, deployment-page rollback shortcut or slow SSL revalidation.
-Those remain separate work and must not be considered fixed by workspace ownership.
+This work protects the shared server during application rollback. It does not
+claim to fix the earlier rollback environment-preview count, general Compose
+rollback transactionality, deployment-page rollback shortcut or SSL revalidation
+latency. The old SaaS customer's `no space left on device` report also needs the
+affected host's block/inode and mount measurements; no customer data was pruned.

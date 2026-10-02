@@ -119,7 +119,7 @@ async function listServers(ctx: ExecutionContext, live = true) {
   // target and every host operation refuses, so the local row is hidden rather
   // than listed-but-dead. Enforced by createHostExecutor throwing — this only
   // stops the UI from offering something the API will reject.
-  const eligible = rows.filter((s) => env.CLOUD_MODE ? !!s.workspaceId : !s.workspaceId);
+  const eligible = rows.filter((s) => !env.CLOUD_MODE || !!s.workspaceId);
   const all = [];
   for (const server of eligible) {
     if (server.isLocal && hostControlDisabled()) continue;
@@ -152,7 +152,7 @@ async function getServer(ctx: ExecutionContext, id: string) {
   // Org-scoped: out-of-org server ids 404 indistinguishably from missing.
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
-  if (env.CLOUD_MODE !== !!server.workspaceId) return failServer({ error: "Server not found" }, 404);
+  if (env.CLOUD_MODE && !server.workspaceId) return failServer({ error: "Server not found" }, 404);
   const cloud = server.workspaceId ? await managed.get(ctx, server.workspaceId) : null;
 
   await primeGeo();
@@ -188,7 +188,7 @@ async function probeReachability(ctx: ExecutionContext, id: string) {
 
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
-  if (env.CLOUD_MODE !== !!server.workspaceId) return failServer({ error: "Server not found" }, 404);
+  if (env.CLOUD_MODE && !server.workspaceId) return failServer({ error: "Server not found" }, 404);
   if (server.workspaceId) {
     try {
       await withServerExecution(ctx.organizationId, id, executor => executor.exec("true", { timeout: 10_000 }));
@@ -761,6 +761,7 @@ async function execOnServer(
         timeoutMs: body.timeoutMs,
         maxOutputBytes: body.maxOutputBytes,
       }),
+      { mutation: true },
     )
     .catch((err: unknown) => {
       if (err instanceof AppError) throw err;

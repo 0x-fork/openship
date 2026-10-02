@@ -8,6 +8,7 @@ import { parseLogLevel, sq } from "../build-pipeline";
 import {
   managedProcessPorts,
   managedProcessState,
+  readManagedProcessStatus,
   waitForManagedProcess,
   type CloudServerConnection,
 } from "./server-connection";
@@ -56,7 +57,7 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
     return workload;
   }
 
-  private async read(deploymentId: string) {
+  private async read(deploymentId: string, live = false) {
     let workload: WorkloadInfo;
     try {
       workload = await this.server.workspace().workloads.get(this.id(deploymentId));
@@ -65,11 +66,12 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
       throw error;
     }
     // Ownership failures must not become an idempotent "already missing" result.
-    return this.assertOwned(workload, deploymentId);
+    const saved = this.assertOwned(workload, deploymentId);
+    return live ? readManagedProcessStatus(this.server.workspace().workloads, saved) : saved;
   }
 
-  private async require(deploymentId: string) {
-    const workload = await this.read(deploymentId);
+  private async require(deploymentId: string, live = false) {
+    const workload = await this.read(deploymentId, live);
     if (!workload)
       throw new AppError(
         "The saved application process is missing. Redeploy this release.",
@@ -211,7 +213,7 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
   }
 
   private async waitForState(deploymentId: string, expected: "running" | "stopped") {
-    return waitForManagedProcess(() => this.require(deploymentId), expected);
+    return waitForManagedProcess(() => this.require(deploymentId, true), expected);
   }
 
   private async assertPortsAvailable(ports: number[]) {
@@ -298,7 +300,7 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
   async getInfo(deploymentId: string): Promise<ContainerInfo> {
     const hostState = await this.server.state();
     if (hostState !== "running") return { containerId: deploymentId, status: hostState };
-    const workload = await this.read(deploymentId);
+    const workload = await this.read(deploymentId, true);
     if (!workload) return { containerId: deploymentId, status: "missing" };
     const status = managedProcessState(workload);
     const ports = managedProcessPorts(workload);

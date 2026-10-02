@@ -453,8 +453,11 @@
     "buyCredits": "购买更多额度",
     "openBilling": "打开账单",
     "close": "知道了",
-    "opening": "正在打开此提醒所属组织的账单…",
-    "wrongOrganization": "您的账户无法使用此账单链接。请使用属于提醒中组织的账户登录。"
+    "wrongOrganization": "您的账户无法使用此账单链接。请使用属于提醒中组织的账户登录。",
+    "title": "Cloud 额度",
+    "showWarnings": "显示额度警告",
+    "hideWarnings": "隐藏额度警告",
+    "backToBilling": "返回账单"
   },
   "capacityEditor": {
     "title": "管理 Cloud 容量",
@@ -609,6 +612,60 @@
       "confirmHint": "这将影响此服务器上的所有项目。禁用互联网可能会中断构建和外部集成。",
       "save": "应用网络更改"
     },
-    "existingServerHint": "使用此服务器的套餐。"
+    "existingServerHint": "使用此服务器的套餐。",
+    "destination": "部署目标",
+    "newProjectServer": "新的专用服务器",
+    "oneProject": "1 个项目",
+    "savedDestinationHint": "此项目保留已保存的服务器和数据。",
+    "uploadDestinationHint": "源文件位于此服务器上。如需使用其他部署目标，请重新上传。",
+    "serverPlanTitle": "为 {name} 选择套餐",
+    "serverPlanDescription": "新服务器拥有自己的 CPU、内存和存储，并使用独立订阅。",
+    "serverPlanReadyTitle": "服务器套餐已就绪",
+    "serverPlanReady": "套餐已生效。返回配置页面以部署到此服务器。",
+    "returnToSetup": "返回配置",
+    "resourceSummary": "{cpu} vCPU · {memory} GB 内存 · {disk} GB 存储",
+    "switchingBilling": "正在加载 {name} 的账单…",
+    "activity": {
+      "empty": "暂无服务器操作。",
+      "waitingForLogs": "正在等待操作日志…",
+      "noLogs": "此操作未记录日志。",
+      "status": {
+        "queued": "排队中",
+        "running": "进行中",
+        "succeeded": "已完成",
+        "failed": "失败"
+      }
+    }
+  },
+  "custom": {
+    "name": "自定义",
+    "configuration": "服务器配置",
+    "presets": "套餐",
+    "title": "选择服务器规格",
+    "description": "选择项目共享的 CPU、内存和存储。",
+    "cpu": "CPU",
+    "memory": "内存",
+    "disk": "存储",
+    "diskGrowth": "现有磁盘可以扩容。缩减存储需要将数据迁移到新服务器。",
+    "range": "{min} 至 {max} {unit}",
+    "shared": "项目和应用共用一台托管服务器。单个服务也可以使用全部可用容量。",
+    "monthlyTotal": "每月总计",
+    "choose": "选择自定义",
+    "updating": "正在更新价格",
+    "invalid": "请为每项资源输入有效范围内的数值。",
+    "quoteError": "无法更新价格，请重试。",
+    "bestPrice": "套餐折扣自动生效。你将以所选资源的最低价格付费。",
+    "breakdown": "价格详情",
+    "bundle": "{name} 套餐",
+    "extraCpu": "额外 CPU",
+    "extraMemory": "额外内存",
+    "extraDisk": "额外存储",
+    "rates": "额外资源月费：{cpu}/vCPU、{memory}/GB 内存、{disk}/GB 存储。仅对超出所选套餐的部分收费。",
+    "applyNotice": "付款后，请查看并应用新资源。应用更改将重启此服务器上的项目。",
+    "resizeTitle": "应用已订阅的资源",
+    "resizeDescription": "你的套餐已更改。重启此服务器之前，请查看新容量及受影响的项目。",
+    "applying": "正在更新服务器资源。你可以在服务器页面查看进度。",
+    "reviewResize": "查看资源变更",
+    "openServer": "打开服务器"
   }
 }

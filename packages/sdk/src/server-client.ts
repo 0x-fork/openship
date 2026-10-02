@@ -198,6 +198,8 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
       destinations: { method: "GET", path: () => "/system/servers/destinations" },
       create: { method: "POST", path: () => "/system/servers" },
       createManaged: { method: "POST", path: () => "/system/servers/managed" },
+      availableManaged: { method: "GET", path: () => "/system/servers/managed/available" },
+      connectManaged: { method: "POST", path: () => "/system/servers/managed/connect" },
       testConnection: {
         method: "POST",
         path: () => "/system/test-connection",

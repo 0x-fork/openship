@@ -1,4 +1,17 @@
 {
+  "acquire": {
+    "connected": {
+      "label": "ربط خادمك",
+      "description": "استخدم خادماً تملكه عبر SSH."
+    },
+    "managed": {
+      "label": "الحصول على خادم مُدار",
+      "description": "تتولى Openship Cloud الإعداد والتوجيه وHTTPS."
+    },
+    "signInHint": "اربط حساب Cloud لاستخدام خادم مُدار حالي أو الحصول على خادم جديد.",
+    "chooseExisting": "اختر خادم Cloud حالياً",
+    "useServer": "استخدام هذا الخادم"
+  },
   "github": {
     "title": "وصول GitHub",
     "desc": "كيف يصادق هذا الخادم على GitHub لاستنساخ المستودعات الخاصة.",

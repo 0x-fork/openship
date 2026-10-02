@@ -453,8 +453,11 @@
     "buyCredits": "Comprar mais créditos",
     "openBilling": "Abrir faturação",
     "close": "Entendido",
-    "opening": "A abrir a faturação da organização deste alerta…",
-    "wrongOrganization": "Este link de faturação não está disponível para a sua conta. Inicie sessão com uma conta da organização deste alerta."
+    "wrongOrganization": "Este link de faturação não está disponível para a sua conta. Inicie sessão com uma conta da organização deste alerta.",
+    "title": "Créditos Cloud",
+    "showWarnings": "Mostrar avisos de créditos",
+    "hideWarnings": "Ocultar avisos de créditos",
+    "backToBilling": "Voltar ao faturamento"
   },
   "capacityEditor": {
     "title": "Gerenciar capacidade do Cloud",
@@ -609,6 +612,60 @@
       "confirmHint": "Isso afeta todos os projetos no servidor. Desativar a internet pode interromper builds e integrações externas.",
       "save": "Aplicar alteração de rede"
     },
-    "existingServerHint": "Usa o plano deste servidor."
+    "existingServerHint": "Usa o plano deste servidor.",
+    "destination": "Destino",
+    "newProjectServer": "Novo servidor dedicado",
+    "oneProject": "1 projeto",
+    "savedDestinationHint": "Este projeto mantém seu servidor e seus dados.",
+    "uploadDestinationHint": "Os arquivos fonte estão neste servidor. Inicie um novo envio para usar outro destino.",
+    "serverPlanTitle": "Escolher um plano para {name}",
+    "serverPlanDescription": "Seu novo servidor tem CPU, memória e armazenamento próprios, com uma assinatura separada.",
+    "serverPlanReadyTitle": "Plano do servidor pronto",
+    "serverPlanReady": "Seu plano está ativo. Volte à configuração para fazer deploy neste servidor.",
+    "returnToSetup": "Voltar à configuração",
+    "resourceSummary": "{cpu} vCPU · {memory} GB de RAM · {disk} GB de armazenamento",
+    "switchingBilling": "Carregando faturamento de {name}…",
+    "activity": {
+      "empty": "Nenhuma operação do servidor ainda.",
+      "waitingForLogs": "Aguardando logs da operação…",
+      "noLogs": "Nenhum log foi registrado para esta operação.",
+      "status": {
+        "queued": "Na fila",
+        "running": "Em andamento",
+        "succeeded": "Concluída",
+        "failed": "Falhou"
+      }
+    }
+  },
+  "custom": {
+    "name": "Personalizado",
+    "configuration": "Configuração do servidor",
+    "presets": "Planos",
+    "title": "Dimensione seu servidor",
+    "description": "Escolha a CPU, memória e armazenamento compartilhados pelos seus projetos.",
+    "cpu": "CPU",
+    "memory": "Memória",
+    "disk": "Armazenamento",
+    "diskGrowth": "Os discos existentes podem ser ampliados. Para reduzir o armazenamento, é necessário mover os dados para um novo servidor.",
+    "range": "De {min} a {max} {unit}",
+    "shared": "Um servidor gerenciado para seus projetos e aplicações. Um único serviço pode usar toda a capacidade disponível.",
+    "monthlyTotal": "Total mensal",
+    "choose": "Escolher Personalizado",
+    "updating": "Atualizando preço",
+    "invalid": "Insira um valor válido dentro do intervalo de cada recurso.",
+    "quoteError": "Não foi possível atualizar o preço. Tente novamente.",
+    "bestPrice": "Os descontos de pacotes são aplicados automaticamente. Você paga o menor preço pelos recursos escolhidos.",
+    "breakdown": "Detalhes do preço",
+    "bundle": "Pacote {name}",
+    "extraCpu": "CPU adicional",
+    "extraMemory": "Memória adicional",
+    "extraDisk": "Armazenamento adicional",
+    "rates": "Extras mensais: {cpu}/vCPU, {memory}/GB de RAM, {disk}/GB de armazenamento. Cobrança somente acima do pacote escolhido.",
+    "applyNotice": "Após o pagamento, revise e aplique os novos recursos. A aplicação reinicia os projetos neste servidor.",
+    "resizeTitle": "Aplicar os recursos da assinatura",
+    "resizeDescription": "Seu plano mudou. Revise a nova capacidade e os projetos afetados antes de reiniciar este servidor.",
+    "applying": "Atualizando os recursos do servidor. Acompanhe o progresso na página dele.",
+    "reviewResize": "Revisar alteração de recursos",
+    "openServer": "Abrir servidor"
   }
 }

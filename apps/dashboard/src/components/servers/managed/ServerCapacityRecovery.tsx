@@ -7,17 +7,14 @@ import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { getApiErrorMessage } from "@/lib/api/client";
-import type { CloudCapacityRestriction } from "@/lib/cloud-deploy-pricing";
 
 export function ServerCapacityRecovery({
   workspaceId,
-  restriction,
   message,
   onClose,
   onRetry,
 }: {
   workspaceId?: string;
-  restriction?: CloudCapacityRestriction;
   message?: string;
   onClose: () => void;
   onRetry?: () => Promise<unknown>;

@@ -1,13 +1,32 @@
 import { PassThrough, Writable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import type { Runtime } from "oblien";
+import type { ManagedCommandRef } from "@repo/core";
 import type { ShellOptions, ShellSession } from "../../types";
+import { currentManagedCommandTracking } from "./command-tracking";
+import { recoverManagedCommand } from "./command-recovery";
+import { CLOUD_TERMINAL_SHELL } from "./exec-framing";
 
 /** Shared provider PTY adapter for service and managed-server terminals. */
-export async function openCloudShell(rt: Runtime, opts?: ShellOptions): Promise<ShellSession> {
+export async function openCloudShell(rt: Runtime, opts?: ShellOptions, workspaceId?: string): Promise<ShellSession> {
   const cols = clampShellWindow(opts?.cols, 80, 1000);
   const rows = clampShellWindow(opts?.rows, 24, 500);
-  const session = await rt.terminal.create({ shell: "/bin/sh", cols, rows });
-  const terminalId = String(session.id);
+  const tracking = currentManagedCommandTracking();
+  if (tracking && !workspaceId) throw new Error("Managed terminal is missing its server identity");
+  const command: ManagedCommandRef = { workspaceId: workspaceId ?? "", marker: `openship-exec-${randomUUID()}:`, kind: "terminal" };
+  await tracking?.record(command);
+  let terminalId: string;
+  try {
+    const session = await rt.terminal.create({ cmd: ["python3", "-u", "-c", CLOUD_TERMINAL_SHELL, command.marker], cols, rows });
+    if (typeof session.id !== "string" || !session.id) throw new Error("The server returned no terminal identity");
+    terminalId = session.id;
+    command.terminalId = terminalId;
+    await tracking?.record({ ...command });
+  } catch (error) {
+    await recoverManagedCommand(rt, command);
+    await tracking?.complete(command.marker);
+    throw error;
+  }
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   const listeners = new Set<(code: number | null, signal?: string) => void>();
@@ -17,27 +36,22 @@ export async function openCloudShell(rt: Runtime, opts?: ShellOptions): Promise<
   let rejectOpen: (error: Error) => void = () => {};
 
   stdout.on("error", () => {
-    void finish();
+    void finish().catch(() => {});
   });
   stderr.on("error", () => {
-    void finish();
+    void finish().catch(() => {});
   });
   stdout.on("close", () => {
-    void finish();
+    void finish().catch(() => {});
   });
   stderr.on("close", () => {
-    void finish();
+    void finish().catch(() => {});
   });
 
   function finish(code: number | null = null, signal?: string): Promise<void> {
     if (exit) return cleanup ?? Promise.resolve();
     exit = { code, signal };
-    cleanup = Promise.resolve()
-      .then(() => rt.terminal.close(terminalId))
-      .then(
-        () => {},
-        () => {},
-      );
+    cleanup = recoverManagedCommand(rt, command).then(() => tracking?.complete(command.marker));
     rejectOpen(new Error("The server terminal connection closed before it was ready"));
     try {
       socket?.close();
@@ -65,19 +79,19 @@ export async function openCloudShell(rt: Runtime, opts?: ShellOptions): Promise<
       // No flow-control method exists in the provider socket. Bound output while
       // the consumer attaches or stalls instead of buffering indefinitely.
       if (stdout.readableLength + stdout.writableLength + bytes.byteLength > 1024 * 1024) {
-        void finish(null, "output_overflow");
+        void finish(null, "output_overflow").catch(() => {});
         return;
       }
       stdout.write(Buffer.from(bytes));
     });
     ws.onTerminalExit((id, code) => {
-      if (id === terminalId) void finish(code ?? null);
+      if (id === terminalId) void finish(code ?? null).catch(() => {});
     });
     ws.onClose(() => {
-      void finish();
+      void finish().catch(() => {});
     });
     ws.onError(() => {
-      void finish();
+      void finish().catch(() => {});
     });
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -109,11 +123,11 @@ export async function openCloudShell(rt: Runtime, opts?: ShellOptions): Promise<
         }
       },
       final(callback) {
-        void finish().then(() => callback());
+        void finish().then(() => callback(), error => callback(error));
       },
     });
     stdin.on("error", () => {
-      void finish();
+      void finish().catch(() => {});
     });
     return {
       stdin,
@@ -128,7 +142,7 @@ export async function openCloudShell(rt: Runtime, opts?: ShellOptions): Promise<
             clampShellWindow(r, 24, 500),
           );
         } catch {
-          void finish();
+          void finish().catch(() => {});
         }
       },
       close: async () => {

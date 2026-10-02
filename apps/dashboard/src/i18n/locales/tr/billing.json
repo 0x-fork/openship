@@ -453,8 +453,11 @@
     "buyCredits": "Daha fazla kredi al",
     "openBilling": "Faturalamayı aç",
     "close": "Anladım",
-    "opening": "Bu uyarıdaki kuruluşun faturalama sayfası açılıyor…",
-    "wrongOrganization": "Bu faturalama bağlantısı hesabınız için kullanılamıyor. Uyarıdaki kuruluşa ait bir hesapla oturum açın."
+    "wrongOrganization": "Bu faturalama bağlantısı hesabınız için kullanılamıyor. Uyarıdaki kuruluşa ait bir hesapla oturum açın.",
+    "title": "Cloud kredileri",
+    "showWarnings": "Kredi uyarılarını göster",
+    "hideWarnings": "Kredi uyarılarını gizle",
+    "backToBilling": "Faturalandırmaya dön"
   },
   "capacityEditor": {
     "title": "Cloud kapasitesini yönet",
@@ -609,6 +612,60 @@
       "confirmHint": "Bu sunucudaki tüm projeler etkilenir. İnterneti kapatmak derlemeleri ve harici entegrasyonları kesintiye uğratabilir.",
       "save": "Ağ değişikliğini uygula"
     },
-    "existingServerHint": "Bu sunucunun planını kullanır."
+    "existingServerHint": "Bu sunucunun planını kullanır.",
+    "destination": "Hedef",
+    "newProjectServer": "Yeni özel sunucu",
+    "oneProject": "1 proje",
+    "savedDestinationHint": "Bu proje, kayıtlı sunucusunu ve verilerini korur.",
+    "uploadDestinationHint": "Kaynak dosyalar bu sunucuda. Başka bir hedef kullanmak için yeni bir yükleme başlat.",
+    "serverPlanTitle": "{name} için bir plan seç",
+    "serverPlanDescription": "Yeni sunucunun kendi CPU’su, belleği ve depolaması ile ayrı bir aboneliği vardır.",
+    "serverPlanReadyTitle": "Sunucu planı hazır",
+    "serverPlanReady": "Planın etkin. Bu sunucuya dağıtım yapmak için kuruluma dön.",
+    "returnToSetup": "Kuruluma dön",
+    "resourceSummary": "{cpu} vCPU · {memory} GB RAM · {disk} GB depolama",
+    "switchingBilling": "{name} için faturalandırma yükleniyor…",
+    "activity": {
+      "empty": "Henüz sunucu işlemi yok.",
+      "waitingForLogs": "İşlem günlükleri bekleniyor…",
+      "noLogs": "Bu işlem için günlük kaydedilmedi.",
+      "status": {
+        "queued": "Sırada",
+        "running": "Devam ediyor",
+        "succeeded": "Tamamlandı",
+        "failed": "Başarısız"
+      }
+    }
+  },
+  "custom": {
+    "name": "Özel",
+    "configuration": "Sunucu yapılandırması",
+    "presets": "Planlar",
+    "title": "Sunucunu boyutlandır",
+    "description": "Projelerinin paylaşacağı CPU, bellek ve depolamayı seç.",
+    "cpu": "CPU",
+    "memory": "Bellek",
+    "disk": "Depolama",
+    "diskGrowth": "Mevcut diskler büyütülebilir. Depolamayı küçültmek için verilerini yeni bir sunucuya taşıman gerekir.",
+    "range": "{min} ile {max} {unit}",
+    "shared": "Projelerin ve uygulamaların için tek bir yönetilen sunucu. Tek bir servis, kullanılabilir kapasitenin tamamını kullanabilir.",
+    "monthlyTotal": "Aylık toplam",
+    "choose": "Özel planı seç",
+    "updating": "Fiyat güncelleniyor",
+    "invalid": "Her kaynak için belirtilen aralıkta geçerli bir miktar gir.",
+    "quoteError": "Fiyat güncellenemedi. Lütfen yeniden dene.",
+    "bestPrice": "Paket indirimleri otomatik uygulanır. Seçtiğin kaynaklar için en düşük fiyatı ödersin.",
+    "breakdown": "Fiyat ayrıntıları",
+    "bundle": "{name} paketi",
+    "extraCpu": "Ek CPU",
+    "extraMemory": "Ek bellek",
+    "extraDisk": "Ek depolama",
+    "rates": "Aylık ek kaynaklar: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB depolama. Yalnızca seçilen paketin üzerindeki kaynaklar ücretlendirilir.",
+    "applyNotice": "Ödemeden sonra yeni kaynakları inceleyip uygula. Uygulama sırasında bu sunucudaki projeler yeniden başlatılır.",
+    "resizeTitle": "Aboneliğindeki kaynakları uygula",
+    "resizeDescription": "Planın değişti. Bu sunucuyu yeniden başlatmadan önce yeni kapasiteyi ve etkilenen projeleri incele.",
+    "applying": "Sunucu kaynakları güncelleniyor. İlerlemeyi sunucu sayfasından takip edebilirsin.",
+    "reviewResize": "Kaynak değişikliğini incele",
+    "openServer": "Sunucuyu aç"
   }
 }

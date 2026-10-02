@@ -421,7 +421,10 @@ export async function selectProjectTransfer(
   // Histories can point at a fork/mail target that was not selected. Optional
   // references are detached; required references must be satisfied by the graph.
   for (const ref of transferReferences) {
-    if (["organization", "user", "servers"].includes(ref.parent)) continue;
+    // Keep managed placement as a destination hint. The subscription itself
+    // never travels; the importer requires an owned server mapping and clears
+    // live workload handles before deriving the destination workspace.
+    if (["organization", "user", "servers", "cloud_workspace"].includes(ref.parent)) continue;
     const parents = new Set(ids(tables[ref.parent] ?? [], ref.parentColumn));
     for (const row of tables[ref.table] ?? []) {
       if (row[ref.column] == null || parents.has(row[ref.column])) continue;

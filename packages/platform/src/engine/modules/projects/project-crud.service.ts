@@ -900,13 +900,16 @@ async function createProductionProject(
   // it through the same org-scoped repository used by deployment preflight,
   // and do it before ensureProjectApp writes anything so a rejected binding is
   // atomic (no orphan project-group row).
-  if (data.serverId && !env.CLOUD_MODE) {
-    const server = await requireOrgServer(data.serverId, organizationId);
-    if (server.workspaceId) throw new AppError("Cloud workspace placement is managed by Openship Cloud", 400, "CLOUD_WORKSPACE_TARGET_UNAVAILABLE");
+  const selectedServer = data.serverId ? await requireOrgServer(data.serverId, organizationId) : null;
+  if (selectedServer && !env.CLOUD_MODE) {
+    if (selectedServer.workspaceId) {
+      const { requireLinkedCloudServer } = await import("../../lib/cloud/server-link");
+      await requireLinkedCloudServer(organizationId, selectedServer.workspaceId);
+    }
   }
   // Workspace ownership is always derived from the selected server.
   data = { ...data, workspaceId: undefined };
-  if (env.CLOUD_MODE) {
+  if (env.CLOUD_MODE || selectedServer?.workspaceId) {
     const { workspace, server } = await resolveCloudProjectServer(organizationId, data.serverId);
     if (workspace) {
       if (!ctx) throw new AppError("Workspace placement requires an authenticated execution context", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");

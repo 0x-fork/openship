@@ -66,12 +66,13 @@ describe("runPreflightChecks", () => {
     );
   });
 
-  it.each(["services", "single"] as const)("checks Cloud volume support for %s projects before deployment", async mode => {
+  it.each(["services", "single"] as const)("uses shared Docker volume support for %s managed-server projects", async mode => {
     const result = await runPreflightChecks({ deployTarget: "cloud", organizationId: "org-1", serviceDeploymentMode: mode,
       buildStrategy: "server", framework: "docker", buildImage: "node:22", hasServer: true, port: 8080 } as any,
     { multiService: true, composeServices: [{ name: "db", image: "postgres:17", ports: ["5432"], exposed: false,
       enabled: true, volumes: ["data:/var/lib/postgresql/data"], dependsOn: [] }] as any });
-    expect(result.checks.find(check => check.id === "cloud-storage")).toMatchObject({ status: mode === "services" ? "pass" : "fail" });
+    expect(result.checks.some(check => check.id === "cloud-storage")).toBe(false);
+    expect(result.checks.find(check => check.id === "config")).toMatchObject({ status: "pass" });
   });
 
   it("checks free-domain availability for every public endpoint", async () => {
@@ -205,7 +206,7 @@ describe("runPreflightChecks", () => {
       {
         repoUrl: "",
         branch: "",
-        sourceStaged: true,
+        localPath: "/tmp/openship-upload/source",
         framework: "docker",
         buildImage: "ubuntu:22.04",
         installCommand: "",
@@ -302,7 +303,7 @@ describe("runPreflightChecks", () => {
       {
         repoUrl: "",
         branch: "",
-        sourceStaged: true,
+        localPath: "/tmp/openship-upload/source",
         framework: "docker",
         installCommand: "",
         buildCommand: "",

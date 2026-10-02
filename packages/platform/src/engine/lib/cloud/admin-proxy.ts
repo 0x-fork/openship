@@ -1,11 +1,17 @@
 import type { CloudAdminProxy } from "@repo/adapters";
 import { cloudClient } from "./client";
 import { cloudRequestError } from "./request-error";
+import { requireLinkedCloudServer, remoteCloudRequest } from "./server-link";
 
 /** Admin-only provider operations remain on the SaaS, including Pages reads. */
-export function createRemoteCloudAdmin(organizationId: string): CloudAdminProxy {
+export function createRemoteCloudAdmin(organizationId: string, workspaceId?: string): CloudAdminProxy {
   const client = cloudClient({ organizationId });
   async function request<T>(path: string, body?: unknown): Promise<T> {
+    if (workspaceId) {
+      const { remote } = await requireLinkedCloudServer(organizationId, workspaceId);
+      return remoteCloudRequest<T>(organizationId, `${path}?serverId=${encodeURIComponent(remote.serverId)}`,
+        body === undefined ? undefined : { method: "POST", body: JSON.stringify(body) }, remote);
+    }
     const response = await client.request(path, body === undefined ? undefined : {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });

@@ -2,11 +2,11 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { usePlatform } from "@/context/PlatformContext";
-import { CreateManagedServerForm } from "@/components/servers/managed/CreateManagedServerForm";
+import { ManagedServerSetup, ServerAcquisitionPicker, type ServerAcquisitionMode } from "@/components/servers/ServerAcquisition";
 import { workspaceBillingHref } from "@/components/billing/BillingWorkspaceContext";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ComponentStatus, ServerInfo } from "@/lib/api/system";
@@ -70,11 +70,31 @@ export default function AddServerPage() {
   const { selfHosted } = usePlatform();
   const router = useRouter();
   const { t } = useI18n();
-  if (selfHosted) return <ConnectedServerSetup />;
-  return <PageContainer className="@container/server-create space-y-6"><Link href="/servers" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />{t.servers.setup.goToServers}</Link><div className="grid items-start gap-6 @min-[60rem]/server-create:grid-cols-[minmax(0,1fr)_340px]"><CreateManagedServerForm onCreated={server => router.push(workspaceBillingHref("/billing/plans", server.id))} /><aside className="space-y-3 rounded-2xl bg-card p-5"><h2 className="text-base font-medium">{t.billing.workspaces.shared}</h2><p className="text-sm text-muted-foreground">{t.billing.workspaces.poolHint}</p><p className="text-sm text-muted-foreground">{t.billing.workspaces.placementHint}</p></aside></div></PageContainer>;
+  const [mode, setMode] = useState<ServerAcquisitionMode>(selfHosted ? "connected" : "managed");
+  const choice = selfHosted ? <ServerAcquisitionPicker value={mode} onChange={setMode} /> : null;
+  if (mode === "connected") return <ConnectedServerSetup choice={choice} />;
+  return (
+    <PageContainer className="@container/server-create space-y-6">
+      <Link href="/servers" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+        <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />{t.servers.setup.goToServers}
+      </Link>
+      <div className="grid items-start gap-6 @min-[60rem]/server-create:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-5">
+          {choice}
+          <ManagedServerSetup onReady={(server, needsPlan) => router.push(needsPlan
+            ? workspaceBillingHref("/billing/plans", server.id) : `/servers/${server.serverId}`)} />
+        </div>
+        <aside className="space-y-3 rounded-2xl bg-card p-5">
+          <h2 className="text-base font-medium">{t.billing.workspaces.shared}</h2>
+          <p className="text-sm text-muted-foreground">{t.billing.workspaces.poolHint}</p>
+          <p className="text-sm text-muted-foreground">{t.billing.workspaces.placementHint}</p>
+        </aside>
+      </div>
+    </PageContainer>
+  );
 }
 
-function ConnectedServerSetup() {
+function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
   const router = useRouter();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -397,6 +417,7 @@ function ConnectedServerSetup() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
           <div className="space-y-6 min-w-0">
+            {!hasExistingServer && choice}
             <ServerForm
               key={initialServer?.id ?? "new"}
               server={initialServer}

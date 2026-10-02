@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **435 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **437 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -508,6 +508,7 @@ The current API has **435 unique tools**. Permission tags below describe the rou
 | `get_system_servers_by_id_tunnels`<br />`GET /api/system/servers/:id/tunnels` | List saved SSH port-forwarding tunnels for this server and their current state. Tunnels run from this Openship controller, not from the MCP client. | `server:read`<br />Self-hosted |
 | `get_system_servers_by_id_usage`<br />`GET /api/system/servers/:id/usage` | Read measured CPU, memory and disk usage plus accessible projects on this server. Purchased disk is capacity, not bytes used. Unavailable measurements are null. This never provisions or resumes a server. | `server:read` |
 | `get_system_servers_destinations`<br />`GET /api/system/servers/destinations` | Read accessible deployment servers and their capabilities. Use serverId to place a project on a connected or managed Cloud server. | `server:list` |
+| `get_system_servers_managed_available`<br />`GET /api/system/servers/managed/available` | List managed servers available through this installation's connected Cloud account. Does not create a server or copy projects. Use connectManaged to add a selected server to this organization. | `server:admin` |
 | `get_system_settings`<br />`GET /api/system/settings` | Read public instance settings and setup state, with secrets masked. | `settings:read`<br />Self-hosted |
 | `get_system_settings_email`<br />`GET /api/system/settings/email` | Read instance email-delivery configuration with credentials masked. | `settings:read`<br />Self-hosted |
 | `patch_system_compute_clusters_by_id`<br />`PATCH /api/system/compute-clusters/:id` | Update compute-cluster membership and network using the current revision. A runtime must be removed before changing its members; this is not live worker joining or draining. | `server:admin`<br />Self-hosted |
@@ -549,6 +550,7 @@ The current API has **435 unique tools**. Permission tags below describe the rou
 | `post_system_servers_by_id_tunnels_by_tunnelId_start`<br />`POST /api/system/servers/:id/tunnels/:tunnelId/start` | Start this saved tunnel on the Openship controller and return its local address. Read the tunnel list to inspect state. | `server:write`<br />Self-hosted |
 | `post_system_servers_by_id_tunnels_by_tunnelId_stop`<br />`POST /api/system/servers/:id/tunnels/:tunnelId/stop` | Stop this controller-side SSH tunnel while retaining its saved configuration. | `server:write`<br />Self-hosted |
 | `post_system_servers_managed`<br />`POST /api/system/servers/managed` | Create a managed Cloud server identity. Projects share its purchased capacity and use the Docker or bare runtime. This does not charge or provision. Subscribe to this server in Billing, then ensure it. Use the returned serverId for management and deployment. | `server:admin` |
+| `post_system_servers_managed_connect`<br />`POST /api/system/servers/managed/connect` | Connect an existing managed Cloud server to this self-hosted organization. Verifies Cloud server administration and pins its account identity. Returns the local serverId to use for deployments; no projects or subscriptions are copied. | `server:admin` |
 | `post_system_test_connection`<br />`POST /api/system/test-connection` | Test draft SSH connection settings before registering a server. Does not save a server or install components. | `server:write`<br />Self-hosted |
 
 ### updates
@@ -634,6 +636,11 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/cloud/resource-proxy` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `GET /api/cloud/route-registry` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/send-invitation` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `GET /api/cloud/server-deletions/:id` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/activity` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/activity/release` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/authorize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/cloud/servers/:id/connection` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/support` | Public Cloud support intake, including customers who cannot sign in. Only returns a receipt; no ticket data can be read anonymously. |
 | `GET /api/cloud/support/tickets` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
 | `GET /api/cloud/support/tickets/:id` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |

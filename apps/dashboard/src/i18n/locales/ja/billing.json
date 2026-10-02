@@ -453,8 +453,11 @@
     "buyCredits": "クレジットを追加購入",
     "openBilling": "請求画面を開く",
     "close": "確認しました",
-    "opening": "この通知の組織の請求画面を開いています…",
-    "wrongOrganization": "このアカウントではこの請求リンクを利用できません。通知に記載された組織のアカウントでログインしてください。"
+    "wrongOrganization": "このアカウントではこの請求リンクを利用できません。通知に記載された組織のアカウントでログインしてください。",
+    "title": "Cloud クレジット",
+    "showWarnings": "クレジットの警告を表示",
+    "hideWarnings": "クレジットの警告を非表示",
+    "backToBilling": "請求に戻る"
   },
   "capacityEditor": {
     "title": "Cloud 容量の管理",
@@ -609,6 +612,60 @@
       "confirmHint": "このサーバーの全プロジェクトに影響します。無効にするとビルドや外部連携が中断する場合があります。",
       "save": "ネットワーク変更を適用"
     },
-    "existingServerHint": "このサーバーのプランを使用します。"
+    "existingServerHint": "このサーバーのプランを使用します。",
+    "destination": "デプロイ先",
+    "newProjectServer": "新しい専用サーバー",
+    "oneProject": "1 件のプロジェクト",
+    "savedDestinationHint": "このプロジェクトは保存済みのサーバーとデータを維持します。",
+    "uploadDestinationHint": "ソースファイルはこのサーバー上にあります。別のデプロイ先を使うには、新しくアップロードしてください。",
+    "serverPlanTitle": "{name} のプランを選択",
+    "serverPlanDescription": "新しいサーバーには専用の CPU、メモリ、ストレージがあり、サブスクリプションも別になります。",
+    "serverPlanReadyTitle": "サーバープランの準備完了",
+    "serverPlanReady": "プランは有効です。セットアップに戻ってこのサーバーにデプロイしてください。",
+    "returnToSetup": "セットアップに戻る",
+    "resourceSummary": "{cpu} vCPU · {memory} GB RAM · {disk} GB ストレージ",
+    "switchingBilling": "{name} の請求情報を読み込み中…",
+    "activity": {
+      "empty": "サーバー操作はまだありません。",
+      "waitingForLogs": "操作ログを待機中…",
+      "noLogs": "この操作のログは記録されていません。",
+      "status": {
+        "queued": "待機中",
+        "running": "実行中",
+        "succeeded": "完了",
+        "failed": "失敗"
+      }
+    }
+  },
+  "custom": {
+    "name": "カスタム",
+    "configuration": "サーバー設定",
+    "presets": "プラン",
+    "title": "サーバーのリソースを選択",
+    "description": "プロジェクトで共有する CPU、メモリ、ストレージを選択します。",
+    "cpu": "CPU",
+    "memory": "メモリ",
+    "disk": "ストレージ",
+    "diskGrowth": "既存のディスクは拡張できます。縮小するには、データを新しいサーバーに移す必要があります。",
+    "range": "{min}～{max} {unit}",
+    "shared": "プロジェクトとアプリを 1 台のマネージドサーバーで実行します。1 つのサービスで利用可能な容量をすべて使用することもできます。",
+    "monthlyTotal": "月額合計",
+    "choose": "カスタムを選択",
+    "updating": "価格を更新中",
+    "invalid": "各リソースの範囲内で有効な値を入力してください。",
+    "quoteError": "価格を更新できませんでした。再試行してください。",
+    "bestPrice": "パッケージ割引は自動適用されます。選択したリソースで最も安い価格が適用されます。",
+    "breakdown": "価格の詳細",
+    "bundle": "{name} パッケージ",
+    "extraCpu": "追加 CPU",
+    "extraMemory": "追加メモリ",
+    "extraDisk": "追加ストレージ",
+    "rates": "追加リソースの月額料金：{cpu}/vCPU、{memory}/GB RAM、{disk}/GB ストレージ。選択したパッケージを超える分のみ課金されます。",
+    "applyNotice": "支払い後、新しいリソースを確認して適用してください。適用すると、このサーバー上のプロジェクトが再起動します。",
+    "resizeTitle": "契約したリソースを適用",
+    "resizeDescription": "プランが変更されました。新しい容量と影響を受けるプロジェクトを確認してからサーバーを再起動してください。",
+    "applying": "サーバーのリソースを更新中です。サーバーページで進行状況を確認できます。",
+    "reviewResize": "リソース変更を確認",
+    "openServer": "サーバーを開く"
   }
 }

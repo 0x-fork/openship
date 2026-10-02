@@ -1,8 +1,6 @@
 import { Oblien, CloudInfraProvider, cloudDockerProjectPaths } from "@repo/adapters";
 import { repos } from "@repo/db";
-import { AppError } from "@repo/core";
 import { env } from "../config/env";
-import { getOrgCloudToken } from "./cloud/client";
 import { createRemoteCloudAdmin } from "./cloud/admin-proxy";
 import { issueNamespaceToken } from "./openship-cloud";
 import { createTenantCloudAdmin } from "./cloud-tenant-admin";
@@ -15,10 +13,9 @@ export interface CloudRouteProject {
   activeDeploymentId: string | null;
 }
 async function tenantClient(organizationId: string, workspaceId?: string | null) {
-  const token = env.CLOUD_MODE ? await issueNamespaceToken(organizationId, workspaceId ?? null) : await getOrgCloudToken(organizationId);
-  if (!token) throw new AppError("Connect Openship Cloud before changing cloud routes", 503, "CLOUD_NOT_CONNECTED");
-  const client = new Oblien({ token: token.token, baseUrl: env.OBLIEN_API_URL });
-  const adminProxy = env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, token.namespace, workspaceId ?? null) : createRemoteCloudAdmin(organizationId);
+  const token = await issueNamespaceToken(organizationId, workspaceId ?? null);
+  const client = new Oblien({ token: token.token, baseUrl: token.providerApiUrl });
+  const adminProxy = env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, token.namespace, workspaceId ?? null) : createRemoteCloudAdmin(organizationId, workspaceId ?? undefined);
   return { client, namespace: token.namespace, adminProxy };
 }
 

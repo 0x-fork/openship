@@ -8,6 +8,36 @@ const CloudAllocationSchema = Type.Object({
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 const nullableNumber = Type.Union([Type.Number({ minimum: 0 }), Type.Null()]);
 const resourceSize = Type.Union([CloudAllocationSchema, Type.Null()]);
+export const ManagedServerActivityInputSchema = Type.Object({
+  id: Type.String({ format: "uuid" }),
+  controllerId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9:_-]+$" }),
+  scope: Type.String({ minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9:_-]+$" }),
+  projects: Type.Array(Type.Object({
+    id: Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9_-]+$" }),
+    name: Type.String({ minLength: 1, maxLength: 256 }),
+  }, { additionalProperties: false }), { maxItems: 10000 }),
+}, { additionalProperties: false });
+export type ManagedServerActivityInput = Static<typeof ManagedServerActivityInputSchema>;
+export const ManagedServerDeletionSchema = Type.Object({
+  serverId: Type.String(), workspaceId: Type.String(), operationId: Type.String(), deletedAt: Type.String(),
+}, { additionalProperties: false });
+export type ManagedServerDeletion = Static<typeof ManagedServerDeletionSchema>;
+/** Server-to-server credential handoff. Never returned by dashboard server reads. */
+export const ManagedServerConnectionSchema = Type.Object({
+  userId: Type.String({ minLength: 1 }),
+  organizationId: Type.String({ minLength: 1 }),
+  serverId: Type.String({ minLength: 1 }),
+  ownerWorkspaceId: Type.String({ minLength: 1 }),
+  workspaceId: Type.String({ minLength: 1 }),
+  namespace: Type.String({ minLength: 1 }),
+  image: Type.String({ minLength: 1 }),
+  resources: CloudAllocationSchema,
+  providerApiUrl: Type.String({ minLength: 1 }),
+  state: Type.String(),
+  token: Type.String({ minLength: 1 }),
+  expiresAt: Type.String({ minLength: 1 }),
+}, { additionalProperties: false });
+export type ManagedServerConnection = Static<typeof ManagedServerConnectionSchema>;
 export const CloudWorkspaceSchema = Type.Object({
   id: Type.String(),
   serverId: Type.String(),

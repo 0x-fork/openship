@@ -1,10 +1,10 @@
 import { AppError, NotFoundError } from "@repo/core";
 import { repos, tryAcquireAdvisoryLock } from "@repo/db";
 import type { CommandExecutor, ShellOptions } from "@repo/adapters";
-import { env } from "../config";
 import { assertServerExecution, assertSelfHosted } from "../modules/system/server-access";
 import { openCloudWorkspaceExecutor } from "./cloud-workspace-host";
 import { sshManager } from "./ssh-manager";
+import { withCloudWorkspaceActivity, holdCloudWorkspaceActivity } from "./cloud-workspace-lock";
 
 /** One connection boundary for host commands, monitoring and terminals. Callers
  * authorize serverId first; this also checks tenant ownership before connecting. */
@@ -14,12 +14,6 @@ export async function acquireServerExecution(organizationId: string, serverId: s
   let executor: CommandExecutor;
   let dispose: () => void | Promise<void>;
   if (server.workspaceId) {
-    if (!env.CLOUD_MODE)
-      throw new AppError(
-        "Managed servers are available in Openship Cloud",
-        404,
-        "CAPABILITY_UNAVAILABLE",
-      );
     executor = await openCloudWorkspaceExecutor(organizationId, server.workspaceId);
     dispose = () => executor.dispose();
   } else {
@@ -53,13 +47,20 @@ export async function withServerExecution<T>(
   organizationId: string,
   serverId: string,
   work: (executor: CommandExecutor) => Promise<T>,
+  options?: { mutation: true; scope?: string },
 ) {
-  const connection = await acquireServerExecution(organizationId, serverId);
-  try {
-    return await connection.run(work);
-  } finally {
-    await connection.release();
-  }
+  const run = async () => {
+    const connection = await acquireServerExecution(organizationId, serverId);
+    try {
+      return await connection.run(work);
+    } finally {
+      await connection.release();
+    }
+  };
+  if (!options?.mutation) return run();
+  const server = await repos.server.getInOrganization(serverId, organizationId);
+  if (!server) throw new NotFoundError("Server", serverId);
+  return withCloudWorkspaceActivity(server.workspaceId, run, undefined, { scope: options.scope ?? "server" });
 }
 
 /** The terminal registry owns release until final close, including park/resume. */
@@ -75,6 +76,7 @@ export async function openServerShell(
   let ownsSlot = false;
   let released = false;
   let shell: Awaited<ReturnType<NonNullable<CommandExecutor["openShell"]>>> | undefined;
+  let releaseActivity: (() => Promise<void>) | undefined;
   const release = async () => {
     if (released) return;
     released = true;
@@ -88,7 +90,8 @@ export async function openServerShell(
       try {
         await slot?.release();
       } finally {
-        if (ownsSlot) managedShells.delete(serverId);
+        try { await releaseActivity?.(); }
+        finally { if (ownsSlot) managedShells.delete(serverId); }
       }
     }
   };
@@ -113,8 +116,12 @@ export async function openServerShell(
       ownsSlot = true;
       slot = await tryAcquireAdvisoryLock(`cloud:server-terminal:${serverId}`);
       if (!slot) throw busy();
+      const activity = await holdCloudWorkspaceActivity(connection.server.workspaceId, "terminal");
+      releaseActivity = activity.release;
+      shell = await activity.run(() => connection.executor.openShell!(options));
+    } else {
+      shell = await connection.executor.openShell(options);
     }
-    shell = await connection.executor.openShell(options);
     shell.onClose(() => {
       void release().catch(() => {});
     });

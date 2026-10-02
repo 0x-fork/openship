@@ -107,7 +107,7 @@ export const BillingStateSchema = Type.Object({
   subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])),
   complimentary: Type.Optional(Type.Union([Type.Object({ id: Type.String(), expiresAt: stringOrNull }), Type.Null()])),
   capabilities: Type.Optional(Type.Object({ portal: Type.Boolean(), cancellation: Type.Boolean(), resumption: Type.Optional(Type.Boolean()), subscriptionChange: Type.Boolean() })),
-  monthlyCreditLimit: numberOrNull, overQuota: Type.Boolean(), buildTimeMinutes: Type.Number(),
+  monthlyCreditLimit: numberOrNull, overQuota: Type.Boolean(), buildTimeMinutes: numberOrNull,
   capacity: Type.Optional(Type.Partial(Type.Object({ routes: meter, workspaces: meter, vcpus: meter, ramMb: meter, diskGb: meter, bandwidthGb: meter, buildMinutes: meter, services: meter, projects: meter }))),
   maxServiceMachine: Type.Union([Type.Object({ tier: Type.String(), cpuCores: Type.Number(), memoryMb: Type.Number() }), Type.Null()]),
   buildMinutesResetAt: Type.String(),

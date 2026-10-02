@@ -26,7 +26,7 @@ import {
 import { env } from "../config/index";
 import { trackBackgroundWork } from "./background-work";
 import { isArtifactRef, isRealContainerRef } from "./container-ref";
-import { getOrgCloudToken } from "./cloud/client";
+import { assertManagedServerCanWork } from "./cloud-workspace-access";
 import { createRemoteCloudAdmin } from "./cloud/admin-proxy";
 import { resolveOrgCloudUserId } from "./cloud/transport";
 import { platform } from "./platform-config";
@@ -40,7 +40,6 @@ import { requireOrgServer } from "./server-target";
 import { registryAuthResolver } from "../modules/credentials/registry-auth";
 import { issueNamespaceToken } from "./openship-cloud";
 import { createTenantCloudAdmin } from "./cloud-tenant-admin";
-import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
 import {
   LOCAL_HOST_PORT_TARGET,
   resolveHostPortTargetIdentity,
@@ -358,6 +357,9 @@ export function resolveEffectiveTarget(
     // the deployment. A server build strategy must never select the API host.
     return "cloud";
   }
+  // An explicit Cloud destination must never degrade to local execution merely
+  // because an old or incomplete client omitted its managed-server binding.
+  if (snapshot.deployTarget === "cloud") return "cloud";
   if (process.env.OPENSHIP_NATIVE === "true") {
     // The embedded host explicitly selects its default runtime. Desktop's
     // product default (cloud) must not reinterpret a native bare installation.
@@ -374,12 +376,6 @@ export function resolveEffectiveTarget(
   if (base === "selfhosted") {
     // UI chose "server" target but serverId may be missing → still route to SSH
     if (snapshot.deployTarget === "server") return "server";
-    // Local-orchestrated cloud deploy: build on THIS host, upload the output to
-    // an Openship Cloud workspace, and run it there — the project stays
-    // local-canonical (no promote/transfer). This is the ONLY combo that keeps
-    // the cloud target on a self-hosted box; a server-build cloud deploy is
-    // promoted to the SaaS earlier (deployment.controller) and never reaches here.
-    if (snapshot.deployTarget === "cloud" && snapshot.buildStrategy === "local") return "cloud";
     return "local";
   }
   return "cloud";
@@ -429,7 +425,7 @@ export async function resolveExecutionDestination(
       server,
     };
   }
-  if (snapshot.managedWorkspaceId || snapshot.managedServer || env.CLOUD_MODE)
+  if (snapshot.managedWorkspaceId || snapshot.managedServer || snapshot.deployTarget === "cloud" || env.CLOUD_MODE)
     throw new AppError(
       "This server is not owned by the selected Cloud workspace",
       409,
@@ -453,11 +449,8 @@ export function usesManagedRouting(
 }
 
 /**
- * Resolve a cloud-target Platform using ANY cloud-linked org member's
- * token. The deployment doesn't carry a user_id anymore — its
- * `organization_id` is the source of truth. We pick whichever member
- * has linked their Openship Cloud account and use their token to mint
- * cloud requests on behalf of the org.
+ * Resolve the server's owned namespace, using the pinned Cloud connection for
+ * linked installations. Never select a credential from an arbitrary org member.
  */
 async function resolveCloudPlatformForOrg(
   organizationId: string | undefined,
@@ -471,17 +464,14 @@ async function resolveCloudPlatformForOrg(
   if (!binding || binding.workspaceId !== bindingMeta.workspaceId || binding.ownerWorkspaceId !== managedWorkspaceId ||
       (bindingMeta.ownerWorkspaceId && bindingMeta.ownerWorkspaceId !== managedWorkspaceId))
     throw new AppError("Managed server does not belong to this deployment", 404, "CLOUD_WORKSPACE_NOT_FOUND");
-  const result = env.CLOUD_MODE
-    ? await issueNamespaceToken(organizationId, managedWorkspaceId)
-    : await getOrgCloudToken(organizationId);
-  if (!result) throw new AppError("Connect Openship Cloud before using this managed server", 503, "CLOUD_NOT_CONNECTED");
+  const result = await issueNamespaceToken(organizationId, managedWorkspaceId);
   if (binding.namespace !== result.namespace) throw new AppError("Managed server namespace changed", 409, "CLOUD_NAMESPACE_MISMATCH");
   return createPlatform({
     target: "cloud", runtime: runtimeMode,
-    cloudToken: result.token, cloudNamespace: result.namespace, cloudApiUrl: env.OBLIEN_API_URL,
-    cloudBeforeProvision: env.CLOUD_MODE ? () => assertCloudCanSpend(organizationId, managedWorkspaceId) : undefined,
+    cloudToken: result.token, cloudNamespace: result.namespace, cloudApiUrl: result.providerApiUrl,
+    cloudBeforeProvision: () => assertManagedServerCanWork(organizationId, managedWorkspaceId),
     allowHostBuild: !env.CLOUD_MODE && (process.env.OPENSHIP_NATIVE !== "true" || process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION === "true"),
-    cloudAdminProxy: env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, result.namespace, managedWorkspaceId) : createRemoteCloudAdmin(organizationId),
+    cloudAdminProxy: env.CLOUD_MODE ? createTenantCloudAdmin(organizationId, result.namespace, managedWorkspaceId) : createRemoteCloudAdmin(organizationId, managedWorkspaceId),
     cloudServer: {
       ...bindingMeta, ownerWorkspaceId: managedWorkspaceId,
       provisionLock: createProvisionLock(`cloud:server:${binding.workspaceId}`),

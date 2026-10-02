@@ -1451,7 +1451,7 @@ export function ServerMigrationWizard({
                 Inspect Docker + Re-scan both live in the footer. */}
       {!serverId && (
         <div className="shrink-0 px-6 pt-4">
-          <ServerSelector value={selectedId} onSelect={pickServer} compact />
+          <ServerSelector requiredCapability="ssh" value={selectedId} onSelect={pickServer} compact />
         </div>
       )}
 
@@ -1736,6 +1736,7 @@ export function ServerMigrationWizard({
                 </div>
                 <div className="w-56 min-w-0">
                   <ServerSelector
+                        requiredCapability="ssh"
                     value={targetId}
                     onSelect={(s) => setTargetId(s?.id ?? null)}
                     compact
@@ -2246,7 +2247,7 @@ export function ServerMigrationWizard({
             <UiIcon name="arrow-right" className="size-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">{m.wizard.targetLabel}</span>
           </div>
-          <ServerSelector value={targetId} onSelect={(s) => setTargetId(s?.id ?? null)} compact />
+          <ServerSelector requiredCapability="ssh" value={targetId} onSelect={(s) => setTargetId(s?.id ?? null)} compact />
           <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
             <input
               type="checkbox"
@@ -2694,6 +2695,7 @@ export function ServerMigrationWizard({
                       </div>
 
                       <ServerSelector
+                        requiredCapability="ssh"
                         value={targetId}
                         onSelect={(s) => setTargetId(s?.id ?? null)}
                         compact
@@ -2865,7 +2867,7 @@ export function ServerMigrationWizard({
                 {m.entry.cardDesc}
               </p>
               {!serverId && (
-                <ServerSelector value={selectedId} onSelect={pickServer} disabled={scanning} />
+                <ServerSelector requiredCapability="ssh" value={selectedId} onSelect={pickServer} disabled={scanning} />
               )}
               {/* Scan-mode option sits directly above the button it changes. */}
               {flatOption(true)}

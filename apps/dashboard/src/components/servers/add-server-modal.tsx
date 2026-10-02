@@ -1,25 +1,33 @@
 "use client";
 
-import { useCallback, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { usePlatform } from "@/context/PlatformContext";
-import { CreateManagedServerForm } from "./managed/CreateManagedServerForm";
+import { ManagedServerSetup, ServerAcquisitionPicker, type ServerAcquisitionMode } from "./ServerAcquisition";
+import type { CloudWorkspaceSummary } from "@repo/contracts";
+import { useSession } from "@/lib/auth-client";
 import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
 import { useI18n } from "@/components/i18n-provider";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useModal } from "@/context/ModalContext";
 import { ServerForm } from "./server-form";
 
-function CreateManagedServerDialog({
-  onCancel,
-  onCreated,
-}: Required<Pick<ComponentProps<typeof CreateManagedServerForm>, "onCancel" | "onCreated">>) {
+function AddServerDialog({ onCancel, onManaged, onConnected, connectedOnly = false }: {
+  onCancel: () => void;
+  onManaged: (server: CloudWorkspaceSummary, needsPlan: boolean) => Promise<void>;
+  onConnected: (server: ServerInfo) => void;
+  connectedOnly?: boolean;
+}) {
   const { t } = useI18n();
+  const { selfHosted } = usePlatform();
+  const [mode, setMode] = useState<ServerAcquisitionMode>(selfHosted ? "connected" : "managed");
   const { dialog, onKeyDown } = useDialogFocus(onCancel);
   return (
-    <div ref={dialog} role="dialog" aria-modal="true" aria-label={t.billing.workspaces.create}
-      tabIndex={-1} onKeyDown={onKeyDown} className="outline-none">
-      <CreateManagedServerForm onCancel={onCancel} onCreated={onCreated} autoFocus={false} />
+    <div ref={dialog} role="dialog" aria-modal="true" aria-label={t.servers.setup.addServer}
+      tabIndex={-1} onKeyDown={onKeyDown} className="space-y-4 outline-none">
+      {selfHosted && !connectedOnly && <ServerAcquisitionPicker value={mode} onChange={setMode} />}
+      {!connectedOnly && mode === "managed" ? <ManagedServerSetup onCancel={onCancel} onReady={onManaged} autoFocus={false} />
+        : <ServerForm variant="modal" onCancel={onCancel} onSaved={({ server }) => onConnected(server)} />}
     </div>
   );
 }
@@ -39,9 +47,15 @@ function CreateManagedServerDialog({
  *
  * `onCreated` receives the saved server so the caller can select it right away.
  */
-export function useAddServerModal() {
+export function useAddServerModal({ connectedOnly = false }: { connectedOnly?: boolean } = {}) {
   const { showModal, hideModal } = useModal();
-  const { selfHosted } = usePlatform();
+  const { data: session } = useSession();
+  const contextKey = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const openDialogs = useRef(new Set<string>());
+  useEffect(() => () => {
+    for (const id of openDialogs.current) hideModal(id);
+    openDialogs.current.clear();
+  }, [contextKey, hideModal]);
 
   return useCallback(
     (onCreated?: (server: ServerInfo) => void) => {
@@ -51,21 +65,23 @@ export function useAddServerModal() {
         width: "720px",
         maxWidth: "92vw",
         showCloseButton: false,
-        onClose: () => { active = false; },
+        onClose: () => { active = false; openDialogs.current.delete(id); },
         // Pickers live inside other modals (backup destination, adopt mail,
         // the migration wizard), and a plain <Modal> defaults to z-10000 — the
         // same value ModalContext hands out first, which would leave this panel
         // tied with its own host. Sit deliberately above it.
         zIndex: 10500,
-        customContent: !selfHosted ? (
-          <CreateManagedServerDialog
+        customContent: (
+          <AddServerDialog
+            connectedOnly={connectedOnly}
             onCancel={() => hideModal(id)}
-            onCreated={async (managed) => {
+            onManaged={async (managed, needsPlan) => {
               if (!active) return;
               const server = await systemApi.getServerById(managed.serverId);
               if (!active) return;
               onCreated?.(server);
               hideModal(id);
+              if (!needsPlan) return;
               let plansId = "";
               plansId = showModal({
                 width: "100%",
@@ -74,6 +90,7 @@ export function useAddServerModal() {
                 overflow: "hidden",
                 showCloseButton: false,
                 zIndex: 10500,
+                onClose: () => { openDialogs.current.delete(plansId); },
                 customContent: (
                   <CloudDeployPlanModal
                     workspaceId={managed.id}
@@ -82,13 +99,9 @@ export function useAddServerModal() {
                   />
                 ),
               });
+              openDialogs.current.add(plansId);
             }}
-          />
-        ) : (
-          <ServerForm
-            variant="modal"
-            onCancel={() => hideModal(id)}
-            onSaved={({ server }) => {
+            onConnected={server => {
               if (!active) return;
               hideModal(id);
               onCreated?.(server);
@@ -96,8 +109,9 @@ export function useAddServerModal() {
           />
         ),
       });
+      openDialogs.current.add(id);
       return id;
     },
-    [showModal, hideModal, selfHosted],
+    [showModal, hideModal, contextKey, connectedOnly],
   );
 }

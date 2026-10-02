@@ -141,6 +141,10 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
   const subscription = presentCloudSubscription(providerSubscription);
   const monthlyCreditLimit = tier === "free" ? 0 : plan?.monthlyCredits ?? null;
   const overQuota = state.balance.quotaRemaining !== null && state.balance.quotaRemaining <= 0;
+  // A connected installation keeps its project/service/build records locally.
+  // Partial control-plane counters are unknown server totals, never zero usage.
+  // Provider capacity, credits and the shared host's measured usage stay complete.
+  const hasLinkedApplications = owner.workspace?.linkedProjects.some(link => link.projects.length > 0) ?? false;
 
   // Use the same application counters and billing windows as the plan gate.
   const [buildMinutes, freeSubdomains, servicesUsed, projectsUsed, providerCapacity] = await Promise.all([
@@ -165,16 +169,16 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
     },
     monthlyCreditLimit,
     overQuota,
-    buildTimeMinutes: buildMinutes.usedMinutes,
+    buildTimeMinutes: hasLinkedApplications ? null : buildMinutes.usedMinutes,
     buildMinutesResetAt: buildMinutes.periodEnd,
     maxServiceMachine: serviceResources
       ? { tier: detectTier({ ...serviceResources, diskMb: 0 }), ...serviceResources } : null,
     capacity: {
       ...providerCapacity,
-      routes: { used: freeSubdomains.used, max: freeSubdomains.limit },
-      buildMinutes: { used: buildMinutes.usedMinutes, max: tier === "free" ? 0 : buildMinutes.limitMinutes },
-      services: { used: servicesUsed, max: planLimitsForTier.runningServices },
-      projects: { used: projectsUsed, max: planLimitsForTier.maxProjects },
+      routes: { used: hasLinkedApplications ? null : freeSubdomains.used, max: freeSubdomains.limit },
+      buildMinutes: { used: hasLinkedApplications ? null : buildMinutes.usedMinutes, max: tier === "free" ? 0 : buildMinutes.limitMinutes },
+      services: { used: hasLinkedApplications ? null : servicesUsed, max: planLimitsForTier.runningServices },
+      projects: { used: hasLinkedApplications ? null : projectsUsed, max: planLimitsForTier.maxProjects },
     },
   };
 }

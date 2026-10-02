@@ -356,6 +356,13 @@ export async function collectProjectManifest(
 
   // ── Deployment containers + images + service containers ────────────
   const { rows: allDeps } = await repos.deployment.listByProject(project.id, { perPage: 1000 });
+  // The subscription's server exists independently of this project. With no
+  // deployment history, a managed draft has never written containers or routes
+  // there. Its configured domains are only desired state, not remote resources.
+  if (project.workspaceId && allDeps.length === 0) {
+    return { projectId: project.id, projectCleanup: true, wipeVolumes,
+      organizationId: project.organizationId, resources: [] };
+  }
   const seenImages = new Set<string>();
   for (const dep of allDeps) {
     const host = (dep.meta as DeploymentMeta | null)?.managedServer;
@@ -667,16 +674,20 @@ export async function collectProjectManifest(
   // references — started by a deploy that then failed during routing, or
   // whose row was lost to a crash. This is how leaked containers ("3 for
   // one project") get cleaned, even retroactively. Sweep every docker
-  // runtime the deployments resolved to PLUS the local platform runtime
-  // (so a single-host install is swept even when no deployment row
-  // resolved). De-duped via pushContainer's seenContainers; best-effort +
-  // bounded (SSH can hang). A separate set keeps the networks block above
-  // from gaining a spurious local-host network resource.
+  // runtime the deployments resolved to. A local project can also sweep the
+  // local daemon when no deployment row resolved. A remote project's missing
+  // history never authorizes execution on the control-plane host.
   const sweepRuntimes = new Set<RuntimeAdapter>([...dockerRuntimes, ...[...resolvedRuntimes].filter(runtime => runtimeTargets.has(runtime) && runtime.supports("projectContainerSweep"))]);
-  const localRuntime = platform().runtime;
-  if (localRuntime instanceof DockerRuntime) {
-    sweepRuntimes.add(localRuntime);
-    runtimeTargets.set(localRuntime, { key: "local", serverId: null, runtimeMode: "docker" });
+  if (!project.workspaceId && platform().target !== "cloud") {
+    const localTarget = !project.serverId ||
+      (await repos.server.getInOrganization(project.serverId, project.organizationId))?.isLocal;
+    if (localTarget) {
+      const localRuntime = platform().runtime;
+      if (localRuntime instanceof DockerRuntime) {
+        sweepRuntimes.add(localRuntime);
+        runtimeTargets.set(localRuntime, { key: "local", serverId: null, runtimeMode: "docker" });
+      }
+    }
   }
   for (const docker of sweepRuntimes) {
     const target = runtimeTargets.get(docker);

@@ -364,7 +364,7 @@ export default function AppInstallPage() {
     });
   }, [appEndpoints, cloudConnected, cloudLoading]);
   const [destination, setDestination] = useState<AppDestination | null>(null);
-  const [destinationReady, setDestinationReady] = useState(selfHosted);
+  const [destinationReady, setDestinationReady] = useState(false);
   const showCloudPricing = useCloudDeployPricing(destination?.workspaceId);
   const cloudDestination = destination?.deployTarget === "cloud" || (!destination && !selfHosted);
   const exposureModeLabels = {
@@ -473,7 +473,7 @@ export default function AppInstallPage() {
   const capacityProjectId = adoptedProjectId ?? projectId ?? targetDraftId;
   useEffect(() => {
     const templateId = template?.id;
-    if (!templateId || (!selfHosted && !destinationReady) || (selfHosted && (!declaresResources || !destination))) {
+    if (!templateId || !destinationReady || (!cloudDestination && !declaresResources)) {
       setHostFit(null);
       setCapacityLoading(false);
       return;
@@ -519,8 +519,8 @@ export default function AppInstallPage() {
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, [selfHosted]);
-  const needsCloudUpgrade = !selfHosted && hostFit?.cloud?.status === "upgrade";
-  const checkingCloudCapacity = !selfHosted && capacityLoading;
+  const needsCloudUpgrade = cloudDestination && hostFit?.cloud?.status === "upgrade";
+  const checkingCloudCapacity = cloudDestination && capacityLoading;
 
   const [draftRouting, setDraftRouting] = useState<
     | { projectId: string; status: "ready"; slug: string | null }
@@ -1164,7 +1164,7 @@ export default function AppInstallPage() {
   };
 
   const install = withSubmission(async () => {
-    if (!selfHosted && !destinationReady) return;
+    if (!destinationReady) return;
     // Business-field validity gate (required + per-field rules). The form reports
     // this; block with a clear message rather than shipping an invalid install.
     if (formValidity && !formValidity.valid) {
@@ -1315,7 +1315,7 @@ export default function AppInstallPage() {
             (confirm, cancel) => (
               <DnsRecordsModal
                 targets={dnsTargets}
-                serverId={destination?.deployTarget === "server" ? destination.serverId : undefined}
+                serverId={destination?.serverId}
                 confirmLabel={w.install}
                 onConfirm={confirm}
                 onCancel={cancel}
@@ -1351,7 +1351,7 @@ export default function AppInstallPage() {
    *  picked so far travels with the create write — the /deploy wizard then edits
    *  real stored routes instead of ones the server guessed. */
   const goAdvanced = withSubmission(async () => {
-    if (!selfHosted && !destinationReady) return;
+    if (!destinationReady) return;
     const routes = await validatedRouteChoices();
     if (!routes) return;
     try {
@@ -1951,7 +1951,7 @@ export default function AppInstallPage() {
                   onClick={install}
                   disabled={
                     busy ||
-                    (!selfHosted && !destinationReady) ||
+                    !destinationReady ||
                     checkingCloudCapacity ||
                     !exposureReady ||
                     (formValidity ? !formValidity.valid : false)
@@ -1969,7 +1969,7 @@ export default function AppInstallPage() {
               <button
                 type="button"
                 onClick={goAdvanced}
-                disabled={busy || !exposureReady || (!selfHosted && !destinationReady)}
+                disabled={busy || !exposureReady || !destinationReady}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
               >
                 <UiIcon name="sliders" className="size-4" /> {w.advanced}

@@ -450,6 +450,8 @@ export const ServerCollectionSchemas = {
   destinations: { action: "read", scope: "list", output: Type.Object({ servers: Type.Array(ServerDetailSchema) }) },
   create: { action: "write", input: CreateServerInputSchema, output: ServerSchema },
   createManaged: { action: "admin", input: CreateManagedServerInputSchema, output: CloudWorkspaceSchema },
+  availableManaged: { action: "admin", scope: "list", output: Type.Object({ servers: Type.Array(ServerDetailSchema) }) },
+  connectManaged: { action: "admin", input: Type.Object({ serverId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }) }, { additionalProperties: false }), output: CloudWorkspaceSchema },
   testConnection: {
     action: "write",
     input: CreateServerInputSchema,

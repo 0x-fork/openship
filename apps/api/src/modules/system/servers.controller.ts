@@ -42,6 +42,12 @@ export async function execOnServer(c: Context) {
 export async function createManagedServer(c: Context) {
   return c.json(await operationData(c, operations().createManaged(operationContext(c), await c.req.json())), 201);
 }
+export async function availableManagedServers(c: Context) {
+  return c.json(await operationData(c, operations().availableManaged(operationContext(c))));
+}
+export async function connectManagedServer(c: Context) {
+  return c.json(await operationData(c, operations().connectManaged(operationContext(c), await c.req.json())), 201);
+}
 export async function serverUsage(c: Context) {
   return c.json(await operationData(c, operations().usage(operationContext(c), param(c, "id"))));
 }

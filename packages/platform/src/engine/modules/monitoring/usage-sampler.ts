@@ -95,7 +95,7 @@ async function targetsForGroup(
 ): Promise<SampleTarget[]> {
   const live =
     runtime.supports("hostContainerQuery") && runtime.listAllContainers
-      ? await runtime.listAllContainers()
+      ? await runtime.listAllContainers().catch(() => null)
       : null;
   const targets: SampleTarget[] = [];
   for (const candidate of candidates) {

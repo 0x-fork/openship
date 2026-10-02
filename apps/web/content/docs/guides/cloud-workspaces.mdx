@@ -36,6 +36,19 @@ subscription's capacity; an additional server has its own subscription.
 
 Self-hosted SSH servers keep their existing setup and management controls.
 
+## Use Cloud from self-hosted Openship
+
+In **Servers → Add server**, choose a managed Cloud server and connect your
+Openship Cloud account. You can purchase a new server or link one you already
+administer. It then appears in the same destination picker as your SSH servers.
+Deployments, jobs, logs, terminals and backups use the existing application flow.
+
+Project settings stay on the installation that created them. Cloud manages the
+server's subscription and records its linked projects so a host cannot be deleted
+while another installation still uses it. The connection is pinned to your Cloud
+account and organization; switching accounts requires reconnecting the original
+account before managing its existing servers.
+
 ## Understand capacity and usage
 
 The server page separates **provisioned capacity** from **live usage**. A
@@ -79,6 +92,14 @@ Moving to a smaller disk requires a separate data migration.
 Provisioning and resize operations survive an API restart. Transient failures
 have a displayed retry time; a settled failure requires an explicit retry.
 A billing connectivity error alone does not cancel an active subscription.
+
+Interrupted commands must finish or be confirmed stopped before another operation
+changes the server. Retry the original operation to recover it. If the server's
+Docker bridge itself crashes during a change and cannot confirm the result,
+Openship keeps the server locked for that operation. The error directs you to
+restart the managed server through the provider console and retry. This recovery
+can interrupt all applications on the server; Openship does not restart it
+automatically to clear the lock.
 
 ## Terminal and networking
 

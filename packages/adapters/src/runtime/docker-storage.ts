@@ -12,7 +12,7 @@ export interface DockerStorageSnapshot {
 
 export function dockerProjectStorage(
   snapshot: DockerStorageSnapshot,
-  projects: Array<{ id: string; slug: string | null }>,
+  projects: Array<{ id: string; slug?: string | null }>,
 ) {
   const bytes = new Map<string, number | null>(projects.map((project) => [project.id, 0]));
   const owners = new Map<string, Set<string>>();

@@ -453,8 +453,11 @@
     "buyCredits": "Weitere Credits kaufen",
     "openBilling": "Abrechnung öffnen",
     "close": "Verstanden",
-    "opening": "Die Abrechnung für die Organisation dieser Meldung wird geöffnet…",
-    "wrongOrganization": "Dieser Abrechnungslink ist für dein Konto nicht verfügbar. Melde dich mit einem Konto an, das zur Organisation dieser Meldung gehört."
+    "wrongOrganization": "Dieser Abrechnungslink ist für dein Konto nicht verfügbar. Melde dich mit einem Konto an, das zur Organisation dieser Meldung gehört.",
+    "title": "Cloud-Guthaben",
+    "showWarnings": "Guthabenwarnungen anzeigen",
+    "hideWarnings": "Guthabenwarnungen ausblenden",
+    "backToBilling": "Zurück zur Abrechnung"
   },
   "capacityEditor": {
     "title": "Cloud-Kapazität verwalten",
@@ -609,6 +612,60 @@
       "confirmHint": "Dies betrifft alle Projekte auf diesem Server. Ohne Internetzugriff können Builds und externe Integrationen fehlschlagen.",
       "save": "Netzwerkänderung anwenden"
     },
-    "existingServerHint": "Nutzt den Tarif dieses Servers."
+    "existingServerHint": "Nutzt den Tarif dieses Servers.",
+    "destination": "Ziel",
+    "newProjectServer": "Neuer dedizierter Server",
+    "oneProject": "1 Projekt",
+    "savedDestinationHint": "Dieses Projekt behält seinen gespeicherten Server und seine Daten.",
+    "uploadDestinationHint": "Die Quelldateien befinden sich auf diesem Server. Starte einen neuen Upload, um ein anderes Ziel zu verwenden.",
+    "serverPlanTitle": "Tarif für {name} wählen",
+    "serverPlanDescription": "Dein neuer Server hat eigene CPU, Arbeitsspeicher und Speicherplatz sowie ein separates Abonnement.",
+    "serverPlanReadyTitle": "Servertarif bereit",
+    "serverPlanReady": "Dein Tarif ist aktiv. Kehre zur Einrichtung zurück, um auf diesem Server zu deployen.",
+    "returnToSetup": "Zurück zur Einrichtung",
+    "resourceSummary": "{cpu} vCPU · {memory} GB RAM · {disk} GB Speicherplatz",
+    "switchingBilling": "Abrechnung für {name} wird geladen…",
+    "activity": {
+      "empty": "Noch keine Servervorgänge.",
+      "waitingForLogs": "Warten auf Vorgangsprotokolle…",
+      "noLogs": "Für diesen Vorgang wurden keine Protokolle aufgezeichnet.",
+      "status": {
+        "queued": "In der Warteschlange",
+        "running": "In Bearbeitung",
+        "succeeded": "Abgeschlossen",
+        "failed": "Fehlgeschlagen"
+      }
+    }
+  },
+  "custom": {
+    "name": "Individuell",
+    "configuration": "Serverkonfiguration",
+    "presets": "Tarife",
+    "title": "Servergröße wählen",
+    "description": "Wähle CPU, Arbeitsspeicher und Speicherplatz für deine Projekte.",
+    "cpu": "CPU",
+    "memory": "Arbeitsspeicher",
+    "disk": "Speicherplatz",
+    "diskGrowth": "Bestehende Datenträger können vergrößert werden. Zum Verkleinern müssen die Daten auf einen neuen Server verschoben werden.",
+    "range": "{min} bis {max} {unit}",
+    "shared": "Ein verwalteter Server für deine Projekte und Apps. Ein einzelner Dienst kann die gesamte verfügbare Kapazität nutzen.",
+    "monthlyTotal": "Monatlicher Gesamtpreis",
+    "choose": "Individuell wählen",
+    "updating": "Preis wird aktualisiert",
+    "invalid": "Gib für jede Ressource einen gültigen Wert im angegebenen Bereich ein.",
+    "quoteError": "Der Preis konnte nicht aktualisiert werden. Bitte versuche es erneut.",
+    "bestPrice": "Paketnachlässe gelten automatisch. Du zahlst den niedrigsten Preis für deine gewählten Ressourcen.",
+    "breakdown": "Preisdetails",
+    "bundle": "Paket {name}",
+    "extraCpu": "Zusätzliche CPU",
+    "extraMemory": "Zusätzlicher Arbeitsspeicher",
+    "extraDisk": "Zusätzlicher Speicherplatz",
+    "rates": "Monatliche Zusatzressourcen: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB Speicherplatz. Berechnet wird nur, was über das gewählte Paket hinausgeht.",
+    "applyNotice": "Prüfe und übernimm die neuen Ressourcen nach der Zahlung. Dabei werden die Projekte auf diesem Server neu gestartet.",
+    "resizeTitle": "Gebuchte Ressourcen übernehmen",
+    "resizeDescription": "Dein Tarif hat sich geändert. Prüfe die neue Kapazität und die betroffenen Projekte, bevor du diesen Server neu startest.",
+    "applying": "Serverressourcen werden aktualisiert. Den Fortschritt siehst du auf der Serverseite.",
+    "reviewResize": "Ressourcenänderung prüfen",
+    "openServer": "Server öffnen"
   }
 }

@@ -4,9 +4,11 @@ import type { Database, DatabaseTransaction } from "../client";
 import {
   cloudDockerWorkspace,
   cloudWorkspace,
+  cloudServerDeletion,
   project,
   servers,
   type CloudWorkspaceOperation,
+  type CloudWorkspaceActivity,
 } from "../schema";
 
 export type CloudWorkspace = typeof cloudWorkspace.$inferSelect;
@@ -15,6 +17,7 @@ export type CloudWorkspace = typeof cloudWorkspace.$inferSelect;
 export async function assertCloudWorkspacePlacement(
   tx: DatabaseTransaction,
   input: {
+    id?: string;
     workspaceId?: string | null;
     organizationId: string;
     serverId?: string | null;
@@ -43,6 +46,8 @@ export async function assertCloudWorkspacePlacement(
     .for("update");
   if (!owner || owner.deletionInProgress)
     throw new AppError("Cloud workspace is unavailable", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
+  if (input.id && owner.linkedProjects.some(link => link.projects.some(project => project.id === input.id)))
+    throw new AppError("A project identity is already controlled by another installation on this server", 409, "CLOUD_PROJECT_IDENTITY_CONFLICT");
   if (owner.operation?.kind === "resize" && owner.operation.status !== "succeeded")
     throw new AppError(
       "Wait for the workspace resize before adding a project",
@@ -50,6 +55,21 @@ export async function assertCloudWorkspacePlacement(
       "CLOUD_WORKSPACE_BUSY",
     );
 
+}
+
+async function updatedLinkedProjects(
+  tx: DatabaseTransaction,
+  row: CloudWorkspace,
+  controllerId: string,
+  projects: Array<{ id: string; name: string }>,
+) {
+  const links = row.linkedProjects.filter(link => link.controllerId !== controllerId);
+  const local = await tx.select({ id: project.id }).from(project).where(eq(project.workspaceId, row.id));
+  const claimed = new Set([...local.map(row => row.id), ...links.flatMap(link => link.projects.map(project => project.id))]);
+  if (new Set(projects.map(project => project.id)).size !== projects.length || projects.some(project => claimed.has(project.id)))
+    throw new AppError("A project identity is already controlled by another installation on this server", 409, "CLOUD_PROJECT_IDENTITY_CONFLICT");
+  if (projects.length) links.push({ controllerId, projects });
+  return links;
 }
 
 export function createCloudWorkspaceRepo(db: Database) {
@@ -81,6 +101,22 @@ export function createCloudWorkspaceRepo(db: Database) {
           name: input.name, sshHost: null, sshPort: null, sshUser: null,
         });
         return row!;
+      });
+    },
+    /** Linking is idempotent and never copies a subscription or creates a VM. */
+    async link(input: Pick<CloudWorkspace, "organizationId" | "name"> & { remote: NonNullable<CloudWorkspace["remote"]> }) {
+      return db.transaction(async (tx) => {
+        await tx.insert(cloudWorkspace).values({ ...input, id: generateId("cws") })
+          .onConflictDoNothing();
+        const [row] = await tx.select().from(cloudWorkspace).where(and(
+          eq(cloudWorkspace.organizationId, input.organizationId), eq(cloudWorkspace.remote, input.remote),
+        )).for("update");
+        if (!row) throw new AppError("This managed server is already connected to another organization or Cloud account on this installation", 409, "CLOUD_SERVER_ALREADY_LINKED");
+        await tx.insert(servers).values({
+          organizationId: input.organizationId, workspaceId: row.id,
+          name: input.name, sshHost: null, sshPort: null, sshUser: null,
+        }).onConflictDoNothing({ target: servers.workspaceId });
+        return row;
       });
     },
     async setNamespace(id: string, organizationId: string, namespace: string) {
@@ -208,6 +244,8 @@ export function createCloudWorkspaceRepo(db: Database) {
           }
         }
         if (operation.kind === "delete") {
+          if (row.linkedProjects.some(link => link.projects.length))
+            throw new AppError("This server still has projects on a connected installation. Remove or move them before deleting the server.", 409, "CLOUD_WORKSPACE_NOT_EMPTY");
           const [member] = await tx
             .select({ id: project.id })
             .from(project)
@@ -253,6 +291,16 @@ export function createCloudWorkspaceRepo(db: Database) {
         return updated!;
       });
     },
+    /** A definitive remote refusal has no provider side effect. Undo only the
+     * matching local intent; a timeout stays pending until it is reconciled. */
+    async rejectLinkedOperation(id: string, organizationId: string, operationId: string, error: string) {
+      await db.update(cloudWorkspace).set({
+        deletionInProgress: null,
+        operation: sql`jsonb_set(jsonb_set(${cloudWorkspace.operation}, '{status}', '"failed"'), '{error}', ${JSON.stringify(error)}::jsonb)`,
+        updatedAt: new Date(),
+      }).where(and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId),
+        isNotNull(cloudWorkspace.remote), sql`${cloudWorkspace.operation}->>'id' = ${operationId}`));
+    },
     async listPendingOperations(limit = 50) {
       return db
         .select()
@@ -265,6 +313,78 @@ export function createCloudWorkspaceRepo(db: Database) {
         )
         .orderBy(asc(cloudWorkspace.updatedAt))
         .limit(limit);
+    },
+    /** Serialized with lifecycle intent on the same workspace row. The caller
+     * also holds its controller's advisory lock for the entire critical section. */
+    async claimActivity(id: string, organizationId: string, activity: CloudWorkspaceActivity, lifecycle = false,
+      linkedProjects?: Array<{ id: string; name: string }>) {
+      return db.transaction(async tx => {
+        const [row] = await tx.select().from(cloudWorkspace).where(and(
+          eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId),
+        )).for("update");
+        if (!row) throw new AppError("Managed server not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+        if (row.activity) {
+          if (row.activity.id !== activity.id || row.activity.controllerId !== activity.controllerId || row.activity.scope !== activity.scope)
+            throw new AppError("This server has an operation in progress. Let it finish on the installation that started it before changing the server.", 409, "CLOUD_WORKSPACE_ACTIVITY_BUSY");
+        }
+        if (!lifecycle && (row.deletionInProgress || (row.operation?.kind === "resize" && row.operation.status !== "succeeded")))
+          throw new AppError("Finish the server's current operation before starting work", 409, "CLOUD_WORKSPACE_BUSY");
+        const links = linkedProjects ? await updatedLinkedProjects(tx, row, activity.controllerId, linkedProjects) : undefined;
+        const claim = row.activity ?? activity;
+        await tx.update(cloudWorkspace).set({ activity: claim,
+          ...(links ? { linkedProjects: links } : {}),
+        }).where(eq(cloudWorkspace.id, id));
+        return claim;
+      });
+    },
+    async recordActivityCommand(id: string, activityId: string, command: import("@repo/core").ManagedCommandRef) {
+      await db.transaction(async tx => {
+        const [row] = await tx.select().from(cloudWorkspace).where(eq(cloudWorkspace.id, id)).for("update");
+        if (!row?.activity || row.activity.id !== activityId || row.activity.settled)
+          throw new AppError("The server operation no longer owns command execution", 409, "CLOUD_WORKSPACE_ACTIVITY_CHANGED");
+        await tx.update(cloudWorkspace).set({ activity: { ...row.activity, commands: [
+          ...(row.activity.commands ?? []).filter(item => item.marker !== command.marker), command,
+        ] } }).where(eq(cloudWorkspace.id, id));
+      });
+    },
+    async completeActivityCommand(id: string, activityId: string, marker: string) {
+      await db.transaction(async tx => {
+        const [row] = await tx.select().from(cloudWorkspace).where(eq(cloudWorkspace.id, id)).for("update");
+        if (row?.activity?.id !== activityId) return;
+        await tx.update(cloudWorkspace).set({ activity: { ...row.activity,
+          commands: (row.activity.commands ?? []).filter(item => item.marker !== marker),
+        } }).where(eq(cloudWorkspace.id, id));
+      });
+    },
+    async settleActivity(id: string, activityId: string) {
+      await db.update(cloudWorkspace).set({ activity: sql`jsonb_set(${cloudWorkspace.activity}, '{settled}', 'true')` })
+        .where(and(eq(cloudWorkspace.id, id), sql`${cloudWorkspace.activity}->>'id' = ${activityId}`,
+          sql`jsonb_array_length(coalesce(${cloudWorkspace.activity}->'commands', '[]'::jsonb)) = 0`));
+    },
+    async releaseActivity(id: string, organizationId: string, activityId: string, controllerId: string,
+      linkedProjects?: Array<{ id: string; name: string }>) {
+      await db.transaction(async tx => {
+        const [row] = await tx.select().from(cloudWorkspace).where(and(
+          eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId),
+        )).for("update");
+        if (row?.activity?.id !== activityId || row.activity.controllerId !== controllerId) return;
+        if (row.activity.commands?.length)
+          throw new AppError("A command on this server has not confirmed its exit. Retry the interrupted operation to recover it.", 409, "CLOUD_COMMAND_EXIT_UNCONFIRMED");
+        const links = linkedProjects ? await updatedLinkedProjects(tx, row, controllerId, linkedProjects) : undefined;
+        await tx.update(cloudWorkspace).set({ activity: null,
+          ...(links ? { linkedProjects: links } : {}),
+        }).where(eq(cloudWorkspace.id, id));
+      });
+    },
+    async listSettledLinkedActivities(limit = 50) {
+      return db.select().from(cloudWorkspace).where(and(isNotNull(cloudWorkspace.remote),
+        sql`${cloudWorkspace.activity}->>'settled' = 'true'`)).limit(limit);
+    },
+    async findDeletion(serverId: string, organizationId: string, operationId: string) {
+      return db.query.cloudServerDeletion.findFirst({ where: and(
+        eq(cloudServerDeletion.serverId, serverId), eq(cloudServerDeletion.organizationId, organizationId),
+        eq(cloudServerDeletion.operationId, operationId),
+      ) });
     },
     /** Only called after provider deletion is confirmed. Membership is blocked
      * by deletionInProgress and independently protected by its RESTRICT FK. */
@@ -282,6 +402,13 @@ export function createCloudWorkspaceRepo(db: Database) {
           .where(eq(project.workspaceId, id))
           .limit(1);
         if (member) throw new Error("Cloud workspace still contains projects");
+        if (row.linkedProjects.some(link => link.projects.length)) throw new Error("Cloud workspace still contains linked projects");
+        const [server] = await tx.select({ id: servers.id }).from(servers)
+          .where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
+        if (!server || row.operation?.kind !== "delete") throw new Error("Server deletion identity is missing");
+        await tx.insert(cloudServerDeletion).values({
+          serverId: server.id, workspaceId: id, organizationId, operationId: row.operation.id,
+        });
         await tx.delete(cloudDockerWorkspace).where(eq(cloudDockerWorkspace.ownerWorkspaceId, id));
         await tx.delete(servers).where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
         await tx.delete(cloudWorkspace).where(eq(cloudWorkspace.id, id));

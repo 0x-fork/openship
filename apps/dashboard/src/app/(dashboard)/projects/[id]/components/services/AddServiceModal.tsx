@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import type { ImageCatalogEntry } from "@/lib/api/images";
 import type { ServiceInput } from "@/lib/api/services";
@@ -250,6 +250,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
   const [customDomain, setCustomDomain] = useState("");
   const [domainType, setDomainType] = useState<"free" | "custom">(newEndpointDomainType);
   const [saving, setSaving] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   // Reset everything when the modal opens - never carry state between sessions
@@ -356,6 +357,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (submitting.current) return;
 
     const trimmedName = name.trim();
     const trimmedImage = image.trim();
@@ -369,6 +371,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
       return;
     }
 
+    submitting.current = true;
     setSaving(true);
     setError(null);
 
@@ -404,6 +407,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
     } catch (err) {
       setError(getApiErrorMessage(err, t.projectDetail.services.addModal.addServiceFailed));
     } finally {
+      submitting.current = false;
       setSaving(false);
     }
   };

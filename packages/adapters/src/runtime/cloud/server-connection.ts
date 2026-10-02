@@ -2,7 +2,7 @@ import type { Oblien, Runtime, WorkloadInfo } from "oblien";
 import { AppError } from "@repo/core";
 import type { ContainerStatus, ProvisionLock } from "../../types";
 import { CloudWorkspaceExecutor } from "./workspace-executor";
-import { dockerWebSocketStream } from "./docker-transport";
+import { openCloudDockerStream } from "./docker-request";
 import {
   CLOUD_DOCKER_BRIDGE_PORT,
   CLOUD_DOCKER_BRIDGE_SOURCE,
@@ -15,8 +15,6 @@ import {
   isDockerWorkspaceRunning,
   waitForCloudDockerWorkspace,
 } from "./workspace-ready";
-import { resolveEnvironment } from "../../system/environment";
-import { envOps, opScript } from "../../system/environment-ops";
 
 export const CLOUD_SERVER_IMAGE = "oblien/docker:29";
 const BRIDGE_SCRIPT = "/opt/openship/cloud-docker/bridge-v1.py";
@@ -54,7 +52,32 @@ export function managedProcessState(workload: WorkloadInfo): ContainerStatus {
     return workload.enabled === false ? "stopped" : "failed";
   if (["starting", "pending", "created", "restarting"].includes(state)) return "deploying";
   if (["stopped", "exited", "disabled", "completed"].includes(state)) return "stopped";
+  if (state === "missing") return "missing";
   throw new Error("The provider did not return a recognized application process state");
+}
+
+/** Workload GET is saved configuration and can retain an old state after a VM
+ * restart. The provider's status endpoint is the live process authority. */
+export async function readManagedProcessStatus(
+  workloads: ReturnType<Oblien["workspace"]>["workloads"],
+  saved: WorkloadInfo,
+): Promise<WorkloadInfo> {
+  let result: Awaited<ReturnType<typeof workloads.status>>;
+  try {
+    result = await workloads.status(saved.id);
+  } catch (error) {
+    // Disabled configurations survive a host restart without registering a live
+    // process. A saved enabled process absent from the guest can be started.
+    if ((error as { status?: number })?.status === 404)
+      return { ...saved, state: saved.enabled === false ? "stopped" : "missing" };
+    throw error;
+  }
+  const live = result.status as { id?: unknown; state?: unknown } | undefined;
+  if (result.success !== true || !live || live.id !== saved.id || typeof live.state !== "string")
+    throw new AppError("The provider did not return a live status for this application process", 502, "PROCESS_STATUS_UNAVAILABLE");
+  const workload = { ...saved, state: live.state };
+  managedProcessState(workload);
+  return workload;
 }
 
 /** A successful control request is not proof the managed process transitioned. */
@@ -114,7 +137,7 @@ export class CloudServerConnection {
     if (!options.namespace || !options.workspaceId)
       throw new Error("Managed server requires a workspace and organization scope");
     this.workspaceId = options.workspaceId;
-    this.executor = new CloudWorkspaceExecutor(() => this.runtime());
+    this.executor = new CloudWorkspaceExecutor(() => this.runtime(), this.workspaceId);
   }
 
   workspace() {
@@ -128,7 +151,7 @@ export class CloudServerConnection {
 
   async state(): Promise<ContainerStatus> {
     const data = await this.workspace().get();
-    assertDockerWorkspaceOwner(data, this.options.namespace);
+    assertDockerWorkspaceOwner(data, this.options.namespace, this.workspaceId);
     if (isDockerWorkspaceRunning(data)) return "running";
     const status = cloudWorkspaceStatus(data);
     if (["failed", "error"].includes(status)) return "failed";
@@ -188,15 +211,13 @@ export class CloudServerConnection {
     for (let attempt = 0; ; attempt++) {
       await this.ensureBridge();
       try {
-        return await dockerWebSocketStream(
-          (await this.runtime()).proxy(CLOUD_DOCKER_BRIDGE_PORT).ws("/docker"),
-        );
+        return await openCloudDockerStream(await this.runtime(), this.workspaceId);
       } catch (error) {
         this.bridgePromise = undefined;
         // A cold restart can invalidate both a cached readiness result and the
         // SDK token. Retry the handshake once after probing again. The transport
         // has not forwarded any Docker request bytes until this promise resolves.
-        if (attempt !== 0) throw error;
+        if (attempt !== 0 || (error instanceof AppError && error.code === "CLOUD_COMMAND_EXIT_UNCONFIRMED")) throw error;
       }
     }
   }
@@ -204,7 +225,7 @@ export class CloudServerConnection {
   private ensureBridge(): Promise<void> {
     const initialize = async () => {
       const info = await this.client.workspaces.get(this.workspaceId);
-      assertDockerWorkspaceOwner(info, this.options.namespace);
+      assertDockerWorkspaceOwner(info, this.options.namespace, this.workspaceId);
       assertCloudWorkspaceRunning(info);
       let runtime = await this.runtime();
       let refreshed = false;
@@ -268,17 +289,9 @@ export class CloudServerConnection {
       };
       if (await ready()) return;
       await this.executor.exec("docker info --format '{{.ServerVersion}}'", { timeout: 60_000 });
-      const hasPython = await this.executor.exec("command -v python3").then(
-        () => true,
-        () => false,
-      );
-      if (!hasPython) {
-        const install = envOps(await resolveEnvironment(this.executor)).pkgInstall(["python3"], {
-          installRecommends: false,
-        });
-        if (!install.supported) throw new Error(install.reason);
-        await this.executor.exec(opScript(install.value), { timeout: 300_000 });
-      }
+      // Python is part of CLOUD_SERVER_IMAGE and also carries command streams.
+      // A modified image missing it must fail at that boundary, not attempt to
+      // bootstrap Python through the transport which already requires it.
       await this.executor.writeFile(BRIDGE_SCRIPT, CLOUD_DOCKER_BRIDGE_SOURCE, { mode: 0o700 });
       const workspace = this.client.workspace(this.workspaceId);
       const workload = (await workspace.workloads.list({ name: BRIDGE_WORKLOAD })).find(
@@ -332,7 +345,7 @@ export class CloudServerConnection {
     await this.options.beforeProvision?.();
     const ws = this.client.workspace(this.workspaceId);
     const data = await ws.get();
-    assertDockerWorkspaceOwner(data, this.options.namespace);
+    assertDockerWorkspaceOwner(data, this.options.namespace, this.workspaceId);
     if (isDockerWorkspaceRunning(data)) return;
     const status = cloudWorkspaceStatus(data);
     if (status === "stopped") await ws.start();

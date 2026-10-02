@@ -298,7 +298,7 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
       // failure/lease cleanup so the claimed deployment cannot remain stuck.
       sessionManager.createSession(dep.id, project.id);
       const { withCloudWorkspaceActivity } = await import("../../lib/cloud-workspace-lock");
-      await withCloudWorkspaceActivity(project.workspaceId, () => executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal), cancellationSignal);
+      await withCloudWorkspaceActivity(project.workspaceId, () => executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal), cancellationSignal, { scope: `project:${project.id}` });
     } catch (err) {
       console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
       // executeBuildAndDeploy's inner try/catch only arms onFailure() after
@@ -1741,12 +1741,17 @@ function buildDeployEnvironment(
         containerPort: port,
         hostPort,
       });
-      await reserveResolvedLoopbackRoutes({
-        target: phase.hostPortTarget,
-        projectId: project.id,
-        runtime,
-        routes: [{ targetUrl, serviceId: null, containerId: id, containerPort: port }],
-      });
+      // Managed routes validate the upstream against the project's processes
+      // and containers in CloudInfraProvider. A bare process uses the VM's
+      // loopback, but does not participate in self-hosted OpenResty claims.
+      if (phase.effectiveTarget !== "cloud") {
+        await reserveResolvedLoopbackRoutes({
+          target: phase.hostPortTarget,
+          projectId: project.id,
+          runtime,
+          routes: [{ targetUrl, serviceId: null, containerId: id, containerPort: port }],
+        });
+      }
       return targetUrl;
     },
   };

@@ -152,6 +152,15 @@ r.post(
   },
   serversCtrl.createManagedServer,
 );
+r.get("/servers/managed/available", {
+  tag: "server:admin", collection: true, authorizationHandledByOperation: true,
+  mcp: { description: "List managed servers available through this installation's connected Cloud account. Does not create a server or copy projects. Use connectManaged to add a selected server to this organization." },
+}, serversCtrl.availableManagedServers);
+r.post("/servers/managed/connect", {
+  tag: "server:admin", collection: true, authorizationHandledByOperation: true, auditHandledByOperation: true,
+  body: ServerCollectionSchemas.connectManaged.input,
+  mcp: { description: "Connect an existing managed Cloud server to this self-hosted organization. Verifies Cloud server administration and pins its account identity. Returns the local serverId to use for deployments; no projects or subscriptions are copied." },
+}, serversCtrl.connectManagedServer);
 r.get(
   "/servers/:id/usage",
   {

@@ -44,7 +44,7 @@ export interface BillingState {
   /** Display-only: out of credits (Oblien is the real enforcer). */
   overQuota: boolean;
   /** Build time this period in minutes (openship-derived; Oblien has no build meter). */
-  buildTimeMinutes: number;
+  buildTimeMinutes: number | null;
   /** Build allowance resets monthly, even for an annual subscription. */
   buildMinutesResetAt?: string;
   maxServiceMachine?: { tier: string; cpuCores: number; memoryMb: number } | null;

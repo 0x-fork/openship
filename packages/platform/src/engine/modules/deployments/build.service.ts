@@ -1059,6 +1059,9 @@ export async function resolveSnapshotTarget(
       ? (override?.serverId ?? project.serverId ?? activeMeta?.serverId ?? undefined)
       : undefined;
 
+  if (deployTarget === "cloud" && (!project.workspaceId || !serverId))
+    throw new AppError("Choose a managed server for this project before deploying", 409, "DEPLOYMENT_SERVER_REQUIRED");
+
   const runtimeMode =
     override?.runtimeMode ?? toRuntimeMode(project.runtimeMode) ?? activeMeta?.runtimeMode;
 
@@ -1545,10 +1548,12 @@ export async function requestBuildAccess(
   }
   if (project.organizationId !== ctx.organizationId) throw new NotFoundError("Project", projectId);
   const deployEnvironment = resolveDeploymentEnvironment(project, environment);
+  const resolvedTarget = await resolveSnapshotTarget(project, { deployTarget, serverId, runtimeMode });
+  if (resolvedTarget.deployTarget === "cloud" && buildStrategy === "local")
+    throw new AppError("Managed servers build on the selected server. Choose a server build to continue.", 400, "MANAGED_SERVER_BUILD_STRATEGY");
   if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ALLOW_HOST_EXECUTION !== "true") {
     if (buildStrategy === "local" || deployTarget === "local")
       throw new AppError("Host execution is disabled by this native installation's policy", 403, "HOST_EXECUTION_DISABLED");
-    await resolveSnapshotTarget(project, { deployTarget, serverId, runtimeMode });
   }
   // Validate an explicit host-root capability before compose reconciliation,
   // route persistence, or deployment-row creation. Runtime/preflight reuse the
@@ -1970,11 +1975,6 @@ export async function requestBuildAccess(
   // the single source of truth shared with triggerDeployment — UI override >
   // workspaceId > active-deployment meta. Keeps the two deploy entry points
   // from diverging on where a project deploys.
-  const resolvedTarget = await resolveSnapshotTarget(project, {
-    deployTarget,
-    serverId,
-    runtimeMode,
-  });
   Object.assign(snapshot, resolvedTarget);
 
   // Keep the validated upload capability with the snapshot. Cloud transfers

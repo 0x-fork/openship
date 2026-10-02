@@ -22,6 +22,14 @@ shared engines. Application operations never create, resize or delete a VM.
 An unbound Cloud platform can inspect infrastructure but rejects application work
 until the server, subscription, namespace and project ownership are resolved.
 
+Self-hosted and desktop installations acquire or link managed servers through
+the same server operations. A local encrypted connection pins the Cloud API URL,
+user, organization, server and subscription. Runtime credentials are scoped to
+that server's namespace; a disconnected or switched account cannot reuse cached
+credentials or cached host usage. Project configuration remains local. Cloud
+stores the installation's registered project identities to coordinate host
+administration without copying projects or introducing another deployment engine.
+
 ## Capacity and lifecycle
 
 Checkout provisions the purchased server once. A sole destination is selected
@@ -59,6 +67,15 @@ has ended can enter host deletion. Financial history remains with the provider.
   mutations use `cloud:server:<provider VM>`, and transport setup has its own
   `cloud:docker-bridge:<provider VM>` lock. Do not acquire an outer activity lock
   again from a runtime operation that is already inside it.
+- Activity claims survive controller restarts and coordinate independent linked
+  installations. Commands and terminals record intent before remote execution;
+  cancellation confirms process-group termination. Docker requests record intent
+  before opening their bridge tunnel, and the guest journals completion only
+  after reading the original daemon response. A lost controller response never
+  authorizes blind replay or a timed unlock. A bridge crash with an unfinished
+  mutation requires a provider-console server restart and retry of the original
+  operation; only a changed host epoch proves old work cannot still run. Completed
+  request journals and cancellation tombstones are retained on the server.
 - Oblien ingress and certificates are provider-owned. Route writes validate
   project listeners and replace the complete desired rule table. Operation logs
   and failures remain visible; an HTTP acknowledgement alone is not proof that
@@ -66,6 +83,13 @@ has ended can enter host deletion. Financial history remains with the provider.
 - Stopped managed hosts are not restarted by monitoring. Docker health and
   usage reuse the shared collectors; reads stay project-scoped and sampling
   budgets remain per physical server. Bare usage follows its process identity.
+- Billing cannot produce complete project/service/route counts or build minutes
+  when linked installations own some application records. Those counters are
+  nullable; purchased capacity, provider charges and measured host usage remain
+  authoritative. Do not replace unknown application counters with zero.
+- Linked server deletion uses a durable, organization-scoped receipt keyed by the
+  original operation. A missing server row alone is not proof of successful
+  provider deletion.
 
 Customer migration is outside this implementation. No compatibility engine,
 customer backfill job, or automatic project migration is included.

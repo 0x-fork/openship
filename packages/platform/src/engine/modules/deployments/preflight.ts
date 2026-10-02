@@ -64,6 +64,7 @@ import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { getTrustedHostCapacity } from "../../lib/host-capacity";
 import { getTemplateForOrg } from "../apps/catalog-source";
 import { repos } from "@repo/db";
+import { requireLinkedCloudServer, remoteCloudRequest } from "../../lib/cloud/server-link";
 
 /**
  * Hostnames this project already holds on the routing edge, so a redeploy
@@ -760,6 +761,13 @@ async function requestCloudPreflight(
   // to mint the wrong namespace on SaaS.
   if (plat.target === "cloud") {
     return runCloudPreflight(snapshot.organizationId, { ...input, workspaceId: snapshot.managedWorkspaceId ?? null });
+  }
+  if (snapshot.managedWorkspaceId) {
+    const { remote } = await requireLinkedCloudServer(snapshot.organizationId, snapshot.managedWorkspaceId);
+    const result = await remoteCloudRequest<{ data: CloudPreflightData }>(snapshot.organizationId,
+      `/api/cloud/preflight?serverId=${encodeURIComponent(remote.serverId)}`,
+      { method: "POST", body: JSON.stringify(input) }, remote);
+    return result.data;
   }
 
   // Everywhere else (selfhosted, desktop): bridge to SaaS via the

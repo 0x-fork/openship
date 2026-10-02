@@ -29,7 +29,7 @@ import { OperationError } from "@repo/contracts";
 import type { LogEntry } from "@repo/adapters";
 import { withServerExecution } from "../../lib/server-execution";
 import { env } from "../../config";
-import { assertCloudCanSpend } from "../billing/billing-oblien-quota";
+import { assertManagedServerCanWork } from "../../lib/cloud-workspace-access";
 import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
 import { jobRunBus } from "./job-run.sse";
@@ -81,7 +81,7 @@ async function commandTargets(cfg: CommandConfig) {
   const ids = resolveServerIds(cfg);
   const servers = await repos.server.getMany(ids);
   const organizationId = jobTargetsOrganization(ids, servers);
-  if (!organizationId || ids.some(id => Boolean(servers.get(id)?.workspaceId) !== env.CLOUD_MODE))
+  if (!organizationId || ids.some(id => !servers.has(id) || (env.CLOUD_MODE && !servers.get(id)?.workspaceId)))
     throw new NotFoundError("Job target server");
   return { organizationId, servers: ids.map(id => servers.get(id)!) };
 }
@@ -94,7 +94,7 @@ async function assertCommandTargetsReady(cfg: CommandConfig, expectedOrganizatio
   for (const server of targets.servers) {
     if (!server.workspaceId) continue;
     try {
-      await assertCloudCanSpend(targets.organizationId, server.workspaceId);
+      await assertManagedServerCanWork(targets.organizationId, server.workspaceId);
     } catch (error) {
       if (error instanceof AppError && error.code === "CLOUD_BILLING_BLOCKED")
         throw new OperationError(error.message, error.statusCode, error.code, { workspaceId: server.workspaceId, serverId: server.id });
@@ -118,7 +118,7 @@ async function runOnServer(
     const result = await withServerExecution(organizationId, serverId, executor => {
       abort.signal.throwIfAborted();
       return executor.streamExec(command, onLine, { signal: abort.signal });
-    });
+    }, { mutation: true, scope: "job" });
     if (abort.signal.aborted) throw new Error(`Command timed out after ${timeoutMs}ms`);
     return result;
   } catch (error) {

@@ -89,6 +89,7 @@ export interface NamespaceTokenResult {
   token: string;
   namespace: string;
   expiresAt: string;
+  providerApiUrl: string;
 }
 
 export interface NamespaceClientResult {
@@ -97,10 +98,16 @@ export interface NamespaceClientResult {
 }
 
 export async function issueNamespaceToken(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<NamespaceTokenResult> {
+  if (!env.CLOUD_MODE) {
+    if (!workspaceId) throw new AppError("Choose a managed server before requesting execution access", 409, "DEPLOYMENT_SERVER_REQUIRED");
+    const { remoteServerConnection } = await import("./cloud/server-connection");
+    const connection = await remoteServerConnection(organizationId, workspaceId);
+    return { token: connection.token, namespace: connection.namespace, expiresAt: connection.expiresAt, providerApiUrl: connection.providerApiUrl };
+  }
   const namespace = await ensureNamespaceWithQuota(organizationId, workspaceId);
   try {
     const result = await getOblienClient().tokens.create({ scope: "namespace", namespace, ttl: 1800 });
-    return { token: result.token, namespace, expiresAt: result.expiresAt };
+    return { token: result.token, namespace, expiresAt: result.expiresAt, providerApiUrl: env.OBLIEN_API_URL };
   } catch (error) {
     console.warn(`[oblien] token issuance failed for org ${organizationId}: ${safeErrorMessage(error)}`);
     throw new AppError("Cloud access is temporarily unavailable. Please retry.", 503, "CLOUD_TOKEN_UNAVAILABLE");
@@ -108,6 +115,6 @@ export async function issueNamespaceToken(organizationId: string, workspaceId?: 
 }
 
 export async function getNamespaceClient(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<NamespaceClientResult> {
-  const { token, namespace } = await issueNamespaceToken(organizationId, workspaceId);
-  return { client: new Oblien({ token, baseUrl: env.OBLIEN_API_URL }), namespace };
+  const { token, namespace, providerApiUrl } = await issueNamespaceToken(organizationId, workspaceId);
+  return { client: new Oblien({ token, baseUrl: providerApiUrl }), namespace };
 }

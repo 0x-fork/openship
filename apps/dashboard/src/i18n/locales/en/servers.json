@@ -1,4 +1,17 @@
 {
+  "acquire": {
+    "connected": {
+      "label": "Connect your server",
+      "description": "Use a server you already own over SSH."
+    },
+    "managed": {
+      "label": "Get a managed server",
+      "description": "Openship Cloud handles setup, routing and HTTPS."
+    },
+    "signInHint": "Connect your Cloud account to use an existing managed server or get a new one.",
+    "chooseExisting": "Choose an existing Cloud server",
+    "useServer": "Use this server"
+  },
   "clusters": {
     "listTitle": "Server clusters",
     "listDescription": "Organize your servers into groups and manage cluster membership.",

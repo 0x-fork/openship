@@ -62,8 +62,20 @@ export async function resolveUsageTargets(
     inventory !== undefined
       ? inventory
       : runtime.supports("hostContainerQuery") && runtime.listAllContainers
-        ? await runtime.listAllContainers()
+        ? await runtime.listAllContainers().catch(() => null)
         : null;
+  const inspectStatus = async (containerId: string | null): Promise<LiveServiceStatus> => {
+    if (!containerId) return "unknown";
+    try {
+      const info = await runtime.getContainerInfo(containerId);
+      if (info.status === "running") return "running";
+      if (info.status === "failed") return "failed";
+      if (["queued", "building", "deploying"].includes(info.status)) return "starting";
+      return "stopped";
+    } catch {
+      return "unknown";
+    }
+  };
   const targets: UsageTarget[] = [];
   if (part !== "main") {
     const matches = live
@@ -78,11 +90,12 @@ export async function resolveUsageTargets(
       : null;
     for (const service of config.services) {
       const match = matches?.get(service.id);
+      const containerId = match?.containerId ?? (live ? null : (config.trackedIds[service.id] ?? null));
       targets.push({
         serviceId: service.id,
         name: service.name,
-        containerId: match?.containerId ?? (live ? null : (config.trackedIds[service.id] ?? null)),
-        status: match?.status ?? (live ? "stopped" : "unknown"),
+        containerId,
+        status: match?.status ?? (live ? "stopped" : await inspectStatus(containerId)),
       });
     }
   }
@@ -103,15 +116,7 @@ export async function resolveUsageTargets(
       const container = live.find((item) => item.id === id);
       status = container ? liveContainerStatus(container) : "stopped";
     } else {
-      const info = await runtime.getContainerInfo(id);
-      status =
-        info.status === "running"
-          ? "running"
-          : info.status === "failed"
-            ? "failed"
-            : ["queued", "building", "deploying"].includes(info.status)
-              ? "starting"
-              : "stopped";
+      status = await inspectStatus(id);
     }
     targets.unshift({ serviceId: null, name: project.name, containerId: id, status });
   }

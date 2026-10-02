@@ -45,7 +45,7 @@ describe("planProjectMove refusals", () => {
 
   it("refuses a cloud project, naming Cloud", () => {
     expect(() =>
-      plan({ project: { ...project, cloudWorkspaceId: "ws_1", serverId: null } }),
+      plan({ project: { ...project, workspaceId: "ws_1", serverId: null } }),
     ).toThrow(/Openship Cloud/);
   });
 
