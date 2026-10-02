@@ -38,6 +38,7 @@ import {
 } from "../../lib/deployable-service";
 import { isFullyPinned, snapshotNeedsGitSource, snapshotNeedsProjectSource } from "./pinned-artifacts";
 import { snapshotToClass } from "./deployment-class";
+import { resolveBuildRuntimeModes } from "./build-execution-plan";
 import { relayConfigEligible, resolveClonePlan } from "./clone-plan";
 import { hasLocalGitIdentity } from "../github/github.local-auth";
 import { isPublicRepo } from "../github/github.http";
@@ -1013,11 +1014,22 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
     return { id: "config", label: "Service configuration", status: "pass" };
   }
 
-  // A `docker` framework builds from its OWN repo Dockerfile (its FROM is the
-  // image), so buildImage is never consumed — refusing the deploy for a missing
-  // buildImage there is wrong (it blocked repo-Dockerfile + self-app deploys).
-  // Mirrors the multi-service branch's dockerfile/build check. #231
-  if (!releaseImageRef && snapshot.framework !== "docker" && !snapshot.buildImage) {
+  const cls = snapshotToClass(snapshot);
+  const baseTarget = platform().target;
+  const { buildRuntimeMode } = resolveBuildRuntimeModes({
+    workload: cls.workload,
+    serverId: snapshot.serverId,
+    baseTarget,
+    effectiveTarget: resolveEffectiveTarget(baseTarget, snapshot),
+    willRunServices: false,
+    hasPrebuiltImage: Boolean(releaseImageRef),
+    runtimeMode: snapshot.runtimeMode,
+  });
+  // Direct host builds consume no Docker image. A static bare release can still
+  // build in Docker, so use the pipeline's build mode rather than its serve mode.
+  // A repository Dockerfile supplies its own FROM image.
+  if (!releaseImageRef && snapshot.framework !== "docker" &&
+      (buildRuntimeMode ?? snapshot.runtimeMode) !== "bare" && !snapshot.buildImage) {
     missing.push("build image");
   }
 
@@ -1030,7 +1042,6 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
     missing.push("install command");
   }
 
-  const cls = snapshotToClass(snapshot);
   if (cls.workload === "web") {
     // A web app is reached on a port and must declare how it starts and listens.
     // Dockerfile apps inherit their process command from the image.
