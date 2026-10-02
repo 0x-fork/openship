@@ -9,7 +9,8 @@ const nullableString = Type.Union([Type.String(), Type.Null()]);
 const nullableNumber = Type.Union([Type.Number({ minimum: 0 }), Type.Null()]);
 const resourceSize = Type.Union([CloudAllocationSchema, Type.Null()]);
 export const ManagedServerActivityInputSchema = Type.Object({
-  id: Type.String({ format: "uuid" }),
+  // TypeBox does not register string formats; keep this wire schema standalone.
+  id: Type.String({ pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }),
   controllerId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9:_-]+$" }),
   scope: Type.String({ minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9:_-]+$" }),
   projects: Type.Array(Type.Object({
