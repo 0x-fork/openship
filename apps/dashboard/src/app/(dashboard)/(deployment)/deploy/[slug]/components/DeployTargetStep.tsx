@@ -522,6 +522,7 @@ interface DeployTargetStepProps {
   targets: ResolvedTargets;
   serverSelection: ServerSelection;
   onContinue: () => void;
+  onBack: () => void;
   /**
    * When true (the default), the step auto-advances to the next step if a
    * saved default applies cleanly - the user never sees this screen. Set to
@@ -531,7 +532,7 @@ interface DeployTargetStepProps {
   autoSkipAllowed?: boolean;
 }
 
-const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSelection, onContinue, autoSkipAllowed = true, projectId }) => {
+const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSelection, onContinue, onBack, autoSkipAllowed = true, projectId }) => {
   const { config, updateConfig } = useDeployment();
   const { requireCloud } = useCloud();
   const { selfHosted, deployMode } = usePlatform();
@@ -1077,9 +1078,19 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
         ? ts.chooseSubtitle
         : ts.noTargetSubtitle;
 
+  const backButton = (
+    <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={onBack}>
+      <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
+      {ts.back}
+    </Button>
+  );
+
   if (config.deployTarget === "cluster") return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-medium">Deploy to server cluster</h1>
+      <header className="flex items-start justify-between gap-4">
+        <h1 className="text-2xl font-medium">Deploy to server cluster</h1>
+        {backButton}
+      </header>
       <p className="text-sm leading-relaxed text-muted-foreground">This project uses the cluster and instance count saved in its Scale controls. OpenShip builds or reuses the application image, starts the instances, and checks their health before switching traffic.</p>
       <Button onClick={onContinue}>Continue</Button>
     </div>
@@ -1087,9 +1098,12 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
 
   return (
     <div className="@container/target space-y-6">
-      <header>
-        <h1 className="text-2xl font-medium text-foreground/80">{ts.heading}</h1>
-        {headerSubtitle && <p className="mt-1 text-sm text-muted-foreground">{headerSubtitle}</p>}
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-medium text-foreground/80">{ts.heading}</h1>
+          {headerSubtitle && <p className="mt-1 text-sm text-muted-foreground">{headerSubtitle}</p>}
+        </div>
+        {backButton}
       </header>
       <div className="grid grid-cols-1 items-start gap-6 @min-[60rem]/target:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
@@ -1144,12 +1158,10 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
               )}
               {showResourceLimits && (
                 <section className="space-y-4 rounded-2xl bg-card p-5" aria-label={t.projectSettings.resources.title}>
-                  <div>
-                    <h2 className="text-sm font-semibold text-foreground">{t.projectSettings.resources.title}</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">{t.projectSettings.resources.description}</p>
-                  </div>
+                  <h2 className="text-sm font-semibold text-foreground">{t.projectSettings.resources.title}</h2>
                   <ResourceTierPicker
                     key={config.serverId}
+                    compact
                     value={config.cloudResourceTier ?? "unlimited"}
                     values={resourceValues}
                     capacity={serverSelection.selected?.managed?.resources ?? undefined}

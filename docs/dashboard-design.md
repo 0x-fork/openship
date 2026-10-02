@@ -47,6 +47,8 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Machine power defaults to the full available server capacity. Project settings and
   deployment setup share the resource editor and tier labels. Optional limits apply to
   containers; the managed server's purchased allocation stays separate.
+  In destination settings, show the current choice with Customize/Change on the right;
+  reveal presets and custom fields on demand. Keep a Back action in the page header.
 - Base grids on the available container width so expanded navigation does not squeeze fields.
   Routing cards use two columns when their controls fit comfortably and one column otherwise.
 - Keep section spacing consistent (`gap-6` between main columns, `space-y-4` for sidebar items).

@@ -669,7 +669,9 @@
       "updated": "Potência da máquina atualizada",
       "updateFailed": "Falha ao atualizar a potência da máquina",
       "invalidValues": "CPU e memória devem ser 0 ou um número positivo"
-    }
+    },
+    "customize": "Personalizar",
+    "change": "Alterar"
   },
   "sleep": {
     "title": "Modo da máquina",

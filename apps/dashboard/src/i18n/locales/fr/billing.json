@@ -535,7 +535,7 @@
     "defaultHint": "Choisissez une offre et déployez. Nous créons et gérons votre serveur automatiquement.",
     "noneAvailable": "Créez un serveur compatible ou libérez un espace dédié avant d’y placer ce projet.",
     "manage": "Gérer les serveurs",
-    "subscriptionHint": "Chaque serveur possède son propre abonnement et son historique de facturation.",
+    "subscriptionHint": "Les nouveaux serveurs sont facturés séparément.",
     "placementHint": "Les projets partagent les ressources de cet espace. En supprimer un laisse les autres en place.",
     "create": "Créer un serveur",
     "mode": "Isolation des projets",
@@ -608,6 +608,7 @@
       "ports": "Ports publiés",
       "confirmHint": "Tous les projets de ce serveur sont concernés. Désactiver Internet peut interrompre les builds et les intégrations externes.",
       "save": "Appliquer la modification réseau"
-    }
+    },
+    "existingServerHint": "Utilise l’offre de ce serveur."
   }
 }

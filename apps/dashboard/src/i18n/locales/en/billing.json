@@ -552,7 +552,7 @@
   "workspaces": {
     "title": "Managed Cloud servers",
     "destination": "Destination",
-    "existingServerHint": "Use this server’s plan; its projects share the capacity.",
+    "existingServerHint": "Uses this server’s plan.",
     "newProjectServer": "New dedicated server",
     "oneProject": "1 project",
     "savedDestinationHint": "This project keeps its saved server and data.",
@@ -582,7 +582,7 @@
     "defaultHint": "Choose a plan and deploy. We create and manage your server automatically.",
     "noneAvailable": "Create a Cloud server to choose its plan and deploy.",
     "manage": "Manage servers",
-    "subscriptionHint": "Each server has its own subscription and billing history.",
+    "subscriptionHint": "New servers are billed separately.",
     "placementHint": "Projects share this server’s capacity. Deleting one leaves the others in place.",
     "create": "Create server",
     "mode": "Project isolation",

@@ -231,18 +231,17 @@ export function ServerSelectorView({
         disabledReason ? (
           <p className="text-xs text-muted-foreground">{disabledReason}</p>
         ) : !disabled && (
-          <div className="space-y-2">
-            {!selfHosted && forDeployment && !automaticCloud && (
-              <p className="text-xs text-muted-foreground">{managedCopy.existingServerHint}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {!selfHosted && (
+              <p className="text-xs text-muted-foreground">
+                {forDeployment && !automaticCloud ? managedCopy.existingServerHint : managedCopy.subscriptionHint}
+              </p>
             )}
             {(automaticCloud || rows.length === 1) && (
               <Button type="button" variant="secondary" size="sm" onClick={addServer}>
                 <Icon name="plus" className="size-3.5" aria-hidden />
                 {addLabel}
               </Button>
-            )}
-            {!selfHosted && (
-              <p className="text-xs text-muted-foreground">{managedCopy.subscriptionHint}</p>
             )}
           </div>
         )

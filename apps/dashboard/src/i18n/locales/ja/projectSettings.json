@@ -669,7 +669,9 @@
       "updated": "マシンパワーを更新しました",
       "updateFailed": "マシンパワーの更新に失敗しました",
       "invalidValues": "CPU とメモリは 0 または正の数を指定してください"
-    }
+    },
+    "customize": "カスタマイズ",
+    "change": "変更"
   },
   "sleep": {
     "title": "マシンモード",

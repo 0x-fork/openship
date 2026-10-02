@@ -807,7 +807,9 @@
       "updated": "Makine gücü güncellendi",
       "updateFailed": "Makine gücü güncellenemedi",
       "invalidValues": "CPU ve bellek 0 veya pozitif bir sayı olmalıdır"
-    }
+    },
+    "customize": "Özelleştir",
+    "change": "Değiştir"
   },
   "sleep": {
     "title": "Makine Modu",

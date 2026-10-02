@@ -535,7 +535,7 @@
     "defaultHint": "Bir plan seçin ve dağıtın. Sunucunuzu otomatik olarak oluşturup yönetiriz.",
     "noneAvailable": "Bu projeyi yerleştirmeden önce uyumlu bir sunucu oluşturun veya ayrılmış bir alanı boşaltın.",
     "manage": "Sunucularnı yönetin",
-    "subscriptionHint": "Her sunucunun kendi aboneliği ve fatura geçmişi vardır.",
+    "subscriptionHint": "Yeni sunucular ayrı faturalandırılır.",
     "placementHint": "Projeler bu sunucunun kapasitesini paylaşır. Birini silmek diğerlerini etkilemez.",
     "create": "Sunucu oluştur",
     "mode": "Proje yalıtımı",
@@ -608,6 +608,7 @@
       "ports": "Yayınlanan portlar",
       "confirmHint": "Bu sunucudaki tüm projeler etkilenir. İnterneti kapatmak derlemeleri ve harici entegrasyonları kesintiye uğratabilir.",
       "save": "Ağ değişikliğini uygula"
-    }
+    },
+    "existingServerHint": "Bu sunucunun planını kullanır."
   }
 }

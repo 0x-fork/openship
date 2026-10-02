@@ -535,7 +535,7 @@
     "defaultHint": "Wähle einen Plan und deploye. Wir erstellen und verwalten deinen Server automatisch.",
     "noneAvailable": "Erstellen Sie einen kompatiblen Server oder leeren Sie einen dedizierten Server, bevor Sie dieses Projekt zuordnen.",
     "manage": "Server verwalten",
-    "subscriptionHint": "Jeder Server hat ein eigenes Abonnement und einen eigenen Abrechnungsverlauf.",
+    "subscriptionHint": "Neue Server werden separat abgerechnet.",
     "placementHint": "Projekte teilen sich die Kapazität dieses Server. Das Löschen eines Projekts lässt die anderen unberührt.",
     "create": "Server erstellen",
     "mode": "Projektisolierung",
@@ -608,6 +608,7 @@
       "ports": "Veröffentlichte Ports",
       "confirmHint": "Dies betrifft alle Projekte auf diesem Server. Ohne Internetzugriff können Builds und externe Integrationen fehlschlagen.",
       "save": "Netzwerkänderung anwenden"
-    }
+    },
+    "existingServerHint": "Nutzt den Tarif dieses Servers."
   }
 }

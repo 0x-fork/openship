@@ -535,7 +535,7 @@
     "defaultHint": "Elige un plan y despliega. Creamos y administramos tu servidor automáticamente.",
     "noneAvailable": "Crea un servidor compatible o libera uno dedicado antes de asignar este proyecto.",
     "manage": "Gestionar servidores",
-    "subscriptionHint": "Cada servidor tiene su propia suscripción e historial de facturación.",
+    "subscriptionHint": "Los servidores nuevos se facturan por separado.",
     "placementHint": "Los proyectos comparten la capacidad de este espacio. Eliminar uno no afecta a los demás.",
     "create": "Crear servidor",
     "mode": "Aislamiento de proyectos",
@@ -608,6 +608,7 @@
       "ports": "Puertos publicados",
       "confirmHint": "Afecta a todos los proyectos del servidor. Desactivar internet puede interrumpir compilaciones e integraciones externas.",
       "save": "Aplicar cambio de red"
-    }
+    },
+    "existingServerHint": "Usa el plan de este servidor."
   }
 }

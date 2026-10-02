@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   MIN_CPU_CORES, MIN_MEMORY_MB, RESOURCE_TIER_ORDER, RESOURCE_TIER_SPECS,
   UNKNOWN_CAPACITY, formatCpuCores, formatMemoryMb, validateAgainstCapacity,
@@ -39,16 +39,20 @@ interface ResourceTierPickerProps {
   capacity?: Pick<HostCapacity, "cpuCores" | "memoryMb">;
   saving?: ResourceTier | null;
   disabled?: boolean;
+  /** Show the selected limit first; reveal the shared editor on demand. */
+  compact?: boolean;
   /** False keeps a custom draft open after a failed save. */
   onSelect: (tier: ResourceTier, values?: ResourceLimitValues) => void | boolean | Promise<boolean>;
 }
 
 /** Project settings and deployment setup share the same limits editor. */
-export function ResourceTierPicker({ value, values, requiresLimit = false, capacity, saving, disabled, onSelect }: ResourceTierPickerProps) {
+export function ResourceTierPicker({ value, values, requiresLimit = false, capacity, saving, disabled, compact = false, onSelect }: ResourceTierPickerProps) {
   const { t } = useI18n();
   const copy = t.projectSettings.resources;
   const labels = useResourceTierLabels();
   const fieldId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState<{ cpu: string; memory: string } | null>(null);
   const [saveError, setSaveError] = useState(false);
   const selected = draft ? "custom" : value;
@@ -63,11 +67,20 @@ export function ResourceTierPicker({ value, values, requiresLimit = false, capac
   );
   const incomplete = !!draft && (!draft.cpu.trim() || !draft.memory.trim());
 
+  const finishEditing = () => {
+    setDraft(null);
+    setSaveError(false);
+    if (compact) {
+      setExpanded(false);
+      toggleRef.current?.focus();
+    }
+  };
+
   const commit = async (tier: ResourceTier, customValues?: ResourceLimitValues) => {
     if (busy) return;
     setSaveError(false);
     try {
-      if (await onSelect(tier, customValues) !== false) setDraft(null);
+      if (await onSelect(tier, customValues) !== false) finishEditing();
     } catch {
       setSaveError(true);
     }
@@ -75,75 +88,102 @@ export function ResourceTierPicker({ value, values, requiresLimit = false, capac
 
   return (
     <div className="@container/resources space-y-3">
-      <div className="grid grid-cols-1 gap-2.5 @min-[24rem]/resources:grid-cols-2 @min-[40rem]/resources:grid-cols-3">
-        {tiers.map(tier => {
-          const active = selected === tier;
-          const overCapacity = tier !== "custom" && tier !== "unlimited" && capacity && (
-            (capacity.cpuCores > 0 && RESOURCE_TIER_SPECS[tier].cpuCores > capacity.cpuCores)
-            || (capacity.memoryMb > 0 && RESOURCE_TIER_SPECS[tier].memoryMb > capacity.memoryMb)
-          );
-          return (
-            <button
-              key={tier}
-              type="button"
-              aria-pressed={active}
-              disabled={busy || !!overCapacity}
-              onClick={() => {
-                if (tier === "custom") {
-                  setDraft({ cpu: String(values.cpuCores), memory: String(values.memoryMb) });
-                  setSaveError(false);
-                } else void commit(tier);
-              }}
-              className={`${tier === "unlimited" ? "col-span-full " : ""}flex items-start gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${active ? "bg-primary/10 ring-1 ring-primary/25" : "bg-muted/60 hover:bg-muted"}`}
-            >
-              <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                <Icon name={saving === tier ? "spinner" : tier === "unlimited" ? "infinity" : tier === "custom" ? "sliders" : "cpu"} className={`size-4 ${saving === tier ? "animate-spin" : ""}`} />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-sm font-medium text-foreground">{labels.name(tier)}</span>
-                <span className="text-xs text-muted-foreground">{labels.description(tier)}</span>
-                <span className="mt-1 text-xs font-medium text-foreground/70">
-                  {overCapacity ? copy.exceedsMachine : <bdi dir={tier === "unlimited" || (tier === "custom" && !values.cpuCores && !values.memoryMb) ? "auto" : "ltr"}>{labels.spec(tier, values)}</bdi>}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {draft && (
-        <div className="space-y-4 rounded-xl bg-muted/30 p-4">
-          {capacity && <p className="text-xs text-muted-foreground">{interpolate(copy.machineCapacity, { cpu: String(capacity.cpuCores), memory: formatMemoryMb(capacity.memoryMb) })}</p>}
-          <div className="grid grid-cols-1 gap-4 @min-[24rem]/resources:grid-cols-2">
-            <div className="space-y-1.5">
-              <label htmlFor={`${fieldId}-cpu`} className="text-sm font-medium">{copy.customPanel.cpuCores}</label>
-              <Input id={`${fieldId}-cpu`} aria-describedby={`${fieldId}-cpu-hint`} type="number" variant="filled" min={requiresLimit ? MIN_CPU_CORES : 0} max={capacity?.cpuCores || undefined} step="0.25" value={draft.cpu} disabled={busy} onChange={event => setDraft({ ...draft, cpu: event.target.value })} />
-              <p id={`${fieldId}-cpu-hint`} className="text-xs text-muted-foreground">
-                <bdi dir={requiresLimit ? "ltr" : "auto"}>
-                {requiresLimit ? (capacity?.cpuCores
-                  ? `${formatCpuCores(MIN_CPU_CORES)} – ${formatCpuCores(capacity.cpuCores)}`
-                  : `≥ ${formatCpuCores(MIN_CPU_CORES)}`) : copy.customPanel.zeroMeansNoLimit}
-                </bdi>
+      {compact && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">{labels.name(value)}</p>
+            {value !== "unlimited" && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                <bdi dir={values.cpuCores || values.memoryMb ? "ltr" : "auto"}>{labels.spec(value, values)}</bdi>
               </p>
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor={`${fieldId}-memory`} className="text-sm font-medium">{copy.customPanel.memory}</label>
-              <Input id={`${fieldId}-memory`} aria-describedby={`${fieldId}-memory-hint`} type="number" variant="filled" min={requiresLimit ? MIN_MEMORY_MB : 0} max={capacity?.memoryMb || undefined} step="128" value={draft.memory} disabled={busy} onChange={event => setDraft({ ...draft, memory: event.target.value })} />
-              <p id={`${fieldId}-memory-hint`} className="text-xs text-muted-foreground">
-                <bdi dir={requiresLimit ? "ltr" : "auto"}>
-                {requiresLimit ? (capacity?.memoryMb
-                  ? `${formatMemoryMb(MIN_MEMORY_MB)} – ${formatMemoryMb(capacity.memoryMb)}`
-                  : `≥ ${formatMemoryMb(MIN_MEMORY_MB)}`) : copy.customPanel.zeroMeansNoLimit}
-                </bdi>
-              </p>
-            </div>
+            )}
           </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" disabled={busy} onClick={() => { setDraft(null); setSaveError(false); }}>{copy.customPanel.cancel}</Button>
-            <Button type="button" disabled={busy || incomplete || invalidCustom} onClick={() => void commit("custom", custom)}>{saving ? copy.customPanel.saving : copy.customPanel.save}</Button>
-          </div>
+          <Button
+            ref={toggleRef}
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            disabled={busy}
+            aria-expanded={expanded}
+            aria-controls={`${fieldId}-choices`}
+            onClick={() => expanded ? finishEditing() : setExpanded(true)}
+          >
+            {expanded ? copy.customPanel.cancel : value === "unlimited" ? copy.customize : copy.change}
+          </Button>
         </div>
       )}
-      {saveError && <p role="alert" className="text-sm text-danger">{copy.toast.updateFailed}</p>}
+      <div id={`${fieldId}-choices`} hidden={compact && !expanded} className="space-y-3">
+        <div className="grid grid-cols-1 gap-2.5 @min-[24rem]/resources:grid-cols-2 @min-[40rem]/resources:grid-cols-3">
+          {tiers.map(tier => {
+            const active = selected === tier;
+            const overCapacity = tier !== "custom" && tier !== "unlimited" && capacity && (
+              (capacity.cpuCores > 0 && RESOURCE_TIER_SPECS[tier].cpuCores > capacity.cpuCores)
+              || (capacity.memoryMb > 0 && RESOURCE_TIER_SPECS[tier].memoryMb > capacity.memoryMb)
+            );
+            return (
+              <button
+                key={tier}
+                type="button"
+                aria-pressed={active}
+                disabled={busy || !!overCapacity}
+                onClick={() => {
+                  if (tier === "custom") {
+                    setDraft({ cpu: String(values.cpuCores), memory: String(values.memoryMb) });
+                    setSaveError(false);
+                  } else void commit(tier);
+                }}
+                className={`${tier === "unlimited" ? "col-span-full " : ""}flex items-start gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${active ? "bg-primary/10 ring-1 ring-primary/25" : "bg-muted/60 hover:bg-muted"}`}
+              >
+                <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                  <Icon name={saving === tier ? "spinner" : tier === "unlimited" ? "infinity" : tier === "custom" ? "sliders" : "cpu"} className={`size-4 ${saving === tier ? "animate-spin" : ""}`} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm font-medium text-foreground">{labels.name(tier)}</span>
+                  <span className="text-xs text-muted-foreground">{labels.description(tier)}</span>
+                  <span className="mt-1 text-xs font-medium text-foreground/70">
+                    {overCapacity ? copy.exceedsMachine : <bdi dir={tier === "unlimited" || (tier === "custom" && !values.cpuCores && !values.memoryMb) ? "auto" : "ltr"}>{labels.spec(tier, values)}</bdi>}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {draft && (
+          <div className="space-y-4 rounded-xl bg-muted/30 p-4">
+            {capacity && <p className="text-xs text-muted-foreground">{interpolate(copy.machineCapacity, { cpu: String(capacity.cpuCores), memory: formatMemoryMb(capacity.memoryMb) })}</p>}
+            <div className="grid grid-cols-1 gap-4 @min-[24rem]/resources:grid-cols-2">
+              <div className="space-y-1.5">
+                <label htmlFor={`${fieldId}-cpu`} className="text-sm font-medium">{copy.customPanel.cpuCores}</label>
+                <Input id={`${fieldId}-cpu`} aria-describedby={`${fieldId}-cpu-hint`} type="number" variant="filled" min={requiresLimit ? MIN_CPU_CORES : 0} max={capacity?.cpuCores || undefined} step="0.25" value={draft.cpu} disabled={busy} onChange={event => setDraft({ ...draft, cpu: event.target.value })} />
+                <p id={`${fieldId}-cpu-hint`} className="text-xs text-muted-foreground">
+                  <bdi dir={requiresLimit ? "ltr" : "auto"}>
+                  {requiresLimit ? (capacity?.cpuCores
+                    ? `${formatCpuCores(MIN_CPU_CORES)} – ${formatCpuCores(capacity.cpuCores)}`
+                    : `≥ ${formatCpuCores(MIN_CPU_CORES)}`) : copy.customPanel.zeroMeansNoLimit}
+                  </bdi>
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor={`${fieldId}-memory`} className="text-sm font-medium">{copy.customPanel.memory}</label>
+                <Input id={`${fieldId}-memory`} aria-describedby={`${fieldId}-memory-hint`} type="number" variant="filled" min={requiresLimit ? MIN_MEMORY_MB : 0} max={capacity?.memoryMb || undefined} step="128" value={draft.memory} disabled={busy} onChange={event => setDraft({ ...draft, memory: event.target.value })} />
+                <p id={`${fieldId}-memory-hint`} className="text-xs text-muted-foreground">
+                  <bdi dir={requiresLimit ? "ltr" : "auto"}>
+                  {requiresLimit ? (capacity?.memoryMb
+                    ? `${formatMemoryMb(MIN_MEMORY_MB)} – ${formatMemoryMb(capacity.memoryMb)}`
+                    : `≥ ${formatMemoryMb(MIN_MEMORY_MB)}`) : copy.customPanel.zeroMeansNoLimit}
+                  </bdi>
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" disabled={busy} onClick={finishEditing}>{copy.customPanel.cancel}</Button>
+              <Button type="button" disabled={busy || incomplete || invalidCustom} onClick={() => void commit("custom", custom)}>{saving ? copy.customPanel.saving : copy.customPanel.save}</Button>
+            </div>
+          </div>
+        )}
+        {saveError && <p role="alert" className="text-sm text-danger">{copy.toast.updateFailed}</p>}
+      </div>
     </div>
   );
 }

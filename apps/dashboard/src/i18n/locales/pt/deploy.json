@@ -220,7 +220,8 @@
     "on": "ativo",
     "off": "inativo",
     "previewTitle": "Prévia da implantação",
-    "previewHint": "Continue para configurar seu app. A implantação começa na próxima página."
+    "previewHint": "Continue para configurar seu app. A implantação começa na próxima página.",
+    "back": "Voltar"
   },
   "summary": {
     "buildAndDeploy": "Compilar e implantar:",

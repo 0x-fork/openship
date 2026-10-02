@@ -535,7 +535,7 @@
     "defaultHint": "选择套餐即可部署。我们会自动创建并管理您的服务器。",
     "noneAvailable": "请创建兼容的服务器或腾空一个独立服务器，再放置此项目。",
     "manage": "管理服务器",
-    "subscriptionHint": "每个服务器都有自己的订阅和账单记录。",
+    "subscriptionHint": "新服务器单独计费。",
     "placementHint": "项目共享此服务器的资源。删除一个项目不会影响其他项目。",
     "create": "创建服务器",
     "mode": "项目隔离",
@@ -608,6 +608,7 @@
       "ports": "公开端口",
       "confirmHint": "这将影响此服务器上的所有项目。禁用互联网可能会中断构建和外部集成。",
       "save": "应用网络更改"
-    }
+    },
+    "existingServerHint": "使用此服务器的套餐。"
   }
 }

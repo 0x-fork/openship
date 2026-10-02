@@ -220,7 +220,8 @@
     "on": "açık",
     "off": "kapalı",
     "previewTitle": "Dağıtım önizlemesi",
-    "previewHint": "Uygulamanızı yapılandırmak için devam edin. Dağıtım sonraki sayfadan başlatılır."
+    "previewHint": "Uygulamanızı yapılandırmak için devam edin. Dağıtım sonraki sayfadan başlatılır.",
+    "back": "Geri"
   },
   "summary": {
     "buildAndDeploy": "Derle ve Dağıt:",

@@ -836,7 +836,9 @@
       "updated": "Machine power updated",
       "updateFailed": "Failed to update machine power",
       "invalidValues": "CPU and memory must be 0 or a positive number"
-    }
+    },
+    "customize": "Customize",
+    "change": "Change"
   },
   "sleep": {
     "title": "Machine Mode",

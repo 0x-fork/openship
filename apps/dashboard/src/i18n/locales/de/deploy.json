@@ -220,7 +220,8 @@
     "on": "ein",
     "off": "aus",
     "previewTitle": "Bereitstellungsvorschau",
-    "previewHint": "Weiter zur App-Konfiguration. Die Bereitstellung startet auf der nächsten Seite."
+    "previewHint": "Weiter zur App-Konfiguration. Die Bereitstellung startet auf der nächsten Seite.",
+    "back": "Zurück"
   },
   "summary": {
     "buildAndDeploy": "Bauen & deployen:",

@@ -421,6 +421,7 @@ const DeployRepository: React.FC = () => {
                         serverSelection={serverSelection}
                         autoSkipAllowed={autoSkipTargetRef.current}
                         onContinue={() => setStep("config")}
+                        onBack={() => setStep("config")}
                         projectId={projectId}
                     />
                 )}

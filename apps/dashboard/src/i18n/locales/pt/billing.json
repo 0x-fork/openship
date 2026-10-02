@@ -535,7 +535,7 @@
     "defaultHint": "Escolha um plano e implante. Criamos e gerenciamos seu servidor automaticamente.",
     "noneAvailable": "Crie um servidor compatível ou libere um dedicado antes de alocar este projeto.",
     "manage": "Gerenciar servidores",
-    "subscriptionHint": "Cada servidor tem sua própria assinatura e histórico de cobrança.",
+    "subscriptionHint": "Novos servidores são cobrados separadamente.",
     "placementHint": "Os projetos compartilham a capacidade deste servidor. Excluir um mantém os demais.",
     "create": "Criar servidor",
     "mode": "Isolamento de projetos",
@@ -608,6 +608,7 @@
       "ports": "Portas publicadas",
       "confirmHint": "Isso afeta todos os projetos no servidor. Desativar a internet pode interromper builds e integrações externas.",
       "save": "Aplicar alteração de rede"
-    }
+    },
+    "existingServerHint": "Usa o plano deste servidor."
   }
 }

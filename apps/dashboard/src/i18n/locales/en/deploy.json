@@ -220,7 +220,8 @@
     "on": "on",
     "off": "off",
     "previewTitle": "Deployment preview",
-    "previewHint": "Continue to configure your app. Deployment starts from the next page."
+    "previewHint": "Continue to configure your app. Deployment starts from the next page.",
+    "back": "Back"
   },
   "summary": {
     "buildAndDeploy": "Build & deploy:",
