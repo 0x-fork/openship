@@ -26,6 +26,7 @@ import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
 import { useServerSelection } from "@/components/shared/ServerSelector";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/toast";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -39,19 +40,20 @@ const ProjectName: React.FC = () => {
     const { config, updateConfig } = useDeployment();
     const { t } = useI18n();
     return (
-        <div className="bg-card rounded-2xl border border-border/50">
+        <div className="bg-card rounded-2xl">
             <div className="px-5 py-5">
-                <label className="text-[15px] font-semibold text-foreground mb-2 block">
+                <label htmlFor="deploy-project-name" className="text-sm font-semibold text-foreground mb-2 block">
                     {t.deploy.page.projectNameLabel}
                 </label>
-                <input
+                <Input
+                    id="deploy-project-name"
+                    variant="filled"
                     type="text"
                     value={config.projectName}
                     onChange={(e) => updateConfig({ projectName: e.target.value })}
                     placeholder="my-awesome-project"
-                    className="w-full px-4 py-2.5 bg-muted/30 border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                 />
-                <p className="text-sm text-muted-foreground mt-1.5">
+                <p className="text-xs text-muted-foreground mt-1.5">
                     {t.deploy.page.projectNameHint}
                 </p>
             </div>
