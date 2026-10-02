@@ -670,8 +670,10 @@
       "updateFailed": "マシンパワーの更新に失敗しました",
       "invalidValues": "CPU とメモリは 0 または正の数を指定してください"
     },
-    "customize": "カスタマイズ",
-    "change": "変更"
+    "customized": {
+      "name": "カスタマイズ",
+      "description": "プリセットを選ぶか、上限を設定"
+    }
   },
   "sleep": {
     "title": "マシンモード",

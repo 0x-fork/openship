@@ -676,8 +676,10 @@
       "updateFailed": "Échec de la mise à jour de la puissance de la machine",
       "invalidValues": "Le CPU et la mémoire doivent valoir 0 ou un nombre positif"
     },
-    "customize": "Personnaliser",
-    "change": "Modifier"
+    "customized": {
+      "name": "Personnalisée",
+      "description": "Choisissez un profil ou vos propres limites"
+    }
   },
   "sleep": {
     "title": "Mode de la machine",

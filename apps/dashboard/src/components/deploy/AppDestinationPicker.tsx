@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
+import { OptionCard } from "@/components/shared/OptionCard";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
 import type { DeployTarget } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";

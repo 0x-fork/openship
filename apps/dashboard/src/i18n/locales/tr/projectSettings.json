@@ -808,8 +808,10 @@
       "updateFailed": "Makine gücü güncellenemedi",
       "invalidValues": "CPU ve bellek 0 veya pozitif bir sayı olmalıdır"
     },
-    "customize": "Özelleştir",
-    "change": "Değiştir"
+    "customized": {
+      "name": "Özelleştirilmiş",
+      "description": "Hazır ayar seçin veya kendi sınırlarınızı belirleyin"
+    }
   },
   "sleep": {
     "title": "Makine Modu",

@@ -17,7 +17,7 @@ import {
 } from "@/components/deploy/CleanDeployProgress";
 import { AppLogo } from "@/components/AppLogo";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
+import { OptionCard } from "@/components/shared/OptionCard";
 import { useToast } from "@/context/ToastContext";
 import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";

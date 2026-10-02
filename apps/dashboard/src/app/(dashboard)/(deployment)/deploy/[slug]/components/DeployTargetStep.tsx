@@ -12,6 +12,7 @@ import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
 import { ServerSelectorView, type ServerSelection } from "@/components/shared/ServerSelector";
 import { ServerPicker } from "@/components/shared/ServerPicker";
+import { OptionCard } from "@/components/shared/OptionCard";
 import { ResourceTierPicker, useResourceTierLabels } from "@/components/deploy/ResourceTierPicker";
 import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
@@ -25,73 +26,6 @@ import { useAddServerModal } from "@/components/servers/add-server-modal";
 import ServerRuntimePicker from "./ServerRuntimePicker";
 import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-
-// ─── Option card ─────────────────────────────────────────────────────────────
-
-interface OptionCardProps {
-  value: string;
-  selected: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  icon: React.ReactNode;
-  label: string;
-  description: string;
-  /** Optional children rendered below when selected */
-  children?: React.ReactNode;
-  /** Extra classes for the outer wrapper - e.g. `h-full` for equal-height grids. */
-  className?: string;
-}
-
-export const OptionCard: React.FC<OptionCardProps> = ({
-  selected,
-  disabled = false,
-  onSelect,
-  icon,
-  label,
-  description,
-  children,
-  className,
-}) => (
-  <div className={className}>
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
-      className={`
-        relative w-full h-full text-start p-4 rounded-xl border transition-all
-        ${selected
-          ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-          : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]"
-        }
-        ${selected && children ? "rounded-b-none border-b-0" : ""}
-      `}
-    >
-      <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg ${selected ? "bg-primary/10 text-primary" : "bg-muted/50 text-muted-foreground"}`}>
-          {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className={`text-sm font-semibold ${selected ? "text-foreground" : "text-foreground/80"}`}>
-            {label}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-            {description}
-          </p>
-        </div>
-        {selected && (
-          <div className="size-5 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5">
-            <div className="size-2 rounded-full bg-primary-foreground" />
-          </div>
-        )}
-      </div>
-    </button>
-    {selected && children && (
-      <div className="border border-t-0 border-primary/20 bg-primary/[0.02] rounded-b-xl px-4 pb-4 pt-2">
-        {children}
-      </div>
-    )}
-  </div>
-);
 
 // ─── Compact summary (shown when editing from step 2) ────────────────────────
 
@@ -550,6 +484,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
   // (+ server id when applicable) to user_settings on continue.
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [savingDefault, setSavingDefault] = useState(false);
+  const [resourceSelectionPending, setResourceSelectionPending] = useState(false);
   // A saved default can skip this step on first entry; explicitly opening
   // destination settings always presents the full page.
   const [defaultApplied, setDefaultApplied] = useState(false);
@@ -934,7 +869,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
 
 
   const hasAnyDeployTarget = deployTargetOptions.length > 0;
-  const canContinue = ready && (
+  const canContinue = ready && !resourceSelectionPending && (
     (config.deployTarget === "cluster" && !!config.projectId) ||
     (config.deployTarget === "cloud" && (selfHosted || destinationReady)) ||
     (config.deployTarget === "server" && !!config.serverId && hasServers)
@@ -1161,7 +1096,8 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
                   <h2 className="text-sm font-semibold text-foreground">{t.projectSettings.resources.title}</h2>
                   <ResourceTierPicker
                     key={config.serverId}
-                    compact
+                    showModeSelector
+                    onPendingChange={setResourceSelectionPending}
                     value={config.cloudResourceTier ?? "unlimited"}
                     values={resourceValues}
                     capacity={serverSelection.selected?.managed?.resources ?? undefined}

@@ -676,8 +676,10 @@
       "updateFailed": "Maschinenleistung konnte nicht aktualisiert werden",
       "invalidValues": "CPU und Speicher müssen 0 oder eine positive Zahl sein"
     },
-    "customize": "Anpassen",
-    "change": "Ändern"
+    "customized": {
+      "name": "Angepasst",
+      "description": "Voreinstellung wählen oder eigene Limits festlegen"
+    }
   },
   "sleep": {
     "title": "Maschinenmodus",

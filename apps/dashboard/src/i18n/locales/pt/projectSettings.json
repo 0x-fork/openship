@@ -670,8 +670,10 @@
       "updateFailed": "Falha ao atualizar a potência da máquina",
       "invalidValues": "CPU e memória devem ser 0 ou um número positivo"
     },
-    "customize": "Personalizar",
-    "change": "Alterar"
+    "customized": {
+      "name": "Personalizada",
+      "description": "Escolha um perfil ou defina seus limites"
+    }
   },
   "sleep": {
     "title": "Modo da máquina",

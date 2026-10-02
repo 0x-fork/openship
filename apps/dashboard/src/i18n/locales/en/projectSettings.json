@@ -837,8 +837,10 @@
       "updateFailed": "Failed to update machine power",
       "invalidValues": "CPU and memory must be 0 or a positive number"
     },
-    "customize": "Customize",
-    "change": "Change"
+    "customized": {
+      "name": "Customized",
+      "description": "Choose a preset or set your own limits"
+    }
   },
   "sleep": {
     "title": "Machine Mode",

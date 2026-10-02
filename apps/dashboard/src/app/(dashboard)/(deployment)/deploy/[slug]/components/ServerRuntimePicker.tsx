@@ -6,20 +6,11 @@ import React, { useMemo } from "react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { OptionCard } from "@/components/shared/OptionCard";
 import type { RuntimeMode } from "@/context/deployment/types";
 
-/**
- * Shared runtime-isolation picker for connected and managed servers — the
- * destination settings. Replaces
- * the old deploy-time modal: the choice is now a visible setting on the target
- * step, persisted to the project (see requestBuildAccess) so it sticks across
- * redeploys.
- *
- * Default: the RAM-aware recommendation (Sandboxed everywhere except <2 GB boxes
- * where the engine itself would contend for the app's memory). Applied
- * automatically only for a FRESH deploy — an existing project's saved choice is
- * hydrated into config.runtimeMode and respected, never overridden.
- */
+/** Connected and managed servers share this runtime choice. Deployment config
+ * owns the sandboxed default and preserves an existing project's saved value. */
 
 // Below this RAM the sandbox engine contends for memory with the app — on a
 // 512MB/1GB VPS that's a real problem. Above it Docker's overhead is
@@ -29,9 +20,7 @@ const TWO_GB = 2 * 1024 * 1024 * 1024;
 const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
   const { config, updateConfig } = useDeployment();
   const { t } = useI18n();
-  // Only stream the server's live stats while actually visible — the picker is
-  // now always mounted (inside the accordion) so the panel can animate its
-  // height, but we don't want a background stats stream when it's collapsed.
+  // Live memory changes the Direct caveat, never the selected runtime.
   const { stats } = useMonitorStream(config.serverId ?? null, enabled && !!config.serverId);
 
   const runtimeOptions: Array<{
@@ -63,21 +52,9 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
   const ramGB = stats ? (stats.memTotal / (1024 * 1024 * 1024)).toFixed(1) : null;
   const selected = config.runtimeMode;
 
-  // NO auto-default effect here, deliberately.
-  //
-  // This used to apply `recommendedMode` from an effect gated on `if (!stats) return`
-  // — and `stats` only streams while this panel is `enabled` (expanded). So the
-  // "recommended" default landed only if the user opened Advanced: anyone who
-  // didn't got DEFAULT_CONFIG's value and a summary badge reading
-  // Direct/unsandboxed. The default now lives in DEFAULT_CONFIG.runtimeMode
-  // ("docker"), where it applies whether or not this component ever renders.
-  //
-  // The gate was also pointless: `recommendedMode` is a constant, so there was
-  // nothing to wait on. RAM only picks the caveat wording below.
-
   return (
     // Runtime and resource controls share the destination page's section rhythm.
-    <div className="@container space-y-3">
+    <div className="@container/runtime space-y-3">
       <div>
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <UiIcon name="server" className="size-4 text-muted-foreground" />
@@ -90,45 +67,23 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 @lg:grid-cols-2 items-stretch">
-        {runtimeOptions.map((option) => {
-          const isSelected = selected === option.value;
-          const isRecommended = option.value === recommendedMode;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={isSelected}
-              onClick={() => updateConfig({ runtimeMode: option.value })}
-              className={`h-full w-full rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                isSelected
-                  ? "bg-primary/10 ring-1 ring-primary/25"
-                  : "bg-muted/40 hover:bg-muted/60"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <span className={isSelected ? "text-primary" : "text-muted-foreground"}>
-                  {option.icon}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className={`text-sm font-medium ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
-                      {option.label}
-                    </p>
-                    {isRecommended && (
-                      <span className="inline-flex items-center rounded-md bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success">
-                        {t.deploy.runtime.recommended}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
-                    {option.description}
-                  </p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
+      <div className="grid grid-cols-1 items-stretch gap-3 @min-[24rem]/runtime:grid-cols-2">
+        {runtimeOptions.map(option => (
+          <OptionCard
+            key={option.value}
+            value={option.value}
+            selected={selected === option.value}
+            onSelect={() => updateConfig({ runtimeMode: option.value })}
+            icon={option.icon}
+            label={option.label}
+            description={option.description}
+            badge={option.value === recommendedMode && (
+              <span className="inline-flex items-center rounded-md bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success">
+                {t.deploy.runtime.recommended}
+              </span>
+            )}
+          />
+        ))}
       </div>
 
       {/* Security caveat — only when Direct is selected (don't preach when the

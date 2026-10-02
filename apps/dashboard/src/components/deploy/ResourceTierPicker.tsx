@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   MIN_CPU_CORES, MIN_MEMORY_MB, RESOURCE_TIER_ORDER, RESOURCE_TIER_SPECS,
   UNKNOWN_CAPACITY, formatCpuCores, formatMemoryMb, validateAgainstCapacity,
@@ -9,6 +9,7 @@ import {
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { OptionCard } from "@/components/shared/OptionCard";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 export type ResourceLimitValues = Pick<ResourceValues, "cpuCores" | "memoryMb">;
@@ -39,24 +40,29 @@ interface ResourceTierPickerProps {
   capacity?: Pick<HostCapacity, "cpuCores" | "memoryMb">;
   saving?: ResourceTier | null;
   disabled?: boolean;
-  /** Show the selected limit first; reveal the shared editor on demand. */
-  compact?: boolean;
+  /** Separate full capacity from the presets and custom limits. */
+  showModeSelector?: boolean;
+  /** An unfinished choice must be completed or cancelled before continuing. */
+  onPendingChange?: (pending: boolean) => void;
   /** False keeps a custom draft open after a failed save. */
   onSelect: (tier: ResourceTier, values?: ResourceLimitValues) => void | boolean | Promise<boolean>;
 }
 
 /** Project settings and deployment setup share the same limits editor. */
-export function ResourceTierPicker({ value, values, requiresLimit = false, capacity, saving, disabled, compact = false, onSelect }: ResourceTierPickerProps) {
+export function ResourceTierPicker({ value, values, requiresLimit = false, capacity, saving, disabled, showModeSelector = false, onPendingChange, onSelect }: ResourceTierPickerProps) {
   const { t } = useI18n();
   const copy = t.projectSettings.resources;
   const labels = useResourceTierLabels();
   const fieldId = useId();
-  const toggleRef = useRef<HTMLButtonElement>(null);
-  const [expanded, setExpanded] = useState(false);
+  const fullRef = useRef<HTMLButtonElement>(null);
+  const customRef = useRef<HTMLButtonElement>(null);
+  const [customizing, setCustomizing] = useState(false);
   const [draft, setDraft] = useState<{ cpu: string; memory: string } | null>(null);
   const [saveError, setSaveError] = useState(false);
+  const useModes = showModeSelector && !requiresLimit;
+  const customized = value !== "unlimited" || customizing;
   const selected = draft ? "custom" : value;
-  const tiers: ResourceTier[] = requiresLimit ? [...RESOURCE_TIER_ORDER, "custom"] : ["unlimited", ...RESOURCE_TIER_ORDER, "custom"];
+  const tiers: ResourceTier[] = requiresLimit || useModes ? [...RESOURCE_TIER_ORDER, "custom"] : ["unlimited", ...RESOURCE_TIER_ORDER, "custom"];
   const busy = disabled || !!saving;
   const custom = draft ? { cpuCores: Number(draft.cpu), memoryMb: Number(draft.memory) } : values;
   const invalidNumbers = !Number.isFinite(custom.cpuCores) || !Number.isFinite(custom.memoryMb)
@@ -66,21 +72,31 @@ export function ResourceTierPicker({ value, values, requiresLimit = false, capac
     { ...custom, diskMb: 0 }, { ...UNKNOWN_CAPACITY, ...capacity },
   );
   const incomplete = !!draft && (!draft.cpu.trim() || !draft.memory.trim());
+  const pending = useModes && ((customizing && value === "unlimited") || !!draft);
 
-  const finishEditing = () => {
+  useEffect(() => {
+    onPendingChange?.(pending);
+    return () => onPendingChange?.(false);
+  }, [onPendingChange, pending]);
+
+  const cancelDraft = () => {
     setDraft(null);
     setSaveError(false);
-    if (compact) {
-      setExpanded(false);
-      toggleRef.current?.focus();
-    }
+    setCustomizing(false);
+    if (useModes && value === "unlimited") fullRef.current?.focus();
+    else customRef.current?.focus();
   };
 
   const commit = async (tier: ResourceTier, customValues?: ResourceLimitValues) => {
     if (busy) return;
     setSaveError(false);
     try {
-      if (await onSelect(tier, customValues) !== false) finishEditing();
+      if (await onSelect(tier, customValues) !== false) {
+        setDraft(null);
+        setCustomizing(false);
+        if (useModes && tier === "unlimited") fullRef.current?.focus();
+        else if (tier === "custom") customRef.current?.focus();
+      }
     } catch {
       setSaveError(true);
     }
@@ -88,33 +104,31 @@ export function ResourceTierPicker({ value, values, requiresLimit = false, capac
 
   return (
     <div className="@container/resources space-y-3">
-      {compact && (
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">{labels.name(value)}</p>
-            {value !== "unlimited" && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                <bdi dir={values.cpuCores || values.memoryMb ? "ltr" : "auto"}>{labels.spec(value, values)}</bdi>
-              </p>
-            )}
-          </div>
-          <Button
-            ref={toggleRef}
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="shrink-0"
+      {useModes && (
+        <div className="grid grid-cols-1 items-stretch gap-3 @min-[24rem]/resources:grid-cols-2">
+          <OptionCard
+            value="unlimited"
+            buttonRef={fullRef}
+            selected={!customized}
             disabled={busy}
-            aria-expanded={expanded}
-            aria-controls={`${fieldId}-choices`}
-            onClick={() => expanded ? finishEditing() : setExpanded(true)}
-          >
-            {expanded ? copy.customPanel.cancel : value === "unlimited" ? copy.customize : copy.change}
-          </Button>
+            onSelect={() => void commit("unlimited")}
+            icon={<Icon name="infinity" className="size-5" />}
+            label={labels.name("unlimited")}
+            description={labels.description("unlimited")}
+          />
+          <OptionCard
+            value="customized"
+            selected={customized}
+            disabled={busy}
+            onSelect={() => setCustomizing(true)}
+            icon={<Icon name="sliders" className="size-5" />}
+            label={copy.customized.name}
+            description={copy.customized.description}
+          />
         </div>
       )}
-      <div id={`${fieldId}-choices`} hidden={compact && !expanded} className="space-y-3">
-        <div className="grid grid-cols-1 gap-2.5 @min-[24rem]/resources:grid-cols-2 @min-[40rem]/resources:grid-cols-3">
+      <div hidden={useModes && !customized} className="space-y-3">
+        <div className="grid grid-cols-1 items-stretch gap-3 @min-[24rem]/resources:grid-cols-2 @min-[40rem]/resources:grid-cols-3">
           {tiers.map(tier => {
             const active = selected === tier;
             const overCapacity = tier !== "custom" && tier !== "unlimited" && capacity && (
@@ -122,30 +136,30 @@ export function ResourceTierPicker({ value, values, requiresLimit = false, capac
               || (capacity.memoryMb > 0 && RESOURCE_TIER_SPECS[tier].memoryMb > capacity.memoryMb)
             );
             return (
-              <button
+              <OptionCard
                 key={tier}
-                type="button"
-                aria-pressed={active}
+                value={tier}
+                buttonRef={tier === "custom" ? customRef : undefined}
+                selected={active}
                 disabled={busy || !!overCapacity}
-                onClick={() => {
+                onSelect={() => {
                   if (tier === "custom") {
                     setDraft({ cpu: String(values.cpuCores), memory: String(values.memoryMb) });
                     setSaveError(false);
                   } else void commit(tier);
                 }}
-                className={`${tier === "unlimited" ? "col-span-full " : ""}flex items-start gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${active ? "bg-primary/10 ring-1 ring-primary/25" : "bg-muted/60 hover:bg-muted"}`}
-              >
-                <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                  <Icon name={saving === tier ? "spinner" : tier === "unlimited" ? "infinity" : tier === "custom" ? "sliders" : "cpu"} className={`size-4 ${saving === tier ? "animate-spin" : ""}`} />
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-sm font-medium text-foreground">{labels.name(tier)}</span>
-                  <span className="text-xs text-muted-foreground">{labels.description(tier)}</span>
-                  <span className="mt-1 text-xs font-medium text-foreground/70">
-                    {overCapacity ? copy.exceedsMachine : <bdi dir={tier === "unlimited" || (tier === "custom" && !values.cpuCores && !values.memoryMb) ? "auto" : "ltr"}>{labels.spec(tier, values)}</bdi>}
-                  </span>
-                </span>
-              </button>
+                className={tier === "unlimited" ? "col-span-full" : undefined}
+                icon={<Icon name={saving === tier ? "spinner" : tier === "unlimited" ? "infinity" : tier === "custom" ? "sliders" : "cpu"} className={`size-4 ${saving === tier ? "animate-spin" : ""}`} />}
+                label={labels.name(tier)}
+                description={(
+                  <>
+                    <span>{labels.description(tier)}</span>
+                    <span className="mt-1 block font-medium text-foreground/70">
+                      {overCapacity ? copy.exceedsMachine : <bdi dir={tier === "unlimited" || (tier === "custom" && !values.cpuCores && !values.memoryMb) ? "auto" : "ltr"}>{labels.spec(tier, values)}</bdi>}
+                    </span>
+                  </>
+                )}
+              />
             );
           })}
         </div>
@@ -177,13 +191,13 @@ export function ResourceTierPicker({ value, values, requiresLimit = false, capac
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="secondary" disabled={busy} onClick={finishEditing}>{copy.customPanel.cancel}</Button>
+              <Button type="button" variant="secondary" disabled={busy} onClick={cancelDraft}>{copy.customPanel.cancel}</Button>
               <Button type="button" disabled={busy || incomplete || invalidCustom} onClick={() => void commit("custom", custom)}>{saving ? copy.customPanel.saving : copy.customPanel.save}</Button>
             </div>
           </div>
         )}
-        {saveError && <p role="alert" className="text-sm text-danger">{copy.toast.updateFailed}</p>}
       </div>
+      {saveError && <p role="alert" className="text-sm text-danger">{copy.toast.updateFailed}</p>}
     </div>
   );
 }
