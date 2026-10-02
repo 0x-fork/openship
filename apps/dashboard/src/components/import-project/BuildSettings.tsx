@@ -77,14 +77,6 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     { value: "worker", label: bs.modeWorker },
     { value: "static", label: bs.modeStatic },
   ];
-  const workloadHint =
-    workload === "web"
-      ? (buildData?.productionPort
-          ? interpolate(bs.serverOnPort, { port: String(buildData.productionPort) })
-          : bs.serverPortNotSet)
-      : workload === "worker"
-        ? bs.workerModeDesc
-        : bs.staticFromEdge;
   // Only a host the config actually names. The old fallback labelled the port
   // field "Port for <projectName>.<baseDomain>" for a config with no chosen
   // route at all — a hostname nobody created.
@@ -493,55 +485,45 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
         {expanded && (
           <div className="space-y-5 px-5 pb-5 border-t border-border/50 pt-4">
-            <div className="grid @min-[36rem]/build-settings:grid-cols-2 gap-5">
+            <div className="grid @min-[40rem]/build-settings:grid-cols-2 gap-5">
               {/* ── Build column ──────────────────────────────── */}
-              <div className="min-w-0 space-y-2 rounded-xl bg-card p-3">
-                <div className="flex min-h-9 items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <UiIcon name="wrench" className="size-3.5 shrink-0 text-muted-foreground" />
-                    <p className="text-sm font-medium text-foreground">{bs.build}</p>
-                  </div>
-                  <Toggle aria-label={bs.build} checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
+              <div className="flex min-h-12 min-w-0 items-center justify-between gap-3 rounded-xl bg-card px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <UiIcon name="wrench" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">{bs.build}</p>
                 </div>
-                <p className="break-words text-xs text-muted-foreground">
-                  {hasBuild
-                    ? (config?.buildImage ? interpolate(bs.installBuildIn, { image: config.buildImage }) : bs.installBuildCommands)
-                    : bs.deploySourceDirectly}
-                </p>
+                <Toggle aria-label={bs.build} checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
               </div>
-              <div className="min-w-0 space-y-4 empty:hidden @min-[36rem]/build-settings:col-start-1 @min-[36rem]/build-settings:row-start-2">
+              <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-1 @min-[40rem]/build-settings:row-start-2">
                 {visibleBuildFields.map(renderInput)}
                 {generalFields.map(renderInput)}
               </div>
 
               {/* ── Start column (Server / Worker / Static, #538) ── */}
-              <div className="min-w-0 space-y-2 rounded-xl bg-card p-3 @min-[36rem]/build-settings:col-start-2 @min-[36rem]/build-settings:row-start-1">
-                <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
-                  <div className="flex shrink-0 items-center gap-2">
-                    <UiIcon name="play" className="size-3.5 shrink-0 text-muted-foreground" />
-                    <p className="text-sm font-medium text-foreground">{bs.start}</p>
-                  </div>
-                  <div role="group" aria-label={bs.start} className="grid grid-cols-3 gap-1">
-                    {workloadOptions.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setWorkload(opt.value)}
-                        aria-pressed={workload === opt.value}
-                        className={`px-2 py-1.5 text-sm font-medium rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                          workload === opt.value
-                            ? "bg-foreground text-background"
-                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+              <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl bg-card px-3 py-2 @min-[40rem]/build-settings:col-start-2 @min-[40rem]/build-settings:row-start-1">
+                <div className="flex shrink-0 items-center gap-2">
+                  <UiIcon name="play" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">{bs.start}</p>
                 </div>
-                <p className="text-xs text-muted-foreground">{workloadHint}</p>
+                <div role="group" aria-label={bs.start} className="grid grid-cols-3 gap-1">
+                  {workloadOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setWorkload(opt.value)}
+                      aria-pressed={workload === opt.value}
+                      className={`px-2 py-1.5 text-sm font-medium rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                        workload === opt.value
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="min-w-0 space-y-4 empty:hidden @min-[36rem]/build-settings:col-start-2 @min-[36rem]/build-settings:row-start-2">
+              <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-2 @min-[40rem]/build-settings:row-start-2">
                 {visibleStartFields.map(renderInput)}
                 {renderEndpointTargetInputs()}
               </div>
@@ -572,10 +554,10 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                   )}
                 </button>
                 {advancedOpen && (
-                  <div className="grid gap-5 pt-4 @min-[36rem]/build-settings:grid-cols-2">
+                  <div className="grid gap-5 pt-4 @min-[40rem]/build-settings:grid-cols-2">
                     {advancedFields.map(renderInput)}
                     {(workload !== "static" || config?.releaseCommands?.length > 0) && (
-                      <div className="space-y-2 @min-[36rem]/build-settings:col-span-2">
+                      <div className="space-y-2 @min-[40rem]/build-settings:col-span-2">
                         <p className="text-sm font-medium text-foreground">{bs.releaseTitle}</p>
                         <p className="text-xs text-muted-foreground">{bs.releaseDescription}</p>
                         {(config?.releaseCommands ?? []).map((command: string, index: number) => (
