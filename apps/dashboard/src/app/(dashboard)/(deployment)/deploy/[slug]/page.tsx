@@ -414,20 +414,15 @@ const DeployRepository: React.FC = () => {
 
     return (
         <PageContainer>
-                {/* Step 1: Shared destination settings for every deployment target.
-                    DeployTargetStep owns its own max-width: it widens to two columns
-                    when a right-hand panel (cloud power / server runtime) is shown, and
-                    stays narrow single-column otherwise. The page just centers it. */}
+                {/* Destination settings share the page's normal content/sidebar layout. */}
                 {step === "target" && (
-                    <div className="flex items-center justify-center min-h-[calc(100vh-8rem)] py-8">
-                        <DeployTargetStep
-                            targets={targets}
-                            serverSelection={serverSelection}
-                            autoSkipAllowed={autoSkipTargetRef.current}
-                            onContinue={() => setStep("config")}
-                            projectId={projectId}
-                        />
-                    </div>
+                    <DeployTargetStep
+                        targets={targets}
+                        serverSelection={serverSelection}
+                        autoSkipAllowed={autoSkipTargetRef.current}
+                        onContinue={() => setStep("config")}
+                        projectId={projectId}
+                    />
                 )}
 
                 {/* Step 2: Project configuration */}

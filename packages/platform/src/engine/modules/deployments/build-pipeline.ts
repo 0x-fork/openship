@@ -815,14 +815,10 @@ async function executeBuildAndDeploy(
 
     await emitInitialServiceChecks(serviceFanOut, project, dep);
 
-    // Target-aware: cloud falls back to the metered free tier, self-hosted falls
-    // back to NO limits (the operator's box is the cap). Using the cloud default
-    // on both is what pinned every self-hosted container to 512 MB.
-    const isCloudDeploy = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
-    const prodResources = resolveRuntimeResources(snapshot.resources, { isCloud: isCloudDeploy });
-    let buildResources = resolveBuildResources(snapshot.buildResources, {
-      isCloud: isCloudDeploy,
-    });
+    // Both server types use the host's available capacity unless the project
+    // sets a limit. Managed builds get measured headroom below.
+    const prodResources = resolveRuntimeResources(snapshot.resources);
+    let buildResources = resolveBuildResources(snapshot.buildResources);
     const needsBuild = !snapshot.releaseImageRef && !snapshot.refreshAppDeploymentId &&
       (willRunServices ? cloudDockerNeedsBuild(serviceMode.servicePreflightServices, strictRefreshImages(snapshot)) : !snapshot.handoverAppImage);
     if (snapshot.managedServer?.ownerWorkspaceId && needsBuild) {

@@ -94,7 +94,7 @@ export function ResourceTierPicker({ value, values, requiresLimit = false, capac
                   setSaveError(false);
                 } else void commit(tier);
               }}
-              className={`flex items-start gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${active ? "bg-primary/10 ring-1 ring-primary/25" : "bg-muted/60 hover:bg-muted"}`}
+              className={`${tier === "unlimited" ? "col-span-full " : ""}flex items-start gap-3 rounded-xl p-3 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${active ? "bg-primary/10 ring-1 ring-primary/25" : "bg-muted/60 hover:bg-muted"}`}
             >
               <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
                 <Icon name={saving === tier ? "spinner" : tier === "unlimited" ? "infinity" : tier === "custom" ? "sliders" : "cpu"} className={`size-4 ${saving === tier ? "animate-spin" : ""}`} />

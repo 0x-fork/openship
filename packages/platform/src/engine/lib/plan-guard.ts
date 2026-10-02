@@ -41,7 +41,7 @@ import { isCloudManagedHostname } from "./public-endpoints";
 import {
   cloudDockerNeedsBuild,
   cloudDockerResources,
-  resolveCloudServiceResources,
+  resolveInheritedResources,
   resolveRuntimeResources,
   type CloudServiceResourceInput,
 } from "./resources";
@@ -248,17 +248,19 @@ export function assertResourcesFitPlan(
   // Resolve named presets before comparing; unknown names cannot bypass the cap.
   const requestedTier = requested.tier?.trim();
   let size = requested;
-  if (requestedTier && requestedTier !== "custom") {
+  if (requestedTier === "unlimited") {
+    size = { cpuCores: 0, memoryMb: 0 };
+  } else if (requestedTier && requestedTier !== "custom") {
     const preset = RESOURCE_TIER_ORDER.find(name => name === requestedTier);
     if (!preset) return refuse();
     size = RESOURCE_TIER_SPECS[preset];
   }
 
-  // Custom numbers: either dimension over the ceiling is over-limit. `0` means
-  // "unlimited" in ResourceValues and must never read as "small".
+  // Zero adds no container cap: the subscribed server already enforces its
+  // allocation. Positive custom limits must still fit that allocation.
   const cpu = size.cpuCores ?? 0;
   const mem = size.memoryMb ?? 0;
-  if (!Number.isFinite(cpu) || !Number.isFinite(mem) || cpu <= 0 || mem <= 0 || cpu > ceiling.cpuCores || mem > ceiling.memoryMb) refuse();
+  if (!Number.isFinite(cpu) || !Number.isFinite(mem) || cpu < 0 || mem < 0 || cpu > ceiling.cpuCores || mem > ceiling.memoryMb) refuse();
 }
 
 type CloudDeploymentLimits = {
@@ -341,14 +343,14 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
   for (const service of services ?? []) {
     assertResourcesFitPlan(
       tier,
-      resolveCloudServiceResources(service.advanced?.resources, input.resources),
+      resolveInheritedResources(service.advanced?.resources, input.resources),
       limits,
     );
   }
   if (input.mainApplication ?? (!services && input.runsApplication)) {
     assertResourcesFitPlan(
       tier,
-      resolveRuntimeResources(input.resources, { isCloud: true }),
+      resolveRuntimeResources(input.resources),
       limits,
     );
   }

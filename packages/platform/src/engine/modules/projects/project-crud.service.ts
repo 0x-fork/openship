@@ -304,10 +304,7 @@ export async function enrichProject(p: Project) {
     activeMigration,
     ...readEnabled(p),
     ...readActiveDeploymentSummary(activeDep),
-    // isCloud decides the fallback when nothing is configured: the metered free
-    // tier on cloud, NO limits self-hosted (the machine is the cap).
     resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
-      isCloud: deployTarget === "cloud",
       automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
     }),
   };
@@ -378,10 +375,7 @@ export async function enrichProjectsBatch(
       activeMigration: readActiveMigration(activeMigrations.get(p.id)),
       ...readEnabled(p),
       ...readActiveDeploymentSummary(activeDep),
-      // isCloud decides the fallback when nothing is configured: the metered
-      // free tier on cloud, NO limits self-hosted (the machine is the cap).
       resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
-        isCloud: deployTarget === "cloud",
         automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
       }),
     };

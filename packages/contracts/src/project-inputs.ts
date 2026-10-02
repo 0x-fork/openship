@@ -9,7 +9,6 @@ import {
   STACK_IDS,
   ALL_PACKAGE_MANAGERS,
   ALL_RESOURCE_TIERS,
-  CLOUD_RESOURCE_TIER_IDS,
   PROXY_DIRECTIVES,
   proxyKindRegex,
   MAX_ROLLBACK_WINDOW,
@@ -43,15 +42,8 @@ export const ResourceTierEnum = (opts?: { description?: string }) =>
     opts,
   );
 
-/** Cloud-selectable subset — no "unlimited" (a metered workspace must be sized). */
-export const CloudResourceTierEnum = (opts?: { description?: string }) =>
-  Type.Union(
-    CLOUD_RESOURCE_TIER_IDS.map((t) => Type.Literal(t)) as [
-      TLiteral<Exclude<ResourceTier, "unlimited">>,
-      ...TLiteral<Exclude<ResourceTier, "unlimited">>[],
-    ],
-    opts,
-  );
+/** Managed and connected servers share the same container-limit contract. */
+export const CloudResourceTierEnum = ResourceTierEnum;
 
 /**
  * Reject any path whose segments include `..`, on either separator.

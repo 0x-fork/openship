@@ -343,11 +343,10 @@ export interface DeploymentModeSnapshots {
 
 /**
  * Resource tier IDs for Openship Cloud deploys — DERIVED from the one tier union
- * in @repo/core, which the backend provisioner reads too. `unlimited` is excluded
- * because Cloud deployment requests currently require concrete container limits.
- * Deployment setup and project settings share the ResourceTierPicker.
+ * in @repo/core. A managed server already has its purchased allocation, so
+ * `unlimited` lets a container use the host's available capacity, as on self-hosted.
  */
-export type CloudResourceTier = Exclude<CoreResourceTier, "unlimited">;
+export type CloudResourceTier = CoreResourceTier;
 
 /**
  * User-supplied resource values when `cloudResourceTier === "custom"`.
@@ -518,7 +517,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   branchesHasMore: false,
   services: [],
   serviceDeploymentMode: "single",
-  cloudResourceTier: "low",
+  cloudResourceTier: "unlimited",
   productionPortTouched: false,
   lastAutoDetectedEnvPort: null,
   options: {

@@ -10,7 +10,7 @@ import type { RuntimeMode } from "@/context/deployment/types";
 
 /**
  * Shared runtime-isolation picker for connected and managed servers — the
- * Advanced panel. Replaces
+ * destination settings. Replaces
  * the old deploy-time modal: the choice is now a visible setting on the target
  * step, persisted to the project (see requestBuildAccess) so it sticks across
  * redeploys.
@@ -76,7 +76,7 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
   // nothing to wait on. RAM only picks the caveat wording below.
 
   return (
-    // Runtime and resource controls share the Advanced panel's section rhythm.
+    // Runtime and resource controls share the destination page's section rhythm.
     <div className="@container space-y-3">
       <div>
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">

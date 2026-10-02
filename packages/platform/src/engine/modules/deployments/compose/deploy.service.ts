@@ -12,7 +12,7 @@
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
 import { assertCloudDeploymentLimits } from "../../../lib/plan-guard";
-import { resolveCloudServiceResources, resolveRuntimeResources } from "../../../lib/resources";
+import { resolveInheritedResources, resolveRuntimeResources } from "../../../lib/resources";
 import { posix as pathPosix } from "node:path";
 import {
   SYSTEM,
@@ -604,19 +604,8 @@ function appRowVolumes(project: Project, service: Service): string[] {
 function resolveServiceResources(
   service: Service,
   projectResources: ResourceConfig | undefined,
-  isCloud = false,
-): ResourceConfig | undefined {
-  const own = (service.advanced as ComposeAdvanced | null)?.resources;
-  if (isCloud) return resolveCloudServiceResources(own, projectResources);
-  if (!own || (own.cpuCores === undefined && own.memoryMb === undefined)) {
-    return projectResources;
-  }
-  const base = projectResources ?? UNLIMITED_RESOURCES;
-  return {
-    cpuCores: own.cpuCores ?? base.cpuCores,
-    memoryMb: own.memoryMb ?? base.memoryMb,
-    diskMb: base.diskMb,
-  };
+): ResourceConfig {
+  return resolveInheritedResources((service.advanced as ComposeAdvanced | null)?.resources, projectResources);
 }
 
 /** @internal Exported so the image-refresh contract can be tested without a Docker host. */
@@ -1447,7 +1436,6 @@ async function deployComposeServicesUnlocked(
   const carryAnchor = carryAnchorDep?.createdAt ?? null;
   const carryProjectResources = resolveRuntimeResources(
     (carryAnchorDep?.meta as { resources?: ResourceConfig | null } | null)?.resources,
-    { isCloud: cloudHosted },
   );
   const carryEnvMeta = carryAnchor
     ? await repos.project.listEnvVarChangeMeta(project.id, dep.environment).catch(() => [])
@@ -1476,9 +1464,9 @@ async function deployComposeServicesUnlocked(
     // same resolver used for activation so inherited changes apply, while a
     // service's explicit overrides do not cause an unnecessary restart.
     const previousResources =
-      resolveServiceResources(svc, carryProjectResources, cloudHosted) ?? UNLIMITED_RESOURCES;
+      resolveServiceResources(svc, carryProjectResources);
     const nextResources =
-      resolveServiceResources(svc, opts?.resources, cloudHosted) ?? UNLIMITED_RESOURCES;
+      resolveServiceResources(svc, opts?.resources);
     if (
       previousResources.cpuCores !== nextResources.cpuCores ||
       previousResources.memoryMb !== nextResources.memoryMb ||
@@ -2954,7 +2942,7 @@ async function deployComposeServicesUnlocked(
       // routable (see ownsNetworkEndpoint).
       const hasNoRoutableAddress = !ownsNetworkEndpoint(resolvedNamespaces.namespaces?.network);
 
-      const serviceResources = resolveServiceResources(svc, opts?.resources, cloudHosted);
+      const serviceResources = resolveServiceResources(svc, opts?.resources);
       const serviceRuntimeConfig = createServiceRuntimeConfig({
         project,
         dep,

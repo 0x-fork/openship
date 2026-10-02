@@ -26,6 +26,7 @@ import {
 import {
   AppError,
   NotFoundError,
+  ValidationError,
   ForbiddenError,
   SYSTEM,
   STACKS,
@@ -39,6 +40,7 @@ import {
   looksLikeSecretKey,
   mergeAdvanced,
   resolveProjectVolumes,
+  resolveTierResources,
   type StackId,
   type DeployTarget,
   type BuildStrategy,
@@ -50,7 +52,7 @@ import {
   type OpenshipEnv,
 } from "@repo/core";
 import type { LogEntry, ResourceConfig } from "@repo/adapters";
-import { resolveCloudResourceConfig } from "./cloud-resources";
+import { decodeResources } from "../../lib/resources";
 import { resolveEnvDirtyServiceIds } from "./env-drift";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
@@ -2029,12 +2031,15 @@ export async function requestBuildAccess(
     (snapshot.runtimeMode !== "bare" || useServicePipeline || snapshot.framework === "docker" || snapshot.releaseImageRef) &&
     cloudResourceTier
   ) {
-    await assertPlanAllowsResourceTier(ctx.organizationId, {
-      tier: cloudResourceTier,
-      cpuCores: cloudResourceCustom?.cpuCores ?? null,
-      memoryMb: cloudResourceCustom?.memoryMb ?? null,
-    }, snapshot.managedWorkspaceId ?? project.workspaceId ?? null);
-    snapshot.resources = resolveCloudResourceConfig(cloudResourceTier, cloudResourceCustom);
+    try {
+      snapshot.resources = decodeResources(cloudResourceTier === "custom"
+        ? cloudResourceCustom ?? {}
+        : resolveTierResources(cloudResourceTier));
+    } catch (error) {
+      throw new ValidationError(error instanceof Error ? error.message : "Invalid resource limits");
+    }
+    await assertPlanAllowsResourceTier(ctx.organizationId, snapshot.resources,
+      snapshot.managedWorkspaceId ?? project.workspaceId ?? null);
   }
 
   // ── Preflight: validate config + domain before creating any resources ──

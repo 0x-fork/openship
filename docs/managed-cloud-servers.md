@@ -25,9 +25,12 @@ until the server, subscription, namespace and project ownership are resolved.
 ## Capacity and lifecycle
 
 Checkout provisions the purchased server once. A sole destination is selected
-automatically; adding another server starts an independent subscription. Container
-CPU and memory values are ceilings within that host, not reservations of another
-VM. New v8 offers impose no project or service-count limit within the purchased
+automatically; adding another server starts an independent subscription. Projects
+use the host's full available CPU and memory by default (`unlimited`, represented
+as zero container limits). Optional project and Compose limits use the same
+inheritance and Docker enforcement as connected servers; they never resize the VM.
+The destination settings page keeps the server picker above visible settings and
+a preview/Continue sidebar. New v8 offers impose no project or service-count limit within the purchased
 server; the provider namespace permits one VM. Saved paid contracts keep their
 own limits. Disk usage is measured from the filesystem and Docker inventory. Shared
 images, caches and system files are reported separately from project data.

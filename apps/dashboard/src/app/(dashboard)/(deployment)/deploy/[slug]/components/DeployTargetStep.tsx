@@ -109,23 +109,18 @@ interface CompactSummaryProps {
    *  tier chip for a "Static" chip — there's no machine to size when
    *  the workload is just files served from the edge. */
   hasServer?: boolean;
-  /** Resolved runtime for a self-hosted SERVER deploy — drives a persistent
-   *  chip so a user who never opens Advanced still sees whether the app runs
-   *  sandboxed (Docker) or directly on the host ("bare"), the latter carrying a
-   *  warning. Ignored for cloud (tier chip) and static (edge-served chip). */
+  /** Runtime isolation shown in the configuration summary and settings preview. */
   runtimeMode?: RuntimeMode;
   /** True when the project deploys as a multi-service stack (compose). A stack
    *  runs sandboxed containers — never static edge-served files — so it must
    *  never show the Static chip even when the project-level hasServer/framework
    *  is unset (those live per-service). */
   isServices?: boolean;
-  /** Retention shown as its own chip. Rollback is configured inside the collapsed
-   *  Advanced panel, so without this the summary bar gave no hint that retention
-   *  exists at all — an operator could ship without ever learning they get
-   *  restorable versions. `null`/undefined window inherits the instance default. */
+  /** Null/undefined retention inherits the instance default. */
   rollbackWindow?: number | null;
   rollbackStrategy?: "git" | "snapshot";
-  onEdit: () => void;
+  onEdit?: () => void;
+  variant?: "inline" | "preview";
 }
 
 export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
@@ -140,6 +135,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   rollbackWindow,
   rollbackStrategy,
   onEdit,
+  variant = "inline",
 }) => {
   const { t } = useI18n();
   const targetLabels: Record<DeployTarget, { label: string; icon: React.ReactNode }> = {
@@ -185,7 +181,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   //   - Cloud + server: the picked resource tier (Zap).
   //   - Self-hosted server: the runtime — "bare" carries a persistent WARNING
   //     (runs directly on the host, unsandboxed) so it's visible even when the
-  //     user never opens Advanced; "docker" a neutral Sandboxed chip.
+  //     user reads only the summary; "docker" a neutral Sandboxed chip.
   const runtimeChip = isServices ? (
     // A service stack (compose) always runs sandboxed containers — never static
     // edge-served files — regardless of the project-level hasServer/framework
@@ -228,8 +224,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     </span>
   ) : null;
 
-  // Retention lives inside the collapsed Advanced panel, so surface it here as
-  // its own chip — otherwise nothing on this bar hints that rollback exists.
+  // Keep retention visible in both the inline summary and settings preview.
   const rollbackChip = (
     <span
       className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0"
@@ -250,6 +245,46 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
           )}
     </span>
   );
+
+  if (variant === "preview") {
+    const containerLimits = deployTarget === "cloud" && (isServices || runtimeMode !== "bare");
+    const runtimeLabel = !hasServer && !isServices
+      ? t.deploy.summary.static
+      : isServices || runtimeMode !== "bare"
+        ? t.deploy.runtime.sandboxedLabel
+        : t.deploy.runtime.directLabel;
+    return (
+      <div className="space-y-4">
+        <dl className="space-y-3">
+          <div>
+            <dt className="text-xs text-muted-foreground">{sameDestination ? t.deploy.summary.buildAndDeploy : t.billing.workspaces.destination}</dt>
+            <dd className="mt-1 break-words text-sm font-medium text-foreground">{deployLabel}</dd>
+          </div>
+          {showBuildStrategy && !sameDestination && (
+            <div>
+              <dt className="text-xs text-muted-foreground">{t.deploy.summary.build}</dt>
+              <dd className="mt-1 text-sm font-medium text-foreground">{build.label}</dd>
+            </div>
+          )}
+        </dl>
+        <div className="space-y-3 rounded-xl bg-muted/40 p-3.5">
+          <dl className="space-y-3 text-sm">
+            <div className="flex flex-wrap justify-between gap-2">
+              <dt className="text-muted-foreground">{t.deploy.runtime.heading}</dt>
+              <dd className="font-medium text-foreground">{runtimeLabel}</dd>
+            </div>
+            {containerLimits && cloudResourceTier && (
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-muted-foreground">{t.projectSettings.resources.title}</dt>
+                <dd className="font-medium text-foreground">{tierLabels.name(cloudResourceTier)}</dd>
+              </div>
+            )}
+          </dl>
+          {rollbackChip}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <button
@@ -482,9 +517,7 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
 // ─── Main step ───────────────────────────────────────────────────────────────
 
 interface DeployTargetStepProps {
-  /** Existing project this deploy edits, when there is one. Enables the rollback
-   *  + backup controls in the Advanced panel (there's nothing to persist to for a
-   *  project that hasn't been created yet). */
+  /** Existing project whose rollback and backup settings can be edited. */
   projectId?: string | null;
   targets: ResolvedTargets;
   serverSelection: ServerSelection;
@@ -516,27 +549,17 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
   // (+ server id when applicable) to user_settings on continue.
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [savingDefault, setSavingDefault] = useState(false);
-  // Whether to render the full picker vs the compact summary pill.
-  // Default = full picker. Flips to compact when a saved default applies
-  // cleanly. User can re-expand any time via the pencil on the pill.
-  const [expanded, setExpanded] = useState(true);
-  // Track when the defaults fetch is done so we can suppress the picker
-  // for a brief moment instead of flashing the full picker before collapsing.
+  // A saved default can skip this step on first entry; explicitly opening
+  // destination settings always presents the full page.
+  const [defaultApplied, setDefaultApplied] = useState(false);
   const [defaultsLoaded, setDefaultsLoaded] = useState(false);
-  // Build picker lives under an "Advanced" disclosure
-  // so the screen leads with the deploy-target decision. Folded by default
-  // because the build strategy is correctly seeded from the user's saved
-  // default — most operators never need to touch it on a per-deploy basis.
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   // True once the user has EXPLICITLY picked a build location from the picker.
   // The auto-match effects below (first-deploy match, cloud-switch default)
   // must never overwrite an explicit choice — otherwise "Build on this machine"
   // silently snaps back to the cloud default. Reset when the deploy target
   // changes so the sensible default applies to the new target.
   const buildStrategyTouchedRef = useRef(false);
-  // Fresh server-app deploys default to Sandbox (docker). The Sandbox/Direct
-  // picker now lives in the collapsed Advanced disclosure and may never mount,
-  // so we can't rely on its own auto-default — seed it here instead.
+  // Seed fresh server applications before rendering the runtime picker.
   const runtimeDefaultedRef = useRef(false);
 
   // Add server inline via modal. On create, refresh the server list and
@@ -561,7 +584,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
   // IS the host, so buildStrategy is inert there). A server deploy that lacks a
   // clone credential still auto-downgrades to a local build at deploy time
   // (Sidebar.handleDeploy), so this never hard-fails a credential-less box. An
-  // explicit pick in the Advanced disclosure (buildStrategyTouchedRef) wins.
+  // explicit pick in the build controls (buildStrategyTouchedRef) wins.
   useEffect(() => {
     if (buildStrategyTouchedRef.current) return;
     const want: BuildStrategy = config.deployTarget === "local" ? "local" : "server";
@@ -573,7 +596,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
   // Sandbox (docker) is the default for a fresh self-hosted server APP. Seeded
   // once, and only when the runtime choice actually applies (server app, not
   // docker/compose/static) — never clobbers a saved project value or a choice
-  // the user makes in Advanced.
+  // the user makes in the runtime controls.
   useEffect(() => {
     if (config.projectId || runtimeDefaultedRef.current) return;
     if (config.deployTarget !== "server") return;
@@ -665,7 +688,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
         // come back and change something - landing them on the compact pill
         // would force an extra click on the pencil to actually edit. Skip
         // the collapse so they see the full picker right away.
-        if (applied && autoSkipAllowed) setExpanded(false);
+        if (applied) setDefaultApplied(true);
       })
       .catch(() => { /* no default - picker falls back to auto-select */ })
       .finally(() => { if (!cancelled) setDefaultsLoaded(true); });
@@ -916,19 +939,10 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
     (config.deployTarget === "server" && !!config.serverId && hasServers)
   );
 
-  // Auto-skip eligibility - true when a saved default has applied cleanly
-  // AND the parent allows skipping. While true, we want to bypass the UI
-  // entirely (no flash of compact summary before onContinue fires).
   const baseLoading = !ready || !defaultsLoaded;
-  const baseCompactEligible = !baseLoading && !expanded && canContinue;
-  const wouldAutoSkip = autoSkipAllowed && baseCompactEligible && selfHosted;
-
-  // Render flags. When we're about to auto-skip, keep showing the loading
-  // spinner so the user sees a single transition (spinner → next step)
-  // instead of (spinner → compact pill → next step).
+  const wouldAutoSkip = autoSkipAllowed && !baseLoading && defaultApplied && canContinue && selfHosted;
   const showLoading = baseLoading || wouldAutoSkip;
-  const useCompact = !showLoading && baseCompactEligible;
-  const showFullPicker = !showLoading && !useCompact;
+  const showFullPicker = !showLoading;
 
   // Auto-skip the entire step when a saved default applies cleanly. Parent
   // sets autoSkipAllowed=false when the user navigated back here on purpose,
@@ -1028,34 +1042,14 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
     onContinue();
   };
 
-  // Connected and managed servers share the same expandable Advanced column.
-  const showServerAdvanced = showFullPicker && (!!config.serverId || !selfHosted) &&
+  const showSettings = showFullPicker && (!!config.serverId || !selfHosted) &&
     (config.deployTarget === "server" || config.deployTarget === "cloud");
-  // Docker/Compose fixes the runtime; single applications expose its isolation.
   const showRuntimeIsolation =
     (config.deployTarget === "cloud" || workloadOf(config.options) !== "static") &&
-    config.projectType !== "docker" &&
-    !isServiceDeployment;
-  const showRightPanel = showServerAdvanced;
+    config.projectType !== "docker" && !isServiceDeployment;
   const showResourceLimits = config.deployTarget === "cloud" &&
     (config.runtimeMode !== "bare" || isServiceDeployment || config.projectType === "docker");
-  const resourceValues = resolveTierResources(config.cloudResourceTier ?? "low", config.cloudResourceCustom);
-
-  // Advanced-panel summary line. Says WHAT'S INSIDE, not just the build location:
-  // a collapsed panel labelled only "Build on Remote" hides the rollback window
-  // and the clone location, so there's no way to know they're in there.
-  const advancedSections = [
-    showRuntimeIsolation ? t.deploy.runtime.heading : null,
-    showResourceLimits ? t.projectSettings.resources.title : null,
-    showBuildStrategy
-      ? interpolate(ts.build.advancedSummary, {
-          action: config.options.hasBuild ? ts.build.actionBuild : ts.build.actionPrepare,
-          location: visibleBuildOptions.find((o) => o.value === config.buildStrategy)?.label ?? "—",
-        })
-      : null,
-    ts.rollbackTitle,
-    showCloneStrategy ? ts.clone.heading : null,
-  ].filter(Boolean) as string[];
+  const resourceValues = resolveTierResources(config.cloudResourceTier ?? "unlimited", config.cloudResourceCustom);
 
   // Saved connection defaults stay with the destination controls.
   const saveDefaultCheckbox =
@@ -1075,329 +1069,161 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
       </label>
     ) : null;
 
-  // Continue stays in the same header for every destination.
-  const continueBtnClass =
-    "inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none";
-  const continueLabel = (
-    <>
-      {ts.continue}
-      <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
-    </>
-  );
-
-  // The header stays fixed while Advanced and the destination trade widths.
-  const headerTitle = useCompact ? ts.deployAndBuildHeading : ts.heading;
   const headerSubtitle = showLoading || (!selfHosted && serverSelection.loading)
     ? ts.loadingSubtitle
-    : useCompact || (!selfHosted && serverSelection.readOnly)
+    : !selfHosted && serverSelection.readOnly
       ? null
       : hasAnyDeployTarget
-        ? hasChoice || !selfHosted
-          ? ts.chooseSubtitle
-          : ts.onlyOneSubtitle
+        ? ts.chooseSubtitle
         : ts.noTargetSubtitle;
-  const headerTitleBlock = (
-    <div className="min-w-0">
-      <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
-        {headerTitle}
-      </h1>
-      {headerSubtitle && <p className="text-sm text-muted-foreground/70 mt-1">{headerSubtitle}</p>}
-    </div>
-  );
-  const header = (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      {headerTitleBlock}
-      <button type="button" onClick={handleContinue} disabled={!canContinue} className={`shrink-0 ${continueBtnClass}`}>
-        {continueLabel}
-      </button>
-    </div>
-  );
 
   if (config.deployTarget === "cluster") return (
-    <div className="mx-auto w-full max-w-lg space-y-5">
+    <div className="space-y-5">
       <h1 className="text-2xl font-medium">Deploy to server cluster</h1>
       <p className="text-sm leading-relaxed text-muted-foreground">This project uses the cluster and instance count saved in its Scale controls. OpenShip builds or reuses the application image, starts the instances, and checks their health before switching traffic.</p>
       <Button onClick={onContinue}>Continue</Button>
     </div>
   );
+
   return (
-    <div className={`mx-auto w-full space-y-8 ${showRightPanel ? "max-w-5xl" : "max-w-lg"}`}>
-      {header}
-      <div className={showRightPanel ? "space-y-8 lg:space-y-0 lg:flex lg:items-start" : ""}>
-    <div
-      className={showRightPanel
-        ? `space-y-8 min-w-0 lg:pe-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${advancedOpen ? "lg:w-[360px]" : "lg:w-[calc(100%-361px)]"}`
-        : "space-y-8 min-w-0"}
-    >
-      {showLoading && (
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-card px-4 py-8 text-sm text-muted-foreground">
-          <UiIcon name="spinner" className="size-4 animate-spin" />
-          {ts.loadingCheck}
-        </div>
-      )}
-
-      {!selfHosted && config.deployTarget === "cloud" && (
-        <ServerSelectorView
-          selection={serverSelection}
-          label={t.billing.workspaces.destination}
-        />
-      )}
-
-      {/* Compact summary - saved default applied cleanly. The pill itself
-          is the edit affordance: clicking expands the full picker so the
-          user can change build/deploy for this one deployment. */}
-      {useCompact && (
-        <DeployTargetSummary
-          deployTarget={config.deployTarget}
-          buildStrategy={config.buildStrategy}
-          serverName={summaryServerName}
-          showBuildStrategy={showBuildStrategy}
-          hasServer={workloadOf(config.options) !== "static"}
-          runtimeMode={config.runtimeMode}
-          isServices={config.projectType === "services" || config.serviceDeploymentMode === "services"}
-          onEdit={() => setExpanded(true)}
-        />
-      )}
-
-      {/* Deploy target */}
-      {selfHosted && showFullPicker && hasAnyDeployTarget && (
-        <div className="space-y-3">
-          <div className="space-y-2">
-            {deployTargetOptions.map((opt) => (
-              <OptionCard
-                key={opt.value}
-                value={opt.value}
-                selected={config.deployTarget === opt.value}
-                onSelect={() => handleDeployTargetChange(opt.value)}
-                icon={opt.icon}
-                label={opt.label}
-                description={opt.description}
-              >
-                {/* Collapsed, searchable picker for multiple servers — carries
-                    its own "Add your own server" row inside the open list. */}
-                {opt.value === "server" && !isSingleServer && config.deployTarget === "server" && (
-                  <ServerPicker
-                    servers={servers}
-                    selectedId={config.serverId}
-                    onSelect={handleServerSelect}
-                    onAddServer={selfHosted ? openAddServer : undefined}
-                  />
-                )}
-              </OptionCard>
-            ))}
-          </div>
-          {/* External add-server button only when the picker (which now owns it)
-              isn't shown — i.e. cloud selected, or the single-server case. */}
-          {selfHosted && !(config.deployTarget === "server" && !isSingleServer) && (
-            <button
-              type="button"
-              onClick={openAddServer}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-2.5 text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground hover:bg-muted/30 transition-all"
-            >
-              <UiIcon name="plus" className="size-3.5" />
-              {ts.addServer}
-            </button>
-          )}
-
-        </div>
-      )}
-
-      {selfHosted && showFullPicker && !hasAnyDeployTarget && (
-        <div className="space-y-3">
-          <div className="rounded-xl border border-border/50 bg-card px-4 py-4 text-sm text-muted-foreground leading-relaxed">
-            {ts.noTargetBody}
-          </div>
-          {selfHosted && (
-            <button
-              type="button"
-              onClick={openAddServer}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-2.5 text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground hover:bg-muted/30 transition-all"
-            >
-              <UiIcon name="plus" className="size-3.5" />
-              {ts.addServer}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* "How it's served" (static vs server process + start command) is NOT here —
-          it lives with the app's build settings (the "Start" toggle), so the deploy
-          step stays about WHERE to deploy, not how the app is built/served. */}
-
-      {/* Advanced (Sandbox/Direct, build location, clone, git-forward) renders
-          as a compact panel in the RIGHT column for server deploys — see the
-          right-panel block below. Continue lives in the unified header. */}
-
-      {saveDefaultCheckbox}
-    </div>
-    {showRightPanel && (
-      <>
-        {/* Vertical divider between the two columns. */}
-        <div className="hidden lg:block w-px bg-border self-stretch lg:shrink-0" />
-        {/* Advanced expands beside the same server picker in both modes. */}
-        <div
-          key={config.deployTarget}
-          className={`min-w-0 animate-slide-in-right lg:ps-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${advancedOpen ? "lg:w-[calc(100%-361px)]" : "lg:w-[360px]"}`}
-        >
-          {showServerAdvanced && (
-            <div className="rounded-2xl bg-card">
-              <button
-                type="button"
-                onClick={() => setAdvancedOpen((v) => !v)}
-                aria-expanded={advancedOpen}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-start"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                    <UiIcon name="sliders" className="size-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground">{ts.build.advanced}</p>
-                    {/* Each section as its own wrapping chip, NOT one joined line.
-                        Joined + `truncate` in this narrow column cut the list off
-                        mid-word ("Rollback & backups · Cl…"), so the panel hid the
-                        very sections the summary exists to advertise. */}
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {advancedSections.map((section) => (
-                        <span
-                          key={section}
-                          className="rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground"
-                        >
-                          {section}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                {advancedOpen ? (
-                  <UiIcon name="chevron-up" className="size-4 shrink-0 text-muted-foreground" />
-                ) : (
-                  <UiIcon name="chevron-down" className="size-4 shrink-0 text-muted-foreground" />
-                )}
-              </button>
-
-              {/* Accordion: animate the content's HEIGHT (grid-rows 0fr→1fr) so it
-                  doesn't pop in. Always mounted so the transition has something to
-                  reveal; the inner content fades in as it grows. */}
-              <div
-                inert={!advancedOpen}
-                aria-hidden={!advancedOpen}
-                className={`grid transition-[grid-template-rows] duration-300 ease-out ${
-                  advancedOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                }`}
-              >
-                <div
-                  className={`overflow-hidden transition-opacity duration-200 ${
-                    advancedOpen ? "opacity-100 delay-100" : "opacity-0"
-                  }`}
-                >
-                  <div className="border-t border-border/50 px-4 py-4 space-y-5">
-                  {/* Runtime isolation — Sandbox (default) vs Direct. Server app only. */}
-                  {showRuntimeIsolation && <ServerRuntimePicker enabled={advancedOpen} />}
-
-                  {showResourceLimits && (
-                    <section className="space-y-3" aria-label={t.projectSettings.resources.title}>
-                      <div>
-                        <h3 className="text-sm font-semibold">{t.projectSettings.resources.title}</h3>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{t.projectSettings.resources.description}</p>
-                      </div>
-                      <ResourceTierPicker
-                        key={config.serverId}
-                        value={config.cloudResourceTier ?? "low"}
-                        values={resourceValues}
-                        requiresLimit
-                        capacity={serverSelection.selected?.managed?.resources ?? undefined}
-                        disabled={serverSelection.disabled}
-                        onSelect={(tier, values) => {
-                          if (tier === "unlimited") return false;
-                          updateConfig({
-                            cloudResourceTier: tier,
-                            ...(tier === "custom" && values ? { cloudResourceCustom: { ...resourceValues, ...values } } : {}),
-                          });
-                        }}
-                      />
-                    </section>
-                  )}
-
-                  {/* Build location — where the clone + build run. */}
-                  {showBuildStrategy && visibleBuildOptions.length > 1 && (
-                    <div className="space-y-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground">
-                          {config.options.hasBuild ? ts.build.heading : ts.build.prepareHeading}
-                        </h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {config.options.hasBuild ? ts.build.subtitle : ts.build.prepareSubtitle}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 items-stretch">
-                        {visibleBuildOptions.map((opt) => (
-                          <OptionCard
-                            key={opt.value}
-                            value={opt.value}
-                            selected={config.buildStrategy === opt.value}
-                            onSelect={() => {
-                              buildStrategyTouchedRef.current = true;
-                              updateConfig({ buildStrategy: opt.value });
-                            }}
-                            icon={opt.icon}
-                            label={opt.label}
-                            description={opt.description}
-                            className="h-full"
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Rollback window + backup summary for the chosen target. The
-                      same retention controls the project's Git settings show. */}
-                  <RollbackBackupPanel
-                    projectId={projectId}
-                    enabled={advancedOpen}
-                    // A static project (nothing runs as a process) retains built
-                    // FILES, not images — the same distinction the "Static ·
-                    // edge-served" chip on the summary makes. A worker builds and
-                    // retains an image like any running workload.
-                    artifactKind={workloadOf(config.options) === "static" && !isServiceDeployment ? "files" : "image"}
-                  />
-
-                  {/* Clone location — docker/compose server deploys (sandboxed). */}
-                  {showCloneStrategy && (
-                    <div className="space-y-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground">
-                          {ts.clone.heading}
-                        </h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {ts.clone.descLead}
-                          {isDesktop ? ts.clone.descDesktop : ts.clone.descServer}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 items-stretch">
-                        {cloneOptions.map((opt) => (
-                          <OptionCard
-                            key={opt.value}
-                            value={opt.value}
-                            selected={cloneStrategy === opt.value}
-                            onSelect={() => updateConfig({ cloneStrategy: opt.value })}
-                            icon={opt.icon}
-                            label={opt.label}
-                            description={opt.description}
-                            className="h-full"
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  </div>
-                </div>
+    <div className="@container/target space-y-6">
+      <header>
+        <h1 className="text-2xl font-medium text-foreground/80">{ts.heading}</h1>
+        {headerSubtitle && <p className="mt-1 text-sm text-muted-foreground">{headerSubtitle}</p>}
+      </header>
+      <div className="grid grid-cols-1 items-start gap-6 @min-[60rem]/target:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-5">
+          <section className="space-y-4 rounded-2xl bg-card p-5" aria-label={t.billing.workspaces.destination}>
+            <h2 className="text-sm font-semibold text-foreground">{t.billing.workspaces.destination}</h2>
+            {showLoading && (
+              <div className="flex items-center gap-2 rounded-xl bg-muted/40 px-4 py-5 text-sm text-muted-foreground">
+                <UiIcon name="spinner" className="size-4 animate-spin" />
+                {ts.loadingCheck}
               </div>
-            </div>
+            )}
+            {!selfHosted && config.deployTarget === "cloud" && (
+              <ServerSelectorView selection={serverSelection} label={t.billing.workspaces.destination} compact />
+            )}
+            {selfHosted && showFullPicker && hasAnyDeployTarget && (
+              <div className="space-y-3">
+                {deployTargetOptions.map((opt) => (
+                  <OptionCard
+                    key={opt.value}
+                    value={opt.value}
+                    selected={config.deployTarget === opt.value}
+                    onSelect={() => handleDeployTargetChange(opt.value)}
+                    icon={opt.icon}
+                    label={opt.label}
+                    description={opt.description}
+                  >
+                    {opt.value === "server" && !isSingleServer && config.deployTarget === "server" && (
+                      <ServerPicker servers={servers} selectedId={config.serverId} onSelect={handleServerSelect} onAddServer={openAddServer} />
+                    )}
+                  </OptionCard>
+                ))}
+              </div>
+            )}
+            {selfHosted && showFullPicker && !hasAnyDeployTarget && (
+              <p className="text-sm text-muted-foreground">{ts.noTargetBody}</p>
+            )}
+            {selfHosted && showFullPicker && !(config.deployTarget === "server" && !isSingleServer && hasServers) && (
+              <Button type="button" variant="secondary" size="sm" onClick={openAddServer}>
+                <UiIcon name="plus" className="size-3.5" />
+                {ts.addServer}
+              </Button>
+            )}
+            {saveDefaultCheckbox}
+          </section>
+
+          {showSettings && (
+            <>
+              {showRuntimeIsolation && (
+                <section className="rounded-2xl bg-card p-5" aria-label={t.deploy.runtime.heading}>
+                  <ServerRuntimePicker />
+                </section>
+              )}
+              {showResourceLimits && (
+                <section className="space-y-4 rounded-2xl bg-card p-5" aria-label={t.projectSettings.resources.title}>
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">{t.projectSettings.resources.title}</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">{t.projectSettings.resources.description}</p>
+                  </div>
+                  <ResourceTierPicker
+                    key={config.serverId}
+                    value={config.cloudResourceTier ?? "unlimited"}
+                    values={resourceValues}
+                    capacity={serverSelection.selected?.managed?.resources ?? undefined}
+                    disabled={serverSelection.disabled}
+                    onSelect={(tier, values) => updateConfig({
+                      cloudResourceTier: tier,
+                      cloudResourceCustom: tier === "custom" && values ? { ...resourceValues, ...values } : undefined,
+                    })}
+                  />
+                </section>
+              )}
+              {showBuildStrategy && visibleBuildOptions.length > 1 && (
+                <section className="space-y-4 rounded-2xl bg-card p-5">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">{config.options.hasBuild ? ts.build.heading : ts.build.prepareHeading}</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">{config.options.hasBuild ? ts.build.subtitle : ts.build.prepareSubtitle}</p>
+                  </div>
+                  <div className="grid grid-cols-1 items-stretch gap-3 @min-[36rem]/target:grid-cols-2">
+                    {visibleBuildOptions.map((opt) => (
+                      <OptionCard key={opt.value} value={opt.value} selected={config.buildStrategy === opt.value}
+                        onSelect={() => { buildStrategyTouchedRef.current = true; updateConfig({ buildStrategy: opt.value }); }}
+                        icon={opt.icon} label={opt.label} description={opt.description} className="h-full" />
+                    ))}
+                  </div>
+                </section>
+              )}
+              <section className="rounded-2xl bg-card p-5" aria-label={ts.rollbackTitle}>
+                <RollbackBackupPanel
+                  projectId={projectId}
+                  enabled
+                  artifactKind={workloadOf(config.options) === "static" && !isServiceDeployment ? "files" : "image"}
+                />
+              </section>
+              {showCloneStrategy && (
+                <section className="space-y-4 rounded-2xl bg-card p-5">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">{ts.clone.heading}</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {ts.clone.descLead}{isDesktop ? ts.clone.descDesktop : ts.clone.descServer}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 items-stretch gap-3 @min-[36rem]/target:grid-cols-2">
+                    {cloneOptions.map((opt) => (
+                      <OptionCard key={opt.value} value={opt.value} selected={cloneStrategy === opt.value}
+                        onSelect={() => updateConfig({ cloneStrategy: opt.value })}
+                        icon={opt.icon} label={opt.label} description={opt.description} className="h-full" />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
           )}
         </div>
-      </>
-    )}
+        <aside className="space-y-4 rounded-2xl bg-card p-5 @min-[60rem]/target:sticky @min-[60rem]/target:top-6" aria-label={ts.previewTitle}>
+          <h2 className="text-base font-semibold text-foreground">{ts.previewTitle}</h2>
+          <DeployTargetSummary
+            variant="preview"
+            deployTarget={config.deployTarget}
+            buildStrategy={config.buildStrategy}
+            serverName={summaryServerName}
+            showBuildStrategy={showBuildStrategy}
+            cloudResourceTier={config.cloudResourceTier}
+            hasServer={workloadOf(config.options) !== "static"}
+            runtimeMode={config.runtimeMode}
+            isServices={isServiceDeployment}
+            rollbackWindow={config.rollbackWindow}
+            rollbackStrategy={config.rollbackStrategy}
+          />
+          <Button type="button" onClick={handleContinue} disabled={!canContinue} className="w-full">
+            {ts.continue}
+            <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
+          </Button>
+          <p className="text-xs leading-relaxed text-muted-foreground">{ts.previewHint}</p>
+        </aside>
       </div>
     </div>
   );

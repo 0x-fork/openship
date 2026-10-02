@@ -41,9 +41,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.
-- Keep runtime, resource limits and rollback in the existing expandable Advanced column.
-  Deployment setup and project settings share the resource editor and tier labels; do not
-  add a Cloud-only power panel or custom-size modal.
+- Destination settings use the normal page layout: server selection first, then visible
+  runtime, resource and rollback sections, with a 340px preview/Continue sidebar. Keep the
+  same layout in Cloud and self-hosted mode; do not hide it in an Advanced accordion.
+- Machine power defaults to the full available server capacity. Project settings and
+  deployment setup share the resource editor and tier labels. Optional limits apply to
+  containers; the managed server's purchased allocation stays separate.
 - Base grids on the available container width so expanded navigation does not squeeze fields.
   Routing cards use two columns when their controls fit comfortably and one column otherwise.
 - Keep section spacing consistent (`gap-6` between main columns, `space-y-4` for sidebar items).
