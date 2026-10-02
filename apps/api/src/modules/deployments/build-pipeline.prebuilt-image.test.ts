@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   convergeTargetHostPortClaims: vi.fn(),
   convergeTargetHostPortClaimsUnlocked: vi.fn(),
   withHostPortTargetLock: vi.fn((_target, fn: () => unknown) => fn()),
+  sshWithHostExecutor: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -206,10 +207,22 @@ vi.mock("@repo/platform/engine/lib/openship-manifest-sync", () => ({
 vi.mock("@repo/platform/engine/modules/deployments/attach-linked-networks", () => ({ attachLinkedNetworks: vi.fn(async () => undefined) }));
 vi.mock("@repo/platform/engine/modules/deployments/port-audit.service", () => ({ auditPorts: vi.fn(async () => []) }));
 vi.mock("@repo/platform/engine/modules/deployments/stability-audit.service", () => ({ verifyDeployedContainers: vi.fn(async () => []) }));
-vi.mock("@repo/platform/engine/modules/deployments/readiness-gate", () => ({
-  resolveReadinessGate: vi.fn(() => ({ active: false })),
-  runReadinessGate: vi.fn(),
-}));
+// Delegates to the REAL readiness-gate implementation instead of a canned
+// `{ active: false }`. Every test in this file except the ones below leaves
+// `project.readiness` unset, and the real resolveReadinessGate already
+// resolves null/undefined to `active: false` — so this changes nothing for
+// them. The readiness-target tests below need the real onFailure/stabilize
+// semantics to prove the wiring in build-pipeline.ts, not a stand-in for it.
+vi.mock("@repo/platform/engine/modules/deployments/readiness-gate", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@repo/platform/engine/modules/deployments/readiness-gate")
+    >();
+  return {
+    resolveReadinessGate: vi.fn(actual.resolveReadinessGate),
+    runReadinessGate: vi.fn(actual.runReadinessGate),
+  };
+});
 vi.mock("@repo/platform/engine/modules/deployments/output-audit.service", () => ({
   auditStaticOutput: vi.fn(async () => []),
   describeOutputFinding: vi.fn(() => ""),
@@ -229,7 +242,13 @@ vi.mock("@repo/platform/engine/lib/edge-reconcile", () => ({
   ensureRoutingReady: (...args: unknown[]) => mocks.ensureRoutingReady(...args),
 }));
 vi.mock("@repo/platform/engine/lib/acme-config", () => ({ resolveAcmeProviderOptions: vi.fn(() => ({})) }));
-vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: {} }));
+// A spy, not a working pooled channel: every test below gives the "server"
+// target its own executor, so the real probe never needs this fallback. A
+// readiness test asserts it was NOT called, to prove a Cloud target never
+// reaches it either.
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
+  sshManager: { withHostExecutor: (...args: unknown[]) => mocks.sshWithHostExecutor(...args) },
+}));
 vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   listTargetPinnedHostPorts: vi.fn(async () => []),
   prepareTargetPinnedHostPorts: (...args: unknown[]) => mocks.prepareTargetPinnedHostPorts(...args),
@@ -1008,6 +1027,102 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.deploy).not.toHaveBeenCalled();
     expect(mocks.runDeployPipeline).not.toHaveBeenCalled();
     expect(mocks.build).not.toHaveBeenCalled();
+  });
+
+  // A server (remote/SSH) deploy target skipped the TCP/HTTP readiness probe
+  // for a running-process app: the strategy never declared
+  // `readinessWorksRemotely`, so `onFailure: "fail"` was never consulted for
+  // it, even with a probe failure the app genuinely had. These tests call
+  // `env.healthCheck` directly — the exact field build-pipeline.ts wires the
+  // readiness gate through — rather than re-deriving the decision by hand, so
+  // a regression in the real wiring fails here, not just in a stand-in.
+  describe("readiness gate wiring for a server deploy target", () => {
+    function serverExecutor(forwardPort: () => Promise<never>) {
+      return { exec: vi.fn(async () => ""), forwardPort: vi.fn(forwardPort) };
+    }
+
+    function useTarget(effectiveTarget: string, executor: { forwardPort: unknown } | null) {
+      resolvedPlatform.effectiveTarget = effectiveTarget as never;
+      resolvedPlatform.platform = { ...resolvedPlatform.platform, executor } as never;
+    }
+
+    type CapturedEnvironment = {
+      env: { healthCheck?: (id: string, cfg: unknown) => Promise<void> };
+      containerId: string;
+      config: unknown;
+    };
+
+    /** Runs kickoffBuild, capturing the real DeployEnvironment build-pipeline.ts builds. */
+    async function captureEnvironment(readiness: Record<string, unknown>) {
+      let captured: CapturedEnvironment | undefined;
+      mocks.runDeployPipeline.mockImplementationOnce(async (env, input) => {
+        const result = await env.activate(input.config, () => undefined);
+        captured = { env, containerId: result.containerId, config: input.config };
+        return { status: "success", containerId: result.containerId, url: result.url };
+      });
+      await run(deployment(), { readiness });
+      await vi.waitFor(() => expect(captured).toBeDefined());
+      return captured!;
+    }
+
+    it('rejects through the server target\'s own executor when onFailure is "fail"', async () => {
+      const forwardPort = vi.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      });
+      useTarget("server", serverExecutor(forwardPort));
+
+      const { env, containerId, config } = await captureEnvironment({
+        enabled: true,
+        onFailure: "fail",
+        stabilization: false,
+        timeoutSeconds: 0.01,
+      });
+
+      await expect(env.healthCheck!(containerId, config)).rejects.toThrow(/never answered/);
+      expect(forwardPort).toHaveBeenCalledTimes(1);
+      expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
+    });
+
+    it('warns instead of failing the deploy when onFailure is "warn"', async () => {
+      const forwardPort = vi.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      });
+      useTarget("server", serverExecutor(forwardPort));
+
+      const { env, containerId, config } = await captureEnvironment({
+        enabled: true,
+        onFailure: "warn",
+        stabilization: false,
+        timeoutSeconds: 0.01,
+      });
+
+      await expect(env.healthCheck!(containerId, config)).resolves.toBeUndefined();
+      expect(forwardPort).toHaveBeenCalledTimes(1);
+    });
+
+    it("wires no health check for a server target when the project has not enabled probing", async () => {
+      useTarget("server", serverExecutor(vi.fn()));
+
+      const { env } = await captureEnvironment({ enabled: false });
+
+      expect(env.healthCheck).toBeUndefined();
+    });
+
+    it("stays excluded for a Cloud target even with probing enabled", async () => {
+      // An ordinary Cloud runtime has no comparable target executor (unlike a
+      // Cloud Docker workspace) — `null` here matches that ordinary case.
+      useTarget("cloud", null);
+
+      const { env, containerId, config } = await captureEnvironment({
+        enabled: true,
+        onFailure: "fail",
+        stabilization: false,
+        timeoutSeconds: 0.01,
+      });
+
+      await expect(env.healthCheck!(containerId, config)).resolves.toBeUndefined();
+      expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
+    });
   });
 });
 
