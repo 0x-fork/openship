@@ -58,28 +58,22 @@ function ServerSummary({ name, description }: { name: string; description?: stri
   );
 }
 
-/** One picker for connected and managed servers; deployments select serverId. */
-export default function ServerSelector({
+/** Selection stays mounted when a wizard switches between its summary and editor. */
+export function useServerSelection({
   onSelect,
   value,
-  label,
   disabled = false,
   readOnly = false,
   selectedName,
   disabledReason,
   onReadyChange,
-  compact = false,
   autoSelectFirst = false,
   excludeIds,
-  emptyHint,
   forDeployment = false,
   requiredCapability,
-}: ServerSelectorProps) {
-  const { t } = useI18n();
-  const copy = t.widgets.shared.serverSelector;
-  const managedCopy = t.billing.workspaces;
+}: ServerSelectorProps, enabled = true) {
   const { selfHosted } = usePlatform();
-  const { data, loading, error, refresh, organizationId } = useServerDestinations(!readOnly);
+  const { data, loading, error, refresh, organizationId } = useServerDestinations(enabled && !readOnly);
   const [internalId, setInternalId] = useState<string | null>(null);
   const autoSelected = useRef(false);
   const openAddServer = useAddServerModal();
@@ -107,7 +101,7 @@ export default function ServerSelector({
     !selfHosted && forDeployment && data?.servers.length === 0 && !selectedId;
   useEffect(() => {
     if (
-      disabled || readOnly ||
+      !enabled || disabled || readOnly ||
       selectedId ||
       (!autoSelectFirst && value === null) ||
       autoSelected.current
@@ -122,11 +116,11 @@ export default function ServerSelector({
       setInternalId(selected.id);
       onSelectRef.current(selected);
     }
-  }, [ids, disabled, readOnly, selectedId, autoSelectFirst, value, organizationId, automaticCloud]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, enabled, disabled, readOnly, selectedId, autoSelectFirst, value, organizationId, automaticCloud]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const selectionReady = readOnly ? Boolean(selectedId) : !loading && !error && (
+  const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && (
     automaticCloud || rows.some((server) => server.id === selectedId && server.managed?.state !== "deleting")
-  );
+  ));
   useEffect(() => {
     onReadyChange?.(selectionReady);
   }, [selectionReady, onReadyChange]);
@@ -139,6 +133,36 @@ export default function ServerSelector({
       refresh();
     });
   }
+  const select = (id: string) => {
+    autoSelected.current = true;
+    setInternalId(id);
+    const server = rows.find((row) => row.id === id);
+    onSelectRef.current(server ? option(server) : null);
+  };
+  return {
+    rows, selectedId, selected: rows.find(server => server.id === selectedId),
+    loading, error, refresh, automaticCloud, ready: selectionReady,
+    disabled, readOnly, selectedName, disabledReason, forDeployment, addServer, select,
+  };
+}
+
+export type ServerSelection = ReturnType<typeof useServerSelection>;
+
+/** Render the same picker against a form-owned selection, without a second fetch or seed. */
+export function ServerSelectorView({
+  selection,
+  label,
+  compact = false,
+  emptyHint,
+}: Pick<ServerSelectorProps, "label" | "compact" | "emptyHint"> & { selection: ServerSelection }) {
+  const { t } = useI18n();
+  const copy = t.widgets.shared.serverSelector;
+  const managedCopy = t.billing.workspaces;
+  const { selfHosted } = usePlatform();
+  const {
+    rows, selectedId, loading, error, refresh, automaticCloud, disabled,
+    readOnly, selectedName, disabledReason, forDeployment, addServer, select,
+  } = selection;
   const describe = (server: ServerDetail) => {
     if (!server.managed) return server.isLocal
       ? t.servers.list.currentHost
@@ -159,12 +183,6 @@ export default function ServerSelector({
     })),
   ];
   const effective = selectedId ?? "";
-  const select = (id: string) => {
-    autoSelected.current = true;
-    setInternalId(id);
-    const server = rows.find((row) => row.id === id);
-    onSelectRef.current(server ? option(server) : null);
-  };
   return (
     <div className={compact ? "space-y-2" : "mb-5 space-y-2"}>
       {!compact && (
@@ -246,4 +264,10 @@ export default function ServerSelector({
       )}
     </div>
   );
+}
+
+/** Standalone forms use the same selection state and view. */
+export default function ServerSelector(props: ServerSelectorProps) {
+  const selection = useServerSelection(props);
+  return <ServerSelectorView selection={selection} label={props.label} compact={props.compact} emptyHint={props.emptyHint} />;
 }

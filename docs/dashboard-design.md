@@ -35,7 +35,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Use [PageContainer](../apps/dashboard/src/components/ui/PageContainer.tsx) for its existing
   1600px page limit and responsive padding. Avoid a second page-width cap inside it.
 - Project and deployment configuration pages use a 340px action sidebar when there is room,
-  then stack on smaller containers. Keep the destination picker and primary action together.
+  then stack on smaller containers. Catalog installs keep their destination and action together.
+  Source deployments use the same destination summary above configuration and target-settings
+  screen in Cloud and self-hosted mode; do not add a separate destination panel to the sidebar.
 - Base grids on the available container width so expanded navigation does not squeeze fields.
   Routing cards use two columns when their controls fit comfortably and one column otherwise.
 - Keep section spacing consistent (`gap-6` between main columns, `space-y-4` for sidebar items).
@@ -45,9 +47,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   the shared picker. Keep the create-server action visible in both cases. Cloud deployments
   can reuse a server's plan or create a separate server and subscription from the same flow.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
-  same project data and status handling. Apps uses a compact installed list with catalog
-  suggestions alongside it; its empty state shows connected app logos and popular install
-  shortcuts. Keep Home's project list and the sidebar counts separate too.
+  same project data and status handling. Apps uses a compact installed list with at most
+  three catalog suggestions alongside it, Home's app illustration and a link to the full
+  catalog. Its empty state shows connected app logos and popular install shortcuts.
+  Keep Home's project list and the sidebar counts separate too.
 - Persistent Cloud credit warnings use a compact floating disclosure at the bottom end of the
   viewport. Keep server-specific billing actions inside it, remember dismissal for the warning,
   and allow reopening without a page-wide banner or an automatic modal.

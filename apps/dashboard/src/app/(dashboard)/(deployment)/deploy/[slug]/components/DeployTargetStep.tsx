@@ -15,7 +15,7 @@ import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import type { DeploymentConfig } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
-import ServerSelector from "@/components/shared/ServerSelector";
+import { ServerSelectorView, type ServerSelection } from "@/components/shared/ServerSelector";
 import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
 import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
@@ -319,7 +319,6 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   onEdit,
 }) => {
   const { t } = useI18n();
-  const { selfHosted } = usePlatform();
   const targetLabels: Record<DeployTarget, { label: string; icon: React.ReactNode }> = {
     local: { label: t.deploy.summary.targetLocal, icon: <UiIcon name="cpu" className="size-4" /> },
     server: { label: t.deploy.summary.targetServer, icon: <UiIcon name="server" className="size-4" /> },
@@ -414,11 +413,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
 
   // Retention lives inside the collapsed Advanced panel, so surface it here as
   // its own chip — otherwise nothing on this bar hints that rollback exists.
-  //
-  // Gated on `selfHosted` for the same reason the Advanced panel is: on a cloud
-  // instance that panel isn't rendered at all, so a chip pointing at it would
-  // advertise a control the operator can't reach.
-  const rollbackChip = !selfHosted ? null : (
+  const rollbackChip = (
     <span
       className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0"
       title={
@@ -443,44 +438,48 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     <button
       type="button"
       onClick={onEdit}
-      className="w-full flex flex-wrap items-center gap-3 px-4 py-3 bg-card rounded-xl border border-border/50 hover:border-primary/30 transition-all group"
+      className="w-full flex items-center gap-3 px-4 py-3 bg-card rounded-xl border border-border/50 hover:border-primary/30 transition-all group text-start"
     >
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        {sameDestination ? (
-          // Merged view — single line, two icons with a + between to
-          // signal "both build and deploy go here", followed by one
-          // label. Saves horizontal space vs the two-section layout.
-          <div className="flex items-center gap-2 text-xs min-w-0">
-            <div className="flex items-center gap-1 text-muted-foreground shrink-0">
-              {build.icon}
-              <UiIcon name="plus" className="size-3" />
-              {target.icon}
-            </div>
-            <span className="text-muted-foreground">{t.deploy.summary.buildAndDeploy}</span>
-            <span className="font-medium text-foreground truncate">{deployLabel}</span>
-          </div>
-        ) : (
-          <>
-            {showBuildStrategy && (
-              <>
-                <div className="flex items-center gap-2 text-xs shrink-0">
-                  {build.icon}
-                  <span className="text-muted-foreground">{t.deploy.summary.build}</span>
-                  <span className="font-medium text-foreground">{build.label}</span>
-                </div>
-                <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground/50 shrink-0 rtl:rotate-180" />
-              </>
-            )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-3 grow basis-64 min-w-0">
+          {sameDestination ? (
+            // Merged view — single line, two icons with a + between to
+            // signal "both build and deploy go here", followed by one
+            // label. Saves horizontal space vs the two-section layout.
             <div className="flex items-center gap-2 text-xs min-w-0">
-              {target.icon}
-              <span className="text-muted-foreground">{t.deploy.summary.deploy}</span>
-              <span className="font-medium text-foreground truncate">{deployLabel}</span>
+              <div className="flex items-center gap-1 text-muted-foreground shrink-0">
+                {build.icon}
+                <UiIcon name="plus" className="size-3" />
+                {target.icon}
+              </div>
+              <span className="text-muted-foreground shrink-0">{t.deploy.summary.buildAndDeploy}</span>
+              <span className="font-medium text-foreground truncate" title={deployLabel}>{deployLabel}</span>
             </div>
-          </>
-        )}
+          ) : (
+            <>
+              {showBuildStrategy && (
+                <>
+                  <div className="flex items-center gap-2 text-xs shrink-0">
+                    {build.icon}
+                    <span className="text-muted-foreground">{t.deploy.summary.build}</span>
+                    <span className="font-medium text-foreground">{build.label}</span>
+                  </div>
+                  <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground/50 shrink-0 rtl:rotate-180" />
+                </>
+              )}
+              <div className="flex items-center gap-2 text-xs min-w-0">
+                {target.icon}
+                <span className="text-muted-foreground shrink-0">{t.deploy.summary.deploy}</span>
+                <span className="font-medium text-foreground truncate" title={deployLabel}>{deployLabel}</span>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {runtimeChip}
+          {rollbackChip}
+        </div>
       </div>
-      {runtimeChip}
-      {rollbackChip}
       <UiIcon name="edit" className="size-4 shrink-0 text-muted-foreground transition-opacity" />
     </button>
   );
@@ -671,6 +670,7 @@ interface DeployTargetStepProps {
    *  project that hasn't been created yet). */
   projectId?: string | null;
   targets: ResolvedTargets;
+  serverSelection: ServerSelection;
   onContinue: () => void;
   /**
    * When true (the default), the step auto-advances to the next step if a
@@ -971,11 +971,11 @@ const CloudPowerPicker: React.FC = () => {
     );
 };
 
-const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue, autoSkipAllowed = true, projectId }) => {
+const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSelection, onContinue, autoSkipAllowed = true, projectId }) => {
   const { config, updateConfig } = useDeployment();
   const { requireCloud } = useCloud();
   const { selfHosted, deployMode } = usePlatform();
-  const [destinationReady, setDestinationReady] = useState(selfHosted);
+  const destinationReady = selfHosted || serverSelection.ready;
   // Git credential forwarding is desktop-only — the relay forwards the
   // operator's machine-local `gh`, which only exists on a desktop host.
   const isDesktop = deployMode === "desktop";
@@ -1586,12 +1586,12 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // exactly, so Continue starts at the divider and spans the advanced column,
   // sitting directly above that panel instead of floating at the far edge.
   const headerTitle = useCompact ? ts.deployAndBuildHeading : ts.heading;
-  const headerSubtitle = showLoading
+  const headerSubtitle = showLoading || (!selfHosted && serverSelection.loading)
     ? ts.loadingSubtitle
-    : useCompact
+    : useCompact || (!selfHosted && serverSelection.readOnly)
       ? null
       : hasAnyDeployTarget
-        ? hasChoice
+        ? hasChoice || !selfHosted
           ? ts.chooseSubtitle
           : ts.onlyOneSubtitle
         : ts.noTargetSubtitle;
@@ -1668,22 +1668,9 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       )}
 
       {!selfHosted && config.deployTarget === "cloud" && (
-        <ServerSelector
-          value={config.serverId}
+        <ServerSelectorView
+          selection={serverSelection}
           label={t.billing.workspaces.destination}
-          readOnly={!!config.projectId || !!config.uploadSessionId}
-          selectedName={config.serverName}
-          disabled={!!config.projectId || !!config.uploadSessionId}
-          disabledReason={config.uploadSessionId
-            ? t.billing.workspaces.uploadDestinationHint
-            : config.projectId ? t.billing.workspaces.savedDestinationHint : undefined}
-          onReadyChange={setDestinationReady}
-          forDeployment
-          onSelect={(server) => updateConfig({
-            workspaceId: server?.raw.managed?.id,
-            serverId: server?.id,
-            serverName: server?.name,
-          })}
         />
       )}
 

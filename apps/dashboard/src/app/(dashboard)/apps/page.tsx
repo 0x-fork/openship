@@ -6,6 +6,7 @@ import { Icon } from "@repo/ui/icons";
 import { AppLogo } from "@/components/AppLogo";
 import { HelpMenu } from "@/components/HelpMenu";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import HomeAppsIllustration from "@/components/overview/HomeAppsIllustration";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -19,34 +20,36 @@ const FEATURED_APP_IDS = [
   "supabase", "convex", "mongodb", "neon", "mail",
   "ghost", "uptime-kuma", "vaultwarden", "metabase",
 ];
+const SIDEBAR_SUGGESTION_LIMIT = 3;
 
-function CatalogShortcut({ app }: { app: AppCatalogEntry }) {
+function CatalogShortcut({ app, compact = false }: { app: AppCatalogEntry; compact?: boolean }) {
   return (
     <Link
       href={`/apps/new?app=${encodeURIComponent(app.id)}`}
-      className="group flex min-w-0 items-center gap-3 rounded-xl bg-card p-4 text-start transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      title={compact ? app.description : undefined}
+      className={`group flex min-w-0 items-center gap-3 rounded-xl bg-card text-start transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${compact ? "px-3 py-2.5" : "p-4"}`}
     >
-      <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/60">
-        <AppLogo appId={app.id} className="size-6" />
+      <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/60 ${compact ? "size-8" : "size-10"}`}>
+        <AppLogo appId={app.id} className={compact ? "size-5" : "size-6"} />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{app.name}</p>
-        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{app.description}</p>
+        {!compact && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{app.description}</p>}
       </div>
       <Icon name="arrow-right" className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground rtl:rotate-180" />
     </Link>
   );
 }
 
-function CatalogSkeleton() {
+function CatalogSkeleton({ count = 5, compact = false }: { count?: number; compact?: boolean }) {
   return (
     <>
-      {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} className="flex animate-pulse items-center gap-3 rounded-xl bg-card p-4" aria-hidden="true">
-          <div className="size-10 shrink-0 rounded-lg bg-muted" />
+      {Array.from({ length: count }, (_, index) => (
+        <div key={index} className={`flex animate-pulse items-center gap-3 rounded-xl bg-card ${compact ? "px-3 py-2.5" : "p-4"}`} aria-hidden="true">
+          <div className={`shrink-0 rounded-lg bg-muted ${compact ? "size-8" : "size-10"}`} />
           <div className="min-w-0 flex-1 space-y-2">
             <div className="h-4 w-24 max-w-full rounded bg-muted" />
-            <div className="h-3 w-40 max-w-full rounded bg-muted/60" />
+            {!compact && <div className="h-3 w-40 max-w-full rounded bg-muted/60" />}
           </div>
         </div>
       ))}
@@ -186,8 +189,10 @@ export default function AppsPage() {
 
           <aside className="rounded-2xl bg-card p-5 @min-[60rem]/apps-page:sticky @min-[60rem]/apps-page:top-6" aria-labelledby="suggested-apps">
             <h2 id="suggested-apps" className="mb-4 text-sm font-medium text-foreground">{copy.alsoDeploy}</h2>
+            <div className="mb-4"><HomeAppsIllustration /></div>
             <div className="space-y-2" aria-busy={catalogLoading}>
-              {catalogLoading ? <CatalogSkeleton /> : suggestions.map(app => <CatalogShortcut key={app.id} app={app} />)}
+              {catalogLoading ? <CatalogSkeleton count={SIDEBAR_SUGGESTION_LIMIT} compact /> : suggestions.slice(0, SIDEBAR_SUGGESTION_LIMIT).map(app => <CatalogShortcut key={app.id} app={app} compact />)}
+              {!catalogLoading && suggestions.length === 0 && <p className="text-center text-sm text-muted-foreground">{copy.emptyDescription}</p>}
             </div>
             <Button asChild variant="secondary" className="mt-4 w-full">
               <Link href="/apps/new">{copy.browseAll}<Icon name="arrow-right" className="size-4 rtl:rotate-180" /></Link>

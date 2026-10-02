@@ -24,6 +24,7 @@ import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import { usePlatform, canUseCloudConnection } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
+import { useServerSelection } from "@/components/shared/ServerSelector";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useToast } from "@/components/toast";
 import { useI18n } from "@/components/i18n-provider";
@@ -61,7 +62,7 @@ const ProjectName: React.FC = () => {
 const DeployRepository: React.FC = () => {
     const params = useParams();
     const slug = params.slug as string;
-    const { config, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, updateConfig } = useDeployment();
+    const { config, state, isRescanning, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, updateConfig } = useDeployment();
     const { deployMode, selfHosted } = usePlatform();
     const { t } = useI18n();
     const searchParams = useSearchParams();
@@ -74,13 +75,9 @@ const DeployRepository: React.FC = () => {
     const uploadName = searchParams.get("name") || undefined;
     // Edit-from-Runtime-tab: hydrate from SAVED settings, skip repo re-detection.
     const isConfigEdit = searchParams.get("mode") === "config" && !!projectId;
-    // Desktop AND self-hosted pick a deploy target (this box / a registered server
-    // / cloud) — only the multi-tenant SaaS always deploys to cloud. Self-hosted
-    // was wrongly excluded, so its target picker never mounted and the "cloud"
-    // DEFAULT_CONFIG value silently shipped ("Build Location: Openship Cloud").
-    // Reuse the shared "self-managed, not SaaS" predicate instead of re-deriving
-    // it inline; the picker's own auto-select already prefers "This Server". #263
-    const canPickTarget = canUseCloudConnection({ selfHosted, deployMode });
+    // Self-hosted connection defaults and Cloud server selection feed the same
+    // summary/editor. Only connection defaults use this self-hosted gate.
+    const canUseConnectionDefaults = canUseCloudConnection({ selfHosted, deployMode });
 
     // Decode the slug at render time so the skeleton can name the source
     // ("Fetching owner/repo from GitHub") on the very first paint, before the
@@ -114,7 +111,7 @@ const DeployRepository: React.FC = () => {
     const hasInitialized = useRef<boolean>(false);
     const { toast } = useToast();
 
-    // Desktop-only: resolve available deploy targets (server / cloud)
+    // Resolve self-hosted connection choices; managed servers use the shared selector below.
     const targets = useDesktopTargets();
 
     // A saved project pins the deploy target only if it actually HAS one, so the gate is
@@ -139,9 +136,28 @@ const DeployRepository: React.FC = () => {
     // setState has re-rendered — so its gate reads the ref, not the state.
     const savedTargetRef = useRef<"pending" | "saved" | "none">(loadsSavedTarget ? "pending" : "none");
 
+    // Own the selector state above both views. Switching between the summary and
+    // target settings must not refetch, reseed or replace the chosen Cloud server.
+    const serverSelection = useServerSelection({
+        value: config.serverId,
+        selectedName: config.serverName,
+        readOnly: !!config.projectId || !!config.uploadSessionId,
+        disabled: loading || isRescanning || state.isDeploying,
+        disabledReason: config.uploadSessionId
+            ? t.billing.workspaces.uploadDestinationHint
+            : config.projectId ? t.billing.workspaces.savedDestinationHint : undefined,
+        forDeployment: true,
+        onSelect: (server) => updateConfig({
+            deployTarget: "cloud",
+            serverId: server?.id,
+            workspaceId: server?.raw.managed?.id,
+            serverName: server?.name,
+        }),
+    }, !selfHosted && !loading && savedTargetState !== "pending");
+
     // Seed the deploy target SILENTLY so the config view's summary bar is correct
     // without ever mounting the full target step.
-    useSeedDeployTarget(targets, canPickTarget && savedTargetState === "none");
+    useSeedDeployTarget(targets, canUseConnectionDefaults && savedTargetState === "none");
 
     // The wizard ALWAYS lands on the config step. The deploy target is seeded
     // silently — applyLastPick (below, useLayoutEffect) for the fast localStorage
@@ -171,7 +187,7 @@ const DeployRepository: React.FC = () => {
         // Don't override a SAVED project's hydrated target, and don't guess ahead of
         // hydration either (same gate as useSeedDeployTarget) — the last-pick memory
         // applies to deploys with no target of their own.
-        if (!canPickTarget || savedTargetRef.current !== "none" || appliedLastPickRef.current) return;
+        if (!canUseConnectionDefaults || savedTargetRef.current !== "none" || appliedLastPickRef.current) return;
         const last = typeof window !== "undefined" ? lastPickStore.read() : null;
         if (!last) return;
         if (last.target === "server") {
@@ -192,7 +208,7 @@ const DeployRepository: React.FC = () => {
         // stored one fails lastPickStore's validation — so it falls through to the
         // seeded auto-pick, which lands on this box's own server row rather than on a
         // target with no card and no address.
-    }, [canPickTarget, targets.servers, updateConfig]);
+    }, [canUseConnectionDefaults, targets.servers, updateConfig]);
 
     useLayoutEffect(() => {
         applyLastPick();
@@ -398,14 +414,15 @@ const DeployRepository: React.FC = () => {
 
     return (
         <PageContainer>
-                {/* Step 1: Deploy target picker - centered onboarding style (desktop only).
+                {/* Step 1: Shared destination settings for every deployment target.
                     DeployTargetStep owns its own max-width: it widens to two columns
                     when a right-hand panel (cloud power / server runtime) is shown, and
                     stays narrow single-column otherwise. The page just centers it. */}
-                {step === "target" && (canPickTarget || !selfHosted) && (
+                {step === "target" && (
                     <div className="flex items-center justify-center min-h-[calc(100vh-8rem)] py-8">
                         <DeployTargetStep
                             targets={targets}
+                            serverSelection={serverSelection}
                             autoSkipAllowed={autoSkipTargetRef.current}
                             onContinue={() => setStep("config")}
                             projectId={projectId}
@@ -417,37 +434,42 @@ const DeployRepository: React.FC = () => {
                 {step === "config" && (
                     <div className="grid lg:grid-cols-[1fr_340px] gap-6">
                         <div className="space-y-5">
-                            {/* Target summary bar — click to go back to step 1 (desktop + self-hosted) */}
-                            {canPickTarget && (
-                                <DeployTargetSummary
-                                    deployTarget={config.deployTarget}
-                                    buildStrategy={config.buildStrategy}
-                                    showBuildStrategy={isSingleAppFlow}
-                                    cloudResourceTier={config.cloudResourceTier}
-                                    hasServer={workloadOf(config.options) !== "static"}
-                                    runtimeMode={config.runtimeMode}
-                                    isServices={usesServiceDeployment(config)}
-                                    rollbackWindow={config.rollbackWindow}
-                                    rollbackStrategy={config.rollbackStrategy}
-                                    serverName={(() => {
-                                        // Resolve the selected server by id; if id isn't set yet but
-                                        // there's exactly one server, use it (covers the paint before
-                                        // the single-server auto-select effect wires serverId).
-                                        const s = config.serverId
-                                            ? targets.servers.find((x) => x.id === config.serverId)
-                                            : targets.servers.length === 1
-                                                ? targets.servers[0]
-                                                : undefined;
-                                        return s?.name ?? s?.sshHost ?? null;
-                                    })()}
-                                    onEdit={() => {
-                                        // User explicitly came back to change something - don't
-                                        // auto-skip them past the picker again.
-                                        autoSkipTargetRef.current = false;
-                                        setStep("target");
-                                    }}
-                                />
-                            )}
+                            {/* One destination summary and editor in Cloud and self-hosted. */}
+                            <DeployTargetSummary
+                                deployTarget={config.deployTarget}
+                                buildStrategy={config.buildStrategy}
+                                showBuildStrategy={isSingleAppFlow}
+                                cloudResourceTier={config.cloudResourceTier}
+                                hasServer={workloadOf(config.options) !== "static"}
+                                runtimeMode={config.runtimeMode}
+                                isServices={usesServiceDeployment(config)}
+                                rollbackWindow={config.rollbackWindow}
+                                rollbackStrategy={config.rollbackStrategy}
+                                serverName={(() => {
+                                    if (!selfHosted) return serverSelection.selected?.name || config.serverName || (
+                                        serverSelection.loading ? t.widgets.shared.serverSelector.loadingServers
+                                            : serverSelection.readOnly && config.serverId ? t.billing.workspaces.singular
+                                            : serverSelection.automaticCloud ? t.deploy.summary.targetCloud
+                                            : t.widgets.shared.serverSelector.selectServer
+                                    );
+                                    // Resolve the selected server by id; if id isn't set yet but
+                                    // there's exactly one server, use it (covers the paint before
+                                    // the single-server auto-select effect wires serverId).
+                                    const s = config.serverId
+                                        ? targets.servers.find((x) => x.id === config.serverId)
+                                        : targets.servers.length === 1
+                                            ? targets.servers[0]
+                                            : undefined;
+                                    return s?.name ?? s?.sshHost ?? null;
+                                })()}
+                                onEdit={() => {
+                                    // User explicitly came back to change something - don't
+                                    // auto-skip them past the picker again.
+                                    autoSkipTargetRef.current = false;
+                                    setStep("target");
+                                }}
+                            />
+                            {!selfHosted && serverSelection.error && <p role="alert" className="text-sm text-danger">{serverSelection.error}</p>}
 
                             {/* Above every type-specific section: a refused
                                 openship.json field can belong to any of them, and
@@ -456,10 +478,7 @@ const DeployRepository: React.FC = () => {
                             <ConfigDiagnostics />
                             {deploymentSections}
                         </div>
-                        <Sidebar onEditTarget={() => {
-                            autoSkipTargetRef.current = false;
-                            setStep("target");
-                        }} />
+                        <Sidebar destinationReady={selfHosted || serverSelection.ready} />
                     </div>
                 )}
         </PageContainer>
