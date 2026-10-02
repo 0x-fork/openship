@@ -2,13 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ServerDetail } from "@repo/contracts";
-import { formatCpuCores, formatMemoryMb } from "@repo/core";
 import { Icon } from "@repo/ui/icons";
-import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useI18n } from "@/components/i18n-provider";
 import type { ServerInfo } from "@/lib/api/system";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
-import { CustomSelect } from "@/components/ui/CustomSelect";
+import { ServerPicker, ServerRowContent } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
 import { usePlatform } from "@/context/PlatformContext";
 
@@ -163,26 +162,8 @@ export function ServerSelectorView({
     rows, selectedId, loading, error, refresh, automaticCloud, disabled,
     readOnly, selectedName, disabledReason, forDeployment, addServer, select,
   } = selection;
-  const describe = (server: ServerDetail) => {
-    if (!server.managed) return server.isLocal
-      ? t.servers.list.currentHost
-      : `${server.sshUser ?? "root"}@${server.sshHost}:${server.sshPort ?? 22}`;
-    const { resources, projectCount, state } = server.managed;
-    return [
-      interpolate(projectCount === 1 ? managedCopy.oneProject : managedCopy.projectCount, { count: String(projectCount) }),
-      resources
-        ? `${formatCpuCores(resources.cpuCores)} · ${formatMemoryMb(resources.memoryMb)} ${t.deploy.power.ram}`
-        : state === "needs_plan" ? managedCopy.states.needs_plan : null,
-    ].filter(Boolean).join(" · ");
-  };
-  const options = [
-    ...rows.map((server) => ({
-      value: server.id,
-      label: server.name || server.sshHost || server.id,
-      description: describe(server),
-    })),
-  ];
   const effective = selectedId ?? "";
+  const addLabel = !selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer;
   return (
     <div className={compact ? "space-y-2" : "mb-5 space-y-2"}>
       {!compact && (
@@ -210,20 +191,22 @@ export function ServerSelectorView({
         </div>
       ) : automaticCloud ? (
         <ServerSummary name={t.deploy.targetStep.options.cloud} description={managedCopy.defaultHint} />
-      ) : options.length > 0 ? (
+      ) : rows.length > 0 ? (
         <>
-          {options.length === 1 && effective === options[0]!.value ? (
-            <ServerSummary name={options[0]!.label} description={options[0]!.description} />
+          {rows.length === 1 && effective === rows[0]!.id ? (
+            <div className="flex items-center gap-3 rounded-xl bg-muted/30 px-4 py-3">
+              <ServerRowContent server={rows[0]!} active />
+            </div>
           ) : (
-            <CustomSelect
-              aria-label={label ?? copy.serverLabel}
-              value={effective}
-              options={options}
+            <ServerPicker
+              label={label ?? copy.serverLabel}
+              showLabel={false}
+              selectedId={effective}
+              servers={rows}
               disabled={disabled}
-              placeholder={copy.selectServer}
-              variant="filled"
-              triggerClassName="bg-muted/60 hover:bg-muted"
-              onChange={select}
+              onSelect={server => select(server.id)}
+              onAddServer={!disabled && !disabledReason ? addServer : undefined}
+              addServerLabel={addLabel}
             />
           )}
         </>
@@ -244,7 +227,7 @@ export function ServerSelectorView({
           </Button>
         </div>
       )}
-      {!readOnly && !loading && !error && (automaticCloud || options.length > 0) && (
+      {!readOnly && !loading && !error && (automaticCloud || rows.length > 0) && (
         disabledReason ? (
           <p className="text-xs text-muted-foreground">{disabledReason}</p>
         ) : !disabled && (
@@ -252,10 +235,12 @@ export function ServerSelectorView({
             {!selfHosted && forDeployment && !automaticCloud && (
               <p className="text-xs text-muted-foreground">{managedCopy.existingServerHint}</p>
             )}
-            <Button type="button" variant="secondary" size="sm" onClick={addServer}>
-              <Icon name="plus" className="size-3.5" aria-hidden />
-              {!selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer}
-            </Button>
+            {(automaticCloud || rows.length === 1) && (
+              <Button type="button" variant="secondary" size="sm" onClick={addServer}>
+                <Icon name="plus" className="size-3.5" aria-hidden />
+                {addLabel}
+              </Button>
+            )}
             {!selfHosted && (
               <p className="text-xs text-muted-foreground">{managedCopy.subscriptionHint}</p>
             )}

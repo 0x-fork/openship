@@ -38,6 +38,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   then stack on smaller containers. Catalog installs keep their destination and action together.
   Source deployments use the same destination summary above configuration and target-settings
   screen in Cloud and self-hosted mode; do not add a separate destination panel to the sidebar.
+- Connected and managed destinations use the same searchable server rows; managed rows show
+  project count and purchased capacity in place of an SSH address. Keep the add-server action
+  inside the multi-server menu and beside the single-server summary.
+- Keep runtime, resource limits and rollback in the existing expandable Advanced column.
+  Deployment setup and project settings share the resource editor and tier labels; do not
+  add a Cloud-only power panel or custom-size modal.
 - Base grids on the available container width so expanded navigation does not squeeze fields.
   Routing cards use two columns when their controls fit comfortably and one column otherwise.
 - Keep section spacing consistent (`gap-6` between main columns, `space-y-4` for sidebar items).

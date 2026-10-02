@@ -4,25 +4,21 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
-  RESOURCE_TIER_ORDER,
-  RESOURCE_TIER_SPECS,
-  formatCpuCores,
-  formatMemoryMb,
+  resolveTierResources,
 } from "@repo/core";
-import { BlurIp } from "@/components/BlurIp";
 import { Button } from "@/components/ui/button";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
-import type { DeploymentConfig } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
 import { ServerSelectorView, type ServerSelection } from "@/components/shared/ServerSelector";
+import { ServerPicker } from "@/components/shared/ServerPicker";
+import { ResourceTierPicker, useResourceTierLabels } from "@/components/deploy/ResourceTierPicker";
 import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
 import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
 import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
-import { useModal } from "@/context/ModalContext";
-import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode } from "@/context/deployment/types";
+import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode, CloudResourceTier } from "@/context/deployment/types";
 import { createPersistedValue } from "@/lib/persisted-value";
 import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
@@ -97,179 +93,6 @@ export const OptionCard: React.FC<OptionCardProps> = ({
   </div>
 );
 
-// ─── Server picker (collapsed → searchable list) ─────────────────────────────
-
-interface ServerPickerProps {
-  servers: ServerInfo[];
-  selectedId?: string;
-  onSelect: (server: ServerInfo) => void;
-  /** Renders "+ Add your own server" as the last row of the open list. */
-  onAddServer?: () => void;
-}
-
-/** Server-glyph avatar + name + host line — shared by the collapsed trigger and
- *  each list row. */
-const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ server, active }) => {
-  const { t } = useI18n();
-  // TODO: temporary desktop gate (useLocalDeployGate). Flag the local host as
-  // not-yet-available so the user sees it here rather than only on Deploy.
-  // Reads context only — no server fetch, and a no-op outside desktop mode.
-  const { deployMode } = usePlatform();
-  const localComingSoon =
-    server.isLocal && deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED;
-  return (
-    <>
-      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
-        active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
-      }`}>
-        <UiIcon name="server" className="size-3.5" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">
-          {server.name || server.sshHost}
-          {server.isLocal && (
-            <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
-              {t.deploy.targetStep.thisServerBadge}
-            </span>
-          )}
-        </p>
-        <p className="text-[11px] text-muted-foreground truncate">
-          {localComingSoon ? (
-            "Running here is coming soon — connect a server"
-          ) : server.isLocal ? (
-            t.deploy.targetStep.thisServerHost
-          ) : (
-            <>
-              {server.sshUser || "root"}@<BlurIp>{server.sshHost}</BlurIp>:{server.sshPort || 22}
-            </>
-          )}
-        </p>
-      </div>
-    </>
-  );
-};
-
-const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSelect, onAddServer }) => {
-  const { t } = useI18n();
-  const ts = t.deploy.targetStep;
-  const selected = servers.find((s) => s.id === selectedId);
-  // Collapsed once a server is chosen; auto-open to the list when none is yet
-  // (so a fresh "Your servers" pick lands straight on the searchable list).
-  const [open, setOpen] = useState(!selected);
-  const [query, setQuery] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-
-  // The list is a FLOATING menu (absolute), so it must dismiss itself on an
-  // outside click / Escape instead of reflowing the card. Only listen while open.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? servers.filter((s) =>
-        `${s.name ?? ""} ${s.sshUser || "root"}@${s.sshHost}:${s.sshPort || 22}`
-          .toLowerCase()
-          .includes(q),
-      )
-    : servers;
-
-  return (
-    <div className="space-y-1.5">
-      <p className="text-xs font-medium text-muted-foreground mb-2">{ts.chooseServer}</p>
-
-      {/* Anchor for the floating menu. */}
-      <div className="relative" ref={ref}>
-        {/* Collapsed trigger — the selected server, or a placeholder. */}
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-all border ${
-            open
-              ? "border-primary/30 bg-muted/20"
-              : "bg-card/60 border-border/30 hover:border-primary/20 hover:bg-muted/30"
-          }`}
-        >
-          {selected ? (
-            <ServerRowContent server={selected} active />
-          ) : (
-            <>
-              <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-muted/50 text-muted-foreground">
-                <UiIcon name="server" className="size-3.5" />
-              </div>
-              <span className="flex-1 text-sm text-muted-foreground">{ts.chooseServer}</span>
-            </>
-          )}
-          <UiIcon name="chevron-down" className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
-        </button>
-
-        {/* Floating menu — absolute + elevated so it OVERLAYS the cards below
-            instead of growing the container. Search box + filtered list. */}
-        {open && (
-          <div className="absolute inset-x-0 top-full z-50 mt-1.5 rounded-lg border border-border/60 bg-popover p-1.5 space-y-1.5 shadow-xl shadow-black/30">
-            <div className="relative">
-              <UiIcon name="search" className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={ts.searchPlaceholder}
-                autoFocus
-                className="w-full ps-9 pe-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-              />
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-1 pe-0.5">
-              {filtered.map((s) => {
-                const isSelected = selectedId === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => { onSelect(s); setQuery(""); setOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-all ${
-                      isSelected
-                        ? "bg-primary/10 border border-primary/30"
-                        : "bg-card/60 border border-transparent hover:border-primary/20 hover:bg-muted/30"
-                    }`}
-                  >
-                    <ServerRowContent server={s} active={isSelected} />
-                    {isSelected && <UiIcon name="check-circle" className="size-4 text-primary shrink-0" />}
-                  </button>
-                );
-              })}
-              {filtered.length === 0 && (
-                <p className="px-3 py-6 text-center text-xs text-muted-foreground">{ts.noServersMatch}</p>
-              )}
-            </div>
-            {onAddServer && (
-              <button
-                type="button"
-                onClick={onAddServer}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/50 px-3 py-2.5 text-[13px] text-muted-foreground transition-all hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
-              >
-                <UiIcon name="plus" className="size-3.5" />
-                {ts.addServer}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 // ─── Compact summary (shown when editing from step 2) ────────────────────────
 
 interface CompactSummaryProps {
@@ -329,13 +152,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     local: { label: t.deploy.summary.buildLocal, icon: <UiIcon name="cpu" className="size-4" /> },
     server: { label: t.deploy.summary.buildRemote, icon: <UiIcon name="cloud" className="size-4" /> },
   };
-  const tierLabels: Record<string, string> = {
-    micro: t.deploy.power.tierMicroLabel,
-    low: t.deploy.power.tierLowLabel,
-    medium: t.deploy.power.tierMediumLabel,
-    high: t.deploy.power.tierHighLabel,
-    custom: t.deploy.power.custom,
-  };
+  const tierLabels = useResourceTierLabels();
   const target = targetLabels[deployTarget];
   // Build label is driven by buildStrategy FIRST — a "local" build always runs
   // on this machine, even when the deploy target is Openship Cloud
@@ -376,7 +193,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     deployTarget === "cloud" && cloudResourceTier ? (
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
         <UiIcon name="bolt" className="size-4" />
-        <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
+        <span>{tierLabels.name(cloudResourceTier)}</span>
       </span>
     ) : (
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
@@ -393,7 +210,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     cloudResourceTier ? (
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
         <UiIcon name="bolt" className="size-4" />
-        <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
+        <span>{tierLabels.name(cloudResourceTier)}</span>
       </span>
     ) : null
   ) : (deployTarget === "server" || deployTarget === "cloud") && runtimeMode === "bare" ? (
@@ -680,296 +497,6 @@ interface DeployTargetStepProps {
    */
   autoSkipAllowed?: boolean;
 }
-
-// ─── Cloud resource tiers ────────────────────────────────────────────────────
-// DERIVED from the one tier table in @repo/core, which the backend provisioner
-// (cloud-resources.ts) and the self-hosted Machine Power card also read. These
-// used to be hand-written display strings next to a comment admitting "the
-// backend owns the authoritative values" — i.e. a copy that could silently drift
-// from what a tier actually provisions. Label + bestFor are still looked up from
-// the dictionary by `id` inside CloudPowerPicker.
-type CloudResourceTier = NonNullable<DeploymentConfig["cloudResourceTier"]>;
-
-const CLOUD_RESOURCE_TIERS: Array<{
-    id: Exclude<CloudResourceTier, "custom">;
-    cpu: string;
-    ram: string;
-    disk: string;
-}> = RESOURCE_TIER_ORDER.map((id) => {
-    const spec = RESOURCE_TIER_SPECS[id];
-    return {
-        id: id as Exclude<CloudResourceTier, "custom">,
-        cpu: formatCpuCores(spec.cpuCores),
-        ram: formatMemoryMb(spec.memoryMb),
-        disk: formatMemoryMb(spec.diskMb),
-    };
-});
-
-/** Custom starts from the middle preset rather than a second literal. */
-const CUSTOM_DEFAULTS = { ...RESOURCE_TIER_SPECS.medium };
-
-// ─── Custom-values modal ─────────────────────────────────────────────────────
-// Rendered via showModal() so the inputs get proper breathing room
-// instead of trying to fit beside the static spec line in a 320px card.
-// Modal is portal-rendered (outside DeploymentProvider) — values are
-// passed in via props rather than read from useDeployment here.
-interface CustomPowerModalContentProps {
-    initial: { cpuCores: number; memoryMb: number; diskMb: number };
-    onSave: (values: { cpuCores: number; memoryMb: number; diskMb: number }) => void;
-    onCancel: () => void;
-}
-
-const CustomPowerModalContent: React.FC<CustomPowerModalContentProps> = ({
-    initial,
-    onSave,
-    onCancel,
-}) => {
-    const { t } = useI18n();
-    const [values, setValues] = useState(initial);
-    const set = (patch: Partial<typeof values>) =>
-        setValues((prev) => ({ ...prev, ...patch }));
-    return (
-        <div className="p-6 space-y-5">
-            <div className="space-y-1.5">
-                <h3 className="text-base font-semibold text-foreground">{t.deploy.power.modalTitle}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                    {t.billing.workspaces.poolHint}
-                </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-                <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">{t.deploy.power.vcpuField}</span>
-                    <input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.25"
-                        min="0.25"
-                        value={values.cpuCores}
-                        onChange={(e) => set({ cpuCores: Number(e.target.value) || 0 })}
-                        className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">{t.deploy.power.ramField}</span>
-                    <input
-                        type="number"
-                        inputMode="numeric"
-                        step="128"
-                        min="128"
-                        value={values.memoryMb}
-                        onChange={(e) => set({ memoryMb: Number(e.target.value) || 0 })}
-                        className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                </label>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-1">
-                <button
-                    type="button"
-                    onClick={onCancel}
-                    className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                >
-                    {t.deploy.power.cancel}
-                </button>
-                <button
-                    type="button"
-                    onClick={() => onSave(values)}
-                    className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                >
-                    {t.deploy.power.save}
-                </button>
-            </div>
-        </div>
-    );
-};
-
-const CloudPowerPicker: React.FC = () => {
-    const { config, updateConfig } = useDeployment();
-    const { t } = useI18n();
-    const { showModal, hideModal } = useModal();
-    const selected = config.cloudResourceTier ?? "low";
-    const custom = config.cloudResourceCustom ?? CUSTOM_DEFAULTS;
-    const tierText: Record<string, { label: string; bestFor: string }> = {
-        micro: { label: t.deploy.power.tierMicroLabel, bestFor: t.deploy.power.tierMicroBestFor },
-        low: { label: t.deploy.power.tierLowLabel, bestFor: t.deploy.power.tierLowBestFor },
-        medium: { label: t.deploy.power.tierMediumLabel, bestFor: t.deploy.power.tierMediumBestFor },
-        high: { label: t.deploy.power.tierHighLabel, bestFor: t.deploy.power.tierHighBestFor },
-    };
-
-    // Collapsed by default: once a tier is chosen the list folds to a single
-    // summary card; the operator expands it only to change the pick.
-    const [expanded, setExpanded] = useState(false);
-    const selectedTier = CLOUD_RESOURCE_TIERS.find((tr) => tr.id === selected);
-    const summary =
-        selected === "custom"
-            ? {
-                  label: t.deploy.power.custom,
-                  bestFor: t.deploy.power.customDesc,
-                  cpu: `${custom.cpuCores} ${t.deploy.power.vcpu}`,
-                  ram: `${custom.memoryMb} MB`,
-                  disk: `${Math.round(custom.diskMb / 1024)} GB`,
-              }
-            : {
-                  label: tierText[selected]?.label ?? selected,
-                  bestFor: tierText[selected]?.bestFor ?? "",
-                  cpu: selectedTier?.cpu ?? "",
-                  ram: selectedTier?.ram ?? "",
-                  disk: selectedTier?.disk ?? "",
-              };
-
-    // Click on Custom card → open modal. Pre-selects the tier so the choice
-    // sticks even if the user cancels (matches the rest of the picker:
-    // clicking any tier card commits the selection). Saving from the
-    // modal also writes the new values; cancel leaves them as-was.
-    const openCustomModal = () => {
-        updateConfig({
-            cloudResourceTier: "custom",
-            cloudResourceCustom: config.cloudResourceCustom ?? CUSTOM_DEFAULTS,
-        });
-        const id = showModal({
-            maxWidth: "480px",
-            customContent: (
-                <CustomPowerModalContent
-                    initial={config.cloudResourceCustom ?? CUSTOM_DEFAULTS}
-                    onCancel={() => hideModal(id)}
-                    onSave={(values) => {
-                        updateConfig({
-                            cloudResourceTier: "custom",
-                            cloudResourceCustom: values,
-                        });
-                        hideModal(id);
-                        setExpanded(false);
-                    }}
-                />
-            ),
-        });
-    };
-
-    return (
-        // Header lives OUTSIDE the cards (matching the left column's
-        // "Where do you want to deploy?" heading rhythm) so the first
-        // tier card visually aligns with the first deploy option across
-        // the grid row.
-        <div className="space-y-3">
-            <div>
-                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                    <UiIcon name="bolt" className="size-4 text-warning" />
-                    {t.deploy.power.heading}
-                </h3>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                    {t.billing.workspaces.poolHint}
-                </p>
-            </div>
-            {!expanded ? (
-                <button
-                    type="button"
-                    onClick={() => setExpanded(true)}
-                    className="w-full rounded-xl border border-primary bg-primary/5 ring-1 ring-primary/20 p-4 text-start transition-all hover:border-primary/60 group"
-                >
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex items-baseline gap-2">
-                            <span className="text-sm font-semibold shrink-0 text-foreground">{summary.label}</span>
-                            <span className="text-muted-foreground/70 shrink-0">·</span>
-                            <span className="text-xs text-muted-foreground truncate">{summary.bestFor}</span>
-                        </div>
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground shrink-0">
-                            Change
-                            <UiIcon name="chevron-down" className="size-3.5" />
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground tabular-nums">
-                        <span>{summary.cpu}</span>
-                        <span className="text-muted-foreground/70">·</span>
-                        <span>{t.deploy.power.ram} {summary.ram}</span>
-                    </div>
-                </button>
-            ) : (
-            <div className="space-y-2">
-                {CLOUD_RESOURCE_TIERS.map((tier) => {
-                    const isSelected = selected === tier.id;
-                    return (
-                        <button
-                            key={tier.id}
-                            type="button"
-                            onClick={() => { updateConfig({ cloudResourceTier: tier.id }); setExpanded(false); }}
-                            className={`w-full rounded-xl border p-4 text-start transition-all ${
-                                isSelected
-                                    ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                                    : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]"
-                            }`}
-                        >
-                            {/* Row 1 — label + description inline with a · divider. */}
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0 flex items-baseline gap-2">
-                                    <span className={`text-sm font-semibold shrink-0 ${isSelected ? "text-foreground" : "text-foreground/80"}`}>
-                                        {tierText[tier.id].label}
-                                    </span>
-                                    <span className="text-muted-foreground/70 shrink-0">·</span>
-                                    <span className="text-xs text-muted-foreground truncate">
-                                        {tierText[tier.id].bestFor}
-                                    </span>
-                                </div>
-                                {isSelected && (
-                                    <div className="size-5 rounded-full bg-primary flex items-center justify-center shrink-0">
-                                        <div className="size-2 rounded-full bg-primary-foreground" />
-                                    </div>
-                                )}
-                            </div>
-                            {/* Row 2 — resources with RAM / Disk labels so each
-                                value reads on its own without context. */}
-                            <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground tabular-nums">
-                                <span>{tier.cpu}</span>
-                                <span className="text-muted-foreground/70">·</span>
-                                <span>{t.deploy.power.ram} {tier.ram}</span>
-                            </div>
-                        </button>
-                    );
-                })}
-
-                {/* Custom — clicking the card selects it; the inline
-                    inputs only appear once selected, so the collapsed
-                    state stays tidy. */}
-                {/* Custom — clicking opens a modal where the operator can
-                    edit CPU / RAM / disk. The card itself mirrors the tier
-                    layout exactly: row 1 = label · description, row 2 =
-                    current values in the same `vCPU · RAM x · Disk y` shape
-                    as the tier cards. Identical height, no in-card inputs
-                    bleeding past the border. */}
-                <button
-                    type="button"
-                    onClick={openCustomModal}
-                    className={`w-full rounded-xl border p-4 text-start transition-all ${
-                        selected === "custom"
-                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                            : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]"
-                    }`}
-                >
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex items-baseline gap-2">
-                            <span className={`text-sm font-semibold shrink-0 ${selected === "custom" ? "text-foreground" : "text-foreground/80"}`}>
-                                {t.deploy.power.custom}
-                            </span>
-                            <span className="text-muted-foreground/70 shrink-0">·</span>
-                            <span className="text-xs text-muted-foreground truncate">
-                                {t.deploy.power.customDesc}
-                            </span>
-                        </div>
-                        {selected === "custom" && (
-                            <div className="size-5 rounded-full bg-primary flex items-center justify-center shrink-0">
-                                <div className="size-2 rounded-full bg-primary-foreground" />
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground tabular-nums">
-                        <span>{custom.cpuCores} {t.deploy.power.vcpu}</span>
-                        <span className="text-muted-foreground/70">·</span>
-                        <span>{t.deploy.power.ram} {custom.memoryMb} MB</span>
-                    </div>
-                </button>
-            </div>
-            )}
-        </div>
-    );
-};
 
 const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSelection, onContinue, autoSkipAllowed = true, projectId }) => {
   const { config, updateConfig } = useDeployment();
@@ -1501,44 +1028,25 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
     onContinue();
   };
 
-  // Right-column "how it runs" panel: cloud → power/resource picker; a
-  // self-hosted SERVER app → runtime-isolation (Sandbox/Direct) picker. Both
-  // lay the step out as 2 columns (existing flow left, panel right). Anything
-  // else (local, static, docker/compose, compact summary, loading) stays
-  // single-column. This component owns its own max-width (below) so the parent
-  // page just centers it — the two-column layout needs the wide track, the
-  // single-column onboarding stays narrow.
-  const showCloudPicker = showFullPicker && config.deployTarget === "cloud";
-  // Server runtime / build / clone knobs now live under ONE collapsed "Advanced"
-  // disclosure in the main column instead of an always-open right panel — the
-  // main screen is just "where to deploy", details one click away. Default is
-  // Sandbox; most users never open this. Only cloud keeps a right-hand panel
-  // (its resource/power picker).
+  // Connected and managed servers share the same expandable Advanced column.
   const showServerAdvanced = showFullPicker && (!!config.serverId || !selfHosted) &&
     (config.deployTarget === "server" || config.deployTarget === "cloud");
-  // Runtime-isolation (Sandbox/Direct) applies only to a self-hosted server APP
-  // that runs a process: docker/compose always run sandboxed, and a static app
-  // (files served by the edge) has nothing to isolate. A worker runs a process,
-  // so it isolates like a web app. Shown in the Advanced panel (right column).
+  // Docker/Compose fixes the runtime; single applications expose its isolation.
   const showRuntimeIsolation =
     (config.deployTarget === "cloud" || workloadOf(config.options) !== "static") &&
     config.projectType !== "docker" &&
     !isServiceDeployment;
-  const showRightPanel = showCloudPicker || showServerAdvanced;
-  // Self-hosted server layout: the server/cloud choice is the MAIN wide column on
-  // the LEFT; Advanced is a collapsed RAIL on the right. Opening Advanced EXCHANGES
-  // the column widths — the server column shrinks to the rail width and Advanced
-  // grows to fill (positions stay fixed; only the grid track widths trade, with a
-  // transition). So the screen leads with "where to deploy" and the build/clone/
-  // runtime detail expands into the space only when asked for. Cloud keeps its own
-  // right-hand power panel; single-column onboarding is untouched.
-  const serverLayout = showServerAdvanced && !showCloudPicker;
+  const showRightPanel = showServerAdvanced;
+  const showResourceLimits = config.deployTarget === "cloud" &&
+    (config.runtimeMode !== "bare" || isServiceDeployment || config.projectType === "docker");
+  const resourceValues = resolveTierResources(config.cloudResourceTier ?? "low", config.cloudResourceCustom);
 
   // Advanced-panel summary line. Says WHAT'S INSIDE, not just the build location:
   // a collapsed panel labelled only "Build on Remote" hides the rollback window
   // and the clone location, so there's no way to know they're in there.
   const advancedSections = [
     showRuntimeIsolation ? t.deploy.runtime.heading : null,
+    showResourceLimits ? t.projectSettings.resources.title : null,
     showBuildStrategy
       ? interpolate(ts.build.advancedSummary, {
           action: config.options.hasBuild ? ts.build.actionBuild : ts.build.actionPrepare,
@@ -1549,9 +1057,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
     showCloneStrategy ? ts.clone.heading : null,
   ].filter(Boolean) as string[];
 
-  // Action controls (extracted so they can live in the left column on a single-
-  // column layout, or move into the right column — above the Advanced/Cloud
-  // panel — when a right panel is shown: Continue → save-default → Advanced).
+  // Saved connection defaults stay with the destination controls.
   const saveDefaultCheckbox =
     selfHosted && showFullPicker && canContinue ? (
       <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
@@ -1569,9 +1075,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
       </label>
     ) : null;
 
-  // Shared Continue styling. In the two-column layout it fills the right
-  // ("advanced") column (see the header grid below); single-column keeps it
-  // auto-width on the right of the header row.
+  // Continue stays in the same header for every destination.
   const continueBtnClass =
     "inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none";
   const continueLabel = (
@@ -1581,10 +1085,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
     </>
   );
 
-  // Unified header — title + subtitle (left) and Continue (right). When a right
-  // ("advanced") panel is shown the header mirrors the body's column template
-  // exactly, so Continue starts at the divider and spans the advanced column,
-  // sitting directly above that panel instead of floating at the far edge.
+  // The header stays fixed while Advanced and the destination trade widths.
   const headerTitle = useCompact ? ts.deployAndBuildHeading : ts.heading;
   const headerSubtitle = showLoading || (!selfHosted && serverSelection.loading)
     ? ts.loadingSubtitle
@@ -1603,21 +1104,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
       {headerSubtitle && <p className="text-sm text-muted-foreground/70 mt-1">{headerSubtitle}</p>}
     </div>
   );
-  const header = showRightPanel && !serverLayout ? (
-    // Cloud: mirror the body grid track (gap-0 on lg) so Continue lines up
-    // pixel-for-pixel with the power panel underneath it. The swapped server
-    // layout uses the plain flex header below instead (Continue top-right, above
-    // the server rail), since its columns are reordered.
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_1px_320px] lg:gap-0 lg:items-start">
-      <div className="lg:pe-6">{headerTitleBlock}</div>
-      <div className="hidden lg:block" aria-hidden />
-      <div className="lg:ps-6">
-        <button type="button" onClick={handleContinue} disabled={!canContinue} className={`w-full ${continueBtnClass}`}>
-          {continueLabel}
-        </button>
-      </div>
-    </div>
-  ) : (
+  const header = (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       {headerTitleBlock}
       <button type="button" onClick={handleContinue} disabled={!canContinue} className={`shrink-0 ${continueBtnClass}`}>
@@ -1636,29 +1123,11 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
   return (
     <div className={`mx-auto w-full space-y-8 ${showRightPanel ? "max-w-5xl" : "max-w-lg"}`}>
       {header}
-      <div
-        className={
-          !showRightPanel
-            ? ""
-            : serverLayout
-              ? // Server layout: flex row so the two columns can TRADE widths with a
-                // real width transition (grid-template-columns won't interpolate
-                // fr↔px, so it snapped). Stacks on mobile.
-                "space-y-8 lg:space-y-0 lg:flex lg:items-start"
-              : "grid grid-cols-1 gap-0 items-start lg:grid-cols-[minmax(0,1fr)_1px_320px]"
-        }
-      >
-    {/* "Where" cell — deploy target + server picker. Always the LEFT column; the
-        wide main until Advanced opens, then it shrinks to the rail width (the
-        Advanced column grows to fill — an animated width exchange). */}
+      <div className={showRightPanel ? "space-y-8 lg:space-y-0 lg:flex lg:items-start" : ""}>
     <div
-      className={
-        serverLayout
-          ? `space-y-8 min-w-0 lg:pe-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${
-              advancedOpen ? "lg:w-[360px]" : "lg:w-[calc(100%-361px)]"
-            }`
-          : `space-y-8 min-w-0 ${showRightPanel ? "lg:pe-6" : ""}`
-      }
+      className={showRightPanel
+        ? `space-y-8 min-w-0 lg:pe-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${advancedOpen ? "lg:w-[360px]" : "lg:w-[calc(100%-361px)]"}`
+        : "space-y-8 min-w-0"}
     >
       {showLoading && (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-card px-4 py-8 text-sm text-muted-foreground">
@@ -1759,36 +1228,23 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
           as a compact panel in the RIGHT column for server deploys — see the
           right-panel block below. Continue lives in the unified header. */}
 
-      {/* save-default sits with the target picker: single-column, or the swap's
-          server rail. For cloud it lives in the right power column instead. */}
-      {(!showRightPanel || serverLayout) && saveDefaultCheckbox}
+      {saveDefaultCheckbox}
     </div>
     {showRightPanel && (
       <>
         {/* Vertical divider between the two columns. */}
         <div className="hidden lg:block w-px bg-border self-stretch lg:shrink-0" />
-        {/* "How" column (right) — the Advanced disclosure (server) or the cloud
-            power picker. For a server it's a rail (360px) that grows to fill when
-            opened, trading widths with the server column via a width transition. */}
+        {/* Advanced expands beside the same server picker in both modes. */}
         <div
           key={config.deployTarget}
-          className={
-            serverLayout
-              ? `min-w-0 space-y-6 animate-slide-in-right lg:ps-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${
-                  advancedOpen ? "lg:w-[calc(100%-361px)]" : "lg:w-[360px]"
-                }`
-              : "min-w-0 space-y-6 animate-slide-in-right lg:ps-6"
-          }
+          className={`min-w-0 animate-slide-in-right lg:ps-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${advancedOpen ? "lg:w-[calc(100%-361px)]" : "lg:w-[360px]"}`}
         >
-          {/* Cloud carries the save-default toggle here; the swap moved it into
-              the server rail (left cell above). */}
-          {!serverLayout && saveDefaultCheckbox}
-          {showCloudPicker && (config.runtimeMode !== "bare" || isServiceDeployment || config.projectType === "docker") && <CloudPowerPicker />}
           {showServerAdvanced && (
             <div className="rounded-2xl bg-card">
               <button
                 type="button"
                 onClick={() => setAdvancedOpen((v) => !v)}
+                aria-expanded={advancedOpen}
                 className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-start"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -1824,6 +1280,8 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
                   doesn't pop in. Always mounted so the transition has something to
                   reveal; the inner content fades in as it grows. */}
               <div
+                inert={!advancedOpen}
+                aria-hidden={!advancedOpen}
                 className={`grid transition-[grid-template-rows] duration-300 ease-out ${
                   advancedOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                 }`}
@@ -1836,6 +1294,30 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, serverSele
                   <div className="border-t border-border/50 px-4 py-4 space-y-5">
                   {/* Runtime isolation — Sandbox (default) vs Direct. Server app only. */}
                   {showRuntimeIsolation && <ServerRuntimePicker enabled={advancedOpen} />}
+
+                  {showResourceLimits && (
+                    <section className="space-y-3" aria-label={t.projectSettings.resources.title}>
+                      <div>
+                        <h3 className="text-sm font-semibold">{t.projectSettings.resources.title}</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{t.projectSettings.resources.description}</p>
+                      </div>
+                      <ResourceTierPicker
+                        key={config.serverId}
+                        value={config.cloudResourceTier ?? "low"}
+                        values={resourceValues}
+                        requiresLimit
+                        capacity={serverSelection.selected?.managed?.resources ?? undefined}
+                        disabled={serverSelection.disabled}
+                        onSelect={(tier, values) => {
+                          if (tier === "unlimited") return false;
+                          updateConfig({
+                            cloudResourceTier: tier,
+                            ...(tier === "custom" && values ? { cloudResourceCustom: { ...resourceValues, ...values } } : {}),
+                          });
+                        }}
+                      />
+                    </section>
+                  )}
 
                   {/* Build location — where the clone + build run. */}
                   {showBuildStrategy && visibleBuildOptions.length > 1 && (

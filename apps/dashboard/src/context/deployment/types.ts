@@ -344,9 +344,8 @@ export interface DeploymentModeSnapshots {
 /**
  * Resource tier IDs for Openship Cloud deploys — DERIVED from the one tier union
  * in @repo/core, which the backend provisioner reads too. `unlimited` is excluded
- * because a metered cloud workspace must be provisioned at a concrete size.
- * The picker's display specs come from the same core table (see
- * `CLOUD_RESOURCE_TIERS` in `DeployTargetStep.tsx`).
+ * because Cloud deployment requests currently require concrete container limits.
+ * Deployment setup and project settings share the ResourceTierPicker.
  */
 export type CloudResourceTier = Exclude<CoreResourceTier, "unlimited">;
 
@@ -473,14 +472,10 @@ export interface DeploymentConfig {
    */
   configDiagnostics?: { errors: string[]; warnings: string[]; wholeFile?: true };
   /**
-   * Resource tier picked for Openship Cloud deploys. Self-hosted servers
-   * inherit the host's capacity, so this field is meaningless for them
-   * — kept on the config (not nested under cloud) because operators
-   * sometimes preview the cost before picking the target. The backend
-   * is responsible for translating the tier into a real ResourceConfig
-   * (cpuCores/memoryMb/diskMb) and the corresponding billing line. See
-   * `CLOUD_RESOURCE_TIERS` in the deploy-target step for placeholder
-   * values; real numbers come from the pricing service later.
+   * Container resource tier for Cloud deployments. Presets come from
+   * @repo/core; custom values use cloudResourceCustom. The selection is
+   * independent of the managed server's subscription and is bounded by
+   * that server's capacity.
    */
   cloudResourceTier?: CloudResourceTier;
   /** Custom CPU/RAM/disk values, used only when cloudResourceTier === "custom". */
