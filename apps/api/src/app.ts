@@ -55,7 +55,7 @@ import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
 import { reconcileAllSchedules } from "@repo/platform/engine/modules/backups/triggers/cron";
-import { reconcileJobs } from "@repo/platform/engine/modules/jobs/job.service";
+import { reconcileJobs, runScheduledJob } from "@repo/platform/engine/modules/jobs/job.service";
 import { scheduleBillingAnniversary } from "@repo/platform/engine/modules/billing/billing-anniversary.cron";
 import { ensureOblienWebhook } from "@repo/platform/engine/lib/openship-cloud";
 import { ensureOblienDefaultQuota } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
@@ -406,6 +406,7 @@ if (env.CLOUD_MODE) {
   const runner = await getJobRunner();
   await runner.start({
     processRun: (runId) => backupOrchestrator.execute(runId),
+    processRecurring: runScheduledJob,
   });
   console.log(`[boot] backup runner: ${runner.describe()}`);
 

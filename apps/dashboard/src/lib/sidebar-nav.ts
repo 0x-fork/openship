@@ -92,8 +92,8 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
   const infraItems: NavItem[] = [{ key: "servers", href: "/servers", icon: "server" }];
   if (selfHosted) {
     infraItems.push({ key: "emails", href: "/emails", icon: "mail" });
-    infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
   }
+  infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
   // infraItems.push(
   //   { key: "monitoring", href: "/monitoring", icon: Activity },
   //   { key: "domains",    href: "/domains",    icon: Globe },
@@ -181,7 +181,7 @@ export interface MailNavInput {
   /** Its registry `completed` flag — the SAME authority /emails' view gate uses,
    *  so the rail and the page can't disagree about whether a server is installed. */
   activeCompleted: boolean;
-  /** Adds Jobs + Servers, which only exist self-hosted. */
+  /** Adds infrastructure links in the self-hosted mail navigation. */
   selfHosted: boolean;
 }
 

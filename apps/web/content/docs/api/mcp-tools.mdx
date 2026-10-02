@@ -213,16 +213,16 @@ The current API has **435 unique tools**. Permission tags below describe the rou
 
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
-| `delete_jobs_by_key`<br />`DELETE /api/jobs/:key` | Delete a custom job (system jobs can't be deleted). | `job:write`<br />Self-hosted |
-| `get_jobs`<br />`GET /api/jobs` | List system + custom jobs with cron, next run, and recent run history. | `job:read`<br />Self-hosted |
-| `get_jobs_backup_schedules`<br />`GET /api/jobs/backup-schedules` | List scheduled backup policies (read-only), surfaced alongside jobs. | `job:read`<br />Self-hosted |
-| `get_jobs_by_key`<br />`GET /api/jobs/:key` | Get one job's config, schedule, and recent runs. | `job:read`<br />Self-hosted |
-| `get_jobs_by_key_runs`<br />`GET /api/jobs/:key/runs` | List a job's run history. | `job:read`<br />Self-hosted |
-| `get_jobs_runs_by_runId`<br />`GET /api/jobs/runs/:runId` | Get one job run incl. captured output. | `job:read`<br />Self-hosted |
-| `get_jobs_trigger_events`<br />`GET /api/jobs/trigger-events` | List the events a job can be triggered on. | `job:read`<br />Self-hosted |
-| `patch_jobs_by_key`<br />`PATCH /api/jobs/:key` | Update a job's schedule/enabled (any job) or full config (custom jobs). | `job:write`<br />Self-hosted |
-| `post_jobs`<br />`POST /api/jobs` | Create a custom job that runs a command on one or more servers (cron / one-time / manual), with retry, env, secrets, dependencies, triggers, and notifications. | `job:write`<br />Self-hosted |
-| `post_jobs_by_key_run`<br />`POST /api/jobs/:key/run` | Run a job immediately (custom jobs stream live; returns a runId). | `job:write`<br />Self-hosted |
+| `delete_jobs_by_key`<br />`DELETE /api/jobs/:key` | Delete a custom job (system jobs can't be deleted). | `job:write` |
+| `get_jobs`<br />`GET /api/jobs` | List your authorized command jobs with schedule, next run, and recent history. Self-hosted installations also show their built-in maintenance jobs; Cloud keeps platform maintenance private. | `job:read` |
+| `get_jobs_backup_schedules`<br />`GET /api/jobs/backup-schedules` | List scheduled backup policies (read-only), surfaced alongside jobs. | `job:read` |
+| `get_jobs_by_key`<br />`GET /api/jobs/:key` | Get one job's config, schedule, and recent runs. | `job:read` |
+| `get_jobs_by_key_runs`<br />`GET /api/jobs/:key/runs` | List a job's run history. | `job:read` |
+| `get_jobs_runs_by_runId`<br />`GET /api/jobs/runs/:runId` | Get one job run incl. captured output. | `job:read` |
+| `get_jobs_trigger_events`<br />`GET /api/jobs/trigger-events` | List the events a job can be triggered on. | `job:read` |
+| `patch_jobs_by_key`<br />`PATCH /api/jobs/:key` | Update a job's schedule/enabled (any job) or full config (custom jobs). | `job:write` |
+| `post_jobs`<br />`POST /api/jobs` | Create a command job on one or more servers you administer, using cron, one-time or manual scheduling, retries, env, secrets, dependencies, triggers and notifications. Cloud jobs reuse a subscribed managed server selected by serverId; they share its resources and metered allowance. | `job:write` |
+| `post_jobs_by_key_run`<br />`POST /api/jobs/:key/run` | Run a job immediately (custom jobs stream live; returns a runId). | `job:write` |
 
 ### mail
 
