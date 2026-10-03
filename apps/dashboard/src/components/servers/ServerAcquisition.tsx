@@ -17,14 +17,15 @@ import { CreateManagedServerForm } from "./managed/CreateManagedServerForm";
 export type ServerAcquisitionMode = "connected" | "managed";
 
 /** The same choice appears on the server page and in inline setup dialogs. */
-export function ServerAcquisitionPicker({ value, onChange }: {
+export function ServerAcquisitionPicker({ value, onChange, stacked = false }: {
   value: ServerAcquisitionMode;
   onChange: (value: ServerAcquisitionMode) => void;
+  stacked?: boolean;
 }) {
   const { t } = useI18n();
   const copy = t.servers.acquire;
   return (
-    <div className="grid items-stretch gap-3 sm:grid-cols-2">
+    <div className={`grid items-stretch gap-3 ${stacked ? "" : "sm:grid-cols-2"}`}>
       {(["connected", "managed"] as const).map(mode => (
         <OptionCard key={mode} value={mode} selected={value === mode} onSelect={() => onChange(mode)}
           icon={<Icon name={mode === "managed" ? "cloud" : "server"} className="size-5" />}

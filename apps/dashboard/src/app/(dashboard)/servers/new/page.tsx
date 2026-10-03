@@ -66,30 +66,48 @@ function getMissingComponentNames(components: ComponentState[]): string[] {
     .map((component) => component.name);
 }
 
+/** One sidebar in both setup modes; on narrow screens only the choices move
+ * before the form, while supporting guidance follows it. */
+function ServerSetupLayout({ choice, guidance, children }: {
+  choice?: ReactNode;
+  guidance: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-1 items-start gap-6 @min-[60rem]/server-create:grid-cols-[minmax(0,1fr)_340px]">
+      <aside className="contents @min-[60rem]/server-create:block @min-[60rem]/server-create:col-start-2 @min-[60rem]/server-create:row-start-1 @min-[60rem]/server-create:space-y-4 @min-[60rem]/server-create:sticky @min-[60rem]/server-create:top-6">
+        {choice && <div className="order-first">{choice}</div>}
+        <div className="order-last min-w-0">{guidance}</div>
+      </aside>
+      <div className="min-w-0 @min-[60rem]/server-create:col-start-1 @min-[60rem]/server-create:row-start-1">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function AddServerPage() {
   const { selfHosted } = usePlatform();
   const router = useRouter();
   const { t } = useI18n();
   const [mode, setMode] = useState<ServerAcquisitionMode>(selfHosted ? "connected" : "managed");
-  const choice = selfHosted ? <ServerAcquisitionPicker value={mode} onChange={setMode} /> : null;
+  const choice = selfHosted ? <ServerAcquisitionPicker value={mode} onChange={setMode} stacked /> : null;
   if (mode === "connected") return <ConnectedServerSetup choice={choice} />;
   return (
     <PageContainer className="@container/server-create space-y-6">
       <Link href="/servers" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
         <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />{t.servers.setup.goToServers}
       </Link>
-      <div className="grid items-start gap-6 @min-[60rem]/server-create:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-5">
-          {choice}
-          <ManagedServerSetup onReady={(server, needsPlan) => router.push(needsPlan
-            ? workspaceBillingHref("/billing/plans", server.id) : `/servers/${server.serverId}`)} />
-        </div>
-        <aside className="space-y-3 rounded-2xl bg-card p-5">
+      <ServerSetupLayout choice={choice} guidance={
+        <div className="space-y-3 rounded-2xl bg-card p-5">
           <h2 className="text-base font-medium">{t.billing.workspaces.shared}</h2>
           <p className="text-sm text-muted-foreground">{t.billing.workspaces.poolHint}</p>
           <p className="text-sm text-muted-foreground">{t.billing.workspaces.placementHint}</p>
-        </aside>
-      </div>
+        </div>
+      }>
+        <ManagedServerSetup onReady={(server, needsPlan) => router.push(needsPlan
+          ? workspaceBillingHref("/billing/plans", server.id) : `/servers/${server.serverId}`)} />
+      </ServerSetupLayout>
     </PageContainer>
   );
 }
@@ -394,7 +412,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
   }
 
   return (
-    <PageContainer>
+    <PageContainer className="@container/server-create">
         <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => router.push("/servers")}
@@ -415,17 +433,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
-          <div className="space-y-6 min-w-0">
-            {!hasExistingServer && choice}
-            <ServerForm
-              key={initialServer?.id ?? "new"}
-              server={initialServer}
-              onSaved={handleSaved}
-            />
-          </div>
-
-          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+        <ServerSetupLayout choice={!hasExistingServer && choice} guidance={
             <div className="bg-card rounded-2xl border border-border/50">
               <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
                 <div className="w-9 h-9 bg-warning-bg rounded-xl flex items-center justify-center">
@@ -459,8 +467,13 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
                 </ul>
               </div>
             </div>
-          </div>
-        </div>
+        }>
+          <ServerForm
+            key={initialServer?.id ?? "new"}
+            server={initialServer}
+            onSaved={handleSaved}
+          />
+        </ServerSetupLayout>
     </PageContainer>
   );
 }

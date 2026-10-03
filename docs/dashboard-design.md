@@ -41,6 +41,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.
+- Add Server keeps the connected/managed choice stacked in the right sidebar above setup
+  guidance. On narrow screens, place that same choice before the form and guidance after it.
+  Reuse the shared acquisition picker in both setup modes and dialogs.
 - Destination settings use the normal page layout: server selection first, then visible
   runtime, resource and rollback sections, with a 340px preview/Continue sidebar. Keep the
   same layout in Cloud and self-hosted mode; do not hide it in an Advanced accordion.
