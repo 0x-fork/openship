@@ -4,6 +4,9 @@
       "detected": "{proxy} detectado no servidor de origem",
       "handoff": "Confira os domínios associados abaixo. A migração configura o proxy de entrada do servidor de destino e pede confirmação caso seja necessário substituir um proxy existente.",
       "warnings": "Revisar {count} avisos de descoberta"
+    },
+    "steps": {
+      "mapNoRepo": "Vincule um repositório para associar os contêineres detectados aos seus serviços (opcional)."
     }
   },
   "entry": {
@@ -28,5 +31,33 @@
   "cutover": {
     "warning": "O destino está ativo. Você pode remover os containers originais ou mantê-los parados. Os volumes de origem são mantidos.",
     "warningRestart": "O destino está ativo. Manter originais reinicia os containers de origem que estavam ativos como cópias independentes. Remover originais os exclui. Os volumes de origem são mantidos."
+  },
+  "discover": {
+    "chooseProject": "Escolha o que importar",
+    "chooseHint": "Selecione um projeto Compose ou serviços individuais.",
+    "topology": "Topologia",
+    "cards": "Cartões",
+    "viewLabel": "Visualização dos resultados",
+    "topologyHint": "As linhas mostram as dependências de inicialização detectadas.",
+    "unavailable": "Indisponível",
+    "selected": "Selecionado",
+    "selectService": "Selecionar serviço",
+    "selectNamedService": "Selecionar {name}",
+    "selectProject": "Selecionar todos os serviços de {name}",
+    "clearSelection": "Limpar seleção",
+    "selectionKeyboard": "Pressione Enter ou Espaço para selecionar um serviço."
+  },
+  "review": {
+    "progress": "Progresso da importação",
+    "title": "Revisar serviços",
+    "hint": "Revise o acesso e os dados antes da migração.",
+    "configureService": "Configurar {name}",
+    "keepDetected": "Manter detectadas",
+    "internal": "Apenas interno",
+    "detected": "Detectado",
+    "finishRoute": "Concluir rota",
+    "finishRouteHint": "Preencha o domínio e a porta ou escolha Apenas interno.",
+    "routingTitle": "Domínios e rotas",
+    "scanOptions": "Opções de análise"
   }
 }

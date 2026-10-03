@@ -84,7 +84,7 @@
       "notInRepo": "غير موجودة في المستودع",
       "composeServicesTitle": "خدمات المستودع",
       "noComposeFound": "لم يُعثر على docker-compose في هذا المستودع — يُربط المستودع على مستوى المشروع.",
-      "mapNoRepo": "اربط مستودعًا في خطوة الاختيار لتعيين حاوياتك على خدمات compose الخاصة به (اختياري).",
+      "mapNoRepo": "اربط مستودعًا لمطابقة الحاويات المكتشفة مع خدماته (اختياري).",
       "mapSkipHint": "ربط المستودع اختياري — تخطَّ للمتابعة (يُعاد استخدام الصورة العاملة كما هي).",
       "mapField": "خدمة المستودع",
       "repoConnectHint": "اربط GitHub من اللوحة لتصفّح مستودعاتك — أو الصق رابط مستودع.",
@@ -148,7 +148,20 @@
     "envFromImageImport": "استورد على أي حال",
     "alreadyManaged": "تم تخطي {count} حاوية يديرها Openship بالفعل.",
     "proxyExcluded": "وكيل عكسي ({ports}) — لم يُستورد؛ حافة Openship تحل محله.",
-    "edgePortReserved": "المنافذ {ports} محجوزة لحافة Openship؛ لا تُنشر."
+    "edgePortReserved": "المنافذ {ports} محجوزة لحافة Openship؛ لا تُنشر.",
+    "chooseProject": "اختر ما تريد استيراده",
+    "chooseHint": "اختر مشروع Compose أو خدمات محددة.",
+    "topology": "المخطط",
+    "cards": "بطاقات",
+    "viewLabel": "طريقة عرض النتائج",
+    "topologyHint": "تُظهر الخطوط تبعيات بدء التشغيل المكتشفة.",
+    "unavailable": "غير متاح",
+    "selected": "محدد",
+    "selectService": "اختر الخدمة",
+    "selectNamedService": "اختر {name}",
+    "selectProject": "اختر جميع خدمات {name}",
+    "clearSelection": "إلغاء التحديد",
+    "selectionKeyboard": "اضغط Enter أو المسافة لاختيار خدمة."
   },
   "reimport": {
     "title": "مشاريع Openship المكتشفة",
@@ -242,5 +255,18 @@
   "cutover": {
     "warning": "الوجهة تعمل الآن. يمكنك إزالة الحاويات الأصلية أو إبقاءها متوقفة. تبقى وحدات تخزين المصدر محفوظة.",
     "warningRestart": "الوجهة تعمل الآن. الاحتفاظ بالأصول يعيد تشغيل حاويات المصدر التي كانت تعمل كنسخ مستقلة. إزالة الأصول تحذف تلك الحاويات. تبقى وحدات تخزين المصدر محفوظة."
+  },
+  "review": {
+    "progress": "تقدم الاستيراد",
+    "title": "مراجعة الخدمات",
+    "hint": "راجع الوصول والبيانات قبل الترحيل.",
+    "configureService": "إعداد {name}",
+    "keepDetected": "إبقاء المكتشف",
+    "internal": "داخلي فقط",
+    "detected": "مكتشف",
+    "finishRoute": "أكمل إعداد المسار",
+    "finishRouteHint": "أكمل النطاق والمنفذ أو اختر داخلي فقط.",
+    "routingTitle": "النطاقات والتوجيه",
+    "scanOptions": "خيارات الفحص"
   }
 }

@@ -27,6 +27,13 @@ routes, and shared project connections. `/scale` redirects to the project list.
 There is no second provisioning engine, deployment queue, or migration model.
 The canvas does not call mutation APIs when a node is moved or selected.
 
+Import discovery also uses `TopologyCanvas`, projected from the scan by
+`migration/discovery-model.ts`. Each Compose group is independent, keyed by
+container identity. Connections show only detected startup dependencies, and
+the canvas actions select services without connecting handles or calling project
+configuration APIs. Discovery passes a null layout key so nothing is persisted.
+The Cards view edits the same selection.
+
 ## Scope and truthfulness
 
 - One logical service is one overview node. Its runtime view shows observed

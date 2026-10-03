@@ -4,6 +4,9 @@
       "detected": "Auf dem Quellserver erkannt: {proxy}",
       "handoff": "Prüfe die zugeordneten Domains unten. Bei der Migration wird der Edge-Proxy des Zielservers eingerichtet. Falls ein vorhandener Proxy ersetzt werden muss, wirst du um Bestätigung gebeten.",
       "warnings": "{count} Hinweise zur Erkennung prüfen"
+    },
+    "steps": {
+      "mapNoRepo": "Verknüpfe optional ein Repository, um erkannte Container seinen Diensten zuzuordnen."
     }
   },
   "entry": {
@@ -28,5 +31,33 @@
   "cutover": {
     "warning": "Das Ziel ist live. Du kannst die Originalcontainer entfernen oder gestoppt behalten. Die Quellvolumes bleiben erhalten.",
     "warningRestart": "Das Ziel ist live. Originale behalten startet zuvor laufende Quellcontainer als unabhängige Kopien neu. Originale entfernen löscht diese Container. Die Quellvolumes bleiben erhalten."
+  },
+  "discover": {
+    "chooseProject": "Import auswählen",
+    "chooseHint": "Wähle ein Compose-Projekt oder einzelne Dienste.",
+    "topology": "Topologie",
+    "cards": "Karten",
+    "viewLabel": "Ergebnisansicht",
+    "topologyHint": "Linien zeigen erkannte Startabhängigkeiten.",
+    "unavailable": "Nicht verfügbar",
+    "selected": "Ausgewählt",
+    "selectService": "Dienst auswählen",
+    "selectNamedService": "{name} auswählen",
+    "selectProject": "Alle Dienste in {name} auswählen",
+    "clearSelection": "Auswahl aufheben",
+    "selectionKeyboard": "Drücke Eingabe oder die Leertaste, um einen Dienst auszuwählen."
+  },
+  "review": {
+    "progress": "Importfortschritt",
+    "title": "Dienste prüfen",
+    "hint": "Prüfe Zugriff und Daten vor der Migration.",
+    "configureService": "{name} konfigurieren",
+    "keepDetected": "Erkannte behalten",
+    "internal": "Nur intern",
+    "detected": "Erkannt",
+    "finishRoute": "Route vervollständigen",
+    "finishRouteHint": "Vervollständige Domain und Port oder wähle Nur intern.",
+    "routingTitle": "Domains & Routing",
+    "scanOptions": "Scan-Optionen"
   }
 }

@@ -62,6 +62,13 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - A destination with one existing server uses a compact summary row; multiple servers use
   the shared picker. Keep the create-server action visible in both cases. Cloud deployments
   can reuse a server's plan or create a separate server and subscription from the same flow.
+- Import discovery defaults to the shared topology canvas, grouped by the scanned Compose
+  project, with Cards as an equivalent selection view. Expand additional groups on demand;
+  selection and project naming stay consistent when changing views or revisiting steps.
+  Only draw discovered dependencies. Keep scan graphs in memory, without saved configuration.
+- Import routing starts with compact per-service access and data summaries. Show detected
+  domains and incomplete routes immediately; expand the existing domain, volume and environment
+  controls when requested. The page and modal share selection, review and navigation controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the

@@ -4,6 +4,9 @@
       "detected": "Se detectó {proxy} en el servidor de origen",
       "handoff": "Revisa los dominios asociados a continuación. La migración configura el proxy de entrada del servidor de destino y pide confirmación si es necesario reemplazar un proxy existente.",
       "warnings": "Revisar {count} avisos de detección"
+    },
+    "steps": {
+      "mapNoRepo": "Vincula un repositorio para asignar los contenedores detectados a sus servicios (opcional)."
     }
   },
   "entry": {
@@ -28,5 +31,33 @@
   "cutover": {
     "warning": "El destino está activo. Puedes eliminar los contenedores originales o conservarlos detenidos. Los volúmenes de origen se conservan.",
     "warningRestart": "El destino está activo. Conservar originales reinicia los contenedores de origen que estaban en ejecución como copias independientes. Eliminar originales los retira. Los volúmenes de origen se conservan."
+  },
+  "discover": {
+    "chooseProject": "Elige qué importar",
+    "chooseHint": "Selecciona un proyecto Compose o servicios individuales.",
+    "topology": "Topología",
+    "cards": "Tarjetas",
+    "viewLabel": "Vista de resultados",
+    "topologyHint": "Las líneas muestran las dependencias de inicio detectadas.",
+    "unavailable": "No disponible",
+    "selected": "Seleccionado",
+    "selectService": "Seleccionar servicio",
+    "selectNamedService": "Seleccionar {name}",
+    "selectProject": "Seleccionar todos los servicios de {name}",
+    "clearSelection": "Borrar selección",
+    "selectionKeyboard": "Pulsa Intro o Espacio para seleccionar un servicio."
+  },
+  "review": {
+    "progress": "Progreso de importación",
+    "title": "Revisar servicios",
+    "hint": "Revisa el acceso y los datos antes de migrar.",
+    "configureService": "Configurar {name}",
+    "keepDetected": "Conservar detectadas",
+    "internal": "Solo interno",
+    "detected": "Detectado",
+    "finishRoute": "Completar ruta",
+    "finishRouteHint": "Completa el dominio y el puerto o elige Solo interno.",
+    "routingTitle": "Dominios y rutas",
+    "scanOptions": "Opciones de análisis"
   }
 }

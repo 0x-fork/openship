@@ -89,7 +89,7 @@
       "notInRepo": "Not in repo",
       "composeServicesTitle": "Repo services",
       "noComposeFound": "No docker-compose found in this repo — the repo links at the project level.",
-      "mapNoRepo": "Link a repository on the Select step to map your containers to its compose services (optional).",
+      "mapNoRepo": "Link a repository to map discovered containers to its services (optional).",
       "mapSkipHint": "Linking a repo is optional — skip to continue (the running image is reused as-is).",
       "mapField": "Repo service",
       "repoConnectHint": "Connect GitHub in the panel to browse your repositories — or paste a repo URL.",
@@ -181,7 +181,20 @@
     "envFromImage": "{n} vars come from the image",
     "envFromImageHint": "Not imported as config — the image supplies these at runtime. Import them to pin the values before you rebuild from source.",
     "envFromImageImport": "Import anyway",
-    "alreadyManaged": "{count} container(s) already managed by Openship were skipped."
+    "alreadyManaged": "{count} container(s) already managed by Openship were skipped.",
+    "chooseProject": "Choose what to import",
+    "chooseHint": "Select a Compose project or individual services.",
+    "topology": "Topology",
+    "cards": "Cards",
+    "viewLabel": "Discovery view",
+    "topologyHint": "Lines show detected startup dependencies.",
+    "unavailable": "Unavailable",
+    "selected": "Selected",
+    "selectService": "Select service",
+    "selectNamedService": "Select {name}",
+    "selectProject": "Select all services in {name}",
+    "clearSelection": "Clear selection",
+    "selectionKeyboard": "Press Enter or Space to select a service."
   },
   "reimport": {
     "title": "Openship projects found",
@@ -271,5 +284,18 @@
     "empty": "Connect the server you want to import from.",
     "hint": "For migrations only. Remove the connection when you're done.",
     "importHint": "Copy apps and data to a managed Openship server. Keep the source until you confirm cutover."
+  },
+  "review": {
+    "progress": "Import progress",
+    "title": "Review services",
+    "hint": "Review access and data before migration.",
+    "configureService": "Configure {name}",
+    "keepDetected": "Keep detected",
+    "internal": "Internal only",
+    "detected": "Detected",
+    "finishRoute": "Complete route setup",
+    "finishRouteHint": "Complete the domain and port, or choose Internal only.",
+    "routingTitle": "Domains & routing",
+    "scanOptions": "Scan options"
   }
 }

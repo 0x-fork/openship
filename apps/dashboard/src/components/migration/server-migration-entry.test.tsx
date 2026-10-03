@@ -3,19 +3,54 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServerMigrationWizard } from "./ServerMigrationWizard";
+import type { DiscoveredService, DiscoveredStack } from "@/lib/api/server-migration";
 
-const h = vi.hoisted(() => ({ listServers: vi.fn(), listSources: vi.fn(), scanStream: vi.fn(), cloudPricing: vi.fn(),
-  preview: vi.fn(), migrate: vi.fn(), getMigration: vi.fn(), confirmCutover: vi.fn(), streamMigration: vi.fn(),
-  selfHosted: true, organizationId: "org-a" }));
+const h = vi.hoisted(() => ({
+  listServers: vi.fn(),
+  listSources: vi.fn(),
+  scanStream: vi.fn(),
+  cloudPricing: vi.fn(),
+  preview: vi.fn(),
+  migrate: vi.fn(),
+  getMigration: vi.fn(),
+  getActive: vi.fn(),
+  confirmCutover: vi.fn(),
+  streamMigration: vi.fn(),
+  selfHosted: true,
+  organizationId: "org-a",
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: async () => ({ servers: await h.listServers() }) } }));
-vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ selfHosted: h.selfHosted, deployMode: "docker" }) }));
-vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: { user: { id: "user" }, session: { activeOrganizationId: h.organizationId } } }) }));
+vi.mock("@/lib/api/system", () => ({
+  systemApi: { listServerDestinations: async () => ({ servers: await h.listServers() }) },
+}));
+vi.mock("@/context/PlatformContext", () => ({
+  usePlatform: () => ({ selfHosted: h.selfHosted, deployMode: "docker", baseDomain: "opsh.test" }),
+}));
+vi.mock("@/context/CloudContext", () => ({
+  useCloud: () => ({ connected: true }),
+  useDefaultDomainType: () => "free",
+}));
+vi.mock("@/context/ModalContext", () => ({
+  useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }),
+}));
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({
+    data: { user: { id: "user" }, session: { activeOrganizationId: h.organizationId } },
+  }),
+}));
 vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => h.cloudPricing }));
 vi.mock("@/components/servers/add-server-modal", () => ({ useAddServerModal: () => vi.fn() }));
 vi.mock("@/lib/api/server-migration", () => ({
-  dockerMigrationApi: { scanStream: h.scanStream, listSources: h.listSources, preview: h.preview,
-    migrate: h.migrate, getMigration: h.getMigration, confirmCutover: h.confirmCutover, streamMigration: h.streamMigration },
+  dockerMigrationApi: {
+    scanStream: h.scanStream,
+    listSources: h.listSources,
+    preview: h.preview,
+    migrate: h.migrate,
+    getMigration: h.getMigration,
+    getActive: h.getActive,
+    confirmCutover: h.confirmCutover,
+    streamMigration: h.streamMigration,
+  },
   isScanStreamStalled: () => false,
 }));
 vi.mock("@/context/GitHubContext", () => ({ useGitHub: () => ({ connected: false }) }));
@@ -29,40 +64,100 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Element.prototype.scrollIntoView = vi.fn();
   h.listServers.mockResolvedValue([
-    { id: "source-a", name: "First server", sshHost: "192.0.2.1", sshPort: 22, sshUser: "root", capabilities: { ssh: true } },
-    { id: "source-b", name: "Second server", sshHost: "192.0.2.2", sshPort: 22, sshUser: "root", capabilities: { ssh: true } },
+    {
+      id: "source-a",
+      name: "First server",
+      sshHost: "192.0.2.1",
+      sshPort: 22,
+      sshUser: "root",
+      capabilities: { ssh: true },
+    },
+    {
+      id: "source-b",
+      name: "Second server",
+      sshHost: "192.0.2.2",
+      sshPort: 22,
+      sshUser: "root",
+      capabilities: { ssh: true },
+    },
   ]);
   h.scanStream.mockImplementation(() => new Promise(() => {}));
   h.getMigration.mockImplementation(() => new Promise(() => {}));
+  h.getActive.mockResolvedValue({ run: null });
   h.streamMigration.mockReturnValue(vi.fn());
   h.confirmCutover.mockResolvedValue({ success: true });
-  h.listSources.mockResolvedValue({ sources: [
-    { id: "external", name: "Migration source", sshHost: "203.0.113.12", sshPort: 22, sshUser: "root", purpose: "migration_source" },
-  ] });
+  h.listSources.mockResolvedValue({
+    sources: [
+      {
+        id: "external",
+        name: "Migration source",
+        sshHost: "203.0.113.12",
+        sshPort: 22,
+        sshUser: "root",
+        purpose: "migration_source",
+      },
+    ],
+  });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });
 
-const button = (label: string) => Array.from(container.querySelectorAll("button"))
-  .find(b => b.textContent?.trim() === label)!;
+const button = (label: string) =>
+  Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.trim() === label)!;
 async function pickSource(name: string) {
-  await act(async () => container.querySelector<HTMLButtonElement>("button[aria-haspopup]")!.click());
-  const choice = Array.from(document.querySelectorAll("button")).find(b => b.textContent?.includes(name))!;
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("button[aria-haspopup]")!.click(),
+  );
+  const choice = Array.from(document.querySelectorAll("button")).find((b) =>
+    b.textContent?.includes(name),
+  )!;
   expect(choice).toBeDefined();
   await act(async () => choice.click());
 }
 function useCloud() {
   h.selfHosted = false;
-  h.listServers.mockResolvedValue([{ id: "managed", name: "Managed server", connection: "cloud",
-    projectCount: 0, managed: { id: "workspace", state: "ready", resources: { cpuCores: 1, memoryMb: 4096, diskMb: 25600 } },
-    capabilities: { ssh: false, exec: true } }]);
+  h.listServers.mockResolvedValue([
+    {
+      id: "managed",
+      name: "Managed server",
+      connection: "cloud",
+      projectCount: 0,
+      managed: {
+        id: "workspace",
+        state: "ready",
+        resources: { cpuCores: 1, memoryMb: 4096, diskMb: 25600 },
+      },
+      capabilities: { ssh: false, exec: true },
+    },
+  ]);
 }
-function scannedStack() {
-  const service = { name: "redis", containerId: "redis-container", source: "container", image: "redis:7",
-    running: true, ports: [], env: {}, volumes: [], networks: [], dependsOn: [], warnings: [] };
-  return { serverId: "external", composeProjects: [], groups: [{ project: null, services: [service] }],
-    services: [service], volumes: [], networks: [], warnings: [], adoptable: true, alreadyManaged: 0, openshipProjects: [] };
+function scannedStack(): DiscoveredStack {
+  const service: DiscoveredService = {
+    name: "redis",
+    containerId: "redis-container",
+    source: "container",
+    image: "redis:7",
+    running: true,
+    ports: [],
+    env: {},
+    volumes: [],
+    networks: [],
+    dependsOn: [],
+    warnings: [],
+  };
+  return {
+    serverId: "external",
+    composeProjects: [],
+    groups: [{ project: null, services: [service] }],
+    services: [service],
+    volumes: [],
+    networks: [],
+    warnings: [],
+    adoptable: true,
+    alreadyManaged: 0,
+    openshipProjects: [],
+  };
 }
 
 it("Cloud uses the restricted source inventory and the same scanner", async () => {
@@ -72,13 +167,21 @@ it("Cloud uses the restricted source inventory and the same scanner", async () =
   expect(button("Scan server").disabled).toBe(true);
   await pickSource("Migration source");
   await act(async () => button("Scan server").click());
-  expect(h.scanStream).toHaveBeenCalledExactlyOnceWith("external", expect.objectContaining({ flatDocker: true }));
+  expect(h.scanStream).toHaveBeenCalledExactlyOnceWith(
+    "external",
+    expect.objectContaining({ flatDocker: true }),
+  );
 });
 
 it("discards scan results and progress after the active organization changes", async () => {
   useCloud();
   let complete!: (stack: ReturnType<typeof scannedStack>) => void;
-  h.scanStream.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+  h.scanStream.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
   await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
   await pickSource("Migration source");
   await act(async () => button("Scan server").click());
@@ -98,14 +201,32 @@ it("discards scan results and progress after the active organization changes", a
 it("opens shared billing recovery and retries the same import after admission fails", async () => {
   useCloud();
   h.scanStream.mockResolvedValue(scannedStack());
-  h.preview.mockResolvedValue({ preview: { sameServer: false, services: [], volumesToMove: [], hasBlocked: false,
-    downtimeWarning: true, droppedProxies: [], warnings: [], plan: { totalBytes: 0, partial: false, items: [] } } });
+  h.preview.mockResolvedValue({
+    preview: {
+      sameServer: false,
+      services: [],
+      volumesToMove: [],
+      hasBlocked: false,
+      downtimeWarning: true,
+      droppedProxies: [],
+      warnings: [],
+      plan: { totalBytes: 0, partial: false, items: [] },
+    },
+  });
   const restriction = new Error("Choose a server plan before importing");
-  h.migrate.mockRejectedValueOnce(restriction).mockResolvedValueOnce({ migrationId: "run", confirmationToken: "token" });
+  h.migrate
+    .mockRejectedValueOnce(restriction)
+    .mockResolvedValueOnce({ migrationId: "run", confirmationToken: "token" });
   await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
   await pickSource("Migration source");
   await act(async () => button("Scan server").click());
-  await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[role="checkbox"][aria-label="Select all services in Standalone containers"]',
+      )!
+      .click(),
+  );
   for (let step = 0; step < 3; step++) {
     expect(button("Next")?.disabled).toBe(false);
     await act(async () => button("Next").click());
@@ -118,16 +239,32 @@ it("opens shared billing recovery and retries the same import after admission fa
   expect(h.migrate).toHaveBeenCalledTimes(2);
   expect(h.migrate.mock.calls[1]![0]).toEqual(h.migrate.mock.calls[0]![0]);
   expect(h.migrate.mock.calls[0]![0]).toMatchObject({
-    sourceServerId: "external", targetServerId: "managed", serviceContainerIds: ["redis-container"], flatDocker: true,
+    sourceServerId: "external",
+    targetServerId: "managed",
+    serviceContainerIds: ["redis-container"],
+    flatDocker: true,
   });
 });
 
 it("uses the reopened run's cutover token without a server prop or a second active-run lookup", async () => {
   useCloud();
-  h.getMigration.mockResolvedValue({ run: { id: "run", status: "awaiting_cutover", mode: "cross_server",
-    projectName: "Imported Redis", confirmationToken: "this-run-only", sourceServerId: "external", targetServerId: "managed" } });
-  await act(async () => root.render(<ServerMigrationWizard variant="tab" initialRunId="run" onClose={vi.fn()} />));
-  const keep = Array.from(container.querySelectorAll("button")).find(b => /keep.*original/i.test(b.textContent ?? ""));
+  h.getMigration.mockResolvedValue({
+    run: {
+      id: "run",
+      status: "awaiting_cutover",
+      mode: "cross_server",
+      projectName: "Imported Redis",
+      confirmationToken: "this-run-only",
+      sourceServerId: "external",
+      targetServerId: "managed",
+    },
+  });
+  await act(async () =>
+    root.render(<ServerMigrationWizard variant="tab" initialRunId="run" onClose={vi.fn()} />),
+  );
+  const keep = Array.from(container.querySelectorAll("button")).find((b) =>
+    /keep.*original/i.test(b.textContent ?? ""),
+  );
   expect(keep).toBeDefined();
   await act(async () => keep!.click());
   expect(h.confirmCutover).toHaveBeenCalledExactlyOnceWith("run", "this-run-only", false);
@@ -135,20 +272,44 @@ it("uses the reopened run's cutover token without a server prop or a second acti
 
 it("waits for the selected destination's storage review before enabling migration", async () => {
   useCloud();
-  const server = { connection: "cloud", projectCount: 0, managed: { state: "ready" }, capabilities: { exec: true } };
+  const server = {
+    connection: "cloud",
+    projectCount: 0,
+    managed: { state: "ready" },
+    capabilities: { exec: true },
+  };
   h.listServers.mockResolvedValue([
     { ...server, id: "managed", name: "First managed server" },
     { ...server, id: "second-managed", name: "Second managed server" },
   ]);
   h.scanStream.mockResolvedValue(scannedStack());
   let finishPreview!: (result: unknown) => void;
-  const preview = { sameServer: false, services: [], volumesToMove: [], hasBlocked: false,
-    downtimeWarning: true, droppedProxies: [], warnings: [], plan: { totalBytes: 0, partial: false, items: [] } };
-  h.preview.mockResolvedValueOnce({ preview }).mockImplementationOnce(() => new Promise(resolve => { finishPreview = resolve; }));
+  const preview = {
+    sameServer: false,
+    services: [],
+    volumesToMove: [],
+    hasBlocked: false,
+    downtimeWarning: true,
+    droppedProxies: [],
+    warnings: [],
+    plan: { totalBytes: 0, partial: false, items: [] },
+  };
+  h.preview.mockResolvedValueOnce({ preview }).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishPreview = resolve;
+      }),
+  );
   await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
   await pickSource("Migration source");
   await act(async () => button("Scan server").click());
-  await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[role="checkbox"][aria-label="Select all services in Standalone containers"]',
+      )!
+      .click(),
+  );
   for (let step = 0; step < 3; step++) await act(async () => button("Next").click());
   expect(button("Migrate").disabled).toBe(false);
   await pickSource("Second managed server");
@@ -158,17 +319,221 @@ it("waits for the selected destination's storage review before enabling migratio
   expect(button("Migrate").disabled).toBe(false);
 });
 
+it("defaults to topology and keeps container selection, view and automatic naming across steps", async () => {
+  useCloud();
+  const base = scannedStack();
+  const first = {
+    ...base.services[0]!,
+    containerId: "first-redis",
+    env: { PASSWORD: "masked-first" },
+  };
+  const second = {
+    ...base.services[0]!,
+    containerId: "second-redis",
+    env: { PASSWORD: "masked-second" },
+  };
+  h.scanStream.mockResolvedValue({
+    ...base,
+    services: [first, second],
+    groups: [
+      { project: "first", services: [first] },
+      { project: "second", services: [second] },
+    ],
+  });
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("Migration source");
+  await act(async () => button("Scan server").click());
+  const tab = (name: string) =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+      (tab) => tab.textContent === name,
+    )!;
+  const pickGroup = (name: string) =>
+    container.querySelector<HTMLButtonElement>(
+      `[role="checkbox"][aria-label="Select all services in ${name}"]`,
+    )!;
+  expect(tab("Topology").getAttribute("aria-selected")).toBe("true");
+  expect(button("Next").disabled).toBe(true);
+  await act(async () => pickGroup("first").click());
+  expect(container.querySelector<HTMLInputElement>('input[id^="import-name-"]')!.value).toBe(
+    "first",
+  );
+  await act(async () => tab("Cards").click());
+  expect(
+    container
+      .querySelector('section[aria-label="first"] [aria-label="Select redis"]')
+      ?.getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    container
+      .querySelector('section[aria-label="second"] [aria-label="Select redis"]')
+      ?.getAttribute("aria-checked"),
+  ).toBe("false");
+  await act(async () => pickGroup("second").click());
+  await act(async () => pickGroup("first").click());
+  expect(container.querySelector<HTMLInputElement>('input[id^="import-name-"]')!.value).toBe(
+    "second",
+  );
+  await act(async () => button("Next").click());
+  await act(async () => button("Back").click());
+  expect(tab("Cards").getAttribute("aria-selected")).toBe("true");
+  expect(pickGroup("second").getAttribute("aria-checked")).toBe("true");
+  expect(container.textContent).not.toContain("masked-first");
+  expect(container.textContent).not.toContain("masked-second");
+  expect(h.migrate).not.toHaveBeenCalled();
+});
+
+it("keeps routing compact and prevents incomplete public routes from being silently omitted", async () => {
+  useCloud();
+  h.scanStream.mockResolvedValue(scannedStack());
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("Migration source");
+  await act(async () => button("Scan server").click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Select all services in Standalone containers"]',
+      )!
+      .click(),
+  );
+  await act(async () => button("Next").click());
+  await act(async () => button("Next").click());
+  const configure = () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Configure redis"]')!;
+  expect(configure().getAttribute("aria-expanded")).toBe("false");
+  expect(button("Custom")).toBeUndefined();
+  expect(button("Next").disabled).toBe(false);
+  await act(async () => configure().click());
+  await act(async () => button("Custom").click());
+  expect(button("Next").disabled).toBe(true);
+  await act(async () => configure().click());
+  expect(container.textContent).toContain("Complete route setup");
+  expect(button("Next").disabled).toBe(true);
+  await act(async () => button("Back").click());
+  await act(async () => button("Next").click());
+  expect(button("Next").disabled).toBe(true);
+  await act(async () => configure().click());
+  await act(async () => button("Internal only").click());
+  expect(button("Next").disabled).toBe(false);
+  expect(h.migrate).not.toHaveBeenCalled();
+});
+
+it("keeps the self-hosted in-place flow and its reviewed volume choice", async () => {
+  const stack = scannedStack();
+  stack.services[0]!.volumes = [
+    { type: "volume", source: "redis-data", target: "/data", rw: true },
+  ];
+  h.scanStream.mockResolvedValue({ ...stack, serverId: "source-a" });
+  h.migrate.mockResolvedValue({ migrationId: "run", confirmationToken: "token" });
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("First server");
+  await act(async () => button("Scan server").click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Select all services in Standalone containers"]',
+      )!
+      .click(),
+  );
+  await act(async () => button("Next").click());
+  await act(async () => button("Next").click());
+  expect(button("Migrate").disabled).toBe(false);
+  expect(h.preview).not.toHaveBeenCalled();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Configure redis"]')!.click(),
+  );
+  await act(async () => button("Copy").click());
+  await act(async () => button("Migrate").click());
+  expect(h.migrate.mock.lastCall?.[0]).toMatchObject({
+    sourceServerId: "source-a",
+    targetServerId: "source-a",
+    serviceContainerIds: ["redis-container"],
+    volumeStrategies: { "redis-container": "copy" },
+    flatDocker: false,
+  });
+});
+
+it("uses the same topology selection and destination review in the modal", async () => {
+  useCloud();
+  h.scanStream.mockResolvedValue(scannedStack());
+  const modalButton = (label: string) =>
+    Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === label,
+    )!;
+  await act(async () =>
+    root.render(<ServerMigrationWizard isOpen serverId="external" onClose={vi.fn()} />),
+  );
+  await act(async () => modalButton("Scan server").click());
+  expect(
+    Array.from(document.querySelectorAll('[role="tab"]'))
+      .find((tab) => tab.textContent === "Topology")
+      ?.getAttribute("aria-selected"),
+  ).toBe("true");
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Select all services in Standalone containers"]',
+      )!
+      .click(),
+  );
+  const name = document.querySelector<HTMLInputElement>('input[id^="import-name-"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      name,
+      "imported-redis",
+    );
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => modalButton("Next").click());
+  await act(async () => modalButton("Next").click());
+  expect(document.querySelector('[aria-label="Configure redis"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Target server");
+  expect(document.body.textContent).toContain("Managed server");
+  expect(modalButton("Next").disabled).toBe(false);
+});
+
+it("shows a useful empty result when only excluded proxy containers are discovered", async () => {
+  useCloud();
+  const stack = scannedStack();
+  stack.services[0]!.proxyKind = "traefik";
+  h.scanStream.mockResolvedValue(stack);
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("Migration source");
+  await act(async () => button("Scan server").click());
+  expect(container.textContent).toContain("No adoptable Docker containers were found");
+  expect(button("Next")).toBeUndefined();
+  expect(button("Scan server").disabled).toBe(false);
+});
+
 it("does not restore an old organization's run or transfer progress after switching context", async () => {
   useCloud();
   let complete!: (value: unknown) => void;
-  h.getMigration.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
-  await act(async () => root.render(<ServerMigrationWizard variant="tab" initialRunId="run" onClose={vi.fn()} />));
+  h.getMigration.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(<ServerMigrationWizard variant="tab" initialRunId="run" onClose={vi.fn()} />),
+  );
   const callbacks = h.streamMigration.mock.calls[0]![1];
   h.organizationId = "org-b";
   await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
   await act(async () => {
-    complete({ run: { id: "run", projectName: "Private org-a workload", status: "awaiting_cutover", confirmationToken: "old-secret" } });
-    callbacks.onProgress({ task: "private-volume", kind: "volume", movedBytes: 10, totalBytes: 100 });
+    complete({
+      run: {
+        id: "run",
+        projectName: "Private org-a workload",
+        status: "awaiting_cutover",
+        confirmationToken: "old-secret",
+      },
+    });
+    callbacks.onProgress({
+      task: "private-volume",
+      kind: "volume",
+      movedBytes: 10,
+      totalBytes: 100,
+    });
   });
   expect(container.textContent).not.toContain("Private org-a workload");
   expect(container.textContent).not.toContain("private-volume");

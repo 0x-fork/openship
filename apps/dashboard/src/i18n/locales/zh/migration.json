@@ -4,6 +4,9 @@
       "detected": "在源服务器上检测到 {proxy}",
       "handoff": "请检查下方匹配的域名。迁移会设置目标服务器的边缘代理；如果需要替换现有代理，会先请求确认。",
       "warnings": "查看 {count} 条检测提示"
+    },
+    "steps": {
+      "mapNoRepo": "关联仓库，将检测到的容器映射到仓库中的服务（可选）。"
     }
   },
   "entry": {
@@ -28,5 +31,33 @@
   "cutover": {
     "warning": "目标已上线。你可以删除原容器，也可以让它们保持停止状态。源数据卷会保留。",
     "warningRestart": "目标已上线。“保留原容器”会将之前运行的源容器作为独立副本重新启动。“删除原容器”会将它们移除。源数据卷会保留。"
+  },
+  "discover": {
+    "chooseProject": "选择要导入的内容",
+    "chooseHint": "选择 Compose 项目或单个服务。",
+    "topology": "拓扑",
+    "cards": "卡片",
+    "viewLabel": "发现视图",
+    "topologyHint": "连线表示检测到的启动依赖关系。",
+    "unavailable": "不可用",
+    "selected": "已选择",
+    "selectService": "选择服务",
+    "selectNamedService": "选择 {name}",
+    "selectProject": "选择 {name} 中的所有服务",
+    "clearSelection": "清除选择",
+    "selectionKeyboard": "按 Enter 或空格键选择服务。"
+  },
+  "review": {
+    "progress": "导入进度",
+    "title": "检查服务",
+    "hint": "迁移前检查访问方式和数据。",
+    "configureService": "配置 {name}",
+    "keepDetected": "保留检测结果",
+    "internal": "仅内部访问",
+    "detected": "已检测",
+    "finishRoute": "完成路由设置",
+    "finishRouteHint": "请填写域名和端口，或选择仅内部访问。",
+    "routingTitle": "域名与路由",
+    "scanOptions": "扫描选项"
   }
 }

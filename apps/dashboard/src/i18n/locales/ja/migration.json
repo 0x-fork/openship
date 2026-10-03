@@ -4,6 +4,9 @@
       "detected": "移行元サーバーで {proxy} を検出しました",
       "handoff": "以下の関連付けられたドメインを確認してください。移行時に移行先サーバーのエッジプロキシを設定します。既存のプロキシを置き換える必要がある場合は、確認を求めます。",
       "warnings": "検出時の通知を {count} 件確認"
+    },
+    "steps": {
+      "mapNoRepo": "リポジトリをリンクして、検出されたコンテナをサービスに対応付けます（任意）。"
     }
   },
   "entry": {
@@ -28,5 +31,33 @@
   "cutover": {
     "warning": "移行先は稼働中です。元のコンテナを削除するか、停止したまま保持できます。移行元のボリュームは保持されます。",
     "warningRestart": "移行先は稼働中です。「元を保持」は、以前稼働していた移行元コンテナを独立したコピーとして再起動します。「元を削除」はそれらを削除します。移行元のボリュームは保持されます。"
+  },
+  "discover": {
+    "chooseProject": "インポートする項目を選択",
+    "chooseHint": "Composeプロジェクトまたは個別のサービスを選択します。",
+    "topology": "トポロジー",
+    "cards": "カード",
+    "viewLabel": "検出結果の表示",
+    "topologyHint": "線は検出された起動依存関係を示します。",
+    "unavailable": "選択不可",
+    "selected": "選択済み",
+    "selectService": "サービスを選択",
+    "selectNamedService": "{name}を選択",
+    "selectProject": "{name}の全サービスを選択",
+    "clearSelection": "選択を解除",
+    "selectionKeyboard": "Enterキーまたはスペースキーでサービスを選択します。"
+  },
+  "review": {
+    "progress": "インポートの進行状況",
+    "title": "サービスを確認",
+    "hint": "移行前にアクセスとデータを確認します。",
+    "configureService": "{name}を設定",
+    "keepDetected": "検出した設定を維持",
+    "internal": "内部のみ",
+    "detected": "検出済み",
+    "finishRoute": "ルート設定を完了",
+    "finishRouteHint": "ドメインとポートを入力するか、内部のみを選択してください。",
+    "routingTitle": "ドメインとルーティング",
+    "scanOptions": "スキャン設定"
   }
 }

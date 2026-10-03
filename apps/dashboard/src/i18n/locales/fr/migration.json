@@ -89,7 +89,7 @@
       "notInRepo": "Absent du dépôt",
       "composeServicesTitle": "Services du dépôt",
       "noComposeFound": "Aucun docker-compose trouvé dans ce dépôt — le dépôt est lié au niveau du projet.",
-      "mapNoRepo": "Liez un dépôt à l'étape Sélection pour mapper vos conteneurs à ses services compose (facultatif).",
+      "mapNoRepo": "Liez un dépôt pour associer les conteneurs détectés à ses services (facultatif).",
       "mapSkipHint": "Lier un dépôt est facultatif — passez pour continuer (l'image en cours d'exécution est réutilisée telle quelle).",
       "mapField": "Service du dépôt",
       "repoConnectHint": "Connectez GitHub dans le panneau pour parcourir vos dépôts — ou collez une URL de dépôt.",
@@ -172,7 +172,20 @@
     "envFromImage": "{n} variables viennent de l'image",
     "envFromImageHint": "Non importées comme configuration — l'image les fournit à l'exécution. Importez-les pour figer les valeurs avant de reconstruire depuis les sources.",
     "envFromImageImport": "Importer quand même",
-    "alreadyManaged": "{count} conteneur(s) déjà géré(s) par Openship ont été ignorés."
+    "alreadyManaged": "{count} conteneur(s) déjà géré(s) par Openship ont été ignorés.",
+    "chooseProject": "Choisir les éléments à importer",
+    "chooseHint": "Sélectionnez un projet Compose ou des services individuels.",
+    "topology": "Topologie",
+    "cards": "Cartes",
+    "viewLabel": "Vue des résultats",
+    "topologyHint": "Les lignes indiquent les dépendances de démarrage détectées.",
+    "unavailable": "Indisponible",
+    "selected": "Sélectionné",
+    "selectService": "Sélectionner le service",
+    "selectNamedService": "Sélectionner {name}",
+    "selectProject": "Sélectionner tous les services de {name}",
+    "clearSelection": "Effacer la sélection",
+    "selectionKeyboard": "Appuyez sur Entrée ou Espace pour sélectionner un service."
   },
   "reimport": {
     "title": "Projets Openship détectés",
@@ -262,5 +275,18 @@
     "empty": "Connectez le serveur depuis lequel vous souhaitez importer.",
     "hint": "Uniquement pour les migrations. Supprimez la connexion une fois terminé.",
     "importHint": "Copiez les applications et les données vers un serveur Openship géré. La source est conservée jusqu’à la confirmation du basculement."
+  },
+  "review": {
+    "progress": "Progression de l’import",
+    "title": "Vérifier les services",
+    "hint": "Vérifiez les accès et les données avant la migration.",
+    "configureService": "Configurer {name}",
+    "keepDetected": "Garder la détection",
+    "internal": "Interne uniquement",
+    "detected": "Détecté",
+    "finishRoute": "Compléter la route",
+    "finishRouteHint": "Renseignez le domaine et le port, ou choisissez Interne uniquement.",
+    "routingTitle": "Domaines et routage",
+    "scanOptions": "Options d’analyse"
   }
 }

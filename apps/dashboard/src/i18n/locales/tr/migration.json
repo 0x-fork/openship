@@ -62,6 +62,9 @@
       "conflictKeep": "Koru",
       "conflictKeepHint": "Mevcut veriyi kullan",
       "measuring": "Aktarım boyutu ölçülüyor…"
+    },
+    "steps": {
+      "mapNoRepo": "Algılanan kapsayıcıları hizmetleriyle eşlemek için bir depo bağlayın (isteğe bağlı)."
     }
   },
   "run": {
@@ -133,7 +136,20 @@
     "envFromImage": "{n} değişken imajdan geliyor",
     "envFromImageHint": "Yapılandırma olarak içe aktarılmadı — imaj bunları çalışma zamanında sağlıyor. Kaynaktan yeniden derlemeden önce değerleri sabitlemek için içe aktarın.",
     "envFromImageImport": "Yine de içe aktar",
-    "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı."
+    "alreadyManaged": "Openship tarafından zaten yönetilen {count} konteyner atlandı.",
+    "chooseProject": "İçe aktarılacakları seçin",
+    "chooseHint": "Bir Compose projesi veya ayrı hizmetler seçin.",
+    "topology": "Topoloji",
+    "cards": "Kartlar",
+    "viewLabel": "Sonuç görünümü",
+    "topologyHint": "Çizgiler algılanan başlatma bağımlılıklarını gösterir.",
+    "unavailable": "Kullanılamıyor",
+    "selected": "Seçildi",
+    "selectService": "Hizmeti seç",
+    "selectNamedService": "{name} seç",
+    "selectProject": "{name} içindeki tüm hizmetleri seç",
+    "clearSelection": "Seçimi temizle",
+    "selectionKeyboard": "Bir hizmet seçmek için Enter veya Boşluk tuşuna basın."
   },
   "reimport": {
     "title": "Openship projeleri bulundu",
@@ -212,5 +228,18 @@
     "empty": "İçe aktarmak istediğiniz sunucuyu bağlayın.",
     "hint": "Yalnızca taşıma için. İşiniz bittiğinde bağlantıyı kaldırabilirsiniz.",
     "importHint": "Uygulamaları ve verileri yönetilen bir Openship sunucusuna kopyalayın. Geçişi onaylayana kadar kaynak korunur."
+  },
+  "review": {
+    "progress": "İçe aktarma ilerlemesi",
+    "title": "Hizmetleri inceleyin",
+    "hint": "Taşımadan önce erişimi ve verileri inceleyin.",
+    "configureService": "{name} yapılandır",
+    "keepDetected": "Algılananı koru",
+    "internal": "Yalnızca dahili",
+    "detected": "Algılandı",
+    "finishRoute": "Yönlendirmeyi tamamlayın",
+    "finishRouteHint": "Alan adını ve bağlantı noktasını tamamlayın veya Yalnızca dahili seçin.",
+    "routingTitle": "Alan adları ve yönlendirme",
+    "scanOptions": "Tarama seçenekleri"
   }
 }
