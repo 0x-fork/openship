@@ -207,22 +207,6 @@ vi.mock("@repo/platform/engine/lib/openship-manifest-sync", () => ({
 vi.mock("@repo/platform/engine/modules/deployments/attach-linked-networks", () => ({ attachLinkedNetworks: vi.fn(async () => undefined) }));
 vi.mock("@repo/platform/engine/modules/deployments/port-audit.service", () => ({ auditPorts: vi.fn(async () => []) }));
 vi.mock("@repo/platform/engine/modules/deployments/stability-audit.service", () => ({ verifyDeployedContainers: vi.fn(async () => []) }));
-// Delegates to the REAL readiness-gate implementation instead of a canned
-// `{ active: false }`. Every test in this file except the ones below leaves
-// `project.readiness` unset, and the real resolveReadinessGate already
-// resolves null/undefined to `active: false` — so this changes nothing for
-// them. The readiness-target tests below need the real onFailure/stabilize
-// semantics to prove the wiring in build-pipeline.ts, not a stand-in for it.
-vi.mock("@repo/platform/engine/modules/deployments/readiness-gate", async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import("@repo/platform/engine/modules/deployments/readiness-gate")
-    >();
-  return {
-    resolveReadinessGate: vi.fn(actual.resolveReadinessGate),
-    runReadinessGate: vi.fn(actual.runReadinessGate),
-  };
-});
 vi.mock("@repo/platform/engine/modules/deployments/output-audit.service", () => ({
   auditStaticOutput: vi.fn(async () => []),
   describeOutputFinding: vi.fn(() => ""),
@@ -1067,7 +1051,9 @@ describe("single-app prebuilt release-image pipeline", () => {
 
     it('rejects through the server target\'s own executor when onFailure is "fail"', async () => {
       const forwardPort = vi.fn(async () => {
-        throw new Error("ECONNREFUSED");
+        throw Object.assign(new Error("(SSH) Channel open failure: Connection refused"), {
+          reason: 2,
+        });
       });
       useTarget("server", serverExecutor(forwardPort));
 
@@ -1083,9 +1069,53 @@ describe("single-app prebuilt release-image pipeline", () => {
       expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
     });
 
+    it("keeps a healthy app unverified when its SSH control connection is unavailable", async () => {
+      const { createServer } = await import("node:http");
+      const server = createServer((_request, response) => {
+        response.writeHead(200);
+        response.end("healthy");
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const port = (server.address() as { port: number }).port;
+        expect((await fetch(`http://127.0.0.1:${port}/ready`)).status).toBe(200);
+        mocks.getContainerInfo.mockResolvedValue({ status: "running", hostPort: port });
+        const forwardPort = vi.fn(async () => {
+          throw Object.assign(new Error("SSH connection lost: read ECONNRESET"), {
+            code: "ECONNRESET",
+            level: "client-socket",
+          });
+        });
+        useTarget("server", serverExecutor(forwardPort));
+        const { env, containerId, config } = await captureEnvironment({
+          enabled: true,
+          onFailure: "fail",
+          stabilization: false,
+          timeoutSeconds: 0.01,
+          path: "/ready",
+        });
+
+        await expect(env.healthCheck!(containerId, config)).resolves.toBeUndefined();
+        expect(forwardPort).toHaveBeenCalledExactlyOnceWith("127.0.0.1", port);
+        expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
+        expect(mocks.appendLog).toHaveBeenCalledWith(
+          "deployment-1",
+          expect.objectContaining({
+            level: "warn",
+            message: expect.stringMatching(/Health check SKIPPED:.*ECONNRESET.*unverified/s),
+          }),
+        );
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
     it('warns instead of failing the deploy when onFailure is "warn"', async () => {
       const forwardPort = vi.fn(async () => {
-        throw new Error("ECONNREFUSED");
+        throw Object.assign(new Error("(SSH) Channel open failure: Connection refused"), {
+          reason: 2,
+        });
       });
       useTarget("server", serverExecutor(forwardPort));
 
@@ -1098,6 +1128,13 @@ describe("single-app prebuilt release-image pipeline", () => {
 
       await expect(env.healthCheck!(containerId, config)).resolves.toBeUndefined();
       expect(forwardPort).toHaveBeenCalledTimes(1);
+      expect(mocks.appendLog).toHaveBeenCalledWith(
+        "deployment-1",
+        expect.objectContaining({
+          level: "warn",
+          message: expect.stringContaining("health check is set to warn"),
+        }),
+      );
     });
 
     it("wires no health check for a server target when the project has not enabled probing", async () => {
@@ -1108,21 +1145,24 @@ describe("single-app prebuilt release-image pipeline", () => {
       expect(env.healthCheck).toBeUndefined();
     });
 
-    it("stays excluded for a Cloud target even with probing enabled", async () => {
-      // An ordinary Cloud runtime has no comparable target executor (unlike a
-      // Cloud Docker workspace) — `null` here matches that ordinary case.
-      useTarget("cloud", null);
+    it.each(["cloud", "cluster"])(
+      "stays excluded for a %s target even with probing enabled",
+      async (target) => {
+        // An ordinary Cloud runtime has no comparable target executor (unlike a
+        // Cloud Docker workspace) — `null` here matches that ordinary case.
+        useTarget(target, null);
 
-      const { env, containerId, config } = await captureEnvironment({
-        enabled: true,
-        onFailure: "fail",
-        stabilization: false,
-        timeoutSeconds: 0.01,
-      });
+        const { env, containerId, config } = await captureEnvironment({
+          enabled: true,
+          onFailure: "fail",
+          stabilization: false,
+          timeoutSeconds: 0.01,
+        });
 
-      await expect(env.healthCheck!(containerId, config)).resolves.toBeUndefined();
-      expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
-    });
+        await expect(env.healthCheck!(containerId, config)).resolves.toBeUndefined();
+        expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
+      },
+    );
   });
 });
 

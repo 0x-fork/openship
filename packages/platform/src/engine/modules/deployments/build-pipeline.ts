@@ -1605,23 +1605,12 @@ interface ServeStrategy {
    */
   readiness?: (containerId: string, config: DeployConfig) => Promise<string | null>;
   /**
-   * Can `readiness` answer for a REMOTE target?
+   * Whether `readiness` can reach a non-local deployment.
    *
-   * Static file-serve sets this unconditionally `true`: its static-output
-   * check goes through the routing provider, which reaches the edge
-   * wherever it lives, for any target.
-   *
-   * The running-process strategy sets this only for a "server" target:
-   * `readiness` then calls `probeDeployedReadiness`, which dials through
-   * that target's own executor (SSH forwarding, falling back to a host-exec
-   * curl) rather than this orchestrator's loopback — see readiness-probe.ts.
-   * It stays `false` for "cloud" and "cluster", so their probe behavior is
-   * unchanged.
-   *
-   * Omitting this (or leaving it false) restricts the probe to a "local"
-   * target. The pipeline then logs a skip and leaves `onFailure` unconsulted
-   * for this one check — a project's stabilization watch can still fail the
-   * deploy on its own.
+   * Static-output checks use the routing provider for every target.
+   * Running-process checks use the target executor on Server deployments.
+   * Omitted/false restricts this probe to local targets; stabilization is
+   * independent and can still reject remote deployments.
    */
   readinessWorksRemotely?: boolean;
 }
@@ -1709,11 +1698,8 @@ function buildDeployEnvironment(
                   ).filter((finding) => !finding.verdict.ok);
                   return unstable ? unstable.detail : null;
                 },
-            // A port probe dials from the orchestrator by default, so it only
-            // answers for a LOCAL target — unless the strategy declares it can
-            // reach THIS target on its own (readinessWorksRemotely; the
-            // static-file strategy always does, the running-process strategy
-            // does it only for a "server" target).
+            // Non-local probes must support the target's transport. Static-output
+            // checks always do; running-process checks support Server targets.
             probe:
               serve.readiness && (effectiveTarget === "local" || serve.readinessWorksRemotely)
                 ? () => serve.readiness!(containerId, cfg)
@@ -2161,19 +2147,8 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           }
           return verdict.failure;
         },
-        // For a "server" target, probeDeployedReadiness dials through that
-        // target's own executor (SSH forwarding, falling back to a host-exec
-        // curl) rather than this orchestrator's loopback — see
-        // readiness-probe.ts. The compose pipeline already relies on that
-        // same function to probe remote per-service workloads, with no
-        // local-only restriction. This strategy was missing the declaration
-        // that says so, so a "server" target skipped this TCP/HTTP probe
-        // outright, and a failing app couldn't trigger `onFailure: "fail"`
-        // through this check (stabilization, the other check, already
-        // covers remote/SSH targets on its own).
-        //
-        // Enable this probe for Server targets through their target
-        // executor. Keep Cloud and cluster probe behavior unchanged.
+        // The shared probe uses the server target's executor, as compose does.
+        // Cloud and cluster targets do not use this remote probe path.
         readinessWorksRemotely: phase.effectiveTarget === "server",
       };
 
