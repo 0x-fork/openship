@@ -306,6 +306,38 @@ it("uses the reopened run's cutover token without a server prop or a second acti
   expect(h.confirmCutover).toHaveBeenCalledExactlyOnceWith("run", "this-run-only", false);
 });
 
+it.each([undefined, "unavailable-run"])(
+  "keeps project migrations out of the scan flow when the run is %s",
+  async (initialRunId) => {
+    h.getMigration.mockResolvedValue({ run: null });
+    const onBack = vi.fn();
+    await act(async () =>
+      root.render(
+        <ServerMigrationWizard
+          variant="tab"
+          origin="project"
+          initialRunId={initialRunId}
+          onClose={vi.fn()}
+          onBack={onBack}
+        />,
+      ),
+    );
+
+    expect(button("Scan server")).toBeUndefined();
+    expect(container.querySelector('[aria-label="Import details"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Scan options"]')).toBeNull();
+    expect(h.scanStream).not.toHaveBeenCalled();
+    const back = Array.from(container.querySelectorAll("button")).find((candidate) =>
+      candidate.textContent?.includes("Back"),
+    );
+    expect(back).toBeDefined();
+    await act(async () => back!.click());
+    expect(onBack).toHaveBeenCalledOnce();
+    expect(h.migrate).not.toHaveBeenCalled();
+    expect(h.reimport).not.toHaveBeenCalled();
+  },
+);
+
 it("waits for the selected destination's storage review before enabling migration", async () => {
   useCloud();
   const server = {
