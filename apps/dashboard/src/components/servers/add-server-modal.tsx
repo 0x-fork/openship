@@ -11,10 +11,12 @@ import { useI18n } from "@/components/i18n-provider";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useModal } from "@/context/ModalContext";
 import { ServerForm } from "./server-form";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@repo/ui/icons";
 
 function AddServerDialog({ onCancel, onManaged, onConnected, connectedOnly = false, migrationSource = false }: {
   onCancel: () => void;
-  onManaged: (server: CloudWorkspaceSummary, needsPlan: boolean) => Promise<void>;
+  onManaged: (server: CloudWorkspaceSummary, needsPlan: boolean, checkoutUrl?: string) => Promise<void>;
   onConnected: (server: ServerInfo) => void;
   connectedOnly?: boolean;
   migrationSource?: boolean;
@@ -22,13 +24,23 @@ function AddServerDialog({ onCancel, onManaged, onConnected, connectedOnly = fal
   const { t } = useI18n();
   const { selfHosted } = usePlatform();
   const [mode, setMode] = useState<ServerAcquisitionMode>(selfHosted ? "connected" : "managed");
+  const managed = !connectedOnly && mode === "managed";
   const { dialog, onKeyDown } = useDialogFocus(onCancel);
   return (
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t.servers.setup.addServer}
-      tabIndex={-1} onKeyDown={onKeyDown} className="space-y-4 outline-none">
+      tabIndex={-1} onKeyDown={onKeyDown} className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col outline-none"
+      style={{ width: `min(${managed ? "1440px" : "720px"}, calc(100vw - 2rem))` }}>
+      {managed && <header className="flex shrink-0 items-center justify-between gap-3 px-5 py-3">
+        <h2 className="text-lg font-semibold tracking-tight">{t.servers.setup.addServer}</h2>
+        <Button type="button" variant="ghost" size="icon" onClick={onCancel} aria-label={t.billing.workspaces.returnToSetup}>
+          <Icon name="close" className="size-4" />
+        </Button>
+      </header>}
+      <div className={`min-h-0 space-y-4 overflow-y-auto ${managed ? "px-5 pb-5" : ""}`}>
       {selfHosted && !connectedOnly && <ServerAcquisitionPicker value={mode} onChange={setMode} />}
-      {!connectedOnly && mode === "managed" ? <ManagedServerSetup onCancel={onCancel} onReady={onManaged} autoFocus={false} />
+      {managed ? <ManagedServerSetup onReady={onManaged} preserveProject />
         : <ServerForm variant="modal" migrationSource={migrationSource} onCancel={onCancel} onSaved={({ server }) => onConnected(server)} />}
+      </div>
     </div>
   );
 }
@@ -63,8 +75,10 @@ export function useAddServerModal({ connectedOnly = false, migrationSource = fal
       let id = "";
       let active = true;
       id = showModal({
-        width: "720px",
-        maxWidth: "92vw",
+        width: "auto",
+        maxWidth: "calc(100vw - 2rem)",
+        maxHeight: "calc(100dvh - 2rem)",
+        overflow: "hidden",
         showCloseButton: false,
         onClose: () => { active = false; openDialogs.current.delete(id); },
         // Pickers live inside other modals (backup destination, adopt mail,
@@ -77,7 +91,7 @@ export function useAddServerModal({ connectedOnly = false, migrationSource = fal
             connectedOnly={connectedOnly}
             migrationSource={migrationSource}
             onCancel={() => hideModal(id)}
-            onManaged={async (managed, needsPlan) => {
+            onManaged={async (managed, needsPlan, checkoutUrl) => {
               if (!active) return;
               const server = await systemApi.getServerById(managed.serverId);
               if (!active) return;
@@ -87,7 +101,7 @@ export function useAddServerModal({ connectedOnly = false, migrationSource = fal
               let plansId = "";
               plansId = showModal({
                 width: "100%",
-                maxWidth: "1440px",
+                maxWidth: checkoutUrl ? "560px" : "1440px",
                 maxHeight: "calc(100dvh - 2rem)",
                 overflow: "hidden",
                 showCloseButton: false,
@@ -97,6 +111,7 @@ export function useAddServerModal({ connectedOnly = false, migrationSource = fal
                   <CloudDeployPlanModal
                     workspaceId={managed.id}
                     serverName={managed.name}
+                    initialCheckoutUrl={checkoutUrl}
                     onClose={() => hideModal(plansId)}
                   />
                 ),

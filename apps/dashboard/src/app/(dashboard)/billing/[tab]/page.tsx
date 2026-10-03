@@ -5,7 +5,7 @@ import { BillingUsage } from "@/components/billing/BillingUsage";
 import { BillingTopups } from "@/components/billing/BillingTopups";
 import { BillingPlansRoute } from "../_components/BillingPlansRoute";
 import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
-import { BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "../_components/billing-shared";
+import { BillingPlanSummary, BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "../_components/billing-shared";
 import { BILLING_TABS } from "../_components/billing-tabs";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { getBillingPageState, getDefaultBillingWorkspace } from "../_components/billing-state";
@@ -16,6 +16,7 @@ import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import { getSession } from "@/lib/server/session";
 import { billingTabHref } from "@/lib/billing-links";
 import { BillingPageView, type BillingView } from "../_components/BillingViewContext";
+import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 
 export default async function BillingTabPage({
   params,
@@ -34,18 +35,27 @@ export default async function BillingTabPage({
 
   const workspaceId = (Array.isArray(query.workspaceId) ? query.workspaceId[0] : query.workspaceId) || undefined;
   const organizationId = (Array.isArray(query.organizationId) ? query.organizationId[0] : query.organizationId) || undefined;
+  const checkoutReturn = ["checkout", "topup", "session_id"].some(key => query[key] !== undefined);
+  const newServer = activeTab === "plans" && query.newServer === "1" && !checkoutReturn;
   const session = await getSession();
   const view: BillingView = {
     contextKey: `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`,
     requestedWorkspaceId: workspaceId,
     organizationId,
     plansOnly: false,
+    newServer,
   };
   if (organizationId && session?.session.activeOrganizationId !== organizationId) {
-    return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab === "topups" ? "topups" : "overview"} workspaceId={workspaceId} embedded /></BillingPageView>;
+    return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab} workspaceId={workspaceId} newServer={newServer} embedded /></BillingPageView>;
   }
+  // Buying another server is separate from inspecting an existing subscription.
+  // The shared purchase component creates an explicitly scoped identity on selection.
+  if (newServer) return <BillingPageView view={{ ...view, plansOnly: true }}>
+    <BillingWorkspaceProvider>
+      <BillingContent layout="purchase" sidebar={null}><ManagedServerPurchase /></BillingContent>
+    </BillingWorkspaceProvider>
+  </BillingPageView>;
   let result = await getBillingPageState(workspaceId);
-  const checkoutReturn = ["checkout", "topup", "session_id"].some(key => query[key] !== undefined);
   if (result.kind === "unavailable" && result.reason === "workspace-required" && !workspaceId && !checkoutReturn) {
     const defaultWorkspaceId = await getDefaultBillingWorkspace();
     if (defaultWorkspaceId) {
@@ -55,7 +65,7 @@ export default async function BillingTabPage({
   }
 
   if (result.kind === "unavailable") {
-    return <BillingPageView view={view}><BillingContent sidebar={null}><BillingUnavailable reason={result.reason} /></BillingContent></BillingPageView>;
+    return <BillingPageView view={view}><BillingContent layout={activeTab === "plans" ? "plans" : "details"} sidebar={null}><BillingUnavailable reason={result.reason} /></BillingContent></BillingPageView>;
   }
 
   const state = result.state;
@@ -72,6 +82,8 @@ export default async function BillingTabPage({
         return <BillingUsage state={state} />;
       case "plans":
         return (
+          <>
+          {!plansOnly && <BillingPlanSummary state={state} compact />}
           <BillingPlansRoute
             currentPlan={state.tier as PlanTierId}
             currentOffer={state.plan}
@@ -80,7 +92,9 @@ export default async function BillingTabPage({
             complimentary={state.complimentary}
             billingEnabled={state.billing?.enabled === true}
             canChangeSubscription={state.capabilities?.subscriptionChange === true}
+            existingServer={!plansOnly}
           />
+          </>
         );
       case "topups":
         return <BillingTopups state={state} />;
@@ -107,10 +121,11 @@ export default async function BillingTabPage({
     <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly }}>
       <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
         <BillingContent
-          key={state.workspace?.id ?? "unsubscribed"}
+          key={`${view.contextKey}:${state.workspace?.id ?? "unsubscribed"}`}
+          layout={activeTab === "plans" ? "plans" : "details"}
           sidebar={
-            plansOnly ? null : (
-              <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} showPlanAction={activeTab !== "plans"} />
+            plansOnly || activeTab === "plans" ? null : (
+              <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} />
             )
           }
         >

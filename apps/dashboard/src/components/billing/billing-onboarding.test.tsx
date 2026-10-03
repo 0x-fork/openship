@@ -12,7 +12,7 @@ import type { BillingState } from "@/lib/api/billing";
 import type { BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
 import { ApiError } from "@/lib/api/client";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
-import { BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "@/app/(dashboard)/billing/_components/billing-shared";
+import { BillingPlanSummary, BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "@/app/(dashboard)/billing/_components/billing-shared";
 import { BillingOverview } from "./BillingOverview";
 import { BillingCapacity } from "./BillingCapacity";
 import { PlanResources } from "./PlanResources";
@@ -460,17 +460,19 @@ describe("complimentary Cloud plans", () => {
     expect(visibleText()).not.toContain("Credits renew on");
   });
 
-  it("marks the grant as current in plan comparison while keeping checkout disabled", async () => {
-    await render(<CloudPlanPicker
+  it("shows the saved complimentary plan separately from paid offers and keeps checkout disabled", async () => {
+    await render(<><BillingPlanSummary state={complimentary} compact /><CloudPlanPicker
       currentPlan={complimentary.tier}
+      currentOffer={complimentary.plan}
       subscription={complimentary.subscription}
       complimentary={complimentary.complimentary}
       billingEnabled
       canChangeSubscription={false}
-    />);
-    const currentCard = () => [...container.querySelectorAll("h3")].find(heading => heading.textContent === "Scale")!.parentElement!.parentElement!;
-    expect(currentCard().textContent).toContain(copy.pricing.currentPlan);
-    expect(currentCard().querySelector("button")).toBeNull();
+    /></>);
+    const current = container.querySelector('section[aria-label="Current plan"]')!;
+    expect(current.textContent).toContain("Scale");
+    expect(current.textContent).toContain(copy.complimentary.label);
+    expect(current.textContent).not.toContain("$99");
     expect(container.textContent).toContain(copy.complimentary.changeViaSupport);
     expect(container.textContent).not.toContain(copy.plansRoute.changeViaSupport);
     const choose = button("Choose Hobby");
@@ -478,7 +480,7 @@ describe("complimentary Cloud plans", () => {
     await act(async () => choose.click());
     expect(mocks.post).not.toHaveBeenCalled();
     await act(async () => button(copy.pricing.annual).click());
-    expect(currentCard().textContent).toContain(copy.pricing.currentPlan);
+    expect(current.textContent).toContain(copy.complimentary.label);
   });
 
   it("explains complimentary top-up availability without asking for another subscription", async () => {

@@ -8,6 +8,7 @@ export interface BillingView {
   organizationId?: string;
   workspaceId?: string;
   plansOnly: boolean;
+  newServer?: boolean;
 }
 
 const BillingViewContext = createContext<(_view: BillingView) => void>(() => {});

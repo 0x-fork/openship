@@ -105,7 +105,17 @@
     "checkoutError": "No se pudo iniciar el pago",
     "changeViaSupport": "Contacta con soporte para cambiar el plan de este servidor. Tu suscripción actual se mantiene.",
     "billingUnavailable": "Las compras no están disponibles actualmente.",
-    "currentServerPlans": "Compara planes para este servidor."
+    "currentServerPlans": "Compara planes para este servidor.",
+    "upgradeServer": "Ampliar este servidor",
+    "upgradeHint": "Más capacidad para este servidor. Revisa el precio y los reinicios antes de aplicar el cambio.",
+    "otherPlans": "Otros planes",
+    "otherPlansHint": "Los cambios a menor precio comienzan al renovar. El almacenamiento existente no se puede reducir.",
+    "backToUpgrades": "Volver a las ampliaciones",
+    "resumeServer": "Elige un plan para este servidor",
+    "resumeHint": "Conserva este servidor y sus proyectos. Elige un plan para reanudar los despliegues.",
+    "newServer": "Elige un plan para tu nuevo servidor",
+    "serverName": "Nombre del servidor",
+    "noLargerPlan": "No hay un plan mayor para este período de facturación. Contacta con soporte para ver otras opciones."
   },
   "complimentary": {
     "label": "Plan de cortesía · Sin cargo",
@@ -667,7 +677,7 @@
     "extraMemory": "Memoria adicional",
     "extraDisk": "Almacenamiento adicional",
     "rates": "Extras mensuales: {cpu}/vCPU, {memory}/GB de RAM, {disk}/GB de almacenamiento. Solo se cobra lo que supere el paquete elegido.",
-    "applyNotice": "El nuevo plan comienza tras confirmar el pago.",
+    "applyNotice": "Las ampliaciones se aplican tras el pago. Los cambios a menor precio comienzan al renovar.",
     "resizeTitle": "Aplicar los recursos de tu suscripción",
     "resizeDescription": "Tu plan ha cambiado. Revisa la nueva capacidad y los proyectos afectados antes de reiniciar este servidor.",
     "applying": "Actualizando recursos del servidor. Puedes seguir el progreso en su página.",

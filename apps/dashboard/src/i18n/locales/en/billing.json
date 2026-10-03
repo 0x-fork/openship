@@ -105,7 +105,17 @@
     "checkoutError": "Failed to start checkout",
     "changeViaSupport": "Contact support to change this server’s plan. Your current subscription stays in place.",
     "billingUnavailable": "Purchases are currently unavailable.",
-    "currentServerPlans": "Compare plans for this server."
+    "currentServerPlans": "Compare plans for this server.",
+    "upgradeServer": "Upgrade this server",
+    "upgradeHint": "More capacity for this server. Review the price and any restarts before applying.",
+    "otherPlans": "Other plans",
+    "otherPlansHint": "Lower-cost changes start at renewal. Existing storage cannot shrink.",
+    "backToUpgrades": "Back to upgrades",
+    "resumeServer": "Choose a plan for this server",
+    "resumeHint": "Keep this server and its projects. Choose a plan to resume deployments.",
+    "newServer": "Choose a plan for your new server",
+    "serverName": "Server name",
+    "noLargerPlan": "No larger plan is available for this billing interval. Contact support for other options."
   },
   "complimentary": {
     "label": "Complimentary · No charge",
@@ -546,7 +556,7 @@
     "extraMemory": "Additional memory",
     "extraDisk": "Additional storage",
     "rates": "Monthly extras: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB storage. Charged only above the selected bundle.",
-    "applyNotice": "The new plan starts after payment is confirmed.",
+    "applyNotice": "Upgrades apply after payment. Lower-cost changes start at renewal.",
     "resizeTitle": "Apply your subscribed resources",
     "resizeDescription": "Your plan has changed. Review the new capacity and affected projects before restarting this server.",
     "applying": "Updating server resources. You can follow progress on the server page.",

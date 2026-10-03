@@ -105,7 +105,17 @@
     "checkoutError": "Bezahlvorgang konnte nicht gestartet werden",
     "changeViaSupport": "Kontaktiere den Support, um den Tarif dieses Servers zu ändern. Dein aktuelles Abonnement bleibt bestehen.",
     "billingUnavailable": "Käufe sind derzeit nicht verfügbar.",
-    "currentServerPlans": "Tarife für diesen Server vergleichen."
+    "currentServerPlans": "Tarife für diesen Server vergleichen.",
+    "upgradeServer": "Diesen Server erweitern",
+    "upgradeHint": "Mehr Kapazität für diesen Server. Preis und nötige Neustarts vor der Änderung prüfen.",
+    "otherPlans": "Andere Pläne",
+    "otherPlansHint": "Günstigere Änderungen gelten ab der Verlängerung. Bestehender Speicher kann nicht verkleinert werden.",
+    "backToUpgrades": "Zurück zu Upgrades",
+    "resumeServer": "Plan für diesen Server wählen",
+    "resumeHint": "Server und Projekte behalten. Einen Plan wählen, um wieder bereitzustellen.",
+    "newServer": "Plan für deinen neuen Server wählen",
+    "serverName": "Servername",
+    "noLargerPlan": "Für dieses Abrechnungsintervall ist kein größerer Plan verfügbar. Weitere Optionen bietet der Support."
   },
   "complimentary": {
     "label": "Kostenlos · Keine Gebühren",
@@ -667,7 +677,7 @@
     "extraMemory": "Zusätzlicher Arbeitsspeicher",
     "extraDisk": "Zusätzlicher Speicherplatz",
     "rates": "Monatliche Zusatzressourcen: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB Speicherplatz. Berechnet wird nur, was über das gewählte Paket hinausgeht.",
-    "applyNotice": "Der neue Plan beginnt nach bestätigter Zahlung.",
+    "applyNotice": "Upgrades gelten nach der Zahlung. Günstigere Änderungen beginnen bei der Verlängerung.",
     "resizeTitle": "Gebuchte Ressourcen übernehmen",
     "resizeDescription": "Dein Tarif hat sich geändert. Prüfe die neue Kapazität und die betroffenen Projekte, bevor du diesen Server neu startest.",
     "applying": "Serverressourcen werden aktualisiert. Den Fortschritt siehst du auf der Serverseite.",

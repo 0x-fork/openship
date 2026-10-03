@@ -105,7 +105,17 @@
     "checkoutError": "Falha ao iniciar o checkout",
     "changeViaSupport": "Entre em contato com o suporte para alterar o plano deste servidor. Sua assinatura atual permanece em vigor.",
     "billingUnavailable": "As compras estão indisponíveis no momento.",
-    "currentServerPlans": "Compare planos para este servidor."
+    "currentServerPlans": "Compare planos para este servidor.",
+    "upgradeServer": "Ampliar este servidor",
+    "upgradeHint": "Mais capacidade para este servidor. Reveja o preço e as reinicializações antes de aplicar.",
+    "otherPlans": "Outros planos",
+    "otherPlansHint": "Alterações de menor custo entram em vigor na renovação. O armazenamento existente não pode ser reduzido.",
+    "backToUpgrades": "Voltar às ampliações",
+    "resumeServer": "Escolha um plano para este servidor",
+    "resumeHint": "Mantenha este servidor e seus projetos. Escolha um plano para retomar as implantações.",
+    "newServer": "Escolha um plano para seu novo servidor",
+    "serverName": "Nome do servidor",
+    "noLargerPlan": "Não há um plano maior para este período de cobrança. Entre em contato com o suporte para outras opções."
   },
   "complimentary": {
     "label": "Plano de cortesia · Sem cobrança",
@@ -667,7 +677,7 @@
     "extraMemory": "Memória adicional",
     "extraDisk": "Armazenamento adicional",
     "rates": "Extras mensais: {cpu}/vCPU, {memory}/GB de RAM, {disk}/GB de armazenamento. Cobrança somente acima do pacote escolhido.",
-    "applyNotice": "O novo plano começa após a confirmação do pagamento.",
+    "applyNotice": "As ampliações são aplicadas após o pagamento. Alterações de menor custo começam na renovação.",
     "resizeTitle": "Aplicar os recursos da assinatura",
     "resizeDescription": "Seu plano mudou. Revise a nova capacidade e os projetos afetados antes de reiniciar este servidor.",
     "applying": "Atualizando os recursos do servidor. Acompanhe o progresso na página dele.",

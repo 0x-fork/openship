@@ -10,18 +10,22 @@ import { billingApi, type BillingState } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
 import { cloudDeployRecovery, type CloudDeployRestriction } from "@/lib/cloud-deploy-pricing";
 import { workspaceBillingHref } from "./BillingWorkspaceContext";
-import { CloudPlanPicker } from "./CloudPlanPicker";
+import { CloudCheckoutNotice, CloudPlanPicker } from "./CloudPlanPicker";
+import { isNewCloudCustomer } from "@/lib/billing-presentation";
 
 export function CloudDeployPlanModal({
   restriction = { code: "CLOUD_BILLING_BLOCKED" },
   onClose,
   workspaceId,
   serverName,
+  initialCheckoutUrl,
 }: {
   restriction?: CloudDeployRestriction;
   workspaceId?: string;
   /** Explicit server setup reuses checkout without presenting a deployment failure. */
   serverName?: string;
+  /** A plan-first server purchase has already opened checkout. */
+  initialCheckoutUrl?: string;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -36,7 +40,7 @@ export function CloudDeployPlanModal({
   const [state, setState] = useState<BillingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<"owner" | "unavailable" | null>(null);
-  const [checkoutStarted, setCheckoutStarted] = useState(false);
+  const [checkoutStarted, setCheckoutStarted] = useState(Boolean(initialCheckoutUrl));
   const [checked, setChecked] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -74,7 +78,7 @@ export function CloudDeployPlanModal({
     (state.subscription?.offerReference ?? state.tier) !== initialOffer.current;
   const ready = recovery === "ready" || planChanged;
   const readyTitle = serverName !== undefined ? t.billing.workspaces.serverPlanReadyTitle : copy.readyTitle;
-  const showPlans = !ready && (recovery === "subscribe" || recovery === "upgrade");
+  const showPlans = !ready && !initialCheckoutUrl && (recovery === "subscribe" || recovery === "upgrade");
   const title = serverName !== undefined
     ? interpolate(t.billing.workspaces.serverPlanTitle, { name: serverName })
     : recovery === "credits"
@@ -151,6 +155,7 @@ export function CloudDeployPlanModal({
         ) : (
           state && (
             <div className="space-y-5">
+              {!ready && initialCheckoutUrl && <CloudCheckoutNotice checkoutUrl={initialCheckoutUrl} />}
               {showPlans && (
                 <CloudPlanPicker
                   workspaceId={state.workspace?.id ?? workspaceId}
@@ -161,6 +166,7 @@ export function CloudDeployPlanModal({
                   complimentary={state.complimentary}
                   billingEnabled={state.billing?.enabled === true}
                   canChangeSubscription={state.capabilities?.subscriptionChange === true}
+                  existingServer={!isNewCloudCustomer(state)}
                   preserveProject
                   onCheckoutStarted={() => {
                     setCheckoutStarted(true);

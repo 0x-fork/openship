@@ -16,9 +16,15 @@ export function billingTabHref(tab: "overview" | "plans", query: Record<string, 
 /** Keep the chosen subscription and organization through billing navigation. */
 export function scopedBillingHref(path: string, { workspaceId, organizationId }: BillingLinkScope = {}) {
   const url = new URL(path, "https://openship.invalid");
-  if (workspaceId) url.searchParams.set("workspaceId", workspaceId);
+  // A new purchase must never inherit the server currently being inspected.
+  if (url.searchParams.get("newServer") === "1") url.searchParams.delete("workspaceId");
+  else if (workspaceId) url.searchParams.set("workspaceId", workspaceId);
   if (organizationId) url.searchParams.set("organizationId", organizationId);
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function newServerBillingHref(organizationId?: string | null) {
+  return scopedBillingHref("/billing/plans?newServer=1", { organizationId });
 }
 
 export function workspaceBillingHref(path: string, workspaceId?: string | null) {

@@ -18,23 +18,25 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const requestedWorkspaceId = searchParams.get("workspaceId") || undefined;
   const organizationId = searchParams.get("organizationId") || undefined;
+  const segment = pathname.split("/").at(-1);
+  const newServer = segment === "plans" && searchParams.get("newServer") === "1"
+    && !["checkout", "topup", "session_id"].some(key => searchParams.has(key));
   const { selfHosted } = usePlatform();
   const inventory = useServerDestinations(!selfHosted);
   const [view, setView] = useState<BillingView | null>(null);
   const organizationMatches = !organizationId || organizationId === inventory.organizationId;
-  const currentView = view?.contextKey === inventory.contextKey && organizationMatches ? view : null;
-  const workspaceId = requestedWorkspaceId ?? (
+  const currentView = view?.contextKey === inventory.contextKey && organizationMatches && Boolean(view.newServer) === newServer ? view : null;
+  const workspaceId = newServer ? undefined : requestedWorkspaceId ?? (
     currentView?.requestedWorkspaceId === requestedWorkspaceId ? currentView?.workspaceId : undefined
   );
   const reportView = useCallback((next: BillingView) => {
     // A tab from an earlier account, organization or server cannot update the
     // current navigation while its replacement is still loading.
     if (next.contextKey === inventory.contextKey && next.organizationId === organizationId
-      && next.requestedWorkspaceId === requestedWorkspaceId) setView(next);
-  }, [inventory.contextKey, organizationId, requestedWorkspaceId]);
+      && next.requestedWorkspaceId === requestedWorkspaceId && Boolean(next.newServer) === newServer) setView(next);
+  }, [inventory.contextKey, organizationId, requestedWorkspaceId, newServer]);
 
   const servers = inventory.data?.servers.filter(server => server.managed) ?? [];
-  const segment = pathname.split("/").at(-1);
   const activeTab = currentView?.plansOnly ? "plans" : BILLING_TABS.find((tab) => tab.key === segment)?.key ?? "overview";
 
   return (
@@ -42,7 +44,7 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
       <BillingWorkspaceProvider workspaceId={workspaceId} organizationId={organizationId}>
         <BillingViewProvider value={reportView}>
           <BillingHeader />
-          <BillingTabBar activeTab={activeTab} plansOnly={currentView?.plansOnly} loading={!currentView} />
+          <BillingTabBar activeTab={activeTab} plansOnly={newServer || currentView?.plansOnly} newServer={newServer} loading={!currentView} />
           <BillingServerInventoryProvider value={!selfHosted && organizationMatches ? {
             servers, loading: inventory.loading, error: inventory.error, onRetry: inventory.refresh,
           } : null}>

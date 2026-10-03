@@ -8,14 +8,14 @@ import { planCapacity } from "./plan-presentation";
 import { CapacitySummary } from "@/components/shared/CapacitySummary";
 
 /** Shared by plan comparisons and the compact subscription summary. */
-export function PlanCapacity({ plan, workspaceScoped = false }: { plan: ApiPlan; workspaceScoped?: boolean }) {
+export function PlanCapacity({ plan, workspaceScoped = false, compact = false }: { plan: ApiPlan; workspaceScoped?: boolean; compact?: boolean }) {
   const { t } = useI18n();
   const capacity = planCapacity(plan);
   if (!capacity) return null;
   return (
     <div className="space-y-2">
-      {workspaceScoped && <p className="text-xs text-muted-foreground">{t.billing.workspaces.provisioned}</p>}
-      <CapacitySummary resources={{ cpuCores: capacity.cpu, memoryMb: capacity.memoryGb * 1024, diskMb: capacity.diskGb * 1024 }} />
+      {workspaceScoped && !compact && <p className="text-xs text-muted-foreground">{t.billing.workspaces.provisioned}</p>}
+      <CapacitySummary inline={compact} resources={{ cpuCores: capacity.cpu, memoryMb: capacity.memoryGb * 1024, diskMb: capacity.diskGb * 1024 }} />
     </div>
   );
 }

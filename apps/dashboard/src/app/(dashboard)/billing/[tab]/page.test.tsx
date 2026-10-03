@@ -28,6 +28,9 @@ import { BillingPageView, type BillingView } from "../_components/BillingViewCon
 import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import BillingPage from "../page";
+import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
+import { BillingPlanSummary } from "../_components/billing-shared";
+import { BillingContent } from "../_components/BillingContent";
 
 const free = {
   tier: "free", subscription: null, billing: { enabled: true },
@@ -171,6 +174,41 @@ describe("billing page failure recovery", () => {
       contextKey: "user-a:org-a", plansOnly: true,
     });
     expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/state", { cache: "no-store", timeout: 45_000 });
+  });
+
+  it("opens a new-server purchase without selecting or fetching an existing subscription", async () => {
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }),
+      searchParams: Promise.resolve({ newServer: "1", workspaceId: "cws-existing", organizationId: "org-a" }) });
+    expect(findElement(page, ManagedServerPurchase)).toBeDefined();
+    expect(findElement(page, BillingPlanSummary)).toBeUndefined();
+    expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view).toMatchObject({ newServer: true, plansOnly: true });
+    expect(findElement<{ layout: string }>(page, BillingContent)?.props.layout).toBe("purchase");
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("shows the saved subscription above Plans, without the server sidebar", async () => {
+    const state = { ...free, tier: "starter", workspace: { id: "cws-existing", provisioned: true } };
+    mocks.get.mockResolvedValue({ data: state });
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({ workspaceId: "cws-existing" }) });
+    expect(findElement<{ state: unknown; compact: boolean }>(page, BillingPlanSummary)?.props).toMatchObject({ state, compact: true });
+    expect(findElement<{ layout: string; sidebar: unknown }>(page, BillingContent)?.props).toMatchObject({ layout: "plans", sidebar: null });
+  });
+
+  it("reconciles a checkout return even if the new-server query remains in the URL", async () => {
+    mocks.get.mockResolvedValue({ data: { ...free, workspace: { id: "cws-paid" } } });
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({
+      newServer: "1", workspaceId: "cws-paid", checkout: "success", session_id: "checkout-paid",
+    }) });
+    expect(findElement(page, ManagedServerPurchase)).toBeUndefined();
+    expect(findElement(page, BillingCheckoutStatus)).toBeDefined();
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/state?workspaceId=cws-paid", { cache: "no-store", timeout: 45_000 });
+  });
+
+  it("authorizes an organization switch before showing its new-server purchase", async () => {
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({ organizationId: "org-b", newServer: "1" }) });
+    expect(findElement(page, ManagedServerPurchase)).toBeUndefined();
+    expect(findElement<{ newServer: boolean; tab: string }>(page, CloudBillingLink)?.props).toMatchObject({ newServer: true, tab: "plans" });
+    expect(mocks.get).not.toHaveBeenCalled();
   });
 
   it.each([

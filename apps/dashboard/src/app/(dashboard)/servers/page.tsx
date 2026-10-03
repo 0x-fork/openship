@@ -25,6 +25,7 @@ import { ServerClustersPanel } from "@/components/servers/clusters/ServerCluster
 import { useServerClustersOverview } from "@/hooks/useServerClustersOverview";
 import { ServerDeletionModal } from "@/components/servers/ServerDeletionModal";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
+import { newServerBillingHref } from "@/lib/billing-links";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
 const FLAGS = CountryFlags as Record<
@@ -391,7 +392,7 @@ export default function ServersPage() {
             />
           ) : (
             <button
-              onClick={() => router.push(!selfHosted && servers.length === 0 ? "/billing/plans" : "/servers/new")}
+              onClick={() => router.push(selfHosted ? "/servers/new" : newServerBillingHref())}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
             >
               <UiIcon name="plus" className="size-4" />
@@ -491,7 +492,7 @@ export default function ServersPage() {
           // Empty state stands alone (no Quick Info card) and centers.
           <EmptyState
             managed={!selfHosted}
-            onAdd={() => router.push(selfHosted ? "/servers/new" : "/billing/plans")}
+            onAdd={() => router.push(selfHosted ? "/servers/new" : newServerBillingHref())}
             onAddThisMachine={canAddThisMachine ? () => void addThisMachine() : undefined}
           />
         ) : (

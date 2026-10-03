@@ -105,7 +105,17 @@
     "checkoutError": "Ödeme adımı başlatılamadı",
     "changeViaSupport": "Bu sunucunun planını değiştirmek için destekle iletişime geçin. Mevcut aboneliğiniz korunur.",
     "billingUnavailable": "Satın alma işlemleri şu anda kullanılamıyor.",
-    "currentServerPlans": "Bu sunucu için planları karşılaştırın."
+    "currentServerPlans": "Bu sunucu için planları karşılaştırın.",
+    "upgradeServer": "Bu sunucuyu yükselt",
+    "upgradeHint": "Bu sunucu için daha fazla kapasite. Uygulamadan önce fiyatı ve yeniden başlatmaları inceleyin.",
+    "otherPlans": "Diğer planlar",
+    "otherPlansHint": "Daha düşük ücretli değişiklikler yenilemede başlar. Mevcut depolama küçültülemez.",
+    "backToUpgrades": "Yükseltmelere dön",
+    "resumeServer": "Bu sunucu için plan seçin",
+    "resumeHint": "Bu sunucuyu ve projelerini koruyun. Dağıtımlara devam etmek için bir plan seçin.",
+    "newServer": "Yeni sunucunuz için plan seçin",
+    "serverName": "Sunucu adı",
+    "noLargerPlan": "Bu faturalandırma dönemi için daha büyük bir plan yok. Diğer seçenekler için destekle iletişime geçin."
   },
   "complimentary": {
     "label": "Ücretsiz plan · Ücret alınmaz",
@@ -667,7 +677,7 @@
     "extraMemory": "Ek bellek",
     "extraDisk": "Ek depolama",
     "rates": "Aylık ek kaynaklar: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB depolama. Yalnızca seçilen paketin üzerindeki kaynaklar ücretlendirilir.",
-    "applyNotice": "Yeni plan, ödeme onaylandıktan sonra başlar.",
+    "applyNotice": "Yükseltmeler ödemeden sonra uygulanır. Daha düşük ücretli değişiklikler yenilemede başlar.",
     "resizeTitle": "Aboneliğindeki kaynakları uygula",
     "resizeDescription": "Planın değişti. Bu sunucuyu yeniden başlatmadan önce yeni kapasiteyi ve etkilenen projeleri incele.",
     "applying": "Sunucu kaynakları güncelleniyor. İlerlemeyi sunucu sayfasından takip edebilirsin.",

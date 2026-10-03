@@ -93,21 +93,22 @@ export default function AddServerPage() {
   const [mode, setMode] = useState<ServerAcquisitionMode>(selfHosted ? "connected" : "managed");
   const choice = selfHosted ? <ServerAcquisitionPicker value={mode} onChange={setMode} stacked /> : null;
   if (mode === "connected") return <ConnectedServerSetup choice={choice} />;
+  const setup = <ManagedServerSetup onReady={(server, needsPlan) => router.push(needsPlan
+    ? workspaceBillingHref("/billing/plans", server.id) : `/servers/${server.serverId}`)} />;
   return (
     <PageContainer className="@container/server-create space-y-6">
       <Link href="/servers" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
         <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />{t.servers.setup.goToServers}
       </Link>
-      <ServerSetupLayout choice={choice} guidance={
+      {selfHosted ? <ServerSetupLayout choice={choice} guidance={
         <div className="space-y-3 rounded-2xl bg-card p-5">
           <h2 className="text-base font-medium">{t.billing.workspaces.shared}</h2>
           <p className="text-sm text-muted-foreground">{t.billing.workspaces.poolHint}</p>
           <p className="text-sm text-muted-foreground">{t.billing.workspaces.placementHint}</p>
         </div>
       }>
-        <ManagedServerSetup onReady={(server, needsPlan) => router.push(needsPlan
-          ? workspaceBillingHref("/billing/plans", server.id) : `/servers/${server.serverId}`)} />
-      </ServerSetupLayout>
+        {setup}
+      </ServerSetupLayout> : setup}
     </PageContainer>
   );
 }

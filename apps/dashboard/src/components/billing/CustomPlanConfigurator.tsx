@@ -71,8 +71,11 @@ export function CustomPlanConfigurator({ catalog, plans, ui, currentOffer, subsc
 
   // A response for an earlier input can never enable the purchase button.
   const quote = valid && !pending && !error && result?.key === requestKey ? result.quote : null;
-  const current = Boolean(quote && subscription?.configuration === "custom" &&
-    !needsCloudPlan({ tier: subscription.tier, subscription }) && subscription.offerReference === quote.reference);
+  const current = Boolean(quote && subscription && !needsCloudPlan({ tier: subscription.tier, subscription }) &&
+    (subscription.offerReference === quote.reference || (saved &&
+      saved.max_total_vcpus === quote.resources.cpuCores && saved.max_total_ram_mb === quote.resources.memoryMb &&
+      saved.max_total_disk_gb === quote.resources.diskGb && currentOffer?.price.monthly === quote.priceCents &&
+      currentOffer.monthlyCredits === quote.monthlyCredits)));
   const bundle = plans.find(plan => plan.id === quote?.basePlanTierId);
   const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
   const fields: Array<{ key: keyof CustomServerResources; label: string; unit: string; icon: IconName; divisor: number }> = [

@@ -5,11 +5,13 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { useI18n } from "@/components/i18n-provider";
 import { BILLING_TABS, type BillingTab } from "./billing-tabs";
+import { newServerBillingHref } from "@/lib/billing-links";
 
-export function BillingTabBar({ activeTab, plansOnly = false, loading = false }: {
+export function BillingTabBar({ activeTab, plansOnly = false, loading = false, newServer = false }: {
   activeTab: BillingTab;
   plansOnly?: boolean;
   loading?: boolean;
+  newServer?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -31,7 +33,7 @@ export function BillingTabBar({ activeTab, plansOnly = false, loading = false }:
         return (
           <Link
             key={tab.key}
-            href={tab.href}
+            href={newServer && tab.key === "plans" ? newServerBillingHref() : tab.href}
             aria-current={active ? "page" : undefined}
             className={`relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-t-lg px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-4 ${
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground/70"

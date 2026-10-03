@@ -44,6 +44,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Add Server keeps the connected/managed choice stacked in the right sidebar above setup
   guidance. On narrow screens, place that same choice before the form and guidance after it.
   Reuse the shared acquisition picker in both setup modes and dialogs.
+  Cloud Add server opens plan selection first. Reuse the same plan and Custom purchase
+  component in Billing, managed server setup and destination dialogs. Keep the server name
+  inline; create its identity only after a plan is chosen, then use the shared scoped checkout.
 - Destination settings use the normal page layout: server selection first, then visible
   runtime, resource and rollback sections, with a 340px preview/Continue sidebar. Keep the
   same layout in Cloud and self-hosted mode; do not hide it in an Advanced accordion.
@@ -97,9 +100,14 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   allowance. Put metering and shared-capacity explanations once below the plans. Keep
   benefits visible, and use catalog feature keys to avoid repeating resource facts.
 - Cloud billing keeps its header and tabs mounted when switching servers. List managed
-  servers in the right sidebar with Add server, reusing the shared destination rows.
+  servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
   One server is a summary; several servers switch billing directly from the visible list.
-  Keep the selected server's plan below that list, including beside plan comparisons.
+  Plans uses the full page width, with the shared compact server picker above a horizontal
+  summary of its saved subscription and capacity. Default to relevant upgrades; offer
+  Other plans deliberately for lower-cost changes and Custom when no larger preset fits.
+  Do not call today's catalog terms the current plan if they differ from the saved purchase,
+  or offer a preset that would shrink an existing disk. New-server purchases have their own
+  explicit entry and never inherit the selected server's billing scope.
   Unscoped billing opens an existing subscription directly; never
   auto-switch a checkout return or an explicitly selected server. New customers see only
   Plans and pricing, without empty usage, payment or invoice tabs. Keep the full navigation

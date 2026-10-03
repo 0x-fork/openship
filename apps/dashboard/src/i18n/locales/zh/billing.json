@@ -105,7 +105,17 @@
     "checkoutError": "无法开始结账",
     "changeViaSupport": "请联系支持更改此服务器的套餐。当前订阅保持不变。",
     "billingUnavailable": "目前暂不支持购买。",
-    "currentServerPlans": "比较此服务器的套餐。"
+    "currentServerPlans": "比较此服务器的套餐。",
+    "upgradeServer": "升级此服务器",
+    "upgradeHint": "为此服务器增加容量。应用前可查看价格和需要的重启。",
+    "otherPlans": "其他套餐",
+    "otherPlansHint": "费用更低的变更从续费时生效。现有存储无法缩小。",
+    "backToUpgrades": "返回升级选项",
+    "resumeServer": "为此服务器选择套餐",
+    "resumeHint": "保留此服务器及其项目。选择套餐以恢复部署。",
+    "newServer": "为新服务器选择套餐",
+    "serverName": "服务器名称",
+    "noLargerPlan": "此计费周期没有更大的套餐。请联系支持了解其他选项。"
   },
   "complimentary": {
     "label": "赠送套餐 · 免费",
@@ -667,7 +677,7 @@
     "extraMemory": "额外内存",
     "extraDisk": "额外存储",
     "rates": "额外资源月费：{cpu}/vCPU、{memory}/GB 内存、{disk}/GB 存储。仅对超出所选套餐的部分收费。",
-    "applyNotice": "付款确认后，新套餐才会生效。",
+    "applyNotice": "升级在付款后生效。费用更低的变更从续费时开始。",
     "resizeTitle": "应用已订阅的资源",
     "resizeDescription": "你的套餐已更改。重启此服务器之前，请查看新容量及受影响的项目。",
     "applying": "正在更新服务器资源。你可以在服务器页面查看进度。",

@@ -12,7 +12,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useSession } from "@/lib/auth-client";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { systemApi } from "@/lib/api/system";
-import { CreateManagedServerForm } from "./managed/CreateManagedServerForm";
+import { ManagedServerPurchase } from "./managed/ManagedServerPurchase";
 
 export type ServerAcquisitionMode = "connected" | "managed";
 
@@ -37,10 +37,10 @@ export function ServerAcquisitionPicker({ value, onChange, stacked = false }: {
 
 /** Cloud owns subscriptions and provisioning; linking only adds a local server
  * destination. Both newly purchased and existing servers use the same picker. */
-export function ManagedServerSetup({ onReady, onCancel, autoFocus = true }: {
-  onReady: (server: CloudWorkspaceSummary, needsPlan: boolean) => void | Promise<void>;
+export function ManagedServerSetup({ onReady, onCancel, preserveProject = false }: {
+  onReady: (server: CloudWorkspaceSummary, needsPlan: boolean, checkoutUrl?: string) => void | Promise<void>;
   onCancel?: () => void;
-  autoFocus?: boolean;
+  preserveProject?: boolean;
 }) {
   const { t } = useI18n();
   const copy = t.servers.acquire;
@@ -115,8 +115,8 @@ export function ManagedServerSetup({ onReady, onCancel, autoFocus = true }: {
   if (!selfHosted || createNew || servers.length === 0) return (
     <div className="space-y-3">
       {selfHosted && servers.length > 0 && <Button variant="ghost" size="sm" onClick={() => setCreateNew(false)}>{copy.chooseExisting}</Button>}
-      <CreateManagedServerForm key={contextKey} autoFocus={autoFocus} onCancel={onCancel}
-        onCreated={server => onReady(server, true)} />
+      <ManagedServerPurchase key={contextKey} onCancel={onCancel} preserveProject={preserveProject}
+        onCheckoutStarted={(server, checkoutUrl) => { if (contextRef.current === contextKey) return onReady(server, true, checkoutUrl); }} />
     </div>
   );
 
