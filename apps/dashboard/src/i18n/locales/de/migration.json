@@ -55,6 +55,8 @@
     "progress": "Importfortschritt",
     "title": "Dienste prüfen",
     "hint": "Prüfe Zugriff und Daten vor der Migration.",
+    "expandAll": "Alle aufklappen",
+    "collapseAll": "Alle zuklappen",
     "configureService": "{name} konfigurieren",
     "keepDetected": "Erkannte behalten",
     "internal": "Nur intern",

@@ -9,6 +9,7 @@ import {
   type TopologySelection,
 } from "@/components/topology/TopologyCanvas";
 import { ServiceIcon } from "@/components/services/ServiceIcon";
+import { ServiceStatusIndicator } from "@/components/services/ServiceStatusBadge";
 import { optionCardSurface } from "@/components/shared/OptionCard";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -295,6 +296,7 @@ function DiscoveredProject({
           <div id={graphId} className="grid grid-cols-1 gap-3 p-4 pt-0 @2xl:grid-cols-2">
             {group.services.map((service) => {
               const action = actions[svcUid(service)]!;
+              const imageRef = service.image ?? service.build;
               return (
                 <button
                   key={svcUid(service)}
@@ -310,33 +312,44 @@ function DiscoveredProject({
                     <ServiceIcon service={service} />
                   </span>
                   <span className="min-w-0 flex-1 space-y-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {service.name}
-                    </span>
-                    <span
-                      className="block truncate text-xs text-muted-foreground"
-                      title={service.image ?? service.build}
-                    >
-                      {service.image ?? service.build}
-                    </span>
-                    <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="flex min-w-0 items-center justify-between gap-3">
                       <span
-                        className="topology-status"
-                        data-state={service.running ? "running" : "stopped"}
+                        className="truncate text-sm font-medium text-foreground"
+                        title={service.name}
                       >
-                        {action.statusLabel}
+                        {service.name}
                       </span>
-                      {service.volumes.length > 0 && (
-                        <span>
-                          {interpolate(d.nVolumes, { n: String(service.volumes.length) })}
-                        </span>
-                      )}
+                      <span className="flex shrink-0 items-center gap-3">
+                        <ServiceStatusIndicator
+                          status={service.running ? "running" : "stopped"}
+                          label={action.statusLabel}
+                        />
+                        {!recoveredProject && (
+                          <Checkbox asButton={false} checked={action.selected} />
+                        )}
+                      </span>
                     </span>
+                    {(imageRef || service.volumes.length > 0) && (
+                      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        {imageRef && (
+                          <span className="truncate" title={imageRef}>
+                            {imageRef}
+                          </span>
+                        )}
+                        {service.volumes.length > 0 && (
+                          <>
+                            {imageRef && <span aria-hidden="true">·</span>}
+                            <span className="shrink-0">
+                              {interpolate(d.nVolumes, { n: String(service.volumes.length) })}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    )}
                     {action.hint && (
                       <span className="block text-xs text-muted-foreground">{action.hint}</span>
                     )}
                   </span>
-                  {!recoveredProject && <Checkbox asButton={false} checked={action.selected} />}
                 </button>
               );
             })}

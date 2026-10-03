@@ -419,7 +419,9 @@ it("defaults to cards and keeps container selection, view and automatic naming a
     )!;
   expect(tab("Cards").getAttribute("aria-selected")).toBe("true");
   expect(button("Next").disabled).toBe(true);
+  expect(button("Add project")).toBeUndefined();
   await act(async () => pickGroup("first").click());
+  expect(button("Add project")).toBeDefined();
   expect(container.querySelector<HTMLInputElement>('input[id^="import-name-"]')!.value).toBe(
     "first",
   );
@@ -438,11 +440,14 @@ it("defaults to cards and keeps container selection, view and automatic naming a
       ?.getAttribute("aria-checked"),
   ).toBe("false");
   await act(async () => pickGroup("second").click());
+  expect(button("Add project")).toBeUndefined();
   await act(async () => pickGroup("first").click());
+  expect(button("Add project")).toBeDefined();
   expect(container.querySelector<HTMLInputElement>('input[id^="import-name-"]')!.value).toBe(
     "second",
   );
   await act(async () => button("Next").click());
+  expect(button("Add project")).toBeUndefined();
   await act(async () => button("Back").click());
   expect(tab("Topology").getAttribute("aria-selected")).toBe("true");
   expect(pickGroup("second").getAttribute("aria-checked")).toBe("true");
@@ -482,6 +487,72 @@ it("keeps routing compact and prevents incomplete public routes from being silen
   expect(button("Next").disabled).toBe(true);
   await act(async () => configure().click());
   await act(async () => button("Internal only").click());
+  expect(button("Next").disabled).toBe(false);
+  expect(h.migrate).not.toHaveBeenCalled();
+});
+
+it("expands service reviews individually or together without losing configuration across steps", async () => {
+  useCloud();
+  const stack = scannedStack();
+  const redis = stack.services[0]!;
+  const worker = { ...redis, name: "worker", containerId: "worker-container" };
+  stack.services = [redis, worker];
+  stack.groups = [{ project: null, services: stack.services }];
+  h.scanStream.mockResolvedValue(stack);
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("Migration source");
+  await act(async () => button("Scan server").click());
+  const selectServices = () =>
+    container.querySelector<HTMLButtonElement>(
+      '[aria-label="Select all services in Standalone containers"]',
+    )!;
+  await act(async () => selectServices().click());
+  for (let step = 0; step < 2; step++) await act(async () => button("Next").click());
+
+  const configure = (name: string) =>
+    container.querySelector<HTMLButtonElement>(`[aria-label="Configure ${name}"]`)!;
+  const expanded = (name: string) => configure(name).getAttribute("aria-expanded");
+  expect(expanded("redis")).toBe("false");
+  expect(expanded("worker")).toBe("false");
+  expect(button("Expand all").disabled).toBe(false);
+  expect(button("Collapse all").disabled).toBe(true);
+
+  await act(async () => configure("redis").click());
+  expect(expanded("redis")).toBe("true");
+  expect(expanded("worker")).toBe("false");
+  expect(button("Expand all").disabled).toBe(false);
+  expect(button("Collapse all").disabled).toBe(false);
+  await act(async () => button("Custom").click());
+  expect(button("Next").disabled).toBe(true);
+
+  await act(async () => button("Expand all").click());
+  expect(expanded("redis")).toBe("true");
+  expect(expanded("worker")).toBe("true");
+  expect(button("Expand all").disabled).toBe(true);
+  expect(button("Collapse all").disabled).toBe(false);
+  await act(async () => button("Back").click());
+  await act(async () => button("Next").click());
+  expect(expanded("redis")).toBe("true");
+  expect(expanded("worker")).toBe("true");
+  expect(button("Custom").getAttribute("aria-pressed")).toBe("true");
+
+  await act(async () => button("Collapse all").click());
+  expect(expanded("redis")).toBe("false");
+  expect(expanded("worker")).toBe("false");
+  expect(button("Expand all").disabled).toBe(false);
+  expect(button("Collapse all").disabled).toBe(true);
+  expect(container.textContent).toContain("Complete route setup");
+  expect(button("Next").disabled).toBe(true);
+
+  await act(async () => button("Expand all").click());
+  for (let step = 0; step < 2; step++) await act(async () => button("Back").click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Re-scan"]')!.click(),
+  );
+  await act(async () => selectServices().click());
+  for (let step = 0; step < 2; step++) await act(async () => button("Next").click());
+  expect(expanded("redis")).toBe("false");
+  expect(expanded("worker")).toBe("false");
   expect(button("Next").disabled).toBe(false);
   expect(h.migrate).not.toHaveBeenCalled();
 });

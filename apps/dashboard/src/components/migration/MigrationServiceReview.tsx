@@ -31,6 +31,8 @@ interface MigrationServiceReviewProps {
   sameServer: boolean;
   volumeStrategy: VolumeStrategy | undefined;
   routeMode: RouteMode;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
   isNew?: boolean;
   deployAction?: DeployAction;
   onSetRoutes: (routes: PublicEndpoint[]) => void;
@@ -48,6 +50,8 @@ export function MigrationServiceReview({
   sameServer,
   volumeStrategy,
   routeMode,
+  expanded,
+  onExpandedChange,
   isNew = false,
   deployAction = "reuse",
   onSetRoutes,
@@ -60,7 +64,6 @@ export function MigrationServiceReview({
   const s = t.migration.wizard.steps;
   const d = t.migration.discover;
   const r = t.migration.review;
-  const [expanded, setExpanded] = useState(false);
   const [envModalOpen, setEnvModalOpen] = useState(false);
   const [imageEnvOpen, setImageEnvOpen] = useState(false);
   const [warningsOpen, setWarningsOpen] = useState(false);
@@ -122,12 +125,12 @@ export function MigrationServiceReview({
 
   return (
     <section
-      className={`@container min-w-0 overflow-hidden rounded-2xl bg-card ${expanded ? "@[640px]/review:col-span-2" : ""}`}
+      className="@container min-w-0 overflow-hidden rounded-2xl bg-card"
       aria-label={service.name}
     >
       <button
         type="button"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => onExpandedChange(!expanded)}
         aria-expanded={expanded}
         aria-controls={detailsId}
         aria-label={interpolate(r.configureService, { name: service.name })}
@@ -184,7 +187,7 @@ export function MigrationServiceReview({
             <button
               type="button"
               className="rounded-md hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              onClick={() => setExpanded((value) => !value)}
+              onClick={() => onExpandedChange(!expanded)}
               aria-expanded={expanded}
               aria-controls={detailsId}
             >

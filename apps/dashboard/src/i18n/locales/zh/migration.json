@@ -55,6 +55,8 @@
     "progress": "导入进度",
     "title": "检查服务",
     "hint": "迁移前检查访问方式和数据。",
+    "expandAll": "全部展开",
+    "collapseAll": "全部收起",
     "configureService": "配置 {name}",
     "keepDetected": "保留检测结果",
     "internal": "仅内部访问",

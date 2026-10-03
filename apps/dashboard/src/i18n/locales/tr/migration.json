@@ -246,6 +246,8 @@
     "progress": "İçe aktarma ilerlemesi",
     "title": "Hizmetleri inceleyin",
     "hint": "Taşımadan önce erişimi ve verileri inceleyin.",
+    "expandAll": "Tümünü genişlet",
+    "collapseAll": "Tümünü daralt",
     "configureService": "{name} yapılandır",
     "keepDetected": "Algılananı koru",
     "internal": "Yalnızca dahili",

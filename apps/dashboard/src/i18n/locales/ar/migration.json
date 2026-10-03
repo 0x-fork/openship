@@ -270,6 +270,8 @@
     "progress": "تقدم الاستيراد",
     "title": "مراجعة الخدمات",
     "hint": "راجع الوصول والبيانات قبل الترحيل.",
+    "expandAll": "توسيع الكل",
+    "collapseAll": "طي الكل",
     "configureService": "إعداد {name}",
     "keepDetected": "إبقاء المكتشف",
     "internal": "داخلي فقط",

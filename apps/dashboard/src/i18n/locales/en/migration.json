@@ -299,6 +299,8 @@
     "progress": "Import progress",
     "title": "Review services",
     "hint": "Review access and data before migration.",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
     "configureService": "Configure {name}",
     "keepDetected": "Keep detected",
     "internal": "Internal only",

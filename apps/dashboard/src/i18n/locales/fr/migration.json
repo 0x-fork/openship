@@ -290,6 +290,8 @@
     "progress": "Progression de l’import",
     "title": "Vérifier les services",
     "hint": "Vérifiez les accès et les données avant la migration.",
+    "expandAll": "Tout développer",
+    "collapseAll": "Tout réduire",
     "configureService": "Configurer {name}",
     "keepDetected": "Garder la détection",
     "internal": "Interne uniquement",

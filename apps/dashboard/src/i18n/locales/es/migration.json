@@ -55,6 +55,8 @@
     "progress": "Progreso de importación",
     "title": "Revisar servicios",
     "hint": "Revisa el acceso y los datos antes de migrar.",
+    "expandAll": "Expandir todo",
+    "collapseAll": "Contraer todo",
     "configureService": "Configurar {name}",
     "keepDetected": "Conservar detectadas",
     "internal": "Solo interno",

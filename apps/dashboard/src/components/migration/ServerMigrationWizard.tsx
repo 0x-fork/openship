@@ -308,6 +308,7 @@ export function ServerMigrationWizard({
   const [discoveryView, setDiscoveryView] = useState<DiscoveryView>("cards");
   const [recoveryId, setRecoveryId] = useState<string | null>(null);
   const [recoveryResults, setRecoveryResults] = useState<Record<string, RecoveryResult>>({});
+  const [expandedServices, setExpandedServices] = useState<Record<string, Set<string>>>({});
 
   // Each step's content is a very different height; without resetting scroll a
   // step change (esp. Next from a scrolled-down list) leaves the viewport parked
@@ -410,6 +411,7 @@ export function ServerMigrationWizard({
     setDiscoveryView("cards");
     setRecoveryId(null);
     setRecoveryResults({});
+    setExpandedServices({});
     setStack(null);
     setError(null);
     setProjects([]);
@@ -593,6 +595,7 @@ export function ServerMigrationWizard({
     setStep("select");
     setRecoveryId(null);
     setRecoveryResults({});
+    setExpandedServices({});
     try {
       // Stream the inspect (SSE): step progress + no total-duration bound, so a slow
       // SSH + docker inspect doesn't get aborted (the old plain POST hit the 15s
@@ -658,6 +661,18 @@ export function ServerMigrationWizard({
     () => projects.find((p) => p.id === activeId) ?? projects[0] ?? null,
     [projects, activeId],
   );
+
+  const setServiceExpansion = (uids: string[], expanded: boolean) => {
+    if (!active) return;
+    setExpandedServices((previous) => {
+      const next = new Set(previous[active.id]);
+      for (const uid of uids) {
+        if (expanded) next.add(uid);
+        else next.delete(uid);
+      }
+      return { ...previous, [active.id]: next };
+    });
+  };
 
   // service name → the project id that already claimed it (exclusive assignment).
   const claimedBy = useMemo(() => {
@@ -932,9 +947,19 @@ export function ServerMigrationWizard({
   ) : null;
   const projectNameField = active ? (
     <div className="space-y-2">
-      <label htmlFor={`import-name-${active.id}`} className="text-sm font-medium text-foreground">
-        {m.wizard.projectName}
-      </label>
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor={`import-name-${active.id}`} className="text-sm font-medium text-foreground">
+          {m.wizard.projectName}
+        </label>
+        {active.services.size > 0 &&
+          stack?.services.some(
+            (service) => !isExcluded(service) && !claimedBy.has(svcUid(service)),
+          ) && (
+            <Button type="button" variant="ghost" size="sm" onClick={addProject}>
+              {m.wizard.addProject}
+            </Button>
+          )}
+      </div>
       <Input
         id={`import-name-${active.id}`}
         variant="filled"
@@ -949,21 +974,63 @@ export function ServerMigrationWizard({
       </p>
     </div>
   ) : null;
+  const reviewCards = active && stack ? buildPlanCards(active, stack.services) : [];
+  const expandedReviewCount = reviewCards.filter(
+    ({ uid }) => active && expandedServices[active.id]?.has(uid),
+  ).length;
   const serviceReviews =
     stack && active ? (
       <div className="@container/review space-y-4">
-        <div className="mb-4">
-          <h3 className="text-base font-semibold text-foreground">{m.review.title}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">{m.review.hint}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">{m.review.title}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{m.review.hint}</p>
+          </div>
+          <div
+            role="group"
+            aria-label={m.review.title}
+            className="flex max-w-full flex-wrap gap-1 rounded-xl bg-card p-1"
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={expandedReviewCount === reviewCards.length}
+              onClick={() =>
+                setServiceExpansion(
+                  reviewCards.map(({ uid }) => uid),
+                  true,
+                )
+              }
+            >
+              {m.review.expandAll}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={expandedReviewCount === 0}
+              onClick={() =>
+                setServiceExpansion(
+                  reviewCards.map(({ uid }) => uid),
+                  false,
+                )
+              }
+            >
+              {m.review.collapseAll}
+            </Button>
+          </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 @[640px]/review:grid-cols-2">
-          {buildPlanCards(active, stack.services).map(({ uid, service, isNew, action }) => (
+        <div className="grid grid-cols-1 items-start gap-4 @[640px]/review:grid-cols-2">
+          {reviewCards.map(({ uid, service, isNew, action }) => (
             <MigrationServiceReview
               key={`${active.id}:${uid}`}
               service={service}
               sourceServerId={selectedId}
               isNew={isNew}
               deployAction={action}
+              expanded={expandedServices[active.id]?.has(uid) ?? false}
+              onExpandedChange={(expanded) => setServiceExpansion([uid], expanded)}
               routes={active.serviceRoutes[uid]}
               envOverride={active.serviceEnvs[uid]}
               sameServer={sameServer}
@@ -1049,7 +1116,6 @@ export function ServerMigrationWizard({
       )}
     </div>
   );
-  const reviewCards = active && stack ? buildPlanCards(active, stack.services) : [];
   const publicServices = reviewCards.filter(
     ({ uid, service }) =>
       (active!.serviceRouteMode[uid] ?? (hasKeepableRoute(service) ? "keep" : "none")) !== "none",
@@ -1782,20 +1848,7 @@ export function ServerMigrationWizard({
               {step === "select" ? (
                 <div className="space-y-4 rounded-2xl bg-card p-5">
                   {projectNameField}
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs text-muted-foreground">
-                      {m.wizard.steps.repoOnSourceHint}
-                    </p>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={m.wizard.addProject}
-                      title={m.wizard.addProject}
-                      onClick={addProject}
-                    >
-                      <UiIcon name="plus" />
-                    </Button>
-                  </div>
+                  <p className="text-xs text-muted-foreground">{m.wizard.steps.repoOnSourceHint}</p>
                 </div>
               ) : step === "source" ? (
                 <RepoSourceCard

@@ -66,16 +66,20 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   Each Compose project has its own section and canvas; do not add another parent node around
   its services. Recovered Openship projects belong in the same selector; their recovery action
   and naming live in the sidebar. Selection uses the shared OptionCard surface and border.
+  Discovery cards use two lines: service name with the shared status ring and selection
+  control, then the image and volume count. Keep Add project beside the project name and
+  show it only after selecting services, while unassigned services remain.
   Expand additional groups on demand. Selection and names survive view and step changes.
   Only draw discovered dependencies; keep scan graphs in memory without saved configuration.
 - Import progress and discovery notices stay in the right sidebar. Keep scan settings in the
   shared compact menu beside scan controls. The repository summary uses the same filled card,
   inputs and dropdowns as the other steps, with concise guidance.
 - Import routing uses two columns when the container has room, with a compact summary on the
-  right. Expanded service controls span both columns. Show detected domains and incomplete
-  routes immediately, and reuse the domain, volume and environment editors. Destination and
-  transfer review have a final step for both same-server and cross-server imports. The page
-  and modal share the whole preparation layout and controls.
+  right. Expanded service controls stay in their column; collapsed neighbors keep their own
+  height. Put compact Expand all / Collapse all actions above the service grid. Show detected
+  domains and incomplete routes immediately, and reuse the domain, volume and environment
+  editors. Destination and transfer review have a final step for both same-server and
+  cross-server imports. The page and modal share the whole preparation layout and controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the

@@ -55,6 +55,8 @@
     "progress": "インポートの進行状況",
     "title": "サービスを確認",
     "hint": "移行前にアクセスとデータを確認します。",
+    "expandAll": "すべて展開",
+    "collapseAll": "すべて折りたたむ",
     "configureService": "{name}を設定",
     "keepDetected": "検出した設定を維持",
     "internal": "内部のみ",
