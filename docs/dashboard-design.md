@@ -96,12 +96,16 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   time separate from runtime capacity; show minutes only when the offer defines a time
   allowance. Put metering and shared-capacity explanations once below the plans. Keep
   benefits visible, and use catalog feature keys to avoid repeating resource facts.
-- Cloud billing keeps its header and tabs mounted when switching servers. Use a compact
-  context chip with Add server for one server and the shared picker with its Add server
-  action for several. Unscoped billing opens an existing subscription directly; never
+- Cloud billing keeps its header and tabs mounted when switching servers. List managed
+  servers in the right sidebar with Add server, reusing the shared destination rows.
+  One server is a summary; several servers switch billing directly from the visible list.
+  Keep the selected server's plan below that list, including beside plan comparisons.
+  Unscoped billing opens an existing subscription directly; never
   auto-switch a checkout return or an explicitly selected server. New customers see only
   Plans and pricing, without empty usage, payment or invoice tabs. Keep the full navigation
-  for existing subscriptions and credit history, including stopped or canceled servers.
+  for existing subscriptions, allocated servers and credit history, including stopped or
+  canceled servers. Show current plan, renewal date or inactive subscription state for
+  existing servers; never replace those with a first-purchase promotion.
   In-app credit alerts
   link directly to the scoped billing tab; only a genuine organization change needs
   authorization and a context reload.

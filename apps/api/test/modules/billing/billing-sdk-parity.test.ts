@@ -419,6 +419,49 @@ describe("billing through the same SDK and HTTP application operations", () => {
     },
   );
 
+  it("keeps allocated-server identity visible when the subscription ended and live capacity is unavailable", async () => {
+    const owner = await seedOwner(), c = await clients(owner);
+    const workspace = await billingWorkspace(owner);
+    await db.insert(schema.cloudDockerWorkspace).values({
+      ownerWorkspaceId: workspace.id, namespace: workspace.namespace!, provisionKey: `test-${workspace.id}`,
+      workspaceId: `provider-${workspace.id}`, image: "ubuntu:24.04", state: "ready",
+      resources: { cpuCores: 1, memoryMb: 4096, diskMb: 25600 },
+    });
+    provider.resourceRead.mockRejectedValue(new Error("Capacity unavailable"));
+    for (const client of [c.native, c.remote]) {
+      expect(await client.getState()).toMatchObject({
+        workspace: { id: workspace.id, provisioned: true }, tier: "free", subscription: null,
+        balance: { quotaUsed: 0, quotaRemaining: 0 },
+      });
+    }
+    expect(provider.checkout).not.toHaveBeenCalled();
+    expect(provider.resourceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("keeps saved contract details visible when the provider cancels spending access", async () => {
+    const owner = await seedOwner(), c = await clients(owner);
+    const namespace = (await billingWorkspace(owner)).namespace!;
+    const saved: NonNullable<OblienSubscription> = {
+      tierId: "reseller", status: "active", billingInterval: "monthly", cancelAtPeriodEnd: false, canceledAt: null,
+      periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+      offer: subscriptionOffer("starter", "monthly"), metadata: subscriptionMetadata("starter", owner.orgId, namespace),
+    };
+    provider.subscriptions.set(namespace, saved);
+    provider.entitlement.mockResolvedValue({
+      success: true, namespace, tierId: saved.tierId, status: "canceled",
+      periodStart: saved.periodStart, periodEnd: saved.periodEnd, quota: { limit: 0, used: 0, balance: 0 },
+    });
+    for (const client of [c.native, c.remote]) {
+      expect(await client.getState()).toMatchObject({
+        tier: "starter", status: "canceled", plan: { price: { monthly: saved.offer!.unitAmount } },
+        subscription: { tier: "starter" }, balance: { quotaRemaining: 0 }, topups: { available: false },
+        capabilities: { subscriptionChange: false },
+      });
+    }
+    expect(provider.resourceUpdate).not.toHaveBeenCalled();
+    expect(provider.checkout).not.toHaveBeenCalled();
+  });
+
   it("never presents an unsubscribed namespace with a missing policy as unlimited", async () => {
     provider.entitlement.mockImplementation(async namespace => ({
       success: true, namespace, tierId: null, status: "active", periodStart: null, periodEnd: null,
@@ -444,12 +487,11 @@ describe("billing through the same SDK and HTTP application operations", () => {
     });
     for (const client of [c.native, c.remote]) {
       expect(await client.getState()).toMatchObject({ tier: "starter", plan: null, monthlyCreditLimit: null, balance: { quotaRemaining: 1_200_000, unlimited: false }, capabilities: { portal: true, cancellation: true } });
-      expect(
-        await client.createSubscription({ planTierId: "starter", interval: "monthly" }),
-      ).toHaveProperty("checkoutUrl");
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" }))
+        .rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
     }
     expect(provider.catalog).not.toHaveBeenCalled();
-    expect(provider.checkout).toHaveBeenCalledTimes(2);
+    expect(provider.checkout).not.toHaveBeenCalled();
   });
 
   it.each(["active", "canceled"] as const)("identifies uncapped credits only for a verified active enterprise subscription (%s)", async status => {
@@ -464,7 +506,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     for (const client of [c.native, c.remote]) expect((await client.getState()).balance.unlimited).toBe(status === "active");
   });
 
-  it("delegates capacity to Oblien for checkout through SDK and HTTP without policy writes", async () => {
+  it("preserves a live subscription through SDK and HTTP even when capacity reads fail", async () => {
     provider.resourceRead.mockRejectedValue(new Error("Workspace resource operations unavailable"));
     provider.resourceUpdate.mockRejectedValue(new Error("Workspace resource operations unavailable"));
     const owner = await seedOwner(), c = await clients(owner);
@@ -479,14 +521,16 @@ describe("billing through the same SDK and HTTP application operations", () => {
       cancelAtPeriodEnd: false, canceledAt: null,
     });
     for (const client of [c.native, c.remote]) {
-      expect(await client.getState()).toMatchObject({ tier: "pro", billing: { enabled: true }, subscription: { tier: "pro" } });
-      expect(await client.createSubscription({ planTierId: "starter", interval: "monthly" })).toHaveProperty("checkoutUrl");
+      expect(await client.getState()).toMatchObject({ tier: "pro", billing: { enabled: true }, subscription: { tier: "pro" }, capabilities: { subscriptionChange: false } });
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" }))
+        .rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
     }
     expect(provider.entitlement).toHaveBeenCalledTimes(5);
     expect(provider.subscription).toHaveBeenCalledTimes(5);
     expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.resourceRead).toHaveBeenCalled();
     expect(provider.resourceUpdate).not.toHaveBeenCalled();
+    expect(provider.checkout).not.toHaveBeenCalled();
   });
 
   it("does not depend on an owner capacity read to sell a declared namespace policy", async () => {

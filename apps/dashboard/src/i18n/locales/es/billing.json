@@ -103,9 +103,9 @@
     "genericError": "Algo salió mal",
     "tryAgain": "Intentar de nuevo",
     "checkoutError": "No se pudo iniciar el pago",
-    "replacementNotice": "Cambiar el plan o el intervalo de facturación inicia un nuevo ciclo al precio completo seleccionado después del pago. No hay prorrateo automático.",
-    "changeViaSupport": "Contacta con soporte para cambiar tu suscripción actual.",
-    "billingUnavailable": "Las compras no están disponibles actualmente."
+    "changeViaSupport": "Contacta con soporte para cambiar el plan de este servidor. Tu suscripción actual se mantiene.",
+    "billingUnavailable": "Las compras no están disponibles actualmente.",
+    "currentServerPlans": "Compara planes para este servidor."
   },
   "complimentary": {
     "label": "Plan de cortesía · Sin cargo",
@@ -258,7 +258,11 @@
       "credit_exhausted": "Cloud pausado"
     },
     "includedTitle": "Qué incluye",
-    "perYear": "${price}/año"
+    "perYear": "${price}/año",
+    "noActivePlan": "Sin plan activo",
+    "inactiveServer": "Este servidor no tiene una suscripción activa. Elige un plan para reanudar los despliegues.",
+    "renewsOn": "Se renueva el {date}",
+    "accessUntil": "Acceso hasta el {date}"
   },
   "paymentPanel": {
     "title": "Método de pago",
@@ -524,7 +528,7 @@
     "description": "Elige un plan y despliega. Openship administra el servidor; tus proyectos comparten CPU, memoria y almacenamiento.",
     "loading": "Cargando servidor…",
     "choose": "Elige un servidor",
-    "chooseBilling": "Elige un servidor para ver su suscripción y uso.",
+    "chooseBilling": "Selecciona un servidor para ver su facturación.",
     "dedicatedProjects": "Facturación de proyectos dedicados",
     "dedicatedProjectsHint": "Proyectos existentes con sus propias máquinas Cloud.",
     "shared": "Varios proyectos",
@@ -635,7 +639,9 @@
         "succeeded": "Completada",
         "failed": "Fallida"
       }
-    }
+    },
+    "billingServers": "Tus servidores",
+    "billingServersUnavailable": "No se pudieron cargar tus servidores."
   },
   "custom": {
     "name": "Personalizado",

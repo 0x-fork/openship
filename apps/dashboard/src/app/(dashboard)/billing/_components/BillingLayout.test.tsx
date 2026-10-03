@@ -8,6 +8,7 @@ import { PlatformProvider } from "@/context/PlatformContext";
 import { baseDictionary } from "@/i18n";
 import { BillingLayout } from "./BillingLayout";
 import { BillingPageView, type BillingView } from "./BillingViewContext";
+import { BillingContent } from "./BillingContent";
 
 const h = vi.hoisted(() => ({
   userId: "user-a", organizationId: "org-a", path: "/billing/overview", query: "",
@@ -43,10 +44,11 @@ const render = (children: ReactNode, selfHosted = false) => act(async () => root
   <I18nProvider><PlatformProvider selfHosted={selfHosted}><BillingLayout>{children}</BillingLayout></PlatformProvider></I18nProvider>,
 ));
 const page = (overrides: Partial<BillingView> = {}) => (
-  <BillingPageView view={{ contextKey: "user-a:org-a", plansOnly: false, ...overrides }}><p>Billing content</p></BillingPageView>
+  <BillingPageView view={{ contextKey: "user-a:org-a", plansOnly: false, ...overrides }}><BillingContent sidebar={null}><p>Billing content</p></BillingContent></BillingPageView>
 );
 const tabs = () => [...host.querySelectorAll("nav a")];
 const picker = () => host.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]');
+const serverButton = (name: string) => [...host.querySelectorAll<HTMLButtonElement>('aside button[aria-pressed]')].find(button => button.textContent?.includes(name))!;
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -71,10 +73,12 @@ describe("billing navigation by server ownership", () => {
     expect(h.router.replace).not.toHaveBeenCalled();
   });
 
-  it("shows one server as a compact identity with the existing Add server flow", async () => {
+  it("shows one server in the right card with the existing Add server flow", async () => {
     h.list.mockResolvedValue({ servers: [production] });
     await render(page({ workspaceId: "cws-production" }));
-    expect(host.querySelector("header")?.textContent).toContain("Production");
+    expect(host.querySelector("header")?.textContent).not.toContain("Production");
+    expect(host.querySelector("aside")?.textContent).toContain("Production");
+    expect(serverButton("Production")).toBeUndefined();
     expect(picker()).toBeNull();
     expect(host.querySelector('a[href="/servers/new"]')?.textContent).toContain(baseDictionary.servers.setup.addServer);
     expect(tabs()).toHaveLength(6);
@@ -82,20 +86,16 @@ describe("billing navigation by server ownership", () => {
     expect(h.router.replace).not.toHaveBeenCalled();
   });
 
-  it("uses the shared picker to switch subscriptions and to add a server", async () => {
+  it("switches billing directly from visible server rows without another menu", async () => {
     h.query = "workspaceId=cws-production&organizationId=org-a";
     h.list.mockResolvedValue({ servers: [production, staging] });
     await render(page({ workspaceId: "cws-production", requestedWorkspaceId: "cws-production", organizationId: "org-a" }));
-    await act(async () => picker()!.click());
-    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(node => node.textContent?.includes("Staging"))!;
-    expect(option).toBeDefined();
-    await act(async () => option.click());
+    expect(picker()).toBeNull();
+    expect(serverButton("Production").getAttribute("aria-pressed")).toBe("true");
+    expect(serverButton("Staging").getAttribute("aria-pressed")).toBe("false");
+    await act(async () => serverButton("Staging").click());
     expect(h.router.push).toHaveBeenLastCalledWith("/billing/overview?workspaceId=cws-staging&organizationId=org-a", { scroll: false });
-    await act(async () => picker()!.click());
-    const add = [...document.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent?.trim() === baseDictionary.servers.setup.addServer)!;
-    expect(add).toBeDefined();
-    await act(async () => add.click());
-    expect(h.router.push).toHaveBeenLastCalledWith("/servers/new");
+    expect(host.querySelector('aside a[href="/servers/new"]')?.textContent).toContain(baseDictionary.servers.setup.addServer);
     expect(h.list).toHaveBeenCalledOnce();
   });
 
@@ -135,7 +135,9 @@ describe("billing navigation by server ownership", () => {
     h.list.mockResolvedValue({ servers: [production] });
     await render(page({ requestedWorkspaceId: "cws-missing" }));
     expect(picker()).toBeNull();
-    expect(host.querySelector('header a[href="/billing/overview?workspaceId=cws-production"]')).not.toBeNull();
+    expect(serverButton("Production").getAttribute("aria-pressed")).toBe("false");
+    await act(async () => serverButton("Production").click());
+    expect(h.router.push).toHaveBeenLastCalledWith("/billing/overview?workspaceId=cws-production", { scroll: false });
     expect(tabs().every(tab => tab.getAttribute("href")?.includes("workspaceId=cws-missing"))).toBe(true);
     expect(h.router.replace).not.toHaveBeenCalled();
   });
@@ -168,11 +170,11 @@ describe("billing navigation by server ownership", () => {
     await render(page());
     expect(host.textContent).toContain("Billing content");
     await act(async () => reject(new Error("Temporarily unavailable")));
-    const retry = host.querySelector<HTMLButtonElement>("header button")!;
+    const retry = host.querySelector<HTMLButtonElement>("aside button")!;
     expect(retry.textContent).toContain("Try again");
     h.list.mockResolvedValueOnce({ servers: [production, staging] });
     await act(async () => retry.click());
-    expect(picker()).not.toBeNull();
+    expect(serverButton("Staging")).toBeDefined();
     expect(host.textContent).toContain("Billing content");
     expect(tabs()).toHaveLength(6);
   });

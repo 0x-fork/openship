@@ -169,7 +169,62 @@ describe("Cloud billing before the first subscription", () => {
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, cancelAtPeriodEnd: true } }} />);
     expect(container.textContent).toContain(copy.pricing.currentPlan);
     await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, status: "canceled" } }} />);
-    expect(button("Subscribe to Hobby").disabled).toBe(false);
+    expect(container.textContent).toContain(copy.sidebar.noActivePlan);
+    expect(container.textContent).not.toContain("Subscribe to Hobby");
+  });
+});
+
+describe("existing server billing", () => {
+  it("keeps an allocated server out of onboarding even with no remaining allowance or usage", async () => {
+    const state = { ...free, capacity: { ...free.capacity, workspaces: { used: 1, max: 1 } } };
+    expect(isNewCloudCustomer(state)).toBe(false);
+    await render(<BillingSidebar state={state} />);
+    expect(container.textContent).toContain(copy.sidebar.noActivePlan);
+    expect(container.textContent).toContain(copy.sidebar.inactiveServer);
+    expect(container.textContent).not.toContain("Start with Hobby");
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it("does not turn an allocated server into a newcomer when provider capacity is unavailable", async () => {
+    const state = { ...free, workspace: { id: "workspace", name: "Production", provisioned: true } };
+    expect(isNewCloudCustomer(state)).toBe(false);
+    await render(<BillingSidebar state={state} />);
+    expect(container.textContent).toContain(copy.sidebar.noActivePlan);
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("preserves a live paid subscription when the entitlement tier is free", async () => {
+    await render(<BillingSidebar state={{ ...paid, tier: "free", status: "past_due", plan: null }} />);
+    expect(container.textContent).toContain(PLANS.starter.name);
+    expect(container.textContent).not.toContain(copy.sidebar.noActivePlan);
+    expect(container.textContent).not.toContain("Start with");
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("shows the renewal date and preserves access through a scheduled cancellation", async () => {
+    await render(<BillingSidebar state={paid} />);
+    expect(container.textContent).toContain("Renews on Oct 1, 2026");
+    await render(<BillingSidebar state={{ ...paid, subscription: { ...paid.subscription!, cancelAtPeriodEnd: true } }} />);
+    expect(container.textContent).toContain("Access until Oct 1, 2026");
+    expect(container.textContent).not.toContain("Renews on");
+    expect(container.textContent).not.toContain("Start with");
+  });
+
+  it("does not describe an exhausted balance as prepaid credit", async () => {
+    await render(<BillingCapacity state={{ ...free, balance: { ...free.balance, quotaUsed: 150_000, quotaRemaining: -150_000 } }} />);
+    expect(container.textContent).toContain("Balance: -150");
+    expect(container.textContent).not.toContain(copy.onboarding.savedCredits);
+    expect(container.textContent).not.toContain(copy.onboarding.stepsTitle);
+  });
+
+  it.each(["active", "trialing", "past_due", "unpaid", "paused"] as const)("does not start a full-price checkout to replace a %s subscription", async status => {
+    await render(<CloudPlanPicker currentPlan="starter" currentOffer={hobby} subscription={{ ...paid.subscription!, status }} billingEnabled canChangeSubscription />);
+    const choices = [...container.querySelectorAll<HTMLButtonElement>("article button")];
+    expect(choices.length).toBeGreaterThan(0);
+    expect(choices.every(choice => choice.disabled)).toBe(true);
+    expect(container.textContent).toContain(copy.plansRoute.changeViaSupport);
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 });
 

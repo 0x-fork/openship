@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
-import { ServerBillingPicker } from "@/components/billing/ServerBillingPicker";
+import { BillingServerInventoryProvider } from "@/components/billing/ServerBillingPicker";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { usePlatform } from "@/context/PlatformContext";
 import { BILLING_TABS } from "./billing-tabs";
@@ -41,14 +41,13 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
     <PageContainer className="space-y-6">
       <BillingWorkspaceProvider workspaceId={workspaceId} organizationId={organizationId}>
         <BillingViewProvider value={reportView}>
-          <BillingHeader>
-            {!selfHosted && organizationMatches && (
-              <ServerBillingPicker workspaceId={workspaceId} servers={servers}
-                loading={inventory.loading} error={inventory.error} onRetry={inventory.refresh} />
-            )}
-          </BillingHeader>
+          <BillingHeader />
           <BillingTabBar activeTab={activeTab} plansOnly={currentView?.plansOnly} loading={!currentView} />
-          {children}
+          <BillingServerInventoryProvider value={!selfHosted && organizationMatches ? {
+            servers, loading: inventory.loading, error: inventory.error, onRetry: inventory.refresh,
+          } : null}>
+            {children}
+          </BillingServerInventoryProvider>
         </BillingViewProvider>
       </BillingWorkspaceProvider>
     </PageContainer>

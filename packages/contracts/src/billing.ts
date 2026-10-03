@@ -99,7 +99,10 @@ export const BillingCreditAlertSchema = Type.Object({
   remaining: numberOrNull, balance: numberOrNull, limit: numberOrNull,
 });
 export const BillingStateSchema = Type.Object({
-  workspace: Type.Optional(Type.Union([Type.Object({ id: Type.String(), serverId: Type.Optional(Type.String()), name: Type.String() }), Type.Null()])),
+  workspace: Type.Optional(Type.Union([Type.Object({
+    id: Type.String(), serverId: Type.Optional(Type.String()), name: Type.String(),
+    provisioned: Type.Optional(Type.Boolean({ description: "A provider server is allocated. This is presentation state, not a billing entitlement." })),
+  }), Type.Null()])),
   creditAlert: Type.Optional(Type.Union([BillingCreditAlertSchema, Type.Null()])),
   tier, status: Type.String(), currentPeriod,
   balance: Type.Object({ total: numberOrNull, quotaLimit: numberOrNull, quotaUsed: Type.Number(), quotaRemaining: numberOrNull, unlimited: Type.Optional(Type.Boolean()) }),

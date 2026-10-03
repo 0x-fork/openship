@@ -4,7 +4,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { PLANS } from "@repo/core";
 import type { BillingState } from "@/lib/api/billing";
-import { needsCloudPlan } from "@/lib/billing-presentation";
+import { isNewCloudCustomer, needsCloudPlan } from "@/lib/billing-presentation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { CloudPlanOffer } from "@/components/billing/CloudPlanOffer";
@@ -20,15 +20,17 @@ export type { BillingState };
 export function BillingSidebar({
   state,
   showSubscriptionControls = false,
+  showPlanAction = true,
 }: {
   state: BillingState;
   showSubscriptionControls?: boolean;
+  showPlanAction?: boolean;
 }) {
   const { t, locale } = useI18n();
   const controls = showSubscriptionControls && state.subscription && (
     <BillingSubscriptionControls state={state} />
   );
-  if (needsCloudPlan(state)) {
+  if (isNewCloudCustomer(state)) {
     return (
       <div className="space-y-4">
         <CloudPlanOffer state={state} />
@@ -36,6 +38,7 @@ export function BillingSidebar({
       </div>
     );
   }
+  const hasPlan = !needsCloudPlan(state);
   const plan = state.plan;
   const interval = state.subscription?.interval ?? "monthly";
   const price = plan?.price[interval];
@@ -44,7 +47,7 @@ export function BillingSidebar({
     state.status.replace(/_/g, " ");
   const healthy = state.status === "active" || state.status === "trialing";
   const complimentary = state.complimentary;
-  const renewal = state.currentPeriod?.end;
+  const renewal = state.subscription?.currentPeriod.end ?? state.currentPeriod?.end;
   const formatDate = (value: string) =>
     new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(value));
 
@@ -64,13 +67,15 @@ export function BillingSidebar({
         <div>
           <div className="flex items-center gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-foreground/80">
-              <PlanIcon planId={state.tier} />
+              <PlanIcon planId={state.subscription?.tier ?? state.tier} />
             </span>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              {plan?.name ?? PLANS[state.tier].name}
+              {hasPlan ? plan?.name ?? PLANS[state.subscription?.tier ?? state.tier].name : t.billing.sidebar.noActivePlan}
             </h2>
           </div>
-          {complimentary ? (
+          {!hasPlan ? (
+            <p className="mt-2 text-sm text-muted-foreground">{t.billing.sidebar.inactiveServer}</p>
+          ) : complimentary ? (
             <div className="mt-2 space-y-1">
               <p className="text-sm text-foreground">{t.billing.complimentary.label}</p>
               <p className="text-xs text-muted-foreground">
@@ -109,13 +114,18 @@ export function BillingSidebar({
             )
           )}
         </div>
-        {plan && <PlanCapacity plan={plan} workspaceScoped={Boolean(state.workspace)} />}
-        <Button asChild variant="secondary" className="w-full">
+        {hasPlan && !complimentary && renewal && (
+          <p className="text-sm text-muted-foreground">
+            {interpolate(state.subscription?.cancelAtPeriodEnd ? t.billing.sidebar.accessUntil : t.billing.sidebar.renewsOn, { date: formatDate(renewal) })}
+          </p>
+        )}
+        {hasPlan && plan && <PlanCapacity plan={plan} workspaceScoped={Boolean(state.workspace)} />}
+        {showPlanAction && <Button asChild variant="secondary" className="w-full">
           <Link href="/billing/plans">
-            {t.billing.onboarding.compare}
+            {!hasPlan ? t.billing.onboarding.choosePlan : complimentary ? t.billing.onboarding.compare : t.billing.workspaces.changePlan}
             <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" aria-hidden="true" />
           </Link>
-        </Button>
+        </Button>}
       </section>
       {controls}
     </div>

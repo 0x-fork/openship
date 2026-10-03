@@ -103,9 +103,9 @@
     "genericError": "出现错误",
     "tryAgain": "重试",
     "checkoutError": "无法开始结账",
-    "replacementNotice": "更改套餐或计费周期将在付款后按所选全价开始新周期。不会自动按比例折算费用。",
-    "changeViaSupport": "请联系支持以更改当前订阅。",
-    "billingUnavailable": "目前暂不支持购买。"
+    "changeViaSupport": "请联系支持更改此服务器的套餐。当前订阅保持不变。",
+    "billingUnavailable": "目前暂不支持购买。",
+    "currentServerPlans": "比较此服务器的套餐。"
   },
   "complimentary": {
     "label": "赠送套餐 · 免费",
@@ -258,7 +258,11 @@
       "credit_exhausted": "Cloud 已暂停"
     },
     "includedTitle": "包含内容",
-    "perYear": "${price}/年"
+    "perYear": "${price}/年",
+    "noActivePlan": "没有有效套餐",
+    "inactiveServer": "此服务器没有有效订阅。请选择套餐以恢复部署。",
+    "renewsOn": "于 {date} 续订",
+    "accessUntil": "可使用至 {date}"
   },
   "paymentPanel": {
     "title": "付款方式",
@@ -524,7 +528,7 @@
     "description": "选择套餐即可部署。Openship 管理服务器，项目共享 CPU、内存和存储。",
     "loading": "正在加载服务器…",
     "choose": "选择服务器",
-    "chooseBilling": "选择服务器以查看其订阅和用量。",
+    "chooseBilling": "选择服务器以查看其账单。",
     "dedicatedProjects": "独立项目计费",
     "dedicatedProjectsHint": "拥有独立 Cloud 主机的现有项目。",
     "shared": "多个项目",
@@ -635,7 +639,9 @@
         "succeeded": "已完成",
         "failed": "失败"
       }
-    }
+    },
+    "billingServers": "你的服务器",
+    "billingServersUnavailable": "无法加载你的服务器。"
   },
   "custom": {
     "name": "自定义",

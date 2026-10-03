@@ -103,9 +103,9 @@
     "genericError": "Algo deu errado",
     "tryAgain": "Tentar novamente",
     "checkoutError": "Falha ao iniciar o checkout",
-    "replacementNotice": "Alterar o plano ou o intervalo de cobrança inicia um novo ciclo pelo preço integral selecionado após o pagamento. Não há ajuste proporcional automático.",
-    "changeViaSupport": "Entre em contato com o suporte para alterar sua assinatura atual.",
-    "billingUnavailable": "As compras estão indisponíveis no momento."
+    "changeViaSupport": "Entre em contato com o suporte para alterar o plano deste servidor. Sua assinatura atual permanece em vigor.",
+    "billingUnavailable": "As compras estão indisponíveis no momento.",
+    "currentServerPlans": "Compare planos para este servidor."
   },
   "complimentary": {
     "label": "Plano de cortesia · Sem cobrança",
@@ -258,7 +258,11 @@
       "credit_exhausted": "Cloud pausado"
     },
     "includedTitle": "O que está incluído",
-    "perYear": "${price}/ano"
+    "perYear": "${price}/ano",
+    "noActivePlan": "Nenhum plano ativo",
+    "inactiveServer": "Este servidor não tem uma assinatura ativa. Escolha um plano para retomar os deployments.",
+    "renewsOn": "Renova em {date}",
+    "accessUntil": "Acesso até {date}"
   },
   "paymentPanel": {
     "title": "Forma de pagamento",
@@ -524,7 +528,7 @@
     "description": "Escolha um plano e implante. O Openship gerencia o servidor; seus projetos compartilham CPU, memória e armazenamento.",
     "loading": "Carregando servidor…",
     "choose": "Escolha um servidor",
-    "chooseBilling": "Escolha um servidor para ver sua assinatura e seu uso.",
+    "chooseBilling": "Selecione um servidor para ver seu faturamento.",
     "dedicatedProjects": "Cobrança de projetos dedicados",
     "dedicatedProjectsHint": "Projetos existentes com suas próprias máquinas Cloud.",
     "shared": "Vários projetos",
@@ -635,7 +639,9 @@
         "succeeded": "Concluída",
         "failed": "Falhou"
       }
-    }
+    },
+    "billingServers": "Seus servidores",
+    "billingServersUnavailable": "Não foi possível carregar seus servidores."
   },
   "custom": {
     "name": "Personalizado",

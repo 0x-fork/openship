@@ -50,7 +50,8 @@ export function CloudPlanPicker({
     subscription?.configuration === "custom" ? "custom" : "plans",
   );
   const canPurchase =
-    !complimentary && billingEnabled && (currentPlan === "free" || canChangeSubscription);
+    !complimentary && billingEnabled && needsCloudPlan({ tier: currentPlan, subscription, complimentary })
+      && (currentPlan === "free" || canChangeSubscription);
   const {
     startCheckout,
     subscribing,
@@ -103,10 +104,11 @@ export function CloudPlanPicker({
         {!preserveProject && (
           <div>
             <h2 className="text-base font-medium text-foreground">
-              {t.billing.onboarding.compareTitle}
+              {subscription && subscription.status !== "canceled" ? t.billing.workspaces.changePlan : t.billing.onboarding.compareTitle}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {workspaceScoped ? t.billing.workspaces.description : t.billing.onboarding.compareDescription}
+              {subscription && subscription.status !== "canceled" ? t.billing.plansRoute.currentServerPlans
+                : workspaceScoped ? t.billing.workspaces.description : t.billing.onboarding.compareDescription}
             </p>
           </div>
         )}
@@ -145,11 +147,6 @@ export function CloudPlanPicker({
           </div>
         )}
       </div>
-      {canPurchase && subscription && subscription.status !== "canceled" && (
-        <p className="rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">
-          {t.billing.plansRoute.replacementNotice}
-        </p>
-      )}
       {checkoutUrl && (
         <div role="status" className="rounded-xl bg-muted/40 p-3 text-sm">
           <p>{t.billing.deployGate.checkoutOpened}</p>

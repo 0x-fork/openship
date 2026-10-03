@@ -55,7 +55,7 @@ describe("billing sidebar", () => {
 
   it("does not invent a price when the paid plan is absent from the response", () => {
     const out = text(render(<BillingSidebar state={{ ...state("pro"), plan: null }} />));
-    expect(out).toContain("Compare all plans");
+    expect(out).toContain("Change plan");
     expect(out).not.toContain("$39");
     expect(out).not.toContain("credits / billing cycle");
   });

@@ -3,6 +3,12 @@ import type { OblienEntitlement, OblienSubscription } from "../../lib/oblien-bil
 import { subscriptionPlan } from "./billing-catalog";
 import { CUSTOM_OFFER_VERSION } from "./billing-custom-offer";
 
+/** A live contract must change in place. Creating another checkout would
+ * replace it at full price and discard the customer's remaining paid period. */
+export function canStartCloudSubscription(subscription: OblienSubscription): boolean {
+  return subscription === null || subscription?.status === "canceled";
+}
+
 /** Extra credits are useful only while a customer's paid plan permits Cloud work. */
 export function canTopUpCloudSubscription(
   subscription: OblienSubscription,

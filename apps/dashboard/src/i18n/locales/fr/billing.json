@@ -103,9 +103,9 @@
     "genericError": "Une erreur s'est produite",
     "tryAgain": "Réessayer",
     "checkoutError": "Échec du démarrage du paiement",
-    "replacementNotice": "Changer d’offre ou de périodicité démarre un nouveau cycle au tarif complet choisi après paiement. Aucun prorata automatique n’est appliqué.",
-    "changeViaSupport": "Contactez l’assistance pour modifier votre abonnement actuel.",
-    "billingUnavailable": "Les achats sont actuellement indisponibles."
+    "changeViaSupport": "Contactez le support pour changer l’offre de ce serveur. Votre abonnement actuel reste en place.",
+    "billingUnavailable": "Les achats sont actuellement indisponibles.",
+    "currentServerPlans": "Comparez les offres pour ce serveur."
   },
   "complimentary": {
     "label": "Offert · Sans frais",
@@ -258,7 +258,11 @@
       "credit_exhausted": "Cloud suspendu"
     },
     "includedTitle": "Ce qui est inclus",
-    "perYear": "${price}/an"
+    "perYear": "${price}/an",
+    "noActivePlan": "Aucune offre active",
+    "inactiveServer": "Ce serveur n’a pas d’abonnement actif. Choisissez une offre pour reprendre les déploiements.",
+    "renewsOn": "Renouvellement le {date}",
+    "accessUntil": "Accès jusqu’au {date}"
   },
   "paymentPanel": {
     "title": "Moyen de paiement",
@@ -524,7 +528,7 @@
     "description": "Choisissez une offre et déployez. Openship gère le serveur ; vos projets partagent CPU, mémoire et stockage.",
     "loading": "Chargement de le serveur…",
     "choose": "Choisir un serveur",
-    "chooseBilling": "Choisissez un serveur pour consulter son abonnement et son utilisation.",
+    "chooseBilling": "Sélectionnez un serveur pour afficher sa facturation.",
     "dedicatedProjects": "Facturation des projets dédiés",
     "dedicatedProjectsHint": "Projets existants disposant de leurs propres machines Cloud.",
     "shared": "Plusieurs projets",
@@ -635,7 +639,9 @@
         "succeeded": "Terminée",
         "failed": "Échouée"
       }
-    }
+    },
+    "billingServers": "Vos serveurs",
+    "billingServersUnavailable": "Impossible de charger vos serveurs."
   },
   "custom": {
     "name": "Sur mesure",

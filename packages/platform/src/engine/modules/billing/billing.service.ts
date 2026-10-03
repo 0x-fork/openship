@@ -14,7 +14,7 @@ import {
 } from "./billing-catalog";
 import { syncOblienEntitlement, withCloudBillingLock } from "./billing-oblien-quota";
 import { listLiveSubscriptions } from "./billing.repository";
-import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
+import { canStartCloudSubscription, canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
 import { cloudAnalytics } from "../cloud-analytics";
 import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
@@ -69,6 +69,15 @@ export async function createCheckoutSession(
   return withCloudBillingLock(ctx.organizationId, async (sync) => {
     await assertBillingOwnerAvailable(ctx.organizationId, owner.workspaceId);
     const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
+    // Provider-verified state is checked under the same lock as checkout and
+    // complimentary grants. A scheduled cancellation is still a paid contract.
+    const { grant, subscription } = await sync({ syncResourceLimits: false });
+    if (grant) {
+      throw new AppError("This workspace has a complimentary plan. Contact support to change it.", 409, "BILLING_COMPLIMENTARY_PLAN");
+    }
+    if (!canStartCloudSubscription(subscription)) {
+      throw new AppError("Contact support to change this server's plan. Your current subscription remains in place; no new charge was created.", 409, "BILLING_PLAN_CHANGE_UNAVAILABLE");
+    }
     if (owner.workspace) {
       const { provider } = await readCloudWorkspaceHost(ctx.organizationId, owner.workspace.id);
       const diskGb = offer.resourceLimits?.max_total_disk_gb;
@@ -76,15 +85,7 @@ export async function createCheckoutSession(
         throw new AppError("A workspace disk cannot be shrunk in place. Move its data to a smaller workspace before purchasing this plan.", 409, "CLOUD_WORKSPACE_DISK_SHRINK");
       }
     }
-    // Serialize checkout creation with operator grants. Complimentary access must
-    // be explicitly revoked before a customer starts a paid subscription.
-    const { grant } = await sync({ syncResourceLimits: false });
-    if (grant) {
-      throw new AppError("This workspace has a complimentary plan. Contact support to change it.", 409, "BILLING_COMPLIMENTARY_PLAN");
-    }
     await getOblienBillingApi().assertResellerSupport();
-    // Oblien replaces only this namespace's subscription after payment. This
-    // starts a full-price cycle without proration; disclose that before checkout.
     const result = await createTrackedWorkspaceCheckout(currentOwner.workspace, {
       namespace,
       kind: "subscription",

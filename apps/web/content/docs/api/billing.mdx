@@ -196,8 +196,11 @@ are unknown, not zero. The read does not provision servers or buy credits.
 
 `POST /subscription` accepts `{ planTierId, interval, workspaceId?, idempotencyKey?, custom? }` and returns
 `{ checkoutUrl }`. Use a stable request key when retrying the same purchase.
-Oblien replaces only the selected server's subscription after payment and starts
-a new cycle at the full selected price, without automatic proration. A browser
+This starts a new subscription only when the selected server has no live
+subscription. Existing contracts, including those scheduled to cancel, return
+`409 BILLING_PLAN_CHANGE_UNAVAILABLE`; they must not be replaced at full price.
+Self-service prorated upgrades and next-cycle downgrades await provider support.
+A browser
 return URL does not grant access: signed Oblien events and fresh entitlement
 reads confirm the current plan.
 

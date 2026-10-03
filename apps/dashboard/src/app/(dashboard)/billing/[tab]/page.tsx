@@ -55,7 +55,7 @@ export default async function BillingTabPage({
   }
 
   if (result.kind === "unavailable") {
-    return <BillingPageView view={view}><BillingUnavailable reason={result.reason} /></BillingPageView>;
+    return <BillingPageView view={view}><BillingContent sidebar={null}><BillingUnavailable reason={result.reason} /></BillingContent></BillingPageView>;
   }
 
   const state = result.state;
@@ -109,8 +109,8 @@ export default async function BillingTabPage({
         <BillingContent
           key={state.workspace?.id ?? "unsubscribed"}
           sidebar={
-            activeTab === "plans" ? null : (
-              <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} />
+            plansOnly ? null : (
+              <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} showPlanAction={activeTab !== "plans"} />
             )
           }
         >

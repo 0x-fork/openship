@@ -103,9 +103,9 @@
     "genericError": "問題が発生しました",
     "tryAgain": "もう一度試す",
     "checkoutError": "チェックアウトの開始に失敗しました",
-    "replacementNotice": "プランや請求間隔を変更すると、支払い後に選択した通常料金で新しい期間が始まります。自動の日割り計算はありません。",
-    "changeViaSupport": "現在のサブスクリプションを変更するにはサポートにお問い合わせください。",
-    "billingUnavailable": "現在、購入はご利用いただけません。"
+    "changeViaSupport": "このサーバーのプラン変更はサポートにお問い合わせください。現在のサブスクリプションは維持されます。",
+    "billingUnavailable": "現在、購入はご利用いただけません。",
+    "currentServerPlans": "このサーバーのプランを比較します。"
   },
   "complimentary": {
     "label": "無償提供プラン · 料金なし",
@@ -258,7 +258,11 @@
       "credit_exhausted": "Cloud一時停止中"
     },
     "includedTitle": "含まれるもの",
-    "perYear": "${price}/年"
+    "perYear": "${price}/年",
+    "noActivePlan": "有効なプランがありません",
+    "inactiveServer": "このサーバーに有効なサブスクリプションはありません。プランを選択してデプロイを再開してください。",
+    "renewsOn": "{date}に更新",
+    "accessUntil": "{date}まで利用可能"
   },
   "paymentPanel": {
     "title": "支払い方法",
@@ -524,7 +528,7 @@
     "description": "プランを選んでデプロイするだけ。サーバーは Openship が管理し、プロジェクトは CPU、メモリ、ストレージを共有します。",
     "loading": "サーバーを読み込み中…",
     "choose": "サーバーを選択",
-    "chooseBilling": "サブスクリプションと使用量を確認するサーバーを選択してください。",
+    "chooseBilling": "サーバーを選択して請求情報を表示します。",
     "dedicatedProjects": "専用プロジェクトの請求",
     "dedicatedProjectsHint": "個別の Cloud マシンを持つ既存のプロジェクト。",
     "shared": "複数のプロジェクト",
@@ -635,7 +639,9 @@
         "succeeded": "完了",
         "failed": "失敗"
       }
-    }
+    },
+    "billingServers": "サーバー",
+    "billingServersUnavailable": "サーバーを読み込めませんでした。"
   },
   "custom": {
     "name": "カスタム",

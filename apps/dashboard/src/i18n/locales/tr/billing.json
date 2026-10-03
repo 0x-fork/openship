@@ -103,9 +103,9 @@
     "genericError": "Bir sorun oluştu",
     "tryAgain": "Tekrar dene",
     "checkoutError": "Ödeme adımı başlatılamadı",
-    "replacementNotice": "Planı veya faturalandırma aralığını değiştirmek, ödeme sonrasında seçilen tam fiyatla yeni bir dönem başlatır. Otomatik orantılı ücret hesaplaması yapılmaz.",
-    "changeViaSupport": "Mevcut aboneliğinizi değiştirmek için destekle iletişime geçin.",
-    "billingUnavailable": "Satın alma işlemleri şu anda kullanılamıyor."
+    "changeViaSupport": "Bu sunucunun planını değiştirmek için destekle iletişime geçin. Mevcut aboneliğiniz korunur.",
+    "billingUnavailable": "Satın alma işlemleri şu anda kullanılamıyor.",
+    "currentServerPlans": "Bu sunucu için planları karşılaştırın."
   },
   "complimentary": {
     "label": "Ücretsiz plan · Ücret alınmaz",
@@ -258,7 +258,11 @@
       "credit_exhausted": "Cloud duraklatıldı"
     },
     "includedTitle": "Neler dahil",
-    "perYear": "${price}/yıl"
+    "perYear": "${price}/yıl",
+    "noActivePlan": "Etkin plan yok",
+    "inactiveServer": "Bu sunucunun etkin aboneliği yok. Dağıtımlara devam etmek için bir plan seçin.",
+    "renewsOn": "{date} tarihinde yenilenir",
+    "accessUntil": "{date} tarihine kadar erişim"
   },
   "paymentPanel": {
     "title": "Ödeme yöntemi",
@@ -524,7 +528,7 @@
     "description": "Bir plan seçin ve dağıtın. Sunucuyu Openship yönetir; projeleriniz CPU, bellek ve depolamayı paylaşır.",
     "loading": "Sunucu yükleniyor…",
     "choose": "Sunucu seçin",
-    "chooseBilling": "Aboneliğini ve kullanımını görmek için bir sunucu seçin.",
+    "chooseBilling": "Faturalandırmasını görmek için bir sunucu seçin.",
     "dedicatedProjects": "Ayrılmış proje faturalandırması",
     "dedicatedProjectsHint": "Kendi Cloud makinelerine sahip mevcut projeler.",
     "shared": "Birden çok proje",
@@ -635,7 +639,9 @@
         "succeeded": "Tamamlandı",
         "failed": "Başarısız"
       }
-    }
+    },
+    "billingServers": "Sunucularınız",
+    "billingServersUnavailable": "Sunucularınız yüklenemedi."
   },
   "custom": {
     "name": "Özel",

@@ -14,7 +14,7 @@ export function BillingOverview({ state }: { state: BillingState }) {
     <div className="space-y-5">
       <SubscribedServerResources state={state} />
       <BillingCapacity state={state} />
-      {state.tier !== "free" && <BillingResourceUsage state={state} />}
+      <BillingResourceUsage state={state} />
       <CloudUsageGuide collapsible />
     </div>
   );

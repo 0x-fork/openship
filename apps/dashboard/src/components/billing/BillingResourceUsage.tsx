@@ -7,6 +7,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { billingApi, type BillingResources, type BillingState } from "@/lib/api/billing";
 import { Button } from "@/components/ui/button";
 import { ResourceMeter } from "./ResourceMeter";
+import { isNewCloudCustomer } from "@/lib/billing-presentation";
 
 export function BillingResourceUsage({ state }: { state: BillingState }) {
   const { t, locale } = useI18n();
@@ -15,12 +16,12 @@ export function BillingResourceUsage({ state }: { state: BillingState }) {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const noPlan = state.tier === "free";
+  const newCustomer = isNewCloudCustomer(state);
   useEffect(() => {
     let active = true;
     setData(null);
     setFailed(false);
-    if (noPlan) {
+    if (newCustomer) {
       setLoading(false);
       return;
     }
@@ -44,13 +45,13 @@ export function BillingResourceUsage({ state }: { state: BillingState }) {
     };
   }, [
     state.workspace?.id,
-    noPlan,
+    newCustomer,
     state.tier,
     state.currentPeriod.start,
     state.currentPeriod.end,
     attempt,
   ]);
-  if (noPlan) return null;
+  if (newCustomer) return null;
   const compute = data?.compute;
   const edge = data?.edge;
   const periodLabel = (period?: { start: string; end: string }) =>

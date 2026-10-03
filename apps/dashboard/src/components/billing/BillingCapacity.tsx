@@ -5,7 +5,7 @@ import { PLANS, planServiceResources, formatCpuCores, formatMemoryMb } from "@re
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
 import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
-import { cloudUsagePercent, hasUnlimitedCloudCredits } from "@/lib/billing-presentation";
+import { cloudUsagePercent, hasUnlimitedCloudCredits, isNewCloudCustomer } from "@/lib/billing-presentation";
 import { ResourceLabel, ResourceMeter, ResourceRing } from "./ResourceMeter";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -60,26 +60,28 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   const resetAt = state.buildMinutesResetAt ? new Date(state.buildMinutesResetAt) : null;
   const savedProjects = cap?.projects?.used ?? 0;
 
-  // No subscription means no compute to meter. Keep any retained projects and
-  // prepaid balance visible without presenting them as an active allowance.
+  // An expired subscription can still have a server and historical usage.
+  // Keep those visible without presenting free-tier limits as purchased capacity.
   if (state.tier === "free")
     return (
       <>
-        <CloudActivationSteps />
+        {isNewCloudCustomer(state) ? <CloudActivationSteps /> : state.workspace?.serverId && (
+          <ServerUsage key={state.workspace.serverId} serverId={state.workspace.serverId} />
+        )}
         {(savedProjects > 0 || (state.balance.quotaRemaining ?? 0) !== 0) && (
           <section className="space-y-3 rounded-2xl bg-card p-5 text-sm text-muted-foreground">
             {savedProjects > 0 && (
               <p>
-                {interpolate(t.billing.onboarding.savedProjects, { count: number(savedProjects) })}
+                {interpolate(t.billing.workspaces.projectCount, { count: number(savedProjects) })}
               </p>
             )}
             {(state.balance.quotaRemaining ?? 0) !== 0 && (
               <>
                 <p className="font-medium tabular-nums text-foreground">
-                  {t.billing.onboarding.savedCredits}:{" "}
+                  {(state.balance.quotaRemaining ?? 0) > 0 ? t.billing.onboarding.savedCredits : t.billing.usage.kpi.balance}:{" "}
                   {formatMilliCredits(state.balance.quotaRemaining, locale)}
                 </p>
-                <p>{t.billing.onboarding.savedCreditsHint}</p>
+                {(state.balance.quotaRemaining ?? 0) > 0 && <p>{t.billing.onboarding.savedCreditsHint}</p>}
               </>
             )}
           </section>

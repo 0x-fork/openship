@@ -98,10 +98,12 @@ browser return URL.
   Customers can also cancel or resume renewal from Overview. Both actions are
   repeatable; cancellation preserves the paid period. They remain available
   when new purchases are disabled. Portal/cancel/resume require `billing:admin`.
-- Paid plan/interval changes use a replacement checkout. Oblien starts a new
-  full-price cycle after payment without automatic proration. The dashboard
-  discloses these terms, displays scheduled cancellation, and supports yearly
-  plans and resubscribing after an ended subscription.
+- Existing paid subscriptions cannot use replacement checkout: it would charge
+  a full-price cycle without proration. New subscriptions and resubscribing after
+  an ended contract remain available. Prorated upgrades and next-cycle downgrades
+  require the provider API described in [subscription changes](oblien-subscription-changes.md).
+  The dashboard displays current terms and scheduled cancellation, with visible
+  server selection in the right-hand billing card.
 - Signed Oblien events trigger a fresh entitlement read. The browser return URL
   never grants access. Failed synchronization returns 503 for retry; repeated
   deliveries are deduplicated. A five-minute reconciliation job repairs missed

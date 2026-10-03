@@ -178,6 +178,8 @@ describe("billing page failure recovery", () => {
     { tier: "team", subscription: null, complimentary: { id: "grant", expiresAt: null } },
     { balance: { ...free.balance, quotaUsed: 10 } },
     { balance: { ...free.balance, quotaLimit: 20, quotaRemaining: 20 } },
+    { capacity: { workspaces: { used: 1, max: 1 } } },
+    { workspace: { id: "cws-existing", name: "Production", provisioned: true } },
   ])("keeps billing history accessible for earlier customers: %j", async history => {
     mocks.get.mockResolvedValue({ data: { ...free, ...history } });
     const page = await loadPage();

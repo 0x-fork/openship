@@ -15,7 +15,7 @@ import {
 } from "@repo/core";
 import { entitlementQuota, syncOblienEntitlement, fromOblienCredits } from "./billing-oblien-quota";
 import { cloudPlan, complimentaryCloudPlan } from "./billing-catalog";
-import { canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
+import { canStartCloudSubscription, canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
 import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
 import { env } from "@repo/platform/engine/config/env";
@@ -147,16 +147,18 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
   const hasLinkedApplications = owner.workspace?.linkedProjects.some(link => link.projects.length > 0) ?? false;
 
   // Use the same application counters and billing windows as the plan gate.
-  const [buildMinutes, freeSubdomains, servicesUsed, projectsUsed, providerCapacity] = await Promise.all([
+  const [buildMinutes, freeSubdomains, servicesUsed, projectsUsed, providerCapacity, binding] = await Promise.all([
     getBuildMinuteUsage(orgId, { tier, limits: planLimitsForTier }, owner.workspaceId),
     getFreeSubdomainUsage(orgId, { tier, limits: planLimitsForTier }, owner.workspaceId),
     repos.service.countRunningForOrg(orgId, [], undefined, undefined, owner.workspaceId).catch(() => null),
     repos.project.countGroupsForOrganization(orgId, owner.workspaceId).catch(() => null),
     readCloudCapacity(entitlement.namespace).catch(() => ({})),
+    owner.workspaceId ? repos.cloudDockerWorkspace.find({ ownerWorkspaceId: owner.workspaceId }, orgId) : null,
   ]);
   const serviceResources = tier === "free" ? null : planServiceResources(planLimitsForTier);
   return {
     ...state,
+    workspace: state.workspace ? { ...state.workspace, provisioned: Boolean(binding?.workspaceId) } : null,
     status: entitlement.status,
     plan,
     subscription,
@@ -165,7 +167,7 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
       portal: managed,
       cancellation: managed && subscription !== null && subscription.status !== "canceled",
       resumption: managed && subscription !== null && subscription.status !== "canceled" && subscription.cancelAtPeriodEnd,
-      subscriptionChange: managed && env.BILLING_ENABLED,
+      subscriptionChange: managed && env.BILLING_ENABLED && canStartCloudSubscription(providerSubscription),
     },
     monthlyCreditLimit,
     overQuota,

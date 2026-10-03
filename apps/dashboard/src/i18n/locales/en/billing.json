@@ -103,9 +103,9 @@
     "genericError": "Something went wrong",
     "tryAgain": "Try again",
     "checkoutError": "Failed to start checkout",
-    "changeViaSupport": "Contact support to change or cancel your current subscription.",
+    "changeViaSupport": "Contact support to change this server’s plan. Your current subscription stays in place.",
     "billingUnavailable": "Purchases are currently unavailable.",
-    "replacementNotice": "Changing your plan or billing interval starts a new cycle at the full selected price after payment. There is no automatic proration."
+    "currentServerPlans": "Compare plans for this server."
   },
   "complimentary": {
     "label": "Complimentary · No charge",
@@ -258,7 +258,11 @@
       "credit_exhausted": "Cloud paused"
     },
     "includedTitle": "What's included",
-    "perYear": "${price}/yr"
+    "perYear": "${price}/yr",
+    "noActivePlan": "No active plan",
+    "inactiveServer": "This server has no active subscription. Choose a plan to resume deployments.",
+    "renewsOn": "Renews on {date}",
+    "accessUntil": "Access until {date}"
   },
   "paymentPanel": {
     "title": "Payment method",
@@ -566,7 +570,7 @@
     "description": "Choose a plan and deploy. Openship manages the server; your projects share its CPU, memory and storage.",
     "loading": "Loading server…",
     "choose": "Choose a server",
-    "chooseBilling": "Choose a server to view its subscription and usage.",
+    "chooseBilling": "Select a server to view its billing.",
     "resourceSummary": "{cpu} vCPU · {memory} GB RAM · {disk} GB storage",
     "switchingBilling": "Loading billing for {name}…",
     "dedicatedProjects": "Dedicated project billing",
@@ -666,6 +670,8 @@
       "ports": "Published ports",
       "confirmHint": "This affects every project on this server. Disabling internet access can interrupt builds and external integrations.",
       "save": "Apply network change"
-    }
+    },
+    "billingServers": "Your servers",
+    "billingServersUnavailable": "Could not load your servers."
   }
 }

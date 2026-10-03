@@ -103,9 +103,9 @@
     "genericError": "حدث خطأ ما",
     "tryAgain": "حاول مرة أخرى",
     "checkoutError": "تعذّر بدء عملية الدفع",
-    "changeViaSupport": "تواصل مع الدعم لتغيير اشتراكك الحالي أو إلغائه.",
+    "changeViaSupport": "تواصل مع الدعم لتغيير خطة هذا الخادم. يبقى اشتراكك الحالي كما هو.",
     "billingUnavailable": "عمليات الشراء غير متاحة حاليًا.",
-    "replacementNotice": "تغيير الخطة أو فترة الفوترة يبدأ دورة جديدة بالسعر الكامل المحدد بعد الدفع. لا تُحسب فروقات المدة تلقائيًا."
+    "currentServerPlans": "قارن الخطط لهذا الخادم."
   },
   "complimentary": {
     "label": "خطة ممنوحة مجانًا · دون رسوم",
@@ -258,7 +258,11 @@
       "credit_exhausted": "السحابة متوقفة مؤقتًا"
     },
     "includedTitle": "ما يشمله",
-    "perYear": "${price}/سنة"
+    "perYear": "${price}/سنة",
+    "noActivePlan": "لا توجد خطة نشطة",
+    "inactiveServer": "لا يوجد اشتراك نشط لهذا الخادم. اختر خطة لاستئناف النشر.",
+    "renewsOn": "يتجدد في {date}",
+    "accessUntil": "متاح حتى {date}"
   },
   "paymentPanel": {
     "title": "طريقة الدفع",
@@ -566,7 +570,7 @@
     "description": "اختر خطة وانشر. يتولى Openship إدارة الخادم، وتتشارك مشاريعك المعالج والذاكرة والتخزين.",
     "loading": "جارٍ تحميل الخادم…",
     "choose": "اختر خادمًا",
-    "chooseBilling": "اختر خادمًا لعرض اشتراكه واستهلاكه.",
+    "chooseBilling": "اختر خادمًا لعرض فواتيره.",
     "resourceSummary": "{cpu} vCPU · {memory} GB ذاكرة · {disk} GB تخزين",
     "switchingBilling": "جارٍ تحميل فوترة {name}…",
     "dedicatedProjects": "فوترة المشاريع المخصصة",
@@ -666,6 +670,8 @@
       "ports": "المنافذ المنشورة",
       "confirmHint": "يؤثر هذا على كل مشاريع الخادم. قد يؤدي تعطيل الإنترنت إلى تعطيل البناء والتكاملات الخارجية.",
       "save": "تطبيق تغيير الشبكة"
-    }
+    },
+    "billingServers": "خوادمك",
+    "billingServersUnavailable": "تعذّر تحميل خوادمك."
   }
 }

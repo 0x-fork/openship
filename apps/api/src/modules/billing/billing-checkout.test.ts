@@ -228,16 +228,28 @@ describe("Cloud customer checkout", () => {
     expect(keys[0]).toBe(keys[1]);
     expect(keys[0]).not.toBe(keys[2]);
   });
-  it.each(["active", "canceled", "credit_exhausted"])("uses provider replacement checkout for an existing %s subscription", async (status) => {
-    h.sync.mockResolvedValue({ tier: "pro", entitlement: { status, periodEnd: "2026-10-01T00:00:00Z" } });
+  it.each(["active", "trialing", "past_due", "unpaid", "paused"])("preserves an existing %s subscription instead of charging for a full-price replacement", async (status) => {
+    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: { ...subscription, status } }));
+    await expect(createCheckoutSession(ctx(), "team", "monthly")).rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
+    expect(h.checkout).not.toHaveBeenCalled();
+    expect(h.pending.size).toBe(0);
+  });
+  it("does not replace a subscription that is scheduled to cancel at renewal", async () => {
+    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: { ...subscription, cancelAtPeriodEnd: true } }));
+    await expect(createCheckoutSession(ctx(), "hobby", "monthly")).rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
+    expect(h.checkout).not.toHaveBeenCalled();
+    expect(h.cancel).not.toHaveBeenCalled();
+  });
+  it("allows a new subscription after the provider confirms the previous contract ended", async () => {
+    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: { ...subscription, status: "canceled" } }));
     await expect(createCheckoutSession(ctx(), "team", "monthly")).resolves.toHaveProperty("checkoutUrl");
-    expect(h.checkout).toHaveBeenCalledWith(
-      expect.objectContaining({
-        namespace: "ns-org-a",
-        offer: expect.objectContaining({ reference: "openship:team:v8", unitAmount: 9900 }),
-        billingInterval: "monthly",
-      }),
-    );
+    expect(h.checkout).toHaveBeenCalledOnce();
+  });
+  it("rechecks the provider contract when a checkout is retried after activation", async () => {
+    await createCheckoutSession(ctx(), "starter", "monthly", "attempt-00000001");
+    h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription }));
+    await expect(createCheckoutSession(ctx(), "starter", "monthly", "attempt-00000001")).rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
+    expect(h.checkout).toHaveBeenCalledOnce();
   });
   it("does not send a customer to checkout when entitlement cannot be verified", async () => {
     h.sync.mockRejectedValue(new Error("provider unavailable"));
@@ -286,14 +298,14 @@ describe("Cloud customer checkout", () => {
   });
   it("refuses purchases before checkout when the provider cannot preserve the offer's policy and limits", async () => {
     h.support.mockRejectedValue(new Error("Billing provider update required"));
+    await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow(
+      "Billing provider update required",
+    );
     h.subscription.mockImplementation(async (namespace) => ({
       success: true,
       namespace,
       subscription,
     }));
-    await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toThrow(
-      "Billing provider update required",
-    );
     await expect(createTopupCheckoutSession(ctx(), "pack_4500")).rejects.toThrow(
       "Billing provider update required",
     );
