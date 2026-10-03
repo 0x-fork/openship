@@ -305,7 +305,12 @@ describe("migration chain applies to an existing, populated database", () => {
       );
       expect(
         (await client.query("SELECT * FROM servers WHERE workspace_id IS NULL ORDER BY id")).rows,
-      ).toEqual(connected.map((server) => ({ ...server, workspace_id: null })));
+      ).toEqual(connected.map((server) => ({
+        ...server,
+        workspace_id: null,
+        purpose: "deployment",
+        ssh_host_key: null,
+      })));
       // Repeated startup retains execution IDs and cannot detach a managed project.
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect(
