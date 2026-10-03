@@ -157,10 +157,8 @@ local function parse(raw)
     local out, n = {}, 0
     for _, e in ipairs(entries) do
         if type(e) == "table" then
-            -- JSON null decodes to the cjson.null userdata sentinel, not nil. A
-            -- whole-project rule pushes "pathPrefix":null; left in the compiled
-            -- entry the sentinel crashes rules_guard's `#p` prefix match and the
-            -- `..` rate-limit key concat — on EVERY request for the host.
+            -- cjson.null is truthy userdata. Normalize once so both prefix
+            -- matching and rate-limit keys use nil for a whole-host rule.
             local prefix = e.pathPrefix
             if type(prefix) ~= "string" then prefix = nil end
             n = n + 1
