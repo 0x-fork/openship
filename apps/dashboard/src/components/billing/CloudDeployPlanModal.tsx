@@ -122,7 +122,7 @@ export function CloudDeployPlanModal({
           id={titleId}
           className="min-w-0 text-lg font-semibold leading-6 tracking-tight text-foreground"
         >
-          {ready ? readyTitle : title}
+          {ready ? readyTitle : initialCheckoutUrl ? copy.continueCheckout : title}
         </h2>
         <Button
           type="button"
