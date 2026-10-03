@@ -24,6 +24,11 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/api/system", () => ({
   systemApi: { listServerDestinations: async () => ({ servers: await h.listServers() }) },
 }));
+vi.mock("@/lib/api/domains", () => ({
+  domainsApi: {
+    previewRecords: vi.fn(async () => ({ data: { records: [], mode: "selfhosted" } })),
+  },
+}));
 vi.mock("@/context/PlatformContext", () => ({
   usePlatform: () => ({ selfHosted: h.selfHosted, deployMode: "docker", baseDomain: "opsh.test" }),
 }));
@@ -490,6 +495,130 @@ it("keeps routing compact and prevents incomplete public routes from being silen
   expect(button("Next").disabled).toBe(false);
   expect(h.migrate).not.toHaveBeenCalled();
 });
+
+it.each(["detected", "edited", "free", "internal"] as const)(
+  "shows three routing choices and imports the %s route selection",
+  async (choice) => {
+    const stack = scannedStack();
+    stack.services[0]!.ports = ["18080:8080"];
+    stack.services[0]!.existingRoute = [
+      {
+        domains: ["api.example.com", "www.example.com"],
+        port: 18080,
+        containerPort: 8080,
+        path: "/v1",
+        exact: true,
+        ssl: { enabled: true },
+      },
+    ];
+    h.scanStream.mockResolvedValue({ ...stack, serverId: "source-a" });
+    h.migrate.mockResolvedValue({ migrationId: "run", confirmationToken: "token" });
+    await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+    await pickSource("First server");
+    await act(async () => button("Scan server").click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Select all services in Standalone containers"]',
+        )!
+        .click(),
+    );
+    for (let step = 0; step < 2; step++) await act(async () => button("Next").click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Configure redis"]')!.click(),
+    );
+    const routeChoices = container.querySelector('[role="group"][aria-label="Route"]')!;
+    expect(Array.from(routeChoices.querySelectorAll("button"), (item) => item.textContent)).toEqual(
+      ["Custom", "Free", "Internal only"],
+    );
+    expect(button("Custom").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Next").disabled).toBe(false);
+    const expandDomain = async (label: string) => {
+      const toggle = Array.from(
+        container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+      ).find((item) => item.textContent?.startsWith(label))!;
+      if (toggle.getAttribute("aria-expanded") !== "true") await act(async () => toggle.click());
+    };
+    const fill = async (input: HTMLInputElement, value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+
+    if (choice === "edited") {
+      await expandDomain("Primary domain");
+      await fill(
+        container.querySelector<HTMLInputElement>('input[placeholder="app.example.com"]')!,
+        "edited.example.com",
+      );
+      await fill(
+        container.querySelector<HTMLInputElement>('input[aria-label="Exposed port"]')!,
+        "9090",
+      );
+      await act(async () => button("Free").click());
+      expect(button("Next").disabled).toBe(true);
+      await act(async () => button("Custom").click());
+      expect(
+        container.querySelector<HTMLInputElement>('input[placeholder="app.example.com"]')!.value,
+      ).toBe("edited.example.com");
+    } else if (choice === "free") {
+      await act(async () => button("Free").click());
+      expect(button("Next").disabled).toBe(true);
+      await expandDomain("Primary domain");
+      await fill(
+        container.querySelector<HTMLInputElement>('input[placeholder="redis"]')!,
+        "api-preview",
+      );
+      expect(button("Next").disabled).toBe(true);
+      await expandDomain("Domain 2");
+      await fill(
+        container.querySelectorAll<HTMLInputElement>('input[placeholder="redis"]')[1]!,
+        "www-preview",
+      );
+    } else if (choice === "internal") {
+      await act(async () => button("Internal only").click());
+      expect(container.querySelector('input[placeholder="app.example.com"]')).toBeNull();
+    } else {
+      await act(async () => button("Custom").click());
+    }
+
+    expect(button("Next").disabled).toBe(false);
+    await act(async () => button("Next").click());
+    await act(async () => button("Migrate").click());
+    const routes = h.migrate.mock.lastCall?.[0].routesByServiceName;
+    if (choice === "internal") {
+      expect(routes).toBeUndefined();
+    } else {
+      expect(routes).toEqual({
+        "redis-container": [
+          {
+            ...(choice === "free"
+              ? { domainType: "free", domain: "api-preview" }
+              : {
+                  domainType: "custom",
+                  customDomain: choice === "edited" ? "edited.example.com" : "api.example.com",
+                }),
+            exposedPort: choice === "edited" ? "9090" : "8080",
+            targetPath: "/v1",
+            exact: true,
+          },
+          {
+            ...(choice === "free"
+              ? { domainType: "free", domain: "www-preview" }
+              : { domainType: "custom", customDomain: "www.example.com" }),
+            exposedPort: "8080",
+            targetPath: "/v1",
+            exact: true,
+          },
+        ],
+      });
+    }
+  },
+);
 
 it("expands service reviews individually or together without losing configuration across steps", async () => {
   useCloud();

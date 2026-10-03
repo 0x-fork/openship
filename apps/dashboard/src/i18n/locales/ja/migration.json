@@ -58,7 +58,6 @@
     "expandAll": "すべて展開",
     "collapseAll": "すべて折りたたむ",
     "configureService": "{name}を設定",
-    "keepDetected": "検出した設定を維持",
     "internal": "内部のみ",
     "detected": "検出済み",
     "finishRoute": "ルート設定を完了",

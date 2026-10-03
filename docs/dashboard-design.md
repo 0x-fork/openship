@@ -78,8 +78,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   right. Expanded service controls stay in their column; collapsed neighbors keep their own
   height. Put compact Expand all / Collapse all actions above the service grid. Show detected
   domains and incomplete routes immediately, and reuse the domain, volume and environment
-  editors. Destination and transfer review have a final step for both same-server and
-  cross-server imports. The page and modal share the whole preparation layout and controls.
+  editors. Routing choices are Custom, Free and Internal only, using the shared routing labels.
+  Detected routes appear under Custom and retain their original import behavior until edited.
+  Destination and transfer review have a final step for both same-server and cross-server
+  imports. The page and modal share the whole preparation layout and controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the

@@ -58,7 +58,6 @@
     "expandAll": "Expandir todo",
     "collapseAll": "Contraer todo",
     "configureService": "Configurar {name}",
-    "keepDetected": "Conservar detectadas",
     "internal": "Solo interno",
     "detected": "Detectado",
     "finishRoute": "Completar ruta",

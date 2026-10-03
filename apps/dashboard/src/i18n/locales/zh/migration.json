@@ -58,7 +58,6 @@
     "expandAll": "全部展开",
     "collapseAll": "全部收起",
     "configureService": "配置 {name}",
-    "keepDetected": "保留检测结果",
     "internal": "仅内部访问",
     "detected": "已检测",
     "finishRoute": "完成路由设置",

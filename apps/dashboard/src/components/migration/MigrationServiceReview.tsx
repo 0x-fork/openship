@@ -16,7 +16,7 @@ import {
   editableServiceRoutes,
   firstContainerPort,
   hasIncompleteServiceRoutes,
-  hasKeepableRoute,
+  keptServiceRoutes,
   type RouteMode,
 } from "./migration-route-input";
 
@@ -64,33 +64,29 @@ export function MigrationServiceReview({
   const s = t.migration.wizard.steps;
   const d = t.migration.discover;
   const r = t.migration.review;
+  const routingLabels = t.widgets.routing.settingsCard;
   const [envModalOpen, setEnvModalOpen] = useState(false);
   const [imageEnvOpen, setImageEnvOpen] = useState(false);
   const [warningsOpen, setWarningsOpen] = useState(false);
   const detailsId = useId();
   const warningsId = useId();
-  const port = routes?.[0]?.port ?? firstContainerPort(service);
-  const keptRoutes = (service.existingRoute ?? []).flatMap((route) =>
-    route.domains.map((domain) => ({ ...route, domain })),
+  // Detected routes appear in Custom; opening the editor does not change the import plan.
+  const inputRoutes = useMemo(
+    () => (routeMode === "keep" ? keptServiceRoutes(service, firstContainerPort(service)) : routes),
+    [routeMode, service, routes],
   );
+  const port = inputRoutes?.[0]?.port ?? firstContainerPort(service);
   const visibleRoutes =
-    routeMode === "keep"
-      ? keptRoutes.map((route) => ({
-          domain: route.domain,
-          path: route.path,
+    routeMode === "none"
+      ? []
+      : (inputRoutes ?? []).map((route) => ({
+          domain: resolvePublicEndpointHostname(route, baseDomain),
+          path: route.targetPath,
           exact: route.exact,
-          port: String(route.containerPort ?? firstContainerPort(service)),
-        }))
-      : routeMode === "none"
-        ? []
-        : (routes ?? []).map((route) => ({
-            domain: resolvePublicEndpointHostname(route, baseDomain),
-            path: route.targetPath,
-            exact: route.exact,
-            port: route.port,
-          }));
+          port: route.port,
+        }));
   const firstRoute = visibleRoutes[0];
-  const incomplete = hasIncompleteServiceRoutes(routeMode, routes);
+  const incomplete = hasIncompleteServiceRoutes(routeMode, inputRoutes);
   const volumes = service.volumes.filter((volume) => volume.type === "volume" && volume.source);
   const envRecord = envOverride ?? service.env;
   const envRows = useMemo(
@@ -108,18 +104,17 @@ export function MigrationServiceReview({
         .revealEnv({ serverId: sourceServerId, containerId, keys })
         .then((result) => result.environment);
   }, [sourceServerId, service.containerId]);
-  const modes: RouteMode[] = hasKeepableRoute(service)
-    ? ["keep", "free", "custom", "none"]
-    : ["free", "custom", "none"];
+  const modes = ["custom", "free", "none"] as const;
+  const selectedMode = routeMode === "keep" ? "custom" : routeMode;
   const modeLabels = {
-    keep: r.keepDetected,
-    free: s.routeFree,
-    custom: s.routeCustom,
-    none: r.internal,
+    custom: routingLabels.custom,
+    free: routingLabels.free,
+    none: routingLabels.internalOnly,
   };
-  const selectMode = (mode: RouteMode) => {
+  const selectMode = (mode: (typeof modes)[number]) => {
+    if (mode === selectedMode) return;
     if (mode === "free" || mode === "custom")
-      onSetRoutes(editableServiceRoutes(service, routes, mode));
+      onSetRoutes(editableServiceRoutes(service, inputRoutes, mode));
     onSetRouteMode(mode);
   };
 
@@ -245,46 +240,22 @@ export function MigrationServiceReview({
               {modes.map((mode) => (
                 <Button
                   key={mode}
-                  variant={routeMode === mode ? "default" : "ghost"}
+                  variant={selectedMode === mode ? "default" : "ghost"}
                   size="sm"
-                  aria-pressed={routeMode === mode}
+                  aria-pressed={selectedMode === mode}
                   onClick={() => selectMode(mode)}
                 >
                   {modeLabels[mode]}
                 </Button>
               ))}
             </div>
-            {routeMode === "keep" && (
-              <div className="space-y-2 rounded-xl bg-background p-3">
-                {keptRoutes.map((route, index) => (
-                  <div
-                    key={`${route.domain}:${index}`}
-                    className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm"
-                  >
-                    <span className="min-w-0 break-all text-foreground">
-                      {route.domain}
-                      <span className="text-muted-foreground">
-                        {route.path !== "/" ? route.path : ""}
-                      </span>
-                      {route.exact && (
-                        <span className="ms-1 text-xs text-muted-foreground">(=)</span>
-                      )}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {route.containerPort ?? firstContainerPort(service)} ·{" "}
-                      {route.ssl.enabled ? s.sslOn : s.sslOff}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
             {routeMode === "none" && (
               <p className="text-xs text-muted-foreground">{s.internalOnly}</p>
             )}
-            {(routeMode === "free" || routeMode === "custom") && (
+            {selectedMode !== "none" && (
               <PublicEndpointsCard
                 projectName={service.name}
-                endpoints={routes ?? []}
+                endpoints={inputRoutes ?? []}
                 hasServer
                 runtimePort={port}
                 allowPortEdit
@@ -293,7 +264,10 @@ export function MigrationServiceReview({
                 hideTypeToggle
                 portInline
                 preserveProxyPaths
-                onChange={onSetRoutes}
+                onChange={(nextRoutes) => {
+                  onSetRoutes(nextRoutes);
+                  if (routeMode === "keep") onSetRouteMode("custom");
+                }}
               />
             )}
             {incomplete && (
