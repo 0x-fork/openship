@@ -63,8 +63,8 @@ const POSITIVE_STACK_CASES: StackCase[] = [
     name: "Farm.js - farm.config.ts + @farm.js/core",
     files: files("package.json", "farm.config.ts", "src/", "pnpm-lock.yaml"),
     packageJson: {
-      dependencies: { "@farm.js/core": "^0.2.0", react: "^19.0.0" },
-      devDependencies: { "@farm.js/cli": "^0.2.0" },
+      dependencies: { "@farm.js/core": "^0.1.0", react: "^19.0.0" },
+      devDependencies: { "@farm.js/cli": "^0.1.0" },
     },
     expectedStack: "farmjs",
     expectedCategory: "fullstack",
@@ -74,7 +74,7 @@ const POSITIVE_STACK_CASES: StackCase[] = [
   {
     name: "Farm.js - farm.config.mjs is also detected",
     files: files("package.json", "farm.config.mjs"),
-    packageJson: { dependencies: { "@farm.js/core": "^0.2.0" } },
+    packageJson: { dependencies: { "@farm.js/core": "^0.1.0" } },
     expectedStack: "farmjs",
   },
   {
@@ -541,7 +541,7 @@ describe("detectStack - rule ordering & gate disambiguation", () => {
     expect(configOnly.stack).not.toBe("farmjs");
 
     const dependencyOnly = detectStack(files("package.json"), {
-      dependencies: { "@farm.js/core": "^0.2.0" },
+      dependencies: { "@farm.js/core": "^0.1.0" },
     });
     expect(dependencyOnly.stack).not.toBe("farmjs");
   });
@@ -939,7 +939,7 @@ describe("detectStack - output directory and build image", () => {
 
   it("uses Farm.js's universal output and Node server entry", () => {
     const result = detectStack(files("package.json", "farm.config.ts"), {
-      dependencies: { "@farm.js/core": "^0.2.0" },
+      dependencies: { "@farm.js/core": "^0.1.0" },
     });
     expect(result.outputDirectory).toBe(".farm/.output");
     expect(result.productionPaths).toEqual([".farm/.output"]);
