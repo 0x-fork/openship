@@ -68,8 +68,5 @@
     "api": "^6.1.3",
     "sonner": "^2.0.7"
   },
-  "private": true,
-  "patchedDependencies": {
-    "oblien@2.5.0": "packages/adapters/patches/oblien@2.5.0.patch"
-  }
+  "private": true
 }

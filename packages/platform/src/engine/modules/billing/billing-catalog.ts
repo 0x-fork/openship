@@ -10,12 +10,12 @@ import {
   type PlanLimits,
   type PlanTierId,
 } from "@repo/core";
-import type { BillingPlans } from "@repo/contracts";
+import type { BillingPlans, CustomSubscriptionSelection } from "@repo/contracts";
 import type { OblienOffer, OblienSubscription } from "../../lib/oblien-billing-api";
 import { cloudNamespaceLimits } from "../../lib/cloud-resource-limits";
 import { fromOblienCredits, toOblienCredits } from "./billing-credit-units";
 import type { ResolvedPlanGrant } from "./billing-plan-grants";
-import { CUSTOM_OFFER_VERSION, validCustomOffer } from "./billing-custom-offer";
+import { CUSTOM_OFFER_VERSION, validCustomOffer, customSubscriptionOffer } from "./billing-custom-offer";
 
 // Read compatibility for subscriptions sold before Openship owned its offers.
 // New checkouts never use these platform catalog IDs.
@@ -129,6 +129,14 @@ export function subscriptionOffer(tier: PlanTierId, interval: "monthly" | "annua
       onOverdraftAction: raw.billing.onOverdraftAction },
     resourceLimits: cloudNamespaceLimits(tier),
   };
+}
+
+/** New purchases and in-place changes resolve exactly the same trusted terms. */
+export function resolveSubscriptionSelection(tier: PlanTierId, interval: "monthly" | "annual", custom?: CustomSubscriptionSelection) {
+  const terms = custom ? customSubscriptionOffer(custom.resources) : null;
+  if (terms && (interval !== "monthly" || tier !== terms.quote.basePlanTierId || custom?.quoteReference !== terms.quote.reference))
+    throw new AppError("This resource quote has changed. Refresh the price before continuing.", 409, "BILLING_QUOTE_CHANGED");
+  return { offer: terms?.offer ?? subscriptionOffer(tier, interval), customLimits: terms?.limits };
 }
 
 export function subscriptionMetadata(

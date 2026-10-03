@@ -15,7 +15,7 @@ import {
 } from "@repo/core";
 import { entitlementQuota, syncOblienEntitlement, fromOblienCredits } from "./billing-oblien-quota";
 import { cloudPlan, complimentaryCloudPlan } from "./billing-catalog";
-import { canStartCloudSubscription, canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
+import { canStartCloudSubscription, canChangeCloudSubscription, canTopUpCloudSubscription, hasPendingSubscriptionChange, presentCloudSubscription } from "./billing-subscription";
 import { ensureNamespace } from "../../lib/openship-cloud";
 import { getBuildMinuteUsage, getFreeSubdomainUsage } from "@repo/platform/engine/lib/plan-guard";
 import { env } from "@repo/platform/engine/config/env";
@@ -139,6 +139,7 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
         return null;
       });
   const subscription = presentCloudSubscription(providerSubscription);
+  const changingPlan = Boolean(subscription?.pendingChange) || hasPendingSubscriptionChange(owner.workspace?.subscriptionChange);
   const monthlyCreditLimit = tier === "free" ? 0 : plan?.monthlyCredits ?? null;
   const overQuota = state.balance.quotaRemaining !== null && state.balance.quotaRemaining <= 0;
   // A connected installation keeps its project/service/build records locally.
@@ -165,9 +166,9 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
     complimentary: grant ? { id: grant.id, expiresAt: grant.expiresAt?.toISOString() ?? null } : null,
     capabilities: {
       portal: managed,
-      cancellation: managed && subscription !== null && subscription.status !== "canceled",
-      resumption: managed && subscription !== null && subscription.status !== "canceled" && subscription.cancelAtPeriodEnd,
-      subscriptionChange: managed && env.BILLING_ENABLED && canStartCloudSubscription(providerSubscription),
+      cancellation: managed && subscription !== null && subscription.status !== "canceled" && !changingPlan,
+      resumption: managed && subscription !== null && subscription.status !== "canceled" && subscription.cancelAtPeriodEnd && !changingPlan,
+      subscriptionChange: managed && env.BILLING_ENABLED && !changingPlan && (canStartCloudSubscription(providerSubscription) || Boolean(owner.workspaceId && canChangeCloudSubscription(providerSubscription, entitlement))),
     },
     monthlyCreditLimit,
     overQuota,

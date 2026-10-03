@@ -2,7 +2,7 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition, CustomServerResources } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
-import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingCreditAlerts, BillingCustomQuote, BillingState as BillingStateContract } from "@repo/contracts";
+import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingCreditAlerts, BillingCustomQuote, BillingState as BillingStateContract, BillingOperations, BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
 import { trackCloudEvent } from "../cloud-analytics";
 export type { BillingResources, BillingCreditAlerts } from "@repo/contracts";
 
@@ -176,6 +176,14 @@ interface Envelope<T> {
 /* ------------------------------------------------------------------ */
 
 export const billingApi = {
+  previewSubscriptionChange: async (input: Parameters<BillingOperations["previewSubscriptionChange"]>[0]): Promise<BillingPlanChangeQuote> =>
+    (await api.post<Envelope<BillingPlanChangeQuote>>(endpoints.billing.changePreview, input)).data,
+  confirmSubscriptionChange: async (input: Parameters<BillingOperations["confirmSubscriptionChange"]>[0]): Promise<BillingPlanChange> =>
+    (await api.post<Envelope<BillingPlanChange>>(endpoints.billing.change, input)).data,
+  getSubscriptionChange: async (changeId: string, workspaceId?: string): Promise<BillingPlanChange> =>
+    (await api.get<Envelope<BillingPlanChange>>(endpoints.billing.change, { params: { changeId, workspaceId } })).data,
+  cancelSubscriptionChange: async (changeId: string, workspaceId?: string): Promise<BillingPlanChange> =>
+    (await api.post<Envelope<BillingPlanChange>>(endpoints.billing.changeCancel, { changeId, workspaceId })).data,
   quoteCustomPlan: async (resources: CustomServerResources): Promise<BillingCustomQuote> => {
     const res = await api.get<Envelope<BillingCustomQuote>>(endpoints.billing.customQuote, { params: { ...resources } });
     return res.data;

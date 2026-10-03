@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **441 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **443 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -83,6 +83,13 @@ The current API has **441 unique tools**. Permission tags below describe the rou
 | `post_backup_runs_by_runId_protect`<br />`POST /api/backup-runs/:runId/protect` | Protect or unprotect this backup from retention cleanup, optionally until a specified time. Read the returned retention lock and backup status. | `backup_destination:backup_run:write` |
 | `post_backup_runs_by_runId_restore_prepare`<br />`POST /api/backup-runs/:runId/restore/prepare` | Prepare restoration from this backup without applying it. Returns restoreId and confirmationToken. Poll the restore until prepared, review its target and mode, then explicitly apply the returned token. | `backup_destination:backup_run:admin` |
 | `post_projects_by_projectId_backup_policies`<br />`POST /api/projects/:projectId/backup-policies` | Create a project or service backup policy with destination, schedule and retention. For one-click volume/data backup, use the existing policy payload defaults; source code remains in its repository. Run the policy separately to test it. | `project:write` |
+
+### billing
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_billing_subscription_change`<br />`GET /api/billing/subscription/change` | Read a provider-confirmed subscription change for the selected managed server. Queued, payment_pending and scheduled do not activate new capacity; applied confirms the new terms. Server resizing uses its existing operation status. | `billing:read` |
+| `post_billing_subscription_change_preview`<br />`POST /api/billing/subscription/change/preview` | Preview an existing managed server's plan change using the provider's prorated price and next renewal date. Saves an expiring quote without charging. Uses trusted preset or Custom resources, preserves the billing interval, and lists projects that would restart. Complete confirmation in Billing. | `billing:write` |
 
 ### billing-local
 
@@ -607,6 +614,8 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/billing/portal` | Creates an account billing-portal session. Open Settings → Billing to manage payment details. |
 | `POST /api/billing/resume` | Paid subscription renewal is managed by the account owner in Settings → Billing; MCP exposes the resulting subscription state. |
 | `POST /api/billing/subscription` | Starts a paid browser checkout. Purchases and payment authorization are completed in Settings → Billing. |
+| `POST /api/billing/subscription/change` | Confirms a paid subscription change and server restart. Payment authorization and restart consent are completed in Billing. |
+| `POST /api/billing/subscription/change/cancel` | Cancel a pending financial change in Billing; MCP exposes its resulting status. |
 | `POST /api/billing/topup` | Starts a paid browser checkout. Buy credits in Settings → Billing; MCP can list pack prices and current balance. |
 | `POST /api/billing/webhook/stripe` | Retired Stripe endpoint — always 410, no billing mutations |
 | `GET /api/cloud/account` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |

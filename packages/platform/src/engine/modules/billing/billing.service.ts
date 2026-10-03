@@ -7,20 +7,19 @@ import type { ExecutionContext as RequestContext } from "../../../context";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import { ensureNamespace } from "../../lib/openship-cloud";
 import {
-  subscriptionOffer,
+  resolveSubscriptionSelection,
   subscriptionMetadata,
   topupOffer,
   subscriptionPlan,
 } from "./billing-catalog";
 import { syncOblienEntitlement, withCloudBillingLock } from "./billing-oblien-quota";
 import { listLiveSubscriptions } from "./billing.repository";
-import { canStartCloudSubscription, canTopUpCloudSubscription, presentCloudSubscription } from "./billing-subscription";
+import { canStartCloudSubscription, canTopUpCloudSubscription, hasPendingSubscriptionChange, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
 import { cloudAnalytics } from "../cloud-analytics";
 import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
 import { readCloudWorkspaceHost } from "../../lib/cloud-workspace-host";
 import { createTrackedWorkspaceCheckout } from "./workspace-checkout";
-import { customSubscriptionOffer } from "./billing-custom-offer";
 
 export function assertBillingEnabled(): void {
   if (!env.BILLING_ENABLED) {
@@ -57,18 +56,16 @@ export async function createCheckoutSession(
   custom?: CustomSubscriptionSelection,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
-  const customTerms = custom ? customSubscriptionOffer(custom.resources) : null;
-  if (customTerms && (interval !== "monthly" || planTierId !== customTerms.quote.basePlanTierId || custom?.quoteReference !== customTerms.quote.reference)) {
-    throw new AppError("This resource quote has changed. Refresh the price before continuing to checkout.", 409, "BILLING_QUOTE_CHANGED");
-  }
+  const { offer, customLimits } = resolveSubscriptionSelection(planTierId, interval, custom);
   await assertBillingOwnerAvailable(ctx.organizationId, workspaceId);
-  const offer = customTerms?.offer ?? subscriptionOffer(planTierId, interval);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
   const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
   const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
   return withCloudBillingLock(ctx.organizationId, async (sync) => {
     await assertBillingOwnerAvailable(ctx.organizationId, owner.workspaceId);
     const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
+    if (hasPendingSubscriptionChange(currentOwner.workspace?.subscriptionChange))
+      throw new AppError("Finish or cancel this server's pending plan change first.", 409, "BILLING_PLAN_CHANGE_PENDING");
     // Provider-verified state is checked under the same lock as checkout and
     // complimentary grants. A scheduled cancellation is still a paid contract.
     const { grant, subscription } = await sync({ syncResourceLimits: false });
@@ -76,7 +73,7 @@ export async function createCheckoutSession(
       throw new AppError("This workspace has a complimentary plan. Contact support to change it.", 409, "BILLING_COMPLIMENTARY_PLAN");
     }
     if (!canStartCloudSubscription(subscription)) {
-      throw new AppError("Contact support to change this server's plan. Your current subscription remains in place; no new charge was created.", 409, "BILLING_PLAN_CHANGE_UNAVAILABLE");
+      throw new AppError("Use Change plan to review the prorated price for this subscription. No new charge was created.", 409, "BILLING_PLAN_CHANGE_UNAVAILABLE");
     }
     if (owner.workspace) {
       const { provider } = await readCloudWorkspaceHost(ctx.organizationId, owner.workspace.id);
@@ -90,7 +87,7 @@ export async function createCheckoutSession(
       namespace,
       kind: "subscription",
       offer,
-      metadata: { ...subscriptionMetadata(planTierId, ctx.organizationId, namespace, customTerms?.limits), ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}) },
+      metadata: { ...subscriptionMetadata(planTierId, ctx.organizationId, namespace, customLimits), ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}) },
       billingInterval: interval === "annual" ? "yearly" : "monthly",
       successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&offer=${encodeURIComponent(offer.reference!)}&session_id={CHECKOUT_SESSION_ID}${selection}`,
       cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled${selection}`,
@@ -183,6 +180,7 @@ export async function cancelSubscription(orgId: string, workspaceId?: CloudWorks
   const namespace = await ensureNamespace(orgId, workspaceId);
   return withCloudBillingLock(orgId, async () => {
   await assertBillingOwnerAvailable(orgId, workspaceId);
+  await assertRenewalChangeAvailable(orgId, workspaceId);
   const result = await getOblienBillingApi().cancelSubscription(namespace);
   subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);
@@ -198,6 +196,7 @@ export async function resumeSubscription(orgId: string, workspaceId?: CloudWorks
   const namespace = await ensureNamespace(orgId, workspaceId);
   return withCloudBillingLock(orgId, async () => {
   await assertBillingOwnerAvailable(orgId, workspaceId);
+  await assertRenewalChangeAvailable(orgId, workspaceId);
   const result = await getOblienBillingApi().resumeSubscription(namespace);
   subscriptionPlan(result.subscription, orgId, namespace);
   const subscription = presentCloudSubscription(result.subscription);
@@ -206,4 +205,10 @@ export async function resumeSubscription(orgId: string, workspaceId?: CloudWorks
   }
   return { subscription };
   }, workspaceId);
+}
+
+async function assertRenewalChangeAvailable(orgId: string, workspaceId?: CloudWorkspaceScope) {
+  const { workspace } = await cloudBillingOwner(orgId, workspaceId);
+  if (hasPendingSubscriptionChange(workspace?.subscriptionChange))
+    throw new AppError("Finish or cancel the pending plan change before changing renewal.", 409, "BILLING_PLAN_CHANGE_PENDING");
 }

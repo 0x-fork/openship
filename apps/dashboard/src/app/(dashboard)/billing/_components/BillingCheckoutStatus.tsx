@@ -67,7 +67,7 @@ function CheckoutConfirmation({
         setError(null);
         if (
           checkout &&
-          ["refunded", "partially_refunded", "disputed"].includes(checkout.fulfillmentStatus)
+          ["refunded", "partially_refunded", "disputed", "reversed"].includes(checkout.fulfillmentStatus)
         ) {
           setStatus("reversed");
           router.refresh();
@@ -78,7 +78,7 @@ function CheckoutConfirmation({
           (checkout.id !== checkoutId ||
             checkout.kind !== kind ||
             checkout.status === "expired" ||
-            ["failed", "expired"].includes(checkout.fulfillmentStatus))
+            ["failed", "expired", "superseded"].includes(checkout.fulfillmentStatus))
         ) {
           setStatus("failed");
           router.refresh();

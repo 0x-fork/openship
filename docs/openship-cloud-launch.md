@@ -57,8 +57,9 @@ Deploy the matching Oblien API first: `/billing/catalog` must report
 Dashboard docs alone cannot enable this contract. Then deploy the updated
 Openship API and dashboard together. Checkout and the readiness check reject an
 older provider; startup also logs the missing capability. Existing subscription
-management remains available during that update. The npm SDK remains pinned to the
-published 2.5.0 transport, so Openship does not depend on a pending SDK release.
+management remains available during that update. Openship pins the published
+2.7.0 SDK for the official subscription-change methods and upstream stream
+cancellation fixes; the earlier local SDK patch is no longer required.
 
 The user reports a successful test-mode payment with the earlier integration.
 That is not a live acceptance result for this new offer contract. Keep the
@@ -80,7 +81,7 @@ browser return URL.
 
 ## What is connected
 
-- `oblien@2.5.0` supplies the official billing module. Openship validates the
+- `oblien@2.7.0` supplies the official billing module. Openship validates the
   returned namespace, subscription shape, hosted URL, and agreement between the
   namespace subscription and its entitlement. Its JSON transport rejects
   credential redirects, bounds request time, checks both HTTP and body failures,
@@ -101,9 +102,13 @@ browser return URL.
 - Existing paid subscriptions cannot use replacement checkout: it would charge
   a full-price cycle without proration. New subscriptions and resubscribing after
   an ended contract remain available. Prorated upgrades and next-cycle downgrades
-  require the provider API described in [subscription changes](oblien-subscription-changes.md).
-  The dashboard displays current terms and scheduled cancellation, with visible
-  server selection in the right-hand billing card.
+  use the published [subscription-change API](oblien-subscription-changes.md),
+  durable retry keys and the existing managed-server resize worker. Provider
+  status `applied` and fresh matching subscription terms authorize capacity;
+  acceptance or pending payment never does. The dashboard shows current terms,
+  price/restart review and pending changes, with visible server selection in
+  the right-hand billing card. Real payment authentication and renewal remain
+  deployment acceptance checks; transport-simulated tests do not replace them.
 - Signed Oblien events trigger a fresh entitlement read. The browser return URL
   never grants access. Failed synchronization returns 503 for retry; repeated
   deliveries are deduplicated. A five-minute reconciliation job repairs missed

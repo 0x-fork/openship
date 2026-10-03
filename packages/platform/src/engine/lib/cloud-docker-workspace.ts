@@ -17,6 +17,7 @@ import {
 } from "@repo/adapters";
 import { repos, type Project, type CloudWorkspaceOperation } from "@repo/db";
 import { AppError, deploymentBelongsToProject } from "@repo/core";
+import { cloudWorkspaceResourcesFromLimits } from "./resources";
 import { env } from "../config/env";
 import { issueNamespaceToken } from "./openship-cloud";
 import { ensureLinkedCloudServer } from "./cloud/server-connection";
@@ -235,24 +236,7 @@ export async function cloudSubscriptionWorkspaceResources(
     workspaceId: ownerWorkspaceId,
     syncResourceLimits: false,
   });
-  const cpuCores = policy.max_total_vcpus ?? policy.max_vcpus;
-  const memoryMb = policy.max_total_ram_mb ?? policy.max_ram_mb;
-  const diskGb = policy.max_total_disk_gb ?? policy.max_disk_gb;
-  if (
-    cpuCores == null ||
-    memoryMb == null ||
-    diskGb == null ||
-    cpuCores <= 0 ||
-    memoryMb <= 0 ||
-    diskGb <= 0
-  ) {
-    throw new AppError(
-      "Choose a Cloud workspace plan with a defined capacity before provisioning",
-      402,
-      "CLOUD_WORKSPACE_CAPACITY_REQUIRED",
-    );
-  }
-  return { cpuCores, memoryMb, diskMb: diskGb * 1024 };
+  return cloudWorkspaceResourcesFromLimits(policy);
 }
 
 interface EnsureDockerInput {

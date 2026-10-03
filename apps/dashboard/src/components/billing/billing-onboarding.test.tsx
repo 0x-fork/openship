@@ -9,6 +9,8 @@ import { ModalProvider } from "@/context/ModalContext";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { baseDictionary } from "@/i18n";
 import type { BillingState } from "@/lib/api/billing";
+import type { BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
+import { ApiError } from "@/lib/api/client";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "@/app/(dashboard)/billing/_components/billing-shared";
 import { BillingOverview } from "./BillingOverview";
@@ -20,6 +22,7 @@ import { ResourceMeter } from "./ResourceMeter";
 import { BillingTopups } from "./BillingTopups";
 import { BillingUsage } from "./BillingUsage";
 import { CloudPlanPicker } from "./CloudPlanPicker";
+import { SubscriptionChangeStatus } from "./SubscriptionChangeStatus";
 import { CloudHomePlanCard } from "./CloudHomePlanCard";
 import type { ApiPlan } from "./PricingCards";
 
@@ -92,6 +95,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -225,6 +229,168 @@ describe("existing server billing", () => {
     expect(choices.every(choice => choice.disabled)).toBe(true);
     expect(container.textContent).toContain(copy.plansRoute.changeViaSupport);
     expect(mocks.post).not.toHaveBeenCalled();
+  });
+});
+
+describe("existing server plan-change review", () => {
+  const planCopy = copy.planChange;
+  const quote = (overrides: Partial<BillingPlanChangeQuote> = {}): BillingPlanChangeQuote => ({
+    id: "quote_selected", direction: "upgrade", interval: "monthly", currency: "usd",
+    expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(), effectiveAt: new Date().toISOString(),
+    current: { name: "Saved Hobby", priceCents: 1300 }, next: { name: "Pro", priceCents: 2900 },
+    unusedTimeCredit: 321, remainingTimeCharge: 1234, amountDueNow: 913, nextInvoiceAmount: 2900,
+    resize: { revision: "server_revision", before: { cpuCores: 1, memoryMb: 4096, diskMb: 25600 },
+      after: { cpuCores: 4, memoryMb: 16384, diskMb: 51200 }, restartProjects: [{ id: "project_api", name: "Public API" }] },
+    ...overrides,
+  });
+  const change = (overrides: Partial<BillingPlanChange> = {}): BillingPlanChange => ({
+    id: "change_selected", direction: "upgrade", currency: "usd", effectiveAt: new Date().toISOString(),
+    current: { name: "Saved Hobby", priceCents: 1300 }, next: { name: "Pro", priceCents: 2900 },
+    amountDueNow: 913, status: "payment_pending", cancelable: true, appliedAt: null,
+    errorCode: null, paymentUrl: "https://invoice.stripe.com/i/test", paymentExpiresAt: null,
+    ...overrides,
+  });
+  const picker = (workspaceId = "server_billing_one", interval: "monthly" | "annual" = "monthly") =>
+    <CloudPlanPicker workspaceId={workspaceId} currentPlan="starter" currentOffer={hobby}
+      subscription={{ ...paid.subscription!, interval }} billingEnabled canChangeSubscription />;
+  const choosePro = () => container.querySelector<HTMLButtonElement>('article[aria-label="Pro"] button')!;
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const dialogButton = (label: string) => {
+    const result = [...dialog()!.querySelectorAll<HTMLButtonElement>("button")].find(item => (item.getAttribute("aria-label") ?? item.textContent?.trim()) === label);
+    expect(result, label).toBeDefined();
+    return result!;
+  };
+  const review = async () => {
+    mocks.post.mockResolvedValueOnce({ data: quote() });
+    await render(picker());
+    expect(choosePro().textContent).toBe(planCopy.review);
+    await act(async () => choosePro().click());
+  };
+
+  it("shows provider prices and affected projects before confirming a paid change", async () => {
+    await review();
+    expect(mocks.post).toHaveBeenCalledExactlyOnceWith("billing/subscription/change/preview", {
+      workspaceId: "server_billing_one", planTierId: "pro", custom: undefined, idempotencyKey: expect.any(String),
+    });
+    expect(dialog()?.textContent).toContain("Saved Hobby");
+    for (const text of ["$13.00", "$9.13", "$3.21", "$12.34", "Public API", planCopy.restartAfterPayment])
+      expect(dialog()?.textContent).toContain(text);
+    let finish!: (value: unknown) => void;
+    mocks.post.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await act(async () => { dialogButton(planCopy.confirmUpgrade).click(); dialogButton(planCopy.confirmUpgrade).click(); });
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(mocks.post).toHaveBeenLastCalledWith("billing/subscription/change", {
+      workspaceId: "server_billing_one", quoteId: "quote_selected", confirmRestart: true,
+    });
+    await act(async () => finish({ data: change() }));
+    expect(dialog()?.textContent).toContain(planCopy.paymentPending);
+    expect(dialog()?.querySelector<HTMLAnchorElement>('a[href="https://invoice.stripe.com/i/test"]')?.textContent).toBe(planCopy.completePayment);
+    expect(mocks.post.mock.calls.some(([path]) => path === "billing/subscription")).toBe(false);
+  });
+
+  it("retries an uncertain acceptance using the saved quote, even after its expiry", async () => {
+    vi.useFakeTimers();
+    await review();
+    mocks.post.mockRejectedValueOnce(new Error("Connection interrupted"));
+    await act(async () => dialogButton(planCopy.confirmUpgrade).click());
+    const input = mocks.post.mock.calls[1];
+    await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+    expect(dialog()?.textContent).not.toContain(planCopy.expired);
+    mocks.post.mockResolvedValueOnce({ data: change() });
+    await act(async () => dialogButton(planCopy.retry).click());
+    expect(mocks.post.mock.calls[2]).toEqual(input);
+    expect(mocks.post.mock.calls.filter(([path]) => path === "billing/subscription/change/preview")).toHaveLength(1);
+  });
+
+  it("requires a fresh quote after a definite stale-price rejection", async () => {
+    await review();
+    mocks.post.mockRejectedValueOnce(new ApiError(409, "Conflict", {
+      code: "OBLIEN_BILLING_ERROR", error: "Review the changed price", details: { providerCode: "billing_quote_changed" },
+    }));
+    await act(async () => dialogButton(planCopy.confirmUpgrade).click());
+    mocks.post.mockResolvedValueOnce({ data: quote({ id: "quote_fresh", amountDueNow: 917 }) });
+    await act(async () => dialogButton(planCopy.refreshQuote).click());
+    expect(mocks.post.mock.calls[2]![0]).toBe("billing/subscription/change/preview");
+    expect(mocks.post.mock.calls[2]![1].idempotencyKey).not.toBe(mocks.post.mock.calls[0]![1].idempotencyKey);
+    expect(dialog()?.textContent).toContain("$9.17");
+    mocks.post.mockResolvedValueOnce({ data: change({ amountDueNow: 917 }) });
+    await act(async () => dialogButton(planCopy.confirmUpgrade).click());
+    expect(mocks.post.mock.calls[3]![1].quoteId).toBe("quote_fresh");
+  });
+
+  it("discards a late quote on a server switch and displays the new server's billing interval", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.post.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await render(picker());
+    await act(async () => choosePro().click());
+    await render(picker("server_billing_two", "annual"));
+    expect(container.querySelector('[role="group"][aria-label="Billing interval"]')).toBeNull();
+    expect(container.querySelector('article[aria-label="Pro"]')?.textContent).toContain("$290");
+    await act(async () => finish({ data: quote() }));
+    expect(dialog()).toBeNull();
+    mocks.post.mockResolvedValueOnce({ data: quote({ interval: "annual" }) });
+    await act(async () => choosePro().click());
+    expect(mocks.post).toHaveBeenLastCalledWith("billing/subscription/change/preview", expect.objectContaining({ workspaceId: "server_billing_two" }));
+    expect(dialog()?.textContent).toContain(planCopy.yearly);
+  });
+
+  it("reviews a scheduled downgrade without requesting immediate payment", async () => {
+    mocks.post.mockResolvedValueOnce({ data: quote({ direction: "downgrade", amountDueNow: 0, effectiveAt: "2026-11-01T00:00:00Z" }) });
+    await render(picker());
+    await act(async () => choosePro().click());
+    expect(dialog()?.textContent).toContain("Nov 1, 2026");
+    expect(dialog()?.textContent).not.toContain(planCopy.remainingCharge);
+    mocks.post.mockResolvedValueOnce({ data: change({ direction: "downgrade", status: "scheduled", paymentUrl: null, effectiveAt: "2026-11-01T00:00:00Z" }) });
+    await act(async () => dialogButton(planCopy.confirmDowngrade).click());
+    expect(dialog()?.textContent).toContain("Pro starts on Nov 1, 2026, after renewal payment.");
+    expect(dialog()?.querySelector('a[href*="stripe.com"]')).toBeNull();
+    mocks.post.mockResolvedValueOnce({ data: change({ status: "canceled", cancelable: false, paymentUrl: null }) });
+    await act(async () => dialogButton(planCopy.cancelChange).click());
+    expect(mocks.post).toHaveBeenLastCalledWith("billing/subscription/change/cancel", { changeId: "change_selected", workspaceId: "server_billing_one" });
+    expect(dialog()?.textContent).toContain(planCopy.canceled);
+  });
+
+  it("polls the same pending change and hides its recovery link after application", async () => {
+    vi.useFakeTimers();
+    const initial = change();
+    mocks.get.mockResolvedValue({ data: change({ status: "applied", serverUpdate: "review_required", cancelable: false }) });
+    await render(<SubscriptionChangeStatus initial={initial} workspaceId="server_billing_one" />);
+    expect(container.querySelector('a[href*="stripe.com"]')).not.toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/subscription/change", { params: { changeId: "change_selected", workspaceId: "server_billing_one" } });
+    expect(container.textContent).toContain(planCopy.resizeReview);
+    expect(container.querySelector('a[href*="stripe.com"]')).toBeNull();
+    expect(container.querySelector('a[href="/billing/overview?workspaceId=server_billing_one"]')).not.toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.get).toHaveBeenCalledOnce();
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it("traps review focus and closes without purchasing on Escape", async () => {
+    await review();
+    expect(document.activeElement).toBe(dialog());
+    dialogButton(planCopy.confirmUpgrade).focus();
+    await act(async () => dialogButton(planCopy.confirmUpgrade).dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(dialogButton(planCopy.close));
+    await act(async () => dialogButton(planCopy.close).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(dialog()).toBeNull();
+    expect(mocks.post).toHaveBeenCalledOnce();
+  });
+
+  it("keeps keyboard focus in the dialog when payment and cancellation replace its actions", async () => {
+    await review();
+    dialogButton(planCopy.confirmUpgrade).focus();
+    mocks.post.mockResolvedValueOnce({ data: change() });
+    await act(async () => dialogButton(planCopy.confirmUpgrade).click());
+    expect(dialog()?.contains(document.activeElement)).toBe(true);
+
+    dialogButton(planCopy.cancelChange).focus();
+    mocks.post.mockResolvedValueOnce({ data: change({ status: "canceled", cancelable: false, paymentUrl: null }) });
+    await act(async () => dialogButton(planCopy.cancelChange).click());
+    expect(dialog()?.contains(document.activeElement)).toBe(true);
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(dialog()).toBeNull();
+    expect(mocks.post).toHaveBeenCalledTimes(3);
   });
 });
 

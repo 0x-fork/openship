@@ -81,6 +81,7 @@ import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { billingPlansRoutes, billingSaasRoutes } from "../../../src/modules/billing/billing.routes";
+import { billingLocalRoutes } from "../../../src/modules/billing/billing-local.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 import * as repository from "@repo/platform/engine/modules/billing/billing.repository";
@@ -88,6 +89,9 @@ import { flushAudit } from "@repo/platform/engine/lib/audit-emitter";
 import { eq } from "@repo/db";
 import { presentCloudPlans } from "@repo/platform/engine/modules/billing/billing-catalog";
 import { assertBuildMinutesAvailable } from "@repo/platform/engine/lib/plan-guard";
+import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
+import { encrypt } from "@repo/platform/engine/lib/encryption";
+import type { BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
 
 const app = new Hono().onError(handleApiError)
   .use("*", async (c, next) => { c.set("clientIp", "192.0.2.64"); await next(); })
@@ -830,4 +834,117 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.cloudRequest).not.toHaveBeenCalled();
   });
 
+});
+
+describe("plan changes from a linked self-hosted installation", () => {
+  const localApp = new Hono().onError(handleApiError).route("/api/health", healthRoutes).route("/api/billing", billingLocalRoutes);
+  const localFetcher = ((url, init) => localApp.request(String(url), init)) as typeof fetch;
+  const quote: BillingPlanChangeQuote = {
+    id: "quote_remote", direction: "upgrade", interval: "monthly", currency: "usd",
+    expiresAt: "2030-01-01T00:00:00Z", effectiveAt: "2026-10-03T00:00:00Z",
+    current: { name: "Hobby", priceCents: 500 }, next: { name: "Starter", priceCents: 2000 },
+    amountDueNow: 636, unusedTimeCredit: 127, remainingTimeCharge: 763, nextInvoiceAmount: 2000,
+    resize: null,
+  };
+  const change: BillingPlanChange = {
+    id: "change_remote", direction: "upgrade", status: "payment_pending", currency: "usd",
+    effectiveAt: quote.effectiveAt, current: quote.current, next: quote.next, amountDueNow: 636,
+    cancelable: true, appliedAt: null, errorCode: null, paymentUrl: "https://invoice.stripe.com/i/test", paymentExpiresAt: null,
+  };
+  async function setup() {
+    const actor = await seedOwner();
+    provider.cloudMode = false;
+    const session = { apiUrl: cloudRuntimeTarget.api, userId: `cloud_${actor.userId}`,
+      organizationId: `cloud_${actor.orgId}`, token: "synthetic-cloud-session" };
+    await repos.settings.setCloudSession(actor.userId, encrypt(JSON.stringify(session)));
+    const { token: _token, ...identity } = session;
+    const linked = await repos.cloudWorkspace.link({ organizationId: actor.orgId, name: "Managed from self-hosted",
+      remote: { ...identity, workspaceId: `remote_${actor.orgId}`, serverId: `remote_server_${actor.orgId}` } });
+    const server = (await repos.server.findByWorkspace(linked.id, actor.orgId))!;
+    const group = await repos.projectGroup.create({ organizationId: actor.orgId, name: "API", slug: `api-${actor.userId}` });
+    const project = await repos.project.create({ organizationId: actor.orgId, groupId: group.id, serverId: server.id, name: "API", slug: group.slug });
+    const external = vi.fn(async (url: RequestInfo | URL) => Response.json({
+      data: String(url).endsWith("/preview") ? { ...quote, resize: {
+        revision: "provider_revision", before: { cpuCores: 1, memoryMb: 4096, diskMb: 25600 },
+        after: { cpuCores: 2, memoryMb: 8192, diskMb: 32768 }, restartProjects: [{ id: project.id, name: project.name }],
+      } } : change,
+    }));
+    vi.stubGlobal("fetch", external);
+    const pair = async (user = actor) => [
+      (await clients(user, actor.orgId)).native,
+      new OpenshipClient({ baseUrl: "http://local.test", token: user.token, organizationId: actor.orgId, fetch: localFetcher }).billing,
+    ];
+    return { actor, session, linked, server, project, external, pair };
+  }
+
+  it("uses the stored Cloud identity and the same remote operations through HTTP and the SDK", async () => {
+    const { actor, session, linked, project, external, pair } = await setup();
+    for (const client of await pair()) {
+      expect(await client.previewSubscriptionChange({ workspaceId: linked.id, planTierId: "starter", idempotencyKey: "review-linked-server-one" }))
+        .toMatchObject({ id: quote.id, amountDueNow: 636, resize: { restartProjects: [{ id: project.id, name: "API" }] } });
+      expect(await client.confirmSubscriptionChange({ workspaceId: linked.id, quoteId: quote.id, confirmRestart: true })).toEqual(change);
+      expect(await client.getSubscriptionChange({ workspaceId: linked.id, changeId: change.id })).toEqual(change);
+      expect(await client.cancelSubscriptionChange({ workspaceId: linked.id, changeId: change.id })).toEqual(change);
+    }
+    expect(external).toHaveBeenCalledTimes(8);
+    for (const [index, call] of external.mock.calls.entries()) {
+      const [url, init] = call as unknown as [string, RequestInit];
+      const headers = new Headers(init.headers);
+      expect(headers.get("Authorization")).toBe(`Bearer ${session.token}`);
+      expect(headers.get("Authorization")).not.toContain(actor.token);
+      expect(headers.get("X-Organization-Id")).toBe(session.organizationId);
+      expect(String(url)).toContain(`${session.apiUrl}/api/billing/subscription/change`);
+      if (index % 4 === 2) {
+        expect(init.method).toBe("GET");
+        expect(new URL(url).searchParams.get("workspaceId")).toBe(linked.remote!.workspaceId);
+        expect(new URL(url).searchParams.get("changeId")).toBe(change.id);
+      } else {
+        expect(init.method).toBe("POST");
+        const input = JSON.parse(String(init.body));
+        expect(input.workspaceId).toBe(linked.remote!.workspaceId);
+        expect(input.namespace).toBeUndefined();
+        if (index % 4 === 1) expect(input).toEqual({ workspaceId: linked.remote!.workspaceId, quoteId: quote.id, confirmRestart: true });
+      }
+    }
+    expect((await repos.cloudWorkspace.findById(linked.id))?.subscriptionChange).toBeNull();
+    expect(provider.checkout).not.toHaveBeenCalled();
+    expect(provider.resourceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("requires local server and project write permission before forwarding restart consent", async () => {
+    const { actor, linked, server, project, external, pair } = await setup();
+    const member = await seedBaseOwner({ bound: false });
+    await db.insert(schema.member).values({ id: `plan-manager-${member.userId}`, organizationId: actor.orgId, userId: member.userId, role: "restricted" });
+    const grant = (resourceType: "billing" | "server" | "project", resourceId: string) => repos.resourceGrant.upsert({
+      organizationId: actor.orgId, userId: member.userId, resourceType, resourceId, permissions: ["admin"], grantedByUserId: actor.userId,
+    });
+    await grant("billing", "*");
+    const reviewers = await pair(member);
+    const review = { workspaceId: linked.id, planTierId: "starter" as const, idempotencyKey: "review-linked-server-one" };
+    const confirm = { workspaceId: linked.id, quoteId: quote.id, confirmRestart: true as const };
+    for (const client of reviewers) await expect(client.previewSubscriptionChange(review)).rejects.toMatchObject({ statusCode: 404 });
+    await grant("server", server.id);
+    for (const client of reviewers) await expect(client.confirmSubscriptionChange(confirm)).rejects.toMatchObject({ statusCode: 404 });
+    expect(external).not.toHaveBeenCalled();
+    await grant("project", project.id);
+    for (const client of reviewers) expect(await client.confirmSubscriptionChange(confirm)).toEqual(change);
+    expect(external).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a changed Cloud connection or another tenant's link before making a billing request", async () => {
+    const { actor, session, linked, external, pair } = await setup();
+    const foreign = await seedBaseOwner();
+    const foreignLink = await repos.cloudWorkspace.link({ organizationId: foreign.orgId, name: "Other owner", remote: {
+      ...linked.remote!, userId: "another-cloud-user", serverId: "another-server", workspaceId: "another-workspace",
+    } });
+    for (const client of await pair()) {
+      await expect(client.getSubscriptionChange({ workspaceId: foreignLink.id, changeId: change.id })).rejects.toMatchObject({ statusCode: 404 });
+    }
+    await repos.settings.setCloudSession(actor.userId, encrypt(JSON.stringify({ ...session, organizationId: "replacement-cloud-org" })));
+    for (const client of await pair()) {
+      await expect(client.confirmSubscriptionChange({ workspaceId: linked.id, quoteId: quote.id, confirmRestart: true }))
+        .rejects.toMatchObject({ code: "CLOUD_SERVER_CONNECTION_CHANGED" });
+    }
+    expect(external).not.toHaveBeenCalled();
+  });
 });

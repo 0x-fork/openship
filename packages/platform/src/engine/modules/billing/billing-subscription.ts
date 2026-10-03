@@ -1,5 +1,7 @@
-import type { BillingSubscription } from "@repo/contracts";
-import type { OblienEntitlement, OblienSubscription } from "../../lib/oblien-billing-api";
+import { PRICING } from "@repo/core";
+import type { BillingSubscription, BillingPlanChange } from "@repo/contracts";
+import type { CloudSubscriptionChangeIntent } from "@repo/db";
+import type { OblienEntitlement, OblienSubscription, OblienPlanChange, OblienOffer } from "../../lib/oblien-billing-api";
 import { subscriptionPlan } from "./billing-catalog";
 import { CUSTOM_OFFER_VERSION } from "./billing-custom-offer";
 
@@ -7,6 +9,41 @@ import { CUSTOM_OFFER_VERSION } from "./billing-custom-offer";
  * replace it at full price and discard the customer's remaining paid period. */
 export function canStartCloudSubscription(subscription: OblienSubscription): boolean {
   return subscription === null || subscription?.status === "canceled";
+}
+
+export function hasPendingSubscriptionChange(intent?: CloudSubscriptionChangeIntent | null): boolean {
+  return Boolean(intent?.confirmationKey && !intent.completed);
+}
+
+export function canChangeCloudSubscription(subscription: OblienSubscription, entitlement?: OblienEntitlement): boolean {
+  return subscription?.tierId === "reseller" && subscription.status === "active" &&
+    Boolean(subscription.offer) && !subscription.cancelAtPeriodEnd && !subscription.pendingChange &&
+    (!entitlement || ["active", "credit_exhausted"].includes(entitlement.status)) &&
+    (subscription.billingInterval === "monthly" || PRICING.annual.enabled);
+}
+
+export function presentChangeOffer(offer: OblienOffer): BillingPlanChange["next"] {
+  return {
+    name: offer.name, priceCents: offer.unitAmount,
+    ...(offer.resourceLimits ? { resourceLimits: {
+      ...offer.resourceLimits, max_total_vcpus: offer.resourceLimits.max_total_vcpus ?? null,
+      max_total_ram_mb: offer.resourceLimits.max_total_ram_mb ?? null,
+      max_total_disk_gb: offer.resourceLimits.max_total_disk_gb ?? null,
+    } } : {}),
+  };
+}
+
+/** Payment links are validated at the adapter boundary; raw provider errors,
+ * namespace IDs, metadata and Stripe identifiers never reach this view. */
+export function presentSubscriptionChange(change: OblienPlanChange): BillingPlanChange {
+  return {
+    id: change.id, direction: change.direction, status: change.status,
+    current: presentChangeOffer(change.current), next: presentChangeOffer(change.next),
+    effectiveAt: change.effectiveAt, amountDueNow: change.amountDueNow, currency: change.currency,
+    paymentUrl: change.payment?.url ?? null, paymentExpiresAt: change.payment?.expiresAt ?? null,
+    errorCode: change.error && /^[a-z][a-z0-9_]{0,79}$/.test(change.error.code) ? change.error.code : null,
+    cancelable: change.cancelable, appliedAt: change.appliedAt,
+  };
 }
 
 /** Extra credits are useful only while a customer's paid plan permits Cloud work. */
@@ -36,5 +73,6 @@ export function presentCloudSubscription(subscription: OblienSubscription): Bill
     currentPeriod: { start: subscription.periodStart, end: subscription.periodEnd },
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
     canceledAt: subscription.canceledAt,
+    pendingChange: subscription.pendingChange ? presentSubscriptionChange(subscription.pendingChange) : null,
   };
 }

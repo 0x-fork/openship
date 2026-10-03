@@ -1,56 +1,105 @@
 # Oblien subscription changes
 
-Openship treats each managed server as an independently billed namespace. Oblien
-owns subscription prices, payments, allowance adjustments, renewal and entitlement.
-Openship owns the server UI and reuses its existing resource-change preview and
-restart flow.
+Openship uses the published `oblien@2.7.0` plan-change API for existing managed
+server subscriptions. Each server has its own namespace and subscription.
+Oblien owns proration, payment, credits, renewals and entitlements; Openship
+supplies trusted retail offers and the existing server resize/restart workflow.
 
-As checked on October 3, 2026, the published Oblien SDK 2.6.0 and live catalog do
-not expose prorated plan changes or scheduled downgrades. The current subscription
-checkout replaces a contract at full price. Openship therefore permits it only
-when no live subscription exists. An active, trialing, past-due, unpaid, paused or
-scheduled-to-cancel subscription must remain unchanged.
+Provider contract: [Reseller subscription plan changes](https://oblien.com/docs/api/billing#reseller-subscription-plan-changes).
+Checked against the published API docs and npm SDK on October 3, 2026.
 
-## Required provider behavior
+## Customer flow
 
-1. **Preview:** accept the target reseller offer and billing interval for the
-   authenticated namespace. Return current and target terms, the unused-time
-   credit, amount due now including applicable tax/discounts, effective date,
-   next renewal date/amount, currency, and an expiring quote identifier bound to
-   the current subscription revision. Use the saved paid offer for the credit.
-2. **Upgrade:** confirm that quote with an idempotency key. Collect the prorated
-   difference, including any required payment authentication. Apply the new
-   entitlement and limits only after payment is confirmed. A failed or abandoned
-   payment leaves the current contract and resources intact. Keep the current
-   cycle anchor for changes within the same billing interval.
-3. **Downgrade:** schedule the quoted target terms at the current period end,
-   preserving the paid plan and limits until then. Return the pending change and
-   its effective date in the subscription response. Support cancellation and
-   replacement of the schedule without charging or ending the current plan.
-4. **Allowances:** own any prorated allowance adjustment. Preserve purchased
-   top-ups and already-metered usage; neither an upgrade nor its retry may reset
-   usage or grant a second full cycle of credits.
-5. **Reconciliation:** expose the change's pending, payment-required, completed,
-   failed and canceled states, with signed events. Bind reads, quotes, actions
-   and events to owner, namespace and subscription revision. Reject stale quotes
-   and conflicting actions; retries and webhook redelivery must be idempotent.
-6. **SDK:** publish the supported API methods, response types and capability
-   advertisement so clients never infer support from an untyped endpoint.
+1. Select a server in Billing's right sidebar and choose **Review change** on
+   another plan or a Custom configuration. The server's billing interval stays
+   unchanged. Its saved paid offer supplies the current price, even if the
+   public catalog has changed.
+2. Review the provider's unused-time credit, remaining-time charge, amount due
+   now, estimated next invoice and effective date. The same dialog shows the
+   capacity change and projects that may restart.
+3. Confirm an upgrade or schedule a downgrade. A pending payment keeps the old
+   plan. If authentication is needed, **Complete payment** opens the provider's
+   validated invoice link. An accepted request can be checked or canceled from
+   the selected server's subscription card.
+4. Only provider status `applied`, followed by a fresh matching subscription
+   read, authorizes new capacity. Upgrades apply after payment; lower or equal
+   prices take effect at the next paid renewal. Purchased credits and metered
+   usage remain provider-managed.
+5. The existing server worker applies the approved resize. If the server or
+   project set changed since review, Billing's **Apply plan capacity** action
+   asks for fresh restart consent. Server progress, logs and retry remain in
+   the standard server UI.
 
-## Server resource changes
+Disks cannot shrink in place. To lower CPU or RAM, choose Custom and retain at
+least the allocated disk size. A smaller disk requires moving data to another
+server. Downgrade acceptance never shrinks or deletes resources early.
 
-Openship must show the returned price difference and effective date before
-confirmation. It must also show the affected projects and obtain restart consent
-before a resize. Confirmed upgrades should then trigger the shared resize flow;
-scheduled downgrades must not resize early.
+## API and authorization
 
-Disk shrink is currently unsupported in place. A smaller offer must retain the
-existing disk through a supported offer, or require migration to a smaller server
-before scheduling. A delayed resize failure must be retryable and visible; payment
-success alone is not proof that the server has resized.
+The same application operations serve SaaS HTTP routes, the SDK, and linked
+self-hosted installations. Local links map their server billing scope to the
+verified Cloud identity; they do not maintain a second financial operation.
 
-Provider coverage must include concurrent/repeated changes, stale quotes, failed
-payments, payment authentication, cancellation/resumption conflicts, monthly and
-annual terms, renewal races, webhook retry/order, top-up preservation and tenant
-isolation. Openship will add adapter, route, SDK and UI coverage against the actual
-published contract once it is available.
+| Openship route | Permission | Official Oblien SDK method |
+| --- | --- | --- |
+| `POST /api/billing/subscription/change/preview` | `billing:write` | `billing.previewPlanChange(namespace, input)` |
+| `POST /api/billing/subscription/change` | `billing:admin` | `billing.changePlan(namespace, input)` |
+| `GET /api/billing/subscription/change` | `billing:read` | `billing.planChange(namespace, changeId)` |
+| `POST /api/billing/subscription/change/cancel` | `billing:admin` | `billing.cancelPlanChange(namespace, changeId, input)` |
+
+Preview saves a quote, so it is explicitly a write route. Preview and confirmation
+also require write access to the server and its projects. Namespace, retail price,
+credits and offer metadata are derived on the server. Public requests cannot
+override them. MCP exposes preview and status; financial confirmation and
+cancellation remain in Billing.
+
+New quotes and confirmations require billing to be enabled and the provider's
+Enterprise reseller eligibility. The provider supports active, automatically
+charged, single-item monthly/yearly USD subscriptions. Resolve pending invoices,
+subscription cancellation and an existing plan change first. Current retail
+availability still applies; Custom offers are monthly. Read/cancel operations
+stay available when new purchases are disabled. Cancel a pending change before
+canceling or resuming the underlying subscription.
+
+## Durable recovery
+
+- Preview saves the exact trusted request, expiring quote identity and server
+  restart approval in `cloud_workspace.subscription_change` (additive migration
+  `0164_subscription_change_intent.sql`). It stores no payment link or card data.
+- Confirmation saves its deterministic retry key **before** calling Oblien.
+  A timeout or lost response replays that same request. A changed or expired
+  quote requires a fresh preview; unknown outcomes cannot start another charge.
+- `queued`, `dispatching`, `payment_pending`, `scheduled`, `canceling` and
+  `reconciliation_required` are pending states. HTTP 200/202 alone never activates
+  the new offer. Failed/canceled/expired changes do not resize the server.
+- Existing HMAC verification and event deduplication handle
+  `subscription.change.scheduled`, `.applied`, `.canceled`, `.payment_required`,
+  `.failed` and `.expired`. Each event triggers fresh provider reads, so delayed
+  or reordered delivery cannot apply stale financial terms.
+- The existing one-minute managed-server recovery job also resumes accepted
+  plan changes. Resizes use the existing activity barrier and durable operation
+  worker, preserving deployment exclusion, retry identity and project restart
+  recovery. A later refund, cancellation or different plan prevents replay of
+  an older capacity approval.
+
+Payment and VM resizing are separate durable operations, not a single distributed
+transaction. The UI distinguishes the applied plan from its server update.
+The provider invoice URL is validated against Stripe's hosted invoice domains
+and excluded from logs, audit payloads and persisted recovery state.
+
+## Verification
+
+Provider-adapter tests exercise SDK paths, monetary units, pending responses,
+tenant binding, URL validation and sanitized errors. Lifecycle integration tests
+run actual HTTP/native SDK authorization, PGlite persistence, locks, signed
+webhooks and the server worker with simulated provider transport. They cover
+upgrade payment, scheduled renewal, retries, duplicate/concurrent confirmation,
+changed restart consent, disk constraints and isolation. Linked-installation
+tests exercise the real scoped proxy, local permissions and stored Cloud identity.
+UI tests cover review, duplicate clicks, payment recovery, expiry, scope switches
+and cancellation. Both production route trees are boot-tested.
+
+These checks do not constitute a live paid-cycle test. Deployment verification
+must still confirm real payment authentication, webhook delivery and renewal in
+an isolated provider billing environment. The existing Oblien credentials and
+signed webhook configuration are reused; there is no new Stripe integration.

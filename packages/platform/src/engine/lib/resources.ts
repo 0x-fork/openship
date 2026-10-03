@@ -9,6 +9,7 @@ import {
   type ResourceConfig,
 } from "@repo/adapters";
 import {
+  AppError,
   UNLIMITED_RESOURCES,
   UNKNOWN_CAPACITY,
   detectTier,
@@ -16,6 +17,7 @@ import {
   type HostCapacity,
   type ProjectResources,
   type ResourceTier,
+  type OblienLimits,
 } from "@repo/core";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -33,6 +35,16 @@ function extractCpuCores(raw: Record<string, unknown>): number | undefined {
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
+
+/** Subscription provisioning and plan-change previews decode the same policy. */
+export function cloudWorkspaceResourcesFromLimits(policy: Pick<OblienLimits, "max_vcpus" | "max_ram_mb" | "max_disk_gb"> & Partial<OblienLimits>): ResourceConfig {
+  const cpuCores = policy.max_total_vcpus ?? policy.max_vcpus;
+  const memoryMb = policy.max_total_ram_mb ?? policy.max_ram_mb;
+  const diskGb = policy.max_total_disk_gb ?? policy.max_disk_gb;
+  if (cpuCores == null || memoryMb == null || diskGb == null || cpuCores <= 0 || memoryMb <= 0 || diskGb <= 0)
+    throw new AppError("Choose a Cloud workspace plan with a defined capacity before provisioning", 402, "CLOUD_WORKSPACE_CAPACITY_REQUIRED");
+  return { cpuCores, memoryMb, diskMb: diskGb * 1024 };
+}
 
 /**
  * Encode ResourceConfig → display format (for API responses).

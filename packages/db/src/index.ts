@@ -23,7 +23,7 @@ export {
 // ─── Schema (table definitions) ──────────────────────────────────────────────
 export * as schema from "./schema";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
-export type { CloudWorkspaceOperation, CloudWorkspaceActivity, LinkedCloudServer } from "./schema/cloud-workspace";
+export type { CloudWorkspaceOperation, CloudWorkspaceActivity, LinkedCloudServer, CloudSubscriptionChangeIntent } from "./schema/cloud-workspace";
 export type { ServerContainerDetail } from "./schema/server-container-status";
 export type {
   IncomingWebhookActionType,

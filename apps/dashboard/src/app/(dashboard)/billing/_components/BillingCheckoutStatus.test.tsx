@@ -148,7 +148,7 @@ describe("checkout return confirmation", () => {
     expect(container.textContent).toContain(copy.topupComplete);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
-  it.each(["refunded", "partially_refunded", "disputed"])(
+  it.each(["refunded", "partially_refunded", "disputed", "reversed"])(
     "reports %s without showing successful credit delivery",
     async (fulfillmentStatus) => {
       mocks.checkout.mockResolvedValue({ ...paid, fulfillmentStatus });
@@ -157,6 +157,14 @@ describe("checkout return confirmation", () => {
       expect(container.querySelector("a")?.href).toBe("mailto:support@openship.io");
     },
   );
+  it("reports a superseded checkout without waiting for fulfillment or welcoming again", async () => {
+    mocks.checkout.mockResolvedValue({ ...paid, fulfillmentStatus: "superseded", fulfilled: false });
+    await render(subscription);
+    expect(container.textContent).toContain(copy.failed);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(mocks.checkout).toHaveBeenCalledOnce();
+  });
   it("rejects a different kind of checkout", async () => {
     mocks.checkout.mockResolvedValue({ ...paid, kind: "topup" });
     await render(subscription);

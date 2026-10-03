@@ -8,9 +8,15 @@ import * as service from "./billing-application.service";
 import { proxyToCloudBilling } from "./billing-local.service";
 import { requireLinkedCloudServer } from "../../lib/cloud/server-link";
 import { requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
+import { authorization } from "../../lib/authorization";
+import { repos } from "@repo/db";
 
 const routes = {
   quoteCustomPlan: ["GET", "/subscription/quote"],
+  previewSubscriptionChange: ["POST", "/subscription/change/preview"],
+  confirmSubscriptionChange: ["POST", "/subscription/change"],
+  getSubscriptionChange: ["GET", "/subscription/change"],
+  cancelSubscriptionChange: ["POST", "/subscription/change/cancel"],
   getCheckout: ["GET", "/checkout"],
   getCreditAlerts: ["GET", "/credit-alerts"],
   getState: ["GET", "/state"], getResources: ["GET", "/resources"], getSubscription: ["GET", "/subscription"],
@@ -28,6 +34,12 @@ async function invoke(name: keyof typeof BillingOperationSchemas, ctx: Execution
   } else {
     const linked = isRecord(input) && typeof input.workspaceId === "string"
       ? await requireLinkedCloudServer(ctx.organizationId, input.workspaceId) : null;
+    if (linked && (name === "previewSubscriptionChange" || name === "confirmSubscriptionChange")) {
+      const server = await requireWorkspaceServer(ctx.organizationId, linked.id);
+      await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
+      for (const project of await repos.project.listByWorkspace(linked.id, ctx.organizationId))
+        await authorization.authorize(ctx, { resourceType: "project", resourceId: project.id, action: "write" });
+    }
     const remoteInput = linked && isRecord(input) ? { ...input, workspaceId: linked.remote.workspaceId } : input;
     const [method, route] = routes[name];
     const query = new URLSearchParams();

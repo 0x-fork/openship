@@ -1887,8 +1887,32 @@
     "billing.createSubscription": {
       "page": "billing",
       "section": "Operations",
-      "description": "Create a subscription checkout or subscription change.",
+      "description": "Start hosted checkout for a new or ended server subscription.",
       "route": "POST /api/billing/subscription"
+    },
+    "billing.previewSubscriptionChange": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Save an expiring provider quote with proration, effective date and affected-project restart review; no charge.",
+      "route": "POST /api/billing/subscription/change/preview"
+    },
+    "billing.confirmSubscriptionChange": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Confirm a saved plan-change quote and restart consent. Upgrades activate after payment; downgrades wait for paid renewal.",
+      "route": "POST /api/billing/subscription/change"
+    },
+    "billing.getSubscriptionChange": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Read the selected server's provider plan-change and capacity-update status.",
+      "route": "GET /api/billing/subscription/change"
+    },
+    "billing.cancelSubscriptionChange": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Cancel a pending, cancelable change while preserving the underlying subscription.",
+      "route": "POST /api/billing/subscription/change/cancel"
     },
     "billing.cancelSubscription": {
       "page": "billing",

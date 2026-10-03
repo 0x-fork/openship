@@ -301,7 +301,7 @@ describe("migration chain applies to an existing, populated database", () => {
       }
       expect((await client.query("SELECT * FROM cloud_docker_workspace")).rows).toEqual(bindings.map(({ project_id: _, ...host }) => host));
       expect((await client.query("SELECT * FROM cloud_workspace ORDER BY id")).rows).toEqual(
-        workspaces.map(({ mode: _mode, runtime: _runtime, ...owner }) => ({ ...owner, remote: null, activity: null, linked_projects: [] })),
+        workspaces.map(({ mode: _mode, runtime: _runtime, ...owner }) => ({ ...owner, remote: null, activity: null, linked_projects: [], subscription_change: null })),
       );
       expect(
         (await client.query("SELECT * FROM servers WHERE workspace_id IS NULL ORDER BY id")).rows,

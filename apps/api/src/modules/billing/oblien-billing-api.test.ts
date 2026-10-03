@@ -26,7 +26,7 @@ function setup(body: unknown, status = 200) {
   const api = new OblienBillingApi({ clientId: "test-id", clientSecret: "test-secret", fetch: fetcher as unknown as typeof fetch });
   return { api, fetcher };
 }
-describe("Oblien 2.4 billing SDK and transport contract", () => {
+describe("Oblien billing SDK and transport contract", () => {
   it("scopes complimentary policy writes to the requested namespace and validates the response", async () => {
     const policy = { quotaLimit: 3000, overdraft: 60, suspendThreshold: 60, onOverdraftAction: "stop_workspaces" as const };
     const result = { success: true, namespace: "os-one", service: "workspace_vm", ...policy };
@@ -392,5 +392,63 @@ describe("Oblien 2.4 billing SDK and transport contract", () => {
   });
   it("does not accept an HTTP failure just because the response body claims success", async () => {
     await expect(setup(subscription, 503).api.getSubscription("os-one")).rejects.toMatchObject({ statusCode: 503 });
+  });
+});
+
+describe("Oblien 2.7 subscription changes", () => {
+  const quote = {
+    id: "quote_one", namespace: "os-one", direction: "upgrade", expiresAt: "2026-10-04T10:10:00Z",
+    effectiveAt: "2026-10-04T10:00:00Z", billingInterval: "monthly", current: offer,
+    next: { ...offer, unitAmount: 2000 }, currency: "usd", unusedTimeCredit: 412, remainingTimeCharge: 833,
+    amountDueNow: 421, nextInvoiceAmount: 2000, includedCreditIncrease: 1.123456,
+    preservesUsage: true, preservesPurchasedCredits: true,
+  };
+  const change = {
+    id: "change_one", quoteId: quote.id, namespace: "os-one", direction: quote.direction, status: "payment_pending",
+    effectiveAt: quote.effectiveAt, current: quote.current, next: quote.next, amountDueNow: quote.amountDueNow,
+    currency: "usd", includedCreditIncrease: quote.includedCreditIncrease,
+    payment: { status: "open", url: "https://invoice.stripe.com/i/payment", expiresAt: null },
+    error: null, cancelable: true, appliedAt: null,
+  };
+  const input = { offer: quote.next, metadata, billingInterval: "monthly" as const, idempotencyKey: "preview-request" };
+  it("delegates all four methods to the official SDK and preserves provider cents and fractional credits", async () => {
+    const preview = setup({ success: true, namespace: "os-one", quote });
+    expect((await preview.api.previewPlanChange("os-one", input)).quote).toEqual(quote);
+    expect(preview.fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/subscription/changes/preview",
+      expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(String(preview.fetcher.mock.calls[0]![1]!.body))).toEqual({ namespace: "os-one", ...input });
+    const accept = setup({ success: true, namespace: "os-one", change }, 202);
+    expect((await accept.api.changePlan("os-one", { quoteId: quote.id, idempotencyKey: "confirm-request" })).change.status).toBe("payment_pending");
+    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/billing/subscription/changes",
+      expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(String(accept.fetcher.mock.calls.at(-1)![1]!.body))).toEqual({ namespace: "os-one", quoteId: quote.id, idempotencyKey: "confirm-request" });
+    await accept.api.getPlanChange("os-one", change.id);
+    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/billing/subscription/changes/change_one?namespace=os-one", expect.objectContaining({ method: "GET" }));
+    await accept.api.cancelPlanChange("os-one", change.id, "cancel-request");
+    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/billing/subscription/changes/change_one/cancel",
+      expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(String(accept.fetcher.mock.calls.at(-1)![1]!.body))).toEqual({ namespace: "os-one", idempotencyKey: "cancel-request" });
+  });
+  it("checks nested namespaces and identities even when the response envelope matches", async () => {
+    await expect(setup({ success: true, namespace: "os-one", quote: { ...quote, namespace: "os-two" } }).api.previewPlanChange("os-one", input))
+      .rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
+    for (const override of [{ namespace: "os-two" }, { id: "wrong-change" }])
+      await expect(setup({ success: true, namespace: "os-one", change: { ...change, ...override } }).api.getPlanChange("os-one", change.id)).rejects.toMatchObject({ statusCode: 502 });
+    await expect(setup({ success: true, namespace: "os-one", change: { ...change, quoteId: "wrong-quote" } }).api.changePlan("os-one", { quoteId: quote.id, idempotencyKey: "confirm" }))
+      .rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
+    await expect(setup({ ...subscription, subscription: { ...subscription.subscription, pendingChange: { ...change, namespace: "os-two" } } }).api.getSubscription("os-one"))
+      .rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
+  });
+  it.each(["http://invoice.stripe.com/i/x", "https://invoice.stripe.com.evil.test/i/x", "https://invoice.stripe.com:8443/i/x", "https://user@invoice.stripe.com/i/x", "javascript:alert(1)"])("rejects unsafe invoice link %s in direct and subscription reads", async url => {
+    const unsafe = { ...change, payment: { ...change.payment, url } };
+    await expect(setup({ success: true, namespace: "os-one", change: unsafe }).api.getPlanChange("os-one", change.id)).rejects.toMatchObject({ statusCode: 502 });
+    await expect(setup({ ...subscription, subscription: { ...subscription.subscription, pendingChange: unsafe } }).api.getSubscription("os-one")).rejects.toMatchObject({ statusCode: 502 });
+  });
+  it.each(["billing_quote_expired", "billing_quote_changed", "idempotency_conflict", "billing_plan_change_pending", "billing_change_busy", "billing_change_not_cancelable", "plan_change_not_found"])("preserves stable failure %s without payment details", async code => {
+    const { api } = setup({ success: false, code, message: "private https://invoice.stripe.com/i/secret" }, 409);
+    const failure = await api.getPlanChange("os-one", "private_change").catch(error => error);
+    expect(failure).toMatchObject({ statusCode: 409, details: { providerCode: code } });
+    expect(JSON.stringify(failure)).not.toContain("secret");
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain("private_change");
   });
 });

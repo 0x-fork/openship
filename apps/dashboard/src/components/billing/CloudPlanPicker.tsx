@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { BillingPlansSkeleton } from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PricingCards } from "@/components/billing/PricingCards";
 import type { PlanTierId } from "@repo/core";
 import { useI18n } from "@/components/i18n-provider";
@@ -14,6 +14,8 @@ import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
 import { useBillingWorkspace } from "./BillingWorkspaceContext";
 import { CustomPlanConfigurator } from "./CustomPlanConfigurator";
 import type { ApiPlan } from "./PricingCards";
+import { useSubscriptionChange } from "./useSubscriptionChange";
+import { SubscriptionChangeDialog } from "./SubscriptionChangeDialog";
 
 export function CloudPlanPicker({
   currentPlan,
@@ -40,18 +42,25 @@ export function CloudPlanPicker({
 }) {
   const { t } = useI18n();
   const billingWorkspaceId = useBillingWorkspace();
+  const selectedWorkspaceId = workspaceId ?? billingWorkspaceId;
+  const changes = useSubscriptionChange(selectedWorkspaceId, onCheckoutStarted);
   const workspaceScoped = Boolean(workspaceId ?? billingWorkspaceId) ||
     (currentPlan === "free" && !subscription && !complimentary);
   const { payload, loading, error, retry } = useCloudPlans();
-  const [interval, setInterval] = useState<"monthly" | "annual">(
-    subscription?.interval ?? "monthly",
-  );
+  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">("monthly");
+  const interval = subscription && subscription.status !== "canceled" ? subscription.interval : purchaseInterval;
   const [configuration, setConfiguration] = useState<"plans" | "custom">(
     subscription?.configuration === "custom" ? "custom" : "plans",
   );
+  useEffect(() => {
+    setConfiguration(subscription?.configuration === "custom" ? "custom" : "plans");
+  }, [selectedWorkspaceId, subscription?.configuration]);
   const canPurchase =
     !complimentary && billingEnabled && needsCloudPlan({ tier: currentPlan, subscription, complimentary })
       && (currentPlan === "free" || canChangeSubscription);
+  const canModify = Boolean(selectedWorkspaceId && !complimentary && billingEnabled && canChangeSubscription &&
+    subscription?.status === "active" && !subscription.cancelAtPeriodEnd && !subscription.pendingChange);
+  const selectable = canPurchase || canModify;
   const {
     startCheckout,
     subscribing,
@@ -72,7 +81,7 @@ export function CloudPlanPicker({
       : currentPlan;
 
   const handleSelectPlan = (planTierId: PlanTierId) => {
-    if (planTierId !== selectedCurrentPlan) void startCheckout(planTierId, interval);
+    if (planTierId !== selectedCurrentPlan) void (canModify ? changes.review(planTierId) : startCheckout(planTierId, interval));
   };
 
   if (loading) return <BillingPlansSkeleton />;
@@ -117,7 +126,7 @@ export function CloudPlanPicker({
             {(["plans", "custom"] as const).map(value => (
               <Button
                 key={value} type="button" size="sm" variant={configuration === value ? "secondary" : "ghost"}
-                aria-pressed={configuration === value} disabled={subscribing !== null}
+                aria-pressed={configuration === value} disabled={subscribing !== null || changes.busy || (value === "custom" && subscription?.interval === "annual")}
                 onClick={() => setConfiguration(value)}
               >
                 {value === "plans" ? t.billing.custom.presets : t.billing.custom.name}
@@ -125,7 +134,7 @@ export function CloudPlanPicker({
             ))}
           </div>
         )}
-        {configuration === "plans" && payload.annual.enabled && (
+        {configuration === "plans" && payload.annual.enabled && (!subscription || subscription.status === "canceled") && (
           <div
             className="inline-flex gap-1 rounded-xl bg-muted/40 p-1"
             role="group"
@@ -165,7 +174,8 @@ export function CloudPlanPicker({
           {checkoutError}
         </p>
       )}
-      {!canPurchase && (
+      {changes.error && !changes.open && <p role="alert" className="text-sm text-danger">{changes.error}</p>}
+      {!selectable && !subscription?.pendingChange && (
         <p className="text-sm text-muted-foreground">
           {complimentary
             ? t.billing.complimentary.changeViaSupport
@@ -182,11 +192,13 @@ export function CloudPlanPicker({
           catalog={payload.custom} plans={purchasable} ui={payload.ui}
           currentOffer={currentOffer} subscription={subscription}
           allocatedDiskGb={allocatedDiskGb}
-          disabled={!canPurchase} busy={subscribing !== null}
+          disabled={!selectable} busy={subscribing !== null || changes.busy}
+          actionLabel={canModify ? t.billing.planChange.review : undefined}
           quoteRevision={quoteRevision}
-          onSelect={quote => void startCheckout(quote.basePlanTierId, "monthly", {
-            resources: quote.resources, quoteReference: quote.reference,
-          })}
+          onSelect={quote => {
+            const custom = { resources: quote.resources, quoteReference: quote.reference };
+            void (canModify ? changes.review(quote.basePlanTierId, custom) : startCheckout(quote.basePlanTierId, "monthly", custom));
+          }}
         />
       ) : (
         <PricingCards
@@ -195,11 +207,13 @@ export function CloudPlanPicker({
           currentPlan={selectedCurrentPlan}
           onSelectPlan={handleSelectPlan}
           subscribingPlan={subscribing}
-          purchasesDisabled={!canPurchase}
+          purchasesDisabled={!selectable || changes.busy}
+          selectionLabel={canModify ? t.billing.planChange.review : undefined}
           interval={interval}
           workspaceScoped={workspaceScoped}
         />
       )}
+      <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
     </div>
   );
 }

@@ -67,7 +67,7 @@ The **Billing** area in the dashboard is organised as tabs:
 | --- | --- |
 | **Overview** | Current plan, billing period, and credit balance. |
 | **Usage** | Metered usage over the period, charted. |
-| **Plans** | Upgrade or downgrade — starts a Stripe Checkout session. |
+| **Plans** | Compare plans or Custom resources; review upgrades and schedule downgrades. |
 | **Top-ups** | One-shot credits added to your existing plan; no increase to resource caps. |
 | **Payment Method** | Opens the Stripe portal to manage cards. |
 | **Invoices** | Opens the Stripe portal to download invoices. |
@@ -81,15 +81,25 @@ Top-ups remain available when an eligible paid plan runs out of credits, includi
 before a scheduled cancellation takes effect. They cannot restart an ended or
 past-due plan; restore the subscription before buying more credits.
 
-Contact support to change an existing server's plan. Self-service prorated
-upgrades and next-cycle downgrades require provider support and are not available
-yet; Openship blocks full-price replacement checkout for a live subscription.
-When a changed entitlement is confirmed, Billing lets you review the new server
-resources and affected projects before confirming a restart. Existing disks can
-grow; shrinking requires moving data to a new server.
-The checkout
-return page waits for payment and credit delivery; pending fulfillment is not
-shown as a successful purchase.
+To change an existing server's plan, choose **Review change**. The review shows
+Oblien's prorated price, amount due now, estimated next invoice and the projects
+that may restart. An upgrade takes effect after payment; a lower or equal-priced
+change starts at the next paid renewal. The interval stays unchanged. Metered
+usage and purchased credits are preserved.
+
+Pending changes stay visible in the subscription card. Complete any required
+payment authentication there, or cancel the change when allowed. Cancel a pending
+change before stopping or resuming subscription renewal. Retries check the same
+financial operation instead of creating another charge.
+
+After activation, the shared server worker applies the approved capacity and
+restarts affected projects. If the server changed since review, **Apply plan
+capacity** asks for a fresh restart confirmation. Existing disks can grow;
+choose Custom to retain the disk while lowering other resources, or move data
+to another server for a smaller disk.
+
+First subscriptions use hosted checkout. Its return page waits for payment and
+credit delivery; pending fulfillment is not shown as a successful purchase.
 
 See the [billing API](/docs/api/billing) for the endpoints behind each of those
 actions.

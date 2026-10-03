@@ -63,7 +63,9 @@ credits. Grace stays zero unless the reseller explicitly configures it.
 
 1. Deploy the generic Oblien aggregate-capacity API and additive schema first.
    Require `reseller.aggregateResourceLimits` before enabling new sales.
-2. Deploy this Openship API/dashboard together. Published SDK 2.5.0 is sufficient.
+2. Deploy the Openship API/dashboard together. The current integration uses
+   published SDK 2.7.0 for prorated upgrades and scheduled downgrades; see
+   [subscription changes](oblien-subscription-changes.md).
 3. Reconcile organizations through the billing sweep or guarded Cloud actions.
    v1 paid credits and periods remain unchanged; pre-v4 finite safety ceilings
    still bound inherited capacity. v2/v3/v4/v5 saved commercial terms and per-service

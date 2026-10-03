@@ -19,6 +19,7 @@ import { getNamespaceUsage } from "@repo/platform/engine/modules/billing/billing
 import { presentCloudPlans } from "./billing-catalog";
 import { getBillingResources } from "./billing-resources.service";
 import { customSubscriptionOffer } from "./billing-custom-offer";
+export { previewSubscriptionChange, confirmSubscriptionChange, getSubscriptionChange, cancelSubscriptionChange } from "./billing-plan-change";
 
 /* ---------- Plans (public) ---------- */
 

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CloudWorkspaceSummary } from "@repo/contracts";
-import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { ManagedServerActionFeedback } from "@/components/servers/managed/ManagedServerActionFeedback";
@@ -15,9 +14,8 @@ import type { BillingState } from "@/lib/api/billing";
 
 /** Billing shares the server's revision check, restart confirmation and worker. */
 export function SubscribedServerResources({ state }: { state: BillingState }) {
-  const { selfHosted } = usePlatform();
   const serverId = state.workspace?.serverId;
-  if (selfHosted || !serverId || state.tier === "free" || state.status !== "active" || !state.plan?.resourceLimits) return null;
+  if (!serverId || state.tier === "free" || state.status !== "active" || !state.plan?.resourceLimits) return null;
   return <ResourceChange key={serverId} serverId={serverId} state={state} />;
 }
 

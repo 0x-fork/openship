@@ -9,6 +9,7 @@ import { billingApi, type BillingState } from "@/lib/api/billing";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { OpenStripePortalButton } from "@/app/(dashboard)/billing/_components/OpenStripePortalButton";
+import { SubscriptionChangeStatus } from "./SubscriptionChangeStatus";
 
 export function BillingSubscriptionControls({ state }: { state: BillingState }) {
   const { t, locale } = useI18n();
@@ -26,7 +27,7 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
   const ended = subscription.status === "canceled";
   const ending = subscription.cancelAtPeriodEnd;
   const canManage =
-    !ended &&
+    !ended && !subscription.pendingChange &&
     (ending ? state.capabilities?.resumption === true : state.capabilities?.cancellation === true);
   const end = subscription.currentPeriod.end;
   const endDate = end
@@ -67,6 +68,10 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
       <p role="status" className="mt-1 text-xs text-muted-foreground">
         {status}
       </p>
+      {subscription.pendingChange && <div className="mt-4"><SubscriptionChangeStatus
+        key={`${state.workspace?.id}:${subscription.pendingChange.id}`} initial={subscription.pendingChange}
+        workspaceId={state.workspace?.id}
+      /></div>}
       {error && (
         <p role="alert" className="mt-3 text-sm text-danger">
           {error}

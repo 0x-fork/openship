@@ -288,8 +288,27 @@ export async function previewResize(
     const { remoteRevision: _remoteRevision, ...preview } = await linkedResizePreview(ctx, id);
     return preview;
   }
+  return previewWorkspaceResourceChange(ctx, id, await cloudSubscriptionWorkspaceResources(ctx.organizationId, id));
+}
+
+/** Billing previews proposed capacity before purchase; normal server actions
+ * preview already-paid capacity. Both review the same host and project set. */
+export async function previewWorkspaceResourceChange(
+  ctx: ExecutionContext, id: string, after: CloudWorkspaceResizePreview["after"],
+): Promise<CloudWorkspaceResizePreview> {
+  const preview = await readWorkspaceResourceChange(ctx.organizationId, id, after);
+  const server = await requireWorkspaceServer(ctx.organizationId, id);
+  await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
+  for (const project of await repos.project.listByWorkspace(id, ctx.organizationId))
+    await authorization.authorize(ctx, { resourceType: "project", resourceId: project.id, action: "write" });
+  return preview;
+}
+
+async function readWorkspaceResourceChange(
+  organizationId: string, id: string, after: CloudWorkspaceResizePreview["after"],
+): Promise<CloudWorkspaceResizePreview> {
   requireSaas();
-  const host = await readCloudWorkspaceHost(ctx.organizationId, id);
+  const host = await readCloudWorkspaceHost(organizationId, id);
   if (!host.provider || !host.binding?.workspaceId)
     throw new AppError(
       "Start this managed server before resizing it",
@@ -309,29 +328,21 @@ export async function previewResize(
     );
   }
   const before = host.provider.allocation;
-  const after = await cloudSubscriptionWorkspaceResources(ctx.organizationId, id);
   if (after.diskMb < before.diskMb)
     throw new AppError(
-      "A server disk cannot be shrunk in place. Move its data to a smaller server before changing to that plan.",
+      "A server disk cannot shrink in place. Choose Custom to keep its current disk while changing CPU or memory, or move its data to a smaller server.",
       409,
       "CLOUD_WORKSPACE_DISK_SHRINK",
     );
-  const projects = await repos.project.listByWorkspace(id, ctx.organizationId);
-  const restartProjects = [];
-  for (const project of projects) {
-    await authorization.authorize(ctx, {
-      resourceType: "project",
-      resourceId: project.id,
-      action: "write",
-    });
-    restartProjects.push({ id: project.id, name: project.name });
-  }
+  const projects = await repos.project.listByWorkspace(id, organizationId);
+  const restartProjects = projects.map(project => ({ id: project.id, name: project.name }));
   restartProjects.push(...host.owner.linkedProjects.flatMap(link => link.projects));
   return {
     revision: digest({
       id,
-      before,
-      after,
+      // JSONB can reorder object keys between quote acceptance and recovery.
+      before: [before.cpuCores, before.memoryMb, before.diskMb],
+      after: [after.cpuCores, after.memoryMb, after.diskMb],
       projects: projects.map((project) => [project.id, project.updatedAt]),
       linkedProjects: host.owner.linkedProjects,
     }),
@@ -339,6 +350,34 @@ export async function previewResize(
     after,
     restartProjects,
   };
+}
+
+/** Use only after a confirmed subscription change. Recheck consent and current
+ * paid capacity under the same lifecycle barrier used by manual resizing. */
+export async function applyApprovedWorkspaceResize(
+  organizationId: string, id: string, plan: CloudWorkspaceResizePreview, requestKey: string,
+) {
+  const requested = await withCloudWorkspaceActivity(id, async () => {
+    const owner = await requireCloudWorkspace(organizationId, id);
+    if (owner.operation?.id === requestKey) return owner;
+    await assertCloudCanSpend(organizationId, id);
+    const allowed = await cloudSubscriptionWorkspaceResources(organizationId, id);
+    if (Object.entries(plan.after).some(([key, value]) => value !== allowed[key as keyof typeof allowed]))
+      throw new AppError("The paid server capacity changed. Review its resize again.", 409, "CLOUD_WORKSPACE_CHANGED");
+    const current = await readWorkspaceResourceChange(organizationId, id, plan.after);
+    if (current.revision !== plan.revision)
+      throw new AppError("The server or its projects changed. Review its resize again.", 409, "CLOUD_WORKSPACE_CHANGED");
+    return queueWorkspaceResize(organizationId, id, plan, requestKey);
+  }, undefined, { lifecycle: true, scope: "lifecycle" });
+  dispatch(id);
+  return requested;
+}
+
+function queueWorkspaceResize(organizationId: string, id: string, plan: CloudWorkspaceResizePreview, requestKey: string) {
+  return repos.cloudWorkspace.requestOperation(id, organizationId, {
+    ...operation("resize", requestKey), revision: plan.revision, resources: plan.after,
+    restartProjectIds: plan.restartProjects.map(project => project.id),
+  });
 }
 export async function resize(
   ctx: ExecutionContext,
@@ -367,12 +406,7 @@ export async function resize(
         409,
         "CLOUD_WORKSPACE_CHANGED",
       );
-    const row = await repos.cloudWorkspace.requestOperation(id, ctx.organizationId, {
-      ...operation("resize", input.idempotencyKey),
-      revision: input.revision,
-      resources: plan.after,
-      restartProjectIds: plan.restartProjects.map((project) => project.id),
-    });
+    const row = await queueWorkspaceResize(ctx.organizationId, id, plan, input.idempotencyKey);
     return row;
   }, undefined, { lifecycle: true, scope: "lifecycle" });
   // Start detached work after releasing the caller's activity/advisory locks.
@@ -678,6 +712,12 @@ export async function retry(ctx: ExecutionContext, id: string) {
 }
 
 export async function runCloudWorkspaceRecovery() {
+  if (env.CLOUD_MODE) {
+    const { reconcileWorkspaceSubscriptionChange } = await import("../billing/billing-plan-change");
+    for (const row of await repos.cloudWorkspace.listPendingSubscriptionChanges())
+      await reconcileWorkspaceSubscriptionChange(row.organizationId, row.id).catch(error =>
+        console.warn(`[cloud-plan-change] ${row.id}: ${safeErrorMessage(error)}`));
+  }
   for (const row of await repos.cloudWorkspace.listSettledLinkedActivities()) {
     await reconcileSettledCloudActivity(row).catch(error =>
       console.warn(`[cloud-activity] ${row.id}: ${safeErrorMessage(error)}`));

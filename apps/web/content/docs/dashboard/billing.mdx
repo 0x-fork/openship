@@ -1,6 +1,6 @@
 ---
 title: Billing
-description: The Billing area (Openship Cloud only) shows your plan, usage, and invoices. Self-hosted Openship has no billing.
+description: Manage each Openship Cloud server's plan, usage, upgrades and invoices, including from a linked self-hosted installation.
 ---
 
 <Callout title="Openship Cloud only">
@@ -29,7 +29,7 @@ terms are kept for renewals.
 | --- | --- |
 | **Overview** | Current plan, billing period, and credit balance. |
 | **Usage** | Metered usage over the period, charted. |
-| **Plans** | Compare plans. New subscriptions open a hosted checkout; existing plan changes require support. |
+| **Plans** | Compare plans or customize resources. Review prorated upgrades and schedule downgrades for renewal. |
 | **Top-ups** | One-shot credits for an existing plan, without changing resource limits. |
 | **Payment Method** | Opens the Stripe portal to manage cards. |
 | **Invoices** | Opens the Stripe portal to download invoices. |
@@ -40,8 +40,16 @@ renewal before that period ends. Cancellation does not delete resources.
 
 Choose a server from the right-hand card to view its own plan, renewal date,
 usage and invoices. Existing servers keep their billing history when a plan ends.
-Self-service upgrades and scheduled downgrades require Oblien's plan-change API;
-Openship currently blocks full-price replacement of an existing subscription.
+Choose **Review change** to see the amount due now, the new renewal price and
+which projects may restart. Upgrades apply after payment is confirmed. Lower or
+equal-priced changes begin at the next paid renewal; the current plan stays
+active until then. If payment needs authentication, use **Complete payment**.
+Pending changes appear in the subscription card and can be canceled when allowed.
+Cancel a pending change before stopping or resuming renewal of the subscription.
+
+The billing interval stays unchanged. Existing usage and purchased credits are
+preserved. A server disk can grow, but cannot shrink in place: choose Custom to
+retain its disk while lowering CPU or RAM, or migrate to a smaller server.
 The return page verifies the specific checkout and credit delivery. It shows
 pending, refunded, disputed or failed states instead of inferring success from
 the browser URL. Invoices and payment methods open the selected server's
@@ -55,49 +63,17 @@ For a **shared Docker server**, open the server to see live usage and its
 projects. Container sizes are limits within that host. A new project does not
 reserve another VM or disk. Source builds use available host capacity, and
 image-only installs do not create a source builder. Stop an idle service if
-memory is tight, or contact support to change the plan and choose **Apply plan capacity**
-once the new entitlement is confirmed.
-The resize preview lists every project that may restart and requires confirmation.
+memory is tight, or review a larger plan in Billing. After payment, the approved
+capacity change uses the existing server resize worker. If projects or server
+resources changed since review, choose **Apply plan capacity** and confirm the
+updated restart list. A resize failure can be retried without buying the plan again.
 See [Servers](/docs/dashboard/servers) for progress, logs and recovery.
-
-### Existing project-owned Cloud resources
-
-Choose **Manage Cloud capacity** in Billing, or open it when a deployment needs
-more available capacity. The pool shows reserved CPU, memory and storage.
-A service-count allowance does not guarantee that another workspace will fit.
-
-Source builds share this pool with running apps. Openship selects build CPU and
-memory from Oblien's reported available capacity, within its workspace limits.
-Existing runtime allocations stay reserved. Image-only installs need no source
-builder. These rules also apply to catalog apps and their retries.
-
-1. Choose **Adjust** beside a running project and edit its service CPU or memory.
-2. Choose **Review changes**. Review the resulting workspace allocation and the
-   services that may briefly restart.
-3. Choose **Apply and restart**. The deployment uses the services' current images
-   and saved settings, preserving persistent volumes. **Deployment logs** opens
-   the normal deployment page.
-4. Wait for capacity verification, then choose **Retry deployment**. The retry
-   uses the original project rather than creating another installation.
-
-Running Docker workspaces can be adjusted here. Other projects show why they are
-unavailable; a resize also requires write permission on the project and its
-services. Stopped workspaces still reserve capacity. Storage cannot be reduced
-here, and workspace allocations include Docker overhead and build reservations.
-
-After five minutes, automatic checks stop and **Refresh capacity** checks the
-same operation again. Closing the dialog does not cancel a deployment. If an
-adjustment fails, inspect its logs and refresh capacity before trying again.
-
-For a source build, **Edit build resources** lets you set an optional CPU/memory
-cap or choose **Automatic** again. This changes the next build, preserving
-production settings. A smaller build may be slower or run out of memory.
 
 ## Credit warnings and recovery
 
-When Cloud credits run low, a persistent dashboard banner links to the affected server's
-billing page. The final warning level, grace credits, and exhaustion also show a dismissible
-dialog. Credit-pack purchases appear only when top-ups are available.
+When Cloud credits run low, a compact notice in the bottom corner links to the
+affected server's billing page. It can be opened or dismissed without covering
+the page. Credit-pack purchases appear only when top-ups are available.
 
 See [credit warnings and recovery](/docs/guides/billing#credit-warnings-and-recovery) for
 warning levels, notifications, and how the balance refreshes after a purchase.

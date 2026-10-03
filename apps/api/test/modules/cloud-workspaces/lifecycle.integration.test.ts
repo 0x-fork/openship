@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createHmac, randomUUID } from "node:crypto";
 import { Hono } from "hono";
-import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
+import type { OblienSubscription, OblienPlanChange, OblienPlanChangeQuote, OblienPlanChangeInput } from "@repo/platform/engine/lib/oblien-billing-api";
 
 const h = vi.hoisted(() => ({
   client: {} as any,
@@ -83,6 +83,8 @@ import {
   assertWorkspaceCheckoutsSettled,
 } from "@repo/platform/engine/modules/billing/workspace-checkout";
 import { getCheckoutStatus } from "@repo/platform/engine/modules/billing/billing.service";
+import { reconcileWorkspaceSubscriptionChange } from "@repo/platform/engine/modules/billing/billing-plan-change";
+import { customSubscriptionOffer } from "@repo/platform/engine/modules/billing/billing-custom-offer";
 import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
@@ -263,6 +265,7 @@ beforeEach(async () => {
     }),
   };
   h.billing = {
+    assertResellerSupport: vi.fn(async () => {}),
     getDefaults: async () => ({
       autoApply: true,
       quotaLimit: 0,
@@ -803,5 +806,322 @@ describe("workspace payment and deletion races", () => {
     );
     await expect(purchase()).rejects.toThrow("Invalid offer");
     expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toHaveLength(1);
+  });
+});
+
+describe("provider subscription changes through billing and the shared server worker", () => {
+  const quotes = new Map<string, { request: OblienPlanChangeInput; quote: OblienPlanChangeQuote }>();
+  const changes = new Map<string, OblienPlanChange>();
+  const accepted = new Map<string, string>();
+  const previews = new Map<string, string>();
+  let clock = Date.now();
+  beforeEach(() => {
+    quotes.clear(); changes.clear(); accepted.clear(); previews.clear();
+    clock = Date.now();
+    h.billing.previewPlanChange = vi.fn(async (namespace: string, request: OblienPlanChangeInput) => {
+      const existing = previews.get(request.idempotencyKey);
+      if (existing) return { success: true, namespace, quote: structuredClone(quotes.get(existing)!.quote) };
+      const current = subscriptions.get(namespace)!;
+      const direction = request.offer.unitAmount > current.offer!.unitAmount ? "upgrade" : "downgrade";
+      const quote: OblienPlanChangeQuote = {
+        id: `quote_${randomUUID()}`, namespace, direction,
+        expiresAt: new Date(clock + 9 * 60_000).toISOString(),
+        effectiveAt: direction === "upgrade" ? new Date(clock).toISOString() : current.periodEnd!,
+        billingInterval: current.billingInterval, current: structuredClone(current.offer!), next: structuredClone(request.offer),
+        currency: "usd", unusedTimeCredit: direction === "upgrade" ? 127 : 0,
+        remainingTimeCharge: direction === "upgrade" ? 763 : 0, amountDueNow: direction === "upgrade" ? 636 : 0,
+        nextInvoiceAmount: request.offer.unitAmount, includedCreditIncrease: 1.123456,
+        preservesUsage: true, preservesPurchasedCredits: true,
+      };
+      quotes.set(quote.id, { request: structuredClone(request), quote });
+      previews.set(request.idempotencyKey, quote.id);
+      return { success: true, namespace, quote: structuredClone(quote) };
+    });
+    h.billing.changePlan = vi.fn(async (namespace: string, input: { quoteId: string; idempotencyKey: string }) => {
+      // Exercise persistence ordering: acceptance must precede the provider call.
+      const saved = (await repos.cloudWorkspace.findByNamespace(namespace))!.subscriptionChange!;
+      expect(saved.confirmationKey).toBe(input.idempotencyKey);
+      const existing = accepted.get(input.idempotencyKey);
+      if (existing) return { success: true, namespace, change: structuredClone(changes.get(existing)!) };
+      const quote = quotes.get(input.quoteId)?.quote;
+      if (!quote || quote.namespace !== namespace) throw new AppError("Missing quote", 404);
+      if (Date.parse(quote.expiresAt) <= clock) throw new OperationError("Expired", 409, "OBLIEN_BILLING_ERROR", { providerCode: "billing_quote_expired" });
+      const change: OblienPlanChange = {
+        id: `change_${randomUUID()}`, quoteId: quote.id, namespace, direction: quote.direction,
+        status: quote.direction === "upgrade" ? "payment_pending" : "scheduled",
+        effectiveAt: quote.effectiveAt, current: quote.current, next: quote.next,
+        amountDueNow: quote.amountDueNow, currency: quote.currency, includedCreditIncrease: quote.includedCreditIncrease,
+        payment: quote.direction === "upgrade" ? { status: "open", url: "https://invoice.stripe.com/i/test", expiresAt: null } : null,
+        error: null, cancelable: true, appliedAt: null,
+      };
+      accepted.set(input.idempotencyKey, change.id); changes.set(change.id, change);
+      subscriptions.set(namespace, { ...subscriptions.get(namespace)!, pendingChange: change });
+      return { success: true, namespace, change: structuredClone(change) };
+    });
+    h.billing.getPlanChange = vi.fn(async (namespace: string, id: string) => {
+      const change = changes.get(id);
+      if (!change || change.namespace !== namespace) throw new AppError("Missing change", 404);
+      return { success: true, namespace, change: structuredClone(change) };
+    });
+    h.billing.cancelPlanChange = vi.fn(async (namespace: string, id: string) => {
+      const { change } = await h.billing.getPlanChange(namespace, id);
+      change.status = "canceled"; change.cancelable = false;
+      changes.set(id, change);
+      subscriptions.set(namespace, { ...subscriptions.get(namespace)!, pendingChange: null });
+      return { success: true, namespace, change };
+    });
+  });
+
+  const billingClient = async (remote = false, actor = owner) => remote ? new OpenshipClient({
+    baseUrl: "http://openship.test", token: actor.token, organizationId: actor.orgId,
+    fetch: ((url, init) => app.request(String(url), init)) as typeof fetch,
+  }).billing : (await nativeShip(actor)).billing;
+  async function review(remote = false) {
+    const client = await billingClient(remote);
+    const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "starter", idempotencyKey: randomUUID() });
+    return { client, quote };
+  }
+  function paid(id: string) {
+    const change = changes.get(id)!;
+    const { request } = quotes.get(change.quoteId)!;
+    change.status = "applied"; change.appliedAt = new Date(clock).toISOString(); change.cancelable = false; change.payment = null;
+    subscriptions.set(change.namespace, { ...subscriptions.get(change.namespace)!, offer: request.offer, metadata: request.metadata, pendingChange: null });
+  }
+  async function event(id: string, type = "subscription.change.applied", eventId = `event_${randomUUID()}`) {
+    const payload = JSON.stringify({ id: eventId, event: type, timestamp: new Date().toISOString(),
+      data: { namespace: workspace.namespace, change: changes.get(id) } });
+    const signature = createHmac("sha256", "workspace-test-webhook-secret").update(payload).digest("hex");
+    const response = await app.request("/api/billing/oblien-webhook", { method: "POST", body: payload,
+      headers: { "content-type": "application/json", "x-webhook-signature": signature, "x-webhook-id": JSON.parse(payload).id } });
+    return response;
+  }
+
+  it.each([false, true])("reviews real cents, confirms once, then resizes after payment (HTTP=%s)", async remote => {
+    await provision();
+    const project = await addProject("API");
+    const { client, quote } = await review(remote);
+    expect(quote).toMatchObject({ amountDueNow: 636, unusedTimeCredit: 127, remainingTimeCharge: 763,
+      resize: { before: { cpuCores: 1 }, after: { cpuCores: 2 }, restartProjects: [{ id: project.id, name: "API" }] } });
+    expect(h.billing.changePlan).not.toHaveBeenCalled();
+    expect(h.client.resize).not.toHaveBeenCalled();
+    const input = { workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true as const };
+    const change = await client.confirmSubscriptionChange(input);
+    expect(change).toMatchObject({ status: "payment_pending", amountDueNow: 636 });
+    expect(await client.getState({ workspaceId: workspace.id })).toMatchObject({ tier: "hobby", subscription: { pendingChange: { id: change.id } }, capabilities: { subscriptionChange: false, cancellation: false } });
+    await client.confirmSubscriptionChange(input);
+    expect(h.billing.changePlan).toHaveBeenCalledTimes(1);
+    expect(h.client.resize).not.toHaveBeenCalled();
+    paid(change.id);
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    await drainBackgroundWork();
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.operation).toMatchObject({ kind: "resize", status: "succeeded", restartProjectIds: [project.id] });
+    expect(h.client.resize).toHaveBeenCalledOnce();
+    expect(h.exec).toHaveBeenCalledWith(expect.stringContaining("docker start"));
+    expect(await client.getState({ workspaceId: workspace.id })).toMatchObject({ tier: "starter" });
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    await client.confirmSubscriptionChange(input);
+    await drainBackgroundWork();
+    expect(h.client.resize).toHaveBeenCalledOnce();
+    expect(h.billing.changePlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a lost acceptance response with the saved key and never opens another payment", async () => {
+    await provision();
+    const { client, quote } = await review();
+    const confirm = h.billing.changePlan.getMockImplementation();
+    h.billing.changePlan.mockImplementationOnce(async (...args: unknown[]) => {
+      await confirm(...args);
+      throw new Error("response lost after acceptance");
+    });
+    const input = { workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true as const };
+    await expect(client.confirmSubscriptionChange(input)).rejects.toThrow("response lost");
+    const saved = (await repos.cloudWorkspace.findById(workspace.id))!.subscriptionChange!;
+    expect(saved).toMatchObject({ confirmationKey: expect.any(String) });
+    expect(saved.changeId).toBeUndefined();
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    expect(accepted.size).toBe(1);
+    expect(h.billing.changePlan.mock.calls[1]).toEqual(h.billing.changePlan.mock.calls[0]);
+    expect(h.client.resize).not.toHaveBeenCalled();
+    expect(await client.confirmSubscriptionChange(input)).toMatchObject({ status: "payment_pending" });
+  });
+
+  it("requires a fresh quote for changed membership and refuses another tenant's quote before payment", async () => {
+    await provision();
+    const { client, quote } = await review();
+    await addProject("Added after review");
+    const input = { workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true as const };
+    await expect(client.confirmSubscriptionChange(input)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHANGED" });
+    const stranger = await billingClient(true, await seedOwner());
+    await expect(stranger.confirmSubscriptionChange(input)).rejects.toMatchObject({ statusCode: 404 });
+    await expect(client.confirmSubscriptionChange({ ...input, quoteId: "another_quote" })).rejects.toMatchObject({ code: "BILLING_QUOTE_CHANGED" });
+    await expect(client.confirmSubscriptionChange({ ...input, confirmRestart: false } as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(h.billing.changePlan).not.toHaveBeenCalled();
+  });
+
+  it("schedules a lower-priced custom offer with retained disk and applies it only after paid renewal", async () => {
+    subscribe("starter"); await provision(); await addProject("API");
+    const client = await billingClient(true);
+    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 32 }).quote;
+    const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,
+      custom: { resources: custom.resources, quoteReference: custom.reference }, idempotencyKey: randomUUID() });
+    expect(quote).toMatchObject({ direction: "downgrade", amountDueNow: 0, effectiveAt: "2026-11-01T00:00:00Z" });
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    expect(change.status).toBe("scheduled");
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    expect(h.client.resize).not.toHaveBeenCalled();
+    expect(subscriptions.get(workspace.namespace!)?.offer?.unitAmount).toBe(2000);
+    // A signed, premature applied event is only a hint; provider reads still say scheduled.
+    expect((await event(change.id)).status).toBe(200);
+    expect(h.client.resize).not.toHaveBeenCalled();
+    paid(change.id);
+    const appliedEventId = `event_${randomUUID()}`;
+    expect((await event(change.id, "subscription.change.applied", appliedEventId)).status).toBe(200);
+    await drainBackgroundWork();
+    expect(h.client.resize).toHaveBeenCalledExactlyOnceWith(expect.any(String), { cpus: 1, memory_mb: 4096, disk_size_mb: 32768, apply: true });
+    expect((await event(change.id, "subscription.change.applied", appliedEventId)).status).toBe(200);
+    expect((await event(change.id, "subscription.change.failed")).status).toBe(200);
+    await drainBackgroundWork();
+    expect(h.client.resize).toHaveBeenCalledOnce();
+  });
+
+  it("blocks disk shrink before creating a quote, and permits canceling a scheduled downgrade", async () => {
+    subscribe("starter"); await provision();
+    const client = await billingClient();
+    await expect(client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "hobby", idempotencyKey: randomUUID() }))
+      .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_DISK_SHRINK" });
+    expect(h.billing.previewPlanChange).not.toHaveBeenCalled();
+    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 32 }).quote;
+    const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,
+      custom: { resources: custom.resources, quoteReference: custom.reference }, idempotencyKey: randomUUID() });
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    await expect(client.cancelSubscription({ workspaceId: workspace.id })).rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_PENDING" });
+    expect(await client.cancelSubscriptionChange({ workspaceId: workspace.id, changeId: change.id })).toMatchObject({ status: "canceled" });
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    expect(h.client.resize).not.toHaveBeenCalled();
+    expect(subscriptions.get(workspace.namespace!)?.offer?.unitAmount).toBe(2000);
+  });
+
+  it("does not restart newly added projects with stale consent after the payment completes", async () => {
+    await provision();
+    const { client, quote } = await review();
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    await addProject("New project during payment");
+    paid(change.id);
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    expect(await client.getSubscriptionChange({ workspaceId: workspace.id, changeId: change.id })).toMatchObject({ status: "applied", serverUpdate: "review_required" });
+    expect(h.client.resize).not.toHaveBeenCalled();
+    const preview = await request("GET", `/${workspace.id}/resize`);
+    expect(preview.status).toBe(200);
+    expect(preview.body.restartProjects).toHaveLength(1);
+  });
+
+  it("does not replay capacity after a refund or a later subscription change", async () => {
+    await provision();
+    const { client, quote } = await review();
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    paid(change.id);
+    subscribe("hobby");
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    expect(h.client.resize).not.toHaveBeenCalled();
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.subscriptionChange).toMatchObject({ completed: true, serverUpdate: "review_required" });
+  });
+
+  it("serializes simultaneous confirmations and blocks read-only tokens and sibling-server replay", async () => {
+    await provision();
+    const { client, quote } = await review();
+    const input = { workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true as const };
+    const remote = await billingClient(true);
+    const results = await Promise.all([client.confirmSubscriptionChange(input), remote.confirmSubscriptionChange(input)]);
+    expect(results[0]!.id).toBe(results[1]!.id);
+    expect(h.billing.changePlan).toHaveBeenCalledOnce();
+    const other = await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Other server" });
+    await ensureNamespace(owner.orgId, other.id);
+    await expect(remote.confirmSubscriptionChange({ ...input, workspaceId: other.id })).rejects.toMatchObject({ code: "BILLING_QUOTE_CHANGED" });
+    await expect(remote.previewSubscriptionChange({ planTierId: "pro", idempotencyKey: randomUUID() })).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_REQUIRED" });
+    await db.update(schema.personalAccessToken).set({ readOnly: true }).where(eq(schema.personalAccessToken.userId, owner.userId));
+    expect(await remote.getSubscriptionChange({ workspaceId: workspace.id, changeId: results[0]!.id })).toMatchObject({ status: "payment_pending" });
+    await expect(remote.confirmSubscriptionChange(input)).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
+    await expect(remote.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "pro", idempotencyKey: randomUUID() })).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
+    expect(h.billing.changePlan).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the old plan after failed payment and releases the intent without resizing", async () => {
+    await provision();
+    const { client, quote } = await review();
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    const failed = changes.get(change.id)!;
+    failed.status = "failed"; failed.payment = null; failed.cancelable = false;
+    subscriptions.set(workspace.namespace!, { ...subscriptions.get(workspace.namespace!)!, pendingChange: null });
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.subscriptionChange?.completed).toBe(true);
+    expect(subscriptions.get(workspace.namespace!)?.metadata?.openship_plan).toBe("hobby");
+    expect(h.client.resize).not.toHaveBeenCalled();
+    expect(await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "pro", idempotencyKey: randomUUID() })).toHaveProperty("id");
+  });
+
+  it("refuses a changed provider offer before saving a quote and keeps unknown confirmations addressable for deletion", async () => {
+    const { client, quote } = await review();
+    const makeQuote = h.billing.previewPlanChange.getMockImplementation();
+    h.billing.previewPlanChange.mockImplementationOnce(async (...args: unknown[]) => {
+      const result = await makeQuote(...args);
+      result.quote.next.unitAmount = 1;
+      return result;
+    });
+    await expect(client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "pro", idempotencyKey: randomUUID() })).rejects.toMatchObject({ code: "BILLING_QUOTE_CHANGED" });
+    h.billing.changePlan.mockRejectedValueOnce(new Error("Network lost before response"));
+    await expect(client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true })).rejects.toThrow("Network lost");
+    expect(await client.getState({ workspaceId: workspace.id })).toMatchObject({ capabilities: { subscriptionChange: false, cancellation: false } });
+    // Even an externally ended subscription cannot delete the namespace until
+    // the accepted financial request has been reconciled.
+    subscriptions.delete(workspace.namespace!);
+    await expect(client.createSubscription({ workspaceId: workspace.id, planTierId: "starter", interval: "monthly" }))
+      .rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_PENDING" });
+    expect(h.billing.createCheckout).not.toHaveBeenCalled();
+    const removal = await request("DELETE", `/${workspace.id}`, { idempotencyKey: randomUUID(), confirmDelete: true });
+    expect(removal.status).toBe(409);
+    expect(removal.body.code).toBe("BILLING_PLAN_CHANGE_PENDING");
+  });
+
+  it("recovers after an expired provider quote and rejects price, namespace and interval injection", async () => {
+    const { client, quote } = await review(true);
+    clock += 11 * 60_000;
+    await expect(client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true })).rejects.toMatchObject({ code: "OBLIEN_BILLING_ERROR" });
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.subscriptionChange?.completed).toBe(true);
+    expect(accepted.size).toBe(0);
+    for (const field of ["offer", "unitAmount", "credits", "namespace", "metadata", "interval"])
+      await expect(client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "starter", idempotencyKey: randomUUID(), [field]: "injected" } as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "starter", idempotencyKey: randomUUID() })).toHaveProperty("id");
+  });
+
+  it.each(["billing_plan_change_pending", "reseller_enterprise_required"])("releases an explicitly rejected first confirmation (%s)", async providerCode => {
+    const { client, quote } = await review();
+    h.billing.changePlan.mockRejectedValueOnce(new OperationError("Change refused", 409, "OBLIEN_BILLING_ERROR", { providerCode }));
+    await expect(client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true })).rejects.toMatchObject({ code: "OBLIEN_BILLING_ERROR" });
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.subscriptionChange?.completed).toBe(true);
+    expect(accepted.size).toBe(0);
+    await expect(client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true }))
+      .rejects.toMatchObject({ code: "BILLING_QUOTE_CHANGED" });
+    expect(h.billing.changePlan).toHaveBeenCalledOnce();
+    expect(await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "starter", idempotencyKey: randomUUID() })).toHaveProperty("id");
+  });
+
+  it("recovers a failed server resize without another plan confirmation or charge", async () => {
+    await provision();
+    const project = await addProject("API");
+    const { client, quote } = await review();
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    paid(change.id);
+    h.client.resize.mockRejectedValueOnce(new AppError("Provider capacity temporarily unavailable", 409));
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    await drainBackgroundWork();
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.operation).toMatchObject({ kind: "resize", status: "failed" });
+    expect(subscriptions.get(workspace.namespace!)?.metadata?.openship_plan).toBe("starter");
+    const retry = await request("POST", `/${workspace.id}/retry`);
+    expect(retry.status, JSON.stringify(retry.body)).toBe(202);
+    await drainBackgroundWork();
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.operation).toMatchObject({ status: "succeeded", restartProjectIds: [project.id] });
+    expect(h.billing.changePlan).toHaveBeenCalledOnce();
+    expect(accepted.size).toBe(1);
+    expect(h.client.resize).toHaveBeenCalledTimes(2);
   });
 });

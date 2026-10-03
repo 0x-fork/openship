@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { repos, type CloudWorkspace } from "@repo/db";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import { oblienCheckoutInputSchema, type OblienCheckout } from "../../lib/oblien-billing-api";
+import { hasPendingSubscriptionChange } from "./billing-subscription";
 
 /** Call only under the billing lock. A lost create response is recovered with
  * the exact persisted provider request; it never becomes an untracked charge. */
@@ -27,6 +28,8 @@ export async function reconcileWorkspaceCheckouts(owner: CloudWorkspace) {
 
 /** The namespace remains addressable until all hosted payments are settled. */
 export async function assertWorkspaceCheckoutsSettled(owner: CloudWorkspace) {
+  if (hasPendingSubscriptionChange(owner.subscriptionChange))
+    throw new AppError("Finish or cancel this server's pending plan change first.", 409, "BILLING_PLAN_CHANGE_PENDING");
   if ((await reconcileWorkspaceCheckouts(owner)).length)
     throw new AppError(
       "This workspace has an open or unfinished payment. Complete it or wait for checkout to expire before deleting the workspace.",

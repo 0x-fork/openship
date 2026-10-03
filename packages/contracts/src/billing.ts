@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
-import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody, CustomServerResourcesSchema } from "./billing-inputs";
+import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody, CustomServerResourcesSchema, PreviewSubscriptionChangeBody, ConfirmSubscriptionChangeBody, SubscriptionChangeScopeSchema } from "./billing-inputs";
+import { CloudWorkspaceResizePreviewSchema } from "./cloud-workspaces";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
 
 const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
@@ -69,6 +70,26 @@ export const BillingPlansSchema = Type.Object({
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
 });
+const changeOffer = Type.Object({ name: Type.String(), priceCents: Type.Integer({ minimum: 100 }), resourceLimits: Type.Optional(namespaceResourceLimits) });
+const changeTerms = {
+  id: Type.String(), direction: Type.Union([Type.Literal("upgrade"), Type.Literal("downgrade")]),
+  current: changeOffer, next: changeOffer, effectiveAt: Type.String(),
+  amountDueNow: Type.Integer({ minimum: 0 }), currency: Type.Literal("usd"),
+};
+export const BillingPlanChangeSchema = Type.Object({
+  ...changeTerms,
+  status: Type.Union(["queued", "dispatching", "payment_pending", "scheduled", "canceling", "reconciliation_required", "applied", "canceled", "expired", "failed"].map(value => Type.Literal(value))),
+  paymentUrl: stringOrNull, paymentExpiresAt: stringOrNull,
+  errorCode: stringOrNull, cancelable: Type.Boolean(), appliedAt: stringOrNull,
+  serverUpdate: Type.Optional(Type.Union(["pending", "queued", "review_required", "not_required"].map(value => Type.Literal(value)))),
+});
+export const BillingPlanChangeQuoteSchema = Type.Object({
+  ...changeTerms,
+  expiresAt: Type.String(), interval: Type.Union([Type.Literal("monthly"), Type.Literal("annual")]),
+  unusedTimeCredit: Type.Integer({ minimum: 0 }), remainingTimeCharge: Type.Integer({ minimum: 0 }),
+  nextInvoiceAmount: numberOrNull,
+  resize: Type.Union([CloudWorkspaceResizePreviewSchema, Type.Null()]),
+});
 export const BillingSubscriptionSchema = Type.Object({
   tier,
   configuration: planConfiguration,
@@ -77,6 +98,7 @@ export const BillingSubscriptionSchema = Type.Object({
   interval: Type.Union([Type.Literal("monthly"), Type.Literal("annual")]),
   currentPeriod,
   cancelAtPeriodEnd: Type.Boolean(), canceledAt: stringOrNull,
+  pendingChange: Type.Optional(Type.Union([BillingPlanChangeSchema, Type.Null()])),
 });
 export const BillingCheckoutStatusSchema = Type.Object({
   id: Type.String(),
@@ -86,7 +108,7 @@ export const BillingCheckoutStatusSchema = Type.Object({
     ["paid", "unpaid", "no_payment_required"].map((value) => Type.Literal(value)),
   ),
   fulfillmentStatus: Type.Union(
-    ["pending", "completed", "partially_refunded", "refunded", "disputed", "expired", "failed"].map(
+    ["pending", "completed", "partially_refunded", "refunded", "disputed", "expired", "failed", "superseded", "reversed"].map(
       (value) => Type.Literal(value),
     ),
   ),
@@ -151,6 +173,10 @@ export const BillingOperationSchemas = {
   getResources: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingResourcesSchema },
   getSubscription: { action: "read", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
+  previewSubscriptionChange: { action: "write", input: PreviewSubscriptionChangeBody, output: BillingPlanChangeQuoteSchema },
+  confirmSubscriptionChange: { action: "admin", input: ConfirmSubscriptionChangeBody, output: BillingPlanChangeSchema },
+  getSubscriptionChange: { action: "read", input: SubscriptionChangeScopeSchema, output: BillingPlanChangeSchema },
+  cancelSubscriptionChange: { action: "admin", input: SubscriptionChangeScopeSchema, output: BillingPlanChangeSchema },
   cancelSubscription: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },
   resumeSubscription: { action: "admin", input: BillingScopeSchema, optionalInput: true, output: Type.Object({ subscription: BillingSubscriptionSchema }) },
   createTopup: { action: "write", input: CreateTopupBody, output: Type.Object({ checkoutUrl: Type.String() }) },
@@ -172,6 +198,8 @@ export type BillingCreditState = Static<typeof BillingCreditStateSchema>;
 export type BillingCreditAlerts = Static<typeof BillingCreditAlertsSchema>;
 export type BillingResources = Static<typeof BillingResourcesSchema>;
 export type BillingSubscription = Static<typeof BillingSubscriptionSchema>;
+export type BillingPlanChange = Static<typeof BillingPlanChangeSchema>;
+export type BillingPlanChangeQuote = Static<typeof BillingPlanChangeQuoteSchema>;
 export type BillingCheckoutStatus = Static<typeof BillingCheckoutStatusSchema>;
 export type BillingCreditPack = Static<typeof BillingCreditPackSchema>;
 export type BillingPlans = Static<typeof BillingPlansSchema>;

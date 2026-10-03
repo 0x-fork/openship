@@ -16,6 +16,10 @@ it.each([
       (route) => route.method === "GET" && route.path === "/api/billing/subscription/quote",
     ),
   ).toBe(true);
+  for (const [method, path] of [["POST", "/subscription/change/preview"], ["POST", "/subscription/change"],
+    ["GET", "/subscription/change"], ["POST", "/subscription/change/cancel"]]) {
+    expect(app.routes.some(route => route.method === method && route.path === `/api/billing${path}`)).toBe(true);
+  }
 
   // Exercise the production scanner, not a duplicate rule or mocked route spec.
   const result = scanRoutes(app);

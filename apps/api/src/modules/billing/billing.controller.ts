@@ -37,6 +37,22 @@ export async function quoteCustomPlan(c: Context) {
   })) });
 }
 export async function createSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.createSubscription(operationContext(c), await c.req.json())) }, 201); }
+export async function previewSubscriptionChange(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.previewSubscriptionChange(operationContext(c), await c.req.json())) });
+}
+export async function confirmSubscriptionChange(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.confirmSubscriptionChange(operationContext(c), await c.req.json())) });
+}
+export async function getSubscriptionChange(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.getSubscriptionChange(operationContext(c), { ...billingScope(c), changeId: c.req.query("changeId") ?? "" })) });
+}
+export async function cancelSubscriptionChange(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.cancelSubscriptionChange(operationContext(c), await c.req.json())) });
+}
 export async function cancelSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.cancelSubscription(operationContext(c), await optionalBody(c))) }); }
 export async function resumeSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.resumeSubscription(operationContext(c), await optionalBody(c))) }); }
 export async function createTopup(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.createTopup(operationContext(c), await c.req.json())) }, 201); }

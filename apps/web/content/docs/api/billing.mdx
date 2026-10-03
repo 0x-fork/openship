@@ -185,7 +185,7 @@ plan's capacity is in use. `GET /usage` returns the metered series behind the
 usage chart. `GET /subscription` returns the entitlement tier/status/period and
 a `subscription` object, or `null` if never subscribed. The object includes
 `tier`, `status`, `interval` (`monthly` or `annual`), `currentPeriod`,
-`cancelAtPeriodEnd`, and `canceledAt`. A scheduled cancellation can still have
+`cancelAtPeriodEnd`, `canceledAt`, and an optional `pendingChange`. A scheduled cancellation can still have
 an active entitlement until the paid period ends.
 
 `billing.getCreditAlerts()` (`GET /api/billing/credit-alerts`) reads credit state
@@ -199,15 +199,65 @@ are unknown, not zero. The read does not provision servers or buy credits.
 This starts a new subscription only when the selected server has no live
 subscription. Existing contracts, including those scheduled to cancel, return
 `409 BILLING_PLAN_CHANGE_UNAVAILABLE`; they must not be replaced at full price.
-Self-service prorated upgrades and next-cycle downgrades await provider support.
-A browser
+Use the plan-change operations below for a live reseller subscription. A browser
 return URL does not grant access: signed Oblien events and fresh entitlement
 reads confirm the current plan.
+
+### Change an existing server's plan
+
+```ts
+const quote = await ship.billing.previewSubscriptionChange({
+  workspaceId: 'cws_...',
+  planTierId: 'pro',
+  idempotencyKey: crypto.randomUUID(),
+});
+// Present quote.current/next, amountDueNow, effectiveAt and resize to the user.
+// Only after explicit payment and affected-project restart confirmation:
+const change = await ship.billing.confirmSubscriptionChange({
+  workspaceId: 'cws_...',
+  quoteId: quote.id,
+  confirmRestart: true,
+});
+const latest = await ship.billing.getSubscriptionChange({
+  workspaceId: 'cws_...', changeId: change.id,
+});
+// If the user cancels a pending, cancelable change:
+// await ship.billing.cancelSubscriptionChange({ workspaceId: 'cws_...', changeId: change.id });
+```
+
+| Operation | Route | Permission |
+| --- | --- | --- |
+| Preview | `POST /api/billing/subscription/change/preview` | `billing:write` |
+| Confirm | `POST /api/billing/subscription/change` | `billing:admin` |
+| Status | `GET /api/billing/subscription/change?workspaceId=...&changeId=...` | `billing:read` |
+| Cancel | `POST /api/billing/subscription/change/cancel` | `billing:admin` |
+
+Preview and confirmation also require write access to the server and affected
+projects. The backend derives the provider namespace and trusted retail offer.
+Custom changes accept the same `custom: { resources, quoteReference }` selection
+as checkout. They preserve the existing interval; Custom is monthly only.
+Amounts are USD cents, as for other billing prices.
+
+Higher prices are prorated and activate after confirmed payment. Lower or equal
+prices are scheduled for the next paid renewal. `queued`, `payment_pending`,
+`scheduled` and other pending states do not grant the new plan. A validated
+`paymentUrl` may be shown while payment is pending. Only `applied` confirms the
+new terms; `serverUpdate` distinguishes pending/queued capacity work from a
+required fresh restart review. The existing server operation supplies progress
+and recovery. Disks cannot shrink in place.
+
+Quotes expire in at most ten minutes. Use a new preview key after expiry or a
+changed quote. Retry an uncertain confirmation with the same `quoteId`; Openship
+persists its provider retry key before acceptance. Signed events and background
+recovery continue it after navigation or a restart. No client-supplied price,
+namespace, credits or metadata is accepted. MCP exposes preview and status;
+payment confirmation stays in Billing.
 
 `POST /cancel` stops renewal at period end and returns `{ cancelAt, subscription }`.
 `POST /resume` undoes a scheduled cancellation and returns `{ subscription }`.
 Both are safe to repeat. Cancellation preserves the paid period; it does not
 delete resources. An ended subscription requires a new checkout.
+Cancel an existing pending plan change before canceling or resuming renewal.
 
 ```ts
 await ship.billing.cancelSubscription();
@@ -326,7 +376,11 @@ closure and resource cleanup.
 | Read compute usage, edge traffic, and bandwidth limits. | `billing.getResources(input?)` | `GET /api/billing/resources`<br />`billing:read` |
 | Read subscription and renewal state. | `billing.getSubscription(input?)` | `GET /api/billing/subscription`<br />`billing:read` |
 | Quote a Custom server's monthly price and usage allowance without purchasing it. | `billing.quoteCustomPlan(input)` | `GET /api/billing/subscription/quote`<br />`billing:read` |
-| Create a subscription checkout or subscription change. | `billing.createSubscription(input)` | `POST /api/billing/subscription`<br />`billing:write` |
+| Start hosted checkout for a new or ended server subscription. | `billing.createSubscription(input)` | `POST /api/billing/subscription`<br />`billing:write` |
+| Save an expiring provider quote with proration, effective date and affected-project restart review; no charge. | `billing.previewSubscriptionChange(input)` | `POST /api/billing/subscription/change/preview`<br />`billing:write` |
+| Confirm a saved plan-change quote and restart consent. Upgrades activate after payment; downgrades wait for paid renewal. | `billing.confirmSubscriptionChange(input)` | `POST /api/billing/subscription/change`<br />`billing:admin` |
+| Read the selected server's provider plan-change and capacity-update status. | `billing.getSubscriptionChange(input)` | `GET /api/billing/subscription/change`<br />`billing:read` |
+| Cancel a pending, cancelable change while preserving the underlying subscription. | `billing.cancelSubscriptionChange(input)` | `POST /api/billing/subscription/change/cancel`<br />`billing:admin` |
 | Stop subscription renewal at the end of the paid period. | `billing.cancelSubscription(input?)` | `POST /api/billing/cancel`<br />`billing:admin` |
 | Resume a scheduled subscription renewal. | `billing.resumeSubscription(input?)` | `POST /api/billing/resume`<br />`billing:admin` |
 | Create a credit top-up checkout. | `billing.createTopup(input)` | `POST /api/billing/topup`<br />`billing:write` |

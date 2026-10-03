@@ -100,6 +100,38 @@ export const oblienOfferSchema = z.object({
 });
 export type OblienOffer = z.infer<typeof oblienOfferSchema>;
 
+const billingId = z.string().min(1).max(255).regex(/^[A-Za-z0-9_-]+$/);
+const cents = amount.int().nonnegative();
+export const oblienPlanChangeInputSchema = z.object({
+  offer: oblienOfferSchema,
+  metadata: z.record(z.string(), z.string()),
+  billingInterval: z.enum(["monthly", "yearly"]),
+  idempotencyKey: z.string().min(1).max(128),
+});
+export type OblienPlanChangeInput = z.infer<typeof oblienPlanChangeInputSchema>;
+export const oblienPlanChangeQuoteSchema = z.object({
+  id: billingId, namespace, direction: z.enum(["upgrade", "downgrade"]),
+  expiresAt: date.unwrap(), effectiveAt: date.unwrap(),
+  billingInterval: z.enum(["monthly", "yearly"]),
+  current: oblienOfferSchema, next: oblienOfferSchema, currency: z.literal("usd"),
+  unusedTimeCredit: cents, remainingTimeCharge: cents, amountDueNow: cents,
+  nextInvoiceAmount: cents.nullable(), includedCreditIncrease: amount.nonnegative(),
+  preservesUsage: z.literal(true), preservesPurchasedCredits: z.literal(true),
+});
+export const oblienPlanChangeSchema = z.object({
+  id: billingId, quoteId: billingId, namespace,
+  direction: z.enum(["upgrade", "downgrade"]),
+  status: z.enum(["queued", "dispatching", "payment_pending", "scheduled", "canceling",
+    "reconciliation_required", "applied", "canceled", "expired", "failed"]),
+  effectiveAt: date.unwrap(), current: oblienOfferSchema, next: oblienOfferSchema,
+  amountDueNow: cents, currency: z.literal("usd"), includedCreditIncrease: amount.nonnegative(),
+  payment: z.object({ status: z.string(), url: z.url().nullable(), expiresAt: date }).nullable(),
+  error: z.object({ code: z.string().max(128), message: z.string().max(2000) }).nullable(),
+  cancelable: z.boolean(), appliedAt: date,
+});
+export type OblienPlanChangeQuote = z.infer<typeof oblienPlanChangeQuoteSchema>;
+export type OblienPlanChange = z.infer<typeof oblienPlanChangeSchema>;
+
 const policySchema = z.object({
   success: z.literal(true), service: z.literal("workspace_vm"),
   quotaLimit: allowance, overdraft: amount.nonnegative(),
@@ -121,6 +153,7 @@ export const oblienSubscriptionSchema = z.object({
       canceledAt: date,
       offer: oblienOfferSchema.optional(),
       metadata: z.record(z.string(), z.string()).optional(),
+      pendingChange: oblienPlanChangeSchema.nullable().optional(),
     })
     .nullable(),
 });
@@ -193,7 +226,7 @@ export class OblienBillingApi {
     }
     this.baseUrl = url.toString().replace(/\/+$/, "");
     this.fetcher = options.fetch ?? fetch;
-    // SDK 2.4 has no client-wide fetch/timeout option. Replace this transport
+    // The SDK has no client-wide fetch/timeout option. Replace this transport
     // so the official billing module owns endpoints and request formatting while
     // we retain timeouts, strict HTTP errors, and credential-safe redirects.
     const client = new Oblien({ token: "", baseUrl: this.baseUrl });
@@ -242,7 +275,8 @@ export class OblienBillingApi {
         method,
         operation: path
           .replace(/^\/billing\/policy\/[^/]+/, "/billing/policy/:namespace")
-          .replace(/^\/billing\/checkout\/[^/]+/, "/billing/checkout/:checkoutId"),
+          .replace(/^\/billing\/checkout\/[^/]+/, "/billing/checkout/:checkoutId")
+          .replace(/^\/billing\/subscription\/changes\/[^/]+/, "/billing/subscription/changes/:changeId"),
         providerStatus: response.status, providerCode: code,
         ...diagnostic,
       });
@@ -266,6 +300,13 @@ export class OblienBillingApi {
         billing_storage_unavailable: "Cloud billing is temporarily unavailable. Please try again later.",
         billing_provider_unavailable: "Cloud checkout is temporarily unavailable. Please try again later.",
         billing_provider_rejected: "Cloud checkout could not be completed. Contact Openship support.",
+        billing_quote_expired: "This price quote expired. Review a fresh quote before confirming.",
+        billing_quote_changed: "The subscription or price changed. Review a fresh quote before confirming.",
+        idempotency_conflict: "This billing attempt no longer matches its original request. Refresh its status before trying again.",
+        billing_plan_change_pending: "Finish or cancel the pending plan change first.",
+        billing_change_busy: "This plan change is still being confirmed. Refresh its status; do not start another payment.",
+        billing_change_not_cancelable: "This plan change can no longer be canceled. Refresh its status.",
+        plan_change_not_found: "This plan change was not found for the selected server.",
       };
       const checkoutUnavailable = path === "/billing/checkout" && providerFailure;
       const message = Object.hasOwn(known, code) ? known[code]
@@ -334,6 +375,8 @@ export class OblienBillingApi {
             "disputed",
             "expired",
             "failed",
+            "superseded",
+            "reversed",
           ]),
           namespaceCreditsGranted: amount.nonnegative(),
         }),
@@ -367,16 +410,60 @@ export class OblienBillingApi {
     }), slug);
   }
 
+  private async subscriptionResponse(response: Promise<unknown>, slug: string) {
+    const result = await this.validate(response, oblienSubscriptionSchema, slug);
+    if (result.subscription?.pendingChange) this.validatePlanChange(result.subscription.pendingChange, slug);
+    return result;
+  }
+
   getSubscription(slug: string) {
-    return this.validate(this.billing.subscription(slug), oblienSubscriptionSchema, slug);
+    return this.subscriptionResponse(this.billing.subscription(slug), slug);
   }
 
   cancelSubscription(slug: string) {
-    return this.validate(this.billing.cancelSubscription(slug), oblienSubscriptionSchema, slug);
+    return this.subscriptionResponse(this.billing.cancelSubscription(slug), slug);
   }
 
   resumeSubscription(slug: string) {
-    return this.validate(this.billing.resumeSubscription(slug), oblienSubscriptionSchema, slug);
+    return this.subscriptionResponse(this.billing.resumeSubscription(slug), slug);
+  }
+
+  async previewPlanChange(slug: string, input: OblienPlanChangeInput) {
+    const result = await this.validate(this.billing.previewPlanChange(slug, input), z.object({
+      success: z.literal(true), namespace, quote: oblienPlanChangeQuoteSchema,
+    }), slug);
+    if (result.quote.namespace !== slug || result.quote.billingInterval !== input.billingInterval)
+      throw new AppError("Cloud billing returned a different subscription quote", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
+    return result;
+  }
+
+  private validatePlanChange(change: OblienPlanChange, slug: string) {
+    if (change.namespace !== slug)
+      throw new AppError("Cloud billing returned a different namespace", 502, "OBLIEN_BILLING_NAMESPACE_MISMATCH");
+    if (change.payment?.url) {
+      const host = new URL(change.payment.url).hostname;
+      this.validateHostedUrl(change.payment.url, host === "pay.stripe.com" ? "pay.stripe.com" : "invoice.stripe.com");
+    }
+  }
+
+  private async planChangeResponse(response: Promise<unknown>, slug: string, match: { id?: string; quoteId?: string }) {
+    const result = await this.validate(response, z.object({ success: z.literal(true), namespace, change: oblienPlanChangeSchema }), slug);
+    this.validatePlanChange(result.change, slug);
+    if ((match.id && result.change.id !== match.id) || (match.quoteId && result.change.quoteId !== match.quoteId))
+      throw new AppError("Cloud billing returned a different plan change", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
+    return result;
+  }
+
+  changePlan(slug: string, input: { quoteId: string; idempotencyKey: string }) {
+    return this.planChangeResponse(this.billing.changePlan(slug, input), slug, { quoteId: input.quoteId });
+  }
+
+  getPlanChange(slug: string, changeId: string) {
+    return this.planChangeResponse(this.billing.planChange(slug, changeId), slug, { id: changeId });
+  }
+
+  cancelPlanChange(slug: string, changeId: string, idempotencyKey: string) {
+    return this.planChangeResponse(this.billing.cancelPlanChange(slug, changeId, { idempotencyKey }), slug, { id: changeId });
   }
 
   async createPortal(input: { namespace: string; returnUrl: string }) {

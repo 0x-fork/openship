@@ -34,6 +34,22 @@ export const CreateSubscriptionBody = Type.Object(
   { additionalProperties: false },
 );
 export type CreateSubscriptionInput = Static<typeof CreateSubscriptionBody>;
+
+const planChangeId = Type.String({ minLength: 1, maxLength: 255, pattern: "^[A-Za-z0-9_-]+$" });
+export const PreviewSubscriptionChangeBody = Type.Object({
+  ...BillingScopeSchema.properties,
+  planTierId: CreateSubscriptionBody.properties.planTierId,
+  custom: Type.Optional(CustomSubscriptionSelectionSchema),
+  idempotencyKey: Type.String({ minLength: 16, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }),
+}, { additionalProperties: false });
+export const ConfirmSubscriptionChangeBody = Type.Object({
+  ...BillingScopeSchema.properties,
+  quoteId: planChangeId,
+  confirmRestart: Type.Literal(true, { description: "Approve the affected-project restart shown in this quote. Applied capacity uses the existing server resize worker." }),
+}, { additionalProperties: false });
+export const SubscriptionChangeScopeSchema = Type.Object({
+  ...BillingScopeSchema.properties, changeId: planChangeId,
+}, { additionalProperties: false });
 export const CreateTopupBody = Type.Object(
   {
     ...BillingScopeSchema.properties,

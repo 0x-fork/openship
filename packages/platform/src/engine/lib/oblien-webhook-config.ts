@@ -5,6 +5,8 @@ export const OBLIEN_WEBHOOK_EVENTS = [
   "payment.succeeded", "subscription.renewed", "subscription.tier_changed",
   "subscription.past_due", "subscription.canceled", "subscription.updated", "entitlement.changed",
   "namespace.suspended", "namespace.restored",
+  "subscription.change.scheduled", "subscription.change.applied", "subscription.change.canceled",
+  "subscription.change.payment_required", "subscription.change.failed", "subscription.change.expired",
 ] as const;
 
 export function oblienWebhookUrl(override: string | undefined, apiBase: string): string {

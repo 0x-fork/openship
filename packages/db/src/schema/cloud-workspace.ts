@@ -54,6 +54,25 @@ export interface LinkedServerProjects {
   projects: Array<{ id: string; name: string }>;
 }
 
+/** Durable customer consent and retry identity, not a billing ledger. Oblien
+ * alone owns the quote, payment status, effective date and subscription terms. */
+export interface CloudSubscriptionChangeIntent {
+  namespace: string;
+  request: Record<string, unknown>;
+  quoteId: string;
+  expiresAt: string;
+  resize: {
+    revision: string;
+    before: { cpuCores: number; memoryMb: number; diskMb: number };
+    after: { cpuCores: number; memoryMb: number; diskMb: number };
+    restartProjects: Array<{ id: string; name: string }>;
+  } | null;
+  confirmationKey?: string;
+  changeId?: string;
+  completed?: boolean;
+  serverUpdate?: "queued" | "review_required" | "not_required";
+}
+
 /** A subscription and execution target. Provider VM identities belong to its runtime. */
 export const cloudWorkspace = pgTable(
   "cloud_workspace",
@@ -80,6 +99,7 @@ export const cloudWorkspace = pgTable(
       .$type<Array<{ request: Record<string, unknown>; checkoutId?: string }>>()
       .notNull()
       .default([]),
+    subscriptionChange: jsonb("subscription_change").$type<CloudSubscriptionChangeIntent>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

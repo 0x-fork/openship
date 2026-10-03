@@ -13,7 +13,7 @@ import { needsCloudPlan } from "@/lib/billing-presentation";
 import { PlanUsageNote } from "./PlanUsageNote";
 import type { ApiPlan, ApiPricingUi } from "./PricingCards";
 
-export function CustomPlanConfigurator({ catalog, plans, ui, currentOffer, subscription, disabled, busy, onSelect, quoteRevision = 0, allocatedDiskGb }: {
+export function CustomPlanConfigurator({ catalog, plans, ui, currentOffer, subscription, disabled, busy, onSelect, quoteRevision = 0, allocatedDiskGb, actionLabel }: {
   catalog: NonNullable<BillingPlans["custom"]>;
   plans: ApiPlan[];
   ui: ApiPricingUi;
@@ -23,6 +23,7 @@ export function CustomPlanConfigurator({ catalog, plans, ui, currentOffer, subsc
   busy: boolean;
   quoteRevision?: number;
   allocatedDiskGb?: number | null;
+  actionLabel?: string;
   onSelect: (quote: BillingCustomQuote) => void;
 }) {
   const { t } = useI18n();
@@ -142,7 +143,7 @@ export function CustomPlanConfigurator({ catalog, plans, ui, currentOffer, subsc
             <p className="mt-1 text-xs text-muted-foreground">{ui.billedMonthly}</p>
           </div>
           <Button type="submit" className="w-full" disabled={!quote || disabled || busy || current}>
-            {busy ? <Icon name="spinner" className="size-4 animate-spin" /> : current ? t.billing.pricing.currentPlan : copy.choose}
+            {busy ? <Icon name="spinner" className="size-4 animate-spin" /> : current ? t.billing.pricing.currentPlan : actionLabel ?? copy.choose}
           </Button>
           {!valid && <p role="alert" className="text-sm text-danger">{copy.invalid}</p>}
           {error && (

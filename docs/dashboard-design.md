@@ -113,6 +113,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   with a compact monthly total, wait for a matching server quote before enabling
   checkout, and expose bundle pricing details on demand. Applying a paid resource
   change reuses the server's affected-project review and restart confirmation.
+- Existing subscriptions use a compact plan-change review, with provider prices,
+  amount due now, effective date and affected projects. Keep these details in the
+  scrollable body and use the shared server resize summary. Upgrades activate
+  after payment; downgrades wait for paid renewal. Keep pending payment and
+  cancellation actions in the selected server's billing card, preserve retry
+  identity after uncertain responses, and never replace the page with a loader.
 - Plan cards respond to their container: one column on phones, two at intermediate widths,
   and four when readable. Offer links to each plan above a stacked comparison; never rely
   on hidden horizontal overflow to reveal additional plans.

@@ -220,6 +220,8 @@ export async function handleOblienWebhook(
       });
     }, owner.workspaceId);
     if (owner.workspaceId) {
+      const { reconcileWorkspaceSubscriptionChange } = await import("./billing-plan-change");
+      await reconcileWorkspaceSubscriptionChange(orgId, owner.workspaceId);
       const { requestPaidWorkspaceProvisioning } = await import("../cloud-workspaces/cloud-workspace.service");
       await requestPaidWorkspaceProvisioning(orgId, owner.workspaceId);
     }

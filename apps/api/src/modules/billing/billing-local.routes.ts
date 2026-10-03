@@ -15,10 +15,11 @@
 import { Hono } from "hono";
 import { BillingOperationSchemas, CreateSubscriptionBody, CreateTopupBody } from "@repo/contracts";
 import { authMiddleware } from "../../middleware";
+import { billingPlanChangeRoutes } from "./billing-plan-change.routes";
 import { secureRouter } from "../../lib/secure-router";
 import * as billingLocal from "./billing.controller";
 
-export const billingLocalRoutes = new Hono();
+export const billingLocalRoutes = new Hono().route("/", billingPlanChangeRoutes);
 const r = secureRouter(billingLocalRoutes, {
   module: "billing-local",
   basePath: "/api/billing",
@@ -33,7 +34,7 @@ const r = secureRouter(billingLocalRoutes, {
 // POST /payment-methods, and GET /invoices do not exist on the SaaS
 // side — invoices and payment methods are owned by Stripe's hosted
 // portal (POST /portal returns the redirect URL), and subscription
-// updates use POST /subscription (checkout), /cancel, or /resume. Mounting
+// updates use /subscription/change, /cancel, or /resume. Mounting
 // the orphan routes here just routed dashboard calls into 404 HTML
 // pages from the SaaS proxy, breaking dashboard error handling.
 r.use("/state", authMiddleware);

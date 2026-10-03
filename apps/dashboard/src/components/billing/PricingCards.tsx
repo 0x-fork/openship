@@ -118,6 +118,7 @@ interface PricingCardsProps {
   purchasesDisabled?: boolean;
   interval?: "monthly" | "annual";
   workspaceScoped?: boolean;
+  selectionLabel?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -192,6 +193,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
   purchasesDisabled = false,
   interval = "monthly",
   workspaceScoped = false,
+  selectionLabel,
 }) => {
   const { t, locale } = useI18n();
   const comparisonId = React.useId();
@@ -332,7 +334,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
                       <UiIcon name="spinner" className="size-4 animate-spin" />
                     ) : (
                       <>
-                        {interpolate(ui.ctaChoose, { name: plan.name })}
+                        {selectionLabel ?? interpolate(ui.ctaChoose, { name: plan.name })}
                         <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
                       </>
                     )}

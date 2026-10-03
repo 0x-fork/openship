@@ -278,6 +278,19 @@ export function createCloudWorkspaceRepo(db: Database) {
         return updated!;
       });
     },
+    /** Caller holds the billing lock; the JSON stores consent and retry keys only. */
+    async setSubscriptionChange(id: string, organizationId: string, subscriptionChange: CloudWorkspace["subscriptionChange"]) {
+      const [row] = await db.update(cloudWorkspace).set({ subscriptionChange, updatedAt: new Date() })
+        .where(and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId))).returning();
+      if (!row) throw new Error("Cloud workspace not found");
+      return row;
+    },
+    async listPendingSubscriptionChanges(limit = 50) {
+      return db.select().from(cloudWorkspace).where(and(isNull(cloudWorkspace.remote),
+        sql`${cloudWorkspace.subscriptionChange}->>'confirmationKey' IS NOT NULL`,
+        sql`coalesce(${cloudWorkspace.subscriptionChange}->>'completed', 'false') <> 'true'`,
+      )).orderBy(asc(cloudWorkspace.updatedAt)).limit(limit);
+    },
     async updateOperation(
       id: string,
       operation: CloudWorkspaceOperation,

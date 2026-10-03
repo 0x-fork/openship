@@ -3,7 +3,7 @@
 import type { CloudWorkspaceSummary } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { CapacitySummary } from "@/components/shared/CapacitySummary";
+import { ServerResizeDetails } from "./ServerResizeDetails";
 import type { ManagedServerActions } from "./useManagedServerActions";
 
 /** Action errors and confirmations stay visible whichever server tab is open. */
@@ -58,28 +58,7 @@ export function ManagedServerActionFeedback({
       {preview && (
         <section className="@container/resize space-y-4 rounded-2xl bg-card p-5">
           <h2 className="text-base font-medium">{copy.resizeConfirm}</h2>
-          <div className="grid gap-4 @min-[36rem]/resize:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">{copy.before}</p>
-              <CapacitySummary resources={preview.before} />
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">{copy.after}</p>
-              <CapacitySummary resources={preview.after} />
-            </div>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {sameSize ? copy.noResize : copy.restartHint}
-          </p>
-          {!sameSize && preview.restartProjects.length > 0 && (
-            <ul className="flex flex-wrap gap-2">
-              {preview.restartProjects.map((project) => (
-                <li key={project.id} className="rounded-lg bg-muted/50 px-3 py-1.5 text-sm">
-                  {project.name}
-                </li>
-              ))}
-            </ul>
-          )}
+          <ServerResizeDetails preview={preview} />
           <div className="flex flex-wrap gap-2">
             {!sameSize && (
               <Button disabled={actions.busy || pending} onClick={() => void actions.resize()}>
