@@ -19,14 +19,18 @@ it("upgrades existing SSH/managed projects and migration history without changin
   for (const entry of journal.entries.filter(entry => entry.idx < 161))
     await client.exec(readFileSync(`${directory}/${entry.tag}.sql`, "utf8"));
 
-  await db.insert(schema.organization).values([{ id: "org", name: "Owner" }, { id: "other", name: "Other" }]);
-  await db.insert(schema.projectGroup).values({ id: "group", organizationId: "org", name: "Apps", slug: "apps" });
-  await db.insert(schema.cloudWorkspace).values({ id: "workspace", organizationId: "org", name: "Managed" });
-  // Raw inserts deliberately use the historical columns, before purpose/recovery exist.
+  // Seed the historical columns explicitly. Today's ORM also writes columns
+  // from later migrations, which this pre-upgrade database must not have yet.
+  await client.query("INSERT INTO organization (id, name) VALUES ($1, $2), ($3, $4)", ["org", "Owner", "other", "Other"]);
+  await client.query("INSERT INTO project_app (id, organization_id, name, slug) VALUES ($1, $2, $3, $4)", ["group", "org", "Apps", "apps"]);
+  await client.query("INSERT INTO cloud_workspace (id, organization_id, name) VALUES ($1, $2, $3)", ["workspace", "org", "Managed"]);
   await client.query("INSERT INTO servers (id, organization_id, ssh_host) VALUES ($1, $2, $3)", ["ssh", "org", "203.0.113.1"]);
   await client.query("INSERT INTO servers (id, organization_id, workspace_id) VALUES ($1, $2, $3)", ["managed", "org", "workspace"]);
   for (const serverId of ["ssh", "managed"])
-    await db.insert(schema.project).values({ id: `project-${serverId}`, organizationId: "org", groupId: "group", name: serverId, slug: serverId, environmentSlug: serverId, serverId });
+    await client.query(
+      "INSERT INTO project (id, organization_id, app_id, name, slug, environment_slug, server_id) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+      [`project-${serverId}`, "org", "group", serverId, serverId, serverId, serverId],
+    );
   await client.query(
     "INSERT INTO docker_migration_run (id, organization_id, source_server_id, target_server_id, project_id, project_name, status, finished_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now())",
     ["historic-run", "org", "ssh", "managed", "project-managed", "Existing import", "succeeded"],
