@@ -2,71 +2,69 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { useState, useTransition } from "react";
+import Link from "next/link";
+import type { ServerDetail } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
-import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useBillingScope } from "./BillingWorkspaceContext";
 import { scopedBillingHref } from "@/lib/billing-links";
-import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { CustomSelect } from "@/components/ui/CustomSelect";
+import { ServerPicker } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
 
 /** Subscription ids stay inside billing; serverId identifies every deploy target. */
-export function ServerBillingPicker({ workspaceId }: { workspaceId?: string }) {
+export function ServerBillingPicker({ workspaceId, servers, loading, error, onRetry }: {
+  workspaceId?: string;
+  servers: ServerDetail[];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { organizationId } = useBillingScope();
   const [pending, startTransition] = useTransition();
   const [requestedName, setRequestedName] = useState("");
-  const { selfHosted } = usePlatform();
   const { t } = useI18n();
   const copy = t.billing.workspaces;
-  const { data, error, loading, refresh } = useServerDestinations(!selfHosted);
-  if (selfHosted || loading) return null;
+  if (loading) return null;
   if (error)
     return (
-      <Button variant="secondary" size="sm" onClick={refresh} title={error}>
+      <Button variant="secondary" size="sm" onClick={onRetry} title={error}>
         {t.billing.plansRoute.tryAgain}
       </Button>
     );
-  const options = data?.servers.flatMap(server => {
-    if (!server.managed) return [];
-    const resources = server.managed.resources;
-    return [{
-      value: server.managed.id,
-      label: server.name || copy.singular,
-      icon: <Icon name={pending && server.managed.id === workspaceId ? "spinner" : "cloud"} className={`size-4 text-muted-foreground ${pending && server.managed.id === workspaceId ? "animate-spin" : ""}`} />,
-      description: resources ? interpolate(copy.resourceSummary, {
-        cpu: String(resources.cpuCores),
-        memory: String(resources.memoryMb / 1024),
-        disk: String(resources.diskMb / 1024),
-      }) : undefined,
-    }];
-  }) ?? [];
-  if (options.length === 0) return null;
-  if (options.length === 1 && (!workspaceId || workspaceId === options[0]!.value)) {
+  if (servers.length === 0) return null;
+  if (servers.length === 1) {
+    const server = servers[0]!;
+    const label = <><Icon name="cloud" className="size-4 shrink-0 text-muted-foreground" /><span className="truncate">{server.name || copy.singular}</span></>;
+    const chipClass = "inline-flex min-w-0 items-center gap-2 rounded-lg bg-card px-3 py-2 text-sm text-foreground";
     return (
-      <div className="inline-flex max-w-full items-center gap-2 rounded-lg bg-card px-3 py-2 text-sm text-foreground">
-        <Icon name="cloud" className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate">{options[0]!.label}</span>
+      <div className="flex max-w-full items-center gap-2">
+        {workspaceId && workspaceId !== server.managed?.id ? (
+          <Link className={`${chipClass} hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring`}
+            href={scopedBillingHref(pathname, { workspaceId: server.managed?.id, organizationId })}>{label}</Link>
+        ) : <div className={chipClass}>{label}</div>}
+        <Button asChild variant="secondary" size="sm" className="shrink-0">
+          <Link href="/servers/new"><Icon name="plus" className="size-4" />{t.servers.setup.addServer}</Link>
+        </Button>
       </div>
     );
   }
   return (
-    <div className="max-w-full" aria-busy={pending}>
-      <CustomSelect
-        aria-label={copy.singular}
-        value={workspaceId ?? ""}
-        options={options}
-        placeholder={copy.choose}
-        variant="filled"
-        className="w-60 max-w-full"
-        triggerClassName="h-9 bg-card px-3 hover:bg-muted/60"
+    <div className="w-64 max-w-full" aria-busy={pending}>
+      <ServerPicker
+        servers={servers}
+        selectedId={servers.find(server => server.managed?.id === workspaceId)?.id}
+        label={copy.singular}
+        showLabel={false}
         disabled={pending}
-        onChange={id => {
-          if (id === workspaceId) return;
-          setRequestedName(options.find(option => option.value === id)?.label ?? copy.singular);
-          startTransition(() => router.push(scopedBillingHref(pathname || "/billing/overview", { workspaceId: id, organizationId })));
+        onAddServer={() => router.push("/servers/new")}
+        addServerLabel={t.servers.setup.addServer}
+        onSelect={server => {
+          const id = server.managed?.id;
+          if (!id || id === workspaceId) return;
+          setRequestedName(server.name || copy.singular);
+          startTransition(() => router.push(scopedBillingHref(pathname, { workspaceId: id, organizationId }), { scroll: false }));
         }}
       />
       <span role="status" className="sr-only">{pending ? interpolate(copy.switchingBilling, { name: requestedName }) : ""}</span>

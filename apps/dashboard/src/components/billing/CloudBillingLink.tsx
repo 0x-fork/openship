@@ -68,7 +68,7 @@ export function CloudBillingLink({
 
   return embedded ? content : (
     <PageContainer className="space-y-6">
-      <BillingHeader showServerPicker={false} />
+      <BillingHeader />
       {content}
     </PageContainer>
   );

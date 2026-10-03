@@ -6,15 +6,25 @@ import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContex
 import { useI18n } from "@/components/i18n-provider";
 import { BILLING_TABS, type BillingTab } from "./billing-tabs";
 
-export function BillingTabBar({ activeTab }: { activeTab: BillingTab }) {
+export function BillingTabBar({ activeTab, plansOnly = false, loading = false }: {
+  activeTab: BillingTab;
+  plansOnly?: boolean;
+  loading?: boolean;
+}) {
   const { t } = useI18n();
+
+  if (loading) return (
+    <div aria-hidden="true" className="flex h-12 items-center gap-4 border-b border-border/50 px-3 sm:px-4">
+      <span className="h-4 w-28 rounded-md bg-muted/60 motion-safe:animate-pulse" />
+    </div>
+  );
 
   return (
     <nav
       aria-label={t.billing.layout.title}
       className="flex items-center gap-1 overflow-x-auto border-b border-border/50"
     >
-      {BILLING_TABS.map((tab) => {
+      {BILLING_TABS.filter(tab => !plansOnly || tab.key === "plans").map((tab) => {
         const Icon = tab.icon;
         const active = activeTab === tab.key;
 

@@ -1,9 +1,8 @@
 "use client";
 
 import { useI18n } from "@/components/i18n-provider";
-import { ServerBillingPicker } from "@/components/billing/ServerBillingPicker";
 
-export function BillingHeader({ workspaceId, showServerPicker = true }: { workspaceId?: string; showServerPicker?: boolean }) {
+export function BillingHeader({ children }: { children?: React.ReactNode }) {
   const { t } = useI18n();
   return (
     <header className="flex flex-wrap items-center justify-between gap-4">
@@ -13,7 +12,7 @@ export function BillingHeader({ workspaceId, showServerPicker = true }: { worksp
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">{t.billing.layout.subtitle}</p>
       </div>
-      {showServerPicker && <ServerBillingPicker workspaceId={workspaceId} />}
+      {children}
     </header>
   );
 }

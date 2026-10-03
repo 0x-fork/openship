@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), getDeploymentInfo: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), getDeploymentInfo: vi.fn(), getSession: vi.fn() }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/server/session", () => ({ getDeploymentInfo: mocks.getDeploymentInfo }));
+vi.mock("@/lib/server/session", () => ({ getDeploymentInfo: mocks.getDeploymentInfo, getSession: mocks.getSession }));
 vi.mock("@/lib/server/api", () => ({
   serverApi: { get: mocks.get },
   ServerApiError: class extends Error {
@@ -24,6 +24,15 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { BillingOverview } from "@/components/billing/BillingOverview";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { BillingPlansRoute } from "../_components/BillingPlansRoute";
+import { BillingPageView, type BillingView } from "../_components/BillingViewContext";
+import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
+import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
+import BillingPage from "../page";
+
+const free = {
+  tier: "free", subscription: null, billing: { enabled: true },
+  balance: { total: 0, quotaLimit: 0, quotaUsed: 0, quotaRemaining: 0 },
+};
 
 function loadPage() {
   return BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve({}) });
@@ -31,8 +40,9 @@ function loadPage() {
 
 async function unavailablePage() {
   const page = await loadPage();
-  expect(page.type).toBe(BillingUnavailable);
-  return page as ReactElement<{ reason: string }>;
+  const unavailable = findElement<{ reason: string }>(page, BillingUnavailable)!;
+  expect(unavailable).toBeDefined();
+  return unavailable;
 }
 
 function findElement<P>(node: ReactNode, type: unknown): ReactElement<P> | undefined {
@@ -48,6 +58,7 @@ describe("billing page failure recovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getDeploymentInfo.mockResolvedValue({ selfHosted: false });
+    mocks.getSession.mockResolvedValue({ user: { id: "user-a" }, session: { activeOrganizationId: "org-a" } });
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
@@ -75,7 +86,7 @@ describe("billing page failure recovery", () => {
 
     expect(page.type).toBe(BillingUnavailable);
     expect(page.props.reason).toBe(reason);
-    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.get).toHaveBeenCalledTimes(code === "CLOUD_WORKSPACE_REQUIRED" ? 2 : 1);
   });
 
   it("does not call an empty response or transport failure disabled billing", async () => {
@@ -87,7 +98,7 @@ describe("billing page failure recovery", () => {
   });
 
   it("renders billing state when purchases are disabled", async () => {
-    const state = { tier: "free", billing: { enabled: false, status: "coming_soon" } };
+    const state = { ...free, tier: "starter", billing: { enabled: false, status: "coming_soon" } };
     mocks.get.mockResolvedValue({ data: state });
 
     const page = await loadPage();
@@ -141,9 +152,105 @@ describe("billing page failure recovery", () => {
   it("keeps the selected workspace available during billing recovery", async () => {
     mocks.get.mockRejectedValue(new ServerApiError(503, "Unavailable", {}));
     const page = await BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve({ workspaceId: "cws_production" }) });
-    expect(page.type).toBe(BillingUnavailable);
-    expect(page.props.reason).toBe("billing-unreachable");
+    expect(findElement<{ reason: string }>(page, BillingUnavailable)?.props.reason).toBe("billing-unreachable");
     expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/state?workspaceId=cws_production", { cache: "no-store", timeout: 45_000 });
+  });
+
+  it.each(["overview", "usage", "topups", "payment", "invoices"])("takes new customers from %s directly to plans", async tab => {
+    mocks.get.mockResolvedValue({ data: free });
+    await expect(BillingTabPage({ params: Promise.resolve({ tab }), searchParams: Promise.resolve({}) }))
+      .rejects.toMatchObject({ digest: "NEXT_REDIRECT;replace;/billing/plans;307;" });
+  });
+
+  it("shows only the plan comparison before the first subscription", async () => {
+    mocks.get.mockResolvedValue({ data: free });
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({}) });
+    expect(findElement(page, BillingPlansRoute)).toBeDefined();
+    expect(findElement(page, BillingOverview)).toBeUndefined();
+    expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view).toMatchObject({
+      contextKey: "user-a:org-a", plansOnly: true,
+    });
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/state", { cache: "no-store", timeout: 45_000 });
+  });
+
+  it.each([
+    { subscription: { status: "canceled" } },
+    { tier: "team", subscription: null, complimentary: { id: "grant", expiresAt: null } },
+    { balance: { ...free.balance, quotaUsed: 10 } },
+    { balance: { ...free.balance, quotaLimit: 20, quotaRemaining: 20 } },
+  ])("keeps billing history accessible for earlier customers: %j", async history => {
+    mocks.get.mockResolvedValue({ data: { ...free, ...history } });
+    const page = await loadPage();
+    expect(findElement(page, BillingOverview)).toBeDefined();
+    expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view.plansOnly).toBe(false);
+  });
+
+  it("preserves checkout and organization parameters when redirecting a new customer", async () => {
+    const query = { organizationId: "org-a", workspaceId: "cws-a", checkout: "success", session_id: "checkout-a", tier: "starter", offer: "offer-a", interval: "monthly" };
+    mocks.get.mockResolvedValue({ data: { ...free, workspace: { id: "cws-a" } } });
+    const href = `/billing/plans?${new URLSearchParams(query)}`;
+    await expect(BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve(query) }))
+      .rejects.toMatchObject({ digest: `NEXT_REDIRECT;replace;${href};307;` });
+
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve(query) });
+    expect(findElement<Record<string, unknown>>(page, BillingCheckoutStatus)?.props).toMatchObject({
+      kind: "subscription", checkoutId: "checkout-a", expectedTier: "starter", expectedOffer: "offer-a", expectedInterval: "monthly",
+    });
+  });
+
+  it("preserves scope and checkout details at the billing entry point", async () => {
+    const query = { organizationId: "org-a", workspaceId: "cws-a", topup: "success", session_id: "checkout-a" };
+    await expect(BillingPage({ searchParams: Promise.resolve(query) }))
+      .rejects.toMatchObject({ digest: `NEXT_REDIRECT;replace;/billing/overview?${new URLSearchParams(query)};307;` });
+  });
+
+  it("waits for the requested organization instead of reading another organization's billing", async () => {
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "usage" }), searchParams: Promise.resolve({ organizationId: "org-b" }) });
+    expect(findElement<Record<string, unknown>>(page, CloudBillingLink)?.props.organizationId).toBe("org-b");
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it.each(["starter", "free"])("opens an allocated server before a draft when multiple subscriptions need selection (saved tier=%s)", async planTierId => {
+    const state = { ...free, tier: "starter", workspace: { id: "cws-production" } };
+    mocks.get.mockRejectedValueOnce(new ServerApiError(400, "Choose server", { code: "CLOUD_WORKSPACE_REQUIRED" }))
+      .mockResolvedValueOnce({ servers: [
+        { id: "migration-source", managed: null },
+        { id: "draft", managed: { id: "cws-draft", planTierId: "free", resources: null } },
+        { id: "production", managed: { id: "cws-production", planTierId, resources: { cpuCores: 2, memoryMb: 8192, diskMb: 25600 } } },
+      ] }).mockResolvedValueOnce({ data: state });
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve({ organizationId: "org-a" }) });
+    expect(findElement<{ state: unknown }>(page, BillingOverview)?.props.state).toBe(state);
+    expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view).toMatchObject({ workspaceId: "cws-production", organizationId: "org-a" });
+    expect(mocks.get).toHaveBeenNthCalledWith(2, "system/servers/destinations", { cache: "no-store" });
+    expect(mocks.get).toHaveBeenLastCalledWith("billing/state?workspaceId=cws-production", { cache: "no-store", timeout: 45_000 });
+    expect(mocks.get).toHaveBeenCalledTimes(3);
+  });
+
+  it("opens the first draft for plan selection if no server has been purchased", async () => {
+    mocks.get.mockRejectedValueOnce(new ServerApiError(400, "Choose server", { code: "CLOUD_WORKSPACE_REQUIRED" }))
+      .mockResolvedValueOnce({ servers: [
+        { managed: { id: "cws-draft", planTierId: "free", resources: null } },
+        { managed: { id: "cws-second", planTierId: "free", resources: null } },
+      ] }).mockResolvedValueOnce({ data: { ...free, workspace: { id: "cws-draft" } } });
+    await expect(loadPage()).rejects.toMatchObject({ digest: "NEXT_REDIRECT;replace;/billing/plans?workspaceId=cws-draft;307;" });
+  });
+
+  it.each([
+    { workspaceId: "cws-missing" },
+    { checkout: "success", session_id: "checkout-a" },
+    { topup: "success" },
+  ])("never guesses another scope for explicit selections or checkout reconciliation: %j", async query => {
+    mocks.get.mockRejectedValueOnce(new ServerApiError(400, "Choose server", { code: "CLOUD_WORKSPACE_REQUIRED" }));
+    const page = await BillingTabPage({ params: Promise.resolve({ tab: "overview" }), searchParams: Promise.resolve(query) });
+    expect(findElement<{ reason: string }>(page, BillingUnavailable)?.props.reason).toBe("workspace-required");
+    expect(mocks.get).toHaveBeenCalledOnce();
+  });
+
+  it("leaves self-hosted Cloud scope resolution with its connected account", async () => {
+    mocks.getDeploymentInfo.mockResolvedValue({ selfHosted: true });
+    mocks.get.mockRejectedValueOnce(new ServerApiError(400, "Choose server", { code: "CLOUD_WORKSPACE_REQUIRED" }));
+    expect((await unavailablePage()).props.reason).toBe("workspace-required");
+    expect(mocks.get).toHaveBeenCalledOnce();
   });
 
   it("does not copy malformed error codes into logs", async () => {

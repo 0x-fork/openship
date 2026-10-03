@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
+import { billingTabHref } from "@/lib/billing-links";
 
-export default async function BillingPage({ searchParams }: { searchParams: Promise<{ workspaceId?: string }> }) {
-  const { workspaceId } = await searchParams;
-  redirect(workspaceId ? `/billing/overview?workspaceId=${encodeURIComponent(workspaceId)}` : "/billing/overview");
+export default async function BillingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  redirect(billingTabHref("overview", await searchParams));
 }

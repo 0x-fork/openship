@@ -97,7 +97,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   allowance. Put metering and shared-capacity explanations once below the plans. Keep
   benefits visible, and use catalog feature keys to avoid repeating resource facts.
 - Cloud billing keeps its header and tabs mounted when switching servers. Use a compact
-  context chip for one server and the shared picker for several. In-app credit alerts
+  context chip with Add server for one server and the shared picker with its Add server
+  action for several. Unscoped billing opens an existing subscription directly; never
+  auto-switch a checkout return or an explicitly selected server. New customers see only
+  Plans and pricing, without empty usage, payment or invoice tabs. Keep the full navigation
+  for existing subscriptions and credit history, including stopped or canceled servers.
+  In-app credit alerts
   link directly to the scoped billing tab; only a genuine organization change needs
   authorization and a context reload.
 - Custom resources sit beside the preset plan choice. Keep CPU, RAM and disk controls

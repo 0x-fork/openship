@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { PlanTierId } from "@repo/core";
 import { BillingOverview } from "@/components/billing/BillingOverview";
 import { BillingUsage } from "@/components/billing/BillingUsage";
@@ -8,12 +8,14 @@ import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
 import { BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "../_components/billing-shared";
 import { BILLING_TABS } from "../_components/billing-tabs";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
-import { getBillingPageState } from "../_components/billing-state";
+import { getBillingPageState, getDefaultBillingWorkspace } from "../_components/billing-state";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingContent } from "../_components/BillingContent";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import { getSession } from "@/lib/server/session";
+import { billingTabHref } from "@/lib/billing-links";
+import { BillingPageView, type BillingView } from "../_components/BillingViewContext";
 
 export default async function BillingTabPage({
   params,
@@ -30,18 +32,37 @@ export default async function BillingTabPage({
     notFound();
   }
 
-  const workspaceId = typeof query.workspaceId === "string" ? query.workspaceId : undefined;
-  const organizationId = typeof query.organizationId === "string" ? query.organizationId : undefined;
-  if (organizationId && (await getSession())?.session.activeOrganizationId !== organizationId) {
-    return <CloudBillingLink organizationId={organizationId} tab={activeTab === "topups" ? "topups" : "overview"} workspaceId={workspaceId} embedded />;
+  const workspaceId = (Array.isArray(query.workspaceId) ? query.workspaceId[0] : query.workspaceId) || undefined;
+  const organizationId = (Array.isArray(query.organizationId) ? query.organizationId[0] : query.organizationId) || undefined;
+  const session = await getSession();
+  const view: BillingView = {
+    contextKey: `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`,
+    requestedWorkspaceId: workspaceId,
+    organizationId,
+    plansOnly: false,
+  };
+  if (organizationId && session?.session.activeOrganizationId !== organizationId) {
+    return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab === "topups" ? "topups" : "overview"} workspaceId={workspaceId} embedded /></BillingPageView>;
   }
-  const result = await getBillingPageState(workspaceId);
+  let result = await getBillingPageState(workspaceId);
+  const checkoutReturn = ["checkout", "topup", "session_id"].some(key => query[key] !== undefined);
+  if (result.kind === "unavailable" && result.reason === "workspace-required" && !workspaceId && !checkoutReturn) {
+    const defaultWorkspaceId = await getDefaultBillingWorkspace();
+    if (defaultWorkspaceId) {
+      view.workspaceId = defaultWorkspaceId;
+      result = await getBillingPageState(defaultWorkspaceId);
+    }
+  }
 
   if (result.kind === "unavailable") {
-    return <BillingUnavailable reason={result.reason} />;
+    return <BillingPageView view={view}><BillingUnavailable reason={result.reason} /></BillingPageView>;
   }
 
   const state = result.state;
+  const plansOnly = isNewCloudCustomer(state);
+  if (plansOnly && activeTab !== "plans") {
+    redirect(billingTabHref("plans", { ...query, workspaceId: state.workspace?.id ?? workspaceId }));
+  }
 
   function renderTab() {
     switch (tab) {
@@ -83,30 +104,32 @@ export default async function BillingTabPage({
   }
 
   return (
-    <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
-      <BillingContent
-        key={state.workspace?.id ?? "unsubscribed"}
-        sidebar={
-          activeTab === "plans" ? null : (
-            <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} />
-          )
-        }
-      >
-        {(query.checkout === "success" || query.topup === "success") && (
-          <BillingCheckoutStatus
-            kind={query.topup === "success" ? "topup" : "subscription"}
-            checkoutId={typeof query.session_id === "string" ? query.session_id : undefined}
-            expectedTier={typeof query.tier === "string" ? query.tier : undefined}
-            expectedOffer={typeof query.offer === "string" ? query.offer : undefined}
-            expectedInterval={
-              query.interval === "monthly" || query.interval === "annual"
-                ? query.interval
-                : undefined
-            }
-          />
-        )}
-        {renderTab()}
-      </BillingContent>
-    </BillingWorkspaceProvider>
+    <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly }}>
+      <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
+        <BillingContent
+          key={state.workspace?.id ?? "unsubscribed"}
+          sidebar={
+            activeTab === "plans" ? null : (
+              <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} />
+            )
+          }
+        >
+          {(query.checkout === "success" || query.topup === "success") && (
+            <BillingCheckoutStatus
+              kind={query.topup === "success" ? "topup" : "subscription"}
+              checkoutId={typeof query.session_id === "string" ? query.session_id : undefined}
+              expectedTier={typeof query.tier === "string" ? query.tier : undefined}
+              expectedOffer={typeof query.offer === "string" ? query.offer : undefined}
+              expectedInterval={
+                query.interval === "monthly" || query.interval === "annual"
+                  ? query.interval
+                  : undefined
+              }
+            />
+          )}
+          {renderTab()}
+        </BillingContent>
+      </BillingWorkspaceProvider>
+    </BillingPageView>
   );
 }
