@@ -46,6 +46,16 @@
   box-shadow: none;
   transition: background-color 160ms ease-out;
 }
+.topology-group {
+  background: color-mix(in oklab, var(--foreground) 4%, var(--th-card-on-page));
+  box-shadow: none;
+}
+.topology-group[data-picked="true"] {
+  background: color-mix(in oklab, var(--primary) 7%, var(--th-card-on-page));
+}
+.topology-group .topology-group-drag {
+  border-bottom: 1px solid var(--border);
+}
 .topology-node:hover {
   background: color-mix(in oklab, var(--scale-node-color) 18%, var(--th-card-on-page));
 }

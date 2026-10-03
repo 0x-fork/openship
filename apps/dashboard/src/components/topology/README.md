@@ -32,7 +32,11 @@ Import discovery also uses `TopologyCanvas`, projected from the scan by
 container identity. Connections show only detected startup dependencies, and
 the canvas actions select services without connecting handles or calling project
 configuration APIs. Discovery passes a null layout key so nothing is persisted.
-The Cards view edits the same selection.
+The Cards view edits the same selection. Compose and recovered Openship projects
+share this selector. Each expanded project has a presentation-only parent node
+containing its services; `group-layout.ts` lays out those children without adding
+infrastructure resources or inferred connections. Recovered services are read-only
+and the parent opens recovery in the sidebar through the existing re-import API.
 
 ## Scope and truthfulness
 

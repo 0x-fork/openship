@@ -26,7 +26,6 @@ import {
   type DiscoveredGroup,
   type DiscoveredService,
   type ComposeRepoService,
-  type OpenshipProjectGroup,
   type MigrationRun,
   type MigrationStatus,
   type TransferProgress,
@@ -61,11 +60,12 @@ import {
 } from "./discovery-model";
 import { MigrationPrompt } from "./MigrationPrompt";
 import { MigrationProxyReview } from "./MigrationProxyReview";
+import { RecoveredProjectReview, type RecoveryResult } from "./RecoveredProjectReview";
 import { useGitHub } from "@/context/GitHubContext";
 import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryList";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
-import { Switch } from "@/components/ui/Switch";
+import DropdownMenu from "@/components/ui/DropdownMenu";
 import { type PublicEndpoint } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { randomUUID } from "@/lib/random-uuid";
@@ -82,6 +82,7 @@ import { MigrationIllustration } from "@/components/migration/MigrationIllustrat
  *  simpleicons mark (blurry favicon sources dropped); the Openship circle is
  *  appended as the destination. */
 const MIGRATE_SOURCES = ["coolify", "caprover", "docker"] as const;
+const EMPTY_SELECTION = { id: "", name: "", services: new Set<string>() };
 
 /** Synthesize a DiscoveredService-shaped card model from a repo compose service
  *  that has NO running container (e.g. `redis`, or a `build:` app that isn't
@@ -302,11 +303,11 @@ export function ServerMigrationWizard({
   const router = useRouter();
   const github = useGitHub();
 
-  // Wizard step for the adopt/migrate flow: select services → link source →
-  // domains/routes → migrate. Only gates the `adoptable && stack` screen; the
-  // re-import, flat-docker, and progress branches are step-agnostic.
+  // All imports review their destination after configuring services.
   const [step, setStep] = useState<"select" | "source" | "domains" | "plan">("select");
   const [discoveryView, setDiscoveryView] = useState<DiscoveryView>("topology");
+  const [recoveryId, setRecoveryId] = useState<string | null>(null);
+  const [recoveryResults, setRecoveryResults] = useState<Record<string, RecoveryResult>>({});
 
   // Each step's content is a very different height; without resetting scroll a
   // step change (esp. Next from a scrolled-down list) leaves the viewport parked
@@ -407,6 +408,8 @@ export function ServerMigrationWizard({
   const reset = () => {
     setStep("select");
     setDiscoveryView("topology");
+    setRecoveryId(null);
+    setRecoveryResults({});
     setStack(null);
     setError(null);
     setProjects([]);
@@ -588,6 +591,8 @@ export function ServerMigrationWizard({
     setStack(null);
     setProjects([]);
     setStep("select");
+    setRecoveryId(null);
+    setRecoveryResults({});
     try {
       // Stream the inspect (SSE): step progress + no total-duration bound, so a slow
       // SSH + docker inspect doesn't get aborted (the old plain POST hit the 15s
@@ -613,7 +618,7 @@ export function ServerMigrationWizard({
         });
       if (stale()) return;
       setStack(scanned);
-      if (!scanned.adoptable) {
+      if (!scanned.adoptable && !scanned.openshipProjects?.some((project) => !project.knownHere)) {
         setError(m.discover.nothing);
         return;
       }
@@ -790,6 +795,7 @@ export function ServerMigrationWizard({
    *  project name from the first group picked. */
   const toggleService = (svc: DiscoveredService, key: string) => {
     if (!active || isExcluded(svc)) return;
+    setRecoveryId(null);
     const uid = svcUid(svc);
     const owner = claimedBy.get(uid);
     if (owner && owner !== active.id) return; // claimed by another project
@@ -815,6 +821,7 @@ export function ServerMigrationWizard({
 
   const toggleGroup = (group: DiscoveredGroup) => {
     if (!active) return;
+    setRecoveryId(null);
     const key = groupKey(group);
     const uids = selectableServices(group, active.id, claimedBy).map(svcUid);
     if (uids.length === 0) return;
@@ -849,10 +856,8 @@ export function ServerMigrationWizard({
     [stack],
   );
   const hasReimport = orphanedOpenship.length > 0;
+  const recoveredProject = orphanedOpenship.find((project) => project.projectId === recoveryId);
   const sameServer = selectedId === targetId;
-  useEffect(() => {
-    if (sameServer && step === "plan") setStep("domains");
-  }, [sameServer, step]);
   // Cross-server now MOVES locally-built images as data (docker save|load) — no
   // registry, no rebuild. Surface an info note up front (the image stream can be
   // large/slow) when a built service exists and a different target is picked.
@@ -907,20 +912,24 @@ export function ServerMigrationWizard({
     !starting &&
     !queue;
 
-  const discoveredProjects =
-    stack && active ? (
-      <DiscoveredProjects
-        key={`${ownerKey}:${selectedId}:${scanGen.current}`}
-        groups={stack.groups}
-        activeProject={active}
-        projects={projects}
-        claimedBy={claimedBy}
-        view={discoveryView}
-        onViewChange={setDiscoveryView}
-        onToggle={(service, group) => toggleService(service, groupKey(group))}
-        onToggleGroup={toggleGroup}
-      />
-    ) : null;
+  const discoveredProjects = stack ? (
+    <DiscoveredProjects
+      key={`${ownerKey}:${selectedId}:${scanGen.current}`}
+      groups={stack.groups.filter((group) =>
+        group.services.some((service) => !isExcluded(service)),
+      )}
+      recovered={orphanedOpenship}
+      recoveryId={recoveryId}
+      onSelectRecovery={setRecoveryId}
+      activeProject={active ?? EMPTY_SELECTION}
+      projects={projects}
+      claimedBy={claimedBy}
+      view={discoveryView}
+      onViewChange={setDiscoveryView}
+      onToggle={(service, group) => toggleService(service, groupKey(group))}
+      onToggleGroup={toggleGroup}
+    />
+  ) : null;
   const projectNameField = active ? (
     <div className="space-y-2">
       <label htmlFor={`import-name-${active.id}`} className="text-sm font-medium text-foreground">
@@ -942,33 +951,35 @@ export function ServerMigrationWizard({
   ) : null;
   const serviceReviews =
     stack && active ? (
-      <div className="space-y-3">
+      <div className="@container/review space-y-4">
         <div className="mb-4">
           <h3 className="text-base font-semibold text-foreground">{m.review.title}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{m.review.hint}</p>
         </div>
-        {buildPlanCards(active, stack.services).map(({ uid, service, isNew, action }) => (
-          <MigrationServiceReview
-            key={`${active.id}:${uid}`}
-            service={service}
-            sourceServerId={selectedId}
-            isNew={isNew}
-            deployAction={action}
-            routes={active.serviceRoutes[uid]}
-            envOverride={active.serviceEnvs[uid]}
-            sameServer={sameServer}
-            volumeStrategy={volumeStrategy[uid]}
-            routeMode={
-              active.serviceRouteMode[uid] ?? (hasKeepableRoute(service) ? "keep" : "none")
-            }
-            onSetRoutes={(routes) => setServiceRoutes(active.id, uid, routes)}
-            onSetEnv={(env) => setServiceEnv(active.id, uid, env)}
-            onSetStrategy={(strategy) =>
-              setVolumeStrategy((previous) => ({ ...previous, [uid]: strategy }))
-            }
-            onSetRouteMode={(mode) => setServiceRouteMode(active.id, uid, mode)}
-          />
-        ))}
+        <div className="grid grid-cols-1 gap-4 @[640px]/review:grid-cols-2">
+          {buildPlanCards(active, stack.services).map(({ uid, service, isNew, action }) => (
+            <MigrationServiceReview
+              key={`${active.id}:${uid}`}
+              service={service}
+              sourceServerId={selectedId}
+              isNew={isNew}
+              deployAction={action}
+              routes={active.serviceRoutes[uid]}
+              envOverride={active.serviceEnvs[uid]}
+              sameServer={sameServer}
+              volumeStrategy={volumeStrategy[uid]}
+              routeMode={
+                active.serviceRouteMode[uid] ?? (hasKeepableRoute(service) ? "keep" : "none")
+              }
+              onSetRoutes={(routes) => setServiceRoutes(active.id, uid, routes)}
+              onSetEnv={(env) => setServiceEnv(active.id, uid, env)}
+              onSetStrategy={(strategy) =>
+                setVolumeStrategy((previous) => ({ ...previous, [uid]: strategy }))
+              }
+              onSetRouteMode={(mode) => setServiceRouteMode(active.id, uid, mode)}
+            />
+          ))}
+        </div>
         {unfinishedRoutes.length > 0 && (
           <p role="status" className="rounded-xl bg-warning-bg p-3 text-sm text-warning">
             {m.review.finishRouteHint}{" "}
@@ -977,16 +988,11 @@ export function ServerMigrationWizard({
         )}
       </div>
     ) : null;
-  const steps: (typeof step)[] = [
-    "select",
-    "source",
-    "domains",
-    ...(!sameServer ? ["plan" as const] : []),
-  ];
+  const steps: (typeof step)[] = ["select", "source", "domains", "plan"];
   const stepIndex = steps.indexOf(step);
   const stepNavigation = (
-    <nav aria-label={m.review.progress}>
-      <ol className="flex flex-wrap items-center gap-x-5 gap-y-2">
+    <nav aria-label={m.review.progress} className="rounded-xl bg-card p-1.5">
+      <ol className="flex items-center justify-between gap-1">
         {steps.map((value, index) => (
           <li key={value}>
             <button
@@ -994,17 +1000,18 @@ export function ServerMigrationWizard({
               disabled={index > stepIndex}
               aria-current={value === step ? "step" : undefined}
               onClick={() => setStep(value)}
-              aria-label={value === "plan" ? m.wizard.plan.title : m.wizard.steps[value]}
-              className={`inline-flex items-center gap-2 rounded-lg py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring ${value === step ? "font-medium text-foreground" : "text-muted-foreground"}`}
+              aria-label={value === "plan" ? m.review.destination : m.wizard.steps[value]}
+              title={value === "plan" ? m.review.destination : m.wizard.steps[value]}
+              className={`inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring ${value === step ? "bg-background font-medium text-foreground" : "text-muted-foreground"}`}
             >
               <span
                 className={`flex size-6 items-center justify-center rounded-full text-xs ${value === step ? "bg-foreground text-background" : "bg-muted/60"}`}
               >
                 {index < stepIndex ? <UiIcon name="check" className="size-3.5" /> : index + 1}
               </span>
-              <span className={value === step ? "" : "hidden @[560px]/migration:inline"}>
-                {value === "plan" ? m.wizard.plan.title : m.wizard.steps[value]}
-              </span>
+              {value === step && (
+                <span>{value === "plan" ? m.review.destination : m.wizard.steps[value]}</span>
+              )}
             </button>
           </li>
         ))}
@@ -1041,6 +1048,51 @@ export function ServerMigrationWizard({
         <span className="block text-xs text-muted-foreground">{m.wizard.crossServerBuiltInfo}</span>
       )}
     </div>
+  );
+  const reviewCards = active && stack ? buildPlanCards(active, stack.services) : [];
+  const publicServices = reviewCards.filter(
+    ({ uid, service }) =>
+      (active!.serviceRouteMode[uid] ?? (hasKeepableRoute(service) ? "keep" : "none")) !== "none",
+  ).length;
+  const reviewSummary = (
+    <section className="space-y-4 rounded-2xl bg-card p-5" aria-label={m.review.summary}>
+      <div>
+        <h3 className="text-base font-semibold text-foreground">{m.review.summary}</h3>
+        <p className="mt-1 truncate text-sm text-muted-foreground" title={active?.name}>
+          {active?.name}
+        </p>
+      </div>
+      <dl className="space-y-3 text-sm">
+        {[
+          [m.discover.servicesTitle, reviewCards.length],
+          [m.review.publicServices, publicServices],
+          [m.review.internalServices, reviewCards.length - publicServices],
+          [
+            m.review.dataMounts,
+            reviewCards.reduce((count, { service }) => count + service.volumes.length, 0),
+          ],
+        ].map(([label, count]) => (
+          <div key={label} className="flex items-center justify-between gap-3">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="tabular-nums text-foreground">{count}</dd>
+          </div>
+        ))}
+      </dl>
+      {active?.repo && (
+        <div className="min-w-0 border-t border-border/50 pt-3">
+          <p className="text-xs text-muted-foreground">{m.wizard.steps.source}</p>
+          <p
+            className="mt-1 truncate text-sm text-foreground"
+            title={`${active.repo.owner}/${active.repo.repo}`}
+          >
+            {active.repo.owner}/{active.repo.repo}
+          </p>
+        </div>
+      )}
+      {step === "domains" && (
+        <p className="text-xs text-muted-foreground">{m.review.destinationNext}</p>
+      )}
+    </section>
   );
 
   // ── Migrate (sequential, one project at a time) ────────────────────────────
@@ -1463,7 +1515,7 @@ export function ServerMigrationWizard({
   // Only go near-full-screen once there are RESULTS to show (an adoptable stack
   // or an in-flight migration). The empty prompt, the loading state, and a
   // "nothing found" result all stay a compact, content-sized dialog.
-  const expanded = adoptable || inProgress;
+  const expanded = adoptable || hasReimport || inProgress;
 
   // Wide layout for the scan/select table AND for the deploy phase — once a
   // target deployment exists (deploying/verifying/failed) we mount the native
@@ -1471,53 +1523,33 @@ export function ServerMigrationWizard({
   // (adopting/moving_data) have only a short step list → stay compact.
   const wide = expanded && (!inProgress || Boolean(run?.deploymentId));
 
-  // "Flat Docker" scan mode. One handler, two shells: an option row inside the
-  // scan / Select card (tab variant — it belongs with the scan controls, not in
-  // the header), and an inline switch beside the modal's scan button. Flipping it
-  // re-scans when results are already shown.
+  // Page and modal share scan options beside their scan controls. Changing
+  // coverage re-scans the selected server when results are already shown.
   const setFlat = (next: boolean) => {
     setFlatDocker(next);
     if (selectedId && stack) void handleScan(next);
   };
 
-  /** Bordered option row: label (+ one-line hint) with the shared Switch. The
-   *  hint is `truncate`d so no locale can grow the card past two lines — the
-   *  full explanation stays on the row's tooltip. */
-  const flatOption = (withHint: boolean) => (
-    <div
-      className="flex items-center justify-between gap-3 rounded-xl bg-background px-3.5 py-2.5"
-      title={m.wizard.flatDockerHint}
-    >
-      <div className="min-w-0">
-        <p className="text-[13px] font-medium text-foreground">{m.wizard.flatDocker}</p>
-        {withHint && (
-          <p className="truncate text-xs text-muted-foreground">{m.wizard.flatDockerShort}</p>
-        )}
-      </div>
-      <Switch
-        size="sm"
-        checked={flatDocker}
-        disabled={scanning}
-        onChange={setFlat}
-        ariaLabel={m.wizard.flatDocker}
-      />
-    </div>
-  );
-
-  const flatInline = selfHosted ? (
-    <div
-      className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
-      title={m.wizard.flatDockerHint}
-    >
-      <Switch
-        size="sm"
-        checked={flatDocker}
-        disabled={scanning}
-        onChange={setFlat}
-        ariaLabel={m.wizard.flatDocker}
-      />
-      {m.wizard.flatDocker}
-    </div>
+  const scanOptions = selfHosted ? (
+    <DropdownMenu
+      trigger={<UiIcon name="settings" className="size-4 text-muted-foreground" />}
+      triggerLabel={m.review.scanOptions}
+      disabled={scanning}
+      actions={[
+        {
+          id: "projects",
+          label: m.review.detectProjects,
+          icon: <UiIcon name={flatDocker ? "project" : "check"} className="size-4" />,
+          onClick: () => setFlat(false),
+        },
+        {
+          id: "all",
+          label: m.review.includeManaged,
+          icon: <UiIcon name={flatDocker ? "check" : "server"} className="size-4" />,
+          onClick: () => setFlat(true),
+        },
+      ]}
+    />
   ) : null;
 
   // "← Back to migrations" (tab variant only) — rendered on its own line above
@@ -1577,13 +1609,15 @@ export function ServerMigrationWizard({
     </button>
   );
 
-  const finalStep = step === "plan" || (step === "domains" && sameServer);
+  const finalStep = step === "plan";
   const canContinue =
     step === "select"
       ? migratable.length > 0
       : step === "source"
         ? !parsingRepo
-        : canMigrate && (step !== "plan" || planReady);
+        : step === "domains"
+          ? migratable.length > 0 && unfinishedRoutes.length === 0
+          : canMigrate && (sameServer || planReady);
   const stepActions = (
     <div className="flex shrink-0 items-center justify-between gap-2">
       <Button
@@ -1593,7 +1627,12 @@ export function ServerMigrationWizard({
         {step !== "select" && <UiIcon name="arrow-left" className="rtl:rotate-180" />}
         {step === "select" ? m.wizard.cancel : m.wizard.steps.back}
       </Button>
-      {step === "select" && rescanBtn}
+      {step === "select" && (
+        <div className="flex items-center gap-1">
+          {rescanBtn}
+          {scanOptions}
+        </div>
+      )}
       <Button
         onClick={() => (finalStep ? handleMigrate() : setStep(steps[stepIndex + 1] ?? "domains"))}
         disabled={!canContinue}
@@ -1606,6 +1645,208 @@ export function ServerMigrationWizard({
           : m.wizard.steps.next}
         {!starting && <UiIcon name="arrow-right" className="rtl:rotate-180" />}
       </Button>
+    </div>
+  );
+
+  const projectPicker =
+    projects.length > 1 && active ? (
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <CustomSelect
+            value={active.id}
+            onChange={setActiveId}
+            variant="filled"
+            triggerClassName="bg-muted/60 hover:bg-muted"
+            options={projects.map((project) => ({
+              value: project.id,
+              label: project.name || m.wizard.projectName,
+            }))}
+          />
+        </div>
+        {step === "select" && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={m.wizard.removeProject}
+            onClick={() => removeProject(active.id)}
+          >
+            <UiIcon name="close" />
+          </Button>
+        )}
+      </div>
+    ) : null;
+
+  // Page and modal differ only in their outer shell. Preparation has one layout.
+  const preparation = (
+    <div className="@container/migration space-y-4">
+      {backBtn}
+      <div className="grid grid-cols-1 items-start gap-6 @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-4">
+          {step === "select" && (
+            <>
+              {!stack && !error && <EmptyHint scanning={scanning} status={scanStatus} />}
+              {stack && !adoptable && !hasReimport && <NoResults message={m.discover.nothing} />}
+              {stack && (adoptable || hasReimport) && discoveredProjects}
+              {error && !stack && <NoResults message={error} isError />}
+            </>
+          )}
+          {step === "source" &&
+            active &&
+            stack &&
+            (active.repo ? (
+              <ServiceMapPanel
+                project={active}
+                stack={stack}
+                parsing={parsingRepo === active.id}
+                onSetMap={(uid, name) => setServiceMap(active.id, uid, name)}
+              />
+            ) : github.connected ? (
+              <div className="rounded-2xl bg-card p-4">
+                <RepositoryList
+                  repos={github.repos}
+                  accounts={github.accounts}
+                  selectedOwner={github.selectedOwner}
+                  setSelectedOwner={github.setSelectedOwner}
+                  loading={github.loading}
+                  loadingRepos={github.loadingRepos}
+                  onSelect={(owner, repo) =>
+                    void onRepoChange(active.id, {
+                      provider: "github",
+                      owner,
+                      repo: repo.name,
+                      branch: repo.default_branch || "main",
+                    })
+                  }
+                  installUrl={github.installUrl}
+                  onInstall={() => void github.connect("oauth")}
+                  installing={github.connecting}
+                />
+              </div>
+            ) : (
+              <div className="flex min-h-[240px] items-center justify-center rounded-2xl bg-card p-8 text-center">
+                <p className="max-w-xs text-sm text-muted-foreground">
+                  {m.wizard.steps.repoConnectHint}
+                </p>
+              </div>
+            ))}
+          {step === "domains" && serviceReviews}
+          {step === "plan" && (
+            <>
+              {targetCard}
+              {!sameServer && selectedId && targetId && (
+                <TransferPlanSummary
+                  sourceId={selectedId}
+                  targetId={targetId}
+                  serviceNames={planServiceNames}
+                  serviceContainerIds={planServiceContainerIds}
+                  flatDocker={flatDocker}
+                  transferMode={transferMode}
+                  setTransferMode={setTransferMode}
+                  compress={compress}
+                  setCompress={setCompress}
+                  customPaths={customPaths}
+                  setCustomPaths={setCustomPaths}
+                  conflictResolution={conflictResolution}
+                  setConflictResolution={setConflictResolution}
+                  cache={planCacheRef}
+                  onReady={setPlanReady}
+                />
+              )}
+            </>
+          )}
+        </div>
+        <aside
+          className="min-w-0 space-y-4 @[980px]/migration:sticky @[980px]/migration:top-6"
+          aria-label={m.review.importDetails}
+        >
+          {step === "select" && recoveredProject ? (
+            <RecoveredProjectReview
+              key={`${ownerKey}:${selectedId}:${recoveredProject.projectId}`}
+              serverId={selectedId ?? ""}
+              project={recoveredProject}
+              result={recoveryResults[recoveredProject.projectId]}
+              isCurrent={claimOperation()}
+              onRecovered={(result) =>
+                setRecoveryResults((previous) => ({
+                  ...previous,
+                  [recoveredProject.projectId]: result,
+                }))
+              }
+              onBack={() => setRecoveryId(null)}
+              onOpen={(id) => router.push(`/projects/${id}`)}
+            />
+          ) : adoptable && active && stack ? (
+            <>
+              {stepNavigation}
+              {projectPicker}
+              {step === "select" ? (
+                <div className="space-y-4 rounded-2xl bg-card p-5">
+                  {projectNameField}
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      {m.wizard.steps.repoOnSourceHint}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={m.wizard.addProject}
+                      title={m.wizard.addProject}
+                      onClick={addProject}
+                    >
+                      <UiIcon name="plus" />
+                    </Button>
+                  </div>
+                </div>
+              ) : step === "source" ? (
+                <RepoSourceCard
+                  key={active.id}
+                  project={active}
+                  github={github}
+                  parsing={parsingRepo === active.id}
+                  onRepoChange={(repo) => void onRepoChange(active.id, repo)}
+                />
+              ) : (
+                reviewSummary
+              )}
+              {stepActions}
+            </>
+          ) : (
+            <div className="space-y-4 rounded-2xl bg-card p-5">
+              <h3 className="text-base font-semibold text-foreground">{m.entry.cardTitle}</h3>
+              <p className="text-sm text-muted-foreground">
+                {hasReimport
+                  ? m.reimport.chooseHint
+                  : selfHosted
+                    ? m.entry.cardDesc
+                    : m.sources.importHint}
+              </p>
+              {!serverId && (
+                <ServerSelector
+                  migrationSource={!selfHosted}
+                  value={selectedId}
+                  onSelect={pickServer}
+                  disabled={scanning}
+                />
+              )}
+              <div className="flex items-center gap-2">
+                <Button
+                  className="flex-1"
+                  onClick={() => handleScan()}
+                  disabled={!selectedId || scanning}
+                >
+                  <UiIcon
+                    name={scanning ? "spinner" : "search"}
+                    className={scanning ? "animate-spin" : ""}
+                  />
+                  {scanning ? m.wizard.scanning : m.wizard.scan}
+                </Button>
+                {scanOptions}
+              </div>
+            </div>
+          )}
+          {stack && <MigrationProxyReview stack={stack} />}
+        </aside>
+      </div>
     </div>
   );
 
@@ -1717,223 +1958,7 @@ export function ServerMigrationWizard({
       </div>
     </>
   ) : (
-    /* ── Selection (scan + tabs + two columns) ── */
-    <>
-      {/* Server picker when the modal isn't pinned to a source. */}
-      {!serverId && (
-        <div className="shrink-0 px-6 pt-4">
-          <ServerSelector
-            migrationSource={!selfHosted}
-            value={selectedId}
-            onSelect={pickServer}
-            compact
-          />
-        </div>
-      )}
-
-      {/* Project tabs */}
-      {adoptable && stack && projects.length > 0 && (
-        <div className="shrink-0 flex items-center gap-1.5 px-6 pt-4 flex-wrap">
-          {projects.map((p) => {
-            const on = p.id === active?.id;
-            return (
-              <div
-                key={p.id}
-                className={`group inline-flex items-center gap-1 rounded-lg text-sm transition-colors ${
-                  on ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/40"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveId(p.id)}
-                  aria-pressed={on}
-                  className="inline-flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <span className="max-w-[160px] truncate font-medium">
-                    {p.name || m.wizard.projectName}
-                  </span>
-                  <span className="text-xs text-muted-foreground">· {p.services.size}</span>
-                </button>
-                {projects.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeProject(p.id);
-                    }}
-                    className="me-2 rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-ring"
-                    aria-label={m.wizard.removeProject}
-                  >
-                    <UiIcon name="close" className="size-3.5" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={addProject}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <UiIcon name="plus" className="size-3.5" />
-            {m.wizard.addProject}
-          </button>
-        </div>
-      )}
-
-      {stack && (
-        <div className="shrink-0 px-6 pt-4 max-h-48 overflow-y-auto">
-          <MigrationProxyReview stack={stack} />
-        </div>
-      )}
-
-      {/* Body */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-        {/* Idle + loading keep the illustration (loading just pulses it). */}
-        {!stack && !error && <EmptyHint scanning={scanning} status={scanStatus} />}
-
-        {/* Scanned but nothing adoptable AND nothing to re-import → compact
-                  "nothing found" (not a giant empty modal). */}
-        {stack && !adoptable && !hasReimport && <NoResults message={m.discover.nothing} />}
-
-        {/* Only Openship projects to re-import (no generic candidates): show
-                  the re-import section on its own. */}
-        {stack && !adoptable && hasReimport && (
-          <div className="h-full min-h-0 overflow-y-auto pr-1">
-            <OpenshipReimportSection
-              serverId={selectedId ?? ""}
-              orphaned={orphanedOpenship}
-              alreadyManaged={stack.alreadyManaged}
-              onOpen={(pid) => router.push(`/projects/${pid}`)}
-            />
-          </div>
-        )}
-
-        {adoptable && stack && active && (
-          <div className="h-full min-h-0 flex flex-col gap-4">
-            {stepNavigation}
-            {/* Select discovered containers; repository linking follows in Source. */}
-            {step === "select" && (
-              <div className="grid min-h-0 gap-6 @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-                <aside className="flex min-h-0 min-w-0 flex-col">
-                  <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pe-1.5">
-                    {hasReimport && (
-                      <OpenshipReimportSection
-                        serverId={selectedId ?? ""}
-                        orphaned={orphanedOpenship}
-                        alreadyManaged={stack.alreadyManaged}
-                        onOpen={(pid) => router.push(`/projects/${pid}`)}
-                      />
-                    )}
-                    {discoveredProjects}
-                  </div>
-                </aside>
-
-                <section className="min-w-0 rounded-2xl bg-card p-5">
-                  <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pe-1">
-                    {projectNameField}
-                    <p className="text-xs text-muted-foreground">
-                      {m.wizard.steps.repoOnSourceHint}
-                    </p>
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {/* ── Step 2: MAP — only the selected containers ↔ the repo's
-                      compose services. No grid, no unselected containers. ── */}
-            {step === "source" && (
-              <div className="grid min-h-0 gap-6 @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-                <ServiceMapPanel
-                  project={active}
-                  stack={stack}
-                  parsing={parsingRepo === active.id}
-                  onSetMap={(uid, name) => setServiceMap(active.id, uid, name)}
-                />
-                <RepoSourceCard
-                  project={active}
-                  github={github}
-                  parsing={parsingRepo === active.id}
-                  onRepoChange={(repo) => void onRepoChange(active.id, repo)}
-                />
-              </div>
-            )}
-
-            {/* ── Step 3: CONFIGURE — one card per selected container: its
-                      route, volume, and env. Nothing else. ── */}
-            {step === "domains" && (
-              <div className="grid min-h-0 items-start gap-6 @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-                <div className="min-w-0">{serviceReviews}</div>
-                {targetCard}
-              </div>
-            )}
-            {step === "plan" && (
-              <div className="grid min-h-0 items-start gap-6 @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-                <TransferPlanSummary
-                  sourceId={selectedId}
-                  targetId={targetId}
-                  serviceNames={planServiceNames}
-                  serviceContainerIds={planServiceContainerIds}
-                  flatDocker={flatDocker}
-                  transferMode={transferMode}
-                  setTransferMode={setTransferMode}
-                  compress={compress}
-                  setCompress={setCompress}
-                  customPaths={customPaths}
-                  setCustomPaths={setCustomPaths}
-                  conflictResolution={conflictResolution}
-                  setConflictResolution={setConflictResolution}
-                  cache={planCacheRef}
-                  onReady={setPlanReady}
-                />
-                {targetCard}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Scan failed (no stack) → same compact "nothing found" frame. */}
-        {error && !stack && <NoResults message={error} isError />}
-      </div>
-
-      {/* Shared step actions; destination and cleanup are reviewed in the content. */}
-      <div className="shrink-0 flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-t border-border/60">
-        {adoptable && stack ? (
-          <>
-            <div className="min-w-0 flex-1">{step === "select" ? flatInline : null}</div>
-            {stepActions}
-          </>
-        ) : (
-          <>
-            {flatInline}
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={close}
-                className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-              >
-                {m.wizard.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleScan()}
-                disabled={!selectedId || scanning}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {scanning ? (
-                  <UiIcon name="spinner" className="size-4 animate-spin" />
-                ) : stack ? (
-                  <UiIcon name="refresh" className="size-4" />
-                ) : (
-                  <UiIcon name="search" className="size-4" />
-                )}
-                {scanning ? m.wizard.scanning : stack ? m.wizard.rescan : m.wizard.scan}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </>
+    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{preparation}</div>
   );
 
   if (variant === "tab") {
@@ -2295,182 +2320,7 @@ export function ServerMigrationWizard({
       );
     }
 
-    // Steps 2 (Source) & 3 (Configure) → focused FULL-WIDTH layout. You already
-    // picked containers on step 1, so drop the list and give the mapping/config
-    // the whole width as a responsive grid.
-    if (adoptable && stack && active && step !== "select") {
-      return (
-        <div ref={stepTopRef} className="@container/migration space-y-5">
-          {stepNavigation}
-          <MigrationProxyReview stack={stack} />
-          {step === "source" ? (
-            /* Source — repo picker inline (like Library) on the left, selected
-               repo + actions in the right rail; once linked, the left becomes
-               the container↔service mapping. No modal. */
-            <div className="grid grid-cols-1 gap-6 items-start @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="min-w-0">
-                {active.repo ? (
-                  <ServiceMapPanel
-                    project={active}
-                    stack={stack}
-                    parsing={parsingRepo === active.id}
-                    onSetMap={(uid, name) => setServiceMap(active.id, uid, name)}
-                  />
-                ) : github.connected ? (
-                  <div className="rounded-2xl bg-card p-4">
-                    <RepositoryList
-                      repos={github.repos}
-                      accounts={github.accounts}
-                      selectedOwner={github.selectedOwner}
-                      setSelectedOwner={github.setSelectedOwner}
-                      loading={github.loading}
-                      loadingRepos={github.loadingRepos}
-                      onSelect={(owner, r) =>
-                        void onRepoChange(active.id, {
-                          provider: "github",
-                          owner,
-                          repo: r.name,
-                          branch: r.default_branch || "main",
-                        })
-                      }
-                      installUrl={github.installUrl}
-                      onInstall={() => void github.connect("oauth")}
-                      installing={github.connecting}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex min-h-[240px] items-center justify-center rounded-2xl bg-card p-8 text-center">
-                    <p className="max-w-xs text-sm text-muted-foreground">
-                      {m.wizard.steps.repoConnectHint}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div className="@[980px]/migration:sticky @[980px]/migration:top-6 space-y-4">
-                <RepoSourceCard
-                  project={active}
-                  github={github}
-                  parsing={parsingRepo === active.id}
-                  onRepoChange={(repo) => void onRepoChange(active.id, repo)}
-                />
-                <p className="px-0.5 text-[13px] leading-relaxed text-muted-foreground">
-                  {m.wizard.steps.mapSkipHint}
-                </p>
-                {stepActions}
-              </div>
-            </div>
-          ) : step === "domains" ? (
-            /* Configure — 2-grid of service cards on the left (like Select), the
-               target card + finalize button reused in the right rail. */
-            <div className="grid grid-cols-1 gap-6 items-start @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="min-w-0">{serviceReviews}</div>
-              <div className="@[980px]/migration:sticky @[980px]/migration:top-6 space-y-4">
-                {targetCard}
-                {stepActions}
-              </div>
-            </div>
-          ) : null}
-          {step === "plan" && (
-            /* Transfer plan — the details get the main column; target + actions
-               stay in the right rail (cross-server only). */
-            <div className="grid grid-cols-1 gap-6 items-start @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="min-w-0">
-                <TransferPlanSummary
-                  sourceId={selectedId}
-                  targetId={targetId}
-                  serviceNames={planServiceNames}
-                  serviceContainerIds={planServiceContainerIds}
-                  flatDocker={flatDocker}
-                  transferMode={transferMode}
-                  setTransferMode={setTransferMode}
-                  compress={compress}
-                  setCompress={setCompress}
-                  customPaths={customPaths}
-                  setCustomPaths={setCustomPaths}
-                  conflictResolution={conflictResolution}
-                  setConflictResolution={setConflictResolution}
-                  cache={planCacheRef}
-                  onReady={setPlanReady}
-                />
-              </div>
-              <div className="@[980px]/migration:sticky @[980px]/migration:top-6 space-y-4">
-                {targetCard}
-                {stepActions}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div ref={stepTopRef} className="@container/migration space-y-5">
-        {backBtn}
-        {adoptable && active && stepNavigation}
-        <div className="grid grid-cols-1 items-start gap-6 @[980px]/migration:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0 space-y-4">
-            {stack && <MigrationProxyReview stack={stack} />}
-            {!stack && !error && <EmptyHint scanning={scanning} status={scanStatus} />}
-            {stack && !adoptable && !hasReimport && <NoResults message={m.discover.nothing} />}
-            {stack && hasReimport && (
-              <OpenshipReimportSection
-                serverId={selectedId ?? ""}
-                orphaned={orphanedOpenship}
-                alreadyManaged={stack.alreadyManaged}
-                onOpen={(projectId) => router.push(`/projects/${projectId}`)}
-              />
-            )}
-            {adoptable && discoveredProjects}
-            {error && !stack && <NoResults message={error} isError />}
-          </div>
-          <aside className="space-y-4 @[980px]/migration:sticky @[980px]/migration:top-6">
-            {adoptable && stack && active ? (
-              <div className="space-y-5 rounded-2xl bg-card p-5">
-                {projectNameField}
-                <p className="text-xs text-muted-foreground">{m.wizard.steps.repoOnSourceHint}</p>
-                {selfHosted && (
-                  <details>
-                    <summary className="cursor-pointer text-sm text-muted-foreground">
-                      {m.review.scanOptions}
-                    </summary>
-                    <div className="mt-3">{flatOption(true)}</div>
-                  </details>
-                )}
-                {stepActions}
-              </div>
-            ) : (
-              <div className="space-y-4 rounded-2xl bg-card p-5">
-                <h3 className="text-base font-semibold text-foreground">{m.entry.cardTitle}</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {selfHosted ? m.entry.cardDesc : m.sources.importHint}
-                </p>
-                {!serverId && (
-                  <ServerSelector
-                    migrationSource={!selfHosted}
-                    value={selectedId}
-                    onSelect={pickServer}
-                    disabled={scanning}
-                  />
-                )}
-                {selfHosted && flatOption(true)}
-                <Button
-                  className="w-full"
-                  onClick={() => handleScan()}
-                  disabled={!selectedId || scanning}
-                >
-                  {scanning ? (
-                    <UiIcon name="spinner" className="animate-spin" />
-                  ) : (
-                    <UiIcon name="search" />
-                  )}
-                  {scanning ? m.wizard.scanning : m.wizard.scan}
-                </Button>
-              </div>
-            )}
-          </aside>
-        </div>
-      </div>
-    );
+    return <div ref={stepTopRef}>{preparation}</div>;
   }
 
   return (
@@ -2581,171 +2431,6 @@ function NoResults({ message, isError }: { message: string; isError?: boolean })
   );
 }
 
-/** Short, locale-aware "last deployed" date for the recovery cards. Guards a
- *  malformed manifest timestamp (returns it verbatim rather than "Invalid Date"). */
-function formatSeen(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-/**
- * Openship projects recovered from the server (matched by the `openship.project`
- * label + the on-server manifest) that this instance doesn't know — DB reset
- * (DR) or a server from another instance. Re-import rebuilds the project records
- * PRESERVING the original id so the running containers re-attach; it's records
- * only (no move/redeploy), so a "redeploy to finalize" note follows.
- */
-export function OpenshipReimportSection({
-  serverId,
-  orphaned,
-  alreadyManaged,
-  onOpen,
-}: {
-  serverId: string;
-  orphaned: OpenshipProjectGroup[];
-  alreadyManaged: number;
-  onOpen: (projectId: string) => void;
-}) {
-  const { t } = useI18n();
-  const m = t.migration.reimport;
-  const disc = t.migration.discover; // reuse the shared running/stopped labels
-  const [names, setNames] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<string | null>(null);
-  const [done, setDone] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const reimport = async (p: OpenshipProjectGroup) => {
-    setBusy(p.projectId);
-    setErrors((e) => ({ ...e, [p.projectId]: "" }));
-    try {
-      const res = await dockerMigrationApi.reimport({
-        serverId,
-        projectId: p.projectId,
-        projectName: (names[p.projectId] ?? p.suggestedName).trim() || undefined,
-      });
-      setDone((d) => ({ ...d, [p.projectId]: res.projectId }));
-    } catch (err) {
-      setErrors((e) => ({ ...e, [p.projectId]: getApiErrorMessage(err, m.failed) }));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <section className="space-y-4">
-      {/* Header — same shape as ServiceGroup (icon + title + muted count pill). */}
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2 px-0.5">
-          <UiIcon name="layers" className="size-4 text-muted-foreground shrink-0" />
-          <h3 className="text-sm font-semibold text-foreground">{m.title}</h3>
-          <span className="text-xs font-medium px-1.5 py-0.5 rounded-md bg-muted/70 text-muted-foreground shrink-0">
-            {orphaned.length}
-          </span>
-        </div>
-        <p className="max-w-2xl px-0.5 text-[13px] leading-relaxed text-muted-foreground">
-          {m.intro}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 items-stretch">
-        {orphaned.map((p) => {
-          const doneId = done[p.projectId];
-          const err = errors[p.projectId];
-          const running = p.services.some((s) => s.running);
-          const svcNames = p.services.map((s) => s.name).join(", ");
-          return (
-            <div
-              key={p.projectId}
-              className="flex h-full flex-col gap-3.5 rounded-2xl border border-border/50 bg-card p-5"
-            >
-              {doneId ? (
-                <div className="flex h-full flex-col justify-between gap-3">
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-success">
-                    <UiIcon name="check-circle" className="size-4 shrink-0" />
-                    {m.reimported}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(doneId)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    {m.openProject}
-                    <UiIcon name="arrow-right" className="size-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <input
-                    value={names[p.projectId] ?? p.suggestedName}
-                    onChange={(e) => setNames((n) => ({ ...n, [p.projectId]: e.target.value }))}
-                    className="w-full rounded-lg border border-border/60 bg-transparent px-2.5 py-1.5 text-sm font-medium text-foreground outline-none transition-colors focus:border-foreground/40"
-                    placeholder={p.suggestedName}
-                  />
-                  {/* Identity: service names + quiet running/stopped status (same
-                      treatment as ServiceRow), then domains + last-deployed. */}
-                  <div className="min-w-0 space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-                        {svcNames || interpolate(m.services, { n: String(p.services.length) })}
-                      </span>
-                      <span
-                        className={`shrink-0 text-[11px] font-medium uppercase tracking-wide ${
-                          running ? "text-success" : "text-warning"
-                        }`}
-                      >
-                        {running ? disc.running : disc.stopped}
-                      </span>
-                    </div>
-                    {p.domains && p.domains.length > 0 && (
-                      <div className="truncate text-[13px] text-muted-foreground">
-                        {p.domains.join(", ")}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 text-[13px] text-muted-foreground/80">
-                      <span>{p.hasSnapshot ? m.fullRestore : m.bestEffort}</span>
-                      {p.updatedAt && (
-                        <span>· {interpolate(m.lastSeen, { when: formatSeen(p.updatedAt) })}</span>
-                      )}
-                    </div>
-                  </div>
-                  {err && (
-                    <p className="flex items-center gap-1.5 text-xs text-warning">
-                      <UiIcon name="warning" className="size-3.5 shrink-0" />
-                      {err}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    disabled={busy === p.projectId || !serverId}
-                    onClick={() => reimport(p)}
-                    className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    {busy === p.projectId ? (
-                      <>
-                        <UiIcon name="spinner" className="size-3.5 animate-spin" />
-                        {m.working}
-                      </>
-                    ) : (
-                      m.action
-                    )}
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="max-w-2xl px-0.5 text-xs leading-relaxed text-muted-foreground/70">
-        {alreadyManaged > 0 && `${interpolate(m.alreadyManaged, { n: String(alreadyManaged) })} `}
-        {m.finalizeNote}
-      </p>
-    </section>
-  );
-}
-
 /** Parse a GitHub repo reference. Delegates the URL forms (https/ssh, ±.git) to
  *  the shared `extractOwnerRepoFromUrl`; adds only the bare `owner/repo` case it
  *  doesn't cover. Returns null for anything else (v1 = GitHub only). */
@@ -2795,28 +2480,24 @@ function RepoSourceCard({
   };
 
   return (
-    <section className="space-y-3 rounded-xl border border-border/50 p-4">
-      <div className="flex items-center gap-2">
-        <UiIcon name="git-branch" className="size-4 text-muted-foreground" />
-        <h4 className="text-sm font-semibold text-foreground">{s.linkRepo}</h4>
-        <span className="text-[11px] text-muted-foreground">· {s.repoOptional}</span>
+    <section className="space-y-4 rounded-2xl bg-card p-5" aria-label={s.linkRepo}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-foreground">{s.linkRepo}</h3>
+        <span className="text-xs text-muted-foreground">{s.repoOptional}</span>
       </div>
       <p className="text-xs text-muted-foreground">{s.linkRepoDesc}</p>
 
       {!github.connected ? (
-        <button
-          type="button"
-          onClick={() => void github.connect()}
-          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-        >
-          <UiIcon name="link" className="size-4" />
+        <Button onClick={() => void github.connect()} className="w-full">
           {s.connectGithub}
-        </button>
+        </Button>
       ) : !repo ? (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">{s.repoPasteHint}</p>
           <div className="flex items-center gap-2">
-            <input
+            <Input
+              variant="filled"
+              aria-label={s.repoUrlPlaceholder}
               value={urlInput}
               onChange={(e) => {
                 setUrlInput(e.target.value);
@@ -2826,21 +2507,15 @@ function RepoSourceCard({
                 if (e.key === "Enter") applyUrl();
               }}
               placeholder={s.repoUrlPlaceholder}
-              className="flex-1 min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+              className="flex-1 min-w-0"
             />
-            <button
-              type="button"
-              onClick={applyUrl}
-              className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-            >
-              {s.repoUrlAdd}
-            </button>
+            <Button onClick={applyUrl}>{s.repoUrlAdd}</Button>
           </div>
           {urlError && <p className="text-xs text-danger">{urlError}</p>}
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-background px-3 py-2">
             <span className="inline-flex min-w-0 items-center gap-2 truncate text-sm font-medium text-foreground">
               {parsing && (
                 <UiIcon
@@ -2850,16 +2525,18 @@ function RepoSourceCard({
               )}
               {repo.owner}/{repo.repo}
             </span>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={s.unlinkRepo}
+              title={s.unlinkRepo}
               onClick={() => onRepoChange(null)}
-              className="shrink-0 text-xs text-muted-foreground hover:text-destructive transition-colors"
             >
-              {s.unlinkRepo}
-            </button>
+              <UiIcon name="close" className="size-4" />
+            </Button>
           </div>
           <div className="space-y-1.5">
-            <label className="text-[13px] font-medium text-muted-foreground">{s.branch}</label>
+            <p className="text-sm font-medium text-foreground">{s.branch}</p>
             <RepositoryBranchSelect
               owner={repo.owner}
               repo={repo.repo}
@@ -2902,13 +2579,12 @@ function ServiceMapPanel({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="@container/source space-y-4">
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <UiIcon name="layers" className="size-4 text-muted-foreground" />
-          <h4 className="text-sm font-semibold text-foreground">{s.mapTitle}</h4>
+          <h3 className="text-base font-semibold text-foreground">{s.mapTitle}</h3>
         </div>
-        <p className="text-[13px] leading-relaxed text-muted-foreground">{s.mapHint}</p>
+        <p className="text-xs text-muted-foreground">{s.mapHint}</p>
       </div>
 
       {parsing ? (
@@ -2916,15 +2592,13 @@ function ServiceMapPanel({
           <UiIcon name="spinner" className="size-4 animate-spin" /> {s.parsingCompose}
         </div>
       ) : composeNames.length === 0 ? (
-        <div className="rounded-xl border border-border/50 bg-card px-4 py-3 text-[13px] text-muted-foreground">
+        <div className="rounded-2xl bg-card p-4 text-sm text-muted-foreground">
           {s.noComposeFound}
         </div>
       ) : (
         <>
-          <div className="rounded-xl border border-border/50 bg-card p-4 space-y-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-              {s.composeServicesTitle}
-            </p>
+          <div className="rounded-2xl bg-card p-4 space-y-2.5">
+            <p className="text-sm font-medium text-muted-foreground">{s.composeServicesTitle}</p>
             <div className="flex flex-wrap gap-1.5">
               {project.composeServices.map((c) => (
                 <span
@@ -2933,7 +2607,7 @@ function ServiceMapPanel({
                 >
                   {c.name}
                   {c.build ? (
-                    <span className="text-[10px] text-muted-foreground">{c.build}</span>
+                    <span className="text-xs text-muted-foreground">{c.build}</span>
                   ) : null}
                 </span>
               ))}
@@ -2941,12 +2615,12 @@ function ServiceMapPanel({
           </div>
           {/* One card per selected container: name on top, full-width service
               dropdown below — readable, no cramped truncation. */}
-          <div className="grid gap-3.5 grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+          <div className="grid grid-cols-1 gap-4 @[640px]/source:grid-cols-2">
             {picked.map((sv) => {
               const uid = svcUid(sv);
               const mapped = project.serviceMap[uid] ?? "";
               return (
-                <div key={uid} className="rounded-xl border border-border/50 bg-card p-4 space-y-3">
+                <div key={uid} className="min-w-0 rounded-2xl bg-card p-4 space-y-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <ServiceIcon service={sv} className="size-4 shrink-0" />
@@ -2959,7 +2633,7 @@ function ServiceMapPanel({
                     </div>
                     {(sv.image || sv.build) && (
                       <p
-                        className="mt-1 truncate text-[11px] text-muted-foreground/80"
+                        className="mt-1 truncate text-xs text-muted-foreground"
                         title={sv.image || sv.build}
                       >
                         {sv.image || `${t.migration.discover.build}: ${sv.build}`}
@@ -2968,11 +2642,11 @@ function ServiceMapPanel({
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
-                      <label className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                      <label className="block text-sm font-medium text-muted-foreground">
                         {s.mapField}
                       </label>
                       {Object.keys(sv.env).length > 0 && (
-                        <span className="shrink-0 text-[11px] text-muted-foreground/70">
+                        <span className="shrink-0 text-xs text-muted-foreground">
                           {interpolate(t.migration.discover.nEnv, {
                             n: String(Object.keys(sv.env).length),
                           })}
@@ -2980,6 +2654,8 @@ function ServiceMapPanel({
                       )}
                     </div>
                     <CustomSelect
+                      variant="filled"
+                      triggerClassName="bg-muted/60 hover:bg-muted"
                       value={mapped}
                       onChange={(val) => onSetMap(uid, val || null)}
                       placeholder={s.mapToService}
@@ -3129,12 +2805,10 @@ function TransferPlanSummary({
   const p = preview?.plan;
   const ssl = preview?.sslByDomain ?? [];
   const canAdd = newSrc.trim().startsWith("/") && newDst.trim().startsWith("/");
-  const inputClass =
-    "min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/25";
   return (
-    <div className="space-y-5 rounded-2xl border border-border/50 bg-card p-5">
+    <div className="space-y-5 rounded-2xl bg-card p-5">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold text-foreground">{plan.title}</span>
+        <h3 className="text-base font-semibold text-foreground">{plan.title}</h3>
         {loading && <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />}
       </div>
 
@@ -3155,7 +2829,7 @@ function TransferPlanSummary({
                 key={action}
                 type="button"
                 onClick={() => setConflictResolution((prev) => ({ ...prev, [c.volume]: action }))}
-                className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
+                className={`flex-1 rounded-lg border px-3 py-2 text-start transition-colors ${
                   sel === action
                     ? "border-primary bg-primary/10"
                     : "border-border hover:bg-muted/40"
@@ -3302,49 +2976,45 @@ function TransferPlanSummary({
           </div>
         ))}
         <div className="flex items-center gap-2">
-          <input
+          <Input
+            variant="filled"
             value={newSrc}
             onChange={(e) => setNewSrc(e.target.value)}
             placeholder={plan.pathSrcPlaceholder}
-            className={inputClass}
+            aria-label={plan.pathSrcPlaceholder}
+            className="min-w-0 flex-1"
           />
           <span className="shrink-0 text-muted-foreground/50">→</span>
-          <input
+          <Input
+            variant="filled"
             value={newDst}
             onChange={(e) => setNewDst(e.target.value)}
             placeholder={plan.pathDestPlaceholder}
-            className={inputClass}
+            aria-label={plan.pathDestPlaceholder}
+            className="min-w-0 flex-1"
           />
-          <button
-            type="button"
-            onClick={addPath}
-            disabled={!canAdd}
-            className="shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <Button onClick={addPath} disabled={!canAdd}>
             {plan.pathAdd}
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border/50 pt-4">
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          {m.wizard.transfer.label}
-          <select
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-sm font-medium text-muted-foreground">{m.wizard.transfer.label}</p>
+          <CustomSelect
+            variant="filled"
+            triggerClassName="bg-muted/60 hover:bg-muted"
             value={transferMode}
-            onChange={(e) => setTransferMode(e.target.value as TransferModeSel)}
-            className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
-          >
-            <option value="">{m.wizard.transfer.default}</option>
-            <option value="stream">{m.wizard.transfer.stream}</option>
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            checked={compress}
-            onChange={(e) => setCompress(e.target.checked)}
-            className="size-4 rounded border-border/60 bg-card text-primary focus:ring-2 focus:ring-primary/30"
+            onChange={setTransferMode}
+            options={[
+              { value: "", label: m.wizard.transfer.default },
+              { value: "stream", label: m.wizard.transfer.stream },
+            ]}
           />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+          <Checkbox checked={compress} onCheckedChange={setCompress} />
           {plan.compress}
         </label>
       </div>

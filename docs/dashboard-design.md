@@ -62,13 +62,19 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - A destination with one existing server uses a compact summary row; multiple servers use
   the shared picker. Keep the create-server action visible in both cases. Cloud deployments
   can reuse a server's plan or create a separate server and subscription from the same flow.
-- Import discovery defaults to the shared topology canvas, grouped by the scanned Compose
-  project, with Cards as an equivalent selection view. Expand additional groups on demand;
-  selection and project naming stay consistent when changing views or revisiting steps.
-  Only draw discovered dependencies. Keep scan graphs in memory, without saved configuration.
-- Import routing starts with compact per-service access and data summaries. Show detected
-  domains and incomplete routes immediately; expand the existing domain, volume and environment
-  controls when requested. The page and modal share selection, review and navigation controls.
+- Import discovery uses the shared topology canvas with a highlighted parent containing each
+  Compose project's service nodes, and Cards as an equivalent selection view. Recovered Openship
+  projects belong in the same selector; their recovery action and naming live in the sidebar.
+  Expand additional groups on demand. Selection and names survive view and step changes.
+  Only draw discovered dependencies; keep scan graphs in memory without saved configuration.
+- Import progress and discovery notices stay in the right sidebar. Keep scan settings in the
+  shared compact menu beside scan controls. The repository summary uses the same filled card,
+  inputs and dropdowns as the other steps, with concise guidance.
+- Import routing uses two columns when the container has room, with a compact summary on the
+  right. Expanded service controls span both columns. Show detected domains and incomplete
+  routes immediately, and reuse the domain, volume and environment editors. Destination and
+  transfer review have a final step for both same-server and cross-server imports. The page
+  and modal share the whole preparation layout and controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the

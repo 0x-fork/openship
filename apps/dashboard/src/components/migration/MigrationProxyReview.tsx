@@ -10,7 +10,7 @@ export function MigrationProxyReview({ stack }: { stack: DiscoveredStack }) {
   const { t } = useI18n();
   const copy = t.migration.wizard.edgeReview;
   const warnings = [...new Set(stack.warnings)];
-  if (!stack.proxy && warnings.length === 0) return null;
+  if (!stack.proxy && warnings.length === 0 && !stack.alreadyManaged) return null;
 
   return (
     <details className="group rounded-xl bg-card px-4 py-3 text-sm">
@@ -24,11 +24,19 @@ export function MigrationProxyReview({ stack }: { stack: DiscoveredStack }) {
             ? interpolate(copy.detected, {
                 proxy: stack.proxy.ours ? "Openship" : stack.proxy.kind,
               })
-            : interpolate(copy.warnings, { count: String(warnings.length) })}
+            : warnings.length
+              ? interpolate(copy.warnings, { count: String(warnings.length) })
+              : interpolate(t.migration.reimport.alreadyManaged, {
+                  n: String(stack.alreadyManaged),
+                })}
         </span>
         {stack.proxy && warnings.length > 0 && (
-          <span className="text-xs text-warning">
-            {interpolate(copy.warnings, { count: String(warnings.length) })}
+          <span
+            className="rounded-md bg-warning-bg px-1.5 text-xs text-warning"
+            aria-label={interpolate(copy.warnings, { count: String(warnings.length) })}
+            title={interpolate(copy.warnings, { count: String(warnings.length) })}
+          >
+            {warnings.length}
           </span>
         )}
         <UiIcon
@@ -38,6 +46,11 @@ export function MigrationProxyReview({ stack }: { stack: DiscoveredStack }) {
       </summary>
       <div className="mt-3 space-y-3 text-xs text-muted-foreground">
         {stack.proxy && <p>{copy.handoff}</p>}
+        {stack.alreadyManaged > 0 && (
+          <p>
+            {interpolate(t.migration.reimport.alreadyManaged, { n: String(stack.alreadyManaged) })}
+          </p>
+        )}
         {warnings.length > 0 && (
           <ul className="list-disc space-y-1.5 ps-5">
             {warnings.map((warning) => (

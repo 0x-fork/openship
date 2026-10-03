@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   cloudPricing: vi.fn(),
   preview: vi.fn(),
   migrate: vi.fn(),
+  reimport: vi.fn(),
   getMigration: vi.fn(),
   getActive: vi.fn(),
   confirmCutover: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock("@/lib/api/server-migration", () => ({
     listSources: h.listSources,
     preview: h.preview,
     migrate: h.migrate,
+    reimport: h.reimport,
     getMigration: h.getMigration,
     getActive: h.getActive,
     confirmCutover: h.confirmCutover,
@@ -84,6 +86,7 @@ beforeEach(() => {
   h.scanStream.mockImplementation(() => new Promise(() => {}));
   h.getMigration.mockImplementation(() => new Promise(() => {}));
   h.getActive.mockResolvedValue({ run: null });
+  h.reimport.mockResolvedValue({ success: true, projectId: "recovered", reattached: true });
   h.streamMigration.mockReturnValue(vi.fn());
   h.confirmCutover.mockResolvedValue({ success: true });
   h.listSources.mockResolvedValue({
@@ -171,6 +174,39 @@ it("Cloud uses the restricted source inventory and the same scanner", async () =
     "external",
     expect.objectContaining({ flatDocker: true }),
   );
+});
+
+it("changes scan coverage through the shared menu and re-scans the selected server", async () => {
+  h.scanStream.mockResolvedValue({ ...scannedStack(), serverId: "source-a" });
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("First server");
+  const openOptions = () =>
+    act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Scan options"]')!.click(),
+    );
+
+  await openOptions();
+  await act(async () => button("Include managed containers").click());
+  expect(h.scanStream).not.toHaveBeenCalled();
+  await act(async () => button("Scan server").click());
+  expect(h.scanStream).toHaveBeenCalledExactlyOnceWith(
+    "source-a",
+    expect.objectContaining({ flatDocker: true }),
+  );
+
+  await openOptions();
+  await act(async () => button("Detect projects").click());
+  expect(h.scanStream).toHaveBeenCalledTimes(2);
+  expect(h.scanStream).toHaveBeenLastCalledWith(
+    "source-a",
+    expect.objectContaining({ flatDocker: false }),
+  );
+  expect(button("Detect projects")).toBeUndefined();
+  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Topology",
+  );
+  expect(h.migrate).not.toHaveBeenCalled();
+  expect(h.reimport).not.toHaveBeenCalled();
 });
 
 it("discards scan results and progress after the active organization changes", async () => {
@@ -363,6 +399,9 @@ it("defaults to topology and keeps container selection, view and automatic namin
       .querySelector('section[aria-label="first"] [aria-label="Select redis"]')
       ?.getAttribute("aria-checked"),
   ).toBe("true");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Services in second"]')!.click(),
+  );
   expect(
     container
       .querySelector('section[aria-label="second"] [aria-label="Select redis"]')
@@ -436,12 +475,17 @@ it("keeps the self-hosted in-place flow and its reviewed volume choice", async (
   );
   await act(async () => button("Next").click());
   await act(async () => button("Next").click());
-  expect(button("Migrate").disabled).toBe(false);
+  expect(button("Migrate")).toBeUndefined();
+  expect(container.textContent).toContain("Import summary");
+  expect(container.textContent).not.toContain("Target server");
   expect(h.preview).not.toHaveBeenCalled();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Configure redis"]')!.click(),
   );
   await act(async () => button("Copy").click());
+  await act(async () => button("Next").click());
+  expect(container.textContent).toContain("Target server");
+  expect(button("Migrate").disabled).toBe(false);
   await act(async () => button("Migrate").click());
   expect(h.migrate.mock.lastCall?.[0]).toMatchObject({
     sourceServerId: "source-a",
@@ -486,9 +530,143 @@ it("uses the same topology selection and destination review in the modal", async
   await act(async () => modalButton("Next").click());
   await act(async () => modalButton("Next").click());
   expect(document.querySelector('[aria-label="Configure redis"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Target server");
+  expect(document.body.textContent).toContain("Import summary");
+  expect(modalButton("Next").disabled).toBe(false);
+  await act(async () => modalButton("Next").click());
   expect(document.body.textContent).toContain("Target server");
   expect(document.body.textContent).toContain("Managed server");
-  expect(modalButton("Next").disabled).toBe(false);
+  expect(modalButton("Next")).toBeUndefined();
+});
+
+it("offers recovered projects inside discovery and keeps recovery separate from migration", async () => {
+  const stack = scannedStack();
+  h.scanStream.mockResolvedValue({
+    ...stack,
+    services: [],
+    groups: [],
+    adoptable: false,
+    openshipProjects: [
+      {
+        projectId: "original-id",
+        suggestedName: "recovered",
+        knownHere: false,
+        hasSnapshot: false,
+        services: stack.services,
+      },
+    ],
+  });
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("First server");
+  await act(async () => button("Scan server").click());
+  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Topology",
+  );
+  expect(container.textContent).not.toContain("Openship projects found");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Recover recovered"]')!.click(),
+  );
+  const panel = container.querySelector('aside[aria-label="Import details"]')!;
+  expect(panel.textContent).toContain("From containers");
+  expect(panel.querySelector<HTMLInputElement>('input[id^="recover-name-"]')!.value).toBe(
+    "recovered",
+  );
+  await act(async () => button("Re-import").click());
+  expect(h.reimport).toHaveBeenCalledExactlyOnceWith({
+    serverId: "source-a",
+    projectId: "original-id",
+    projectName: "recovered",
+  });
+  expect(h.migrate).not.toHaveBeenCalled();
+  expect(panel.textContent).toContain("Open project");
+  await act(async () => button("Back").click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Recover recovered"]')!.click(),
+  );
+  expect(panel.textContent).toContain("Open project");
+  expect(button("Re-import")).toBeUndefined();
+  expect(h.reimport).toHaveBeenCalledOnce();
+});
+
+it("does not show a stale recovery response after the organization changes", async () => {
+  const stack = scannedStack();
+  h.scanStream.mockResolvedValue({
+    ...stack,
+    openshipProjects: [
+      {
+        projectId: "private-project",
+        suggestedName: "Private recovery",
+        knownHere: false,
+        hasSnapshot: true,
+        services: stack.services,
+      },
+    ],
+    groups: [],
+    services: [],
+    adoptable: false,
+  });
+  let complete!: (value: unknown) => void;
+  h.reimport.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("First server");
+  await act(async () => button("Scan server").click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Recover Private recovery"]')!.click(),
+  );
+  await act(async () => button("Re-import").click());
+  h.organizationId = "org-b";
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await act(async () =>
+    complete({ success: true, projectId: "private-project", reattached: true }),
+  );
+  expect(container.textContent).not.toContain("Private recovery");
+  expect(button("Open project")).toBeUndefined();
+});
+
+it("remembers a successful recovery that finishes after leaving its review", async () => {
+  const stack = scannedStack();
+  h.scanStream.mockResolvedValue({
+    ...stack,
+    openshipProjects: [
+      {
+        projectId: "original-id",
+        suggestedName: "Existing shop",
+        knownHere: false,
+        hasSnapshot: true,
+        services: stack.services,
+      },
+    ],
+  });
+  let complete!: (value: unknown) => void;
+  h.reimport.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
+  await pickSource("First server");
+  await act(async () => button("Scan server").click());
+  const openReview = () =>
+    act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Recover Existing shop"]')!.click(),
+    );
+
+  await openReview();
+  await act(async () => button("Re-import").click());
+  await act(async () => button("Back").click());
+  await act(async () => complete({ success: true, projectId: "restored-id", reattached: true }));
+  expect(button("Open project")).toBeUndefined();
+  await openReview();
+  expect(button("Open project")).toBeDefined();
+  expect(button("Re-import")).toBeUndefined();
+  expect(h.reimport).toHaveBeenCalledOnce();
+  expect(h.migrate).not.toHaveBeenCalled();
 });
 
 it("shows a useful empty result when only excluded proxy containers are discovered", async () => {

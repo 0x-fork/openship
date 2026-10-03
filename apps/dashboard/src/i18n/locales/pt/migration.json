@@ -1,12 +1,15 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "{proxy} detectado no servidor de origem",
+      "detected": "{proxy} detectado",
       "handoff": "Confira os domínios associados abaixo. A migração configura o proxy de entrada do servidor de destino e pede confirmação caso seja necessário substituir um proxy existente.",
       "warnings": "Revisar {count} avisos de descoberta"
     },
     "steps": {
-      "mapNoRepo": "Vincule um repositório para associar os contêineres detectados aos seus serviços (opcional)."
+      "mapNoRepo": "Vincule um repositório para associar os contêineres detectados aos seus serviços (opcional).",
+      "linkRepoDesc": "Use o Git para futuras compilações e implantações automáticas.",
+      "repoOnSourceHint": "Vincule um repositório na próxima etapa.",
+      "mapHint": "Associe os contêineres aos serviços no repositório."
     }
   },
   "entry": {
@@ -45,7 +48,8 @@
     "selectNamedService": "Selecionar {name}",
     "selectProject": "Selecionar todos os serviços de {name}",
     "clearSelection": "Limpar seleção",
-    "selectionKeyboard": "Pressione Enter ou Espaço para selecionar um serviço."
+    "selectionKeyboard": "Pressione Enter ou Espaço para selecionar um serviço.",
+    "expandProject": "Serviços de {name}"
   },
   "review": {
     "progress": "Progresso da importação",
@@ -58,6 +62,26 @@
     "finishRoute": "Concluir rota",
     "finishRouteHint": "Preencha o domínio e a porta ou escolha Apenas interno.",
     "routingTitle": "Domínios e rotas",
-    "scanOptions": "Opções de análise"
+    "scanOptions": "Opções de análise",
+    "destination": "Destino",
+    "summary": "Resumo da importação",
+    "publicServices": "Serviços públicos",
+    "internalServices": "Serviços internos",
+    "dataMounts": "Montagens de dados",
+    "destinationNext": "Escolha onde executar estes serviços na próxima etapa.",
+    "importDetails": "Detalhes da importação",
+    "detectProjects": "Detectar projetos",
+    "includeManaged": "Incluir contêineres gerenciados"
+  },
+  "reimport": {
+    "review": "Recuperar projeto",
+    "reviewNamed": "Recuperar {name}",
+    "groupLabel": "Projeto Openship",
+    "recoverHint": "Restaure as configurações e reconecte os contêineres em execução.",
+    "configuration": "Configuração",
+    "snapshot": "Snapshot salvo",
+    "containerMetadata": "Dos contêineres",
+    "checkSettings": "As configurações de compilação podem precisar de revisão após a recuperação.",
+    "chooseHint": "Selecione um projeto para recuperar suas configurações e serviços ativos."
   }
 }

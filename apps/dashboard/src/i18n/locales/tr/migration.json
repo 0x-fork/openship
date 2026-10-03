@@ -1,7 +1,7 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "Kaynak sunucuda {proxy} algılandı",
+      "detected": "{proxy} algılandı",
       "handoff": "Aşağıda eşleştirilen alan adlarını inceleyin. Taşıma, hedef sunucunun yönlendirmesini kurar ve mevcut bir proxy değiştirilecekse onayınızı ister.",
       "warnings": "{count} keşif bildirimini inceleyin"
     },
@@ -64,7 +64,10 @@
       "measuring": "Aktarım boyutu ölçülüyor…"
     },
     "steps": {
-      "mapNoRepo": "Algılanan kapsayıcıları hizmetleriyle eşlemek için bir depo bağlayın (isteğe bağlı)."
+      "mapNoRepo": "Algılanan kapsayıcıları hizmetleriyle eşlemek için bir depo bağlayın (isteğe bağlı).",
+      "linkRepoDesc": "Sonraki derlemeler ve otomatik dağıtımlar için Git kullanın.",
+      "repoOnSourceHint": "Sonraki adımda bir depo bağlayın.",
+      "mapHint": "Kapsayıcıları depodaki hizmetleriyle eşleştirin."
     }
   },
   "run": {
@@ -149,7 +152,8 @@
     "selectNamedService": "{name} seç",
     "selectProject": "{name} içindeki tüm hizmetleri seç",
     "clearSelection": "Seçimi temizle",
-    "selectionKeyboard": "Bir hizmet seçmek için Enter veya Boşluk tuşuna basın."
+    "selectionKeyboard": "Bir hizmet seçmek için Enter veya Boşluk tuşuna basın.",
+    "expandProject": "{name} hizmetleri"
   },
   "reimport": {
     "title": "Openship projeleri bulundu",
@@ -161,7 +165,16 @@
     "openProject": "Projeyi aç",
     "alreadyManaged": "{n} konteyner zaten bu kurulum tarafından yönetiliyor.",
     "finalizeNote": "Tekrar içe aktarma proje kayıtlarını geri yükler; çalışan konteynerleri tamamen yönetim altına almak için projeden yeniden dağıtın.",
-    "failed": "Tekrar içe aktarma başarısız oldu"
+    "failed": "Tekrar içe aktarma başarısız oldu",
+    "review": "Projeyi kurtar",
+    "reviewNamed": "{name} projesini kurtar",
+    "groupLabel": "Openship projesi",
+    "recoverHint": "Ayarları geri yükleyin ve çalışan kapsayıcıları yeniden bağlayın.",
+    "configuration": "Yapılandırma",
+    "snapshot": "Kayıtlı anlık görüntü",
+    "containerMetadata": "Kapsayıcılardan",
+    "checkSettings": "Kurtarma sonrasında derleme ayarlarını gözden geçirmeniz gerekebilir.",
+    "chooseHint": "Ayarlarını ve çalışan hizmetlerini kurtarmak için bir proje seçin."
   },
   "scanFailed": "Docker incelemesi başarısız oldu",
   "adoptFailed": "Proje oluşturulamadı",
@@ -240,6 +253,15 @@
     "finishRoute": "Yönlendirmeyi tamamlayın",
     "finishRouteHint": "Alan adını ve bağlantı noktasını tamamlayın veya Yalnızca dahili seçin.",
     "routingTitle": "Alan adları ve yönlendirme",
-    "scanOptions": "Tarama seçenekleri"
+    "scanOptions": "Tarama seçenekleri",
+    "destination": "Hedef",
+    "summary": "İçe aktarma özeti",
+    "publicServices": "Dışa açık hizmetler",
+    "internalServices": "Dahili hizmetler",
+    "dataMounts": "Veri bağlamaları",
+    "destinationNext": "Sonraki adımda bu hizmetlerin nerede çalışacağını seçin.",
+    "importDetails": "İçe aktarma ayrıntıları",
+    "detectProjects": "Projeleri algıla",
+    "includeManaged": "Yönetilen kapsayıcıları dahil et"
   }
 }

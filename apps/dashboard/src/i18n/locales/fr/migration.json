@@ -1,7 +1,7 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "{proxy} détecté sur le serveur source",
+      "detected": "{proxy} détecté",
       "handoff": "Vérifiez les domaines associés ci-dessous. La migration configure le routage du serveur cible et demande confirmation avant de remplacer un proxy existant.",
       "warnings": "Consulter les {count} remarques de détection"
     },
@@ -74,7 +74,7 @@
       "back": "Retour",
       "sourceHint": "Liez éventuellement un dépôt et mappez vos conteneurs à ses services compose — l'image en cours d'exécution est toujours réutilisée.",
       "linkRepo": "Lier un dépôt",
-      "linkRepoDesc": "Liez le dépôt pour qu'Openship connaisse la source de chaque service (auto-déploiement + reconstruction plus tard). Cette migration réutilise toujours l'image en cours — aucune reconstruction maintenant.",
+      "linkRepoDesc": "Utilisez Git pour les prochaines compilations et les déploiements automatiques.",
       "repoOptional": "facultatif",
       "connectGithub": "Connecter GitHub",
       "selectRepo": "Choisir un dépôt",
@@ -84,7 +84,7 @@
       "branch": "Branche",
       "unlinkRepo": "Retirer",
       "mapTitle": "Mapper les conteneurs aux services compose",
-      "mapHint": "Associez chaque conteneur découvert à son service dans le compose du dépôt. Le chemin de build du service correspondant devient sa source.",
+      "mapHint": "Associez les conteneurs à leurs services dans le dépôt.",
       "mapToService": "Choisir un service",
       "notInRepo": "Absent du dépôt",
       "composeServicesTitle": "Services du dépôt",
@@ -94,7 +94,7 @@
       "mapField": "Service du dépôt",
       "repoConnectHint": "Connectez GitHub dans le panneau pour parcourir vos dépôts — ou collez une URL de dépôt.",
       "repoPasteHint": "Ou collez une URL de dépôt.",
-      "repoOnSourceHint": "Liez un dépôt Git à l'étape suivante (Source) — facultatif.",
+      "repoOnSourceHint": "Associez un dépôt à l’étape suivante.",
       "parsingCompose": "Analyse du compose…",
       "envTitle": "Variables d'environnement",
       "publishDomains": "Publier les domaines",
@@ -185,7 +185,8 @@
     "selectNamedService": "Sélectionner {name}",
     "selectProject": "Sélectionner tous les services de {name}",
     "clearSelection": "Effacer la sélection",
-    "selectionKeyboard": "Appuyez sur Entrée ou Espace pour sélectionner un service."
+    "selectionKeyboard": "Appuyez sur Entrée ou Espace pour sélectionner un service.",
+    "expandProject": "Services de {name}"
   },
   "reimport": {
     "title": "Projets Openship détectés",
@@ -200,7 +201,16 @@
     "openProject": "Ouvrir le projet",
     "alreadyManaged": "{n} conteneur(s) déjà géré(s) par cette instance.",
     "finalizeNote": "La ré-importation restaure le projet et rattache les conteneurs en cours d'exécution en direct — aucun redéploiement nécessaire. Redéployez uniquement pour changer le build.",
-    "failed": "Échec de la ré-importation"
+    "failed": "Échec de la ré-importation",
+    "review": "Récupérer le projet",
+    "reviewNamed": "Récupérer {name}",
+    "groupLabel": "Projet Openship",
+    "recoverHint": "Restaurez ses paramètres et rattachez les conteneurs en cours d’exécution.",
+    "configuration": "Configuration",
+    "snapshot": "Instantané enregistré",
+    "containerMetadata": "Depuis les conteneurs",
+    "checkSettings": "Les paramètres de compilation peuvent nécessiter une vérification après récupération.",
+    "chooseHint": "Sélectionnez un projet pour récupérer ses paramètres et ses services actifs."
   },
   "scanFailed": "Échec de l'inspection Docker",
   "adoptFailed": "Impossible de créer le projet",
@@ -287,6 +297,15 @@
     "finishRoute": "Compléter la route",
     "finishRouteHint": "Renseignez le domaine et le port, ou choisissez Interne uniquement.",
     "routingTitle": "Domaines et routage",
-    "scanOptions": "Options d’analyse"
+    "scanOptions": "Options d’analyse",
+    "destination": "Destination",
+    "summary": "Résumé de l’import",
+    "publicServices": "Services publics",
+    "internalServices": "Services internes",
+    "dataMounts": "Montages de données",
+    "destinationNext": "Choisissez ensuite où exécuter ces services.",
+    "importDetails": "Détails de l’import",
+    "detectProjects": "Détecter les projets",
+    "includeManaged": "Inclure les conteneurs gérés"
   }
 }

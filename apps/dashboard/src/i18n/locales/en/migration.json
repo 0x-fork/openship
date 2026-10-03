@@ -23,7 +23,7 @@
     "removeProject": "Remove project",
     "targetLabel": "Target server",
     "edgeReview": {
-      "detected": "Detected {proxy} on the source server",
+      "detected": "{proxy} detected",
       "handoff": "Review the matched domains below. Migration sets up the target server's edge and asks for confirmation if an existing proxy needs to be replaced.",
       "warnings": "Review {count} discovery notices"
     },
@@ -74,7 +74,7 @@
       "back": "Back",
       "sourceHint": "Optionally link a repo and map your containers to its compose services — the running image is still reused.",
       "linkRepo": "Link repository",
-      "linkRepoDesc": "Link the repo so Openship knows each service's source (auto-deploy + rebuild later). This migration still reuses the running image — no rebuild now.",
+      "linkRepoDesc": "Use Git for future rebuilds and auto-deploys.",
       "repoOptional": "optional",
       "connectGithub": "Connect GitHub",
       "selectRepo": "Choose a repository",
@@ -84,7 +84,7 @@
       "branch": "Branch",
       "unlinkRepo": "Remove",
       "mapTitle": "Map containers to compose services",
-      "mapHint": "Point each discovered container at its service in the repo's compose. The matched service's build path becomes its source.",
+      "mapHint": "Match containers to their services in the repository.",
       "mapToService": "Select service",
       "notInRepo": "Not in repo",
       "composeServicesTitle": "Repo services",
@@ -94,7 +94,7 @@
       "mapField": "Repo service",
       "repoConnectHint": "Connect GitHub in the panel to browse your repositories — or paste a repo URL.",
       "repoPasteHint": "Or paste a repository URL.",
-      "repoOnSourceHint": "Link a Git repository in the next step (Source) — optional.",
+      "repoOnSourceHint": "Link a repository in the next step.",
       "parsingCompose": "Parsing compose…",
       "envTitle": "Environment variables",
       "publishDomains": "Publish domains",
@@ -194,7 +194,8 @@
     "selectNamedService": "Select {name}",
     "selectProject": "Select all services in {name}",
     "clearSelection": "Clear selection",
-    "selectionKeyboard": "Press Enter or Space to select a service."
+    "selectionKeyboard": "Press Enter or Space to select a service.",
+    "expandProject": "Services in {name}"
   },
   "reimport": {
     "title": "Openship projects found",
@@ -209,7 +210,16 @@
     "openProject": "Open project",
     "alreadyManaged": "{n} container(s) are already managed by this instance.",
     "finalizeNote": "Re-import restores the project and re-attaches the running containers live — no redeploy needed. Redeploy only to change the build.",
-    "failed": "Re-import failed"
+    "failed": "Re-import failed",
+    "review": "Recover project",
+    "reviewNamed": "Recover {name}",
+    "groupLabel": "Openship project",
+    "recoverHint": "Restore its settings and reconnect the running containers.",
+    "configuration": "Configuration",
+    "snapshot": "Saved snapshot",
+    "containerMetadata": "From containers",
+    "checkSettings": "Build settings may need review after recovery.",
+    "chooseHint": "Select a project to recover its settings and running services."
   },
   "scanFailed": "Docker inspection failed",
   "adoptFailed": "Couldn't create the project",
@@ -296,6 +306,15 @@
     "finishRoute": "Complete route setup",
     "finishRouteHint": "Complete the domain and port, or choose Internal only.",
     "routingTitle": "Domains & routing",
-    "scanOptions": "Scan options"
+    "scanOptions": "Scan options",
+    "destination": "Destination",
+    "summary": "Import summary",
+    "publicServices": "Public services",
+    "internalServices": "Internal services",
+    "dataMounts": "Data mounts",
+    "destinationNext": "Choose where to run these services next.",
+    "importDetails": "Import details",
+    "detectProjects": "Detect projects",
+    "includeManaged": "Include managed containers"
   }
 }

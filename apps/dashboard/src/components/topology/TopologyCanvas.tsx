@@ -33,6 +33,7 @@ import {
   type TopologyState,
 } from "./model";
 import { readTopologyPositions, saveTopologyPositions } from "./layout";
+import { groupedTopologyLayout, type TopologyGroupLayout } from "./group-layout";
 import "@xyflow/react/dist/style.css";
 
 export type TopologySelection = { kind: "node" | "edge"; id: string } | null;
@@ -44,11 +45,98 @@ export interface TopologyNodeAction {
   disabled?: boolean;
   hint?: string;
   statusLabel?: string;
+  kind?: "select" | "open";
+  indeterminate?: boolean;
+  readOnly?: boolean;
+}
+export interface TopologyGroup extends TopologyGroupLayout {
+  title: string;
+  description: string;
+  action: TopologyNodeAction;
+  expandLabel: string;
+  onToggleExpanded: () => void;
 }
 type ResourceFlowNode = Node<
   { resource: TopologyResource; onOpen: (id: string) => void; action?: TopologyNodeAction },
   "resource"
 >;
+type GroupFlowNode = Node<{ group: TopologyGroup; onOpen: (id: string) => void }, "projectGroup">;
+type TopologyFlowNode = ResourceFlowNode | GroupFlowNode;
+
+/** The same group heading is used by discovery cards and the canvas parent node. */
+export function TopologyGroupHeading({ group, onOpen }: GroupFlowNode["data"]) {
+  const { action } = group;
+  return (
+    <div className="topology-group-drag flex h-20 items-center gap-3 px-4 text-start">
+      <button
+        type="button"
+        className="nodrag nopan flex min-w-0 flex-1 items-center gap-3 rounded-lg text-start focus-visible:outline-2 focus-visible:outline-ring"
+        onClick={(event) => {
+          event.stopPropagation();
+          group.onToggleExpanded();
+        }}
+        aria-expanded={!group.collapsed}
+        aria-label={group.expandLabel}
+      >
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/70">
+          <UiIcon name="project" className="size-4 text-muted-foreground" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className="block truncate text-sm font-semibold text-foreground"
+            title={group.title}
+          >
+            {group.title}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+            {group.description}
+          </span>
+        </span>
+        <UiIcon
+          name="chevron-down"
+          className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${group.collapsed ? "" : "rotate-180"}`}
+        />
+      </button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="nodrag nopan shrink-0"
+        role={action.kind === "open" ? undefined : "checkbox"}
+        aria-checked={
+          action.kind === "open" ? undefined : action.indeterminate ? "mixed" : action.selected
+        }
+        aria-pressed={action.kind === "open" ? action.selected : undefined}
+        aria-label={action.ariaLabel}
+        disabled={action.disabled}
+        title={action.hint}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen(group.id);
+        }}
+      >
+        {action.kind !== "open" && (
+          <Checkbox
+            asButton={false}
+            checked={action.indeterminate ? "indeterminate" : action.selected}
+          />
+        )}
+        {action.label}
+      </Button>
+    </div>
+  );
+}
+
+const ProjectGroup = memo(function ProjectGroup({ data }: NodeProps<GroupFlowNode>) {
+  return (
+    <article
+      className="topology-group h-full w-full rounded-2xl"
+      data-picked={data.group.action.selected || undefined}
+      aria-label={data.group.title}
+    >
+      <TopologyGroupHeading {...data} />
+    </article>
+  );
+});
 
 const stateLabels: Record<TopologyState, string> = {
   running: "Running",
@@ -147,62 +235,72 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
           )}
         </div>
       )}
-      <div className="px-3 pb-3">
-        <button
-          type="button"
-          className="topology-node-action nodrag nopan flex h-8 w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          role={action ? "checkbox" : undefined}
-          aria-checked={action?.selected}
-          disabled={action?.disabled}
-          title={action?.hint}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpen(resource.id);
-          }}
-          aria-label={
-            action
-              ? action.ariaLabel
-              : canInspectInstance
-                ? `View instances of ${resource.name}`
-                : resource.clusterPod
-                  ? `Inspect ${resource.name}`
-                  : `Configure ${resource.name}`
-          }
-        >
-          <span className="flex min-w-0 items-center gap-2 truncate">
-            {action && <Checkbox asButton={false} checked={action.selected} />}
-            {action
-              ? action.label
-              : canInspectInstance
-                ? "Instances"
-                : resource.clusterPod
-                  ? "Inspect instance"
-                  : resource.kind === "traffic"
-                    ? "View traffic"
-                    : resource.kind === "linked"
-                      ? "View connection"
-                      : "Configuration"}
-          </span>
-          <span className="flex shrink-0 items-center gap-2">
-            {applicationRelease ? (
-              <span className="text-[11px] text-muted-foreground">Deployed {resource.version}</span>
-            ) : action?.statusLabel ? (
-              <span className="topology-status text-xs" data-state={resource.state}>
-                {action.statusLabel}
-              </span>
-            ) : (
-              <TopologyStatus state={resource.state} />
-            )}
-            {!action && <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />}
-          </span>
-        </button>
-      </div>
+      {action?.readOnly ? (
+        <div className="px-4 pb-3 text-xs topology-status" data-state={resource.state}>
+          {action.statusLabel}
+        </div>
+      ) : (
+        <div className="px-3 pb-3">
+          <button
+            type="button"
+            className="topology-node-action nodrag nopan flex h-8 w-full items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            role={action && action.kind !== "open" ? "checkbox" : undefined}
+            aria-checked={action?.kind === "open" ? undefined : action?.selected}
+            disabled={action?.disabled}
+            title={action?.hint}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen(resource.id);
+            }}
+            aria-label={
+              action
+                ? action.ariaLabel
+                : canInspectInstance
+                  ? `View instances of ${resource.name}`
+                  : resource.clusterPod
+                    ? `Inspect ${resource.name}`
+                    : `Configure ${resource.name}`
+            }
+          >
+            <span className="flex min-w-0 items-center gap-2 truncate">
+              {action && action.kind !== "open" && (
+                <Checkbox asButton={false} checked={action.selected} />
+              )}
+              {action
+                ? action.label
+                : canInspectInstance
+                  ? "Instances"
+                  : resource.clusterPod
+                    ? "Inspect instance"
+                    : resource.kind === "traffic"
+                      ? "View traffic"
+                      : resource.kind === "linked"
+                        ? "View connection"
+                        : "Configuration"}
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              {applicationRelease ? (
+                <span className="text-[11px] text-muted-foreground">
+                  Deployed {resource.version}
+                </span>
+              ) : action?.statusLabel ? (
+                <span className="topology-status text-xs" data-state={resource.state}>
+                  {action.statusLabel}
+                </span>
+              ) : (
+                <TopologyStatus state={resource.state} />
+              )}
+              {!action && <UiIcon name="chevron-right" className="size-3 rtl:rotate-180" />}
+            </span>
+          </button>
+        </div>
+      )}
       <Handle type="source" position={Position.Right} isConnectable={isService && !action} />
     </article>
   );
 });
 
-const nodeTypes = { resource: Resource };
+const nodeTypes = { resource: Resource, projectGroup: ProjectGroup };
 const edgeTypes = { traffic: TrafficEdge };
 const fitViewOptions = { padding: 0.2, maxZoom: 1 };
 const selectionFitViewOptions: FitViewOptions = {
@@ -301,6 +399,7 @@ interface TopologyCanvasProps {
   onOpen: (id: string) => void;
   onConnect?: (connection: Connection) => void;
   nodeActions?: Readonly<Record<string, TopologyNodeAction>>;
+  groups?: readonly TopologyGroup[];
   ariaLabel?: string;
   nodeDescription?: string;
 }
@@ -315,20 +414,55 @@ function Canvas({
   onOpen,
   onConnect,
   nodeActions,
+  groups,
   ariaLabel = "Project topology",
   nodeDescription,
 }: TopologyCanvasProps) {
   const fitOptions = nodeActions ? selectionFitViewOptions : fitViewOptions;
-  const positions = useMemo(() => topologyPositions(graph), [graph]);
+  const grouped = useMemo(
+    () => (groups?.length ? groupedTopologyLayout(graph, groups) : null),
+    [graph, groups],
+  );
+  const positions = useMemo(() => grouped?.positions ?? topologyPositions(graph), [graph, grouped]);
   const storedPositions = useRef<ReturnType<typeof readTopologyPositions> | null>(null);
   if (storedPositions.current === null)
     storedPositions.current = layoutKey ? readTopologyPositions(layoutKey) : {};
-  const [nodes, setNodes] = useState<ResourceFlowNode[]>([]);
+  const [nodes, setNodes] = useState<TopologyFlowNode[]>([]);
   const [fitRevision, setFitRevision] = useState(0);
   const previousIds = useRef<string>("");
   useEffect(() => {
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
+      if (groups && grouped) {
+        const groupById = new Map(groups.map((group) => [group.id, group]));
+        return [
+          ...groups.map(
+            (group): GroupFlowNode => ({
+              ...byId.get(group.id),
+              id: group.id,
+              type: "projectGroup",
+              position: positions[group.id]!,
+              style: grouped.frames.get(group.id),
+              draggable: false,
+              data: { group, onOpen },
+            }),
+          ),
+          ...graph.nodes.map((resource): ResourceFlowNode => {
+            const parentId = grouped.parents.get(resource.id);
+            return {
+              ...byId.get(resource.id),
+              id: resource.id,
+              type: "resource",
+              parentId,
+              extent: parentId ? "parent" : undefined,
+              position: positions[resource.id]!,
+              hidden: parentId ? groupById.get(parentId)?.collapsed : false,
+              draggable: false,
+              data: { resource, onOpen, action: nodeActions?.[resource.id] },
+            };
+          }),
+        ];
+      }
       const occupied = current
         .filter((node) => graph.nodes.some((resource) => resource.id === node.id))
         .map((node) => node.position);
@@ -358,14 +492,15 @@ function Canvas({
         };
       });
     });
-    const ids = graph.nodes
-      .map((node) => node.id)
-      .sort()
-      .join("|");
+    const ids =
+      graph.nodes
+        .map((node) => node.id)
+        .sort()
+        .join("|") + (groups?.map((group) => `${group.id}:${group.collapsed}`).join("|") ?? "");
     if (previousIds.current && previousIds.current !== ids)
       setFitRevision((revision) => revision + 1);
     previousIds.current = ids;
-  }, [graph, positions, onOpen, nodeActions]);
+  }, [graph, positions, onOpen, nodeActions, groups, grouped]);
   const edges = useMemo<ScaleFlowEdge[]>(
     () =>
       graph.edges.map((relation) => ({
@@ -394,12 +529,12 @@ function Canvas({
         if (!(target instanceof Element) || !target.matches(".react-flow__node, .react-flow__edge"))
           return;
         const id = target.getAttribute("data-id");
-        if (!id || nodeActions?.[id]?.disabled) return;
+        if (!id || nodeActions?.[id]?.disabled || nodeActions?.[id]?.readOnly) return;
         event.preventDefault();
         onSelect({ kind: target.classList.contains("react-flow__node") ? "node" : "edge", id });
       }}
     >
-      <ReactFlow<ResourceFlowNode, ScaleFlowEdge>
+      <ReactFlow<TopologyFlowNode, ScaleFlowEdge>
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -414,7 +549,7 @@ function Canvas({
         }}
         onNodeClick={(event, node) => {
           (event.currentTarget as HTMLElement).focus({ preventScroll: true });
-          if (nodeActions?.[node.id]?.disabled) return;
+          if (nodeActions?.[node.id]?.disabled || nodeActions?.[node.id]?.readOnly) return;
           onSelect({ kind: "node", id: node.id });
         }}
         onEdgeClick={(event, edge) => {

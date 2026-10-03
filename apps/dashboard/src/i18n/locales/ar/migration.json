@@ -1,7 +1,7 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "تم اكتشاف {proxy} على الخادم المصدر",
+      "detected": "تم اكتشاف {proxy}",
       "handoff": "راجع النطاقات المطابقة أدناه. يجهّز الترحيل موجّه الخادم الهدف ويطلب تأكيدك إذا لزم استبدال الوكيل الحالي.",
       "warnings": "مراجعة {count} ملاحظات من الفحص"
     },
@@ -69,7 +69,7 @@
       "back": "رجوع",
       "sourceHint": "يمكنك اختياريًا ربط مستودع وتعيين حاوياتك على خدمات compose الخاصة به — لا تزال الصورة قيد التشغيل مُعاد استخدامها.",
       "linkRepo": "ربط مستودع",
-      "linkRepoDesc": "اربط المستودع ليعرف Openship مصدر كل خدمة (النشر التلقائي وإعادة البناء لاحقًا). لا تزال هذه الهجرة تعيد استخدام الصورة قيد التشغيل — لا إعادة بناء الآن.",
+      "linkRepoDesc": "استخدم Git لإعادة البناء والنشر التلقائي لاحقًا.",
       "repoOptional": "اختياري",
       "connectGithub": "ربط GitHub",
       "selectRepo": "اختر مستودعًا",
@@ -79,7 +79,7 @@
       "branch": "الفرع",
       "unlinkRepo": "إزالة",
       "mapTitle": "تعيين الحاويات على خدمات compose",
-      "mapHint": "وجّه كل حاوية مكتشفة إلى خدمتها في compose الخاص بالمستودع. يصبح مسار بناء الخدمة المطابقة مصدرها.",
+      "mapHint": "طابق الحاويات مع خدماتها في المستودع.",
       "mapToService": "اختر خدمة",
       "notInRepo": "غير موجودة في المستودع",
       "composeServicesTitle": "خدمات المستودع",
@@ -89,7 +89,7 @@
       "mapField": "خدمة المستودع",
       "repoConnectHint": "اربط GitHub من اللوحة لتصفّح مستودعاتك — أو الصق رابط مستودع.",
       "repoPasteHint": "أو الصق رابط مستودع.",
-      "repoOnSourceHint": "اربط مستودع Git في الخطوة التالية (المصدر) — اختياري.",
+      "repoOnSourceHint": "اربط مستودعًا في الخطوة التالية.",
       "parsingCompose": "جارٍ تحليل compose…",
       "envTitle": "متغيرات البيئة",
       "publishDomains": "نشر النطاقات",
@@ -161,7 +161,8 @@
     "selectNamedService": "اختر {name}",
     "selectProject": "اختر جميع خدمات {name}",
     "clearSelection": "إلغاء التحديد",
-    "selectionKeyboard": "اضغط Enter أو المسافة لاختيار خدمة."
+    "selectionKeyboard": "اضغط Enter أو المسافة لاختيار خدمة.",
+    "expandProject": "خدمات {name}"
   },
   "reimport": {
     "title": "مشاريع Openship المكتشفة",
@@ -176,7 +177,16 @@
     "openProject": "فتح المشروع",
     "alreadyManaged": "{n} حاوية يديرها هذا النظام بالفعل.",
     "finalizeNote": "تستعيد إعادة الاستيراد المشروع وتربط الحاويات العاملة مباشرةً — دون الحاجة لإعادة النشر. أعد النشر فقط لتغيير البناء.",
-    "failed": "فشلت إعادة الاستيراد"
+    "failed": "فشلت إعادة الاستيراد",
+    "review": "استعادة المشروع",
+    "reviewNamed": "استعادة {name}",
+    "groupLabel": "مشروع Openship",
+    "recoverHint": "استعد إعداداته وأعد ربط الحاويات قيد التشغيل.",
+    "configuration": "الإعدادات",
+    "snapshot": "لقطة محفوظة",
+    "containerMetadata": "من الحاويات",
+    "checkSettings": "قد تحتاج إعدادات البناء إلى مراجعة بعد الاستعادة.",
+    "chooseHint": "اختر مشروعًا لاستعادة إعداداته وخدماته قيد التشغيل."
   },
   "scanFailed": "فشل فحص Docker",
   "adoptFailed": "تعذّر إنشاء المشروع",
@@ -267,6 +277,15 @@
     "finishRoute": "أكمل إعداد المسار",
     "finishRouteHint": "أكمل النطاق والمنفذ أو اختر داخلي فقط.",
     "routingTitle": "النطاقات والتوجيه",
-    "scanOptions": "خيارات الفحص"
+    "scanOptions": "خيارات الفحص",
+    "destination": "الوجهة",
+    "summary": "ملخص الاستيراد",
+    "publicServices": "خدمات عامة",
+    "internalServices": "خدمات داخلية",
+    "dataMounts": "وحدات البيانات",
+    "destinationNext": "اختر مكان تشغيل هذه الخدمات في الخطوة التالية.",
+    "importDetails": "تفاصيل الاستيراد",
+    "detectProjects": "اكتشاف المشاريع",
+    "includeManaged": "تضمين الحاويات المُدارة"
   }
 }

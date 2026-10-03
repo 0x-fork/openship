@@ -1,12 +1,15 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "移行元サーバーで {proxy} を検出しました",
+      "detected": "{proxy} を検出",
       "handoff": "以下の関連付けられたドメインを確認してください。移行時に移行先サーバーのエッジプロキシを設定します。既存のプロキシを置き換える必要がある場合は、確認を求めます。",
       "warnings": "検出時の通知を {count} 件確認"
     },
     "steps": {
-      "mapNoRepo": "リポジトリをリンクして、検出されたコンテナをサービスに対応付けます（任意）。"
+      "mapNoRepo": "リポジトリをリンクして、検出されたコンテナをサービスに対応付けます（任意）。",
+      "linkRepoDesc": "今後のビルドと自動デプロイに Git を使用します。",
+      "repoOnSourceHint": "次のステップでリポジトリを連携します。",
+      "mapHint": "コンテナをリポジトリ内のサービスに対応付けます。"
     }
   },
   "entry": {
@@ -45,7 +48,8 @@
     "selectNamedService": "{name}を選択",
     "selectProject": "{name}の全サービスを選択",
     "clearSelection": "選択を解除",
-    "selectionKeyboard": "Enterキーまたはスペースキーでサービスを選択します。"
+    "selectionKeyboard": "Enterキーまたはスペースキーでサービスを選択します。",
+    "expandProject": "{name} のサービス"
   },
   "review": {
     "progress": "インポートの進行状況",
@@ -58,6 +62,26 @@
     "finishRoute": "ルート設定を完了",
     "finishRouteHint": "ドメインとポートを入力するか、内部のみを選択してください。",
     "routingTitle": "ドメインとルーティング",
-    "scanOptions": "スキャン設定"
+    "scanOptions": "スキャン設定",
+    "destination": "移行先",
+    "summary": "インポートの概要",
+    "publicServices": "公開サービス",
+    "internalServices": "内部サービス",
+    "dataMounts": "データマウント",
+    "destinationNext": "次のステップでサービスの実行先を選択します。",
+    "importDetails": "インポートの詳細",
+    "detectProjects": "プロジェクトを検出",
+    "includeManaged": "管理対象コンテナを含める"
+  },
+  "reimport": {
+    "review": "プロジェクトを復元",
+    "reviewNamed": "{name} を復元",
+    "groupLabel": "Openship プロジェクト",
+    "recoverHint": "設定を復元し、実行中のコンテナを再接続します。",
+    "configuration": "設定",
+    "snapshot": "保存済みスナップショット",
+    "containerMetadata": "コンテナから取得",
+    "checkSettings": "復元後にビルド設定の確認が必要な場合があります。",
+    "chooseHint": "設定と実行中のサービスを復元するプロジェクトを選択します。"
   }
 }

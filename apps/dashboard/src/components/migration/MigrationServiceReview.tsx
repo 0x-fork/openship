@@ -122,7 +122,7 @@ export function MigrationServiceReview({
 
   return (
     <section
-      className="@container min-w-0 overflow-hidden rounded-2xl bg-card"
+      className={`@container min-w-0 overflow-hidden rounded-2xl bg-card ${expanded ? "@[640px]/review:col-span-2" : ""}`}
       aria-label={service.name}
     >
       <button

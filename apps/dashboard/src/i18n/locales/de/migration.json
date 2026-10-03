@@ -1,12 +1,15 @@
 {
   "wizard": {
     "edgeReview": {
-      "detected": "Auf dem Quellserver erkannt: {proxy}",
+      "detected": "{proxy} erkannt",
       "handoff": "Prüfe die zugeordneten Domains unten. Bei der Migration wird der Edge-Proxy des Zielservers eingerichtet. Falls ein vorhandener Proxy ersetzt werden muss, wirst du um Bestätigung gebeten.",
       "warnings": "{count} Hinweise zur Erkennung prüfen"
     },
     "steps": {
-      "mapNoRepo": "Verknüpfe optional ein Repository, um erkannte Container seinen Diensten zuzuordnen."
+      "mapNoRepo": "Verknüpfe optional ein Repository, um erkannte Container seinen Diensten zuzuordnen.",
+      "linkRepoDesc": "Git für spätere Builds und automatische Deployments verwenden.",
+      "repoOnSourceHint": "Verknüpfe im nächsten Schritt ein Repository.",
+      "mapHint": "Ordne Container ihren Diensten im Repository zu."
     }
   },
   "entry": {
@@ -45,7 +48,8 @@
     "selectNamedService": "{name} auswählen",
     "selectProject": "Alle Dienste in {name} auswählen",
     "clearSelection": "Auswahl aufheben",
-    "selectionKeyboard": "Drücke Eingabe oder die Leertaste, um einen Dienst auszuwählen."
+    "selectionKeyboard": "Drücke Eingabe oder die Leertaste, um einen Dienst auszuwählen.",
+    "expandProject": "Dienste in {name}"
   },
   "review": {
     "progress": "Importfortschritt",
@@ -58,6 +62,26 @@
     "finishRoute": "Route vervollständigen",
     "finishRouteHint": "Vervollständige Domain und Port oder wähle Nur intern.",
     "routingTitle": "Domains & Routing",
-    "scanOptions": "Scan-Optionen"
+    "scanOptions": "Scan-Optionen",
+    "destination": "Ziel",
+    "summary": "Importübersicht",
+    "publicServices": "Öffentliche Dienste",
+    "internalServices": "Interne Dienste",
+    "dataMounts": "Daten-Mounts",
+    "destinationNext": "Wähle als Nächstes, wo diese Dienste laufen sollen.",
+    "importDetails": "Importdetails",
+    "detectProjects": "Projekte erkennen",
+    "includeManaged": "Verwaltete Container einbeziehen"
+  },
+  "reimport": {
+    "review": "Projekt wiederherstellen",
+    "reviewNamed": "{name} wiederherstellen",
+    "groupLabel": "Openship-Projekt",
+    "recoverHint": "Einstellungen wiederherstellen und laufende Container erneut zuordnen.",
+    "configuration": "Konfiguration",
+    "snapshot": "Gespeicherter Snapshot",
+    "containerMetadata": "Aus Containern",
+    "checkSettings": "Build-Einstellungen müssen nach der Wiederherstellung eventuell geprüft werden.",
+    "chooseHint": "Wähle ein Projekt, um seine Einstellungen und laufenden Dienste wiederherzustellen."
   }
 }
