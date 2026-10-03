@@ -88,6 +88,7 @@ export const HostChannelSchema = Type.Object(
 
 const serverFields = {
   id: Type.String(),
+  purpose: Type.Optional(Type.Union([Type.Literal("deployment"), Type.Literal("migration_source")])),
   name: nullableString,
   isLocal: Type.Boolean(),
   sshHost: nullableString,

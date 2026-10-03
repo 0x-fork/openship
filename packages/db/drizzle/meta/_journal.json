@@ -1128,6 +1128,27 @@
       "when": 1790945000000,
       "tag": "0160_linked_server_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1790963755770,
+      "tag": "0161_migration_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1790965146889,
+      "tag": "0162_migration_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1790982000000,
+      "tag": "0163_migration_placement",
+      "breakpoints": true
     }
   ]
 }

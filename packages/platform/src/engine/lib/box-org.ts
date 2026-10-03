@@ -37,6 +37,7 @@ export async function boxOwningOrgId(): Promise<string | null> {
 }
 
 type LocalServerRow = {
+  purpose?: string;
   workspaceId?: string | null;
   isLocal?: boolean | null;
   sshHost?: string | null;
@@ -55,7 +56,7 @@ type LocalServerRow = {
  * belongs to the box-owning org, never a teammate's org.
  */
 export async function isLocalHostRow(server: LocalServerRow): Promise<boolean> {
-  if (server.workspaceId) return false;
+  if (server.workspaceId || server.purpose === "migration_source") return false;
   if (server.isLocal) return true;
   if (!resolvesToLocalHost(server)) return false;
   const boxOrg = await boxOwningOrgId();

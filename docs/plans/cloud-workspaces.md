@@ -3,7 +3,9 @@
 Approved scope: one subscription provisions one managed server. Projects select
 it through `serverId` and use the existing Docker or bare application engine.
 Self-hosted, desktop and SaaS share the server acquisition, destination and
-application flows. Existing customer migration is performed outside this code.
+application flows. Conversion of customers from the retired Cloud architecture is
+performed outside this code. Customer-initiated imports use the shared migration
+flow, with migration-only external SSH sources and managed Cloud destinations.
 
 ## Invariants
 

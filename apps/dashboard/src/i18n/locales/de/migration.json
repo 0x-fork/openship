@@ -8,5 +8,25 @@
   },
   "entry": {
     "tab": "Bestehendes Projekt importieren"
+  },
+  "sources": {
+    "title": "Migrationsquelle verbinden",
+    "connect": "Quelle verbinden",
+    "disconnect": "Quelle trennen",
+    "empty": "Verbinde den Server, von dem du importieren möchtest.",
+    "hint": "Nur für Migrationen. Entferne die Verbindung, wenn du fertig bist.",
+    "importHint": "Kopiere Apps und Daten auf einen verwalteten Openship-Server. Die Quelle bleibt bis zur bestätigten Umstellung erhalten."
+  },
+  "tab": {
+    "safetyTitle": "Die Quelldaten bleiben erhalten.",
+    "safetyBody": "Daten werden kopiert. Die ausgewählten Quellcontainer werden während der Übertragung gestoppt; ihre Daten bleiben auf der Quelle. Das Entfernen der Originalcontainer erfordert deine Zustimmung."
+  },
+  "run": {
+    "downtimeNote": "Die ausgewählten Quellcontainer werden während der Datenübertragung und des Starts am Ziel gestoppt. Plane Ausfallzeit ein.",
+    "routeHint": "Deine Dienste bleiben privat, bis Routen eingerichtet sind. Füge ihre Domains im Tab Domains des Projekts hinzu oder prüfe sie dort."
+  },
+  "cutover": {
+    "warning": "Das Ziel ist live. Du kannst die Originalcontainer entfernen oder gestoppt behalten. Die Quellvolumes bleiben erhalten.",
+    "warningRestart": "Das Ziel ist live. Originale behalten startet zuvor laufende Quellcontainer als unabhängige Kopien neu. Originale entfernen löscht diese Container. Die Quellvolumes bleiben erhalten."
   }
 }

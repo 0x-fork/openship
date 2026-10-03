@@ -466,6 +466,9 @@ export const endpoints = {
   /*  Docker migration (inspect + adopt an existing Docker server)    */
   /* ---------------------------------------------------------------- */
   dockerMigration: {
+    sources: "migration/sources",
+    testSource: "migration/sources/test",
+    source: (id: string) => `migration/sources/${encodeURIComponent(id)}`,
     scan: "migration/scan",
     scanStream: "migration/scan/stream",
     revealEnv: "migration/reveal-env",

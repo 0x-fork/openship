@@ -16,7 +16,7 @@ export function createServerRepo(db: Database) {
     /** Connected-host inventory for SSH maintenance and infrastructure jobs. */
     async list(): Promise<ConnectedServer[]> {
       return db.query.servers.findMany({
-        where: isNull(servers.workspaceId),
+        where: and(isNull(servers.workspaceId), eq(servers.purpose, "deployment")),
         orderBy: (s, { asc }) => [asc(s.createdAt)],
       }) as Promise<ConnectedServer[]>;
     },
@@ -61,11 +61,20 @@ export function createServerRepo(db: Database) {
       const rows = await db.query.servers.findMany({
         where: and(
           eq(servers.organizationId, organizationId),
+          eq(servers.purpose, "deployment"),
           includeManaged ? undefined : isNull(servers.workspaceId),
         ),
         orderBy: (s, { asc }) => [asc(s.createdAt)],
       });
       return rows as IncludeManaged extends true ? Server[] : ConnectedServer[];
+    },
+
+    /** Sources live only in the import flow, never in host maintenance or defaults. */
+    async listMigrationSources(organizationId: string): Promise<Server[]> {
+      return db.query.servers.findMany({
+        where: and(eq(servers.organizationId, organizationId), eq(servers.purpose, "migration_source")),
+        orderBy: (s, { asc }) => [asc(s.createdAt)],
+      });
     },
 
     /** Org-scoped get. Strict equality — NULL-org rows are invisible. */

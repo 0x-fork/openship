@@ -123,17 +123,19 @@
     "failed": "Échec de la migration",
     "rolled_back": "Annulé — vos conteneurs d'origine ont été redémarrés",
     "openProject": "Ouvrir le projet",
-    "downtimeNote": "Les conteneurs d'origine sont arrêtés pendant le transfert ; attendez-vous à une brève interruption jusqu'à ce que le nouveau déploiement soit en ligne.",
+    "downtimeNote": "Les conteneurs source sélectionnés sont arrêtés pendant la copie des données et le démarrage de la destination. Prévoyez une interruption.",
     "movingImage": "image",
     "movingVolume": "volume",
-    "partial": "Partielle — certains chemins n'ont pas été déplacés"
+    "partial": "Partielle — certains chemins n'ont pas été déplacés",
+    "routeHint": "Vos services restent privés tant que les routes ne sont pas configurées. Ajoutez ou vérifiez leurs domaines dans l’onglet Domaines du projet."
   },
   "cutover": {
     "title": "Finaliser la migration",
-    "warning": "Le nouveau déploiement est en ligne sur le serveur cible. Vous pouvez arrêter et supprimer les conteneurs d'origine maintenant, ou les conserver (arrêtés) comme filet de sécurité et les supprimer plus tard.",
+    "warning": "La destination est en ligne. Vous pouvez supprimer les conteneurs d’origine ou les conserver arrêtés. Les volumes source sont conservés.",
     "stopRemove": "Arrêter et supprimer les originaux",
     "keep": "Conserver les originaux",
-    "working": "Traitement…"
+    "working": "Traitement…",
+    "warningRestart": "La destination est en ligne. Conserver les originaux redémarre les conteneurs source précédemment actifs comme copies indépendantes. Supprimer les originaux les retire. Les volumes source sont conservés."
   },
   "discover": {
     "buildBlocked": "Construit depuis les sources — migration impossible pour l'instant (publiez d'abord une image)",
@@ -244,13 +246,21 @@
     "resume": "Reprendre la migration",
     "resuming": "Reprise…",
     "editRetry": "Modifier et réessayer",
-    "safetyTitle": "Non destructif et réversible.",
-    "safetyBody": "Votre source continue de fonctionner tout du long — les données sont copiées, jamais déplacées. Rien n'est supprimé, même après une migration réussie : vos conteneurs d'origine restent (arrêtés, comme filet de sécurité) jusqu'à ce que vous les supprimiez explicitement lors de la bascule.",
+    "safetyTitle": "Les données source sont conservées.",
+    "safetyBody": "Les données sont copiées. Les conteneurs source sélectionnés sont arrêtés pendant le transfert ; leurs données restent sur la source. La suppression des conteneurs d’origine nécessite votre accord.",
     "cleanupTarget": "Supprimer les données copiées sur la cible",
     "retryRun": "Réessayer",
     "changeTarget": "Changer de cible"
   },
   "plan": {
     "missing": "introuvable"
+  },
+  "sources": {
+    "title": "Connecter une source de migration",
+    "connect": "Connecter la source",
+    "disconnect": "Déconnecter la source",
+    "empty": "Connectez le serveur depuis lequel vous souhaitez importer.",
+    "hint": "Uniquement pour les migrations. Supprimez la connexion une fois terminé.",
+    "importHint": "Copiez les applications et les données vers un serveur Openship géré. La source est conservée jusqu’à la confirmation du basculement."
   }
 }

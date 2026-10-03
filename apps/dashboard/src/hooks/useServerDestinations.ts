@@ -5,11 +5,12 @@ import type { ServerOperations } from "@repo/contracts";
 import { systemApi } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useSession } from "@/lib/auth-client";
+import { dockerMigrationApi } from "@/lib/api/server-migration";
 
-export function useServerDestinations(enabled = true) {
+export function useServerDestinations(enabled = true, inventory: "deployment" | "migration-source" = "deployment") {
   const { data: session } = useSession();
   const organizationId = session?.session.activeOrganizationId ?? undefined;
-  const contextKey = `${session?.user.id ?? "local"}:${organizationId ?? ""}`;
+  const contextKey = `${session?.user.id ?? "local"}:${organizationId ?? ""}${inventory === "migration-source" ? ":migration-source" : ""}`;
   const [data, setData] = useState<Awaited<ReturnType<ServerOperations["destinations"]>> | null>(
     null,
   );
@@ -25,8 +26,9 @@ export function useServerDestinations(enabled = true) {
     setError(null);
     setLoading(enabled);
     if (enabled)
-      void systemApi
-        .listServerDestinations()
+      void (inventory === "migration-source"
+        ? dockerMigrationApi.listSources().then(result => ({ servers: result.sources }))
+        : systemApi.listServerDestinations())
         .then((value) => {
           if (active) setData(value);
         })
@@ -39,7 +41,7 @@ export function useServerDestinations(enabled = true) {
     return () => {
       active = false;
     };
-  }, [enabled, contextKey, revision]);
+  }, [enabled, contextKey, revision, inventory]);
   const current = enabled && owner === contextKey;
   return {
     data: current ? data : null,

@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   issueToken: vi.fn(),
   ssh: vi.fn(),
+  project: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/config/env", async (original) => ({
   ...(await original<any>()),
@@ -18,6 +19,7 @@ vi.mock("@repo/db", () => ({
     server: { getInOrganization: h.server, findByWorkspace: h.workspaceServer },
     cloudWorkspace: { findByIdInOrganization: h.workspace },
     cloudDockerWorkspace: { find: h.binding },
+    project: { findByIdInOrganization: h.project },
   },
 }));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ issueNamespaceToken: h.issueToken }));
@@ -52,6 +54,7 @@ const server = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  h.project.mockResolvedValue({ id: "project", organizationId: "org", serverId: server.id, workspaceId: "owner" });
   h.server.mockResolvedValue(server);
   h.workspaceServer.mockResolvedValue(server);
   h.workspace.mockResolvedValue({
@@ -76,6 +79,23 @@ beforeEach(() => {
 });
 
 describe("managed server execution destinations", () => {
+  it("uses a retained deployment's owned server after the project has moved", async () => {
+    h.project.mockResolvedValue({ id: "project", organizationId: "org", serverId: "new-server", workspaceId: "new-owner" });
+    await resolveDeploymentPlatform({ serverId: server.id, runtimeMode: "docker", managedWorkspaceId: "owner",
+      managedServer: { projectId: "project", workspaceId: "provider-vm", ownerWorkspaceId: "owner" } }, { organizationId: "org" });
+    expect(h.project).toHaveBeenCalledExactlyOnceWith("project", "org");
+    expect(h.binding).toHaveBeenCalledWith({ ownerWorkspaceId: "owner" }, "org");
+    expect(h.issueToken).toHaveBeenCalledExactlyOnceWith("org", "owner");
+    expect(h.create.mock.calls[0][0].cloudServer).toMatchObject({ projectId: "project", workspaceId: "provider-vm", ownerWorkspaceId: "owner" });
+  });
+  it("rejects retained deployments belonging to a project outside the active organization", async () => {
+    h.project.mockResolvedValue(null);
+    await expect(resolveDeploymentPlatform({ serverId: server.id, runtimeMode: "docker", managedWorkspaceId: "owner",
+      managedServer: { projectId: "foreign-project", workspaceId: "provider-vm", ownerWorkspaceId: "owner" } }, { organizationId: "org" }))
+      .rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
+    expect(h.issueToken).not.toHaveBeenCalled();
+    expect(h.create).not.toHaveBeenCalled();
+  });
   it("uses the shared BareRuntime for direct applications on a managed server", async () => {
     const resolved = await resolveDeploymentPlatform({ serverId: server.id, runtimeMode: "bare",
       managedServer: { projectId: "project", workspaceId: "provider-vm", ownerWorkspaceId: "owner" } }, { organizationId: "org" });

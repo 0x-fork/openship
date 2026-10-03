@@ -12,11 +12,12 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useModal } from "@/context/ModalContext";
 import { ServerForm } from "./server-form";
 
-function AddServerDialog({ onCancel, onManaged, onConnected, connectedOnly = false }: {
+function AddServerDialog({ onCancel, onManaged, onConnected, connectedOnly = false, migrationSource = false }: {
   onCancel: () => void;
   onManaged: (server: CloudWorkspaceSummary, needsPlan: boolean) => Promise<void>;
   onConnected: (server: ServerInfo) => void;
   connectedOnly?: boolean;
+  migrationSource?: boolean;
 }) {
   const { t } = useI18n();
   const { selfHosted } = usePlatform();
@@ -27,7 +28,7 @@ function AddServerDialog({ onCancel, onManaged, onConnected, connectedOnly = fal
       tabIndex={-1} onKeyDown={onKeyDown} className="space-y-4 outline-none">
       {selfHosted && !connectedOnly && <ServerAcquisitionPicker value={mode} onChange={setMode} />}
       {!connectedOnly && mode === "managed" ? <ManagedServerSetup onCancel={onCancel} onReady={onManaged} autoFocus={false} />
-        : <ServerForm variant="modal" onCancel={onCancel} onSaved={({ server }) => onConnected(server)} />}
+        : <ServerForm variant="modal" migrationSource={migrationSource} onCancel={onCancel} onSaved={({ server }) => onConnected(server)} />}
     </div>
   );
 }
@@ -47,7 +48,7 @@ function AddServerDialog({ onCancel, onManaged, onConnected, connectedOnly = fal
  *
  * `onCreated` receives the saved server so the caller can select it right away.
  */
-export function useAddServerModal({ connectedOnly = false }: { connectedOnly?: boolean } = {}) {
+export function useAddServerModal({ connectedOnly = false, migrationSource = false }: { connectedOnly?: boolean; migrationSource?: boolean } = {}) {
   const { showModal, hideModal } = useModal();
   const { data: session } = useSession();
   const contextKey = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
@@ -74,6 +75,7 @@ export function useAddServerModal({ connectedOnly = false }: { connectedOnly?: b
         customContent: (
           <AddServerDialog
             connectedOnly={connectedOnly}
+            migrationSource={migrationSource}
             onCancel={() => hideModal(id)}
             onManaged={async (managed, needsPlan) => {
               if (!active) return;
@@ -112,6 +114,6 @@ export function useAddServerModal({ connectedOnly = false }: { connectedOnly?: b
       openDialogs.current.add(id);
       return id;
     },
-    [showModal, hideModal, contextKey, connectedOnly],
+    [showModal, hideModal, contextKey, connectedOnly, migrationSource],
   );
 }

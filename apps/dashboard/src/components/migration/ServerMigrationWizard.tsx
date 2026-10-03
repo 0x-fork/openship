@@ -4,8 +4,12 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { usePlatform } from "@/context/PlatformContext";
+import { useSession } from "@/lib/auth-client";
 import { Modal } from "@/components/ui/Modal";
-import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
+import ServerSelector, { ServerSelectorView, useServerSelection, type ServerOption } from "@/components/shared/ServerSelector";
+import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
+import { Button } from "@/components/ui/button";
 import {
   dockerMigrationApi,
   isScanStreamStalled,
@@ -314,6 +318,12 @@ export function ServerMigrationWizard({
 }) {
   const { t } = useI18n();
   const m = t.migration;
+  const { selfHosted } = usePlatform();
+  const { data: session } = useSession();
+  const ownerKey = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const ownerRef = useRef(ownerKey);
+  ownerRef.current = ownerKey;
+  const previousOwnerRef = useRef(ownerKey);
   const router = useRouter();
   const github = useGitHub();
 
@@ -331,12 +341,12 @@ export function ServerMigrationWizard({
   }, [step]);
 
   const [selectedId, setSelectedId] = useState<string | null>(serverId ?? null);
-  const [targetId, setTargetId] = useState<string | null>(serverId ?? null);
+  const [targetId, setTargetId] = useState<string | null>(selfHosted ? serverId ?? null : null);
   const [serverName, setServerName] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   // "Flat Docker" scan mode: ignore openship.* labels so managed workloads adopt
   // as plain compose/standalone (no re-import). Off = Openship-aware (default).
-  const [flatDocker, setFlatDocker] = useState(false);
+  const [flatDocker, setFlatDocker] = useState(!selfHosted);
   const [scanStatus, setScanStatus] = useState<string>("");
   const [stack, setStack] = useState<DiscoveredStack | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -390,6 +400,25 @@ export function ServerMigrationWizard({
   /** Bumped by every scan and every reset; a scan whose generation has moved on has
    *  lost its claim on the wizard's state. See handleScan. */
   const scanGen = useRef(0);
+  const repoRequests = useRef(new Map<string, RepoLink | null>());
+  const visible = variant === "tab" || !!isOpen;
+  const claimOperation = () => {
+    const generation = scanGen.current;
+    return () => scanGen.current === generation && ownerRef.current === ownerKey;
+  };
+  const targetSelection = useServerSelection({
+    value: targetId,
+    autoSelectFirst: true,
+    onSelect: selected => {
+      if (selected?.id === targetId) return;
+      setTargetId(selected?.id ?? null);
+      setPlanReady(false);
+      setConflictResolution({});
+    },
+  }, visible && !initialRunId);
+  const handleCloudPricing = useCloudDeployPricing(targetSelection.selected?.managed?.id);
+
+  useEffect(() => () => { scanGen.current++; }, []);
 
   const reset = () => {
     setStep("select");
@@ -399,12 +428,15 @@ export function ServerMigrationWizard({
     setActiveId(null);
     setVolumeStrategy({});
     setScanning(false);
+    setScanStatus("");
+    setPlanReady(false);
     setKillOriginals(false);
     setTransferMode("");
     setCompress(false);
     setCustomPaths([]);
     setConflictResolution({});
     planCacheRef.current.clear();
+    repoRequests.current.clear();
     scanGen.current++;
     setQueue(null);
     setQueueIndex(0);
@@ -417,7 +449,19 @@ export function ServerMigrationWizard({
     setCutoverBusy(false);
     setConfirmingDelete(false);
     setDeleteBusy(false);
+    setCleanupBusy(false);
+    setRetrying(false);
+    setParsingRepo(null);
+    setDeploy(null);
   };
+
+  useEffect(() => {
+    if (previousOwnerRef.current === ownerKey) return;
+    previousOwnerRef.current = ownerKey;
+    reset();
+    setSelectedId(serverId ?? null);
+    setTargetId(selfHosted ? serverId ?? null : null);
+  }, [ownerKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = () => {
     reset();
@@ -438,11 +482,14 @@ export function ServerMigrationWizard({
   // list via close(). Two-step inline confirm to avoid an accidental wipe.
   const deleteRun = async () => {
     if (!migrationId) return;
+    const isCurrent = claimOperation();
     setDeleteBusy(true);
     try {
       await dockerMigrationApi.remove(migrationId);
-      close();
-    } catch {
+      if (isCurrent()) close();
+    } catch (e) {
+      if (!isCurrent()) return;
+      setError(getApiErrorMessage(e, m.adoptFailed));
       setDeleteBusy(false);
       setConfirmingDelete(false);
     }
@@ -454,14 +501,15 @@ export function ServerMigrationWizard({
   const [cleanupBusy, setCleanupBusy] = useState(false);
   const cleanupTarget = async () => {
     if (!migrationId) return;
+    const isCurrent = claimOperation();
     setCleanupBusy(true);
     try {
       await dockerMigrationApi.cleanupTarget(migrationId);
-      setRun((prev) => (prev ? { ...prev, targetVolumes: [] } : prev));
-    } catch {
-      /* best-effort */
+      if (isCurrent()) setRun((prev) => (prev ? { ...prev, targetVolumes: [] } : prev));
+    } catch (e) {
+      if (isCurrent()) setError(getApiErrorMessage(e, m.adoptFailed));
     } finally {
-      setCleanupBusy(false);
+      if (isCurrent()) setCleanupBusy(false);
     }
   };
 
@@ -493,6 +541,7 @@ export function ServerMigrationWizard({
   const retryProjectRun = async () => {
     const snap = projectMoveSnapshot;
     if (!snap?.projectId || retrying) return;
+    const isCurrent = claimOperation();
     setRetrying(true);
     try {
       const res = await dockerMigrationApi.startProjectMove({
@@ -501,18 +550,20 @@ export function ServerMigrationWizard({
         intent: snap.intent === "copy" ? "copy" : "move",
         serviceNames: snap.serviceNames,
       });
+      if (!isCurrent()) return;
       // Re-point this panel at the NEW run. The failed run's record stays, as it does for a
       // scan retry — the history is how you see that the first attempt happened.
       setMigrationId(res.migrationId);
+      setConfirmToken(res.confirmationToken);
       setRun(null);
       setProgress(null);
       setQueue([{ name: "", serviceNames: [], volumeStrategies: {} }]);
       setQueueIndex(0);
       setCompleted([]);
     } catch (e: unknown) {
-      setError(getApiErrorMessage(e, m.tab.editRetry));
+      if (isCurrent()) setError(getApiErrorMessage(e, m.tab.editRetry));
     } finally {
-      setRetrying(false);
+      if (isCurrent()) setRetrying(false);
     }
   };
 
@@ -534,18 +585,18 @@ export function ServerMigrationWizard({
     setSelectedId(s?.id ?? null);
     setServerName(s?.name ?? null);
     reset();
-    setTargetId(s?.id ?? null);
+    if (selfHosted) setTargetId(s?.id ?? null);
   };
 
   const handleScan = async (flatOverride?: boolean) => {
     if (!selectedId) return;
-    const flat = flatOverride ?? flatDocker;
+    const flat = !selfHosted || (flatOverride ?? flatDocker);
     // The fallback below can land up to two minutes after the stream gave up, and
     // closing the wizard does NOT unmount this component — only the Modal's children
     // go. Without a claim check, a scan the user walked away from repopulates the
     // stack, and of the wrong server if they picked another one meanwhile.
     const gen = ++scanGen.current;
-    const stale = () => scanGen.current !== gen;
+    const stale = () => scanGen.current !== gen || ownerRef.current !== ownerKey;
     setScanning(true);
     setScanStatus("");
     setError(null);
@@ -560,8 +611,9 @@ export function ServerMigrationWizard({
       // beats a spinner that never stops, so take it silently: same stack, only
       // without the progress lines.
       const scanned = await dockerMigrationApi
-        .scanStream(selectedId, { onProgress: setScanStatus, flatDocker: flat })
+        .scanStream(selectedId, { onProgress: message => { if (!stale()) setScanStatus(message); }, flatDocker: flat })
         .catch(async (e: unknown) => {
+          if (stale()) throw e;
           if (!isScanStreamStalled(e)) throw e;
           // Recovered, but an operator's proxy is still misconfigured — say so
           // somewhere rather than hiding it behind a scan that silently got slower.
@@ -700,11 +752,18 @@ export function ServerMigrationWizard({
   // discovered services to the parsed compose services (step 2). One handler for
   // both linking and branch changes (both re-parse).
   const onRepoChange = async (projectId: string, repo: RepoLink | null) => {
+    repoRequests.current.set(projectId, repo);
+    const ownsWizard = claimOperation();
+    const isCurrent = () => ownsWizard() && repoRequests.current.get(projectId) === repo;
     setProjectRepo(projectId, repo);
-    if (!repo) return;
+    if (!repo) {
+      setParsingRepo(current => current === projectId ? null : current);
+      return;
+    }
     setParsingRepo(projectId);
     try {
       const res = await dockerMigrationApi.parseRepoCompose(repo.owner, repo.repo, repo.branch);
+      if (!isCurrent()) return;
       const services = res?.services ?? [];
       const names = services.map((s) => s.name);
       const proj = projects.find((p) => p.id === projectId);
@@ -714,9 +773,9 @@ export function ServerMigrationWizard({
       }
       setProjectCompose(projectId, services, map);
     } catch {
-      setProjectCompose(projectId, [], {});
+      if (isCurrent()) setProjectCompose(projectId, [], {});
     } finally {
-      setParsingRepo(null);
+      if (isCurrent()) setParsingRepo(current => current === projectId ? null : current);
     }
   };
 
@@ -846,11 +905,13 @@ export function ServerMigrationWizard({
     [migratable, stack],
   );
   const canMigrate =
-    Boolean(selectedId) && Boolean(targetId) && migratable.length > 0 && !starting && !queue;
+    Boolean(selectedId) && Boolean(targetId) && targetSelection.ready && migratable.length > 0 && !starting && !queue;
 
   // ── Migrate (sequential, one project at a time) ────────────────────────────
-  const startMigration = async (item: MigrateItem) => {
-    if (!selectedId || !targetId) return;
+  const startMigration = async (item: MigrateItem, fromRecovery = false): Promise<void> => {
+    if (!selectedId || !targetId || !targetSelection.ready) return;
+    const generation = scanGen.current;
+    const stale = () => scanGen.current !== generation || ownerRef.current !== ownerKey;
     setStarting(true);
     setError(null);
     try {
@@ -876,8 +937,9 @@ export function ServerMigrationWizard({
         serviceSubpaths: item.serviceSubpaths,
         serviceRenames: item.serviceRenames,
         serviceEnv: item.serviceEnv,
-        flatDocker,
+        flatDocker: !selfHosted || flatDocker,
       });
+      if (stale()) return;
       setMigrationId(res.migrationId);
       setConfirmToken(res.confirmationToken);
       setRun({
@@ -886,9 +948,14 @@ export function ServerMigrationWizard({
         mode: sameServer ? "same_server" : "cross_server",
       });
     } catch (e) {
+      if (stale()) return;
       setError(getApiErrorMessage(e, m.adoptFailed));
+      if (fromRecovery) throw e;
+      handleCloudPricing(e, async () => {
+        if (!stale()) await startMigration(item, true);
+      });
     } finally {
-      setStarting(false);
+      if (!stale()) setStarting(false);
     }
   };
 
@@ -991,16 +1058,18 @@ export function ServerMigrationWizard({
 
   const handleCutover = async (kill: boolean) => {
     if (!migrationId || !confirmToken) return;
+    const isCurrent = claimOperation();
     setCutoverBusy(true);
     setError(null);
     try {
       await dockerMigrationApi.confirmCutover(migrationId, confirmToken, kill);
+      if (!isCurrent()) return;
       const res = await dockerMigrationApi.getMigration(migrationId);
-      setRun(res.run);
+      if (isCurrent()) setRun(res.run);
     } catch (e) {
-      setError(getApiErrorMessage(e, m.adoptFailed));
+      if (isCurrent()) setError(getApiErrorMessage(e, m.adoptFailed));
     } finally {
-      setCutoverBusy(false);
+      if (isCurrent()) setCutoverBusy(false);
     }
   };
 
@@ -1079,35 +1148,30 @@ export function ServerMigrationWizard({
   // Open directly on a specific run (a row clicked in the Migrations list) —
   // seed the same state the progress view + poll need, for ANY status incl.
   // terminal. Wins over the in-flight re-attach below (guarded by initialRunId).
-  // The token (for a cutover) rides the active-run endpoint when this run is live.
+  // The detail poll supplies this run's token, even without a serverId prop.
   useEffect(() => {
-    if (!initialRunId || migrationId === initialRunId) return;
+    if (!visible || !initialRunId || migrationId === initialRunId) return;
     setQueue([{ name: "", serviceNames: [], volumeStrategies: {} }]);
     setQueueIndex(0);
     setCompleted([]);
     setMigrationId(initialRunId);
     setRun(null);
     setConfirmToken(null);
-    if (serverId) {
-      void dockerMigrationApi
-        .getActive(serverId)
-        .then((a) => setConfirmToken(a.confirmationToken))
-        .catch(() => {});
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialRunId]);
+  }, [initialRunId, ownerKey, visible]);
 
   // Re-attach after a CLIENT reload: the run is server-side, so if one is in
   // flight for this server, re-find it and re-seed the state the progress
   // screen + poll need (queue placeholder flips `inProgress`; confirmToken is
   // required for the cutover buttons and is never persisted client-side).
   useEffect(() => {
-    if (!serverId || queue || initialRunId) return; // `queue`/`initialRunId` ⇒ already targeting a run
+    if (!visible || !serverId || queue || initialRunId) return; // `queue`/`initialRunId` ⇒ already targeting a run
     let live = true;
+    const isCurrent = claimOperation();
     void dockerMigrationApi
       .getActive(serverId)
       .then((res) => {
-        if (!live || !res.run) return;
+        if (!live || !isCurrent() || !res.run) return;
         setQueue([{ name: res.run.projectName ?? "", serviceNames: [], volumeStrategies: {} }]);
         setQueueIndex(0);
         setCompleted([]);
@@ -1120,7 +1184,7 @@ export function ServerMigrationWizard({
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverId]);
+  }, [serverId, ownerKey, visible]);
 
   /**
    * Publish the run's phase to the PROJECT payload every time it changes.
@@ -1163,18 +1227,25 @@ export function ServerMigrationWizard({
 
   // Poll the current run while a migration is in flight; stop once terminal.
   useEffect(() => {
-    if (!migrationId) return;
+    if (!visible || !migrationId) return;
     if (run && ["succeeded", "failed", "rolled_back"].includes(run.status)) return;
     let live = true;
+    const isCurrent = claimOperation();
+    let fetching = false;
     const tick = async () => {
+      if (fetching) return;
+      fetching = true;
       try {
         const res = await dockerMigrationApi.getMigration(migrationId);
-        if (live) {
+        if (live && isCurrent()) {
           setRun(res.run);
+          setConfirmToken(res.run.confirmationToken ?? null);
           setProgress(res.progress ?? null);
         }
       } catch {
         /* transient — keep polling */
+      } finally {
+        fetching = false;
       }
     };
     const iv = setInterval(tick, 2500);
@@ -1183,19 +1254,20 @@ export function ServerMigrationWizard({
       live = false;
       clearInterval(iv);
     };
-  }, [migrationId, run?.status]);
+  }, [migrationId, run?.status, ownerKey, visible]);
 
   // Live progress SSE — a smooth, real-time transfer bar (the 2.5s poll above is
   // coarse). The poll stays the authoritative run/log source, so a dropped
   // stream degrades to it rather than stalling. Server closes the stream on the
   // terminal event; opening a finished run just gets a snapshot + close.
   useEffect(() => {
-    if (!migrationId) return;
+    if (!visible || !migrationId) return;
+    const isCurrent = claimOperation();
     const stop = dockerMigrationApi.streamMigration(migrationId, {
-      onProgress: (u) => setProgress(u),
+      onProgress: (u) => { if (isCurrent()) setProgress(u); },
     });
     return stop;
-  }, [migrationId]);
+  }, [migrationId, ownerKey, visible]);
 
   // Pull the target deploy's logs + per-service status while it's deploying/
   // verifying (live) and once it fails — so the wizard shows the actual reason
@@ -1204,15 +1276,16 @@ export function ServerMigrationWizard({
     const depId = run?.deploymentId;
     const live = run?.status === "deploying" || run?.status === "verifying";
     const failedNow = run?.status === "failed" || run?.status === "rolled_back";
-    if (!depId || (!live && !failedNow)) {
+    if (!visible || !depId || (!live && !failedNow)) {
       setDeploy(null);
       return;
     }
     let on = true;
+    const isCurrent = claimOperation();
     const tick = async () => {
       try {
         const st = await deployApi.getBuildStatus(depId);
-        if (!on) return;
+        if (!on || !isCurrent()) return;
         setDeploy({
           services: Array.isArray(st?.serviceStatuses)
             ? st.serviceStatuses.map((s: Record<string, unknown>) => ({
@@ -1233,11 +1306,18 @@ export function ServerMigrationWizard({
       on = false;
       if (iv) clearInterval(iv);
     };
-  }, [run?.deploymentId, run?.status]);
+  }, [run?.deploymentId, run?.status, ownerKey, visible]);
 
   const inProgress = Boolean(queue);
-  const failed = run?.status === "failed" || run?.status === "rolled_back";
+  const admissionBlocked = !!queue && !migrationId && !starting && !!error;
+  const failed = admissionBlocked || run?.status === "failed" || run?.status === "rolled_back";
+  const admissionRetry = admissionBlocked ? (
+    <Button onClick={() => void startMigration(queue![queueIndex]!)} disabled={!targetSelection.ready}>
+      {m.tab.retryRun}
+    </Button>
+  ) : null;
   const cutoverNeedsRetry = run?.status === "cutover" && Boolean(run.errorMessage);
+  const cutoverWarning = run?.mode === "cross_server" ? m.cutover.warningRestart : m.cutover.warning;
   // Only go near-full-screen once there are RESULTS to show (an adoptable stack
   // or an in-flight migration). The empty prompt, the loading state, and a
   // "nothing found" result all stay a compact, content-sized dialog.
@@ -1356,7 +1436,7 @@ export function ServerMigrationWizard({
         {run?.status === "awaiting_cutover" || cutoverNeedsRetry ? (
           <>
             <span className="text-xs text-muted-foreground flex-1 min-w-0">
-              {m.cutover.warning}
+              {cutoverWarning}
             </span>
             <div className="flex items-center gap-2 shrink-0">
               {run?.status === "awaiting_cutover" && (
@@ -1423,6 +1503,7 @@ export function ServerMigrationWizard({
           <>
             <span />
             <div className="flex items-center gap-2 shrink-0">
+              {admissionRetry}
               {failed && run?.deploymentId && (
                 <button
                   type="button"
@@ -1451,7 +1532,7 @@ export function ServerMigrationWizard({
                 Inspect Docker + Re-scan both live in the footer. */}
       {!serverId && (
         <div className="shrink-0 px-6 pt-4">
-          <ServerSelector requiredCapability="ssh" value={selectedId} onSelect={pickServer} compact />
+          <ServerSelector migrationSource={!selfHosted} value={selectedId} onSelect={pickServer} compact />
         </div>
       )}
 
@@ -1735,12 +1816,7 @@ export function ServerMigrationWizard({
                   </span>
                 </div>
                 <div className="w-56 min-w-0">
-                  <ServerSelector
-                        requiredCapability="ssh"
-                    value={targetId}
-                    onSelect={(s) => setTargetId(s?.id ?? null)}
-                    compact
-                  />
+                  <ServerSelectorView selection={targetSelection} compact />
                 </div>
                 <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
                   <input
@@ -1899,7 +1975,7 @@ export function ServerMigrationWizard({
       const done = allDone || runStatus === "succeeded";
       const running = !failed && !done && !cutoverAction && !partial;
       const terminal = failed || runStatus === "succeeded"; // deletable record
-      const railLabel = done
+      const railLabel = admissionBlocked ? m.adoptFailed : done
         ? queueTotal > 1
           ? interpolate(m.run.allSucceeded, { n: String(queueTotal) })
           : m.run.succeeded
@@ -1953,10 +2029,11 @@ export function ServerMigrationWizard({
           {/* The error text already shows in the LEFT card's failure banner
             (above the session log) — don't duplicate it here in the rail. */}
           {cutoverAction && (
-            <p className="text-xs leading-relaxed text-muted-foreground">{m.cutover.warning}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">{cutoverWarning}</p>
           )}
 
           <div className="space-y-2">
+            {admissionRetry}
             {cutoverAction ? (
               <>
                 <button
@@ -2247,7 +2324,7 @@ export function ServerMigrationWizard({
             <UiIcon name="arrow-right" className="size-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">{m.wizard.targetLabel}</span>
           </div>
-          <ServerSelector requiredCapability="ssh" value={targetId} onSelect={(s) => setTargetId(s?.id ?? null)} compact />
+          <ServerSelectorView selection={targetSelection} compact />
           <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
             <input
               type="checkbox"
@@ -2644,7 +2721,7 @@ export function ServerMigrationWizard({
                     </p>
                     {/* Still reachable after a scan (flipping it re-scans) without
                         putting a control back in the list header. */}
-                    {flatOption(false)}
+                    {selfHosted && flatOption(false)}
                   </>
                 )}
 
@@ -2694,12 +2771,7 @@ export function ServerMigrationWizard({
                         </span>
                       </div>
 
-                      <ServerSelector
-                        requiredCapability="ssh"
-                        value={targetId}
-                        onSelect={(s) => setTargetId(s?.id ?? null)}
-                        compact
-                          />
+                      <ServerSelectorView selection={targetSelection} compact />
                       <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
                         <input
                           type="checkbox"
@@ -2864,13 +2936,13 @@ export function ServerMigrationWizard({
                 </h3>
               </div>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                {m.entry.cardDesc}
+                {selfHosted ? m.entry.cardDesc : m.sources.importHint}
               </p>
               {!serverId && (
-                <ServerSelector requiredCapability="ssh" value={selectedId} onSelect={pickServer} disabled={scanning} />
+                <ServerSelector migrationSource={!selfHosted} value={selectedId} onSelect={pickServer} disabled={scanning} />
               )}
               {/* Scan-mode option sits directly above the button it changes. */}
-              {flatOption(true)}
+              {selfHosted && flatOption(true)}
               <button
                 type="button"
                 onClick={() => handleScan()}
@@ -4102,9 +4174,12 @@ function TransferPlanSummary({
     .map((c) => `${c.source}>${c.dest}`)
     .join(",")}`;
 
-  const [preview, setPreview] = useState<MigrationPreview | null>(
-    () => cache.current.get(key) ?? null,
-  );
+  const [loadedPreview, setLoadedPreview] = useState<{ key: string; preview: MigrationPreview } | null>(() => {
+    const preview = cache.current.get(key);
+    return preview ? { key, preview } : null;
+  });
+  // A previous server's successful review cannot authorize this destination.
+  const preview = loadedPreview?.key === key ? loadedPreview.preview : null;
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [newSrc, setNewSrc] = useState("");
@@ -4114,7 +4189,7 @@ function TransferPlanSummary({
     if (!sourceId || !targetId || serviceNames.length === 0) return;
     const cached = cache.current.get(key);
     if (cached) {
-      setPreview(cached);
+      setLoadedPreview({ key, preview: cached });
       setErr(null);
       setLoading(false);
       return; // readiness handled by the effect below (factors conflicts)
@@ -4135,7 +4210,7 @@ function TransferPlanSummary({
       .then((res) => {
         if (!live) return;
         cache.current.set(key, res.preview);
-        setPreview(res.preview);
+        setLoadedPreview({ key, preview: res.preview });
       })
       .catch((e) => live && (setErr(getApiErrorMessage(e, m.scanFailed)), onReady?.(false)))
       .finally(() => live && setLoading(false));
@@ -4149,10 +4224,9 @@ function TransferPlanSummary({
   // a resolution — so nothing destructive starts with an unresolved conflict.
   const conflicts = preview?.conflicts ?? [];
   useEffect(() => {
-    if (!preview) return;
-    onReady?.(conflicts.every((c) => Boolean(conflictResolution[c.volume])));
+    onReady?.(!loading && !!preview && conflicts.every((c) => Boolean(conflictResolution[c.volume])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview, conflictResolution]);
+  }, [preview, loading, conflictResolution]);
 
   const addPath = () => {
     const source = newSrc.trim();
@@ -4441,6 +4515,7 @@ export function MigrationProgress({
   ];
   const curIdx = order.indexOf(status);
   const failed =
+    (!run && !!error) ||
     status === "failed" ||
     status === "rolled_back" ||
     (status === "cutover" && Boolean(run?.errorMessage));
@@ -4513,8 +4588,8 @@ export function MigrationProgress({
         <div className="flex items-start gap-2 text-sm text-destructive rounded-xl bg-destructive/10 px-4 py-3">
           <UiIcon name="alert-circle" className="size-4 mt-0.5 shrink-0" />
           <div>
-            <p className="font-medium">{runText[status]}</p>
-            {run?.errorMessage && <p className="mt-1 text-xs opacity-80">{run.errorMessage}</p>}
+            <p className="font-medium">{run ? runText[status] : m.adoptFailed}</p>
+            {(run?.errorMessage || error) && <p className="mt-1 text-sm">{run?.errorMessage || error}</p>}
           </div>
         </div>
       ) : (
@@ -4598,7 +4673,7 @@ export function MigrationProgress({
         </div>
       )}
 
-      {error && (
+      {error && !failed && (
         <div className="flex items-start gap-2 text-sm text-destructive rounded-xl bg-destructive/10 px-4 py-3">
           <UiIcon name="alert-circle" className="size-4 mt-0.5 shrink-0" />
           <span>{error}</span>

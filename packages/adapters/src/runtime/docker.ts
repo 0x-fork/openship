@@ -1146,8 +1146,13 @@ export class DockerRuntime implements RuntimeAdapter {
     provisionLock?: ProvisionLock,
   ): Promise<DockerRuntime> {
     const runtime = new DockerRuntime(opts, systemManager, provisionLock);
-    await runtime.initializeDocker();
-    return runtime;
+    try {
+      await runtime.initializeDocker();
+      return runtime;
+    } catch (error) {
+      await runtime.dispose();
+      throw error;
+    }
   }
 
   protected async initializeDocker(): Promise<void> {

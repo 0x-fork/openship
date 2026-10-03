@@ -1454,7 +1454,7 @@ export async function withProjectCreationLock<T>(organizationId: string, create:
   return createProvisionLock(`cloud:project-quota:${organizationId}`).run(create);
 }
 
-export async function ensureProject(data: EnsureProjectBody, organizationId: string, ctx?: RequestContext) {
+export async function ensureProject(data: EnsureProjectBody, organizationId: string, ctx?: RequestContext, options?: { mustCreate: true }) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
 
@@ -1473,6 +1473,8 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (project && project.organizationId !== organizationId) {
     throw new NotFoundError("Project", data.projectId ?? desiredSlug);
   }
+  if (project && options?.mustCreate)
+    throw new ConflictError("A project with this name already exists. Choose another name for the import.");
   if (project?.workspaceId && data.serverId && data.serverId !== project.serverId) throw new AppError(
     "This project belongs to another execution target. Move its data explicitly before changing workspaces.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
   if (data.deploymentEnvironment !== undefined) {

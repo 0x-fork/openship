@@ -130,18 +130,19 @@
     "addDomains": "Add domains",
     "viewDeployLogs": "View deploy logs",
     "deployDetail": "Deploy logs",
-    "routeHint": "Your services are imported but not public yet. Add a domain per service on the Domains tab — Openship deploys automatically to install its edge (OpenResty) and, if your old proxy still holds 80/443, offers to take it over.",
-    "downtimeNote": "Original containers are stopped during the move; expect brief downtime until the new deployment is live.",
+    "routeHint": "Your services are private until routes are configured. Add or review their domains in the project’s Domains tab.",
+    "downtimeNote": "Selected source containers stop while data is copied and the destination starts. Plan for downtime.",
     "movingImage": "image",
     "movingVolume": "volume",
     "partial": "Partial — some paths didn't move"
   },
   "cutover": {
     "title": "Finish migration",
-    "warning": "The new deployment is live on the target server. You can stop & remove the original containers now, or keep them as a safety net and remove them later — on a different target server they're restarted as a live standby; on the same server they stay stopped (the new stack now holds their ports).",
+    "warning": "The destination is live. You can remove the original containers or keep them stopped. Source volumes are kept.",
     "stopRemove": "Stop & remove originals",
     "keep": "Keep originals",
-    "working": "Working…"
+    "working": "Working…",
+    "warningRestart": "The destination is live. Keep originals restarts previously running source containers as independent copies. Remove originals retires them. Source volumes are kept."
   },
   "discover": {
     "buildBlocked": "Built from source — can't migrate yet (publish an image first)",
@@ -254,13 +255,21 @@
     "resume": "Resume migration",
     "resuming": "Resuming…",
     "editRetry": "Edit & retry",
-    "safetyTitle": "Non-destructive & reversible.",
-    "safetyBody": "Data is copied, never moved — your source is only briefly paused, and nothing is deleted unless you explicitly cut over.",
+    "safetyTitle": "Source data is kept.",
+    "safetyBody": "Data is copied. Selected source containers stop during transfer; their data stays on the source. Removing original containers requires your approval.",
     "cleanupTarget": "Remove copied data from target",
     "retryRun": "Retry",
     "changeTarget": "Change target"
   },
   "plan": {
     "missing": "not found"
+  },
+  "sources": {
+    "title": "Connect a migration source",
+    "connect": "Connect source",
+    "disconnect": "Disconnect source",
+    "empty": "Connect the server you want to import from.",
+    "hint": "For migrations only. Remove the connection when you're done.",
+    "importHint": "Copy apps and data to a managed Openship server. Keep the source until you confirm cutover."
   }
 }

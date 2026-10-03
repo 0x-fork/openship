@@ -1,24 +1,27 @@
 import { AppError, NotFoundError } from "@repo/core";
 import { repos, tryAcquireAdvisoryLock } from "@repo/db";
 import type { CommandExecutor, ShellOptions } from "@repo/adapters";
-import { assertServerExecution, assertSelfHosted } from "../modules/system/server-access";
+import { assertServerExecution, assertSelfHosted, assertDeploymentServer } from "../modules/system/server-access";
 import { openCloudWorkspaceExecutor } from "./cloud-workspace-host";
 import { sshManager } from "./ssh-manager";
 import { withCloudWorkspaceActivity, holdCloudWorkspaceActivity } from "./cloud-workspace-lock";
 
 /** One connection boundary for host commands, monitoring and terminals. Callers
  * authorize serverId first; this also checks tenant ownership before connecting. */
-export async function acquireServerExecution(organizationId: string, serverId: string) {
+export async function acquireServerExecution(organizationId: string, serverId: string, options?: { migration: true }) {
   const server = await repos.server.getInOrganization(serverId, organizationId);
   if (!server) throw new NotFoundError("Server", serverId);
+  if (!options?.migration) assertDeploymentServer(server);
   let executor: CommandExecutor;
   let dispose: () => void | Promise<void>;
   if (server.workspaceId) {
     executor = await openCloudWorkspaceExecutor(organizationId, server.workspaceId);
     dispose = () => executor.dispose();
   } else {
-    assertSelfHosted();
-    await assertServerExecution(server);
+    if (!(options?.migration && server.purpose === "migration_source")) {
+      assertSelfHosted();
+      await assertServerExecution(server);
+    }
     sshManager.retain(serverId);
     try {
       executor = await sshManager.acquire(serverId);

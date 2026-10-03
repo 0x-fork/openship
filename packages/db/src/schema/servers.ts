@@ -30,6 +30,9 @@ export const servers = pgTable("servers", {
   /** Managed host owner. Its subscription and provider VM lifecycle stay on the workspace. */
   workspaceId: text("workspace_id"),
 
+  /** Import connections are never deployment destinations or general host controls. */
+  purpose: text("purpose", { enum: ["deployment", "migration_source"] }).notNull().default("deployment"),
+
   /** Human-readable label - defaults to sshHost when not set */
   name: text("name"),
 
@@ -59,12 +62,25 @@ export const servers = pgTable("servers", {
   /** Transport is structured; arbitrary local ProxyCommand values are not stored. */
   sshTransport: text("ssh_transport", { enum: ["direct", "cloudflare"] }).notNull().default("direct"),
   sshArgs: text("ssh_args"),
+  /** Public SSH host key pinned when a migration source is first connected. */
+  sshHostKey: text("ssh_host_key"),
 
   // ── Timestamps ─────────────────────────────────────────────────────────────
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
+  check("servers_purpose_check", sql`${table.purpose} IN ('deployment', 'migration_source')`),
+  check("servers_migration_source_check", sql`
+    ${table.purpose} <> 'migration_source' OR (
+      ${table.organizationId} IS NOT NULL AND ${table.workspaceId} IS NULL AND NOT ${table.isLocal}
+      AND ${table.sshHost} IS NOT NULL AND ${table.sshHostKey} IS NOT NULL
+      AND ${table.sshTransport} = 'direct' AND ${table.sshKeyPath} IS NULL
+      AND ${table.sshJumpHost} IS NULL AND ${table.sshArgs} IS NULL
+      AND ((${table.sshAuthMethod} = 'password' AND ${table.sshPassword} IS NOT NULL)
+        OR (${table.sshAuthMethod} = 'key' AND ${table.sshPrivateKey} IS NOT NULL))
+    )
+  `),
   check("servers_ssh_transport_check", sql`${table.sshTransport} IN ('direct', 'cloudflare')`),
   uniqueIndex("servers_workspace_unique").on(table.workspaceId),
   uniqueIndex("servers_workspace_owner_unique").on(table.id, table.workspaceId, table.organizationId),

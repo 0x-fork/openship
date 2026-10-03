@@ -106,12 +106,18 @@ it.each([true, false])(
     expect(paths.has("/api/system/servers/:id/ensure")).toBe(true);
     expect(paths.has("/api/system/servers/:id/resize")).toBe(true);
     expect(paths.has("/api/system/onboarding")).toBe(!cloud);
+    expect(paths.has("/api/migration/sources")).toBe(true);
+    expect(paths.has("/api/migration/migrate")).toBe(true);
     const { getMcpTools, resetMcpToolCache } = await import("../../src/modules/mcp/mcp-tools");
     resetMcpToolCache();
     const names = getMcpTools().map((tool) => tool.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.includes("get_system_servers")).toBe(true);
     expect(names.includes("get_jobs")).toBe(true);
+    expect(names.includes("get_migration_sources")).toBe(true);
+    expect(names.includes("post_migration_migrate")).toBe(true);
+    expect(names.includes("post_migration_adopt")).toBe(!cloud);
+    expect(names.includes("post_migration_reimport")).toBe(!cloud);
     const exit = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("The production route scanner refused startup");
     });

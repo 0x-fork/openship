@@ -32,6 +32,7 @@ import {
   waitForCloudDockerWorkspace,
 } from "./workspace-ready";
 import { cloudDockerProjectPaths } from "./docker-paths";
+import { ensureCloudProjectVolume } from "./docker-volume";
 import { prepareManagedSource } from "./source";
 import { scopeVolumeBinds } from "../volume-namespace";
 import { pickHostPort } from "../host-port";
@@ -301,30 +302,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     for (const spec of scoped) {
       const source = spec.split(":")[0]!;
       if (isHostPathSource(source)) continue;
-      try {
-        const volume = await this.docker.getVolume(source).inspect();
-        if (volume.Labels?.["openship.project"] !== this.projectId)
-          throw new AppError(
-            "A volume with this name belongs to another project. Choose a different name.",
-            409,
-            "CLOUD_VOLUME_CONFLICT",
-          );
-      } catch (error) {
-        if (!notFound(error)) throw error;
-        await this.docker.createVolume({
-          Name: source,
-          Labels: { "openship.project": this.projectId },
-        });
-        // Dockerode returns a volume handle, not the creation response. Inspect
-        // the persisted label too: creation can race a pre-existing volume.
-        const created = await this.docker.getVolume(source).inspect();
-        if (created.Labels?.["openship.project"] !== this.projectId)
-          throw new AppError(
-            "Volume ownership changed during creation",
-            409,
-            "CLOUD_VOLUME_CONFLICT",
-          );
-      }
+      await ensureCloudProjectVolume(this.docker, source, this.projectId);
     }
     return scoped;
   }

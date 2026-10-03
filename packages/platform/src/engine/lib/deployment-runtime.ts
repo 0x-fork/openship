@@ -460,7 +460,11 @@ async function resolveCloudPlatformForOrg(
 ): Promise<Platform> {
   if (!organizationId || !managedWorkspaceId || !bindingMeta)
     throw new AppError("This deployment has no managed server binding", 409, "DEPLOYMENT_SERVER_REQUIRED");
-  const binding = await repos.cloudDockerWorkspace.find(bindingMeta.projectId, organizationId);
+  // A retained deployment stays on its recorded server when a project moves.
+  // Resolve that owned server, never the project's mutable current binding.
+  const project = await repos.project.findByIdInOrganization(bindingMeta.projectId, organizationId);
+  if (!project) throw new AppError("Deployment project not found", 404, "PROJECT_NOT_FOUND");
+  const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: managedWorkspaceId }, organizationId);
   if (!binding || binding.workspaceId !== bindingMeta.workspaceId || binding.ownerWorkspaceId !== managedWorkspaceId ||
       (bindingMeta.ownerWorkspaceId && bindingMeta.ownerWorkspaceId !== managedWorkspaceId))
     throw new AppError("Managed server does not belong to this deployment", 404, "CLOUD_WORKSPACE_NOT_FOUND");

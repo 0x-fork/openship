@@ -196,6 +196,28 @@ describe("managed server admission across independent installations", () => {
     expect(h.recover).not.toHaveBeenCalled();
   });
 
+  it("attributes commands to their own host while a migration holds two managed servers", async () => {
+    const second = await cloud.create({ organizationId: "org", name: "Second managed server" });
+    h.repositories.set(second.id, cloud);
+    h.bindings.set(second.id, "provider-vm-2");
+    const otherCommand = { workspaceId: "provider-vm-2", marker: "openship-exec-other" };
+    await withCloudWorkspaceActivity(host.id, () =>
+      withCloudWorkspaceActivity(second.id, async () => {
+        const tracking = currentManagedCommandTracking()!;
+        await tracking.record(command);
+        await tracking.record(otherCommand);
+        expect((await cloud.findById(host.id))!.activity?.commands).toEqual([command]);
+        expect((await cloud.findById(second.id))!.activity?.commands).toEqual([otherCommand]);
+        await tracking.complete(command.marker);
+        expect((await cloud.findById(host.id))!.activity?.commands).toEqual([]);
+        expect((await cloud.findById(second.id))!.activity?.commands).toEqual([otherCommand]);
+        await tracking.complete(otherCommand.marker);
+      }, undefined, { scope: "migration:run" }),
+    undefined, { scope: "migration:run" });
+    expect((await cloud.findById(host.id))!.activity).toBeNull();
+    expect((await cloud.findById(second.id))!.activity).toBeNull();
+  });
+
   it("keeps unconfirmed children fenced even when their error is swallowed, then recovers the same scope", async () => {
     await expect(withCloudWorkspaceActivity(a.id, async () => {
       await currentManagedCommandTracking()!.record(command);

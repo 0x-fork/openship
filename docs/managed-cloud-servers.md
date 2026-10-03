@@ -97,8 +97,27 @@ has ended can enter host deletion. Financial history remains with the provider.
   original operation. A missing server row alone is not proof of successful
   provider deletion.
 
-Customer migration is outside this implementation. No compatibility engine,
-customer backfill job, or automatic project migration is included.
+Converting customers from the retired Cloud architecture is handled manually,
+outside this implementation. No compatibility engine or customer backfill job is included.
+
+## Customer-initiated imports
+
+Cloud exposes the existing project-import wizard with migration-only SSH sources.
+They use the normal server table with `purpose: migration_source`, encrypted
+credentials and a pinned host key. Public DNS is checked and the dial address
+pinned before connecting. These rows cannot be deployment destinations, terminals,
+jobs or infrastructure targets; Cloud migration targets must be owned managed servers.
+
+Both endpoints and every affected project are authorized in the active organization.
+The shared migration orchestrator uses the existing Docker/SSH/provider adapters,
+storage planner and deployment worker. Managed imports scope volumes and bind paths
+to the project. Temporary transfer trust, original placement and container state
+are checkpointed for rollback and recovery. An active run prevents source removal
+and managed-server deletion or resize until its remote work has settled.
+
+The database permits managed-project rebinding only through a transaction tied to
+the matching migration and its saved source checkpoint. Retained deployments keep
+their original owned server binding when a project moves.
 
 ## Verification boundaries
 

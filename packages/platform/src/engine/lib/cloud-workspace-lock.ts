@@ -6,7 +6,7 @@ import { withManagedCommandTracking } from "@repo/adapters";
 import { createProvisionLock, tryWithProvisionLock } from "./provision-lock";
 import { remoteCloudRequest, requireLinkedCloudServer } from "./cloud/server-link";
 
-const held = new AsyncLocalStorage<ReadonlyMap<string, { active: boolean }>>();
+const held = new AsyncLocalStorage<ReadonlyMap<string, { active: boolean; owner: CloudWorkspace; activity: CloudWorkspaceActivity }>>();
 
 async function recoverCommands(row: CloudWorkspace) {
   if (!row.activity?.commands?.length) return;
@@ -110,9 +110,10 @@ async function runCloudWorkspaceActivity<T>(
       id: randomUUID(), controllerId, scope, startedAt: new Date().toISOString(),
     }, options.lifecycle);
   let admitted = !row.remote;
-  const state = { active: true };
+  const state = { active: true, owner: row, activity };
   const next = new Map(held.getStore());
   next.set(workspaceId, state);
+  const commandOwners = new Map<string, typeof state>();
   try {
     if (row.remote) {
       await remoteActivity(row, activity, false);
@@ -122,13 +123,26 @@ async function runCloudWorkspaceActivity<T>(
     signal?.throwIfAborted();
     return await held.run(next, () => withManagedCommandTracking({
       async record(command) {
-        if (!state.active) throw new AppError("The server operation has ended", 409, "CLOUD_WORKSPACE_ACTIVITY_CHANGED");
-        const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: row.id }, row.organizationId);
-        if (binding?.workspaceId !== command.workspaceId)
-          throw new AppError("The command belongs to a different managed server", 409, "CLOUD_SERVER_IDENTITY_MISMATCH");
-        await repos.cloudWorkspace.recordActivityCommand(row.id, activity.id, command);
+        if (!state.active) throw new AppError("The server operation has finished", 409, "CLOUD_WORKSPACE_ACTIVITY_CHANGED");
+        // A migration/connection may hold two servers. Dispatch by the verified
+        // provider binding; nested admission must never attribute A's command to B.
+        for (const entry of next.values()) {
+          if (!entry.active) continue;
+          const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: entry.owner.id }, entry.owner.organizationId);
+          if (binding?.workspaceId !== command.workspaceId) continue;
+          await repos.cloudWorkspace.recordActivityCommand(entry.owner.id, entry.activity.id, command);
+          commandOwners.set(command.marker, entry);
+          return;
+        }
+        throw new AppError("The command belongs to a different managed server", 409, "CLOUD_SERVER_IDENTITY_MISMATCH");
       },
-      complete: marker => repos.cloudWorkspace.completeActivityCommand(row.id, activity.id, marker),
+      async complete(marker) {
+        if (!state.active) throw new AppError("The server operation has finished", 409, "CLOUD_WORKSPACE_ACTIVITY_CHANGED");
+        const entry = commandOwners.get(marker);
+        if (!entry) throw new AppError("The command has no admitted server", 409, "CLOUD_SERVER_IDENTITY_MISMATCH");
+        await repos.cloudWorkspace.completeActivityCommand(entry.owner.id, entry.activity.id, marker);
+        commandOwners.delete(marker);
+      },
     }, work));
   } catch (error) {
     // A definitive refusal happened before any work. A lost response may

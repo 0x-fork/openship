@@ -1,5 +1,7 @@
 import {
   CloudDockerRuntime,
+  CloudServerConnection,
+  DockerRuntime,
   CloudWorkspaceExecutor,
   cloudDockerProjectPaths,
   cloudWorkspaceStatus,
@@ -20,6 +22,7 @@ import { readCloudWorkspaceAllocation } from "./cloud-capacity";
 import { createProvisionLock } from "./provision-lock";
 import { cacheStore } from "./cache-store/index";
 import { sampleServerUsage, unavailableServerUsage } from "./server-usage";
+import { registryAuthResolver } from "../modules/credentials/registry-auth";
 export { unavailableServerUsage as unavailableWorkspaceUsage } from "./server-usage";
 
 /** Inspect the persisted host only. A read must never create/resume a VM. */
@@ -73,6 +76,31 @@ async function runningConnection(organizationId: string, id: string) {
 export async function openCloudWorkspaceExecutor(organizationId: string, id: string) {
   const { client, binding } = await runningConnection(organizationId, id);
   return new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime(), binding.workspaceId!);
+}
+
+/** Server-authorized Docker operations (inventory and migration). Applications
+ * continue to use CloudDockerRuntime's additional project ownership guards. */
+export async function openCloudWorkspaceDockerRuntime(organizationId: string, id: string) {
+  const { client, namespace, binding } = await runningConnection(organizationId, id);
+  const connection = new CloudServerConnection(client, {
+    workspaceId: binding.workspaceId!, namespace,
+    bridgeLock: createProvisionLock(`cloud:docker-bridge:${binding.workspaceId}`),
+  });
+  try {
+    const runtime = await DockerRuntime.create({
+      transport: "cloud", executor: connection.executor,
+      cloudConnection: () => connection.connectDocker(),
+      resolveRegistryAuth: registryAuthResolver(organizationId),
+    });
+    const dispose = runtime.dispose.bind(runtime);
+    runtime.dispose = async () => {
+      try { await dispose(); } finally { await connection.dispose(); }
+    };
+    return runtime;
+  } catch (error) {
+    await connection.dispose();
+    throw error;
+  }
 }
 
 async function measuredHost(organizationId: string, id: string) {

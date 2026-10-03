@@ -48,11 +48,15 @@ import { operatorSshKeyRoots, resolveSafeSshKeyPath } from "./ssh-key-path";
 import { isLocalHostRow } from "./box-org";
 import { assertSshDestination, normalizeSshTransport, parseSshTuningArgs, safeErrorMessage } from "@repo/core";
 import { assertNativeSshSettings } from "../native/execution-policy";
+import { resolvePinnedHost } from "./ssrf-guard";
+import { AppError } from "@repo/core";
 
 // ─── Shared SSH config builder ───────────────────────────────────────────────
 
 /** Settings shape accepted by `buildSshConfig`. */
 export interface SshSettingsInput {
+  purpose?: string;
+  sshHostKey?: string | null;
   sshHost: string | null;
   sshPort?: number | null;
   sshUser?: string | null;
@@ -76,6 +80,7 @@ export interface SshSettingsInput {
  */
 export async function buildSshConfig(
   settings: SshSettingsInput,
+  options?: { trustOnFirstUse: (key: Buffer) => boolean },
 ): Promise<SshConfig | null> {
   if (!settings.sshHost) return null;
   assertNativeSshSettings(settings);
@@ -93,6 +98,20 @@ export async function buildSshConfig(
   if (settings.sshArgs?.trim()) config.sshArgs = settings.sshArgs.trim();
   assertSshDestination(config);
   parseSshTuningArgs(config.sshArgs);
+
+  if (settings.purpose === "migration_source") {
+    // These are customer-owned sources reached by the SaaS, never operator SSH
+    // configuration. Pin the actual dial address on EVERY reconnect (no DNS TOCTOU).
+    if (transport !== "direct" || settings.sshKeyPath || settings.sshJumpHost || settings.sshArgs ||
+        !["password", "key"].includes(settings.sshAuthMethod ?? "") ||
+        (!settings.sshHostKey && !options?.trustOnFirstUse)) {
+      throw new AppError("Migration sources require direct SSH with a password or uploaded private key", 400, "INVALID_MIGRATION_CONNECTION");
+    }
+    config.host = (await resolvePinnedHost(settings.sshHost)).ip;
+    config.hostVerifier = settings.sshHostKey
+      ? key => key.toString("base64") === settings.sshHostKey
+      : options!.trustOnFirstUse;
+  }
 
   if (settings.sshAuthMethod === "password" && settings.sshPassword) {
     // Stored encrypted on insert; decrypted only here at the moment we

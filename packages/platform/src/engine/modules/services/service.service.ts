@@ -80,7 +80,8 @@ import {
 } from "./live-state";
 import { parseVolumeSpec, type VolumeKind } from "./volume-spec";
 import { sq } from "../migration/direct-transfer";
-import { bounded, duBytes, volumeBytes } from "../migration/migration-size";
+import { duBytes, volumeBytes } from "../migration/migration-size";
+import { mapWithLimit } from "../../lib/map-with-limit";
 import { deployComposeServices } from "../deployments/compose/deploy.service";
 import type { DeploymentConfigSnapshot } from "../deployments/build.service";
 import { ServiceConfigStaleError, resolveStaleEnvKeysForService } from "../deployments/env-drift";
@@ -1962,7 +1963,7 @@ export async function getServiceVolumeSizes(
     }
   }
 
-  const volumes = await bounded(
+  const volumes = await mapWithLimit(
     parsed,
     VOL_SIZE_CONCURRENCY,
     async (p): Promise<ServiceVolumeSize> => {

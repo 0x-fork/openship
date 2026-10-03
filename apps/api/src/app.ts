@@ -309,6 +309,8 @@ setupWebSocket(app);
   app.route("/api/system", serverResourceRoutes);
   const { terminalRoutes } = await import("./modules/terminal/terminal.routes");
   app.route("/api/terminal", terminalRoutes);
+  const { migrationRoutes } = await import("./modules/migration/migration.routes");
+  app.route("/api/migration", migrationRoutes);
 }
 
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
@@ -337,10 +339,6 @@ if (env.CLOUD_MODE) {
   /** Mail server setup - self-hosted iRedMail wizard */
   const { mailRoutes } = await import("./modules/mail/mail.routes");
   app.route("/api/mail", mailRoutes);
-
-  /** Docker migration - inspect a server's Docker and adopt it as a project */
-  const { migrationRoutes } = await import("./modules/migration/migration.routes");
-  app.route("/api/migration", migrationRoutes);
 
   /** Cloud account management - connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
@@ -396,9 +394,9 @@ if (env.CLOUD_MODE) {
   // A Docker migration is an in-memory FSM that quiesces (stops) the source
   // containers before the target deploy — a restart mid-migration would strand
   // a stopped production stack forever. Restart the originals + roll back any
-  // interrupted run. Self-hosted only (migrations don't run on the SaaS); the
-  // dynamic import keeps the SSH/runtime chain out of the cloud boot path.
-  if (!env.CLOUD_MODE) {
+  // interrupted run. Per-run advisory leases leave workers on other Cloud
+  // replicas untouched; the same recovery is used by self-hosted installations.
+  {
     const { migrationOrchestrator } = await import("@repo/platform/engine/modules/migration/migration.orchestrator");
     await migrationOrchestrator.recoverInterruptedMigrations();
   }

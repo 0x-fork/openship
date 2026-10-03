@@ -3307,6 +3307,22 @@
       "page": "migration",
       "description": "List active server migration sessions."
     },
+    "GET /api/migration/sources": {
+      "page": "migration",
+      "description": "List the active organization's migration-only SSH connections."
+    },
+    "POST /api/migration/sources": {
+      "page": "migration",
+      "description": "Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations."
+    },
+    "POST /api/migration/sources/test": {
+      "page": "migration",
+      "description": "Test a public SSH source without saving it and return its host fingerprint."
+    },
+    "DELETE /api/migration/sources/:serverId": {
+      "page": "migration",
+      "description": "Disconnect an idle migration source without deleting its external server or workloads."
+    },
     "POST /api/migration/adopt": {
       "page": "migration",
       "description": "Create an Openship project from the selected discovered services."

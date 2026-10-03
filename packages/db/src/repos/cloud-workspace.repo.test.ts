@@ -2,12 +2,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import * as schema from "../schema";
 import { assertCloudWorkspacePlacement, createCloudWorkspaceRepo } from "./cloud-workspace.repo";
 import { createCloudDockerWorkspaceRepo } from "./cloud-docker-workspace.repo";
 import { createServerRepo } from "./server.repo";
+import { createDockerMigrationRunRepo } from "./docker-migration.repo";
 
 const client = new PGlite("memory://");
 const db = drizzle(client, { schema });
@@ -34,6 +35,7 @@ afterAll(async () => {
   await client.close();
 });
 beforeEach(async () => {
+  await db.delete(schema.dockerMigrationRun);
   await db.delete(schema.cloudDockerWorkspace);
   await db.delete(schema.project);
   await db.delete(schema.servers);
@@ -47,6 +49,112 @@ beforeEach(async () => {
   await db
     .insert(schema.projectGroup)
     .values({ id: "group", organizationId: "org-a", name: "Apps", slug: "apps" });
+});
+
+describe("migration placement and server lifecycle", () => {
+  it.each([
+    ["managed", "managed"], ["ssh", "managed"], ["managed", "ssh"],
+  ])("saves and restores %s → %s placement and storage atomically", async (sourceKind, targetKind) => {
+    const inventory = createServerRepo(db);
+    const endpoint = async (kind: string) => kind === "managed"
+      ? (await inventory.findByWorkspace((await createWorkspace()).id, "org-a"))!
+      : await inventory.create({ organizationId: "org-a", sshHost: "203.0.113.1" });
+    const a = await endpoint(sourceKind), b = await endpoint(targetKind);
+    await db.insert(schema.project).values({ id: "moved", organizationId: "org-a", groupId: "group",
+      name: "Moved", slug: "moved", serverId: a.id });
+    await db.insert(schema.service).values({ id: "svc", projectId: "moved", name: "db", image: "postgres:17",
+      volumes: ["old-data:/data"], namespaceVolumes: false });
+    const runs = createDockerMigrationRunRepo(db);
+    await runs.create({ id: "move", organizationId: "org-a", projectId: "moved", projectName: "moved",
+      mode: "project_move", sourceServerId: a.id, targetServerId: b.id, status: "adopting" });
+    if (a.workspaceId) {
+      // A live migration is not a blanket bypass for ordinary project writes.
+      await expect(db.update(schema.project).set({ serverId: b.id, workspaceId: b.workspaceId })
+        .where(eq(schema.project.id, "moved"))).rejects.toThrow();
+    }
+    await runs.placeProject("move", "org-a", b.id);
+    expect(await db.query.project.findFirst({ where: eq(schema.project.id, "moved") }))
+      .toMatchObject({ serverId: b.id, workspaceId: b.workspaceId });
+    if (b.workspaceId) {
+      // The migration's transaction-local intent must not escape to the next write.
+      await expect(db.update(schema.project).set({ serverId: a.id, workspaceId: a.workspaceId })
+        .where(eq(schema.project.id, "moved"))).rejects.toThrow();
+    }
+    await db.update(schema.service).set({ volumes: ["new-data:/data"], namespaceVolumes: true }).where(eq(schema.service.id, "svc"));
+    await runs.restoreProject("move", "org-a");
+    expect(await db.query.project.findFirst({ where: eq(schema.project.id, "moved") }))
+      .toMatchObject({ serverId: a.id, workspaceId: a.workspaceId });
+    expect(await db.query.service.findFirst({ where: eq(schema.service.id, "svc") }))
+      .toMatchObject({ volumes: ["old-data:/data"], namespaceVolumes: false });
+    await runs.transition("move", "rolled_back");
+    await expect(runs.placeProject("move", "org-a", b.id)).rejects.toThrow("no longer placing");
+    await expect(runs.restoreProject("move", "org-a")).rejects.toThrow("no longer restore");
+  });
+
+  it("does not let an explicit migration intent reassign ownership or move an unrelated project", async () => {
+    const source = await createWorkspace(), target = await createWorkspace();
+    const inventory = createServerRepo(db);
+    const a = (await inventory.findByWorkspace(source.id, "org-a"))!;
+    const b = (await inventory.findByWorkspace(target.id, "org-a"))!;
+    await addProject("subject", source.id);
+    await addProject("unrelated", source.id);
+    const runs = createDockerMigrationRunRepo(db);
+    await runs.create({ id: "move", organizationId: "org-a", projectId: "subject", projectName: "Subject",
+      mode: "project_move", sourceServerId: a.id, targetServerId: b.id, status: "adopting" });
+    await runs.placeProject("move", "org-a", b.id);
+    await expect(runs.placeProject("move", "org-b", b.id)).rejects.toThrow("unavailable");
+    for (const patch of [
+      { id: "unrelated", serverId: b.id, workspaceId: target.id, organizationId: "org-a" },
+      { id: "subject", serverId: a.id, workspaceId: source.id, organizationId: "org-b" },
+    ]) {
+      await expect(db.transaction(async tx => {
+        await tx.execute(sql`select set_config('openship.migration_id', 'move', true)`);
+        await tx.update(schema.project).set(patch).where(eq(schema.project.id, patch.id));
+      })).rejects.toThrow();
+    }
+    expect(await db.query.project.findFirst({ where: eq(schema.project.id, "subject") }))
+      .toMatchObject({ serverId: b.id, workspaceId: target.id, organizationId: "org-a" });
+  });
+
+  it.each(["resize", "delete"] as const)("blocks %s while migration or temporary SSH recovery still owns a server", async kind => {
+    const owner = await createWorkspace();
+    const server = (await createServerRepo(db).findByWorkspace(owner.id, "org-a"))!;
+    const runs = createDockerMigrationRunRepo(db);
+    await runs.create({ id: "active-move", organizationId: "org-a", projectName: "app",
+      sourceServerId: server.id, targetServerId: server.id, status: "moving_data" });
+    await expect(workspaces.requestOperation(owner.id, "org-a", intent(kind)))
+      .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_MIGRATION_ACTIVE" });
+    await runs.transition("active-move", "rolled_back");
+    await runs.updateRecovery("active-move", { transferRunTag: "unfinished-trust" });
+    expect(await runs.findActiveForServer(server.id)).toHaveLength(1);
+    await expect(workspaces.requestOperation(owner.id, "org-a", intent(kind)))
+      .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_MIGRATION_ACTIVE" });
+    await runs.updateRecovery("active-move", { transferRunTag: null });
+    expect(await runs.findActiveForServer(server.id)).toHaveLength(0);
+  });
+
+  it("does not expose migration connections as normal deployment servers", async () => {
+    const servers = createServerRepo(db);
+    const row = await servers.create({ organizationId: "org-a", purpose: "migration_source",
+      sshHost: "203.0.113.1", sshAuthMethod: "password", sshPassword: "encrypted-password", sshHostKey: "public-key" });
+    expect((await servers.listMigrationSources("org-a")).map(server => server.id)).toEqual([row.id]);
+    expect(await servers.listMigrationSources("org-b")).toEqual([]);
+    expect(await servers.listByOrganization("org-a")).toEqual([]);
+    await expect(db.insert(schema.project).values({ id: "external-project", organizationId: "org-a", groupId: "group",
+      name: "Invalid destination", slug: "external-project", serverId: row.id })).rejects.toThrow();
+  });
+
+  it.each([
+    { isLocal: true }, { organizationId: null }, { sshHostKey: null },
+    { sshKeyPath: "/api/private-key" }, { sshArgs: "ProxyCommand=local" },
+    { sshJumpHost: "internal" }, { sshTransport: "cloudflare" as const },
+    { sshAuthMethod: "agent", sshPassword: null },
+  ])("rejects unsafe stored migration-source settings: %j", async patch => {
+    await expect(db.insert(schema.servers).values({
+      id: "unsafe", organizationId: "org-a", purpose: "migration_source", sshHost: "203.0.113.1",
+      sshAuthMethod: "password", sshPassword: "encrypted-password", sshHostKey: "public-key", ...patch,
+    })).rejects.toThrow();
+  });
 });
 async function createWorkspace() {
   const workspace = await workspaces.create({ organizationId: "org-a", name: "Production" });

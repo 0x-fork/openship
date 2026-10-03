@@ -224,6 +224,16 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     },
   },
   {
+    key: "migrations:recover",
+    label: "Migration recovery",
+    defaultCron: "* * * * *",
+    run: async () => {
+      const { migrationOrchestrator } = await import("../migration/migration.orchestrator");
+      await migrationOrchestrator.recoverInterruptedMigrations();
+      return {};
+    },
+  },
+  {
     key: "deployments:reconcile",
     label: "Deployment reconcile",
     defaultCron: "*/10 * * * *",

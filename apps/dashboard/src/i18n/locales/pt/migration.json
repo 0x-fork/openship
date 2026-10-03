@@ -8,5 +8,25 @@
   },
   "entry": {
     "tab": "Importar projeto existente"
+  },
+  "sources": {
+    "title": "Conectar uma origem de migração",
+    "connect": "Conectar origem",
+    "disconnect": "Desconectar origem",
+    "empty": "Conecte o servidor de onde deseja importar.",
+    "hint": "Apenas para migrações. Remova a conexão quando terminar.",
+    "importHint": "Copie aplicativos e dados para um servidor gerenciado do Openship. A origem é mantida até você confirmar a transferência."
+  },
+  "tab": {
+    "safetyTitle": "Os dados de origem são mantidos.",
+    "safetyBody": "Os dados são copiados. Os containers de origem selecionados param durante a transferência; seus dados permanecem na origem. Remover os containers originais exige sua aprovação."
+  },
+  "run": {
+    "downtimeNote": "Os containers de origem selecionados param enquanto os dados são copiados e o destino inicia. Planeje um período de indisponibilidade.",
+    "routeHint": "Seus serviços ficam privados até que as rotas sejam configuradas. Adicione ou revise os domínios na aba Domínios do projeto."
+  },
+  "cutover": {
+    "warning": "O destino está ativo. Você pode remover os containers originais ou mantê-los parados. Os volumes de origem são mantidos.",
+    "warningRestart": "O destino está ativo. Manter originais reinicia os containers de origem que estavam ativos como cópias independentes. Remover originais os exclui. Os volumes de origem são mantidos."
   }
 }

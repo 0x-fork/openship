@@ -7,9 +7,11 @@ import {
   cloudServerDeletion,
   project,
   servers,
+  dockerMigrationRun,
   type CloudWorkspaceOperation,
   type CloudWorkspaceActivity,
 } from "../schema";
+import { activeMigration } from "./docker-migration.repo";
 
 export type CloudWorkspace = typeof cloudWorkspace.$inferSelect;
 
@@ -230,6 +232,12 @@ export function createCloudWorkspaceRepo(db: Database) {
         }
         if (row.deletionInProgress && operation.kind !== "delete")
           throw new Error("Cloud workspace is being deleted");
+        if (operation.kind === "resize" || operation.kind === "delete") {
+          const [migration] = await tx.select({ id: dockerMigrationRun.id }).from(dockerMigrationRun)
+            .innerJoin(servers, or(eq(servers.id, dockerMigrationRun.sourceServerId), eq(servers.id, dockerMigrationRun.targetServerId)))
+            .where(and(eq(servers.workspaceId, id), activeMigration)).limit(1);
+          if (migration) throw new AppError("Finish or cancel this server's migration before changing the server", 409, "CLOUD_WORKSPACE_MIGRATION_ACTIVE");
+        }
         if (operation.kind === "resize") {
           const members = await tx
             .select({ id: project.id })
