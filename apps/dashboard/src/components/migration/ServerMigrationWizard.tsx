@@ -305,7 +305,7 @@ export function ServerMigrationWizard({
 
   // All imports review their destination after configuring services.
   const [step, setStep] = useState<"select" | "source" | "domains" | "plan">("select");
-  const [discoveryView, setDiscoveryView] = useState<DiscoveryView>("topology");
+  const [discoveryView, setDiscoveryView] = useState<DiscoveryView>("cards");
   const [recoveryId, setRecoveryId] = useState<string | null>(null);
   const [recoveryResults, setRecoveryResults] = useState<Record<string, RecoveryResult>>({});
 
@@ -407,7 +407,7 @@ export function ServerMigrationWizard({
 
   const reset = () => {
     setStep("select");
-    setDiscoveryView("topology");
+    setDiscoveryView("cards");
     setRecoveryId(null);
     setRecoveryResults({});
     setStack(null);

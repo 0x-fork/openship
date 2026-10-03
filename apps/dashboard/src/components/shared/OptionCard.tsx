@@ -18,6 +18,13 @@ interface OptionCardProps {
   buttonRef?: Ref<HTMLButtonElement>;
 }
 
+/** Shared surface for single-choice cards and multi-select service cards. */
+export function optionCardSurface(selected: boolean) {
+  return selected
+    ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+    : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]";
+}
+
 /** The shared bordered choice used for deployment destinations and settings. */
 export function OptionCard({ value, selected, disabled = false, onSelect, icon, label, description, badge, children, className, buttonRef }: OptionCardProps) {
   return (
@@ -31,9 +38,7 @@ export function OptionCard({ value, selected, disabled = false, onSelect, icon, 
         disabled={disabled}
         className={cn(
           "relative h-full w-full rounded-xl border p-4 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-          selected
-            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-            : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]",
+          optionCardSurface(selected),
           selected && children && "rounded-b-none border-b-0",
         )}
       >

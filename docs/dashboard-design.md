@@ -62,9 +62,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - A destination with one existing server uses a compact summary row; multiple servers use
   the shared picker. Keep the create-server action visible in both cases. Cloud deployments
   can reuse a server's plan or create a separate server and subscription from the same flow.
-- Import discovery uses the shared topology canvas with a highlighted parent containing each
-  Compose project's service nodes, and Cards as an equivalent selection view. Recovered Openship
-  projects belong in the same selector; their recovery action and naming live in the sidebar.
+- Import discovery defaults to Cards, with the shared topology canvas as an optional view.
+  Each Compose project has its own section and canvas; do not add another parent node around
+  its services. Recovered Openship projects belong in the same selector; their recovery action
+  and naming live in the sidebar. Selection uses the shared OptionCard surface and border.
   Expand additional groups on demand. Selection and names survive view and step changes.
   Only draw discovered dependencies; keep scan graphs in memory without saved configuration.
 - Import progress and discovery notices stay in the right sidebar. Keep scan settings in the

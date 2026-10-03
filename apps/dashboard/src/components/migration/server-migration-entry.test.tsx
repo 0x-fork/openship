@@ -202,9 +202,7 @@ it("changes scan coverage through the shared menu and re-scans the selected serv
     expect.objectContaining({ flatDocker: false }),
   );
   expect(button("Detect projects")).toBeUndefined();
-  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Topology",
-  );
+  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Cards");
   expect(h.migrate).not.toHaveBeenCalled();
   expect(h.reimport).not.toHaveBeenCalled();
 });
@@ -387,7 +385,7 @@ it("waits for the selected destination's storage review before enabling migratio
   expect(button("Migrate").disabled).toBe(false);
 });
 
-it("defaults to topology and keeps container selection, view and automatic naming across steps", async () => {
+it("defaults to cards and keeps container selection, view and automatic naming across steps", async () => {
   useCloud();
   const base = scannedStack();
   const first = {
@@ -419,13 +417,13 @@ it("defaults to topology and keeps container selection, view and automatic namin
     container.querySelector<HTMLButtonElement>(
       `[role="checkbox"][aria-label="Select all services in ${name}"]`,
     )!;
-  expect(tab("Topology").getAttribute("aria-selected")).toBe("true");
+  expect(tab("Cards").getAttribute("aria-selected")).toBe("true");
   expect(button("Next").disabled).toBe(true);
   await act(async () => pickGroup("first").click());
   expect(container.querySelector<HTMLInputElement>('input[id^="import-name-"]')!.value).toBe(
     "first",
   );
-  await act(async () => tab("Cards").click());
+  await act(async () => tab("Topology").click());
   expect(
     container
       .querySelector('section[aria-label="first"] [aria-label="Select redis"]')
@@ -446,7 +444,7 @@ it("defaults to topology and keeps container selection, view and automatic namin
   );
   await act(async () => button("Next").click());
   await act(async () => button("Back").click());
-  expect(tab("Cards").getAttribute("aria-selected")).toBe("true");
+  expect(tab("Topology").getAttribute("aria-selected")).toBe("true");
   expect(pickGroup("second").getAttribute("aria-checked")).toBe("true");
   expect(container.textContent).not.toContain("masked-first");
   expect(container.textContent).not.toContain("masked-second");
@@ -528,7 +526,7 @@ it("keeps the self-hosted in-place flow and its reviewed volume choice", async (
   });
 });
 
-it("uses the same topology selection and destination review in the modal", async () => {
+it("uses the same default cards selection and destination review in the modal", async () => {
   useCloud();
   h.scanStream.mockResolvedValue(scannedStack());
   const modalButton = (label: string) =>
@@ -541,7 +539,7 @@ it("uses the same topology selection and destination review in the modal", async
   await act(async () => modalButton("Scan server").click());
   expect(
     Array.from(document.querySelectorAll('[role="tab"]'))
-      .find((tab) => tab.textContent === "Topology")
+      .find((tab) => tab.textContent === "Cards")
       ?.getAttribute("aria-selected"),
   ).toBe("true");
   await act(async () =>
@@ -591,9 +589,7 @@ it("offers recovered projects inside discovery and keeps recovery separate from 
   await act(async () => root.render(<ServerMigrationWizard variant="tab" onClose={vi.fn()} />));
   await pickSource("First server");
   await act(async () => button("Scan server").click());
-  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Topology",
-  );
+  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Cards");
   expect(container.textContent).not.toContain("Openship projects found");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Recover recovered"]')!.click(),

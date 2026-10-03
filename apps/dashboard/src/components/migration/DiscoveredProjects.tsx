@@ -1,15 +1,16 @@
 "use client";
 
 import { useCallback, useId, useMemo, useState } from "react";
+import { Icon } from "@repo/ui/icons";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import {
   TopologyCanvas,
-  TopologyGroupHeading,
-  type TopologyGroup,
   type TopologyNodeAction,
   type TopologySelection,
 } from "@/components/topology/TopologyCanvas";
 import { ServiceIcon } from "@/components/services/ServiceIcon";
+import { optionCardSurface } from "@/components/shared/OptionCard";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Tabs } from "@/components/ui/Tabs";
 import type {
@@ -17,7 +18,6 @@ import type {
   DiscoveredService,
   OpenshipProjectGroup,
 } from "@/lib/api/server-migration";
-import { groupedTopologyLayout } from "@/components/topology/group-layout";
 import {
   discoveryGraph,
   groupKey,
@@ -63,8 +63,8 @@ export function DiscoveredProjects(props: DiscoveredProjectsProps) {
         </div>
         <Tabs
           tabs={[
-            { key: "topology", label: d.topology, icon: "topology" },
             { key: "cards", label: d.cards, icon: "grid" },
+            { key: "topology", label: d.topology, icon: "topology" },
           ]}
           value={props.view}
           onChange={props.onViewChange}
@@ -176,23 +176,12 @@ function DiscoveredProject({
                 ? interpolate(t.migration.reimport.reviewNamed, { name: title })
                 : interpolate(d.selectNamedService, { name: service.name }),
               statusLabel: service.running ? d.running : d.stopped,
-              kind: recoveredProject ? "open" : "select",
               readOnly: Boolean(recoveredProject),
             } satisfies TopologyNodeAction,
           ];
         }),
       ),
-    [
-      group,
-      activeProject,
-      projects,
-      claimedBy,
-      d,
-      recoveredProject,
-      recoveryId,
-      t.migration.reimport,
-      title,
-    ],
+    [group, activeProject, projects, claimedBy, d, recoveredProject, t.migration.reimport, title],
   );
   const toggle = useCallback(
     (id: string) => {
@@ -201,18 +190,13 @@ function DiscoveredProject({
         onSelectRecovery(recoveredProject.projectId);
         return;
       }
-      if (id === graphId) {
-        setExpanded(true);
-        onToggleGroup(group);
-        return;
-      }
       const service = group.services.find((service) => svcUid(service) === id);
       if (service && !actions[id]?.disabled) {
         setExpanded(true);
         onToggle(service, group);
       }
     },
-    [group, actions, onToggle, onToggleGroup, graphId, recoveredProject, onSelectRecovery],
+    [group, actions, onToggle, recoveredProject, onSelectRecovery],
   );
   const select = useCallback(
     (next: TopologySelection) => {
@@ -221,123 +205,143 @@ function DiscoveredProject({
     },
     [toggle],
   );
-  const parent = useMemo<TopologyGroup>(
-    () => ({
-      id: graphId,
-      title,
-      description: `${recoveredProject ? t.migration.reimport.groupLabel : group.project ? d.composeGroup : d.standalone} · ${interpolate(t.migration.tab.servicesCount, { n: String(group.services.length) })}`,
-      nodeIds: group.services.map(svcUid),
-      collapsed: !expanded,
-      expandLabel: interpolate(d.expandProject, { name: title }),
-      onToggleExpanded: () => setExpanded((value) => !value),
-      action: recoveredProject
-        ? {
-            kind: "open",
-            label: t.migration.reimport.review,
-            ariaLabel: interpolate(t.migration.reimport.reviewNamed, { name: title }),
-            selected: recoveryId === recoveredProject.projectId,
-          }
-        : {
-            label: allSelected ? d.clearSelection : d.selectAll,
-            ariaLabel: interpolate(d.selectProject, { name: title }),
-            selected: allSelected,
-            indeterminate: pickedCount > 0 && !allSelected,
-            disabled: available.length === 0,
-          },
-    }),
-    [
-      graphId,
-      title,
-      recoveredProject,
-      recoveryId,
-      group,
-      expanded,
-      d,
-      t.migration,
-      allSelected,
-      pickedCount,
-      available.length,
-    ],
-  );
-  const parents = useMemo(() => [parent], [parent]);
-  const height = groupedTopologyLayout(graph, parents).frames.get(parent.id)!.height;
   return (
     <section className="@container overflow-hidden rounded-2xl bg-card" aria-label={title}>
-      {view === "topology" && expanded ? (
-        <div
-          className="topology-workspace"
-          style={{ height: Math.min(620, height + 104), minHeight: 0 }}
+      <div className="flex items-center gap-3 p-4 text-start">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-start focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          aria-controls={graphId}
+          aria-label={interpolate(d.expandProject, { name: title })}
         >
-          <TopologyCanvas
-            graph={graph}
-            layoutKey={null}
-            selection={selection}
-            fullscreen={false}
-            inert={false}
-            onSelect={select}
-            onOpen={toggle}
-            nodeActions={actions}
-            groups={parents}
-            ariaLabel={`${title} — ${d.topology}`}
-            nodeDescription={d.selectionKeyboard}
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/70">
+            <Icon name="project" className="size-4 text-muted-foreground" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-foreground" title={title}>
+              {title}
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+              {recoveredProject
+                ? t.migration.reimport.groupLabel
+                : group.project
+                  ? d.composeGroup
+                  : d.standalone}
+              {" · "}
+              {interpolate(t.migration.tab.servicesCount, { n: String(group.services.length) })}
+            </span>
+          </span>
+          <Icon
+            name="chevron-down"
+            className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
           />
-        </div>
-      ) : (
-        <>
-          <TopologyGroupHeading group={parent} onOpen={toggle} />
-          {expanded && (
-            <div className="grid grid-cols-1 gap-3 p-4 pt-0 @2xl:grid-cols-2">
-              {group.services.map((service) => {
-                const action = actions[svcUid(service)]!;
-                return (
-                  <button
-                    key={svcUid(service)}
-                    type="button"
-                    role={recoveredProject ? undefined : "checkbox"}
-                    aria-checked={recoveredProject ? undefined : action.selected}
-                    disabled={action.disabled}
-                    aria-label={action.ariaLabel}
-                    onClick={() => toggle(svcUid(service))}
-                    className={`flex min-w-0 items-start gap-3 rounded-xl p-4 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed ${action.selected ? "bg-primary/10" : "bg-background hover:bg-muted"}`}
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/50">
-                      <ServiceIcon service={service} />
+        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0"
+          role={recoveredProject ? undefined : "checkbox"}
+          aria-checked={
+            recoveredProject ? undefined : allSelected ? true : pickedCount ? "mixed" : false
+          }
+          aria-pressed={recoveredProject ? recoveryId === recoveredProject.projectId : undefined}
+          aria-label={interpolate(
+            recoveredProject ? t.migration.reimport.reviewNamed : d.selectProject,
+            { name: title },
+          )}
+          disabled={!recoveredProject && available.length === 0}
+          onClick={() => {
+            setExpanded(true);
+            if (recoveredProject) onSelectRecovery(recoveredProject.projectId);
+            else onToggleGroup(group);
+          }}
+        >
+          {!recoveredProject && (
+            <Checkbox
+              asButton={false}
+              checked={allSelected ? true : pickedCount ? "indeterminate" : false}
+            />
+          )}
+          {recoveredProject
+            ? t.migration.reimport.review
+            : allSelected
+              ? d.clearSelection
+              : d.selectAll}
+        </Button>
+      </div>
+      {expanded &&
+        (view === "topology" ? (
+          <div
+            id={graphId}
+            className="topology-workspace"
+            style={{ height: group.services.length > 2 ? 420 : 260, minHeight: 0 }}
+          >
+            <TopologyCanvas
+              graph={graph}
+              layoutKey={null}
+              selection={selection}
+              fullscreen={false}
+              inert={false}
+              onSelect={select}
+              onOpen={toggle}
+              nodeActions={actions}
+              ariaLabel={`${title} — ${d.topology}`}
+              nodeDescription={d.selectionKeyboard}
+            />
+          </div>
+        ) : (
+          <div id={graphId} className="grid grid-cols-1 gap-3 p-4 pt-0 @2xl:grid-cols-2">
+            {group.services.map((service) => {
+              const action = actions[svcUid(service)]!;
+              return (
+                <button
+                  key={svcUid(service)}
+                  type="button"
+                  role={recoveredProject ? undefined : "checkbox"}
+                  aria-checked={recoveredProject ? undefined : action.selected}
+                  disabled={action.disabled}
+                  aria-label={action.ariaLabel}
+                  onClick={() => toggle(svcUid(service))}
+                  className={`flex min-w-0 items-start gap-3 rounded-xl border p-4 text-start transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed ${optionCardSurface(action.selected)}`}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/50">
+                    <ServiceIcon service={service} />
+                  </span>
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {service.name}
                     </span>
-                    <span className="min-w-0 flex-1 space-y-1">
-                      <span className="block truncate text-sm font-medium text-foreground">
-                        {service.name}
-                      </span>
+                    <span
+                      className="block truncate text-xs text-muted-foreground"
+                      title={service.image ?? service.build}
+                    >
+                      {service.image ?? service.build}
+                    </span>
+                    <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                       <span
-                        className="block truncate text-xs text-muted-foreground"
-                        title={service.image ?? service.build}
+                        className="topology-status"
+                        data-state={service.running ? "running" : "stopped"}
                       >
-                        {service.image ?? service.build}
+                        {action.statusLabel}
                       </span>
-                      <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <span
-                          className="topology-status"
-                          data-state={service.running ? "running" : "stopped"}
-                        >
-                          {action.statusLabel}
+                      {service.volumes.length > 0 && (
+                        <span>
+                          {interpolate(d.nVolumes, { n: String(service.volumes.length) })}
                         </span>
-                        {service.volumes.length > 0 && (
-                          <span>
-                            {interpolate(d.nVolumes, { n: String(service.volumes.length) })}
-                          </span>
-                        )}
-                      </span>
-                      {action.hint && (
-                        <span className="block text-xs text-muted-foreground">{action.hint}</span>
                       )}
                     </span>
-                    {!recoveredProject && <Checkbox asButton={false} checked={action.selected} />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
+                    {action.hint && (
+                      <span className="block text-xs text-muted-foreground">{action.hint}</span>
+                    )}
+                  </span>
+                  {!recoveredProject && <Checkbox asButton={false} checked={action.selected} />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       {view === "topology" && group.services.some((service) => actions[svcUid(service)]?.hint) && (
         <div className="space-y-1 px-4 pb-4 text-xs text-muted-foreground">
           {group.services
