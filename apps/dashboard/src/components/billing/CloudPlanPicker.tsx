@@ -30,7 +30,6 @@ export function CloudPlanPicker({
   workspaceId,
   currentOffer,
   allocatedDiskGb,
-  existingServer = false,
   prepareWorkspace,
   purchaseDetails,
   purchaseDisabled = false,
@@ -45,7 +44,6 @@ export function CloudPlanPicker({
   complimentary?: BillingState["complimentary"];
   preserveProject?: boolean;
   onCheckoutStarted?: (checkoutUrl?: string) => void;
-  existingServer?: boolean;
   /** New server acquisition resolves its identity only after choosing a plan. */
   prepareWorkspace?: () => Promise<string>;
   purchaseDetails?: ReactNode;
@@ -147,95 +145,93 @@ export function CloudPlanPicker({
     ? showOtherPlans
       ? copy.otherPlans
       : copy.upgradeServer
-    : existingServer
-      ? copy.resumeServer
-      : prepareWorkspace
-        ? copy.newServer
-        : t.billing.onboarding.compareTitle;
+    : t.billing.onboarding.compareTitle;
   const description = hasPlan
     ? showOtherPlans
       ? copy.otherPlansHint
       : copy.upgradeHint
-    : existingServer
-      ? copy.resumeHint
-      : t.billing.workspaces.description;
+    : t.billing.workspaces.description;
   const busy = subscribing !== null || changes.busy;
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         {!preserveProject && (
-          <div>
+          <div className="min-w-0 flex-1 basis-96">
             <h2 className="text-base font-medium text-foreground">{title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>
           </div>
         )}
-        {purchaseDetails}
-        <div className="flex flex-wrap items-center gap-3">
-          {compareUpgrades && (choices.other.length > 0 || showOtherPlans) && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                selectConfiguration(
-                  showOtherPlans ? defaultConfiguration : "plans",
-                  !showOtherPlans,
-                )
-              }
-            >
-              {showOtherPlans ? copy.backToUpgrades : copy.otherPlans}
-            </Button>
-          )}
-          {payload.custom && visiblePlans.length > 0 && (
-            <div
-              role="group"
-              aria-label={t.billing.custom.configuration}
-              className="inline-flex gap-1 rounded-xl bg-muted/40 p-1"
-            >
-              {(["plans", "custom"] as const).map((value) => (
-                <Button
-                  key={value}
-                  type="button"
-                  size="sm"
-                  variant={configuration === value ? "secondary" : "ghost"}
-                  aria-pressed={configuration === value}
-                  disabled={busy || (value === "custom" && !canUseCustom)}
-                  onClick={() => selectConfiguration(value)}
-                >
-                  {value === "plans"
-                    ? compareUpgrades && !showOtherPlans
-                      ? t.billing.pricing.upgrade
-                      : t.billing.custom.presets
-                    : t.billing.custom.name}
-                </Button>
-              ))}
-            </div>
-          )}
-          {configuration === "plans" &&
-            payload.annual.enabled &&
-            (!subscription || subscription.status === "canceled") && (
-              <div
-                className="inline-flex gap-1 rounded-xl bg-muted/40 p-1"
-                role="group"
-                aria-label={t.billing.pricing.billingInterval}
+        <div
+          className={`flex min-w-0 flex-wrap items-end gap-4 ${preserveProject ? "w-full justify-between" : ""}`}
+        >
+          {purchaseDetails}
+          <div className="flex flex-wrap items-center gap-3">
+            {compareUpgrades && (choices.other.length > 0 || showOtherPlans) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  selectConfiguration(
+                    showOtherPlans ? defaultConfiguration : "plans",
+                    !showOtherPlans,
+                  )
+                }
               >
-                {(["monthly", "annual"] as const).map((value) => (
+                {showOtherPlans ? copy.backToUpgrades : copy.otherPlans}
+              </Button>
+            )}
+            {payload.custom && visiblePlans.length > 0 && (
+              <div
+                role="group"
+                aria-label={t.billing.custom.configuration}
+                className="inline-flex gap-1 rounded-xl bg-muted/40 p-1"
+              >
+                {(["plans", "custom"] as const).map((value) => (
                   <Button
                     key={value}
                     type="button"
                     size="sm"
-                    aria-pressed={interval === value}
-                    onClick={() => setInterval(value)}
-                    disabled={subscribing !== null}
-                    variant={interval === value ? "secondary" : "ghost"}
+                    variant={configuration === value ? "secondary" : "ghost"}
+                    aria-pressed={configuration === value}
+                    disabled={busy || (value === "custom" && !canUseCustom)}
+                    onClick={() => selectConfiguration(value)}
                   >
-                    {value === "monthly" ? t.billing.pricing.monthly : t.billing.pricing.annual}
+                    {value === "plans"
+                      ? compareUpgrades && !showOtherPlans
+                        ? t.billing.pricing.upgrade
+                        : t.billing.custom.presets
+                      : t.billing.custom.name}
                   </Button>
                 ))}
               </div>
             )}
+            {configuration === "plans" &&
+              payload.annual.enabled &&
+              (!subscription || subscription.status === "canceled") && (
+                <div
+                  className="inline-flex gap-1 rounded-xl bg-muted/40 p-1"
+                  role="group"
+                  aria-label={t.billing.pricing.billingInterval}
+                >
+                  {(["monthly", "annual"] as const).map((value) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="sm"
+                      aria-pressed={interval === value}
+                      onClick={() => setInterval(value)}
+                      disabled={subscribing !== null}
+                      variant={interval === value ? "secondary" : "ghost"}
+                    >
+                      {value === "monthly" ? t.billing.pricing.monthly : t.billing.pricing.annual}
+                    </Button>
+                  ))}
+                </div>
+              )}
+          </div>
         </div>
       </div>
       {subscription?.pendingChange && (

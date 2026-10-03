@@ -1,9 +1,6 @@
 "use client";
 
-import { ServerBillingPicker, useBillingServerInventory } from "@/components/billing/ServerBillingPicker";
-import { BillingLink } from "@/components/billing/BillingWorkspaceContext";
-import { useI18n } from "@/components/i18n-provider";
-import { Icon } from "@repo/ui/icons";
+import { ServerBillingPicker, billingServersVisible, useBillingServerInventory } from "@/components/billing/ServerBillingPicker";
 
 export function BillingContent({
   children,
@@ -15,19 +12,10 @@ export function BillingContent({
   layout?: "details" | "plans" | "purchase";
 }) {
   const inventory = useBillingServerInventory();
-  const { t } = useI18n();
   // Plans keep the whole comparison width. Usage and history retain the
   // visible server list; purchasing another server has no selected subscription.
-  const showServers = Boolean(inventory && (inventory.error || inventory.servers.some(({ managed }) =>
-    managed && (managed.resources || managed.planTierId !== "free" || managed.state !== "needs_plan"),
-  )));
-  if (layout !== "details") return <div className="min-w-0 space-y-5">
-    {layout === "plans" && showServers && <ServerBillingPicker compact />}
-    {layout === "purchase" && showServers && <BillingLink href="/billing" className="inline-flex items-center gap-2 rounded text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-      <Icon name="arrow-left" className="size-4 rtl:rotate-180" />{t.billing.creditAlert.backToBilling}
-    </BillingLink>}
-    {children}
-  </div>;
+  const showServers = billingServersVisible(inventory);
+  if (layout !== "details") return <div className="min-w-0 space-y-5">{children}</div>;
   if (!sidebar && !showServers) {
     return <div className="min-w-0">{children}</div>;
   }

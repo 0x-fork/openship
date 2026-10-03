@@ -111,9 +111,6 @@
     "otherPlans": "其他套餐",
     "otherPlansHint": "费用更低的变更从续费时生效。现有存储无法缩小。",
     "backToUpgrades": "返回升级选项",
-    "resumeServer": "为此服务器选择套餐",
-    "resumeHint": "保留此服务器及其项目。选择套餐以恢复部署。",
-    "newServer": "为新服务器选择套餐",
     "serverName": "服务器名称",
     "noLargerPlan": "此计费周期没有更大的套餐。请联系支持了解其他选项。"
   },

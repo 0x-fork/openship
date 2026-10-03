@@ -11,7 +11,6 @@ import { ApiError } from "@/lib/api/client";
 import { cloudDeployRecovery, type CloudDeployRestriction } from "@/lib/cloud-deploy-pricing";
 import { workspaceBillingHref } from "./BillingWorkspaceContext";
 import { CloudCheckoutNotice, CloudPlanPicker } from "./CloudPlanPicker";
-import { isNewCloudCustomer } from "@/lib/billing-presentation";
 
 export function CloudDeployPlanModal({
   restriction = { code: "CLOUD_BILLING_BLOCKED" },
@@ -166,7 +165,6 @@ export function CloudDeployPlanModal({
                   complimentary={state.complimentary}
                   billingEnabled={state.billing?.enabled === true}
                   canChangeSubscription={state.capabilities?.subscriptionChange === true}
-                  existingServer={!isNewCloudCustomer(state)}
                   preserveProject
                   onCheckoutStarted={() => {
                     setCheckoutStarted(true);

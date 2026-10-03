@@ -111,9 +111,6 @@
     "otherPlans": "Andere Pläne",
     "otherPlansHint": "Günstigere Änderungen gelten ab der Verlängerung. Bestehender Speicher kann nicht verkleinert werden.",
     "backToUpgrades": "Zurück zu Upgrades",
-    "resumeServer": "Plan für diesen Server wählen",
-    "resumeHint": "Server und Projekte behalten. Einen Plan wählen, um wieder bereitzustellen.",
-    "newServer": "Plan für deinen neuen Server wählen",
     "serverName": "Servername",
     "noLargerPlan": "Für dieses Abrechnungsintervall ist kein größerer Plan verfügbar. Weitere Optionen bietet der Support."
   },

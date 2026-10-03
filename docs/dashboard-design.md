@@ -102,8 +102,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Cloud billing keeps its header and tabs mounted when switching servers. List managed
   servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
   One server is a summary; several servers switch billing directly from the visible list.
-  Plans uses the full page width, with the shared compact server picker above a horizontal
-  summary of its saved subscription and capacity. Default to relevant upgrades; offer
+  Plans uses the full page width, with the shared compact server picker and Add server
+  in the page header. Show its saved subscription and capacity below the tabs; an
+  inactive subscription uses a short inline notice. New purchases group the server name
+  with the plan controls and reuse the shared plan introduction. Default to relevant upgrades; offer
   Other plans deliberately for lower-cost changes and Custom when no larger preset fits.
   Do not call today's catalog terms the current plan if they differ from the saved purchase,
   or offer a preset that would shrink an existing disk. New-server purchases have their own

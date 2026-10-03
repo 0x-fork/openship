@@ -422,7 +422,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
           </ul>
         </section>
       )}
-      <PlanUsageNote plans={plans} interval={interval} workspaceScoped={workspaceScoped} />
+      <PlanUsageNote plans={plans} interval={interval} workspaceScoped={workspaceScoped} showCapacityNote={!workspaceScoped} />
     </div>
   );
 };

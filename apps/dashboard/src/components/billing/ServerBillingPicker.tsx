@@ -22,6 +22,18 @@ const BillingServerInventoryContext = createContext<BillingServerInventory | nul
 export const BillingServerInventoryProvider = BillingServerInventoryContext.Provider;
 export const useBillingServerInventory = () => useContext(BillingServerInventoryContext);
 
+export function billingServersVisible(inventory: BillingServerInventory | null) {
+  return Boolean(
+    inventory &&
+    (inventory.error ||
+      inventory.servers.some(
+        ({ managed }) =>
+          managed &&
+          (managed.resources || managed.planTierId !== "free" || managed.state !== "needs_plan"),
+      )),
+  );
+}
+
 /** Visible server rows share the destination presentation and authorized inventory. */
 export function ServerBillingPicker({ compact = false }: { compact?: boolean }) {
   const inventory = useBillingServerInventory();
@@ -32,7 +44,7 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
   const [requestedName, setRequestedName] = useState("");
   const { t } = useI18n();
   const copy = t.billing.workspaces;
-  if (!inventory) return null;
+  if (!inventory || !billingServersVisible(inventory)) return null;
   const { servers, loading, error, onRetry } = inventory;
   const selected = servers.find((server) => server.managed?.id === workspaceId);
   const addHref = newServerBillingHref(organizationId);
@@ -47,7 +59,7 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
     );
   };
   const addServer = (
-    <Button asChild variant="secondary" size="sm" className="shrink-0">
+    <Button asChild variant="secondary" size={compact ? "default" : "sm"} className="shrink-0">
       <Link href={addHref}>
         <Icon name="plus" className="size-4" aria-hidden="true" />
         {t.servers.setup.addServer}
@@ -73,12 +85,12 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
       <section
         aria-label={copy.billingServers}
         aria-busy={pending || loading}
-        className="flex flex-wrap items-center justify-between gap-3"
+        className="flex w-full min-w-0 items-center gap-3 md:w-auto"
       >
         {error ? (
           failure
         ) : (
-          <div className="w-full min-w-0 sm:w-80">
+          <div className="min-w-0 flex-1 md:w-80 md:flex-none">
             {servers.length === 1 && selected ? (
               <div className="flex items-center gap-3 rounded-xl bg-card px-3 py-2.5">
                 <ServerRowContent server={selected} active />

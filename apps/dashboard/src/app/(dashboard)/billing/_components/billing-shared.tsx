@@ -70,6 +70,20 @@ export function BillingPlanSummary({
   const formatDate = (value: string) =>
     new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(value));
 
+  if (compact && !hasPlan)
+    return (
+      <div
+        role="status"
+        className="inline-flex max-w-full items-center gap-2.5 rounded-xl bg-card px-3 py-2 text-sm"
+      >
+        <span
+          aria-hidden="true"
+          className="size-2.5 shrink-0 rounded-full border-2 border-warning"
+        />
+        <p className="text-muted-foreground">{t.billing.sidebar.inactiveServer}</p>
+      </div>
+    );
+
   return (
     <section
       className={`rounded-2xl bg-card ${compact ? "flex flex-wrap items-center justify-between gap-x-6 gap-y-3 p-4" : "space-y-4 p-5"}`}

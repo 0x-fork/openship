@@ -111,9 +111,6 @@
     "otherPlans": "Otros planes",
     "otherPlansHint": "Los cambios a menor precio comienzan al renovar. El almacenamiento existente no se puede reducir.",
     "backToUpgrades": "Volver a las ampliaciones",
-    "resumeServer": "Elige un plan para este servidor",
-    "resumeHint": "Conserva este servidor y sus proyectos. Elige un plan para reanudar los despliegues.",
-    "newServer": "Elige un plan para tu nuevo servidor",
     "serverName": "Nombre del servidor",
     "noLargerPlan": "No hay un plan mayor para este período de facturación. Contacta con soporte para ver otras opciones."
   },

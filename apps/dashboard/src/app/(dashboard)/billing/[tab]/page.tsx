@@ -92,7 +92,6 @@ export default async function BillingTabPage({
             complimentary={state.complimentary}
             billingEnabled={state.billing?.enabled === true}
             canChangeSubscription={state.capabilities?.subscriptionChange === true}
-            existingServer={!plansOnly}
           />
           </>
         );

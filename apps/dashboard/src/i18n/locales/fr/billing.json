@@ -111,9 +111,6 @@
     "otherPlans": "Autres offres",
     "otherPlansHint": "Les changements moins chers prennent effet au renouvellement. Le stockage existant ne peut pas être réduit.",
     "backToUpgrades": "Retour aux augmentations",
-    "resumeServer": "Choisir une offre pour ce serveur",
-    "resumeHint": "Conservez ce serveur et ses projets. Choisissez une offre pour reprendre les déploiements.",
-    "newServer": "Choisir une offre pour votre nouveau serveur",
     "serverName": "Nom du serveur",
     "noLargerPlan": "Aucune offre supérieure pour cette période de facturation. Contactez le support pour les autres options."
   },

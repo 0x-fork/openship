@@ -102,19 +102,21 @@ describe("billing navigation by server ownership", () => {
     expect(h.list).toHaveBeenCalledOnce();
   });
 
-  it("uses the shared compact selector on Plans without a server sidebar", async () => {
+  it("keeps the shared selector and new-server action in the Plans header", async () => {
     h.path = "/billing/plans";
     h.query = "workspaceId=cws-production&organizationId=org-a";
     h.list.mockResolvedValue({ servers: [production, staging] });
     await render(page({ workspaceId: "cws-production", requestedWorkspaceId: "cws-production", organizationId: "org-a" }));
     expect(host.querySelector("aside")).toBeNull();
     expect(picker()?.textContent).toContain("Production");
+    expect(host.querySelector("header")?.contains(picker()!)).toBe(true);
+    expect(host.querySelectorAll('button[aria-haspopup="listbox"]')).toHaveLength(1);
     await act(async () => picker()!.click());
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent?.includes("Staging"))!;
     expect(option).toBeDefined();
     await act(async () => option.click());
     expect(h.router.push).toHaveBeenLastCalledWith("/billing/plans?workspaceId=cws-staging&organizationId=org-a", { scroll: false });
-    expect(host.querySelector('a[href="/billing/plans?newServer=1&organizationId=org-a"]')).not.toBeNull();
+    expect(host.querySelector('header a[href="/billing/plans?newServer=1&organizationId=org-a"]')).not.toBeNull();
   });
 
   it("keeps a single server compact on Plans without presenting a redundant menu", async () => {
@@ -123,8 +125,8 @@ describe("billing navigation by server ownership", () => {
     await render(page({ workspaceId: "cws-production" }));
     expect(host.querySelector("aside")).toBeNull();
     expect(picker()).toBeNull();
-    expect(host.textContent).toContain("Production");
-    expect(host.querySelector('a[href="/billing/plans?newServer=1"]')).not.toBeNull();
+    expect(host.querySelector("header")?.textContent).toContain("Production");
+    expect(host.querySelector('header a[href="/billing/plans?newServer=1"]')).not.toBeNull();
   });
 
   it("does not inherit an existing server's navigation while buying a new one", async () => {
@@ -137,7 +139,21 @@ describe("billing navigation by server ownership", () => {
     expect(host.textContent).not.toContain("Production");
     expect(picker()).toBeNull();
     expect(host.querySelector("aside")).toBeNull();
-    expect(host.querySelector('a[href="/billing?organizationId=org-a"]')).not.toBeNull();
+    expect(host.querySelector('header a[href="/billing?organizationId=org-a"]')).not.toBeNull();
+  });
+
+  it("keeps the Plans server selector mounted while its content refreshes", async () => {
+    h.path = "/billing/plans";
+    h.query = "workspaceId=cws-production";
+    h.list.mockResolvedValue({ servers: [production, staging] });
+    await render(page({ workspaceId: "cws-production", requestedWorkspaceId: "cws-production" }));
+    const control = picker();
+    expect(control?.textContent).toContain("Production");
+    await render(<div role="status">Refreshing plans</div>);
+    expect(picker()).toBe(control);
+    expect(host.querySelector("header")?.contains(control!)).toBe(true);
+    expect(h.list).toHaveBeenCalledOnce();
+    expect(tabs()).toHaveLength(6);
   });
 
   it("keeps the header and tabs mounted while another tab loads", async () => {

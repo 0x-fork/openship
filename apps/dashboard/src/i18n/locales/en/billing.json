@@ -111,9 +111,6 @@
     "otherPlans": "Other plans",
     "otherPlansHint": "Lower-cost changes start at renewal. Existing storage cannot shrink.",
     "backToUpgrades": "Back to upgrades",
-    "resumeServer": "Choose a plan for this server",
-    "resumeHint": "Keep this server and its projects. Choose a plan to resume deployments.",
-    "newServer": "Choose a plan for your new server",
     "serverName": "Server name",
     "noLargerPlan": "No larger plan is available for this billing interval. Contact support for other options."
   },

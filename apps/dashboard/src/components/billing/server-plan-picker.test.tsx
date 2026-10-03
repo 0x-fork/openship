@@ -73,7 +73,7 @@ async function edit(field: HTMLInputElement, value: string) {
 const flushQuote = () => act(async () => { await vi.advanceTimersByTimeAsync(250); });
 function picker(tier: PlanTierId, extra: Partial<React.ComponentProps<typeof CloudPlanPicker>> = {}) {
   return <CloudPlanPicker workspaceId="cws-production" currentPlan={tier} currentOffer={offer(tier)}
-    subscription={subscription(tier)} billingEnabled canChangeSubscription existingServer {...extra} />;
+    subscription={subscription(tier)} billingEnabled canChangeSubscription {...extra} />;
 }
 
 function AddServerFromProject() {
