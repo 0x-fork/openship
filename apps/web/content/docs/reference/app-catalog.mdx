@@ -458,11 +458,12 @@ shows a warning; it never prevents a first installation or redeployment. An unav
 capacity reading means unknown, and no shortfall is inferred. A 10% tolerance accounts
 for memory reserved by the operating system on machines sold with round RAM sizes.
 
-On Cloud, the installer checks the actual workspace allocation against the organization's
-plan, including service overrides and temporary build resources. It offers an upgrade when
-the allocation does not fit. Advanced setup remains available to adjust the configuration.
-Deployment checks the current plan again before queuing work, and the provider enforces
-live namespace capacity when allocating the workspace.
+On Cloud, the installer checks the runtime configuration, including service overrides,
+against the organization's plan. It offers an upgrade when the allocation does not fit.
+Advanced setup remains available to adjust the configuration. Source builds use the
+remaining shared pool capacity reported by Oblien, with optional saved build caps;
+image-only templates need no source builder. Deployment checks again before queuing work,
+and Oblien enforces live capacity atomically when allocating or resizing a workspace.
 
 [`GET /apps/catalog/{id}/host-fit`](/docs/api/apps) exposes this preview. Pass `projectId`
 to include an existing draft's saved resource settings. The preview does not modify the

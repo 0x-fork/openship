@@ -1,3 +1,4 @@
+import { savedOffer as subscriptionOffer, savedMetadata as subscriptionMetadata, savedLimits as planLimits } from "../../../test/helpers/saved-cloud-offer";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
@@ -26,10 +27,8 @@ import {
   syncOblienEntitlement, reconcileOblienEntitlement, entitlementQuota,
   assertCloudCanSpend, assertNamespaceHasQuota, ensureOblienDefaultQuota, resetAndRegrant, getQuotaState,
 } from "@repo/platform/engine/modules/billing/billing-oblien-quota";
-import { PRICING, planLimits } from "@repo/core";
+import { PRICING } from "@repo/core";
 import {
-  subscriptionOffer,
-  subscriptionMetadata,
   cloudPlan,
   complimentaryCloudPlan,
 } from "@repo/platform/engine/modules/billing/billing-catalog";

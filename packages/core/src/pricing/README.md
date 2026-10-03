@@ -6,14 +6,29 @@ same catalog to the dashboard, marketing and linked installations. Checkout uses
 a generic Oblien offer; the subscription belongs to the customer's namespace.
 The Enterprise reseller owner receives wallet funding and keeps its own plan.
 
-## Version 3 offers
+## Version 6 offers
 
-| Plan | Monthly price | Included credits | Total vCPU | Total RAM | Total disk | Workspace count | Per VM: CPU / RAM / disk |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Hobby | $5 | 400 | 1 | 4 GB | 16 GB | 1 | 1 / 4 GB / 16 GB |
-| Starter | $20 | 1,700 | 2 | 6 GB | 32 GB | 3 | 2 / 6 GB / 16 GB |
-| Pro | $40 | 3,500 | 4 | 8 GB | 128 GB | 6 | 2 / 8 GB / 32 GB |
-| Team | $99 | 9,000 | 8 | 16 GB | 256 GB | 12 | 4 / 12 GB / 64 GB |
+| Plan | Monthly price | Included credits | Shared CPU / RAM / disk | Per service: CPU / RAM | Projects | Service slots |
+| --- | ---: | ---: | --- | --- | ---: | ---: |
+| Hobby | $5 | 400 | 1 / 4 GB / 25 GB | 1 / 2 GB | 3 | 1 |
+| Starter | $20 | 1,700 | 2 / 6 GB / 32 GB | 2 / 3 GB | 10 | 3 |
+| Pro | $39 | 3,500 | 4 / 8 GB / 128 GB | 4 / 4 GB | 50 | 10 |
+| Scale | $99 | 9,000 | 8 / 16 GB / 256 GB | 8 / 8 GB | No set limit | 50 |
+
+CPU values are vCPU. New retail offers allow one service up to the full shared
+CPU pool and half the shared RAM. `limits.maxServiceResources` records that ceiling explicitly,
+including custom sizes; it does not change machine presets or workload defaults.
+Version 5 lowered Pro to $39/month. Version 6 raises Hobby storage to 25 GB and
+lets a Starter workspace use its 32 GB storage pool, so upgrading from Hobby does
+not require a smaller disk. Included credits, project/service counts and other
+capacity limits retain their v4 values.
+
+| Plan | Workspace count | Per VM: vCPU / RAM / disk |
+| --- | ---: | --- |
+| Hobby | 1 | 1 / 4 GB / 25 GB |
+| Starter | 3 | 2 / 6 GB / 32 GB |
+| Pro | 6 | 4 / 8 GB / 32 GB |
+| Scale | 12 | 8 / 12 GB / 64 GB |
 
 Hobby includes a finite allowance for light use. A continuously running Docker
 host can need top-ups; $5 does not buy an unlimited always-on VM.
@@ -24,7 +39,7 @@ virtual CPU quota, not a dedicated physical core. An unpaid namespace has zero
 workspace and total capacity. Enterprise remains contact-sales; only a verified
 contract or audited operator grant can select it.
 
-At Oblien's current 100 credits/USD wallet rate, these payments fund 500 / 2,000 / 4,000 /
+At Oblien's current 100 credits/USD wallet rate, these payments fund 500 / 2,000 / 3,900 /
 9,900 wallet credits. The namespace allowances stay below that funding. Catalog
 validation rejects unfunded retail allowances, top-ups and inherited retail
 capacity. Oblien-admin promotions explicitly account for any promotional subsidy;
@@ -71,8 +86,12 @@ service slots. Reservations remain until activation or worker cleanup finishes;
 redeploying the same service does not consume a second slot.
 
 An image-only Compose app gets only its service allocation plus Docker/OS room:
-a default 512 MB service uses a 1 CPU / 1 GB host with an 8 GB disk. Source builds
-reserve additional RAM temporarily. After deployment, verified running container
+a default 0.5-vCPU / 512 MB service uses a 0.5-vCPU / 1 GB host with an 8 GB disk.
+Runtime and source builds share the same pool. The SaaS engine reads Oblien's
+effective limits and allocated usage before choosing temporary build CPU/RAM;
+saved build settings are upper limits, and an unset setting uses available
+headroom. It protects the runtime allocation and does not borrow pending savings.
+After deployment, verified running container
 limits determine whether CPU/RAM can be released under the project runtime lock.
 Disks never shrink automatically. Unknown/unbounded containers prevent automatic
 downsizing. Captured running services are restored after a resize; intentionally
@@ -80,18 +99,27 @@ stopped services stay stopped.
 
 ## Existing subscriptions and upgrades
 
-`openship:<tier>:v3` saves the price, credits, grace, application limits and all
+`openship:<tier>:v6` saves the price, credits, grace, application limits and all
 seven capacity fields. Renewals use that snapshot, even after catalog edits.
-Unknown versions, missing v2/v3 capacity fields and organization/namespace mismatches
+Unknown versions, missing v2–v6 capacity fields and organization/namespace mismatches
 fail closed. Price and credit metadata never come from browser input.
 
-Saved v2 subscriptions retain their original price, credits and capacity snapshot.
-The new Hobby tier exists only in v3: a legacy provider `hobby` subscription still
+Saved v2/v3/v4/v5 subscriptions retain their original price, credits and capacity snapshot,
+including the $40 price on existing v4 Pro subscriptions. New v5 offers use a
+distinct checkout reference so retries cannot reuse the older price.
+Version 6 raises Hobby's per-workspace and total storage limit from 16 GB to
+25 GB and Starter's per-workspace storage limit from 16 GB to its existing 32 GB
+pool. Prices, credits, other allowances and saved subscriptions are unchanged.
+Snapshots without `maxServiceResources` retain their purchased `maxResourceTier`
+ceiling. There is no automatic uplift or rewrite of existing paid subscriptions;
+any adjustment is an explicit operator action. Unchanged top-ups retain v3 references.
+The new Hobby tier exists from v3: a legacy provider `hobby` subscription still
 maps to its original Openship Starter tier, never to the new $5 plan.
 
 Legacy v1 offers left VM sizes inherited from the Enterprise owner. Reconciliation
-adds the current retail safety ceilings to those offers while preserving their
-paid price, credits, period and history. It also preserves tighter saved limits.
+retains their pre-v4 safety ceilings, including 2 vCPU per Pro VM and 4 vCPU per
+Scale VM, while preserving paid price, credits, period and history. Pre-reseller
+subscriptions also keep those CPU ceilings. Tighter saved limits remain in force.
 Existing allocations above a new ceiling are not destroyed; downsize CPU/RAM or
 remove/migrate resources before adding more. The older API patch shape preserves
 the new total fields, so a prior client cannot erase them by omission.

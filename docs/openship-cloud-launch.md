@@ -33,7 +33,7 @@ verified; see [the checkout verification report](openship-cloud-production-verif
 
 ## Reseller offer contract, updated 2026-09-29
 
-New purchases use Openship's $5 / $20 / $40 / $99 monthly catalog. Each checkout saves
+New purchases use Openship's $5 / $20 / $39 / $99 monthly catalog. Each checkout saves
 an immutable generic offer: price, namespace credits, zero-by-default configurable
 grace, VM caps and application plan metadata. The namespace receives the customer
 subscription. The reseller account receives wallet funding and retains its own

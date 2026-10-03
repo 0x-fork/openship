@@ -31,6 +31,7 @@
     "anyWorkload": "任意工作负载:容器、Compose、后台任务、Postgres、Redis",
     "runningServices": "{runningServices} 个同时运行的应用、数据库或后台任务",
     "buildMinutes": "每月 {buildMinutes} 分钟构建时长",
+    "meteredBuilds": "构建使用共享额度，无每月时长上限",
     "power": "每个应用最高可达 {powerCpu} vCPU 和 {powerRamGb} GB RAM",
     "projects": "{maxProjects} 个项目",
     "projectsUnlimited": "项目不限数量",

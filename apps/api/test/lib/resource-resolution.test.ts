@@ -132,6 +132,13 @@ describe("decodeResources", () => {
 });
 
 describe("encodeResources", () => {
+  it("reports automatic hosted Cloud builds without inventing a fixed CPU/RAM machine", () => {
+    expect(encodeResources(null, null, "auto_sleep", 3000, { isCloud: true, automaticBuild: true }))
+      .toMatchObject({ buildMode: "automatic", build: { cpuCores: 0, memoryMb: 0, diskMb: 8192 } });
+    const build = { cpuCores: 0.25, memoryMb: 512, diskMb: 8192 };
+    expect(encodeResources(null, build, "auto_sleep", 3000, { isCloud: true, automaticBuild: true }))
+      .toMatchObject({ buildMode: "custom", build });
+  });
   it("reports unlimited + the detected tier for an unconfigured self-hosted project", () => {
     const out = encodeResources(null, null, "auto_sleep", 3000, {
       isCloud: false,

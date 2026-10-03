@@ -3,10 +3,12 @@ import {
   CLOUD_DOCKER_IMAGE,
   CloudWorkspaceExecutor,
   Oblien,
+  cloudCpus,
   cloudWorkspaceCreationFailure,
   cloudWorkspaceStatus,
   sq,
   waitForCloudDockerWorkspace,
+  updateCloudWorkspaceResources,
   type ResourceConfig,
 } from "@repo/adapters";
 import { repos, type Project } from "@repo/db";
@@ -23,6 +25,24 @@ function workspaceSlug(projectId: string): string {
   return `os-docker-${createHash("sha256").update(projectId).digest("hex").slice(0, 24)}`;
 }
 
+/** Recover provider identity by the exact project slug within its namespace.
+ * A negative lookup cannot rule out an earlier POST still in progress. */
+async function findProjectWorkspace(client: Oblien, projectId: string, namespace: string) {
+  let found: Awaited<ReturnType<typeof client.workspaces.get>> | undefined;
+  for (let page = 1; ; page++) {
+    const result = await client.workspaces.list({ page, limit: 100 });
+    const matches = result.workspaces.filter(
+      item => item.slug === workspaceSlug(projectId) && item.namespace === namespace,
+    );
+    for (const workspace of matches) {
+      if (found && found.id !== workspace.id)
+        throw new Error("Multiple Cloud workspaces match this project. Contact support@openship.io to verify its workspace before retrying.");
+      found = workspace;
+    }
+    if (!result.workspaces.length || page * result.limit >= result.total) return found;
+  }
+}
+
 /** Reconcile an interrupted create before teardown. This only reads provider
  * state; it never provisions or starts a workspace in order to delete it. */
 export async function cloudDockerWorkspaceForCleanup(projectId: string, organizationId: string) {
@@ -32,14 +52,10 @@ export async function cloudDockerWorkspaceForCleanup(projectId: string, organiza
     const credentials = env.CLOUD_MODE ? await issueNamespaceToken(organizationId) : await getOrgCloudToken(organizationId);
     if (!credentials || credentials.namespace !== binding.namespace) throw new Error("Cannot verify the project's cloud namespace for cleanup");
     const client = new Oblien({ token: credentials.token, baseUrl: env.OBLIEN_API_URL });
-    for (let page = 1; ; page++) {
-      const result = await client.workspaces.list({ page, limit: 100 });
-      const workspace = result.workspaces.find(item => item.slug === workspaceSlug(projectId) && item.namespace === binding.namespace);
-      if (workspace) {
-        await repos.cloudDockerWorkspace.attach(projectId, organizationId, binding.namespace, workspace.id, true);
-        return { ...binding, workspaceId: workspace.id };
-      }
-      if (!result.workspaces.length || page * result.limit >= result.total) break;
+    const workspace = await findProjectWorkspace(client, projectId, binding.namespace);
+    if (workspace) {
+      await repos.cloudDockerWorkspace.attach(projectId, organizationId, binding.namespace, workspace.id, true);
+      return { ...binding, workspaceId: workspace.id };
     }
     throw new Error(
       `Cloud Docker provisioning is not yet confirmed. Retry deletion; if it keeps failing, contact support@openship.io with project ${projectId}.`,
@@ -83,7 +99,11 @@ export function runningDockerAllocation(output: string, projectId: string): Reso
     }
     cpu += cores; memory += bytes / 1048576;
   }
-  return { cpuCores: Math.max(1, Math.ceil(cpu)), memoryMb: Math.max(1024, Math.ceil((memory + 512) / 256) * 256), diskMb: 8192 };
+  return {
+    cpuCores: cloudCpus(cpu),
+    memoryMb: Math.max(1024, Math.ceil((memory + 512) / 256) * 256),
+    diskMb: 8192,
+  };
 }
 
 async function resizeDockerWorkspace(input: {
@@ -100,11 +120,7 @@ async function resizeDockerWorkspace(input: {
     input.signal?.throwIfAborted();
     let failure: { error: unknown } | undefined;
     try {
-      const result = await ws.resources.update({ cpus: input.resources.cpuCores, memory_mb: input.resources.memoryMb,
-        disk_size_mb: input.resources.diskMb, apply: true });
-      if (result.success === false || result.relaunched === false || result.pending_capacity_verification) {
-        throw new Error("The Cloud resource change is still pending verification; retry once the provider confirms it");
-      }
+      await updateCloudWorkspaceResources(ws, input.resources);
     } catch (error) { failure = { error }; }
     // Finish restoration even after cancellation or a lost provider response.
     try {
@@ -264,6 +280,13 @@ export async function ensureCloudDockerWorkspace(input: {
               namespace,
               failure.workspaceId,
             );
+          } else if (failure.capacityRejected && existing) {
+            // Admission may reject a replay before returning its earlier result.
+            // Adopt a verified workspace instead of provisioning a replacement.
+            // If none is visible, preserve the key: list absence does not cancel
+            // an earlier uncertain request, even after a quota rejection.
+            const recovered = await findProjectWorkspace(client, input.projectId, namespace);
+            if (recovered) return recovered;
           } else if (failure.rejected && !existing) {
             // Quota refusals are documented 409s too. They allocated nothing;
             // unknown conflicts, timeouts and outages must retain the retry key.

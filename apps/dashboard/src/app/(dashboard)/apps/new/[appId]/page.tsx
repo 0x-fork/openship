@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   getAppTemplate,
@@ -36,7 +36,7 @@ import { appsApi, deployApi, servicesApi, projectsApi } from "@/lib/api";
 import type { AppHostFitView, InstallAppRoute } from "@/lib/api/apps";
 import { type Service } from "@/lib/api/services";
 import { connectionsApi } from "@/lib/api/connections";
-import { getApiErrorMessage } from "@/lib/api/client";
+import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import {
   AppSettingsForm,
   fk,
@@ -64,6 +64,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useModal } from "@/context/ModalContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
+import { cloudDeployFailure } from "@/lib/cloud-deploy-pricing";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import { defaultDomainType } from "@/lib/default-domain-type";
@@ -83,22 +84,17 @@ import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { encodeProjectSlug } from "@/utils/repoSlug";
 import { parseContainerPort } from "@/utils/compose-ports";
 
-/**
- * Dedicated app-install wizard — a CLEAN business-only wrapper over the existing
- * deploy pipeline. No ports/services/routes/logs: the app's template defines
- * what to ask (install-step business fields + whether it needs a public URL);
- * the template's known ports drive routing. It's a pure client orchestration of
- * existing endpoints — install → apply settings + domain → buildAccess — with a
- * JSON-mapped progress view: it ATTACHES to the running build over SSE and maps
- * the real backend phase/service boundaries onto an authored stepper, with logs
- * demoted to a foldable detail. "Advanced" hands off to the technical /deploy
- * wizard.
- */
+/** Catalog-driven app installer using the shared deployment pipeline. Business
+ * settings and endpoint choices are saved before deployment; the progress view
+ * maps the existing build stream onto the app's phases and shared log console.
+ * Advanced hands the saved draft to the full deployment wizard. */
 
 type Phase = "form" | "installing" | "done" | "error";
+type ReadStatus = "loading" | "ready" | "error";
 
 const isInstallField = (f: AppSettingField) => f.installStep === true;
 
@@ -243,11 +239,14 @@ export default function AppInstallPage() {
   // from the API) is fetched so a repo-fresh app opens + installs without a redeploy.
   const bundledTemplate = useMemo(() => getAppTemplate(appId), [appId]);
   const [template, setTemplate] = useState(bundledTemplate);
-  // A repo-fresh template is absent from the dashboard bundle by definition.
-  // Do not treat that initial `undefined` as a 404: wait for the runtime-catalog
-  // request before redirecting. Without this guard, a newly published catalog
-  // app flashes the route and immediately returns to the catalog.
-  const [templateResolved, setTemplateResolved] = useState(Boolean(bundledTemplate));
+  // The runtime read also discovers an existing draft. The bundled template
+  // can render immediately, but cannot authorize installing over unknown routes.
+  const [catalogRead, setCatalogRead] = useState<{ appId: string; status: ReadStatus }>({
+    appId,
+    status: "loading",
+  });
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const catalogStatus = catalogRead.appId === appId ? catalogRead.status : "loading";
   // The org's existing not-yet-deployed draft of this app, if any. The catalog
   // tiles link here WITHOUT ?projectId, so without this the wizard had no idea a
   // draft existed — it showed template defaults while Install landed on the draft.
@@ -258,7 +257,8 @@ export default function AppInstallPage() {
   } | null>(null);
   useEffect(() => {
     setTemplate(bundledTemplate);
-    setTemplateResolved(Boolean(bundledTemplate));
+    setCatalogRead({ appId, status: "loading" });
+    setOpenDraft(null);
     let cancelled = false;
     appsApi
       .template(appId)
@@ -266,17 +266,21 @@ export default function AppInstallPage() {
         if (cancelled) return;
         if (r?.data) setTemplate(r.data);
         setOpenDraft(r?.draft ?? null);
+        setCatalogRead({ appId, status: "ready" });
       })
-      .catch(() => {
-        /* Keep a bundled fallback if the runtime catalog is temporarily unavailable. */
-      })
-      .finally(() => {
-        if (!cancelled) setTemplateResolved(true);
+      .catch((error) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 404) {
+          setTemplate(undefined);
+          setCatalogRead({ appId, status: "ready" });
+        } else {
+          setCatalogRead({ appId, status: "error" });
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [appId, bundledTemplate]);
+  }, [appId, bundledTemplate, catalogRevision]);
   const groups = useMemo(() => (template ? getAppSettings(template) : []), [template]);
   const installFields = useMemo(
     () => flattenSettingFields(groups).filter(isInstallField),
@@ -359,7 +363,6 @@ export default function AppInstallPage() {
       return next;
     });
   }, [appEndpoints, cloudConnected, cloudLoading]);
-  const exposureReady = appEndpoints.every((e) => Boolean(expo[endpointKey(e)]));
   const [destination, setDestination] = useState<AppDestination | null>(null);
   const cloudDestination = destination?.deployTarget === "cloud" || (!destination && !selfHosted);
   const exposureModeLabels = {
@@ -415,6 +418,11 @@ export default function AppInstallPage() {
   const [isStopping, setIsStopping] = useState(false);
   const [cancelled, setCancelled] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(resumeDeploymentId);
+  const activeDeployment = useRef<string | null>(resumeDeploymentId);
+  useEffect(() => {
+    activeDeployment.current = deploymentId;
+    return () => { if (activeDeployment.current === deploymentId) activeDeployment.current = null; };
+  }, [deploymentId]);
   const [projectId, setProjectId] = useState<string | null>(adoptedProjectId);
   const [progress, setProgress] = useState(0);
   // Epoch ms this install started, for the progress panel's elapsed clock. Set
@@ -425,6 +433,8 @@ export default function AppInstallPage() {
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [logs, setLogs] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [cloudFailure, setCloudFailure] = useState<ApiError | null>(null);
+  const shownRecovery = useRef<string | null>(null);
   // The JSON-mapped install stepper's live state: real backend phase boundaries
   // (images → services → app-setup → ready) and per-service statuses, both fed by
   // SSE and replayed on reconnect. Empty object = all-pending preview.
@@ -436,11 +446,11 @@ export default function AppInstallPage() {
 
   // Unknown / non-installable / flow apps don't belong here.
   useEffect(() => {
-    if (!templateResolved) return;
+    if (catalogStatus !== "ready") return;
     if (!template || template.kind === "flow" || !template.available) {
       router.replace("/apps/new");
     }
-  }, [templateResolved, template, appId, router]);
+  }, [catalogStatus, template, appId, router]);
 
   // ── Draft re-entry: show what's persisted, not the template defaults ───────
   /** The project label the installer will build free hostnames from — its slug,
@@ -509,7 +519,26 @@ export default function AppInstallPage() {
   const needsCloudUpgrade = !selfHosted && hostFit?.cloud?.status === "upgrade";
   const checkingCloudCapacity = !selfHosted && capacityLoading;
 
-  const [draftSlug, setDraftSlug] = useState<string | null>(null);
+  const [draftRouting, setDraftRouting] = useState<
+    | { projectId: string; status: "ready"; slug: string | null }
+    | { projectId: string; status: "error" }
+    | null
+  >(null);
+  const currentDraftRouting = draftRouting?.projectId === targetDraftId ? draftRouting : null;
+  const draftRoutingReady =
+    !targetDraftId || !needsExposure || currentDraftRouting?.status === "ready";
+  const draftSlug = currentDraftRouting?.status === "ready" ? currentDraftRouting.slug : null;
+  const configurationReady = catalogStatus === "ready" && draftRoutingReady;
+  const exposureReady =
+    configurationReady && appEndpoints.every((e) => Boolean(expo[endpointKey(e)]));
+  const configurationError =
+    catalogStatus === "error"
+      ? w.catalogLoadFailed
+      : currentDraftRouting?.status === "error"
+        ? w.routingLoadFailed
+        : null;
+  const routeControlsDisabled =
+    busy || !draftRoutingReady || (catalogStatus !== "ready" && !adoptedProjectId);
   /** The default free subdomain LABEL for one endpoint — identical to what the
    *  installer writes when the slug field is left blank (shared helper), so the
    *  preview can't promise a hostname the install won't create. */
@@ -522,32 +551,38 @@ export default function AppInstallPage() {
   // Rehydrate ONCE per draft. Keyed by id, not by effect deps: `appEndpoints` gets
   // a new identity when the overlay-fresh template lands, and re-running then
   // would overwrite picker edits the operator had already made.
-  const rehydratedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!targetDraftId || appEndpoints.length === 0) return;
-    if (rehydratedRef.current === targetDraftId) return;
+    if (!targetDraftId) {
+      setDraftRouting(null);
+      return;
+    }
+    if (appEndpoints.length === 0 || draftRouting?.projectId === targetDraftId) return;
     let cancelled = false;
-    void (async () => {
-      const [info, svcRes] = await Promise.all([
-        projectsApi.getInfo(targetDraftId).catch(() => null),
-        servicesApi.list(targetDraftId).catch(() => null),
-      ]);
-      if (cancelled) return;
-      const project = info?.data?.project as { slug?: string; name?: string } | undefined;
-      setDraftSlug(project?.slug ?? project?.name ?? null);
-      const services = (svcRes?.services ?? []) as Service[];
-      if (services.length > 0) {
+    void Promise.all([projectsApi.getInfo(targetDraftId), servicesApi.list(targetDraftId)])
+      .then(([info, svcRes]) => {
+        if (cancelled) return;
+        const project = info?.data?.project as { slug?: string; name?: string } | undefined;
+        if (!project || !Array.isArray(svcRes?.services))
+          throw new Error("Incomplete draft response");
         // A catalog update can cancel the pending read. Only mark the draft
-        // restored once its routes are applied, so the next effect can retry.
-        rehydratedRef.current = targetDraftId;
-        setExpo((prev) => ({ ...prev, ...rehydrateExpo(appEndpoints, services, cloudConnected) }));
-      }
-    })();
+        // restored after its routes are applied, including an empty service list.
+        setExpo((prev) => ({
+          ...prev,
+          ...rehydrateExpo(appEndpoints, svcRes.services, cloudConnected),
+        }));
+        setDraftRouting({
+          projectId: targetDraftId,
+          status: "ready",
+          slug: project.slug ?? (project.name ? slugify(project.name) : null),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setDraftRouting({ projectId: targetDraftId, status: "error" });
+      });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetDraftId, appEndpoints]);
+  }, [targetDraftId, appEndpoints, draftRouting, cloudConnected]);
 
   /**
    * The URL an endpoint is ACTUALLY reachable at, read back from the service rows
@@ -607,20 +642,68 @@ export default function AppInstallPage() {
   // `action_required` / `reconciling` into a plain success/failure, so the true
   // DB status (and the precise liveUrl) comes from the read, not the stream.
   const settledRef = useRef(false);
+  const attachDeployment = useCallback((response: Awaited<ReturnType<typeof deployApi.buildAccess>>, targetPid: string) => {
+    const depId = response?.data?.deployment_id ?? response?.data?.deploymentId ?? response?.deployment_id;
+    if (typeof depId !== "string" || !depId) throw new Error(w.installFailed);
+    settledRef.current = false;
+    shownRecovery.current = null;
+    activeDeployment.current = depId;
+    setProjectId(targetPid);
+    setDeploymentId(depId);
+    setLogs("");
+    setPhases({});
+    setServices([]);
+    setProgress(0);
+    setLiveUrl(null);
+    setCancelled(false);
+    setErrorMsg("");
+    setCloudFailure(null);
+    setPhaseLabel(w.phaseQueued);
+    setStartedAt(Date.now());
+    setPhase("installing");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("deployment", depId);
+      url.searchParams.set("projectId", targetPid);
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      /* resume just won't survive a reload */
+    }
+  }, [w.installFailed, w.phaseQueued]);
+  const retryDeployment = useCallback(async function retry(): Promise<void> {
+    if (!deploymentId || !projectId || submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    try {
+      attachDeployment(await deployApi.buildRedeploy(deploymentId), projectId);
+    } catch (error) {
+      if (!showCloudPricing(error, retry)) showToast(getApiErrorMessage(error, w.installFailed), "error");
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }, [deploymentId, projectId, attachDeployment, showCloudPricing, showToast, w.installFailed]);
+  useEffect(() => {
+    if (phase !== "error" || !cloudFailure || !deploymentId || shownRecovery.current === deploymentId) return;
+    if (showCloudPricing(cloudFailure, retryDeployment)) shownRecovery.current = deploymentId;
+  }, [phase, cloudFailure, deploymentId, showCloudPricing, retryDeployment]);
   const resolveTerminal = async (fallback: {
     ok: boolean;
     message?: string;
+    errorCode?: string;
+    errorDetails?: Record<string, unknown>;
     /** This resolution is a CANCEL (the user's Stop, or an SSE `cancelled`), even
      *  if the DB row hasn't caught up yet. Load-bearing: a cancel must never
      *  inherit the generic failure message — see `settledMessage`. */
     cancelled?: boolean;
   }) => {
-    if (settledRef.current || !deploymentId) return;
+    if (settledRef.current || !deploymentId || activeDeployment.current !== deploymentId) return;
     settledRef.current = true;
     let status = "";
     let s: any = {};
     try {
       const res = await deployApi.getBuildStatus(deploymentId);
+      if (activeDeployment.current !== deploymentId) return;
       s = res?.data ?? res ?? {};
       status = s.deploymentStatus ?? s.status ?? "";
       // Prefer the server's full accumulated log over the streamed fragments.
@@ -628,10 +711,19 @@ export default function AppInstallPage() {
     } catch {
       /* fall back to the SSE outcome below */
     }
+    if (activeDeployment.current !== deploymentId) return;
     // A cancelled deploy (user Stop, or resuming one) is a neutral outcome, not a
     // failure — flag it so the error screen reads as "cancelled".
     const isCancel = status === "cancelled" || fallback.cancelled === true;
     if (isCancel) setCancelled(true);
+    const failureProjectId = typeof s.project_id === "string" ? s.project_id : projectId;
+    if (failureProjectId) setProjectId(failureProjectId);
+    setCloudFailure(isCancel ? null : cloudDeployFailure({
+      errorCode: s.errorCode ?? fallback.errorCode,
+      errorDetails: s.errorCode ? s.errorDetails : fallback.errorDetails,
+      errorMessage: s.failureMessage ?? s.errorMessage ?? fallback.message,
+      projectId: failureProjectId,
+    }));
     // The reason under the verdict — or nothing. A cancel never inherits the
     // failure fallback; see `installSettledMessage` for why.
     const settledMessage = () =>
@@ -686,7 +778,7 @@ export default function AppInstallPage() {
         if (typeof pct === "number") setProgress(pct);
       },
       onSuccess: () => void resolveTerminal({ ok: true }),
-      onFailure: (message) => void resolveTerminal({ ok: false, message }),
+      onFailure: (message, errorCode, errorDetails) => void resolveTerminal({ ok: false, message, errorCode, errorDetails }),
       onCanceled: () => {
         setCancelled(true);
         // The stream's cancel message is a fixed "Build cancelled" — the verdict
@@ -726,6 +818,8 @@ export default function AppInstallPage() {
           await resolveTerminal({
             ok: status === "ready" || status === "no_changes",
             message: s.failureMessage,
+            errorCode: s.errorCode,
+            errorDetails: s.errorDetails,
             cancelled: status === "cancelled",
           });
           return;
@@ -764,7 +858,35 @@ export default function AppInstallPage() {
     }
   };
 
-  if (!template) return null;
+  const configurationNotice = !configurationReady && (
+    <div role={configurationError ? "alert" : "status"} className="space-y-3 rounded-2xl bg-card p-4">
+      <p className="flex items-start gap-2 text-sm text-muted-foreground">
+        <UiIcon
+          name={configurationError ? "warning" : "spinner"}
+          className={`mt-0.5 size-4 shrink-0 ${configurationError ? "text-warning" : "animate-spin"}`}
+        />
+        {configurationError ?? w.configurationLoading}
+      </p>
+      {configurationError && (
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            if (catalogStatus === "error") {
+              setCatalogRead({ appId, status: "loading" });
+              setCatalogRevision((value) => value + 1);
+            } else {
+              setDraftRouting(null);
+            }
+          }}
+        >
+          {w.retryConfiguration}
+        </Button>
+      )}
+    </div>
+  );
+
+  if (!template) return <PageContainer>{configurationNotice}</PageContainer>;
 
   const setField = (f: AppSettingField, v: FormValue) =>
     setValues((prev) => ({ ...prev, [fk(f.service, f.key)]: v }));
@@ -959,12 +1081,20 @@ export default function AppInstallPage() {
         (route?.mode === "port" && (endpoint.scope === "public" || endpoint.scope === undefined))
       );
     });
-    if (withoutDomains.length === 0) return routes;
+    // An empty Free field asks the server to generate a route. Confirm that
+    // intent without freezing the preview label: a second installation may get
+    // a suffixed project name and must keep its own default hostname.
+    const automaticEndpoints = appEndpoints.filter((endpoint) => {
+      const route = routes.find((r) => r.service === endpoint.service && r.port === endpoint.port);
+      return route?.mode === "free" && !route.domain;
+    });
+    if (withoutDomains.length === 0 && automaticEndpoints.length === 0) return routes;
 
     const confirmed = await confirmInstall(
       (confirm, cancel) => (
         <AppDomainConfirmation
           endpoints={withoutDomains}
+          automaticEndpoints={automaticEndpoints}
           cloud={cloudDestination}
           onClose={cancel}
           onAddDomains={() => {
@@ -980,7 +1110,7 @@ export default function AppInstallPage() {
             cancel();
             requestAnimationFrame(() => {
               const section = document
-                .getElementById(`endpoint-${endpointKey(withoutDomains[0]!)}`)
+                .getElementById(`endpoint-${endpointKey(withoutDomains[0] ?? automaticEndpoints[0]!)}`)
                 ?.closest("section");
               const field =
                 section?.querySelector<HTMLElement>("input:not([disabled])") ??
@@ -1083,15 +1213,6 @@ export default function AppInstallPage() {
     }
     const routes = await validatedRouteChoices();
     if (!routes) return;
-    setDeploymentId(null);
-    setLogs("");
-    // Reset the live stepper so a re-install starts from a clean slate.
-    setPhases({});
-    setServices([]);
-    setProgress(0);
-    setLiveUrl(null);
-    setCancelled(false);
-    settledRef.current = false;
     // Flips true the moment a deployment is actually created. A preflight
     // failure rejects buildAccess BEFORE that, so `started` stays false and the
     // catch surfaces a toast instead of the full-screen error card.
@@ -1152,28 +1273,10 @@ export default function AppInstallPage() {
             deployTarget: destination?.deployTarget,
             serverId: destination?.deployTarget === "server" ? destination.serverId : undefined,
           });
-          const depId =
-            dep?.data?.deployment_id ?? dep?.data?.deploymentId ?? dep?.deployment_id ?? null;
-          setDeploymentId(depId);
+          attachDeployment(dep, targetPid);
           started = true;
-          // Persist the deployment id in the URL so a hard refresh mid-install
-          // resumes the progress view (re-attaches to the same SSE stream) instead
-          // of dropping back to the form. Client-only; best-effort.
-          if (depId) {
-            try {
-              const url = new URL(window.location.href);
-              url.searchParams.set("deployment", depId);
-              url.searchParams.set("projectId", targetPid);
-              window.history.replaceState(null, "", url.toString());
-            } catch {
-              /* resume just won't survive a reload */
-            }
-          }
-          setPhaseLabel(w.phaseQueued);
-          setStartedAt(Date.now());
-          setPhase("installing");
         } catch (err) {
-          if (!started && showCloudPricing(err)) return;
+          if (!started && showCloudPricing(err, () => startDeploy(targetPid))) return;
           const msg = getApiErrorMessage(err, w.installFailed).replace(
             /^Pre-deploy checks failed:\s*/i,
             "",
@@ -1280,6 +1383,7 @@ export default function AppInstallPage() {
     // Leaving the progress view (Retry / Back to form): drop the persisted
     // deployment id so a subsequent refresh doesn't resume a finished/failed run.
     const resetToForm = () => {
+      activeDeployment.current = null;
       settledRef.current = false;
       setPhases({});
       setServices([]);
@@ -1287,6 +1391,7 @@ export default function AppInstallPage() {
       setProgress(0);
       setLiveUrl(null);
       setErrorMsg("");
+      setCloudFailure(null);
       setDeploymentId(null);
       setCancelled(false);
       setStartedAt(null);
@@ -1420,6 +1525,11 @@ export default function AppInstallPage() {
         onGoToProject={() => projectId && router.push(`/projects/${projectId}`)}
         onViewBuild={() => deploymentId && router.push(`/build/${deploymentId}`)}
         onRetry={resetToForm}
+        recoveryAction={cloudFailure ? {
+          label: cloudFailure.status === 409 ? t.billing.capacityEditor.title : t.billing.deployGate.manageBilling,
+          pending: busy,
+          onClick: () => { showCloudPricing(cloudFailure, retryDeployment); },
+        } : undefined}
         onStop={stopInstall}
         isStopping={isStopping}
         cancelled={cancelled}
@@ -1441,6 +1551,7 @@ export default function AppInstallPage() {
         id="app-name"
         type="text"
         value={appName}
+        disabled={busy}
         onChange={(e) => setAppName(e.target.value)}
         placeholder={template.name}
         variant="filled"
@@ -1593,7 +1704,10 @@ export default function AppInstallPage() {
             {needsExposure && (
               <div className="@container/app-routes rounded-2xl bg-card p-5">
                 <h3 className="text-sm font-semibold text-foreground">{w.exposeTitle}</h3>
-                <div className="mt-4 grid grid-cols-1 items-start gap-4 @min-[38rem]/app-routes:grid-cols-2">
+                <fieldset
+                  disabled={routeControlsDisabled}
+                  className="mt-4 grid min-w-0 grid-cols-1 items-start gap-4 @min-[38rem]/app-routes:grid-cols-2"
+                >
                   {appEndpoints.map((e) => {
                     const key = endpointKey(e);
                     const st = expo[key];
@@ -1634,7 +1748,7 @@ export default function AppInstallPage() {
                           onChange={(mode) => setExpoMode(key, mode)}
                           variant="filled"
                           triggerClassName="bg-muted/60 hover:bg-muted"
-                          disabled={modes.length < 2}
+                          disabled={routeControlsDisabled || modes.length < 2}
                         />
 
                         {st.kind === "http" ? (
@@ -1643,6 +1757,7 @@ export default function AppInstallPage() {
                             {st.mode === "domain" && (
                               <div>
                                 <RoutingSettingsCard
+                                  disabled={routeControlsDisabled}
                                   /* The DEFAULT free label for THIS route — the card
                                      previews it, and the installer writes exactly it
                                      when the slug is left blank. */
@@ -1700,7 +1815,7 @@ export default function AppInstallPage() {
                       </section>
                     );
                   })}
-                </div>
+                </fieldset>
               </div>
             )}
           </div>
@@ -1800,6 +1915,7 @@ export default function AppInstallPage() {
 
             {/* Actions */}
             <div className="space-y-2">
+              {configurationNotice}
               {needsCloudUpgrade ? (
                 <a
                   href="/billing/plans"
@@ -1827,13 +1943,13 @@ export default function AppInstallPage() {
                   ) : (
                     <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
                   )}
-                  {busy ? w.installing : checkingCloudCapacity ? w.checkingCapacity : w.install}
+                  {checkingCloudCapacity ? w.checkingCapacity : w.install}
                 </button>
               )}
               <button
                 type="button"
                 onClick={goAdvanced}
-                disabled={busy}
+                disabled={busy || !exposureReady}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
               >
                 <UiIcon name="sliders" className="size-4" /> {w.advanced}

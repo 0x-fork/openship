@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
 import { CreateSubscriptionBody, CreateTopupBody } from "./billing-inputs";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
+import { ApplyCloudCapacitySchema, CloudCapacityEditSchema, CloudCapacityOverviewSchema, CloudCapacityPreviewSchema } from "./cloud-capacity";
 
 const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
 const stringOrNull = Type.Union([Type.String(), Type.Null()]);
@@ -26,6 +27,9 @@ const planLimits = Type.Object({
   workloads: Type.Array(Type.Union(WORKLOAD_TYPES.map(value => Type.Literal(value)))),
   services: Type.Boolean(), runningServices: numberOrNull, maxProjects: numberOrNull,
   maxResourceTier: Type.Union([...RESOURCE_TIER_ORDER.map(value => Type.Literal(value)), Type.Null()]),
+  maxServiceResources: Type.Optional(Type.Union([Type.Object({
+    cpuCores: Type.Number({ exclusiveMinimum: 0 }), memoryMb: Type.Integer({ exclusiveMinimum: 0 }),
+  }, { additionalProperties: false }), Type.Null()])),
   computeMinutesPerMonth: numberOrNull, buildMinutesPerMonth: numberOrNull,
   freeSubdomains: numberOrNull, customDomains: numberOrNull, seats: numberOrNull,
 });
@@ -46,6 +50,7 @@ export const BillingPlansSchema = Type.Object({
     monthlyCredits: numberOrNull, annualCredits: Type.Optional(numberOrNull), limits: planLimits,
     resourceLimits: Type.Optional(namespaceResourceLimits),
     edge: Type.Optional(edgeLimits), features: Type.Array(Type.String()),
+    featureKeys: Type.Optional(Type.Array(Type.String())),
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
 });
@@ -113,6 +118,10 @@ export const BillingOperationSchemas = {
   },
   getState: { action: "read", output: BillingStateSchema },
   getResources: { action: "read", output: BillingResourcesSchema },
+  getCapacity: { action: "read", output: CloudCapacityOverviewSchema },
+  previewCapacity: { action: "read", input: CloudCapacityEditSchema, output: CloudCapacityPreviewSchema },
+  applyCapacity: { action: "write", input: ApplyCloudCapacitySchema,
+    output: Type.Object({ deploymentId: Type.String(), projectId: Type.String() }) },
   getSubscription: { action: "read", output: Type.Object({ tier, status: Type.String(), currentPeriod, subscription: Type.Optional(Type.Union([BillingSubscriptionSchema, Type.Null()])) }) },
   createSubscription: { action: "write", input: CreateSubscriptionBody, output: Type.Object({ checkoutUrl: Type.String() }) },
   cancelSubscription: { action: "admin", output: Type.Object({ cancelAt: stringOrNull, subscription: BillingSubscriptionSchema }) },

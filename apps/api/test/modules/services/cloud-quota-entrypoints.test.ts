@@ -3,6 +3,7 @@ const h = vi.hoisted(() => ({
   tier: "starter",
   cloud: true,
   readRuntime: vi.fn(),
+  readNamespace: vi.fn(),
   savedLimits: null as import("@repo/core").PlanLimits | null,
 }));
 vi.mock("@repo/platform/engine/config/env", async original => {
@@ -27,6 +28,9 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
     try { return await fn(runtime, serverId); }
     finally { runtime.dispose?.(); }
   },
+}));
+vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
+  getOblienClient: () => ({ namespaces: { get: h.readNamespace } }),
 }));
 import { db, schema, repos, seedOwner } from "../jobs/_harness";
 import { eq } from "@repo/db";
@@ -97,6 +101,14 @@ beforeEach(async () => {
   h.tier = "starter";
   h.cloud = true;
   h.savedLimits = null;
+  h.readNamespace.mockImplementation(async (slug: string) => ({
+    success: true,
+    data: {
+      slug,
+      effective_resource_limits: resolvePlan(h.tier).oblienLimits,
+      allocated_resource_usage: { workspaces: 0, vcpus: 0, ram_mb: 0, disk_gb: 0, pending_updates: 0 },
+    },
+  }));
   const owner = await seedOwner(); organizationId = owner.orgId;
   await db.update(schema.organization).set({ oblienNamespace: `namespace-${organizationId}`, planTierId: "starter" }).where(eq(schema.organization.id, organizationId));
   projectId = await project();
@@ -174,7 +186,7 @@ describe("Cloud quotas at real application mutation boundaries", () => {
   });
   it("enforces the paid machine-size snapshot before queueing new compute", async () => {
     h.tier = "team";
-    h.savedLimits = { ...planLimits("team"), maxResourceTier: "low" };
+    h.savedLimits = { ...planLimits("team"), maxResourceTier: "low", maxServiceResources: undefined };
     await expect(queue(projectId)).rejects.toMatchObject({ reason: "resource-tier" });
     expect(
       await db.query.deployment.findMany({ where: eq(schema.deployment.projectId, projectId) }),

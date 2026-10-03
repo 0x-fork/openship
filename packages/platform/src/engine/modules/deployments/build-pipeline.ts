@@ -43,6 +43,7 @@ import {
 import { platform } from "../../lib/platform-config";
 import { cloudDockerNeedsBuild, reconcileCloudDockerWorkspace, cloudDockerResources, ensureCloudDockerWorkspace, usesCloudDockerWorkspace } from "../../lib/cloud-docker-workspace";
 import { assertCloudDeploymentLimits } from "../../lib/plan-guard";
+import { cloudCapacityFailure } from "../../lib/cloud-capacity";
 import {
   resolveUpstreamUrl,
   resolveRouteStrategy,
@@ -137,8 +138,10 @@ import {
   pinnedStaticDir,
   refreshAppDeploymentId,
   snapshotNeedsGitSource,
+  strictRefreshImages,
 } from "./pinned-artifacts";
 import { snapshotToClass } from "./deployment-class";
+import { prepareCloudBuildResources } from "./cloud-build-resources";
 import { shouldRetainArtifact } from "./rollback/restore-plan";
 import { resolveClonePlan } from "./clone-plan";
 import { collapseTerminalLogs } from "./terminal-logs";
@@ -353,7 +356,11 @@ async function markDeploymentFailedFromOutside(
       // `updateStatus(id, "failed")` below would erase that distinction.
       return;
     }
-    await repos.deployment.updateStatus(deploymentId, "failed").catch(() => {});
+    const capacityError = cloudCapacityFailure(error, dep.projectId);
+    await repos.deployment.updateStatus(deploymentId, "failed", {
+      errorMessage: capacityError?.message ?? message,
+      ...(capacityError ? { errorCode: capacityError.code, errorDetails: capacityError.details } : {}),
+    }).catch(() => {});
     const buildSession = await repos.deployment
       .findBuildSessionByDeploymentId(deploymentId)
       .catch(() => null);
@@ -665,6 +672,7 @@ async function executeBuildAndDeploy(
   };
 
   let settledDockerResources: ResourceConfig | undefined;
+  let buildResourcesForRecovery: ResourceConfig | null | undefined;
   try {
     // Decide the runtime modes as DATA (no mutate-then-undo). Two historical
     // flips, encoded in resolveBuildRuntimeModes: services → Docker (containers
@@ -684,7 +692,16 @@ async function executeBuildAndDeploy(
       runsApplication: snapshotToClass(snapshot).workload !== "static",
       services: willRunServices ? serviceMode.servicePreflightServices : undefined,
       dockerWorkspace,
+      retainedImages: strictRefreshImages(snapshot),
     });
+    const cloudBuild = await prepareCloudBuildResources({ project, snapshot,
+      services: willRunServices ? serviceMode.servicePreflightServices : undefined, dockerWorkspace });
+    buildResourcesForRecovery = cloudBuild?.build ?? null;
+    if (cloudBuild) {
+      for (const [name, allocation] of Object.entries(cloudBuild.services ?? { build: cloudBuild.build })) {
+        logger.log(`→ Cloud ${name} build: ${allocation.cpuCores} vCPU · ${allocation.memoryMb} MB, selected from the pool's available capacity.\n`);
+      }
+    }
     if (dockerWorkspace) {
       settledDockerResources = cloudDockerResources({
         resources: snapshot.resources,
@@ -696,9 +713,9 @@ async function executeBuildAndDeploy(
       logger.log("→ Preparing the project's shared Docker workspace on Openship Cloud.\n");
       snapshot.cloudDockerWorkspace = await ensureCloudDockerWorkspace({
         projectId: project.id, organizationId: dep.organizationId,
-        resources: cloudDockerResources({
+        resources: cloudBuild?.workspace ?? cloudDockerResources({
           resources: snapshot.resources, buildResources: snapshot.buildResources,
-          reserveBuild: cloudDockerNeedsBuild(serviceMode.servicePreflightServices),
+          reserveBuild: !env.CLOUD_MODE && cloudDockerNeedsBuild(serviceMode.servicePreflightServices, strictRefreshImages(snapshot)),
           services: serviceMode.servicePreflightServices.map(service => ({
             enabled: service.enabled,
             resources: service.advanced?.resources,
@@ -832,7 +849,7 @@ async function executeBuildAndDeploy(
     // on both is what pinned every self-hosted container to 512 MB.
     const isCloudDeploy = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
     const prodResources = resolveRuntimeResources(snapshot.resources, { isCloud: isCloudDeploy });
-    const buildResources = resolveBuildResources(snapshot.buildResources, {
+    const buildResources = cloudBuild?.build ?? resolveBuildResources(snapshot.buildResources, {
       isCloud: isCloudDeploy,
     });
 
@@ -1136,7 +1153,7 @@ async function executeBuildAndDeploy(
       // alongside the real monorepo row (no DB unique constraint on
       // (projectId, name)). Filter to compose-kind before handing it off.
       const composeOnly = snapshot.composeServices?.filter((s) => serviceKind(s) === "compose");
-      if (composeOnly?.length) {
+      if (composeOnly?.length && !snapshot.capacityAdjustment) {
         // removeMissing: false — this list is the release's frozen snapshot, not
         // an authoritative inventory. On a rollback it predates services added
         // since; on any deploy the delete cascades `service_deployment` and so
@@ -1171,6 +1188,7 @@ async function executeBuildAndDeploy(
           composeInterpolationEnv: envMap,
           buildEnvVars: buildEnv.envVars,
           buildResources,
+          serviceBuildResources: cloudBuild?.services ?? (env.CLOUD_MODE ? {} : undefined),
           runtimeResources: prodResources,
           gitToken: gitCred.token,
           gitCredentialHelperPath: composeRelay?.scriptPath,
@@ -1319,6 +1337,8 @@ async function executeBuildAndDeploy(
     }
 
     if (buildResult.status === "failed") {
+      const capacityError = cloudCapacityFailure(buildResult.errorCause, project.id, buildResourcesForRecovery);
+      if (capacityError) throw capacityError;
       await onFailure(ctx, buildResult.errorMessage ?? "Build failed", buildResult.durationMs);
       return;
     }
@@ -1411,18 +1431,28 @@ async function executeBuildAndDeploy(
     // Only an UNSETTLED error is a deploy failure. An error thrown after the
     // outcome was recorded is bookkeeping: reporting it as a failure would
     // invert a working deploy and tear its containers down.
-    await reportPipelineError(ctx, message, logger);
+    const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery);
+    await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
+      ? { errorCode: capacityError.code, errorDetails: capacityError.details } : undefined);
   } finally {
     // The deploy is over either way — release the loopback bridges it opened.
     // Safe here and not earlier: the readiness/stabilization gate runs INLINE as
     // the pipeline's healthCheck hook, so nothing still needs a transport once
     // this function settles.
     for (const rt of transports) disposeRuntime(rt);
-    if (snapshot.cloudDockerWorkspace && settledDockerResources) {
-      await reconcileCloudDockerWorkspace({ projectId: project.id, organizationId: dep.organizationId,
-        workspaceId: snapshot.cloudDockerWorkspace.workspaceId, deploymentId: dep.id,
-        resources: settledDockerResources, onProgress: message => logger.log(message) })
-        .catch(error => logger.log(`Cloud capacity reconciliation is pending: ${error instanceof Error ? error.message : "provider unavailable"}\n`));
+    if (settledDockerResources) {
+      try {
+        // ensure may resize/create successfully and then lose its response.
+        // Its durable binding still identifies the host whose build allocation
+        // must be released, even before the snapshot was updated.
+        const workspaceId = snapshot.cloudDockerWorkspace?.workspaceId ??
+          (await repos.cloudDockerWorkspace.find(project.id, dep.organizationId))?.workspaceId;
+        if (workspaceId) await reconcileCloudDockerWorkspace({ projectId: project.id, organizationId: dep.organizationId,
+          workspaceId, deploymentId: dep.id, resources: settledDockerResources,
+          onProgress: message => logger.log(message) });
+      } catch (error) {
+        logger.log(`Cloud capacity reconciliation is pending: ${error instanceof Error ? error.message : "provider unavailable"}\n`, "warn");
+      }
     }
   }
 }
@@ -1575,15 +1605,12 @@ interface ServeStrategy {
    */
   readiness?: (containerId: string, config: DeployConfig) => Promise<string | null>;
   /**
-   * Can `readiness` answer for a REMOTE target?
+   * Whether `readiness` can reach a non-local deployment.
    *
-   * false (running process): the probe dials a port from the orchestrator, and a
-   *   remote app's port isn't reachable from here — so it only runs for local.
-   * true (static file-serve): the probe goes through the routing provider, which
-   *   reaches the edge wherever it lives, so a remote server is fine.
-   *
-   * Without this the static check would be skipped on every remote deploy — i.e.
-   * exactly the deploys where a missing doc-root is hardest to notice.
+   * Static-output checks use the routing provider for every target.
+   * Running-process checks use the target executor on Server deployments.
+   * Omitted/false restricts this probe to local targets; stabilization is
+   * independent and can still reject remote deployments.
    */
   readinessWorksRemotely?: boolean;
 }
@@ -1633,10 +1660,12 @@ function buildDeployEnvironment(
     // When a project does opt in, up to two layers run:
     //
     //  1. Stabilization — watch the container we just started and fail if it
-    //     bounces or exits. Asked of the RUNTIME (docker inspect), so unlike the
-    //     TCP probe it works for remote/SSH targets too.
-    //  2. Readiness probe — local targets only; the app runs on this host, so a
-    //     refused/timed-out connection genuinely means it never came up.
+    //     bounces or exits. Asked of the RUNTIME (docker inspect), so it works
+    //     for remote/SSH targets too, independent of the probe below.
+    //  2. Readiness probe (TCP/HTTP) — dials the workload's port. Restricted to
+    //     a "local" target unless the serve strategy declares
+    //     `readinessWorksRemotely` for this target. For a running-process
+    //     workload, it then dials through the deploy target's own executor.
     //
     // `onFailure` decides what a failure means. "warn" (the default even when
     // opted in) keeps the deploy ready and records an action-required warning;
@@ -1669,9 +1698,8 @@ function buildDeployEnvironment(
                   ).filter((finding) => !finding.verdict.ok);
                   return unstable ? unstable.detail : null;
                 },
-            // A port probe dials from the orchestrator, so it only answers for a
-            // LOCAL target. The static file probe goes through the routing provider
-            // and reaches the edge anywhere, so it isn't restricted.
+            // Non-local probes must support the target's transport. Static-output
+            // checks always do; running-process checks support Server targets.
             probe:
               serve.readiness && (effectiveTarget === "local" || serve.readinessWorksRemotely)
                 ? () => serve.readiness!(containerId, cfg)
@@ -2119,6 +2147,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           }
           return verdict.failure;
         },
+        // The shared probe uses the server target's executor, as compose does.
+        // Cloud and cluster targets do not use this remote probe path.
+        readinessWorksRemotely: phase.effectiveTarget === "server",
       };
 
   // A worker serves through the running-process lifecycle (baseServe, since

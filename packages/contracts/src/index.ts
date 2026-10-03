@@ -81,6 +81,7 @@ export * from "./github";
 export * from "./notices";
 
 export * from "./billing";
+export * from "./cloud-capacity";
 
 export * from "./billing-inputs";
 

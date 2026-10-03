@@ -2,7 +2,7 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { PlanTierId, CreditPackDefinition } from "@repo/core";
 import type { ApiPlan } from "@/components/billing/PricingCards";
-import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingState as BillingStateContract } from "@repo/contracts";
+import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingState as BillingStateContract, CloudCapacityOverview, CloudCapacityEdit, CloudCapacityPreview } from "@repo/contracts";
 import { trackCloudEvent } from "../cloud-analytics";
 export type { BillingResources } from "@repo/contracts";
 
@@ -174,6 +174,15 @@ interface Envelope<T> {
 /* ------------------------------------------------------------------ */
 
 export const billingApi = {
+  getCapacity: async (): Promise<CloudCapacityOverview> => {
+    return (await api.get<Envelope<CloudCapacityOverview>>(endpoints.billing.capacity)).data;
+  },
+  previewCapacity: async (input: CloudCapacityEdit): Promise<CloudCapacityPreview> => {
+    return (await api.post<Envelope<CloudCapacityPreview>>(endpoints.billing.capacityPreview, input)).data;
+  },
+  applyCapacity: async (input: CloudCapacityEdit & { idempotencyKey: string; confirmRestart: true }) => {
+    return (await api.post<Envelope<{ deploymentId: string; projectId: string }>>(endpoints.billing.capacityApply, input)).data;
+  },
   getCheckoutStatus: async (checkoutId: string): Promise<BillingCheckoutStatus> => {
     const res = await api.get<Envelope<BillingCheckoutStatus>>(endpoints.billing.checkout, {
       params: { checkoutId },

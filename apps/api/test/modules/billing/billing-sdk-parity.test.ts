@@ -1,3 +1,4 @@
+import { savedOffer as subscriptionOffer, savedMetadata as subscriptionMetadata } from "../../helpers/saved-cloud-offer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
@@ -19,6 +20,8 @@ const provider = vi.hoisted(() => ({
   resourceRead: vi.fn(),
   resourceUpdate: vi.fn(),
   resources: vi.fn(),
+  workspace: vi.fn(),
+  kickoff: vi.fn(),
   checkoutStatus: vi.fn(),
   support: vi.fn(),
   limits: new Map<string, Record<string, number | null>>(),
@@ -50,7 +53,7 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
     }),
   }),
   getOblienClient: () => ({
-    workspaces: { getQuota: provider.quota },
+    workspaces: { getQuota: provider.quota, get: provider.workspace },
     namespaces: {
       ensure: provider.namespaces,
       get: provider.resourceRead,
@@ -60,6 +63,17 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
 }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: () => ({ request: provider.cloudRequest }) }));
 vi.mock("@repo/platform/engine/modules/billing/billing-resources.service", () => ({ getBillingResources: provider.resources }));
+// No live workspace, network or worker is started in the transport tests. The
+// real capacity service, admission transaction and deployment snapshots run.
+vi.mock("@repo/platform/engine/lib/cloud-preflight", () => ({ runCloudPreflight: async () => ({ runtime: { ok: true } }) }));
+vi.mock("@repo/platform/engine/lib/platform-config", async original => ({
+  ...await original<typeof import("@repo/platform/engine/lib/platform-config")>(),
+  platform: () => ({ target: "cloud", runtime: { name: "cloud", supports: () => false } }),
+}));
+vi.mock("@repo/platform/engine/modules/deployments/build-pipeline", async original => ({
+  ...await original<typeof import("@repo/platform/engine/modules/deployments/build-pipeline")>(),
+  kickoffBuild: provider.kickoff,
+}));
 import { db, schema, repos, seedOwner, type SeededOwner } from "../jobs/_harness";
 import { AppError, CREDIT_PACKS, FREE_DOMAIN_SUFFIX, getAppTemplate } from "@repo/core";
 import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
@@ -72,6 +86,7 @@ import * as repository from "@repo/platform/engine/modules/billing/billing.repos
 import { flushAudit } from "@repo/platform/engine/lib/audit-emitter";
 import { eq } from "@repo/db";
 import { presentCloudPlans } from "@repo/platform/engine/modules/billing/billing-catalog";
+import { assertBuildMinutesAvailable } from "@repo/platform/engine/lib/plan-guard";
 
 const app = new Hono().onError(handleApiError)
   .use("*", async (c, next) => { c.set("clientIp", "192.0.2.64"); await next(); })
@@ -90,6 +105,7 @@ beforeEach(() => {
   provider.subscriptions.clear();
   provider.support.mockResolvedValue(undefined);
   provider.limits.clear();
+  provider.kickoff.mockResolvedValue("simulated-worker");
   provider.quota.mockResolvedValue({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 }, maxSandboxes: null });
   provider.resourceRead.mockImplementation(async (slug: string) => ({ data: { id: slug, slug, resource_limits: provider.limits.get(slug) } }));
   provider.resourceUpdate.mockImplementation(async (slug: string, input: { resource_limits: Record<string, number | null> }) => {
@@ -127,6 +143,167 @@ beforeEach(() => {
     creditPacks: [
       { packId: "pack_5k", name: "Starter", credits: 1000, price: 10, currency: "usd" },
     ],
+  });
+});
+
+async function seedCapacityProject() {
+  const owner = await seedOwner();
+  const c = await clients(owner);
+  await c.native.getState();
+  const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+  provider.subscriptions.set(namespace, {
+    tierId: "reseller", status: "active", billingInterval: "monthly",
+    periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+    cancelAtPeriodEnd: false, canceledAt: null,
+    offer: subscriptionOffer("pro", "monthly"), metadata: subscriptionMetadata("pro", owner.orgId, namespace),
+  });
+  provider.resourceRead.mockImplementation(async (slug: string) => ({ success: true, data: {
+    id: slug, slug, resource_limits: provider.limits.get(slug),
+    effective_resource_limits: subscriptionOffer("pro", "monthly").resourceLimits,
+    allocated_resource_usage: { workspaces: 1, vcpus: 4, ram_mb: 6144, disk_gb: 8, pending_updates: 0 },
+  } }));
+  const resources = { cpuCores: 1, memoryMb: 1024, diskMb: 8192 };
+  const input = { organizationId: owner.orgId, name: "Production app", slug: `capacity-${owner.userId.replaceAll("_", "-")}` };
+  const group = await repos.projectGroup.create(input);
+  const project = await repos.project.create({ ...input, groupId: group.id, framework: "docker-compose", resources });
+  const deployment = (await repos.deployment.create({ projectId: project.id, organizationId: owner.orgId, branch: "main", status: "ready",
+    environment: "production", meta: { organizationId: owner.orgId, port: 3000, framework: "docker-compose", deployTarget: "cloud", runtimeMode: "docker", resources,
+      serviceDeploymentMode: "services", source: "image", envCapture: "flat-v1", hasServer: true, hasBuild: false },
+  }))!;
+  const services = [];
+  for (const name of ["api", "database"]) {
+    const service = await repos.service.create({ projectId: project.id, name, kind: "compose", image: "postgres:17", enabled: true,
+      environment: { SECRET: "private-value" }, advanced: { resources, files: [{ path: "/app/settings", content: "keep-this" }] } });
+    services.push(service);
+    await repos.serviceDeployment.create({ serviceId: service.id, deploymentId: deployment.id, serviceName: name, status: "success", imageRef: "postgres:17" });
+  }
+  const workspaceId = `workspace-${project.id}`;
+  await repos.project.update(project.id, { activeDeploymentId: deployment.id });
+  await repos.cloudDockerWorkspace.reserve({ projectId: project.id, namespace, image: "oblien/docker:29", resources }, owner.orgId);
+  await repos.cloudDockerWorkspace.attach(project.id, owner.orgId, namespace, workspaceId);
+  provider.workspace.mockImplementation(async (id: string) => ({ id, namespace, status: "running",
+    resources: { cpus: 2, memory_mb: 2560, disk_size_mb: 8192 } }));
+  return { owner, c, project, services, deployment, namespace, workspaceId };
+}
+
+describe("Cloud capacity HTTP and native SDK", () => {
+  it("previews the same allocation and restart impact without changing configuration", async () => {
+    const { c, project, services } = await seedCapacityProject();
+    const overview = await c.native.getCapacity();
+    expect((await c.remote.getCapacity()).projects).toEqual(overview.projects);
+    const input = { projectId: project.id, revision: overview.projects[0]!.revision,
+      services: [{ serviceId: services[0]!.id, cpuCores: 0.25, memoryMb: 512 }] };
+    const preview = await c.native.previewCapacity(input);
+    expect(await c.remote.previewCapacity(input)).toEqual(preview);
+    expect(preview).toMatchObject({ before: { cpuCores: 2 }, after: { cpuCores: 1.25, memoryMb: 2048, diskMb: 8192 }, restartServices: ["api", "database"] });
+    expect(JSON.stringify(overview)).not.toMatch(/private-value|keep-this|workspace-/);
+    expect((await repos.service.findById(services[0]!.id))?.advanced?.resources?.cpuCores).toBe(1);
+    expect(provider.kickoff).not.toHaveBeenCalled();
+  });
+
+  it("commits one deployment and only the reviewed overrides across transport retries", async () => {
+    const { c, project, services } = await seedCapacityProject();
+    const overview = await c.native.getCapacity();
+    const input = { projectId: project.id, revision: overview.projects[0]!.revision,
+      services: [{ serviceId: services[0]!.id, cpuCores: 0.25, memoryMb: 512 }],
+      confirmRestart: true as const, idempotencyKey: "http-and-sdk-same-request" };
+    const applied = await c.remote.applyCapacity(input);
+    expect(await c.native.applyCapacity(input)).toEqual(applied);
+    const dep = await repos.deployment.findById(applied.deploymentId);
+    expect(dep?.meta).toMatchObject({ capacityAdjustment: { key: input.idempotencyKey }, strictServiceScope: true,
+      targetServiceIds: [services[0]!.id], refreshServiceIds: [services[0]!.id], handoverImages: { api: "postgres:17", database: "postgres:17" } });
+    expect(await repos.deployment.findBuildSessionByDeploymentId(applied.deploymentId)).toMatchObject({ status: "queued" });
+    expect(await repos.deployment.listInFlightByProject(project.id)).toHaveLength(1);
+    const saved = await repos.service.findById(services[0]!.id);
+    expect(saved).toMatchObject({ environment: { SECRET: "private-value" }, advanced: { resources: { cpuCores: 0.25, memoryMb: 512 }, files: [{ path: "/app/settings", content: "keep-this" }] } });
+    expect((await repos.service.findById(services[1]!.id))?.advanced?.resources?.cpuCores).toBe(1);
+    expect((await c.remote.getCapacity()).projects[0]).toMatchObject({ editable: false, unavailableReason: "busy", activeAdjustmentId: applied.deploymentId });
+    await expect(c.remote.applyCapacity({ ...input, services: [{ ...input.services[0]!, cpuCores: 0.5 }] }))
+      .rejects.toMatchObject({ code: "CLOUD_CAPACITY_IDEMPOTENCY_CONFLICT" });
+  });
+
+  it("rejects foreign projects and missing confirmation before writes", async () => {
+    const { c, project, services } = await seedCapacityProject();
+    const foreign = await clients(await seedOwner());
+    const input = { projectId: project.id, revision: (await c.native.getCapacity()).projects[0]!.revision,
+      services: [{ serviceId: services[0]!.id, cpuCores: 0.25, memoryMb: 512 }],
+      idempotencyKey: "authorization-boundaries", confirmRestart: true as const };
+    for (const client of [foreign.native, foreign.remote]) {
+      await expect(client.previewCapacity({ projectId: input.projectId, revision: input.revision, services: input.services }))
+        .rejects.toMatchObject({ statusCode: 404 });
+      await expect(client.applyCapacity(input)).rejects.toMatchObject({ statusCode: 404 });
+    }
+    const { confirmRestart: _, ...unconfirmed } = input;
+    for (const client of [c.native, c.remote]) await expect(client.applyCapacity(unconfirmed as typeof input))
+      .rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(await repos.deployment.listInFlightByProject(project.id)).toHaveLength(0);
+    expect((await repos.service.findById(services[0]!.id))?.advanced?.resources?.cpuCores).toBe(1);
+  });
+
+  it("does not grant project access through billing permission", async () => {
+    const { c, owner, project, services } = await seedCapacityProject();
+    const member = await seedOwner({ bound: false });
+    await db.insert(schema.member).values({ id: `capacity-reader-${member.userId}`, organizationId: owner.orgId, userId: member.userId, role: "restricted" });
+    await repos.resourceGrant.upsert({ organizationId: owner.orgId, userId: member.userId, resourceType: "billing", resourceId: "*", permissions: ["read", "write"], grantedByUserId: owner.userId });
+    const input = { projectId: project.id, revision: (await c.native.getCapacity()).projects[0]!.revision,
+      services: [{ serviceId: services[0]!.id, cpuCores: 0.25, memoryMb: 512 }],
+      confirmRestart: true as const, idempotencyKey: "billing-access-is-not-project-access" };
+    const reader = await clients(member, owner.orgId);
+    for (const client of [reader.native, reader.remote]) {
+      expect((await client.getCapacity()).projects).toEqual([]);
+      await expect(client.previewCapacity({ projectId: input.projectId, revision: input.revision, services: input.services })).rejects.toMatchObject({ statusCode: 404 });
+      await expect(client.applyCapacity(input)).rejects.toMatchObject({ statusCode: 404 });
+    }
+    expect(provider.kickoff).not.toHaveBeenCalled();
+  });
+
+  it("allows retained-image capacity recovery after the saved build allowance is exhausted", async () => {
+    const { c, owner, project, services, namespace } = await seedCapacityProject();
+    const subscription = provider.subscriptions.get(namespace)!;
+    subscription.metadata!.openship_limits = JSON.stringify({
+      ...JSON.parse(subscription.metadata!.openship_limits!), buildMinutesPerMonth: 0,
+    });
+    // A source-built service normally requires build admission. This operation
+    // must use its deployed artifact instead, even when no build minutes remain.
+    await repos.service.update(services[0]!.id, { image: null, build: "." });
+    await expect(assertBuildMinutesAvailable(owner.orgId)).rejects.toMatchObject({ code: "PLAN_UPGRADE_REQUIRED", reason: "build-minutes-exhausted" });
+    const input = { projectId: project.id, revision: (await c.native.getCapacity()).projects[0]!.revision,
+      services: [{ serviceId: services[0]!.id, cpuCores: 0.25, memoryMb: 512 }],
+      confirmRestart: true as const, idempotencyKey: "retained-image-no-build-allowance" };
+    const result = await c.remote.applyCapacity(input);
+    expect(await repos.deployment.findById(result.deploymentId)).toMatchObject({ status: "queued", meta: {
+      strictServiceScope: true, refreshServiceIds: [services[0]!.id], handoverImages: { api: "postgres:17" },
+    } });
+    expect(provider.kickoff).toHaveBeenCalledOnce();
+  });
+
+  it("keeps read-only credentials out of capacity mutations", async () => {
+    const { c, owner, project, services } = await seedCapacityProject();
+    const input = { projectId: project.id, revision: (await c.native.getCapacity()).projects[0]!.revision,
+      services: [{ serviceId: services[0]!.id, cpuCores: 0.25, memoryMb: 512 }],
+      confirmRestart: true as const, idempotencyKey: "read-only-capacity-request" };
+    await db.update(schema.personalAccessToken).set({ readOnly: true }).where(eq(schema.personalAccessToken.userId, owner.userId));
+    const readonly = await clients(owner, owner.orgId, { credential: { organizationId: owner.orgId, readOnly: true } });
+    for (const client of [readonly.native, readonly.remote]) {
+      expect((await client.getCapacity()).projects).toHaveLength(1);
+      await expect(client.applyCapacity(input)).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
+    }
+    expect(provider.kickoff).not.toHaveBeenCalled();
+    expect(await repos.deployment.listInFlightByProject(project.id)).toHaveLength(0);
+  });
+
+  it("does not resize local projects through Cloud capacity operations", async () => {
+    const { c, project, services } = await seedCapacityProject();
+    const input = { projectId: project.id, revision: (await c.native.getCapacity()).projects[0]!.revision,
+      services: [{ serviceId: services[0]!.id, cpuCores: 0.25, memoryMb: 512 }],
+      confirmRestart: true as const, idempotencyKey: "self-hosted-capacity-request" };
+    provider.cloudMode = false;
+    for (const client of [c.native, c.remote]) {
+      await expect(client.getCapacity()).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+      await expect(client.applyCapacity(input)).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    }
+    expect(provider.kickoff).not.toHaveBeenCalled();
+    expect((await repos.service.findById(services[0]!.id))?.advanced?.resources?.cpuCores).toBe(1);
   });
 });
 afterEach(async () => {
@@ -341,6 +518,37 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
   });
 
+  it.each([["3", 1, 1024, "medium"], ["4", 2, 3072, "custom"]] as const)(
+    "shows the purchased v%s service ceiling through both SDK and HTTP billing state", async (version, cpuCores, memoryMb, machineTier) => {
+      const owner = await seedOwner(), c = await clients(owner);
+      await c.native.getState();
+      const namespace = (await repos.organization.findById(owner.orgId))!.oblienNamespace!;
+      const metadata: Record<string, string> = { ...subscriptionMetadata("starter", owner.orgId, namespace), openship_offer_version: version };
+      if (version === "3") {
+        const limits = JSON.parse(metadata.openship_limits!);
+        delete limits.maxServiceResources;
+        metadata.openship_limits = JSON.stringify(limits);
+      }
+      const saved: NonNullable<OblienSubscription> = {
+        tierId: "reseller", status: "active", billingInterval: "monthly", cancelAtPeriodEnd: false, canceledAt: null,
+        periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z",
+        offer: { ...subscriptionOffer("starter", "monthly"), reference: `openship:starter:v${version}` }, metadata,
+      };
+      const before = structuredClone(saved);
+      provider.subscriptions.set(namespace, saved);
+      provider.resourceUpdate.mockClear();
+      for (const client of [c.native, c.remote]) {
+        const state = await client.getState();
+        expect(state.maxServiceMachine).toEqual({ tier: machineTier, cpuCores, memoryMb });
+        expect(state.plan?.limits).toEqual(JSON.parse(metadata.openship_limits!));
+        expect(state.plan?.price.monthly).toBe(saved.offer!.unitAmount);
+        expect(state.plan?.monthlyCredits).toBe(saved.offer!.credits * 1000);
+      }
+      expect(provider.subscriptions.get(namespace)).toEqual(before);
+      expect(provider.resourceUpdate).not.toHaveBeenCalled();
+    },
+  );
+
   it("never presents an unsubscribed namespace with a missing policy as unlimited", async () => {
     provider.entitlement.mockImplementation(async namespace => ({
       success: true, namespace, tierId: null, status: "active", periodStart: null, periodEnd: null,
@@ -422,7 +630,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.checkout).toHaveBeenCalledTimes(2);
     for (const [input] of provider.checkout.mock.calls) {
-      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
+      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 12, max_vcpus: 8, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
     }
   });
 
@@ -447,7 +655,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     for (const [id, monthlyPrice, monthlyCredits] of [
       ["hobby", 500, 400_000],
       ["starter", 2000, 1_700_000],
-      ["pro", 4000, 3_500_000],
+      ["pro", 3900, 3_500_000],
       ["team", 9900, 9_000_000],
     ] as const)
       expect(native.plans.find(plan => plan.id === id)).toMatchObject({
@@ -466,7 +674,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
   it.each([
     ["hobby", 500, 400],
     ["starter", 2000, 1700],
-    ["pro", 4000, 3500],
+    ["pro", 3900, 3500],
     ["team", 9900, 9000],
   ] as const)("uses the selected tenant and current %s offer without auditing checkout URLs", async (tier, unitAmount, credits) => {
     const owner = await seedOwner(), other = await seedOwner(), c = await clients(owner);
@@ -482,9 +690,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: org!.oblienNamespace,
         kind: "subscription",
-        offer: { reference: `openship:${tier}:v3`, unitAmount, credits },
+        offer: { reference: `openship:${tier}:v6`, unitAmount, credits },
         billingInterval: "monthly",
-        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "3" },
+        metadata: { openship_organization: owner.orgId, openship_namespace: org!.oblienNamespace, openship_offer_version: "6" },
       });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");

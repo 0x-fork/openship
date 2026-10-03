@@ -24,8 +24,8 @@ import {
   AppError,
   FREE_DOMAIN_SUFFIX,
   planLimits,
+  planServiceResources,
   resolvePlan,
-  PRICING,
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
   formatCpuCores,
@@ -41,12 +41,12 @@ import { isCloudManagedHostname } from "./public-endpoints";
 import {
   cloudDockerNeedsBuild,
   cloudDockerResources,
-  resolveBuildResources,
   resolveCloudServiceResources,
   resolveRuntimeResources,
   type CloudServiceResourceInput,
 } from "./resources";
 import type { ResourceConfig, RuntimeAdapter } from "@repo/adapters";
+import { assertCloudWorkspaceCapacity } from "./cloud-capacity";
 
 /**
  * A refusal the user can act on by upgrading. 402 Payment Required is the
@@ -214,9 +214,8 @@ export async function assertPlanAllowsServices(organizationId: string): Promise<
  * can share one VM. Openship also enforces the selected per-service tier inside
  * that host, so a container cannot silently exceed its service configuration.
  *
- * Sizes are compared through `RESOURCE_TIER_ORDER` — the deploy wizard's own
- * ordering — so "larger than your plan" means the same thing here and in the
- * picker. A `custom` size is compared on its numbers against the tier's spec.
+ * Named presets and custom sizes are compared on CPU and RAM against the
+ * purchased service ceiling, independently of the workspace allocation.
  */
 export async function assertPlanAllowsResourceTier(
   organizationId: string,
@@ -228,37 +227,34 @@ export async function assertPlanAllowsResourceTier(
   assertResourcesFitPlan(tier, requested, limits);
 }
 
-function assertResourcesFitPlan(
+export function assertResourcesFitPlan(
   tier: PlanTierId,
   requested: { tier?: string | null; cpuCores?: number | null; memoryMb?: number | null },
   limits: PlanLimits,
 ): void {
-  const maxTier = limits.maxResourceTier;
-  if (maxTier === null) return; // uncapped (enterprise)
-
-  const ceiling = RESOURCE_TIER_SPECS[maxTier];
-  const refuse = () => {
+  const ceiling = planServiceResources(limits);
+  if (ceiling === null) return;
+  const refuse = (): never => {
     throw new PlanUpgradeRequiredError(
-      `Your plan allows up to ${ceiling.cpuCores} vCPU and ${Math.round(ceiling.memoryMb / 1024)} GB RAM per service. Upgrade for bigger machines.`,
+      `Your plan allows up to ${formatCpuCores(ceiling.cpuCores)} and ${formatMemoryMb(ceiling.memoryMb)} RAM per service. Upgrade for bigger machines.`,
       "resource-tier",
       tier,
     );
   };
 
-  // A named tier: compare position in the shared order, so an unknown name is
-  // treated as over-limit rather than waved through.
+  // Resolve named presets before comparing; unknown names cannot bypass the cap.
   const requestedTier = requested.tier?.trim();
+  let size = requested;
   if (requestedTier && requestedTier !== "custom") {
-    const wantIdx = RESOURCE_TIER_ORDER.indexOf(requestedTier as never);
-    const maxIdx = RESOURCE_TIER_ORDER.indexOf(maxTier);
-    if (wantIdx < 0 || wantIdx > maxIdx) refuse();
-    return;
+    const preset = RESOURCE_TIER_ORDER.find(name => name === requestedTier);
+    if (!preset) return refuse();
+    size = RESOURCE_TIER_SPECS[preset];
   }
 
   // Custom numbers: either dimension over the ceiling is over-limit. `0` means
   // "unlimited" in ResourceValues and must never read as "small".
-  const cpu = requested.cpuCores ?? 0;
-  const mem = requested.memoryMb ?? 0;
+  const cpu = size.cpuCores ?? 0;
+  const mem = size.memoryMb ?? 0;
   if (!Number.isFinite(cpu) || !Number.isFinite(mem) || cpu <= 0 || mem <= 0 || cpu > ceiling.cpuCores || mem > ceiling.memoryMb) refuse();
 }
 
@@ -271,6 +267,8 @@ type CloudDeploymentLimits = {
   nativeApplication?: boolean;
   /** Docker service stacks share one VM; its aggregate allocation also has to fit. */
   dockerWorkspace?: boolean;
+  /** Internally pinned images use the same no-build decision as the deployer. */
+  retainedImages?: Readonly<Record<string, string>>;
   services?: CloudServiceResourceInput[];
 };
 
@@ -346,46 +344,41 @@ export async function assertCloudDeploymentLimits(organizationId: string, input:
   if (input.dockerWorkspace && services?.length) {
     const allocation = cloudDockerResources({
       resources: input.resources,
-      buildResources: input.buildResources,
-      reserveBuild: cloudDockerNeedsBuild(services),
       services: services.map((service) => ({ resources: service.advanced?.resources })),
     });
-    const shortages = [
-      policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
-        ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
-        : null,
-      policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
-        ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
-        : null,
-      policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
-        ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
-        : null,
-    ].filter(Boolean);
-    if (shortages.length)
-      throw new PlanUpgradeRequiredError(
-        `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
-        "workspace-capacity",
-        tier,
-      );
+    assertWorkspaceResourcesFitPlan(tier, allocation, policy);
+    // Source builders use Oblien's current headroom in prepareCloudBuildResources.
+    // Image-only actions need no build allocation, even with saved build settings.
+    if (input.projectId && !cloudDockerNeedsBuild(services, input.retainedImages)) {
+      await assertCloudWorkspaceCapacity({ organizationId, projectId: input.projectId,
+        requested: allocation, reuseDockerWorkspace: true,
+        buildResources: null });
+    }
   }
-  if (
-    services?.length &&
-    !input.nativeApplication &&
-    services.every(service => Boolean(service.image || service.advanced?.imageTemplate) &&
-      !service.build && !service.advanced?.build)
-  )
-    return;
-  const build = resolveBuildResources(input.buildResources, { isCloud: true });
-  const maximum = { cpuCores: policy.max_vcpus ?? PRICING.oblien.buildResources.cpuCores,
-    memoryMb: policy.max_ram_mb ?? PRICING.oblien.buildResources.memoryMb,
-    diskGb: policy.max_disk_gb ?? PRICING.oblien.buildResources.diskGb };
-  if (limits.maxResourceTier !== null && (!Number.isFinite(build.cpuCores) || !Number.isFinite(build.memoryMb) ||
-      build.cpuCores > maximum.cpuCores || build.memoryMb > maximum.memoryMb || build.diskMb > maximum.diskGb * 1024)) {
-    throw new PlanUpgradeRequiredError(
-      `Builds on this plan support up to ${maximum.cpuCores} vCPU and ${maximum.memoryMb / 1024} GB RAM. Reduce the build allocation.`,
-      "resource-tier", tier,
-    );
-  }
+}
+
+/** Shared by adjustment previews and deployment admission. A namespace's total
+ * capacity is separate from the purchased limit on one workspace. */
+export function assertWorkspaceResourcesFitPlan(
+  tier: PlanTierId,
+  allocation: { cpuCores: number; memoryMb: number; diskMb: number },
+  policy: OblienLimits,
+): void {
+  const shortages = [
+    policy.max_vcpus != null && allocation.cpuCores > policy.max_vcpus
+      ? `${formatCpuCores(allocation.cpuCores)} (plan: ${policy.max_vcpus} vCPU)`
+      : null,
+    policy.max_ram_mb != null && allocation.memoryMb > policy.max_ram_mb
+      ? `${formatMemoryMb(allocation.memoryMb)} RAM (plan: ${policy.max_ram_mb === 0 ? "0 MB" : formatMemoryMb(policy.max_ram_mb)})`
+      : null,
+    policy.max_disk_gb != null && allocation.diskMb > policy.max_disk_gb * 1024
+      ? `${formatMemoryMb(allocation.diskMb)} disk (plan: ${policy.max_disk_gb} GB)`
+      : null,
+  ].filter(Boolean);
+  if (shortages.length) throw new PlanUpgradeRequiredError(
+    `This app's Cloud workspace needs ${shortages.join(", ")}. Upgrade your plan or adjust the service resources before deploying.`,
+    "workspace-capacity", tier,
+  );
 }
 
 /** Starting an existing container applies its OLD limits, not editable settings.
@@ -398,7 +391,7 @@ export async function assertCloudRuntimeLimits(organizationId: string,
 ): Promise<void> {
   if (!env.CLOUD_MODE || containers.length === 0) return;
   const { tier, limits } = await planFor(organizationId);
-  if (limits.maxResourceTier === null) return;
+  if (planServiceResources(limits) === null) return;
   for (const container of containers) {
     const info = await runtime.getContainerInfo(container.containerId);
     const recorded = container.allocatedResources;

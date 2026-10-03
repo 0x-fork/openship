@@ -35,6 +35,7 @@ export * from "./backup-image-detect";
 export * from "./backup-storage";
 export * from "./runtime-config";
 export * from "./resources";
+export * from "./cloud-capacity";
 export * from "./rollback-window";
 export * from "./deployment-history";
 export * from "./secret-keys";

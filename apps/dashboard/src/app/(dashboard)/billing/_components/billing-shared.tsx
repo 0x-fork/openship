@@ -9,6 +9,8 @@ import { needsCloudPlan } from "@/lib/billing-presentation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { CloudPlanOffer } from "@/components/billing/CloudPlanOffer";
 import { PlanResources } from "@/components/billing/PlanResources";
+import { PlanFeatures } from "@/components/billing/PlanFeatures";
+import { PlanUsageNote } from "@/components/billing/PlanUsageNote";
 import { BillingEmptyState } from "@/components/billing/BillingEmptyState";
 import { OpenStripePortalButton } from "./OpenStripePortalButton";
 
@@ -61,20 +63,13 @@ export function BillingSidebar({ state }: { state: BillingState }) {
     </div>}
     {plan && <>
       <p className="mt-5 text-sm font-medium text-foreground">{t.billing.sidebar.includedTitle}</p>
-      <PlanResources plan={plan} interval={interval} />
-      {plan.inheritedFrom && <p className="mb-3 text-xs text-muted-foreground">{plan.inheritedFrom}</p>}
-      {plan.features.length > 0 && <details className="mb-4 border-t border-border/40 pt-3">
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{t.billing.resourcesGuide.moreFeatures}</summary>
-        <ul className="mt-3 space-y-2.5">
-        {plan.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm leading-relaxed text-muted-foreground">
-          <UiIcon name="check" className="mt-1 size-3.5 shrink-0 text-primary" aria-hidden="true" /><span>{feature}</span>
-        </li>)}
-        </ul>
-      </details>}
+      <PlanResources plan={plan} />
+      <PlanFeatures plan={plan} />
     </>}
     <Link href="/billing/plans" className="mt-4 flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/40">
       {t.billing.onboarding.compare}<UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" aria-hidden="true" />
     </Link>
+    {plan && <div className="mt-5"><PlanUsageNote plans={[plan]} interval={interval} /></div>}
   </section>;
 }
 

@@ -3,10 +3,18 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
-import type { OblienLimits, PlanLimits, PlanTierId } from "@repo/core";
+import {
+  resolveStandard,
+  toPricingLocale,
+  type OblienLimits,
+  type PlanLimits,
+  type PlanTierId,
+} from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { PlanResources } from "./PlanResources";
+import { PlanFeatures } from "./PlanFeatures";
+import { PlanUsageNote } from "./PlanUsageNote";
 
 /* ------------------------------------------------------------------ */
 /*  Types — mirror the shape returned by GET /api/billing/plans       */
@@ -58,6 +66,8 @@ export interface ApiPlan {
   resourceLimits?: OblienLimits;
   /** Finished localized strings, numbers already interpolated by the catalog. */
   features: string[];
+  /** Optional for older APIs; aligned with features when supplied. */
+  featureKeys?: readonly string[];
   /** "Everything in X, plus:" — a lead-in, NOT a bullet, so it renders above the
    *  ticked list without a checkmark of its own. */
   inheritedFrom?: string | null;
@@ -183,6 +193,8 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
   interval = "monthly",
 }) => {
   const { t, locale } = useI18n();
+  const comparisonId = React.useId();
+  const standard = resolveStandard(toPricingLocale(locale));
   // The reader's own calendar for a campaign deadline. Built once per render
   // rather than per card, and from `locale` (the chosen UI language) rather than
   // the browser default, which is what every other localized date here uses.
@@ -195,178 +207,171 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
   const pricedPlans = plans.filter((plan) => plan.price.monthly !== null);
   const customPlans = plans.filter((plan) => plan.price.monthly === null);
 
-  const comparison = pricedPlans.length > 0 ? (
-    <div className={`grid gap-5 ${CARD_COLUMNS[Math.min(pricedPlans.length, 4)]}`}>
-      {pricedPlans.map((plan) => {
-        const { listCents, chargedCents, discounted } = resolveCardPrice(plan, interval);
-        // Headline = what the customer pays today; the list price moves beside it.
-        const { label, suffix } = formatPrice(discounted ? chargedCents : listCents, ui, interval);
-        const listLabel = formatPrice(listCents, ui, interval).label;
-        const campaign = discounted ? plan.campaign : null;
-        // A missing `campaignBadge` still shows the magnitude: "-50%" is a number
-        // and a glyph, so it reads the same in every language.
-        const badgeLabel = campaign
-          ? ui.campaignBadge
-            ? interpolate(ui.campaignBadge, { percentOff: String(campaign.percentOff) })
-            : `-${campaign.percentOff}%`
-          : null;
-        // No fallback here on purpose: a bare date with no "offer ends" carrier
-        // sentence is unreadable, so the line is dropped rather than guessed.
-        const endsLabel =
-          campaign && ui.campaignEnds
-            ? interpolate(ui.campaignEnds, { date: dateFmt.format(new Date(campaign.endsAt)) })
+  const comparison =
+    pricedPlans.length > 0 ? (
+      <div className={`grid gap-4 ${CARD_COLUMNS[Math.min(pricedPlans.length, 4)]}`}>
+        {pricedPlans.map((plan) => {
+          const { listCents, chargedCents, discounted } = resolveCardPrice(plan, interval);
+          // Headline = what the customer pays today; the list price moves beside it.
+          const { label, suffix } = formatPrice(
+            discounted ? chargedCents : listCents,
+            ui,
+            interval,
+          );
+          const listLabel = formatPrice(listCents, ui, interval).label;
+          const campaign = discounted ? plan.campaign : null;
+          // A missing `campaignBadge` still shows the magnitude: "-50%" is a number
+          // and a glyph, so it reads the same in every language.
+          const badgeLabel = campaign
+            ? ui.campaignBadge
+              ? interpolate(ui.campaignBadge, { percentOff: String(campaign.percentOff) })
+              : `-${campaign.percentOff}%`
             : null;
-        const isCurrent = currentPlan === plan.id;
-        const isPopular = plan.popular;
-        // Purchasability reads the LIST price, never the effective one. A 100%-off
-        // campaign leaves `effectivePrice.monthly === 0`, and keying off that would
-        // render a paid tier with the free tier's "Free forever" plate and no
-        // checkout button — the customer could never subscribe.
-        const isPaid = plan.price[interval] !== null && plan.price[interval]! > 0;
-        const isSubscribing = subscribingPlan === plan.id;
-        const icon = PLAN_ICON[plan.id] ?? <UiIcon name="sparkles" className="size-5" />;
+          // No fallback here on purpose: a bare date with no "offer ends" carrier
+          // sentence is unreadable, so the line is dropped rather than guessed.
+          const endsLabel =
+            campaign && ui.campaignEnds
+              ? interpolate(ui.campaignEnds, { date: dateFmt.format(new Date(campaign.endsAt)) })
+              : null;
+          const isCurrent = currentPlan === plan.id;
+          const isPopular = plan.popular;
+          // Purchasability reads the LIST price, never the effective one. A 100%-off
+          // campaign leaves `effectivePrice.monthly === 0`, and keying off that would
+          // render a paid tier with the free tier's "Free forever" plate and no
+          // checkout button — the customer could never subscribe.
+          const isPaid = plan.price[interval] !== null && plan.price[interval]! > 0;
+          const isSubscribing = subscribingPlan === plan.id;
+          const icon = PLAN_ICON[plan.id] ?? <UiIcon name="sparkles" className="size-5" />;
 
-        return (
-          <div
-            key={plan.id}
-            className={`relative flex flex-col rounded-2xl border bg-card p-6 transition-colors ${
-              isPopular
-                ? "border-primary/50 shadow-[0_0_0_1px_var(--primary)]"
-                : "border-border/50 hover:border-border"
-            }`}
-          >
-            {isPopular && (
-              <span className="absolute -top-2.5 start-6 inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary-foreground">
-                {ui.mostPopular}
-              </span>
-            )}
-
-            {/* Header */}
-            <div className="mb-5 flex items-center gap-2.5">
-              <div
-                className={`flex size-9 items-center justify-center rounded-lg ${
-                  isPopular
-                    ? "bg-primary/10 text-primary"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {icon}
-              </div>
-              <h3 className="text-base font-semibold text-foreground">{plan.name}</h3>
-            </div>
-
-            {/* Price */}
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="text-4xl font-bold tracking-tight tabular-nums text-foreground">
-                {label}
-              </span>
-              {suffix && (
-                <span className="text-sm font-medium text-muted-foreground">
-                  {suffix}
+          return (
+            <article
+              key={plan.id}
+              id={`${comparisonId}-${plan.id}`}
+              aria-label={plan.name}
+              className={`relative min-w-0 scroll-mt-6 rounded-2xl bg-card p-5 ${
+                isPopular ? "ring-1 ring-primary/50" : ""
+              }`}
+            >
+              {isPopular && (
+                <span className="absolute -top-2.5 start-6 inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary-foreground">
+                  {ui.mostPopular}
                 </span>
               )}
-              {campaign && (
-                <>
-                  {/* The strike-through carries the meaning visually; `wasPrice`
-                      carries it for a screen reader, which cannot hear one. */}
-                  <span
-                    className="text-sm font-medium tabular-nums text-muted-foreground line-through"
-                    aria-label={
-                      ui.wasPrice ? interpolate(ui.wasPrice, { price: listLabel }) : undefined
-                    }
-                  >
-                    {listLabel}
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-[11px] font-semibold text-success">
-                    {badgeLabel}
-                  </span>
-                </>
-              )}
-            </div>
-            <p className="mt-1 min-h-[1rem] text-[11px] text-muted-foreground">
-              {isPaid ? interval === "annual" ? t.billing.pricing.billedAnnually : ui.billedMonthly : ""}
-            </p>
-            {endsLabel && (
-              <p className="mt-0.5 text-[11px] font-medium text-success">{endsLabel}</p>
-            )}
-            <p className="mb-6 mt-2 min-h-[2.5rem] text-[13px] leading-snug text-muted-foreground">
-              {plan.description}
-            </p>
 
-            {/* CTA */}
-            <div className="mb-5">
-              {isCurrent ? (
-                <div className="flex h-10 w-full items-center justify-center rounded-lg border border-border/50 bg-muted/40 text-sm font-medium text-muted-foreground">
-                  {t.billing.pricing.currentPlan}
-                </div>
-              ) : plan.price.monthly === 0 ? (
-                <div className="flex h-10 w-full items-center justify-center rounded-lg border border-border/50 bg-muted/40 text-sm font-medium text-muted-foreground">
-                  {t.billing.pricing.freeForever}
-                </div>
-              ) : isPaid ? (
-                <button
-                  type="button"
-                  onClick={() => onSelectPlan?.(plan.id)}
-                  disabled={!!subscribingPlan || purchasesDisabled}
-                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 ${
-                    isPopular
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                      : "border border-border/50 bg-card text-foreground hover:bg-muted/60"
+              {/* Header */}
+              <div className="mb-4 flex items-center gap-2.5">
+                <div
+                  className={`flex size-9 items-center justify-center rounded-lg ${
+                    isPopular ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  {isSubscribing ? (
-                    <UiIcon name="spinner" className="size-4 animate-spin" />
-                  ) : (
-                    <>
-                      {interpolate(ui.ctaChoose, { name: plan.name })}
-                      <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
-                    </>
-                  )}
-                </button>
-              ) : null}
-            </div>
+                  {icon}
+                </div>
+                <h3 className="text-base font-semibold text-foreground">{plan.name}</h3>
+              </div>
 
-            <PlanResources plan={plan} interval={interval} />
-
-            {/* Additional features supplied by the live catalog. */}
-            {plan.features.length > 0 && <details className="mt-auto border-t border-border/30 pt-3 text-sm">
-              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{t.billing.resourcesGuide.moreFeatures}</summary>
-            {plan.inheritedFrom ? (
-              <p className="border-t border-border/30 pt-5 text-[12px] font-medium text-muted-foreground">
-                {plan.inheritedFrom}
+              {/* Price */}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="text-3xl font-semibold tracking-tight tabular-nums text-foreground">
+                  {label}
+                </span>
+                {suffix && (
+                  <span className="text-sm font-medium text-muted-foreground">{suffix}</span>
+                )}
+                {campaign && (
+                  <>
+                    {/* The strike-through carries the meaning visually; `wasPrice`
+                      carries it for a screen reader, which cannot hear one. */}
+                    <span
+                      className="text-sm font-medium tabular-nums text-muted-foreground line-through"
+                      aria-label={
+                        ui.wasPrice ? interpolate(ui.wasPrice, { price: listLabel }) : undefined
+                      }
+                    >
+                      {listLabel}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-[11px] font-semibold text-success">
+                      {badgeLabel}
+                    </span>
+                  </>
+                )}
+              </div>
+              <p className="mt-1 min-h-5 text-xs text-muted-foreground">
+                {isPaid
+                  ? interval === "annual"
+                    ? t.billing.pricing.billedAnnually
+                    : ui.billedMonthly
+                  : ""}
               </p>
-            ) : null}
-            <ul
-              className={`space-y-2.5 ${plan.inheritedFrom ? "pt-2.5" : "border-t border-border/30 pt-5"}`}
-            >
-              {plan.features.map((feature) => (
-                <li
-                  key={feature}
-                  className="flex items-start gap-2 text-[13px] text-foreground/80"
-                >
-                  <UiIcon name="check"
-                    className={`mt-0.5 size-3.5 shrink-0 ${
-                      isPopular ? "text-primary" : "text-muted-foreground"
-                    }`}
-                  />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
-            </details>}
-          </div>
-        );
-      })}
-    </div>
-  ) : null;
+              {endsLabel && (
+                <p className="mt-0.5 text-[11px] font-medium text-success">{endsLabel}</p>
+              )}
+              <p className="mb-5 mt-2 min-h-15 text-sm leading-5 text-muted-foreground">
+                {plan.description}
+              </p>
+
+              {/* CTA */}
+              <div className="mb-5">
+                {isCurrent ? (
+                  <div className="flex h-10 w-full items-center justify-center rounded-lg border border-border/50 bg-muted/40 text-sm font-medium text-muted-foreground">
+                    {t.billing.pricing.currentPlan}
+                  </div>
+                ) : plan.price.monthly === 0 ? (
+                  <div className="flex h-10 w-full items-center justify-center rounded-lg border border-border/50 bg-muted/40 text-sm font-medium text-muted-foreground">
+                    {t.billing.pricing.freeForever}
+                  </div>
+                ) : isPaid ? (
+                  <Button
+                    type="button"
+                    variant={isPopular ? "default" : "secondary"}
+                    onClick={() => onSelectPlan?.(plan.id)}
+                    disabled={!!subscribingPlan || purchasesDisabled}
+                    className="w-full"
+                  >
+                    {isSubscribing ? (
+                      <UiIcon name="spinner" className="size-4 animate-spin" />
+                    ) : (
+                      <>
+                        {interpolate(ui.ctaChoose, { name: plan.name })}
+                        <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
+                      </>
+                    )}
+                  </Button>
+                ) : null}
+              </div>
+
+              <PlanResources plan={plan} />
+              <PlanFeatures plan={plan} />
+            </article>
+          );
+        })}
+      </div>
+    ) : null;
 
   return (
-    <div className="@container/pricing space-y-5">
+    <div className="@container/pricing min-w-0 space-y-6">
+      {plans.length > 1 && (
+        <nav
+          aria-label={t.billing.onboarding.choosePlan}
+          className="flex flex-wrap gap-2 @min-[34rem]/pricing:hidden"
+        >
+          {plans.map((plan) => (
+            <a
+              key={plan.id}
+              href={`#${comparisonId}-${plan.id}`}
+              className="rounded-lg bg-muted/60 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              {plan.name}
+            </a>
+          ))}
+        </nav>
+      )}
       {comparison}
       {customPlans.map((plan) => (
         <div
           key={plan.id}
-          className="flex flex-col gap-4 rounded-2xl bg-card p-5 @min-[34rem]/pricing:flex-row @min-[34rem]/pricing:items-center"
+          id={`${comparisonId}-${plan.id}`}
+          className="flex scroll-mt-6 flex-col gap-4 rounded-2xl bg-card p-5 @min-[34rem]/pricing:flex-row @min-[34rem]/pricing:items-center"
         >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
@@ -396,6 +401,24 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
           ) : null}
         </div>
       ))}
+      {pricedPlans.some((plan) => plan.id !== "free") && (
+        <section className="px-1">
+          <h3 className="text-sm font-medium text-foreground">{standard.title}</h3>
+          <ul className="mt-3 grid gap-x-6 gap-y-2 @min-[34rem]/pricing:grid-cols-2 @min-[70rem]/pricing:grid-cols-3">
+            {standard.features.map((feature) => (
+              <li key={feature} className="flex items-start gap-2 text-sm text-muted-foreground">
+                <UiIcon
+                  name="check"
+                  className="mt-1 size-3.5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                <span>{feature}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <PlanUsageNote plans={plans} interval={interval} />
     </div>
   );
 };
