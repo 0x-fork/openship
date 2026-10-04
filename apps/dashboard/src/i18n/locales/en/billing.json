@@ -48,8 +48,7 @@
     "usage": "Usage",
     "plans": "Plans",
     "topups": "Top-ups",
-    "payment": "Payment Method",
-    "invoices": "Invoices"
+    "payment": "Payments & invoices"
   },
   "portal": {
     "openButton": "Open billing portal",
@@ -243,7 +242,8 @@
   },
   "layout": {
     "title": "Billing & Usage",
-    "subtitle": "Manage your subscription, usage, and payment methods."
+    "subtitle": "Manage your subscription, usage, and payment methods.",
+    "getServer": "Get server"
   },
   "sidebar": {
     "planSuffix": "{name} Plan",
@@ -272,12 +272,9 @@
     "accessUntil": "Access until {date}"
   },
   "paymentPanel": {
-    "title": "Payment method",
-    "description": "Manage your payment methods and billing details."
-  },
-  "invoicesPanel": {
-    "title": "Invoices",
-    "description": "View or request your billing history and invoices."
+    "title": "Payments & invoices",
+    "description": "Manage payment methods, download invoices and update billing details in Stripe.",
+    "openStripe": "Open Stripe portal"
   },
   "checkout": {
     "checking": "Refreshing your Cloud plan and balance. Payment may take a moment to process.",
@@ -415,13 +412,11 @@
     "stepDeployHint": "Create your project and press Deploy.",
     "usageTitle": "Your Cloud usage starts here",
     "usageDescription": "Deploy on a paid plan to see your build and app usage here.",
-    "paymentTitle": "No payment method yet",
-    "paymentDescription": "Add a payment method during checkout. You can manage it here after your first purchase.",
-    "invoicesTitle": "No invoices yet",
-    "invoicesDescription": "Your invoices and receipts appear after your first payment.",
+    "paymentTitle": "Your payments and invoices",
+    "paymentDescription": "Payment details and invoices will be available after your first purchase.",
     "topupsTitle": "Start with a Cloud plan",
     "topupsDescription": "Your plan includes usage for builds and apps. Add more after your subscription is active.",
-    "compareTitle": "Find the right plan for your projects",
+    "compareTitle": "Find the right plan",
     "compareDescription": "Compare projects, services, build time, and the CPU and memory available to each app.",
     "savedProjects": "Saved projects in this workspace: {count}. Subscribe to add more."
   },
@@ -456,8 +451,6 @@
   },
   "creditAlert": {
     "title": "Cloud credits",
-    "showWarnings": "Show credit warnings",
-    "hideWarnings": "Hide credit warnings",
     "lowTitle": "Cloud credits running low",
     "lowDescription": "You have used {percent}% of your allowance, including purchased credits. {credits} credits remain.",
     "graceTitle": "You are using grace credits",
@@ -465,8 +458,6 @@
     "exhaustedTitle": "Cloud credits exhausted",
     "exhaustedDescription": "New deployments need more credits. Review this server’s billing options.",
     "buyCredits": "Buy more credits",
-    "openBilling": "Open billing",
-    "close": "Got it",
     "backToBilling": "Back to billing",
     "wrongOrganization": "This billing link is unavailable for your account. Sign in with an account that belongs to the organization in the alert."
   },
@@ -540,7 +531,6 @@
     "disk": "Storage",
     "diskGrowth": "Existing disks can grow. Shrinking storage requires moving your data to a new server.",
     "range": "{min}–{max} {unit}",
-    "shared": "One managed server for your projects and apps. A single service can use the full available capacity.",
     "monthlyTotal": "Monthly total",
     "choose": "Choose Custom",
     "updating": "Updating price",
@@ -696,12 +686,12 @@
     "afterPayment": "The new plan starts after payment is confirmed.",
     "restartNextCycle": "On {date}, applying the new capacity briefly restarts these projects. If the server changes before then, we will ask you to review the restart again.",
     "restartAfterPayment": "After payment, applying the new capacity briefly restarts these projects.",
-    "preserved": "Current usage and purchased credits are preserved. The billing interval stays the same.",
+    "preserved": "Your usage history is preserved. The billing interval stays the same.",
     "expired": "This quote expired. Refresh it to see the current price.",
     "refreshQuote": "Refresh quote",
     "retry": "Retry confirmation",
     "confirmUpgrade": "Confirm upgrade",
-    "confirmDowngrade": "Schedule downgrade",
+    "confirmDowngrade": "Schedule change",
     "scheduled": "{name} starts on {date}, after renewal payment.",
     "paymentPending": "Your current plan is still active. Complete payment to finish the upgrade.",
     "applied": "Your new plan is active. Server progress is shown in Overview.",
@@ -713,5 +703,76 @@
     "refresh": "Check status",
     "cancelChange": "Cancel change",
     "nextPlan": "New plan"
+  },
+  "purchase": {
+    "mode": "Billing model",
+    "monthly": "Monthly hosts",
+    "payg": "Prepaid PAYG",
+    "title": "Prepaid hosting",
+    "description": "Add credits, choose your resources, and pay for usage across your hosts.",
+    "rates": "Resource usage",
+    "cpuUnit": "Per active vCPU-hour",
+    "memoryUnit": "Per GiB-hour",
+    "diskUnit": "Per GiB-month",
+    "transfer": "Data transfer",
+    "transferUnit": "Per GiB",
+    "compareMonthly": "Compare monthly hosts",
+    "preview": "Pricing preview",
+    "ratesUnavailable": "Usage pricing is unavailable right now. You can still compare monthly hosts.",
+    "packages": "Credit package",
+    "packagesHint": "Shared across your PAYG hosts.",
+    "conversion": "{credits} credits = {amount}",
+    "credits": "{amount} credits",
+    "sizeHosts": "Size your hosts",
+    "sizeHint": "Choose resources per host and estimate their average activity.",
+    "hosts": "Number of hosts",
+    "cpuActivity": "Average CPU activity",
+    "activityHint": "1 vCPU-hour is one vCPU at 100% for one elapsed hour. Reserved RAM and storage still accrue usage.",
+    "invalid": "Check the resource ranges, choose 1–100 hosts, and set CPU activity between 0% and 100%.",
+    "ratesDetails": "Resource rates and billing details",
+    "extras": "Optional managed proxy: {amount}/GiB, billed separately. Public app routes are separate.",
+    "retentionHint": "Pausing does not release RAM charges. Retained storage remains billable until deleted.",
+    "estimate": "Estimated hourly cost",
+    "packageSummary": "{amount} upfront · {credits} credits",
+    "runtime": "Balance estimate",
+    "runtimeHint": "At {percent}% CPU: about {duration}.",
+    "addCredits": "Add {amount} credits",
+    "previewHint": "Preview only. Purchases are not available yet.",
+    "hourlyBasis": "Per elapsed hour · all hosts",
+    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU-h",
+    "cpuHours": "{amount} vCPU-h",
+    "gibHours": "{amount} GiB-h",
+    "rangeMinimum": "Full CPU · 100%",
+    "rangeMaximum": "Idle CPU · 0%",
+    "rangeHint": "At the displayed usage rates, with RAM and storage included.",
+    "perHour": "/ hour",
+    "creditsPerHour": "{amount} credits/hour",
+    "hourlyHint": "All selected hosts · {percent}% average CPU"
+  },
+  "compute": {
+    "covered": "Compute covered",
+    "needsAttention": "Coverage needs attention",
+    "included": "CPU, RAM and included storage are covered 24/7 for your paid month. No compute credits or top-ups.",
+    "features": {
+      "capacity": "CPU, RAM and storage covered 24/7",
+      "noCredits": "No compute credits or top-ups",
+      "shared": "Shared capacity for apps and builds",
+      "fullCapacity": "Full available capacity for any service"
+    },
+    "extras": "Managed proxy transfer is optional and purchased separately. Backups use their configured destination. After coverage ends, retained storage is billed until deleted.",
+    "paidThrough": "Paid through {date}",
+    "recovery": "Review your renewal or payment to restore compute access.",
+    "storageDue": "Retained storage balance: {amount}",
+    "details": "Usage, transfer and storage terms",
+    "paygComparison": "Recorded usage at PAYG rates",
+    "comparisonHint": "Usage comparison only; this is not a cash saving or an extra charge.",
+    "proxyTransfer": "Managed proxy transfer",
+    "transferRemaining": "{amount} GiB available",
+    "proxyHint": "Only the optional managed internet proxy uses this allowance. Public app routes are separate.",
+    "transferRecovery": "No proxy transfer is available. Contact support to add transfer; paid compute remains covered.",
+    "retention": "After compute expires, retained storage costs {amount}/GiB-month until deleted. Disks are retained for at least {days} days, with no automatic deletion.",
+    "paygMetering": "PAYG measures active CPU, reserved RAM while running or paused, and provisioned storage while retained.",
+    "buildHint": "Builds run on this server and share its resources with your apps.",
+    "usageIncluded": "Resource activity is included in your paid server. It does not spend compute credits."
   }
 }

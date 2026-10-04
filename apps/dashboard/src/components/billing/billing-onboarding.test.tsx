@@ -12,7 +12,7 @@ import type { BillingState } from "@/lib/api/billing";
 import type { BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
 import { ApiError } from "@/lib/api/client";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
-import { BillingPlanSummary, BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "@/app/(dashboard)/billing/_components/billing-shared";
+import { BillingPlanSummary, BillingSidebar, BillingPaymentsPanel } from "@/app/(dashboard)/billing/_components/billing-shared";
 import { BillingOverview } from "./BillingOverview";
 import { BillingCapacity } from "./BillingCapacity";
 import { PlanResources } from "./PlanResources";
@@ -22,9 +22,11 @@ import { ResourceMeter } from "./ResourceMeter";
 import { BillingTopups } from "./BillingTopups";
 import { BillingUsage } from "./BillingUsage";
 import { CloudPlanPicker } from "./CloudPlanPicker";
+import { BillingWorkspaceProvider } from "./BillingWorkspaceContext";
 import { SubscriptionChangeStatus } from "./SubscriptionChangeStatus";
 import { CloudHomePlanCard } from "./CloudHomePlanCard";
 import type { ApiPlan } from "./PricingCards";
+import { monthlyCompute } from "../../../test/helpers/monthly-billing";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), usage: vi.fn() }));
 vi.mock("@/lib/api/system", () => ({ systemApi: { serverUsage: mocks.usage } }));
@@ -146,10 +148,10 @@ describe("Cloud billing before the first subscription", () => {
   });
 
   it("offers useful empty states without a nonexistent payment portal or credit purchase", async () => {
-    await render(<><PaymentMethodPanel portalAvailable hasHistory={false} /><InvoicesPanel portalAvailable hasHistory={false} /><BillingTopups state={free} /><BillingUsage state={free} /></>);
-    for (const message of [copy.onboarding.paymentTitle, copy.onboarding.invoicesTitle, copy.onboarding.topupsTitle, copy.onboarding.usageTitle]) expect(container.textContent).toContain(message);
+    await render(<><BillingPaymentsPanel portalAvailable hasHistory={false} /><BillingTopups state={free} /><BillingUsage state={free} /></>);
+    for (const message of [copy.onboarding.paymentTitle, copy.onboarding.topupsTitle, copy.onboarding.usageTitle]) expect(container.textContent).toContain(message);
     expect(container.textContent).not.toContain(copy.portal.openButton);
-    expect(container.querySelectorAll('a[href="/billing/plans"]')).toHaveLength(4);
+    expect(container.querySelectorAll('a[href="/billing/plans"]')).toHaveLength(3);
     expect(mocks.get).not.toHaveBeenCalled();
     expect(mocks.post).not.toHaveBeenCalled();
   });
@@ -179,6 +181,17 @@ describe("Cloud billing before the first subscription", () => {
 });
 
 describe("existing server billing", () => {
+  it("uses one Stripe portal action for payment methods and invoices in the selected server", async () => {
+    mocks.post.mockRejectedValueOnce(new Error("Portal temporarily unavailable"));
+    await render(<BillingWorkspaceProvider workspaceId="cws-production"><BillingPaymentsPanel portalAvailable /></BillingWorkspaceProvider>);
+    expect(container.textContent).toContain(copy.paymentPanel.title);
+    expect(container.querySelectorAll("button")).toHaveLength(1);
+    await act(async () => button(copy.paymentPanel.openStripe).click());
+    expect(mocks.post).toHaveBeenCalledExactlyOnceWith("billing/portal", { workspaceId: "cws-production" });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Portal temporarily unavailable");
+    expect(button(copy.paymentPanel.openStripe).disabled).toBe(false);
+  });
+
   it("keeps an allocated server out of onboarding even with no remaining allowance or usage", async () => {
     const state = { ...free, capacity: { ...free.capacity, workspaces: { used: 1, max: 1 } } };
     expect(isNewCloudCustomer(state)).toBe(false);
@@ -495,6 +508,44 @@ describe("complimentary Cloud plans", () => {
 });
 
 describe("customer credit limits", () => {
+  it("shows paid monthly coverage without a credit donut or exhausted-balance copy", async () => {
+    const monthly = { ...paid, compute: monthlyCompute(), monthlyCreditLimit: null,
+      balance: { total: null, quotaLimit: null, quotaUsed: 0, quotaRemaining: null },
+      plan: { ...hobby, billingMode: "monthly" as const, monthlyCredits: null } };
+    await render(<BillingCapacity state={monthly} />);
+    expect(visibleText()).toContain(copy.compute.covered);
+    expect(visibleText()).toContain("Paid through Nov 1, 2026");
+    expect(container.querySelector('[role="meter"][aria-label="Cloud usage"]')).toBeNull();
+    expect(container.textContent).not.toContain(copy.creditAlert.exhaustedTitle);
+    expect(container.textContent).not.toContain(copy.resourcesGuide.planUsageNote);
+    expect(container.textContent).not.toContain("credits left");
+    await render(<PlanUsageNote plans={[monthly.plan]} />);
+    expect(container.textContent).toContain(copy.compute.features.capacity);
+    expect(container.textContent).toContain(copy.compute.features.noCredits);
+    expect(container.textContent).not.toContain(copy.resourcesGuide.creditAllowances);
+  });
+  it("separates retained storage charges from expired compute coverage", async () => {
+    const compute = monthlyCompute({ covered: false, status: "storage_payment_required" });
+    compute.retention.amountDue = 1.25;
+    await render(<BillingCapacity state={{ ...paid, compute }} />);
+    expect(visibleText()).toContain(copy.compute.needsAttention);
+    expect(visibleText()).toContain("Retained storage balance: $1.25");
+    expect(visibleText()).not.toContain(copy.creditAlert.exhaustedTitle);
+    const details = [...container.querySelectorAll("details")].find(item => item.querySelector("summary")?.textContent?.includes(copy.compute.details))!;
+    await act(async () => { details.open = true; });
+    expect(visibleText()).toContain("$0.05/GiB-month until deleted");
+    expect(visibleText()).toContain("no automatic deletion");
+  });
+  it("charts CPU time for monthly servers while retaining usage units", async () => {
+    mocks.get.mockResolvedValue({ data: { usage: { buckets: [], totals: { credits: 999,
+      vcpu_hours: 12.5, gb_hours: 50, disk_io_gb: 1, network_gb: 0.5 } } } });
+    await render(<BillingUsage state={{ ...paid, compute: monthlyCompute() }} />);
+    expect(visibleText()).toContain(copy.resourceOverview.cpu);
+    expect(visibleText()).toContain("12.5");
+    expect(visibleText()).toContain(copy.compute.usageIncluded);
+    expect(visibleText()).not.toContain(copy.resourcesGuide.selectedRange);
+    expect(visibleText()).not.toContain("999");
+  });
   it("reuses a top-up key after an uncertain response and prevents duplicate clicks", async () => {
     mocks.get.mockResolvedValue({ data: [{ id: "extra", name: "Extra", credits_milli: 617_000, price_cents: 1000, sortOrder: 0 }] });
     let reject!: (reason: Error) => void;

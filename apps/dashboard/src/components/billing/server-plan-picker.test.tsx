@@ -3,17 +3,19 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PRICING, pricingUi, resolvePlan, type CustomServerResources, type PlanTierId } from "@repo/core";
-import type { BillingCustomQuote, BillingSubscription, CloudWorkspaceSummary } from "@repo/contracts";
+import type { BillingCustomQuote, BillingPlans, BillingSubscription, CloudWorkspaceSummary } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { ModalProvider } from "@/context/ModalContext";
 import { baseDictionary } from "@/i18n";
 import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
+import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import { ManagedServerSetup } from "@/components/servers/ServerAcquisition";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { BillingWorkspaceProvider } from "./BillingWorkspaceContext";
 import { CloudPlanPicker } from "./CloudPlanPicker";
+import { CloudPurchaseProvider, CloudPurchaseTabs } from "./CloudPurchaseContext";
 import type { ApiPlan } from "./PricingCards";
 import type { BillingState } from "@/lib/api/billing";
 
@@ -28,13 +30,19 @@ vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: h.conne
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 
 const copy = baseDictionary.billing;
-const plans: ApiPlan[] = (["hobby", "starter", "pro", "team"] as const).map(id => {
+const plans: ApiPlan[] = (["hobby", "starter", "pro", "team", "enterprise"] as const).map(id => {
   const source = resolvePlan(id);
   return { ...source, features: [...source.features], resourceLimits: source.oblienLimits,
     listPrice: { monthly: source.price.monthly }, effectivePrice: { monthly: source.price.monthly }, campaign: null };
 });
 const offer = (id: PlanTierId) => plans.find(plan => plan.id === id)!;
 const catalog = { data: { plans, custom: PRICING.custom, ui: pricingUi("en"), annual: { enabled: false, monthsFree: 0 } } };
+const computePricing: NonNullable<BillingPlans["computePricing"]> = {
+  tariffId: "test-tariff", currency: "usd", creditsPerDollar: 100, paygCapPercent: 125,
+  usage: { activeVcpuHourCents: 3, reservedGiBHourCents: 0.8, retainedGiBMonthCents: 5, monthHours: 720 },
+  network: { managedProxyGiBCents: 10, minimumTopupCents: 500 }, retentionDays: 30,
+  paygCheckoutAvailable: false,
+};
 const subscription = (tier: PlanTierId): BillingSubscription => ({
   tier, configuration: "preset", status: "active", interval: "monthly", offerReference: `saved-${tier}`,
   currentPeriod: { start: "2026-10-01T00:00:00Z", end: "2026-11-01T00:00:00Z" },
@@ -46,7 +54,7 @@ const server: CloudWorkspaceSummary = {
 };
 function customQuote(resources: CustomServerResources): BillingCustomQuote {
   return { basePlanTierId: "team", reference: `quoted-${resources.cpuCores}-${resources.memoryMb}-${resources.diskGb}`,
-    resources, priceCents: 9900 + (resources.cpuCores - 8) * 500, currency: "usd", monthlyCredits: offer("team").monthlyCredits!,
+    resources, priceCents: 9900 + (resources.cpuCores - 8) * 500, currency: "usd", billingMode: "monthly", monthlyCredits: null,
     breakdown: { basePriceCents: 9900, cpuCents: (resources.cpuCores - 8) * 500, memoryCents: 0, diskCents: 0 } };
 }
 let root: Root;
@@ -177,6 +185,165 @@ describe("plans for an existing server", () => {
 });
 
 describe("buying another managed server", () => {
+  it("previews packages shared across hosts without checkout, and preserves inputs across billing modes", async () => {
+    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
+    await render(<ManagedServerPurchase />);
+    await click(copy.purchase.payg);
+    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
+    const estimate = panel.querySelector("aside")!;
+    expect(estimate.textContent).toContain("$0.0637");
+    expect(estimate.textContent).toContain("6.37 credits/hour");
+    expect(estimate.querySelector("details")?.open).toBe(false);
+    expect(estimate.textContent).not.toMatch(/30-day|Assumes|Compare monthly hosts/);
+    expect(estimate.textContent).toContain("13.1 days");
+    expect(estimate.textContent).toContain("24.7 days");
+    await act(async () => panel.querySelector<HTMLButtonElement>('button[value="500"]')!.click());
+    expect(estimate.textContent).toContain("3.3 days");
+    expect(estimate.textContent).toContain("6.2 days");
+    await edit(input(copy.purchase.hosts)!, "2");
+    expect(estimate.textContent).toContain("1.6 days");
+    expect(estimate.textContent).toContain("$0.1275");
+    await edit(input(copy.purchase.cpuActivity)!, "25");
+    expect(estimate.textContent).toContain("0.5 vCPU-h");
+    expect(estimate.textContent).toContain("1.5 credits");
+    expect(estimate.textContent).toContain("2.5 days");
+    expect(estimate.textContent).toContain("25%");
+    expect(panel.textContent).toContain("2 vCPU × 25% = 0.5 vCPU-h");
+    await edit(input(copy.purchase.cpuActivity)!, "0.1");
+    expect(estimate.textContent).toContain("0.002 vCPU-h");
+    expect(estimate.textContent).toContain("0.006 credits");
+    expect(estimate.textContent).toContain("$0.00006");
+    expect(buttons("Add 500 credits")[0]?.disabled).toBe(true);
+    await click(copy.purchase.monthly);
+    expect(buttons(copy.purchase.monthly)[0]?.getAttribute("aria-selected")).toBe("true");
+    await click(copy.purchase.payg);
+    expect(input(copy.purchase.hosts)?.value).toBe("2");
+    expect(panel.querySelector('button[value="500"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it("estimates custom PAYG resources immediately without requesting a monthly quote", async () => {
+    vi.useFakeTimers();
+    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
+    await render(<ManagedServerPurchase />);
+    await click(copy.purchase.payg);
+    h.get.mockClear();
+    await edit(input(copy.custom.cpu)!, "4");
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
+    expect(panel.querySelector("aside")?.textContent).toContain("$0.1537");
+    expect(h.get).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+  });
+
+  it("clears an invalid estimate and cannot open PAYG checkout even if the catalog advertises availability", async () => {
+    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing: { ...computePricing, paygCheckoutAvailable: true } } });
+    await render(<ManagedServerPurchase />);
+    await click(copy.purchase.payg);
+    await edit(input(copy.purchase.hosts)!, "0");
+    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
+    expect(panel.querySelector('[role="alert"]')?.textContent).toBe(copy.purchase.invalid);
+    expect(panel.querySelector("aside")?.textContent).not.toContain("13.1 days");
+    const buy = buttons("Add 2,000 credits")[0]!;
+    expect(buy.disabled).toBe(true);
+    await act(async () => buy.click());
+    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
+  });
+
+  it("keeps configuration in the page header and retains custom resources across purchase modes", async () => {
+    vi.useFakeTimers();
+    await render(<CloudPurchaseProvider tabs="header">
+      <BillingHeader /><CloudPurchaseTabs /><ManagedServerPurchase />
+    </CloudPurchaseProvider>);
+    expect(host.querySelector("h1")?.textContent).toBe(copy.onboarding.compareTitle);
+    expect([...host.querySelectorAll("h1, h2")].filter(node => node.textContent === copy.onboarding.compareTitle)).toHaveLength(1);
+    expect(host.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+    expect(buttons(copy.custom.presets)).toHaveLength(1);
+    expect(buttons(copy.custom.name)).toHaveLength(1);
+    expect(buttons(copy.custom.presets)[0]?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector("header")?.contains(buttons(copy.custom.name)[0]!)).toBe(true);
+    await click(copy.custom.name); await flushQuote();
+    expect(buttons(copy.custom.name)[0]?.getAttribute("aria-pressed")).toBe("true");
+    expect(buttons(copy.custom.presets)[0]?.getAttribute("aria-pressed")).toBe("false");
+    await edit(input(copy.custom.cpu)!, "3"); await flushQuote();
+    const monthly = buttons(copy.purchase.monthly)[0]!;
+    const panel = document.getElementById(monthly.getAttribute("aria-controls")!)!;
+    expect(panel.hidden).toBe(false);
+
+    await click(copy.purchase.payg);
+    expect(host.querySelector("h1")?.textContent).toBe(copy.purchase.title);
+    expect(panel.hidden).toBe(true);
+    expect(buttons(copy.purchase.payg)[0]?.getAttribute("aria-selected")).toBe("true");
+    const payg = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
+    expect(payg.hidden).toBe(false);
+    expect(payg.textContent).toContain(copy.purchase.ratesUnavailable);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+
+    await click(copy.purchase.compareMonthly);
+    expect(host.querySelector("h1")?.textContent).toBe(copy.onboarding.compareTitle);
+    expect(panel.hidden).toBe(false);
+    expect(input(copy.custom.cpu)?.value).toBe("3");
+    expect(buttons(copy.custom.name)[0]?.getAttribute("aria-pressed")).toBe("true");
+    await click(copy.custom.presets);
+    expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    expect(buttons(copy.custom.presets)[0]?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("supports keyboard switching and resets the purchase choice when the account changes", async () => {
+    const page = (scopeKey: string) => <CloudPurchaseProvider scopeKey={scopeKey} tabs="header">
+      <BillingHeader /><CloudPurchaseTabs /><ManagedServerPurchase preserveProject />
+    </CloudPurchaseProvider>;
+    await render(page("user-a:org-a"));
+    const monthly = buttons(copy.purchase.monthly)[0]!;
+    monthly.focus();
+    await act(async () => monthly.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+    const payg = buttons(copy.purchase.payg)[0]!;
+    expect(document.activeElement).toBe(payg);
+    expect(payg.getAttribute("aria-selected")).toBe("true");
+    h.user = "user-b";
+    await render(page("user-b:org-a"));
+    expect(buttons(copy.purchase.monthly)[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(h.post).not.toHaveBeenCalled();
+    expect(h.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps mode navigation in the page header when billing state resolves", async () => {
+    vi.useFakeTimers();
+    const page = (ready: boolean) => <CloudPurchaseProvider tabs={ready ? "header" : "none"}>
+      <BillingHeader />{ready && <CloudPurchaseTabs />}<ManagedServerPurchase preserveProject />
+    </CloudPurchaseProvider>;
+    await render(page(false));
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
+    expect(host.querySelector('[role="tabpanel"]')).toBeNull();
+    await click(copy.custom.name); await flushQuote();
+    await edit(input(copy.custom.cpu)!, "3"); await flushQuote();
+    await render(page(true));
+    expect(host.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+    expect(input(copy.custom.cpu)?.value).toBe("3");
+    expect(host.querySelector("header")?.contains(buttons(copy.custom.name)[0]!)).toBe(true);
+  });
+
+  it("locks the billing model while a checkout is being prepared", async () => {
+    let finish!: (server: CloudWorkspaceSummary) => void;
+    h.create.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await render(<CloudPurchaseProvider tabs="header">
+      <BillingHeader /><CloudPurchaseTabs /><ManagedServerPurchase preserveProject />
+    </CloudPurchaseProvider>);
+    await click("Choose Hobby");
+    const monthly = buttons(copy.purchase.monthly)[0]!;
+    const payg = buttons(copy.purchase.payg)[0]!;
+    expect(payg.closest('fieldset')?.disabled).toBe(true);
+    expect(buttons(copy.custom.name)[0]?.closest('fieldset')?.disabled).toBe(true);
+    await act(async () => payg.click());
+    expect(monthly.getAttribute("aria-selected")).toBe("true");
+    await act(async () => finish(server));
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.post).toHaveBeenCalledOnce();
+  });
+
   it("opens the shared plans inside a destination dialog and preserves the project when dismissed", async () => {
     await render(<ModalProvider><AddServerFromProject /></ModalProvider>);
     await click("Add a destination");
@@ -189,12 +356,14 @@ describe("buying another managed server", () => {
     expect(host.querySelector<HTMLInputElement>('input[aria-label="Project name"]')?.value).toBe("Keep this project");
   });
 
-  it("starts with plans and creates nothing while browsing or editing its name", async () => {
+  it("creates a server with its default name only after a plan is chosen", async () => {
     await render(<ManagedServerPurchase preserveProject />);
     expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
-    await edit(input(copy.plansRoute.serverName)!, "Staging");
+    expect(host.querySelector("input")).toBeNull();
     expect(h.create).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
+    await click("Choose Hobby");
+    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName });
   });
 
   it.each([false, true])("keeps checkout and the selected destination through the status handoff (popup blocked: %s)", async (blocked) => {
@@ -237,9 +406,8 @@ describe("buying another managed server", () => {
     h.post.mockRejectedValueOnce(new Error("Checkout response lost"));
     const started = vi.fn();
     await render(<BillingWorkspaceProvider workspaceId="cws-already-paid"><ManagedServerPurchase preserveProject onCheckoutStarted={started} /></BillingWorkspaceProvider>);
-    await edit(input(copy.plansRoute.serverName)!, "Staging");
     await act(async () => { buttons("Choose Starter")[0]!.click(); buttons("Choose Starter")[0]!.click(); });
-    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: "Staging" });
+    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName });
     expect(h.post).not.toHaveBeenCalled();
     await act(async () => created(server));
     expect(h.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ workspaceId: server.id, planTierId: "starter" }));
@@ -267,12 +435,15 @@ describe("buying another managed server", () => {
     expect(h.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ workspaceId: "cws-org-b" }));
   });
 
-  it("keeps the form editable after creation fails and starts no checkout", async () => {
+  it("allows retrying a failed server creation without starting checkout prematurely", async () => {
     h.create.mockRejectedValueOnce(new Error("Server could not be created"));
     await render(<ManagedServerPurchase preserveProject />); await click("Choose Hobby");
-    expect(input(copy.plansRoute.serverName)?.disabled).toBe(false);
+    expect(buttons("Choose Hobby")[0]?.disabled).toBe(false);
     expect(host.textContent).toContain("Server could not be created");
     expect(h.post).not.toHaveBeenCalled();
+    await click("Choose Hobby");
+    expect(h.create).toHaveBeenCalledTimes(2);
+    expect(h.post).toHaveBeenCalledOnce();
   });
 
   it("reuses existing Cloud server linking on self-hosted installations", async () => {

@@ -53,6 +53,8 @@ export async function createTrackedWorkspaceCheckout(
       "IDEMPOTENCY_KEY_CONFLICT",
     );
   if (!existing) {
+    if (request.kind === "subscription" && pending.some(item => item.request.kind === "subscription"))
+      throw new AppError("This server already has an unfinished checkout. Resume that payment or wait for it to expire before choosing another plan.", 409, "CLOUD_WORKSPACE_CHECKOUT_PENDING");
     if (pending.length >= 20)
       throw new AppError(
         "Finish an open checkout before starting another purchase",

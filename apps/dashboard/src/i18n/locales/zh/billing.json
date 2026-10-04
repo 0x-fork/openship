@@ -48,8 +48,7 @@
     "usage": "用量",
     "plans": "套餐",
     "topups": "充值",
-    "payment": "付款方式",
-    "invoices": "账单"
+    "payment": "付款与发票"
   },
   "portal": {
     "openButton": "打开账单门户",
@@ -243,7 +242,8 @@
   },
   "layout": {
     "title": "账单与用量",
-    "subtitle": "管理您的订阅、用量和付款方式。"
+    "subtitle": "管理您的订阅、用量和付款方式。",
+    "getServer": "购买服务器"
   },
   "sidebar": {
     "planSuffix": "{name} 套餐",
@@ -272,12 +272,9 @@
     "accessUntil": "可使用至 {date}"
   },
   "paymentPanel": {
-    "title": "付款方式",
-    "description": "管理付款方式和账单信息。"
-  },
-  "invoicesPanel": {
-    "title": "账单",
-    "description": "查看或申请账单历史和发票。"
+    "title": "付款与发票",
+    "description": "在 Stripe 中管理付款方式、下载发票并更新账单信息。",
+    "openStripe": "打开 Stripe 门户"
   },
   "subscription": {
     "title": "订阅",
@@ -415,13 +412,11 @@
     "stepDeployHint": "创建项目并点击部署。",
     "usageTitle": "Cloud 用量从这里开始",
     "usageDescription": "使用付费计划部署后，即可在此查看构建和应用用量。",
-    "paymentTitle": "尚无付款方式",
-    "paymentDescription": "结账时添加付款方式。首次购买后可在此管理。",
-    "invoicesTitle": "尚无账单",
-    "invoicesDescription": "首次付款后将显示账单和收据。",
+    "paymentTitle": "您的付款与发票",
+    "paymentDescription": "首次购买后即可查看付款信息和发票。",
     "topupsTitle": "从 Cloud 计划开始",
     "topupsDescription": "套餐包含构建和应用用量。订阅激活后可追加用量。",
-    "compareTitle": "为项目选择合适的计划",
+    "compareTitle": "选择合适的计划",
     "compareDescription": "比较项目数、服务数、构建时间，以及每个应用可用的 CPU 和内存。",
     "savedProjects": "工作区中保留了 {count} 个已保存的项目。订阅后可添加更多。"
   },
@@ -462,12 +457,8 @@
     "exhaustedTitle": "Cloud 额度已用完",
     "exhaustedDescription": "添加额度或付费配额续期前，将阻止新工作负载。请打开账单页面查看可用选项。",
     "buyCredits": "购买更多额度",
-    "openBilling": "打开账单",
-    "close": "知道了",
     "wrongOrganization": "您的账户无法使用此账单链接。请使用属于提醒中组织的账户登录。",
     "title": "Cloud 额度",
-    "showWarnings": "显示额度警告",
-    "hideWarnings": "隐藏额度警告",
     "backToBilling": "返回账单"
   },
   "capacityEditor": {
@@ -661,7 +652,6 @@
     "disk": "存储",
     "diskGrowth": "现有磁盘可以扩容。缩减存储需要将数据迁移到新服务器。",
     "range": "{min} 至 {max} {unit}",
-    "shared": "项目和应用共用一台托管服务器。单个服务也可以使用全部可用容量。",
     "monthlyTotal": "每月总计",
     "choose": "选择自定义",
     "updating": "正在更新价格",
@@ -696,12 +686,12 @@
     "afterPayment": "付款确认后，新套餐才会生效。",
     "restartNextCycle": "在 {date} 应用新容量时，这些项目将短暂重启。如果服务器在此之前发生变化，我们会请你重新确认重启。",
     "restartAfterPayment": "付款后，应用新容量时这些项目将短暂重启。",
-    "preserved": "保留当前用量和已购买的额度。计费周期保持不变。",
+    "preserved": "保留使用历史记录，账单周期保持不变。",
     "expired": "此报价已过期。请刷新以查看当前价格。",
     "refreshQuote": "刷新报价",
     "retry": "重试确认",
     "confirmUpgrade": "确认升级",
-    "confirmDowngrade": "安排降级",
+    "confirmDowngrade": "安排变更",
     "scheduled": "{name} 将在续费付款后于 {date} 生效。",
     "paymentPending": "当前套餐仍然有效。请完成付款以完成升级。",
     "applied": "新套餐已生效。请在概览中查看服务器进度。",
@@ -713,5 +703,76 @@
     "refresh": "查看状态",
     "cancelChange": "取消变更",
     "nextPlan": "新套餐"
+  },
+  "purchase": {
+    "mode": "计费方式",
+    "monthly": "包月主机",
+    "payg": "预付按量计费",
+    "title": "预付费托管",
+    "description": "充值积分、选择资源，并按各台主机的用量付费。",
+    "rates": "资源用量",
+    "cpuUnit": "每个活跃vCPU小时",
+    "memoryUnit": "每 GiB 小时",
+    "diskUnit": "每 GiB 月",
+    "transfer": "数据传输",
+    "transferUnit": "每 GiB",
+    "compareMonthly": "比较包月主机",
+    "preview": "价格预览",
+    "ratesUnavailable": "暂时无法获取按量价格。您仍可比较包月主机。",
+    "packages": "积分包",
+    "packagesHint": "在您的按量主机之间共享。",
+    "conversion": "{credits} 积分 = {amount}",
+    "credits": "{amount} 积分",
+    "sizeHosts": "配置您的主机",
+    "sizeHint": "选择每台主机的资源并估算平均活跃率。",
+    "hosts": "主机数量",
+    "cpuActivity": "平均 CPU 活跃率",
+    "activityHint": "1 vCPU小时指1个vCPU以100%活跃率运行1个实际小时。预留内存和存储仍会持续计费。",
+    "invalid": "请检查资源范围，选择 1–100 台主机，并将 CPU 活跃率设为 0%–100%。",
+    "ratesDetails": "资源单价与计费详情",
+    "extras": "可选托管代理：{amount}/GiB，单独计费。应用的公共路由不属于此项。",
+    "retentionHint": "暂停不会停止内存计费。保留的存储在删除前仍会计费。",
+    "estimate": "预计每小时费用",
+    "packageSummary": "预付 {amount} · {credits} 积分",
+    "runtime": "余额可用时长",
+    "runtimeHint": "CPU使用率为{percent}%时：约{duration}。",
+    "addCredits": "充值 {amount} 积分",
+    "previewHint": "仅供预览，尚未开放购买。",
+    "hourlyBasis": "每个实际小时 · 全部主机",
+    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU小时",
+    "cpuHours": "{amount} vCPU小时",
+    "gibHours": "{amount} GiB小时",
+    "rangeMinimum": "CPU满载 · 100%",
+    "rangeMaximum": "CPU空闲 · 0%",
+    "rangeHint": "按所显示的使用单价估算，包含内存和存储费用。",
+    "perHour": "/ 小时",
+    "creditsPerHour": "{amount}额度/小时",
+    "hourlyHint": "所有选定主机 · 平均CPU使用率{percent}%"
+  },
+  "compute": {
+    "covered": "计算资源已包含",
+    "needsAttention": "请检查计算保障状态",
+    "included": "已付款月份内全天包含 CPU、内存和配套存储，无需计算积分或充值。",
+    "features": {
+      "capacity": "CPU、内存和存储全天候包含在内",
+      "noCredits": "无需计算积分或充值",
+      "shared": "应用与构建共享服务器容量",
+      "fullCapacity": "任一服务均可使用全部可用容量"
+    },
+    "extras": "托管代理流量为可选项，需单独购买。备份使用已配置的存储目标。 保障期结束后，保留的存储将持续计费，直到被删除。",
+    "paidThrough": "已付款至 {date}",
+    "recovery": "请检查续订或付款以恢复计算访问。",
+    "storageDue": "保留存储待付款金额：{amount}",
+    "details": "用量、流量和存储条款",
+    "paygComparison": "按按量付费单价计算的已记录用量",
+    "comparisonHint": "仅用于用量对比，不代表现金节省或额外费用。",
+    "proxyTransfer": "托管代理流量",
+    "transferRemaining": "可用 {amount} GiB",
+    "proxyHint": "此额度仅用于可选的托管互联网代理。应用的公共路由单独计算。",
+    "transferRecovery": "当前无可用代理流量。请联系支持添加；已付款的计算保障不受影响。",
+    "retention": "计算到期后，保留存储按 {amount}/GiB·月收费，直到删除。磁盘至少保留 {days} 天，不会自动删除。",
+    "paygMetering": "按量付费计量活跃 CPU、运行或暂停时预留的内存，以及仍被保留的已分配存储。",
+    "buildHint": "构建在此服务器上运行，与应用共享资源。",
+    "usageIncluded": "资源活动已包含在已付款服务器中，不消耗计算积分。"
   }
 }

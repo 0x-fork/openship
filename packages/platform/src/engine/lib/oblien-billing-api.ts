@@ -2,6 +2,8 @@ import { z } from "zod";
 import { AppError } from "@repo/core";
 import { OperationError } from "@repo/contracts";
 import { Oblien } from "@repo/adapters";
+import { isDeepStrictEqual } from "node:util";
+import { computeBillingModeSchema, oblienCapacityCatalogSchema, oblienCapacityPoolSchema, oblienNamespaceCapacitySchema } from "./oblien-capacity";
 
 // Oblien owns payments and credits. Validate its SDK responses at our tenant
 // boundary before returning customer data or hosted billing session URLs.
@@ -9,6 +11,7 @@ const amount = z.number().finite();
 const allowance = amount.nonnegative().nullable();
 const date = z.string().refine((value) => Number.isFinite(Date.parse(value))).nullable();
 const namespace = z.string().min(1).max(128);
+const timestamp = (value: string | null) => value === null ? null : Date.parse(value);
 
 export const oblienCatalogSchema = z.object({
   success: z.literal(true),
@@ -61,6 +64,9 @@ export const oblienEntitlementSchema = z.object({
   tierId: z.string().nullable(),
   status: z.enum(["active", "past_due", "canceled", "credit_exhausted"]),
   periodStart: date, periodEnd: date,
+  billingMode: computeBillingModeSchema.optional(),
+  computeCovered: z.boolean().optional(),
+  capacity: oblienNamespaceCapacitySchema.nullable().optional(),
   // Preserve signed legacy usage; the provider's limit includes purchased credits.
   quota: z.object({
     limit: allowance,
@@ -68,8 +74,20 @@ export const oblienEntitlementSchema = z.object({
     balance: amount.nullable(),
     overdraft: amount.nonnegative().optional(),
     suspendThreshold: allowance.optional(),
-    alert: oblienQuotaAlertSchema.optional(),
+    alert: oblienQuotaAlertSchema.nullable().optional(),
   }),
+}).superRefine((value, ctx) => {
+  if (value.tierId !== "capacity") {
+    if (value.capacity || value.billingMode === "monthly")
+      ctx.addIssue({ code: "custom", message: "Capacity requires a capacity entitlement" });
+    return;
+  }
+  const capacity = value.capacity;
+  if (!capacity || capacity.namespace !== value.namespace || capacity.billingMode !== value.billingMode ||
+      capacity.computeCovered !== value.computeCovered || timestamp(capacity.periodStart) !== timestamp(value.periodStart) ||
+      timestamp(capacity.periodEnd) !== timestamp(value.periodEnd)) {
+    ctx.addIssue({ code: "custom", message: "Capacity entitlement does not match its saved contract" });
+  }
 });
 
 export const oblienOfferResourceLimitsSchema = z.object({
@@ -87,7 +105,10 @@ export const oblienOfferSchema = z.object({
   description: z.string().max(500).optional(),
   unitAmount: amount.int().min(100).max(1_000_000),
   currency: z.literal("usd"),
-  credits: amount.int().min(1).max(1_000_000_000),
+  billingMode: computeBillingModeSchema.optional(),
+  capacity: oblienCapacityPoolSchema.optional(),
+  tariffId: z.string().min(1).optional(),
+  credits: amount.int().min(0).max(1_000_000_000),
   policy: z
     .object({
       overdraft: amount.int().nonnegative(),
@@ -97,6 +118,13 @@ export const oblienOfferSchema = z.object({
     .refine((value) => value.suspendThreshold >= value.overdraft)
     .optional(),
   resourceLimits: oblienOfferResourceLimitsSchema.optional(),
+}).superRefine((value, ctx) => {
+  if (value.billingMode === "monthly") {
+    if (!value.capacity || value.credits !== 0 || value.policy !== undefined)
+      ctx.addIssue({ code: "custom", message: "Monthly capacity requires a pool, zero credits and no credit policy" });
+  } else if (value.credits <= 0 || value.capacity !== undefined || value.tariffId !== undefined) {
+    ctx.addIssue({ code: "custom", message: "Metered offers require credits and cannot purchase capacity" });
+  }
 });
 export type OblienOffer = z.infer<typeof oblienOfferSchema>;
 
@@ -107,7 +135,8 @@ export const oblienPlanChangeInputSchema = z.object({
   metadata: z.record(z.string(), z.string()),
   billingInterval: z.enum(["monthly", "yearly"]),
   idempotencyKey: z.string().min(1).max(128),
-});
+}).refine(value => value.offer.billingMode !== "monthly" || value.billingInterval === "monthly",
+  "Monthly capacity requires a monthly subscription");
 export type OblienPlanChangeInput = z.infer<typeof oblienPlanChangeInputSchema>;
 export const oblienPlanChangeQuoteSchema = z.object({
   id: billingId, namespace, direction: z.enum(["upgrade", "downgrade"]),
@@ -164,12 +193,19 @@ export type OblienBillingPolicy = z.infer<typeof policySchema>;
 export type OblienSubscription = z.infer<typeof oblienSubscriptionSchema>["subscription"];
 /** An echoed namespace alone cannot prove a paid entitlement belongs to it. */
 export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEntitlement, subscription: OblienSubscription): void {
-  const timestamp = (value: string | null) => value === null ? null : Date.parse(value);
-  if ((entitlement.tierId ?? "free") !== (subscription?.tierId ?? "free") ||
+  const monthly = subscription?.offer?.billingMode === "monthly";
+  const expectedTier = monthly ? "capacity" : subscription?.tierId ?? "free";
+  const capacity = entitlement.capacity;
+  if ((entitlement.tierId ?? "free") !== expectedTier ||
+      (monthly && (!capacity || capacity.namespace !== entitlement.namespace || capacity.provider !== "stripe" ||
+        capacity.billingMode !== "monthly" || entitlement.billingMode !== "monthly" ||
+        capacity.computeCovered !== entitlement.computeCovered ||
+        !isDeepStrictEqual(capacity.capacity, subscription!.offer!.capacity) ||
+        timestamp(capacity.periodStart) !== timestamp(entitlement.periodStart) || timestamp(capacity.periodEnd) !== timestamp(entitlement.periodEnd))) ||
       (!subscription && (entitlement.periodStart !== null || entitlement.periodEnd !== null)) ||
       (subscription && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
       (subscription && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
-      (entitlement.status === "active" && subscription && !["active", "trialing"].includes(subscription.status))) {
+      (!monthly && entitlement.status === "active" && subscription && !["active", "trialing"].includes(subscription.status))) {
     throw new AppError("Cloud billing returned an entitlement that does not match this organization's subscription", 502, "OBLIEN_ENTITLEMENT_MISMATCH");
   }
 }
@@ -181,7 +217,9 @@ const checkoutInput = z.object({
 export const oblienCheckoutInputSchema = z.discriminatedUnion("kind", [
   checkoutInput.extend({ kind: z.literal("subscription"), billingInterval: z.enum(["monthly", "yearly"]) }),
   checkoutInput.extend({ kind: z.literal("topup") }),
-]);
+]).refine(value => value.offer.billingMode !== "monthly" ||
+  (value.kind === "subscription" && value.billingInterval === "monthly"),
+  "Monthly capacity requires a monthly subscription");
 export type OblienCheckout = z.infer<typeof oblienCheckoutInputSchema>;
 
 /** Log only a bounded error identifier, never provider messages or payment data. */
@@ -240,7 +278,7 @@ export class OblienBillingApi {
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
-    const publicRead = method === "GET" && path === "/billing/catalog";
+    const publicRead = method === "GET" && (path === "/billing/catalog" || path === "/billing/capacity/catalog");
     const headers: Record<string, string> = { Accept: "application/json" };
     if (!publicRead) {
       if (!this.options.clientId || !this.options.clientSecret) {
@@ -307,6 +345,9 @@ export class OblienBillingApi {
         billing_change_busy: "This plan change is still being confirmed. Refresh its status; do not start another payment.",
         billing_change_not_cancelable: "This plan change can no longer be canceled. Refresh its status.",
         plan_change_not_found: "This plan change was not found for the selected server.",
+        capacity_billing_unavailable: "Monthly server purchases are temporarily unavailable. Existing paid servers keep their coverage.",
+        billing_capacity_unavailable: "The requested server capacity is temporarily unavailable. Choose another size or try again later.",
+        billing_offer_underfunded: "This server's price needs updating before it can be purchased. Contact Openship support.",
       };
       const checkoutUnavailable = path === "/billing/checkout" && providerFailure;
       const message = Object.hasOwn(known, code) ? known[code]
@@ -332,6 +373,18 @@ export class OblienBillingApi {
 
   getCatalog(): Promise<OblienBillingCatalog> {
     return this.validate(this.billing.catalog(), oblienCatalogSchema);
+  }
+
+  getCapacityCatalog() {
+    return this.validate(this.billing.capacityCatalog(), oblienCapacityCatalogSchema);
+  }
+
+  /** Sales check only. Existing contracts and renewal keep their saved tariff. */
+  async assertMonthlyCapacitySupport() {
+    const catalog = await this.getCapacityCatalog();
+    if (!catalog.billingModes.includes("monthly") || !catalog.paymentSources.monthly.includes("stripe"))
+      throw new AppError("Monthly server purchases are temporarily unavailable", 503, "OBLIEN_CAPACITY_UNAVAILABLE");
+    return catalog;
   }
 
   async assertResellerSupport(): Promise<void> {
@@ -388,6 +441,7 @@ export class OblienBillingApi {
   getBalance(slug: string) {
     return this.validate(this.billing.balance(slug), z.object({
       success: z.literal(true), namespace, blocking: z.boolean(), balance: amount.nullable(),
+      billingMode: computeBillingModeSchema.optional(), computeCovered: z.boolean().optional(), paidThrough: date.optional(),
     }), slug);
   }
 
@@ -429,7 +483,8 @@ export class OblienBillingApi {
   }
 
   async previewPlanChange(slug: string, input: OblienPlanChangeInput) {
-    const result = await this.validate(this.billing.previewPlanChange(slug, input), z.object({
+    const request = oblienPlanChangeInputSchema.parse(input);
+    const result = await this.validate(this.billing.previewPlanChange(slug, request), z.object({
       success: z.literal(true), namespace, quote: oblienPlanChangeQuoteSchema,
     }), slug);
     if (result.quote.namespace !== slug || result.quote.billingInterval !== input.billingInterval)
@@ -475,7 +530,7 @@ export class OblienBillingApi {
   async createCheckout(input: OblienCheckout) {
     // Oblien validates admin-issued codes against the authenticated reseller
     // and this saved namespace offer before creating the Stripe session.
-    const request = { ...input, allowPromotionCodes: true };
+    const request = { ...oblienCheckoutInputSchema.parse(input), allowPromotionCodes: true };
     const result = await this.validate(this.billing.checkout(request), checkoutSchema);
     this.validateCheckoutUrl(result.url);
     return result;

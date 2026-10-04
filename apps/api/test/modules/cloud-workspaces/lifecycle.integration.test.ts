@@ -1,3 +1,5 @@
+import capacityCatalog from "../../fixtures/oblien-capacity-catalog.json";
+import { monthlyCloudBilling } from "../../helpers/monthly-cloud-offer";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createHmac, randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -266,6 +268,7 @@ beforeEach(async () => {
   };
   h.billing = {
     assertResellerSupport: vi.fn(async () => {}),
+    assertMonthlyCapacitySupport: vi.fn(async () => capacityCatalog),
     getDefaults: async () => ({
       autoApply: true,
       quotaLimit: 0,
@@ -280,6 +283,11 @@ beforeEach(async () => {
     })),
     getEntitlement: vi.fn(async (namespace: string) => {
       const sub = subscriptions.get(namespace);
+      if (sub?.offer?.billingMode === "monthly") {
+        const { entitlement } = monthlyCloudBilling(owner.orgId, namespace);
+        return { ...entitlement, status: sub.status, periodStart: sub.periodStart, periodEnd: sub.periodEnd,
+          capacity: { ...entitlement.capacity, capacity: sub.offer.capacity, periodStart: sub.periodStart, periodEnd: sub.periodEnd } };
+      }
       return {
         success: true,
         namespace,
@@ -292,8 +300,9 @@ beforeEach(async () => {
     }),
     getBalance: vi.fn(async (namespace: string) => ({
       namespace,
-      balance: subscriptions.has(namespace) ? 1000 : 0,
+      balance: subscriptions.get(namespace)?.offer?.billingMode === "monthly" ? null : subscriptions.has(namespace) ? 1000 : 0,
       blocking: !subscriptions.has(namespace),
+      ...(subscriptions.get(namespace)?.offer?.billingMode === "monthly" ? { billingMode: "monthly", computeCovered: true } : {}),
     })),
     createCheckout: vi.fn(async () => ({
       checkoutId: "checkout-test",
@@ -571,9 +580,12 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     h.billing.getCheckout.mockImplementation(async () => ({
       checkout: {
         id: "checkout-complete",
+        kind: "subscription",
         status: "complete",
+        paymentStatus: "paid",
+        fulfillmentStatus: "completed",
         fulfilled: true,
-        namespaceCreditsGranted: 400,
+        namespaceCreditsGranted: 0,
       },
     }));
     const result = await Promise.all([
@@ -583,6 +595,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     ]);
     expect((result[0] as Response).status).toBe(200);
     expect((result[1] as Response).status).toBe(200);
+    expect(result[2]).toMatchObject({ fulfilled: true, creditsGranted: 0 });
     await drainBackgroundWork();
     expect(h.client.workspaces.create).toHaveBeenCalledTimes(1);
     expect((await repos.cloudWorkspace.findById(workspace.id))?.operation?.status).toBe(
@@ -822,7 +835,13 @@ describe("provider subscription changes through billing and the shared server wo
       const existing = previews.get(request.idempotencyKey);
       if (existing) return { success: true, namespace, quote: structuredClone(quotes.get(existing)!.quote) };
       const current = subscriptions.get(namespace)!;
-      const direction = request.offer.unitAmount > current.offer!.unitAmount ? "upgrade" : "downgrade";
+      // Provider semantics: even a higher-priced offer waits for renewal when
+      // it reduces a resource or changes the compute billing model.
+      const reduced = current.offer?.capacity && request.offer.capacity &&
+        (["vcpus", "memoryMb", "diskGb", "workspaces"] as const)
+          .some(key => request.offer.capacity![key] < current.offer!.capacity![key]);
+      const direction = request.offer.billingMode === current.offer!.billingMode && !reduced &&
+        request.offer.unitAmount > current.offer!.unitAmount ? "upgrade" : "downgrade";
       const quote: OblienPlanChangeQuote = {
         id: `quote_${randomUUID()}`, namespace, direction,
         expiresAt: new Date(clock + 9 * 60_000).toISOString(),
@@ -830,7 +849,7 @@ describe("provider subscription changes through billing and the shared server wo
         billingInterval: current.billingInterval, current: structuredClone(current.offer!), next: structuredClone(request.offer),
         currency: "usd", unusedTimeCredit: direction === "upgrade" ? 127 : 0,
         remainingTimeCharge: direction === "upgrade" ? 763 : 0, amountDueNow: direction === "upgrade" ? 636 : 0,
-        nextInvoiceAmount: request.offer.unitAmount, includedCreditIncrease: 1.123456,
+        nextInvoiceAmount: request.offer.unitAmount, includedCreditIncrease: 0,
         preservesUsage: true, preservesPurchasedCredits: true,
       };
       quotes.set(quote.id, { request: structuredClone(request), quote });
@@ -982,6 +1001,53 @@ describe("provider subscription changes through billing and the shared server wo
     expect((await event(change.id, "subscription.change.failed")).status).toBe(200);
     await drainBackgroundWork();
     expect(h.client.resize).toHaveBeenCalledOnce();
+  });
+
+  it("honors the provider's renewal date for a resource reduction that costs more", async () => {
+    subscribe("starter"); await provision(); await addProject("API");
+    const client = await billingClient(true);
+    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 16384, diskGb: 32 }).quote;
+    expect(custom.priceCents).toBeGreaterThan(2000);
+    const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,
+      custom: { resources: custom.resources, quoteReference: custom.reference }, idempotencyKey: randomUUID() });
+    expect(quote).toMatchObject({ direction: "downgrade", amountDueNow: 0, effectiveAt: "2026-11-01T00:00:00Z",
+      resize: { before: { cpuCores: 2, memoryMb: 8192 }, after: { cpuCores: 1, memoryMb: 16384 } } });
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    expect(change.status).toBe("scheduled");
+    expect(h.client.resize).not.toHaveBeenCalled();
+    expect(subscriptions.get(workspace.namespace!)?.offer?.unitAmount).toBe(2000);
+    clock = Date.parse(quote.effectiveAt);
+    paid(change.id);
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    await drainBackgroundWork();
+    expect(h.client.resize).toHaveBeenCalledExactlyOnceWith(expect.any(String), { cpus: 1, memory_mb: 16384, disk_size_mb: 32768, apply: true });
+  });
+
+  it("adopts monthly coverage from a saved metered subscription at renewal without a second checkout", async () => {
+    subscribe("starter");
+    const saved = subscriptions.get(workspace.namespace!)!;
+    delete saved.offer!.billingMode;
+    delete saved.offer!.capacity;
+    Object.assign(saved.offer!, { reference: "openship:starter:v8", credits: 1700,
+      policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" } });
+    saved.metadata!.openship_offer_version = "8";
+    await provision();
+    const client = await billingClient();
+    const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "starter", idempotencyKey: randomUUID() });
+    expect(quote).toMatchObject({ direction: "downgrade", amountDueNow: 0, effectiveAt: "2026-11-01T00:00:00Z" });
+    const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
+    expect(change.status).toBe("scheduled");
+    expect(subscriptions.get(workspace.namespace!)?.offer?.credits).toBe(1700);
+    expect(h.billing.createCheckout).not.toHaveBeenCalled();
+    clock = Date.parse(quote.effectiveAt);
+    paid(change.id);
+    await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
+    await drainBackgroundWork();
+    expect(await client.getState({ workspaceId: workspace.id })).toMatchObject({
+      subscription: { billingMode: "monthly" }, compute: { billingMode: "monthly", covered: true }, monthlyCreditLimit: null,
+    });
+    expect(h.client.resize).not.toHaveBeenCalled();
+    expect(h.billing.createCheckout).not.toHaveBeenCalled();
   });
 
   it("blocks disk shrink before creating a quote, and permits canceling a scheduled downgrade", async () => {

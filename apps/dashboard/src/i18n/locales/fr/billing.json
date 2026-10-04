@@ -48,8 +48,7 @@
     "usage": "Utilisation",
     "plans": "Forfaits",
     "topups": "Recharges",
-    "payment": "Moyen de paiement",
-    "invoices": "Factures"
+    "payment": "Paiements et factures"
   },
   "portal": {
     "openButton": "Ouvrir le portail de facturation",
@@ -243,7 +242,8 @@
   },
   "layout": {
     "title": "Facturation et utilisation",
-    "subtitle": "Gérez votre abonnement, votre utilisation et vos moyens de paiement."
+    "subtitle": "Gérez votre abonnement, votre utilisation et vos moyens de paiement.",
+    "getServer": "Obtenir un serveur"
   },
   "sidebar": {
     "planSuffix": "Forfait {name}",
@@ -272,12 +272,9 @@
     "accessUntil": "Accès jusqu’au {date}"
   },
   "paymentPanel": {
-    "title": "Moyen de paiement",
-    "description": "Gérez vos moyens de paiement et vos coordonnées de facturation."
-  },
-  "invoicesPanel": {
-    "title": "Factures",
-    "description": "Consultez ou demandez votre historique de facturation et vos factures."
+    "title": "Paiements et factures",
+    "description": "Gérez vos moyens de paiement, téléchargez vos factures et modifiez vos coordonnées de facturation dans Stripe.",
+    "openStripe": "Ouvrir le portail Stripe"
   },
   "subscription": {
     "title": "Abonnement",
@@ -415,13 +412,11 @@
     "stepDeployHint": "Créez votre projet et cliquez sur Déployer.",
     "usageTitle": "Votre utilisation Cloud commence ici",
     "usageDescription": "Déployez avec un forfait payant pour voir l’utilisation de vos builds et applications.",
-    "paymentTitle": "Aucun moyen de paiement",
-    "paymentDescription": "Ajoutez un moyen de paiement lors de l’achat. Vous pourrez le gérer ici après votre premier achat.",
-    "invoicesTitle": "Aucune facture pour le moment",
-    "invoicesDescription": "Vos factures et reçus apparaissent après votre premier paiement.",
+    "paymentTitle": "Vos paiements et factures",
+    "paymentDescription": "Les informations de paiement et les factures seront disponibles après votre premier achat.",
     "topupsTitle": "Commencez avec un forfait Cloud",
     "topupsDescription": "Votre offre inclut de l’utilisation pour les builds et les apps. Ajoutez-en une fois l’abonnement actif.",
-    "compareTitle": "Trouvez le forfait adapté à vos projets",
+    "compareTitle": "Trouvez le bon forfait",
     "compareDescription": "Comparez projets, services, temps de build, processeur et mémoire disponibles pour chaque app.",
     "savedProjects": "Projets enregistrés dans cet espace de travail : {count}. Abonnez-vous pour en ajouter."
   },
@@ -462,12 +457,8 @@
     "exhaustedTitle": "Crédits Cloud épuisés",
     "exhaustedDescription": "Les nouvelles charges de travail sont bloquées jusqu’à l’ajout de crédits ou au renouvellement payé du quota. Consultez la facturation pour voir vos options.",
     "buyCredits": "Acheter des crédits",
-    "openBilling": "Ouvrir la facturation",
-    "close": "Compris",
     "wrongOrganization": "Ce lien de facturation est indisponible pour votre compte. Connectez-vous avec un compte membre de l’organisation concernée.",
     "title": "Crédits Cloud",
-    "showWarnings": "Afficher les alertes de crédits",
-    "hideWarnings": "Masquer les alertes de crédits",
     "backToBilling": "Retour à la facturation"
   },
   "capacityEditor": {
@@ -661,7 +652,6 @@
     "disk": "Stockage",
     "diskGrowth": "Les disques existants peuvent être agrandis. Réduire le stockage nécessite de déplacer vos données vers un nouveau serveur.",
     "range": "De {min} à {max} {unit}",
-    "shared": "Un serveur géré pour vos projets et applications. Un seul service peut utiliser toute la capacité disponible.",
     "monthlyTotal": "Total mensuel",
     "choose": "Choisir Sur mesure",
     "updating": "Actualisation du prix",
@@ -696,12 +686,12 @@
     "afterPayment": "Le nouveau forfait commence après confirmation du paiement.",
     "restartNextCycle": "Le {date}, l’application de la nouvelle capacité redémarrera brièvement ces projets. Si le serveur change avant cette date, nous vous demanderons une nouvelle confirmation.",
     "restartAfterPayment": "Après le paiement, l’application de la nouvelle capacité redémarrera brièvement ces projets.",
-    "preserved": "L’utilisation actuelle et les crédits achetés sont conservés. La périodicité de facturation reste identique.",
+    "preserved": "Votre historique d’utilisation est conservé. La période de facturation reste inchangée.",
     "expired": "Ce devis a expiré. Actualisez-le pour consulter le prix actuel.",
     "refreshQuote": "Actualiser le devis",
     "retry": "Réessayer la confirmation",
     "confirmUpgrade": "Confirmer la mise à niveau",
-    "confirmDowngrade": "Planifier la réduction",
+    "confirmDowngrade": "Planifier le changement",
     "scheduled": "{name} commence le {date}, après paiement du renouvellement.",
     "paymentPending": "Votre forfait actuel reste actif. Terminez le paiement pour finaliser la mise à niveau.",
     "applied": "Votre nouveau forfait est actif. Suivez le serveur dans la vue d’ensemble.",
@@ -713,5 +703,76 @@
     "refresh": "Vérifier le statut",
     "cancelChange": "Annuler le changement",
     "nextPlan": "Nouvelle formule"
+  },
+  "purchase": {
+    "mode": "Mode de facturation",
+    "monthly": "Serveurs mensuels",
+    "payg": "Usage prépayé",
+    "title": "Hébergement prépayé",
+    "description": "Ajoutez des crédits, choisissez vos ressources et payez selon l’usage de vos serveurs.",
+    "rates": "Utilisation des ressources",
+    "cpuUnit": "Par heure-vCPU active",
+    "memoryUnit": "Par Go-heure",
+    "diskUnit": "Par Go-mois",
+    "transfer": "Transfert de données",
+    "transferUnit": "Par Go",
+    "compareMonthly": "Comparer les serveurs mensuels",
+    "preview": "Aperçu des tarifs",
+    "ratesUnavailable": "Les tarifs à l’usage sont indisponibles. Vous pouvez comparer les serveurs mensuels.",
+    "packages": "Lot de crédits",
+    "packagesHint": "Partagé entre vos serveurs à l’usage.",
+    "conversion": "{credits} crédits = {amount}",
+    "credits": "{amount} crédits",
+    "sizeHosts": "Dimensionnez vos serveurs",
+    "sizeHint": "Choisissez les ressources par serveur et estimez leur activité moyenne.",
+    "hosts": "Nombre de serveurs",
+    "cpuActivity": "Activité CPU moyenne",
+    "activityHint": "Une heure-vCPU correspond à un vCPU à 100% pendant une heure écoulée. La RAM et le stockage réservés restent facturés.",
+    "invalid": "Vérifiez les plages de ressources, choisissez 1 à 100 serveurs et une activité CPU entre 0% et 100%.",
+    "ratesDetails": "Tarifs des ressources et facturation",
+    "extras": "Proxy géré facultatif : {amount}/GiB, facturé séparément. Les routes publiques des applications sont distinctes.",
+    "retentionHint": "La mise en pause n’arrête pas les frais de RAM. Le stockage conservé reste facturé jusqu’à sa suppression.",
+    "estimate": "Coût horaire estimé",
+    "packageSummary": "{amount} à l’avance · {credits} crédits",
+    "runtime": "Durée du solde",
+    "runtimeHint": "À {percent}% de CPU : environ {duration}.",
+    "addCredits": "Ajouter {amount} crédits",
+    "previewHint": "Aperçu uniquement. Les achats ne sont pas encore disponibles.",
+    "hourlyBasis": "Par heure écoulée · tous les serveurs",
+    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} heures-vCPU",
+    "cpuHours": "{amount} heures-vCPU",
+    "gibHours": "{amount} GiB-heures",
+    "rangeMinimum": "CPU à pleine charge · 100%",
+    "rangeMaximum": "CPU au repos · 0%",
+    "rangeHint": "Aux tarifs d’utilisation affichés, RAM et stockage inclus.",
+    "perHour": "/ heure",
+    "creditsPerHour": "{amount} crédits/heure",
+    "hourlyHint": "Tous les serveurs sélectionnés · {percent}% de CPU en moyenne"
+  },
+  "compute": {
+    "covered": "Calcul couvert",
+    "needsAttention": "Couverture à vérifier",
+    "included": "CPU, RAM et stockage inclus sont couverts 24 h/24 pendant le mois payé. Aucun crédit de calcul ni recharge.",
+    "features": {
+      "capacity": "CPU, RAM et stockage inclus 24 h/24",
+      "noCredits": "Aucun crédit de calcul ni recharge",
+      "shared": "Capacité partagée entre apps et builds",
+      "fullCapacity": "Toute la capacité disponible pour chaque service"
+    },
+    "extras": "Le trafic du proxy géré est facultatif et acheté séparément. Les sauvegardes utilisent leur destination configurée. Après la fin de la couverture, le stockage conservé reste facturé jusqu’à sa suppression.",
+    "paidThrough": "Payé jusqu’au {date}",
+    "recovery": "Vérifiez le renouvellement ou le paiement pour rétablir l’accès au calcul.",
+    "storageDue": "Solde du stockage conservé : {amount}",
+    "details": "Utilisation, trafic et conditions de stockage",
+    "paygComparison": "Utilisation enregistrée aux tarifs à l’usage",
+    "comparisonHint": "Comparaison d’utilisation uniquement ; ce n’est ni une économie en espèces ni un supplément.",
+    "proxyTransfer": "Trafic du proxy géré",
+    "transferRemaining": "{amount} GiB disponibles",
+    "proxyHint": "Seul le proxy Internet géré facultatif utilise ce quota. Les routes publiques des applications sont distinctes.",
+    "transferRecovery": "Aucun trafic proxy disponible. Contactez le support pour en ajouter ; le calcul payé reste couvert.",
+    "retention": "Après expiration du calcul, le stockage conservé coûte {amount}/GiB-mois jusqu’à sa suppression. Les disques sont conservés au moins {days} jours, sans suppression automatique.",
+    "paygMetering": "La facturation à l’usage mesure le CPU actif, la RAM réservée en fonctionnement ou en pause et le stockage provisionné tant qu’il est conservé.",
+    "buildHint": "Les builds s’exécutent sur ce serveur et partagent ses ressources avec vos applications.",
+    "usageIncluded": "L’activité des ressources est incluse dans votre serveur payé et ne consomme aucun crédit de calcul."
   }
 }

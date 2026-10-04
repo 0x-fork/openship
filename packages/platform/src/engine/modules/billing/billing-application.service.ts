@@ -19,6 +19,7 @@ import { getNamespaceUsage } from "@repo/platform/engine/modules/billing/billing
 import { presentCloudPlans } from "./billing-catalog";
 import { getBillingResources } from "./billing-resources.service";
 import { customSubscriptionOffer } from "./billing-custom-offer";
+import { getOblienBillingApi } from "../../lib/oblien-client";
 export { previewSubscriptionChange, confirmSubscriptionChange, getSubscriptionChange, cancelSubscriptionChange } from "./billing-plan-change";
 
 /* ---------- Plans (public) ---------- */
@@ -26,7 +27,7 @@ export { previewSubscriptionChange, confirmSubscriptionChange, getSubscriptionCh
 /** Public on every installation: a linked local dashboard must show Cloud's
  * actual prices too. Outside SaaS, read Openship's public catalog without credentials. */
 export async function listPlans(input: NonNullable<Parameters<BillingOperations["listPlans"]>[0]>) {
-  if (env.CLOUD_MODE) return presentCloudPlans(input.locale);
+  if (env.CLOUD_MODE) return presentCloudPlans(input.locale, await getOblienBillingApi().assertMonthlyCapacitySupport());
   const url = new URL("/api/billing/plans", cloudRuntimeTarget.api);
   if (input.locale) url.searchParams.set("locale", input.locale);
   try {
@@ -69,7 +70,9 @@ export async function getResources(ctx: ExecutionContext, input: BillingScopeInp
 /* ---------- Subscriptions ---------- */
 
 export async function quoteCustomPlan(_ctx: ExecutionContext, input: Parameters<BillingOperations["quoteCustomPlan"]>[0]) {
-  return customSubscriptionOffer(input).quote;
+  await getOblienBillingApi().assertMonthlyCapacitySupport();
+  const { quote } = customSubscriptionOffer(input);
+  return quote;
 }
 
 export async function createSubscription(ctx: ExecutionContext, input: NonNullable<Parameters<BillingOperations["createSubscription"]>[0]>) {

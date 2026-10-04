@@ -60,6 +60,7 @@
         "@bomb.sh/tab": "^0.0.22",
         "@clack/prompts": "^0.11.0",
         "@repo/adapters": "workspace:*",
+        "@repo/contracts": "workspace:*",
         "@repo/core": "workspace:*",
         "@repo/onboarding": "workspace:*",
         "@repo/sdk": "workspace:*",
@@ -191,7 +192,7 @@
         "dockerode": "^4.0.9",
         "ignore": "^7.0.5",
         "ioredis": "^5.10.0",
-        "oblien": "2.7.0",
+        "oblien": "2.8.0",
         "ssh2": "^1.17.0",
         "tar-fs": "^2.1.4",
         "undici": "^7.29.1",
@@ -2458,7 +2459,7 @@
 
     "object-keys": ["object-keys@1.1.1", "", {}, "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA=="],
 
-    "oblien": ["oblien@2.7.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-yJBzIRWZFaE14HfST6qMq8wb6Ot+1U5qefAfDiKL+/v/SXMYxY3bmP39pKwOy8fK84GoUnCnTD3aBRsq4yDZuw=="],
+    "oblien": ["oblien@2.8.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-5AkwXaYp6bThHxJi46hfLfdy0zjN7BrTSC9wIbP5PMVm3hpfm+hE0Z/Nk2ZTsyVl9JBi1m74E96gpQrIYs6UjQ=="],
 
     "obug": ["obug@2.1.1", "", {}, "sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ=="],
 

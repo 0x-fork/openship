@@ -12,17 +12,20 @@ import {
 } from "recharts";
 import { useI18n } from "@/components/i18n-provider";
 import { CHART_TOOLTIP_LABEL_STYLE, CHART_TOOLTIP_STYLE } from "@/lib/chart-theme";
-import { formatBillingNumber, usageTimestamp, type CreditUsagePoint } from "@/lib/billing-usage";
+import { formatBillingNumber, usageTimestamp, type CloudUsagePoint } from "@/lib/billing-usage";
 
 export function UsageChart({
   buckets,
   granularity,
+  metric = "credits",
 }: {
-  buckets: CreditUsagePoint[];
+  buckets: CloudUsagePoint[];
   granularity: "day" | "week";
+  metric?: "credits" | "vcpu_hours";
 }) {
   const { t, locale } = useI18n();
   const fillId = useId();
+  const label = metric === "credits" ? t.billing.resourcesGuide.credits : "vCPU-h";
   const data = buckets
     .map((bucket) => ({ ...bucket, time: usageTimestamp(bucket.timestamp).getTime() }))
     .filter((bucket) => Number.isFinite(bucket.time))
@@ -65,13 +68,13 @@ export function UsageChart({
           }
           formatter={(value) => [
             formatBillingNumber(Number(value), locale),
-            t.billing.resourcesGuide.credits,
+            label,
           ]}
         />
         <Area
           type="linear"
-          dataKey="credits"
-          name={t.billing.resourcesGuide.credits}
+          dataKey={metric}
+          name={label}
           stroke="var(--primary)"
           fill={`url(#${fillId})`}
           strokeWidth={2}

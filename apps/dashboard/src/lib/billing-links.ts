@@ -4,7 +4,7 @@ export interface BillingLinkScope {
 }
 
 /** Preserve checkout reconciliation and organization scope through entry redirects. */
-export function billingTabHref(tab: "overview" | "plans", query: Record<string, string | string[] | undefined>) {
+export function billingTabHref(tab: "overview" | "plans" | "payment", query: Record<string, string | string[] | undefined>) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     for (const item of Array.isArray(value) ? value : value === undefined ? [] : [value]) params.append(key, item);

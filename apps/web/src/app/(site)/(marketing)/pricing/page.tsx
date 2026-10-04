@@ -80,7 +80,7 @@ function PlanResources({ plan }: { plan: PricedPlan }) {
         <dt>Build time</dt>
         <dd>
           {plan.limits.buildMinutesPerMonth === null
-            ? "Uses credits"
+            ? plan.billingMode === "monthly" ? "No time cap" : "Metered"
             : `${count(plan.limits.buildMinutesPerMonth)} min/mo`}
         </dd>
       </div>
@@ -160,7 +160,9 @@ export default async function PricingPage() {
                         <span className="pp-plan-per">{price.per}</span>
                       </div>
                       <p className="pp-plan-credits">
-                        {plan.monthlyCredits === null ? (
+                        {plan.billingMode === "monthly" ? (
+                          "CPU, RAM and disk covered all month"
+                        ) : plan.monthlyCredits === null ? (
                           "See dashboard for included credits"
                         ) : (
                           <>
@@ -177,7 +179,6 @@ export default async function PricingPage() {
                       </a>
                       <PlanResources plan={plan} />
                       <p className="pp-plan-support">
-                        <Check />
                         {supportLabels[plan.support] ?? "See support options"}
                       </p>
                     </article>
@@ -190,8 +191,9 @@ export default async function PricingPage() {
               <>
                 <div className="pp-usage-note" id="usage">
                   <p>
-                    Credits cover metered app and build usage. Capacity is shared across your
-                    projects; continuous hosting can require top-ups.
+                    {pricing.tiers.every(plan => plan.billingMode === "monthly")
+                      ? "Each plan includes one managed server, with CPU, RAM and storage covered for the paid month. Apps and builds share its capacity. Managed proxy transfer and backups are separate."
+                      : "Apps and builds share your server’s capacity. Review the billing mode and included allowance before checkout."}
                   </p>
                   <a href="/docs/guides/billing">
                     How billing works <span aria-hidden="true">↗</span>

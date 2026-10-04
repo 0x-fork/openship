@@ -72,17 +72,22 @@ not each assume the same free resources. If too little memory is available,
 stop an idle service or upgrade the server and retry. Image-only installs
 do not create a source builder.
 
-Capacity and metered credits are separate. Running apps and builds consume the
-server's usage allowance under the provider's rate card. A capacity limit
-does not promise unlimited runtime hours. See [Cloud billing](/docs/guides/billing).
+New monthly plans cover the server's CPU, RAM and storage for the full paid
+period. Applications and builds share that capacity without a second compute-credit
+allowance. Older metered subscriptions keep their saved terms until you explicitly
+change plans. Optional managed proxy transfer and backups are separate from
+monthly compute. See [Cloud billing](/docs/guides/billing).
 
 ## Upgrade and recover
 
-1. Open Billing for the server and purchase the desired plan.
-2. Open the server and choose **Apply plan capacity**.
-3. Review the current and purchased sizes and the affected projects.
-4. Confirm the restart. The operation waits for active work, records the
-   running applications, resizes the host and restores them.
+1. Open Billing for the server and choose **Change plan**.
+2. Review the provider's amount due now, effective date, resource changes and
+   affected projects, then confirm the restart.
+3. Complete any payment. Pure capacity upgrades apply after payment; resource
+   reductions and billing-model changes wait for renewal, even if the price rises.
+4. The operation waits for active work, records the running applications,
+   resizes the host and restores them. If the server's projects changed after
+   review, use **Apply plan capacity** to review the restart again.
 
 Allow for downtime during a host resize. Intentionally stopped services stay
 stopped. A failed operation retains its logs, reason and recovery checkpoint;

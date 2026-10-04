@@ -48,8 +48,7 @@
     "usage": "Nutzung",
     "plans": "Tarife",
     "topups": "Aufladungen",
-    "payment": "Zahlungsmethode",
-    "invoices": "Rechnungen"
+    "payment": "Zahlungen & Rechnungen"
   },
   "portal": {
     "openButton": "Abrechnungsportal öffnen",
@@ -243,7 +242,8 @@
   },
   "layout": {
     "title": "Abrechnung & Nutzung",
-    "subtitle": "Verwalte dein Abonnement, deine Nutzung und deine Zahlungsmethoden."
+    "subtitle": "Verwalte dein Abonnement, deine Nutzung und deine Zahlungsmethoden.",
+    "getServer": "Server buchen"
   },
   "sidebar": {
     "planSuffix": "Tarif {name}",
@@ -272,12 +272,9 @@
     "accessUntil": "Zugang bis {date}"
   },
   "paymentPanel": {
-    "title": "Zahlungsmethode",
-    "description": "Zahlungsmethoden und Rechnungsdaten verwalten."
-  },
-  "invoicesPanel": {
-    "title": "Rechnungen",
-    "description": "Rechnungsverlauf und Rechnungen anzeigen oder anfordern."
+    "title": "Zahlungen & Rechnungen",
+    "description": "Zahlungsmethoden verwalten, Rechnungen herunterladen und Rechnungsdaten in Stripe aktualisieren.",
+    "openStripe": "Stripe-Portal öffnen"
   },
   "subscription": {
     "title": "Abonnement",
@@ -415,13 +412,11 @@
     "stepDeployHint": "Lege dein Projekt an und klicke auf Bereitstellen.",
     "usageTitle": "Deine Cloud-Nutzung beginnt hier",
     "usageDescription": "Stelle ein Projekt mit einem kostenpflichtigen Tarif bereit, um die Build- und App-Nutzung zu sehen.",
-    "paymentTitle": "Noch keine Zahlungsmethode",
-    "paymentDescription": "Füge beim Kauf eine Zahlungsmethode hinzu. Nach dem ersten Kauf kannst du sie hier verwalten.",
-    "invoicesTitle": "Noch keine Rechnungen",
-    "invoicesDescription": "Deine Rechnungen und Belege erscheinen nach der ersten Zahlung.",
+    "paymentTitle": "Ihre Zahlungen und Rechnungen",
+    "paymentDescription": "Zahlungsdaten und Rechnungen sind nach Ihrem ersten Kauf verfügbar.",
     "topupsTitle": "Starte mit einem Cloud-Tarif",
     "topupsDescription": "Dein Tarif enthält Nutzung für Builds und Apps. Nach der Aktivierung kannst du weitere Nutzung buchen.",
-    "compareTitle": "Finde den passenden Tarif für deine Projekte",
+    "compareTitle": "Finde den passenden Tarif",
     "compareDescription": "Vergleiche Projekte, Dienste, Build-Zeit sowie CPU und Arbeitsspeicher pro App.",
     "savedProjects": "Gespeicherte Projekte in diesem Arbeitsbereich: {count}. Abonniere einen Tarif, um weitere hinzuzufügen."
   },
@@ -462,12 +457,8 @@
     "exhaustedTitle": "Cloud-Guthaben aufgebraucht",
     "exhaustedDescription": "Neue Workloads sind gesperrt, bis Credits hinzugefügt werden oder dein bezahltes Kontingent erneuert wird. Öffne die Abrechnung, um deine Optionen zu sehen.",
     "buyCredits": "Weitere Credits kaufen",
-    "openBilling": "Abrechnung öffnen",
-    "close": "Verstanden",
     "wrongOrganization": "Dieser Abrechnungslink ist für dein Konto nicht verfügbar. Melde dich mit einem Konto an, das zur Organisation dieser Meldung gehört.",
     "title": "Cloud-Guthaben",
-    "showWarnings": "Guthabenwarnungen anzeigen",
-    "hideWarnings": "Guthabenwarnungen ausblenden",
     "backToBilling": "Zurück zur Abrechnung"
   },
   "capacityEditor": {
@@ -661,7 +652,6 @@
     "disk": "Speicherplatz",
     "diskGrowth": "Bestehende Datenträger können vergrößert werden. Zum Verkleinern müssen die Daten auf einen neuen Server verschoben werden.",
     "range": "{min} bis {max} {unit}",
-    "shared": "Ein verwalteter Server für deine Projekte und Apps. Ein einzelner Dienst kann die gesamte verfügbare Kapazität nutzen.",
     "monthlyTotal": "Monatlicher Gesamtpreis",
     "choose": "Individuell wählen",
     "updating": "Preis wird aktualisiert",
@@ -696,12 +686,12 @@
     "afterPayment": "Der neue Plan beginnt nach bestätigter Zahlung.",
     "restartNextCycle": "Am {date} werden diese Projekte beim Anwenden der neuen Kapazität kurz neu gestartet. Ändert sich der Server vorher, bitten wir erneut um Bestätigung.",
     "restartAfterPayment": "Nach der Zahlung werden diese Projekte beim Anwenden der neuen Kapazität kurz neu gestartet.",
-    "preserved": "Aktueller Verbrauch und gekaufte Guthaben bleiben erhalten. Das Abrechnungsintervall bleibt gleich.",
+    "preserved": "Dein Nutzungsverlauf bleibt erhalten. Das Abrechnungsintervall bleibt unverändert.",
     "expired": "Dieses Angebot ist abgelaufen. Aktualisiere es für den aktuellen Preis.",
     "refreshQuote": "Angebot aktualisieren",
     "retry": "Bestätigung wiederholen",
     "confirmUpgrade": "Upgrade bestätigen",
-    "confirmDowngrade": "Downgrade planen",
+    "confirmDowngrade": "Änderung planen",
     "scheduled": "{name} beginnt am {date} nach bezahlter Verlängerung.",
     "paymentPending": "Dein aktueller Plan bleibt aktiv. Schließe die Zahlung ab, um das Upgrade zu beenden.",
     "applied": "Dein neuer Plan ist aktiv. Den Serverfortschritt findest du in der Übersicht.",
@@ -713,5 +703,76 @@
     "refresh": "Status prüfen",
     "cancelChange": "Änderung abbrechen",
     "nextPlan": "Neuer Tarif"
+  },
+  "purchase": {
+    "mode": "Abrechnungsmodell",
+    "monthly": "Monatliche Server",
+    "payg": "Prepaid-Nutzung",
+    "title": "Prepaid-Hosting",
+    "description": "Guthaben aufladen, Ressourcen wählen und die Nutzung deiner Server bezahlen.",
+    "rates": "Ressourcennutzung",
+    "cpuUnit": "Pro aktiver vCPU-Stunde",
+    "memoryUnit": "Pro GiB-Stunde",
+    "diskUnit": "Pro GiB-Monat",
+    "transfer": "Datenübertragung",
+    "transferUnit": "Pro GiB",
+    "compareMonthly": "Monatliche Server vergleichen",
+    "preview": "Preisvorschau",
+    "ratesUnavailable": "Nutzungspreise sind gerade nicht verfügbar. Du kannst weiterhin monatliche Server vergleichen.",
+    "packages": "Guthabenpaket",
+    "packagesHint": "Gemeinsam für deine nutzungsbasierten Server.",
+    "conversion": "{credits} Credits = {amount}",
+    "credits": "{amount} Credits",
+    "sizeHosts": "Server dimensionieren",
+    "sizeHint": "Wähle Ressourcen pro Server und schätze ihre mittlere Auslastung.",
+    "hosts": "Anzahl der Server",
+    "cpuActivity": "Mittlere CPU-Auslastung",
+    "activityHint": "Eine vCPU-Stunde entspricht einer vCPU mit 100% Auslastung für eine verstrichene Stunde. Reservierter RAM und Speicher werden weiterhin berechnet.",
+    "invalid": "Prüfe die Ressourcenbereiche, wähle 1–100 Server und eine CPU-Auslastung zwischen 0% und 100%.",
+    "ratesDetails": "Ressourcenpreise und Abrechnung",
+    "extras": "Optionaler verwalteter Proxy: {amount}/GiB, separat berechnet. Öffentliche App-Routen sind davon getrennt.",
+    "retentionHint": "Pausieren beendet RAM-Kosten nicht. Aufbewahrter Speicher bleibt bis zur Löschung kostenpflichtig.",
+    "estimate": "Geschätzte Kosten pro Stunde",
+    "packageSummary": "{amount} im Voraus · {credits} Credits",
+    "runtime": "Guthabendauer",
+    "runtimeHint": "Bei {percent}% CPU: etwa {duration}.",
+    "addCredits": "{amount} Credits aufladen",
+    "previewHint": "Nur Vorschau. Noch nicht käuflich.",
+    "hourlyBasis": "Pro verstrichener Stunde · alle Server",
+    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU-Std.",
+    "cpuHours": "{amount} vCPU-Std.",
+    "gibHours": "{amount} GiB-Std.",
+    "rangeMinimum": "Volle CPU · 100%",
+    "rangeMaximum": "CPU im Leerlauf · 0%",
+    "rangeHint": "Zu den angezeigten Nutzungspreisen, einschließlich RAM und Speicher.",
+    "perHour": "/ Stunde",
+    "creditsPerHour": "{amount} Credits/Stunde",
+    "hourlyHint": "Alle ausgewählten Server · durchschnittlich {percent}% CPU"
+  },
+  "compute": {
+    "covered": "Rechenleistung abgedeckt",
+    "needsAttention": "Abdeckung prüfen",
+    "included": "CPU, RAM und enthaltener Speicher sind im bezahlten Monat rund um die Uhr abgedeckt. Keine Compute-Credits oder Aufladungen.",
+    "features": {
+      "capacity": "CPU, RAM und Speicher rund um die Uhr inklusive",
+      "noCredits": "Keine Compute-Credits oder Aufladungen",
+      "shared": "Gemeinsame Kapazität für Apps und Builds",
+      "fullCapacity": "Volle verfügbare Kapazität für jeden Dienst"
+    },
+    "extras": "Verkehr über den verwalteten Proxy ist optional und wird separat gekauft. Backups verwenden ihr konfiguriertes Ziel. Nach Ende der Abdeckung wird aufbewahrter Speicher bis zur Löschung berechnet.",
+    "paidThrough": "Bezahlt bis {date}",
+    "recovery": "Prüfe Verlängerung oder Zahlung, um die Rechenleistung wieder zu nutzen.",
+    "storageDue": "Offener Betrag für aufbewahrten Speicher: {amount}",
+    "details": "Nutzung, Datenverkehr und Speicherbedingungen",
+    "paygComparison": "Erfasste Nutzung zu PAYG-Tarifen",
+    "comparisonHint": "Nur ein Nutzungsvergleich; keine Geldersparnis oder Zusatzgebühr.",
+    "proxyTransfer": "Verwalteter Proxy-Datenverkehr",
+    "transferRemaining": "{amount} GiB verfügbar",
+    "proxyHint": "Nur der optionale verwaltete Internet-Proxy nutzt dieses Kontingent. Öffentliche App-Routen sind separat.",
+    "transferRecovery": "Kein Proxy-Datenverkehr verfügbar. Kontaktiere den Support zum Nachkaufen; bezahlte Rechenleistung bleibt abgedeckt.",
+    "retention": "Nach Ablauf kostet aufbewahrter Speicher {amount}/GiB-Monat bis zur Löschung. Datenträger bleiben mindestens {days} Tage erhalten, ohne automatische Löschung.",
+    "paygMetering": "PAYG misst aktive CPU, reservierten RAM im laufenden oder pausierten Zustand und bereitgestellten Speicher bis zur Löschung.",
+    "buildHint": "Builds laufen auf diesem Server und teilen seine Ressourcen mit deinen Apps.",
+    "usageIncluded": "Die Ressourcenaktivität ist im bezahlten Server enthalten und verbraucht keine Compute-Credits."
   }
 }

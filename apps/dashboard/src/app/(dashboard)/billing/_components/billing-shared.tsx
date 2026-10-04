@@ -60,11 +60,13 @@ export function BillingPlanSummary({
   const plan = state.plan;
   const interval = state.subscription?.interval ?? "monthly";
   const price = plan?.price[interval];
-  const status = hasPlan
+  const status = state.compute?.billingMode === "monthly"
+    ? state.compute.covered ? t.billing.compute.covered : t.billing.compute.needsAttention
+    : hasPlan
     ? ((t.billing.sidebar.statuses as Record<string, string>)[state.status] ??
       state.status.replace(/_/g, " "))
     : t.billing.sidebar.statusInactive;
-  const healthy = hasPlan && (state.status === "active" || state.status === "trialing");
+  const healthy = state.compute ? state.compute.covered : hasPlan && (state.status === "active" || state.status === "trialing");
   const complimentary = state.complimentary;
   const renewal = state.subscription?.currentPeriod.end ?? state.currentPeriod?.end;
   const formatDate = (value: string) =>
@@ -196,20 +198,19 @@ export function BillingPlanSummary({
 
 type PortalPanelProps = { portalAvailable?: boolean; hasHistory?: boolean };
 
-function BillingPortalPanel({
-  kind,
+export function BillingPaymentsPanel({
   portalAvailable = false,
   hasHistory = true,
-}: PortalPanelProps & { kind: "payment" | "invoices" }) {
+}: PortalPanelProps) {
   const { t } = useI18n();
-  if (!hasHistory) return <BillingEmptyState kind={kind} />;
-  const copy = kind === "payment" ? t.billing.paymentPanel : t.billing.invoicesPanel;
+  if (!hasHistory) return <BillingEmptyState kind="payment" />;
+  const copy = t.billing.paymentPanel;
   return (
     <section className="rounded-2xl bg-card p-5">
       <div className="flex items-start gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
           <UiIcon
-            name={kind === "payment" ? "credit-card" : "receipt"}
+            name="credit-card"
             className="size-5"
             aria-hidden="true"
           />
@@ -220,16 +221,8 @@ function BillingPortalPanel({
         </div>
       </div>
       <div className="mt-5">
-        <OpenStripePortalButton enabled={portalAvailable} />
+        <OpenStripePortalButton enabled={portalAvailable} label={copy.openStripe} />
       </div>
     </section>
   );
-}
-
-export function PaymentMethodPanel(props: PortalPanelProps) {
-  return <BillingPortalPanel kind="payment" {...props} />;
-}
-
-export function InvoicesPanel(props: PortalPanelProps) {
-  return <BillingPortalPanel kind="invoices" {...props} />;
 }

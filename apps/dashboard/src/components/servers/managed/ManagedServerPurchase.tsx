@@ -6,7 +6,6 @@ import { useI18n } from "@/components/i18n-provider";
 import { CloudPlanPicker } from "@/components/billing/CloudPlanPicker";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useSession } from "@/lib/auth-client";
 import { systemApi } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -38,20 +37,14 @@ function Purchase({
   sessionPending,
 }: PurchaseProps & { sessionPending?: boolean }) {
   const { t } = useI18n();
-  const [name, setName] = useState(t.billing.workspaces.defaultName);
   const created = useRef<CloudWorkspaceSummary | null>(null);
-  const [locked, setLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function prepareWorkspace() {
-    setLocked(true);
-    try {
-      created.current ??= await systemApi.createManagedServer({ name: name.trim() });
-      return created.current.id;
-    } catch (error) {
-      setLocked(false);
-      throw error;
-    }
+    created.current ??= await systemApi.createManagedServer({
+      name: t.billing.workspaces.defaultName,
+    });
+    return created.current.id;
   }
 
   return (
@@ -61,7 +54,7 @@ function Purchase({
         subscription={null}
         billingEnabled={billingEnabled}
         prepareWorkspace={prepareWorkspace}
-        purchaseDisabled={!name.trim() || sessionPending}
+        purchaseDisabled={sessionPending}
         preserveProject={preserveProject}
         onCheckoutStarted={(checkoutUrl) => {
           if (created.current && checkoutUrl && onCheckoutStarted) {
@@ -72,25 +65,11 @@ function Purchase({
           }
         }}
         purchaseDetails={
-          <div className="flex min-w-0 flex-wrap items-end gap-3">
-            <label className="block space-y-1.5 text-sm font-medium">
-              <span>{t.billing.plansRoute.serverName}</span>
-              <Input
-                variant="filled"
-                value={name}
-                maxLength={80}
-                required
-                disabled={locked}
-                onChange={(event) => setName(event.target.value)}
-                className="w-full bg-muted/40 sm:w-52"
-              />
-            </label>
-            {onCancel && (
-              <Button type="button" variant="ghost" onClick={onCancel}>
-                {t.billing.capacityEditor.cancel}
-              </Button>
-            )}
-          </div>
+          onCancel && (
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              {t.billing.capacityEditor.cancel}
+            </Button>
+          )
         }
       />
       {error && (

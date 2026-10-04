@@ -45,8 +45,8 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   guidance. On narrow screens, place that same choice before the form and guidance after it.
   Reuse the shared acquisition picker in both setup modes and dialogs.
   Cloud Add server opens plan selection first. Reuse the same plan and Custom purchase
-  component in Billing, managed server setup and destination dialogs. Keep the server name
-  inline; create its identity only after a plan is chosen, then use the shared scoped checkout.
+  component in Billing, managed server setup and destination dialogs. Create the server
+  with its default name only after a plan is chosen, then use the shared scoped checkout.
 - Destination settings use the normal page layout: server selection first, then visible
   runtime, resource and rollback sections, with a 340px preview/Continue sidebar. Keep the
   same layout in Cloud and self-hosted mode; do not hide it in an Advanced accordion.
@@ -88,37 +88,84 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
-  same project data and status handling. Apps uses a compact installed list with at most
-  three catalog suggestions alongside it, Home's app illustration and a link to the full
-  catalog. Its empty state shows connected app logos and popular install shortcuts.
+  same project data and status handling. Apps uses a compact installed list with Home's
+  app illustration and a link to the full catalog alongside it. The illustration's icons
+  link to available catalog apps; keep their targets stable and do not repeat them in a
+  second suggestion list. Its empty state shows connected app logos and popular install shortcuts.
   Keep Home's project list and the sidebar counts separate too.
-- Persistent Cloud credit warnings use a compact floating disclosure at the bottom end of the
-  viewport. Keep server-specific billing actions inside it, remember dismissal for the warning,
-  and allow reopening without a page-wide banner or an automatic modal.
+- Cloud's New Project choices are Apps, GitHub, Git URL and Import existing project.
+  Folder import and the Browse Templates shortcut are available only on self-hosted instances.
+- Credit warnings belong in Billing's overview for the selected server. Reuse its loaded
+  billing state and scoped links; keep the notice inline. Monthly servers have no compute
+  credit warnings. Other pages do not mount a credit tray or poll all server balances.
 - Plan comparisons lead with CPU, memory, storage and service/project limits. Keep build
   time separate from runtime capacity; show minutes only when the offer defines a time
-  allowance. Put metering and shared-capacity explanations once below the plans. Keep
-  benefits visible, and use catalog feature keys to avoid repeating resource facts.
+  allowance. Summarize monthly coverage and shared capacity in the common checklist
+  below the comparison, alongside shared capabilities. Keep additional transfer, backup
+  and storage terms in a compact disclosure. Follow this with the catalog's Enterprise
+  contact card; do not repeat these details inside every plan or in a separate text card.
 - Cloud billing keeps its header and tabs mounted when switching servers. List managed
   servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
   One server is a summary; several servers switch billing directly from the visible list.
-  Plans uses the full page width, with the shared compact server picker and Add server
-  in the page header. Show its saved subscription and capacity below the tabs; an
-  inactive subscription uses a short inline notice. New purchases group the server name
-  with the plan controls and reuse the shared plan introduction. Default to relevant upgrades; offer
+  Keep one Get server action in the page header across billing tabs; the sidebar only
+  selects the server being inspected. Plans uses the full page width with the shared
+  compact server picker beside that action. Show its saved subscription and capacity below
+  the tabs; an inactive subscription uses a short inline notice. New purchases use the plan introduction
+  as the page title and description. Keep Plans / Custom beside Back to billing in the
+  header, using matching 40px controls. Purchasing does not require a server-name field.
+  An existing server without a plan keeps the server selector, including when every
+  server is unpaid. Only an explicit new-server purchase replaces it with Back to billing.
+  Do not repeat the introduction below the page heading. Default to relevant upgrades; offer
   Other plans deliberately for lower-cost changes and Custom when no larger preset fits.
   Do not call today's catalog terms the current plan if they differ from the saved purchase,
   or offer a preset that would shrink an existing disk. New-server purchases have their own
   explicit entry and never inherit the selected server's billing scope.
   Unscoped billing opens an existing subscription directly; never
   auto-switch a checkout return or an explicitly selected server. New customers see only
-  Plans and pricing, without empty usage, payment or invoice tabs. Keep the full navigation
-  for existing subscriptions, allocated servers and credit history, including stopped or
+  Monthly server and Pay as you go in the existing top tab bar, without empty billing-history
+  tabs. Reuse the same purchase controls in server setup and destination dialogs. Switching
+  these views keeps resource inputs and never starts a purchase. The page's purchase
+  tabs sit directly above the plan cards. Standalone setup and destination dialogs reuse
+  the same Plans / Custom control beside their tabs, without a separate page header. Until a usage
+  offer is supported, show its unavailable state without invented rates or a checkout action.
+  Keep normal billing navigation for existing subscriptions, allocated servers and credit history, including stopped or
   canceled servers. Show current plan, renewal date or inactive subscription state for
   existing servers; never replace those with a first-purchase promotion.
   In-app credit alerts
   link directly to the scoped billing tab; only a genuine organization change needs
   authorization and a context reload.
+  Payments and invoices share one tab and the existing scoped Stripe portal. Show Top-ups
+  only when the billing API enables them for the selected server; the purchase-view choice
+  must never override paid terms or provider entitlement.
+- Monthly servers show purchased resources, paid-through coverage and measured CPU time;
+  they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
+  managed proxy transfer and retained-storage charges distinct from compute coverage, with
+  details in a compact disclosure. Existing metered subscriptions retain their credit view.
+  Prepaid PAYG shows package amounts beside their credit value, using the provider's
+  conversion and published resource rates. Reuse the monthly resource editor for its
+  interactive estimate; PAYG prices come directly from usage rates and do not depend on
+  monthly-plan quotes or ceilings. Keep the pricing preview until customer-funded
+  purchases are supported. A shared balance is funding,
+  not a multiplied resource pool; estimates for several hosts must spend that balance
+  once. Use three columns when space permits: the resource editor, readable credit
+  package rows in the middle, and the 340px estimate card on the right. Give packages
+  280–320px and let the resource editor use the remaining space. Stack the
+  packages below resources at intermediate widths, then stack all sections on mobile.
+  Keep one compact purchase bar visible at the bottom while configuring resources;
+  use a translucent popover surface with backdrop blur while keeping its text readable.
+  Lead with estimated dollars per hour and the matching credits per hour, with
+  average CPU activity and all-host scope beside them. Keep the CPU, RAM and storage
+  hourly breakdown visible. Do not turn a full-month projection into a purchase
+  requirement or suggest a larger deposit to cover it. Balance duration belongs in
+  an optional disclosure and follows prepaid funds divided by resource usage cost;
+  reserved RAM and storage stay included at full and idle CPU. A monthly spending
+  ceiling requires an enforceable provider quote, not a UI-derived promise.
+  Show CPU-hours as allocated vCPUs multiplied by average activity and elapsed time;
+  label time online as elapsed time. Show resource-hours and their costs under a clear
+  per-elapsed-hour heading, including all selected hosts. Distinguish active CPU from
+  reserved RAM and retained storage. Keep checkout unavailable until customer-funded purchases are
+  supported. Do not expose reseller wallet balances or call hypothetical comparisons
+  recorded savings.
 - Custom resources sit beside the preset plan choice. Keep CPU, RAM and disk controls
   with a compact monthly total, wait for a matching server quote before enabling
   checkout, and expose bundle pricing details on demand. Applying a paid resource

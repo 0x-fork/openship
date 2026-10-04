@@ -4,17 +4,17 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useI18n } from "@/components/i18n-provider";
 
-/** The same explanation on pricing and billing. Credits pay for resources;
- * build minutes and concurrent services are independent plan limits. */
-export function CloudUsageGuide({ collapsible = false }: { collapsible?: boolean }) {
+/** Explain purchased capacity and measured usage using the saved billing mode. */
+export function CloudUsageGuide({ collapsible = false, billingMode }: { collapsible?: boolean; billingMode?: "monthly" | "metered" | "payg" }) {
   const { t } = useI18n();
   const copy = t.billing.resourcesGuide;
+  const monthly = billingMode === "monthly";
   const explanation = (
     <>
       <div className="mt-4 grid gap-4 @min-[38rem]/guide:grid-cols-3">
         {[
-          { Icon: "cpu" as const, title: copy.usageAllowance, text: copy.usageSummary },
-          { Icon: "clock" as const, title: copy.buildTime, text: copy.buildHint },
+          { Icon: "cpu" as const, title: monthly ? t.billing.purchase.monthly : copy.usageAllowance, text: monthly ? t.billing.compute.included : copy.usageSummary },
+          { Icon: "clock" as const, title: copy.buildTime, text: monthly ? t.billing.compute.buildHint : copy.buildHint },
           { Icon: "layers" as const, title: copy.apps, text: copy.appsHint },
         ].map(({ Icon, title, text }) => (
           <div key={title}>
@@ -27,7 +27,7 @@ export function CloudUsageGuide({ collapsible = false }: { collapsible?: boolean
         ))}
       </div>
       <p className="mt-4 border-t border-border/50 pt-3 text-xs leading-relaxed text-muted-foreground">
-        {copy.balanceRule}
+        {monthly ? t.billing.compute.extras : copy.balanceRule}
       </p>
     </>
   );

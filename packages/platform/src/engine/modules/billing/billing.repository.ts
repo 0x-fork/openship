@@ -68,10 +68,17 @@ async function readBillingCreditState(orgId: string, workspaceId?: CloudWorkspac
   const managed = legacySubscriptions.length === 0 && !grant;
   const canTopUp = canTopUpCloudSubscription(subscription, entitlement);
   const { quotaLimit, quotaUsed, quotaRemaining } = entitlementQuota(entitlement);
-  const state: Pick<BillingState, "workspace" | "creditAlert" | "tier" | "currentPeriod" | "balance" | "billing" | "topups"> = {
+  const compute = entitlement.capacity;
+  const state: Pick<BillingState, "workspace" | "creditAlert" | "compute" | "tier" | "currentPeriod" | "balance" | "billing" | "topups"> = {
     workspace: owner.workspace ? { id: owner.workspace.id, serverId: (await requireWorkspaceServer(orgId, owner.workspace.id)).id, name: owner.workspace.name } : null,
     tier,
-    creditAlert: entitlement.quota.alert ? {
+    compute: compute ? {
+      billingMode: compute.billingMode, covered: compute.computeCovered, status: compute.status,
+      currentPeriod: { start: compute.periodStart, end: compute.periodEnd }, autoRenew: compute.autoRenew,
+      monthlyAmount: compute.monthlyAmount, paygCapAmount: compute.paygCapAmount,
+      retention: compute.retention, network: compute.network, savings: compute.savings,
+    } : null,
+    creditAlert: !compute && entitlement.quota.alert ? {
       namespace: entitlement.namespace,
       state: entitlement.quota.alert.state,
       percent: entitlement.quota.alert.percent,
@@ -141,7 +148,7 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
   const subscription = presentCloudSubscription(providerSubscription);
   const changingPlan = Boolean(subscription?.pendingChange) || hasPendingSubscriptionChange(owner.workspace?.subscriptionChange);
   const monthlyCreditLimit = tier === "free" ? 0 : plan?.monthlyCredits ?? null;
-  const overQuota = state.balance.quotaRemaining !== null && state.balance.quotaRemaining <= 0;
+  const overQuota = !state.compute && state.balance.quotaRemaining !== null && state.balance.quotaRemaining <= 0;
   // A connected installation keeps its project/service/build records locally.
   // Partial control-plane counters are unknown server totals, never zero usage.
   // Provider capacity, credits and the shared host's measured usage stay complete.

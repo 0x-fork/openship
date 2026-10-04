@@ -8,7 +8,8 @@ export interface CustomServerResources {
   diskGb: number;
 }
 
-/** Retail pricing only. Oblien remains authoritative for metered consumption. */
+/** Openship retail bundle pricing. Oblien validates funding and reserves the
+ * pool at checkout; this calculation never grants paid coverage. */
 export function quoteCustomResources(resources: CustomServerResources, catalog: PricingCatalogRaw = PRICING) {
   for (const key of Object.keys(catalog.custom.resources) as Array<keyof CustomServerResources>) {
     const value = resources[key];
@@ -19,7 +20,7 @@ export function quoteCustomResources(resources: CustomServerResources, catalog: 
   }
   const rates = catalog.custom.extraMonthlyCents;
   const candidates = catalog.plans.flatMap(plan => {
-    if (!plan.price.monthly || !plan.billing.creditsPerCycle || plan.contactSales) return [];
+    if (!plan.price.monthly || plan.billing.mode !== "monthly" || plan.contactSales) return [];
     const included = plan.billing.resourceLimits;
     const breakdown = {
       basePriceCents: plan.price.monthly,
@@ -32,17 +33,16 @@ export function quoteCustomResources(resources: CustomServerResources, catalog: 
       plan,
       breakdown,
       priceCents: plan.price.monthly + extras,
-      creditsPerCycle: plan.billing.creditsPerCycle + Math.floor(extras * catalog.custom.extraCreditPercent / 100),
     }];
   });
   // A richer bundle may be cheaper than adding each resource separately. Its
   // discount applies without silently changing the customer's chosen allocation.
-  candidates.sort((a, b) => a.priceCents - b.priceCents || b.creditsPerCycle - a.creditsPerCycle);
+  candidates.sort((a, b) => a.priceCents - b.priceCents);
   const selected = candidates[0];
-  if (!selected || !Number.isSafeInteger(selected.priceCents) || selected.priceCents > 1_000_000 || selected.creditsPerCycle > selected.priceCents) {
+  if (!selected || !Number.isSafeInteger(selected.priceCents) || selected.priceCents > 1_000_000) {
     throw new ValidationError("This resource configuration is not available for checkout.");
   }
-  const { plan, breakdown, priceCents, creditsPerCycle } = selected;
+  const { plan, breakdown, priceCents } = selected;
   const resourceLimits: OblienLimits = {
     max_workspaces: 1,
     max_vcpus: resources.cpuCores,
@@ -62,9 +62,8 @@ export function quoteCustomResources(resources: CustomServerResources, catalog: 
     resources: { cpuCores: resources.cpuCores, memoryMb: resources.memoryMb, diskGb: resources.diskGb },
     breakdown,
     priceCents,
-    creditsPerCycle,
+    creditsPerCycle: 0,
     limits,
     resourceLimits,
-    policy: { overdraft: plan.billing.overdraft, suspendThreshold: plan.billing.suspendThreshold, onOverdraftAction: plan.billing.onOverdraftAction },
   };
 }

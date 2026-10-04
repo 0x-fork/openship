@@ -56,7 +56,7 @@ export async function createCheckoutSession(
   custom?: CustomSubscriptionSelection,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
-  const { offer, customLimits } = resolveSubscriptionSelection(planTierId, interval, custom);
+  const { offer, customLimits } = await resolveSubscriptionSelection(planTierId, interval, custom);
   await assertBillingOwnerAvailable(ctx.organizationId, workspaceId);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
   const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
@@ -115,6 +115,8 @@ export async function createTopupCheckoutSession(ctx: RequestContext, packId: st
   const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
   const { subscription, entitlement } = await sync({ syncResourceLimits: false });
   if (!canTopUpCloudSubscription(subscription, entitlement)) {
+    if (entitlement.billingMode === "monthly" || subscription?.offer?.billingMode === "monthly")
+      throw new AppError("Monthly servers do not use compute-credit top-ups. Review this server's coverage in Billing.", 409, "BILLING_TOPUPS_NOT_APPLICABLE");
     throw new AppError("An active Cloud subscription is required before adding credits", 402, "CLOUD_PLAN_REQUIRED");
   }
   await getOblienBillingApi().assertResellerSupport();

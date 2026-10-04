@@ -48,8 +48,7 @@
     "usage": "使用量",
     "plans": "プラン",
     "topups": "追加購入",
-    "payment": "支払い方法",
-    "invoices": "請求書"
+    "payment": "支払いと請求書"
   },
   "portal": {
     "openButton": "請求ポータルを開く",
@@ -243,7 +242,8 @@
   },
   "layout": {
     "title": "請求と使用状況",
-    "subtitle": "サブスクリプション、使用量、支払い方法を管理します。"
+    "subtitle": "サブスクリプション、使用量、支払い方法を管理します。",
+    "getServer": "サーバーを購入"
   },
   "sidebar": {
     "planSuffix": "{name}プラン",
@@ -272,12 +272,9 @@
     "accessUntil": "{date}まで利用可能"
   },
   "paymentPanel": {
-    "title": "支払い方法",
-    "description": "お支払い方法と請求先情報を管理します。"
-  },
-  "invoicesPanel": {
-    "title": "請求書",
-    "description": "請求履歴と請求書を確認または請求できます。"
+    "title": "支払いと請求書",
+    "description": "Stripeで支払い方法の管理、請求書のダウンロード、請求先情報の更新ができます。",
+    "openStripe": "Stripeポータルを開く"
   },
   "subscription": {
     "title": "サブスクリプション",
@@ -415,13 +412,11 @@
     "stepDeployHint": "プロジェクトを作成して「デプロイ」を押します。",
     "usageTitle": "Cloud の使用状況はここから",
     "usageDescription": "有料プランでデプロイすると、ビルドとアプリの使用状況をここで確認できます。",
-    "paymentTitle": "支払い方法は未登録です",
-    "paymentDescription": "購入時に支払い方法を追加してください。初回購入後はここで管理できます。",
-    "invoicesTitle": "請求書はまだありません",
-    "invoicesDescription": "初回の支払い後に請求書と領収書が表示されます。",
+    "paymentTitle": "お支払いと請求書",
+    "paymentDescription": "初回購入後に支払い情報と請求書を確認できます。",
     "topupsTitle": "Cloud プランで始める",
     "topupsDescription": "プランにはビルドとアプリの利用枠が含まれます。契約が有効になった後で追加できます。",
-    "compareTitle": "プロジェクトに合うプランを探す",
+    "compareTitle": "最適なプランを探す",
     "compareDescription": "プロジェクト数、サービス数、ビルド時間、各アプリで使えるCPUとメモリを比較できます。",
     "savedProjects": "ワークスペースには保存済みのプロジェクトが{count}件あります。追加するにはプランを契約してください。"
   },
@@ -462,12 +457,8 @@
     "exhaustedTitle": "Cloud クレジットを使い切りました",
     "exhaustedDescription": "クレジットを追加するか、支払い済みの割り当てが更新されるまで、新しいワークロードは制限されます。請求画面で選択肢をご確認ください。",
     "buyCredits": "クレジットを追加購入",
-    "openBilling": "請求画面を開く",
-    "close": "確認しました",
     "wrongOrganization": "このアカウントではこの請求リンクを利用できません。通知に記載された組織のアカウントでログインしてください。",
     "title": "Cloud クレジット",
-    "showWarnings": "クレジットの警告を表示",
-    "hideWarnings": "クレジットの警告を非表示",
     "backToBilling": "請求に戻る"
   },
   "capacityEditor": {
@@ -661,7 +652,6 @@
     "disk": "ストレージ",
     "diskGrowth": "既存のディスクは拡張できます。縮小するには、データを新しいサーバーに移す必要があります。",
     "range": "{min}～{max} {unit}",
-    "shared": "プロジェクトとアプリを 1 台のマネージドサーバーで実行します。1 つのサービスで利用可能な容量をすべて使用することもできます。",
     "monthlyTotal": "月額合計",
     "choose": "カスタムを選択",
     "updating": "価格を更新中",
@@ -696,12 +686,12 @@
     "afterPayment": "お支払いの確認後に新しいプランが開始します。",
     "restartNextCycle": "{date}に新しい容量を適用する際、これらのプロジェクトを一時的に再起動します。それまでにサーバーが変更された場合は、再度確認をお願いします。",
     "restartAfterPayment": "お支払い後、新しい容量を適用する際にこれらのプロジェクトを一時的に再起動します。",
-    "preserved": "現在の使用量と購入済みクレジットは保持されます。請求間隔は変わりません。",
+    "preserved": "使用履歴は保持されます。請求サイクルは変わりません。",
     "expired": "この見積もりは期限切れです。更新して現在の価格を確認してください。",
     "refreshQuote": "見積もりを更新",
     "retry": "確認を再試行",
     "confirmUpgrade": "アップグレードを確定",
-    "confirmDowngrade": "ダウングレードを予約",
+    "confirmDowngrade": "変更を予約",
     "scheduled": "{name}は更新料金のお支払い後、{date}に開始します。",
     "paymentPending": "現在のプランは引き続き有効です。お支払いを完了してアップグレードしてください。",
     "applied": "新しいプランが有効になりました。サーバーの進行状況は概要で確認できます。",
@@ -713,5 +703,76 @@
     "refresh": "状態を確認",
     "cancelChange": "変更をキャンセル",
     "nextPlan": "新しいプラン"
+  },
+  "purchase": {
+    "mode": "課金方式",
+    "monthly": "月額ホスト",
+    "payg": "前払い従量課金",
+    "title": "前払いホスティング",
+    "description": "クレジットを追加し、リソースを選び、各ホストの使用量に応じて支払います。",
+    "rates": "リソース使用量",
+    "cpuUnit": "稼働vCPU時間あたり",
+    "memoryUnit": "GiB時間あたり",
+    "diskUnit": "GiB月あたり",
+    "transfer": "データ転送",
+    "transferUnit": "GiBあたり",
+    "compareMonthly": "月額ホストを比較",
+    "preview": "料金プレビュー",
+    "ratesUnavailable": "現在、従量料金を取得できません。月額ホストは比較できます。",
+    "packages": "クレジットパッケージ",
+    "packagesHint": "従量課金ホスト間で共有します。",
+    "conversion": "{credits}クレジット = {amount}",
+    "credits": "{amount}クレジット",
+    "sizeHosts": "ホストのリソースを設定",
+    "sizeHint": "ホストごとのリソースを選び、平均稼働率を見積もります。",
+    "hosts": "ホスト数",
+    "cpuActivity": "平均CPU使用率",
+    "activityHint": "1 vCPU時間は、1 vCPUが100%の使用率で実時間の1時間稼働する量です。予約済みRAMとストレージは引き続き課金されます。",
+    "invalid": "リソース範囲を確認し、ホスト数を1～100、CPU使用率を0%～100%に設定してください。",
+    "ratesDetails": "リソース単価と課金の詳細",
+    "extras": "任意の管理プロキシ：{amount}/GiB（別料金）。アプリの公開ルートとは別です。",
+    "retentionHint": "一時停止してもRAMの料金は発生します。保持したストレージは削除するまで課金されます。",
+    "estimate": "時間あたりの推定費用",
+    "packageSummary": "{amount}を前払い · {credits}クレジット",
+    "runtime": "残高での稼働期間",
+    "runtimeHint": "CPU使用率{percent}%：約{duration}。",
+    "addCredits": "{amount}クレジットを追加",
+    "previewHint": "プレビューのみです。まだ購入できません。",
+    "hourlyBasis": "実時間の1時間あたり · 全ホスト",
+    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU時間",
+    "cpuHours": "{amount} vCPU時間",
+    "gibHours": "{amount} GiB時間",
+    "rangeMinimum": "CPU最大使用 · 100%",
+    "rangeMaximum": "CPUアイドル · 0%",
+    "rangeHint": "表示されている使用料金で計算。RAMとストレージを含みます。",
+    "perHour": "/ 時間",
+    "creditsPerHour": "{amount}クレジット/時間",
+    "hourlyHint": "選択した全ホスト · 平均CPU使用率{percent}%"
+  },
+  "compute": {
+    "covered": "コンピュートは支払い済み",
+    "needsAttention": "利用期間をご確認ください",
+    "included": "CPU、RAM、付属ストレージは支払い済みの月に24時間利用できます。コンピュートクレジットや追加購入は不要です。",
+    "features": {
+      "capacity": "CPU・RAM・ストレージは24時間料金に含まれます",
+      "noCredits": "コンピュートクレジット・追加チャージ不要",
+      "shared": "アプリとビルドでサーバーの容量を共有",
+      "fullCapacity": "どのサービスも利用可能な容量をすべて使用可能"
+    },
+    "extras": "マネージドプロキシの転送量は任意で、別途購入します。バックアップは設定済みの保存先を使用します。 対象期間の終了後も、保持されているストレージは削除されるまで課金されます。",
+    "paidThrough": "{date} まで支払い済み",
+    "recovery": "更新または支払いを確認し、コンピュートへのアクセスを復旧してください。",
+    "storageDue": "保持ストレージの未払い額: {amount}",
+    "details": "使用量・転送量・ストレージの条件",
+    "paygComparison": "従量課金単価での記録済み使用量",
+    "comparisonHint": "使用量の比較のみです。実際の節約額や追加料金ではありません。",
+    "proxyTransfer": "マネージドプロキシ転送量",
+    "transferRemaining": "{amount} GiB 利用可能",
+    "proxyHint": "この枠は任意のマネージドインターネットプロキシ専用です。アプリの公開ルートとは別です。",
+    "transferRecovery": "利用可能なプロキシ転送量がありません。追加はサポートにお問い合わせください。支払い済みコンピュートには影響しません。",
+    "retention": "コンピュートの期限後も、保持ストレージには削除まで {amount}/GiB・月がかかります。ディスクは最低 {days} 日保持され、自動削除されません。",
+    "paygMetering": "従量課金は稼働中のCPU、実行中または一時停止中に予約されたRAM、保持中のプロビジョニング済みストレージを計測します。",
+    "buildHint": "ビルドはこのサーバーで実行され、アプリとリソースを共有します。",
+    "usageIncluded": "リソースの利用は支払い済みサーバーに含まれ、コンピュートクレジットを消費しません。"
   }
 }

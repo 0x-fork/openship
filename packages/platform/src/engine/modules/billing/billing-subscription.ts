@@ -3,7 +3,7 @@ import type { BillingSubscription, BillingPlanChange } from "@repo/contracts";
 import type { CloudSubscriptionChangeIntent } from "@repo/db";
 import type { OblienEntitlement, OblienSubscription, OblienPlanChange, OblienOffer } from "../../lib/oblien-billing-api";
 import { subscriptionPlan } from "./billing-catalog";
-import { CUSTOM_OFFER_VERSION } from "./billing-custom-offer";
+import { isCustomOfferVersion } from "./billing-custom-offer";
 
 /** A live contract must change in place. Creating another checkout would
  * replace it at full price and discard the customer's remaining paid period. */
@@ -52,7 +52,7 @@ export function canTopUpCloudSubscription(
   entitlement: OblienEntitlement,
 ): boolean {
   return (
-    subscription !== null &&
+    subscription !== null && subscription.offer?.billingMode !== "monthly" && entitlement.billingMode !== "monthly" &&
     subscriptionPlan(subscription).tier !== "free" &&
     ["active", "trialing"].includes(subscription.status) &&
     // The management record may remain active after its paid period expires.
@@ -66,7 +66,8 @@ export function presentCloudSubscription(subscription: OblienSubscription): Bill
   if (!subscription) return null;
   return {
     tier: subscriptionPlan(subscription).tier,
-    configuration: subscription.metadata?.openship_offer_version === CUSTOM_OFFER_VERSION ? "custom" : "preset",
+    billingMode: subscription.offer?.billingMode === "monthly" ? "monthly" : "metered",
+    configuration: isCustomOfferVersion(subscription.metadata?.openship_offer_version) ? "custom" : "preset",
     offerReference: subscription.offer?.reference,
     status: subscription.status,
     interval: subscription.billingInterval === "yearly" ? "annual" : "monthly",

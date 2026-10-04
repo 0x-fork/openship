@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ServerUsage } from "@/components/servers/ServerUsage";
 import { CloudActivationSteps } from "./CloudActivationSteps";
+import { BillingComputeCoverage } from "./BillingComputeCoverage";
 
 export type { BillingState };
 
@@ -42,7 +43,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
     },
     {
       label: copy.buildTime,
-      hint: copy.buildHint,
+      hint: state.compute?.billingMode === "monthly" ? t.billing.compute.buildHint : copy.buildHint,
       meter: buildMeter,
       unit: t.billing.header.min,
       Icon: "clock" as const,
@@ -91,6 +92,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
 
   return (
     <>
+      <BillingComputeCoverage state={state} />
       {state.workspace?.serverId && (
         <ServerUsage key={state.workspace.serverId} serverId={state.workspace.serverId} />
       )}
@@ -143,7 +145,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
             })}
           </p>
         )}
-        <details className="group mt-4 rounded-xl bg-muted/35 p-3">
+        {!state.compute && <details className="group mt-4 rounded-xl bg-muted/35 p-3">
           <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
             <ResourceRing large label={copy.usageAllowance} used={percent} max={100}>
               <span className="text-sm font-medium tabular-nums">
@@ -192,7 +194,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
             <p className="text-xs leading-relaxed">{copy.creditUnitsHint}</p>
             <p className="text-xs leading-relaxed">{copy.topupCapacityHint}</p>
           </div>
-        </details>
+        </details>}
       </section>
     </>
   );

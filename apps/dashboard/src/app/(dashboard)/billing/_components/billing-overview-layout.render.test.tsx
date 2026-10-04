@@ -104,7 +104,7 @@ describe("custom plan presentation", () => {
 });
 
 describe("plan comparison", () => {
-  it("shows benefits and places the shared usage explanation once after every plan", () => {
+  it("keeps the cards focused on resources and places shared information below the comparison", () => {
     const plans = (["hobby", "starter", "pro", "team"] as const).map((id) => ({
       ...PLANS[id], features: [...PLANS[id].features], resourceLimits: PLANS[id].oblienLimits,
       listPrice: { monthly: PLANS[id].price.monthly }, effectivePrice: { monthly: PLANS[id].price.monthly }, campaign: null,
@@ -118,11 +118,16 @@ describe("plan comparison", () => {
       expect(card).toContain(copy.buildIncluded);
       expect(card).not.toMatch(/credits|Shared across|More features/i);
     }
-    expect(out.match(/<details/g)).toHaveLength(1);
-    expect(text(out)).toContain("Priority support");
-    expect(text(out).split(copy.poolNote)).toHaveLength(2);
-    expect(out.indexOf('role="note"')).toBeGreaterThan(out.lastIndexOf("</article>"));
-    expect(text(out)).toContain("Hobby : 400");
-    expect(text(out)).toContain("Scale : 9,000");
+    for (const [index, card] of cards.entries()) {
+      for (const feature of plans[index]!.features) expect(card).not.toContain(feature);
+    }
+    const compute = baseDictionary.billing.compute;
+    for (const note of [...Object.values(compute.features), compute.extras])
+      expect(text(out).split(note)).toHaveLength(2);
+    expect(text(out)).not.toContain(compute.included);
+    expect(text(out)).toContain(compute.details);
+    expect(out).not.toMatch(/<details\b[^>]*\bopen(?:=|>|\s)/);
+    expect(out.indexOf("<section")).toBeGreaterThan(out.lastIndexOf("</article>"));
+    expect(text(out)).not.toContain(copy.creditAllowances);
   });
 });

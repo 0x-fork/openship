@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@repo/ui/icons";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { usePlatform } from "@/context/PlatformContext";
+import { CloudPurchaseProvider } from "@/components/billing/CloudPurchaseContext";
+import { newServerBillingHref } from "@/lib/billing-links";
 import { BILLING_TABS } from "./billing-tabs";
 import { BillingTabBar } from "./BillingTabBar";
 import { BillingHeader } from "./BillingHeader";
@@ -44,12 +46,11 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
     Boolean(view.newServer) === newServer
       ? view
       : null;
-  const workspaceId = newServer
-    ? undefined
-    : (requestedWorkspaceId ??
-      (currentView?.requestedWorkspaceId === requestedWorkspaceId
-        ? currentView?.workspaceId
-        : undefined));
+  // Keep navigation mounted during a server switch, without reusing the
+  // previous server's purchase mode or billing scope while the next one loads.
+  const scopedView =
+    currentView?.requestedWorkspaceId === requestedWorkspaceId ? currentView : null;
+  const workspaceId = newServer ? undefined : (requestedWorkspaceId ?? scopedView?.workspaceId);
   const reportView = useCallback(
     (next: BillingView) => {
       // A tab from an earlier account, organization or server cannot update the
@@ -66,9 +67,12 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
   );
 
   const servers = inventory.data?.servers.filter((server) => server.managed) ?? [];
-  const activeTab = currentView?.plansOnly
+  const plansOnly = newServer || Boolean(scopedView?.plansOnly);
+  const activeTab = plansOnly
     ? "plans"
-    : (BILLING_TABS.find((tab) => tab.key === segment)?.key ?? "overview");
+    : segment === "invoices"
+      ? "payment"
+      : (BILLING_TABS.find((tab) => tab.key === segment)?.key ?? "overview");
   const serverInventory =
     !selfHosted && organizationMatches
       ? {
@@ -84,28 +88,39 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
       <BillingWorkspaceProvider workspaceId={workspaceId} organizationId={organizationId}>
         <BillingViewProvider value={reportView}>
           <BillingServerInventoryProvider value={serverInventory}>
-            <BillingHeader>
-              {activeTab === "plans" &&
-                (newServer ? (
-                  billingServersVisible(serverInventory) && (
+            <CloudPurchaseProvider
+              scopeKey={`${inventory.contextKey}:${organizationId ?? ""}:${newServer ? "new" : (workspaceId ?? "unsubscribed")}`}
+              tabs={plansOnly ? "header" : "none"}
+            >
+              <BillingHeader>
+                {billingServersVisible(serverInventory) &&
+                  (newServer ? (
                     <Button asChild variant="secondary" className="shrink-0">
                       <BillingLink href="/billing">
                         <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
                         {t.billing.creditAlert.backToBilling}
                       </BillingLink>
                     </Button>
-                  )
-                ) : (
-                  <ServerBillingPicker compact />
-                ))}
-            </BillingHeader>
-            <BillingTabBar
-              activeTab={activeTab}
-              plansOnly={newServer || currentView?.plansOnly}
-              newServer={newServer}
-              loading={!currentView}
-            />
-            {children}
+                  ) : (
+                    <div className="flex w-full min-w-0 items-center gap-3 md:w-auto">
+                      {activeTab === "plans" && <ServerBillingPicker compact />}
+                      <Button asChild variant="secondary" className="shrink-0">
+                        <BillingLink href={newServerBillingHref()}>
+                          <Icon name="plus" className="size-4" aria-hidden="true" />
+                          {t.billing.layout.getServer}
+                        </BillingLink>
+                      </Button>
+                    </div>
+                  ))}
+              </BillingHeader>
+              <BillingTabBar
+                activeTab={activeTab}
+                plansOnly={plansOnly}
+                topupsAvailable={scopedView?.topupsAvailable}
+                loading={!currentView}
+              />
+              {children}
+            </CloudPurchaseProvider>
           </BillingServerInventoryProvider>
         </BillingViewProvider>
       </BillingWorkspaceProvider>

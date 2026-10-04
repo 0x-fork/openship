@@ -85,13 +85,18 @@ function CheckoutConfirmation({
           return;
         }
         const paid =
-          checkout?.paymentStatus === "paid" &&
+          checkout &&
+          ["paid", "no_payment_required"].includes(checkout.paymentStatus) &&
           checkout.status === "complete" &&
           checkout.fulfilled &&
-          checkout.fulfillmentStatus === "completed" &&
-          checkout.creditsGranted > 0;
+          checkout.fulfillmentStatus === "completed";
+        // Monthly purchases deliver capacity, not credits. The API verifies the
+        // saved subscription against the provider's committed capacity snapshot.
+        const delivered = kind === "subscription" && state.subscription?.billingMode === "monthly"
+          ? state.compute?.billingMode === "monthly" && state.compute.covered && state.compute.status === "active"
+          : (checkout?.creditsGranted ?? 0) > 0;
         if (
-          paid &&
+          paid && delivered &&
           (kind === "topup" ||
             (expectedTier &&
               state.tier === expectedTier &&

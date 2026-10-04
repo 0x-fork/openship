@@ -13,7 +13,7 @@ import type { BillingState } from "@/lib/api/billing";
 import {
   billingUsageWindow,
   formatBillingNumber,
-  weeklyCreditUsage,
+  weeklyUsage,
   type CloudUsagePayload,
 } from "@/lib/billing-usage";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
@@ -23,8 +23,8 @@ interface UsageResponse {
   data: { usage: CloudUsagePayload | null };
 }
 
-/** Credits are an authoritative total. CPU, memory, disk activity and network
- * each have their own unit; the provider does not attribute credits among them. */
+/** Monthly servers chart measured CPU time; saved metered plans chart credits.
+ * Each physical measurement keeps its own unit. */
 export function BillingUsage({ state }: { state: BillingState }) {
   return isNewCloudCustomer(state) ? (
     <BillingEmptyState kind="usage" />
@@ -36,6 +36,7 @@ export function BillingUsage({ state }: { state: BillingState }) {
 function BillingUsageHistory({ state }: { state: BillingState }) {
   const { t, locale } = useI18n();
   const copy = t.billing.resourcesGuide;
+  const monthly = state.compute?.billingMode === "monthly";
   const today = new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState(() => {
     const start = state.currentPeriod.start?.slice(0, 10);
@@ -81,7 +82,7 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
 
   const buckets = useMemo(() => {
     const daily = usage?.buckets ?? [];
-    return granularity === "week" ? weeklyCreditUsage(daily) : daily;
+    return granularity === "week" ? weeklyUsage(daily) : daily;
   }, [usage, granularity]);
   const resources = t.billing.usage.resources;
   const totals = usage?.totals;
@@ -148,11 +149,11 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs text-muted-foreground">{copy.selectedRange}</p>
+          <p className="text-xs text-muted-foreground">{monthly ? t.billing.resourceOverview.cpu : copy.selectedRange}</p>
           <p className="mt-1 text-xl font-medium tabular-nums text-foreground" aria-live="polite">
-            {loading || error ? "—" : formatBillingNumber(totals?.credits ?? 0, locale)}
+            {loading || error ? "—" : monthly ? totals?.vcpu_hours == null ? "—" : formatBillingNumber(totals.vcpu_hours, locale) : formatBillingNumber(totals?.credits ?? 0, locale)}
             <span className="ms-1.5 text-sm font-normal text-muted-foreground">
-              {t.billing.usage.kpi.credits}
+              {monthly ? "vCPU-h" : t.billing.usage.kpi.credits}
             </span>
           </p>
         </div>
@@ -202,10 +203,10 @@ function BillingUsageHistory({ state }: { state: BillingState }) {
             {t.billing.usage.empty}
           </div>
         ) : (
-          <UsageChart buckets={buckets} granularity={granularity} />
+          <UsageChart buckets={buckets} granularity={granularity} metric={monthly ? "vcpu_hours" : "credits"} />
         )}
         <p className="mt-2 text-xs text-muted-foreground">
-          {interpolate(copy.creditsChart, { unit: t.billing.usage.granularity[granularity] })}
+          {monthly ? t.billing.compute.usageIncluded : interpolate(copy.creditsChart, { unit: t.billing.usage.granularity[granularity] })}
         </p>
       </div>
 

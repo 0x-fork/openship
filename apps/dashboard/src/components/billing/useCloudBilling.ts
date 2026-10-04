@@ -13,6 +13,7 @@ import type { ApiPlan, ApiPricingUi } from "./PricingCards";
 
 interface PlansPayload {
   custom: BillingPlans["custom"];
+  computePricing?: BillingPlans["computePricing"];
   locale: string;
   annual: { enabled: boolean; monthsFree: number };
   ui: ApiPricingUi;

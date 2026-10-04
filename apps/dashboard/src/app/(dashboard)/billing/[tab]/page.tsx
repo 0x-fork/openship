@@ -5,7 +5,7 @@ import { BillingUsage } from "@/components/billing/BillingUsage";
 import { BillingTopups } from "@/components/billing/BillingTopups";
 import { BillingPlansRoute } from "../_components/BillingPlansRoute";
 import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
-import { BillingPlanSummary, BillingSidebar, InvoicesPanel, PaymentMethodPanel } from "../_components/billing-shared";
+import { BillingPlanSummary, BillingSidebar, BillingPaymentsPanel } from "../_components/billing-shared";
 import { BILLING_TABS } from "../_components/billing-tabs";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { getBillingPageState, getDefaultBillingWorkspace } from "../_components/billing-state";
@@ -28,7 +28,7 @@ export default async function BillingTabPage({
   const { tab } = await params;
   const query = await searchParams;
 
-  const activeTab = BILLING_TABS.find((item) => item.key === tab)?.key;
+  const activeTab = tab === "invoices" ? "payment" : BILLING_TABS.find((item) => item.key === tab)?.key;
   if (!activeTab) {
     notFound();
   }
@@ -73,6 +73,9 @@ export default async function BillingTabPage({
   if (plansOnly && activeTab !== "plans") {
     redirect(billingTabHref("plans", { ...query, workspaceId: state.workspace?.id ?? workspaceId }));
   }
+  if (tab === "invoices") {
+    redirect(billingTabHref("payment", { ...query, workspaceId: state.workspace?.id ?? workspaceId }));
+  }
 
   function renderTab() {
     switch (tab) {
@@ -99,14 +102,7 @@ export default async function BillingTabPage({
         return <BillingTopups state={state} />;
       case "payment":
         return (
-          <PaymentMethodPanel
-            portalAvailable={state.capabilities?.portal === true}
-            hasHistory={!isNewCloudCustomer(state)}
-          />
-        );
-      case "invoices":
-        return (
-          <InvoicesPanel
+          <BillingPaymentsPanel
             portalAvailable={state.capabilities?.portal === true}
             hasHistory={!isNewCloudCustomer(state)}
           />
@@ -117,7 +113,7 @@ export default async function BillingTabPage({
   }
 
   return (
-    <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly }}>
+    <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly, topupsAvailable: state.topups?.available === true }}>
       <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
         <BillingContent
           key={`${view.contextKey}:${state.workspace?.id ?? "unsubscribed"}`}

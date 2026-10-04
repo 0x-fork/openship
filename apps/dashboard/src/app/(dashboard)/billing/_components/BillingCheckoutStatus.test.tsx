@@ -7,6 +7,7 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { BillingCheckoutStatus } from "./BillingCheckoutStatus";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
+import { monthlyCompute } from "../../../../../test/helpers/monthly-billing";
 
 const mocks = vi.hoisted(() => ({
   state: vi.fn(),
@@ -87,11 +88,61 @@ const subscription = {
   expectedTier: "starter",
   expectedInterval: "monthly" as const,
 };
+const monthlyState = {
+  ...state,
+  subscription: { interval: "monthly", billingMode: "monthly", offerReference: "openship:starter:v9" },
+  compute: monthlyCompute(),
+  plan: { ...state.plan, billingMode: "monthly", monthlyCredits: null },
+};
 describe("checkout return confirmation", () => {
-  it("confirms the selected paid subscription only after its credits are delivered", async () => {
+  it("confirms a saved metered subscription only after its credits are delivered", async () => {
     await render(subscription);
     expect(container.textContent).toContain(copy.active);
     expect(mocks.checkout).toHaveBeenCalledExactlyOnceWith("cs_selected", undefined);
+  });
+  it.each(["paid", "no_payment_required"])("confirms monthly capacity with zero credits after verified fulfillment (%s)", async paymentStatus => {
+    mocks.state.mockResolvedValue(monthlyState);
+    mocks.checkout.mockResolvedValue({ ...paid, paymentStatus, creditsGranted: 0 });
+    await render({ ...subscription, expectedOffer: "openship:starter:v9" });
+    expect(container.textContent).toContain(copy.active);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(mocks.router.refresh).toHaveBeenCalledOnce();
+  });
+  it.each([
+    undefined,
+    monthlyCompute({ covered: false, status: "pending" }),
+    monthlyCompute({ covered: false, status: "expired" }),
+    monthlyCompute({ billingMode: "payg" }),
+  ])("waits for committed monthly coverage before confirming zero-credit payment: %j", async compute => {
+    mocks.state.mockResolvedValueOnce({ ...monthlyState, compute }).mockResolvedValue(monthlyState);
+    mocks.checkout.mockResolvedValue({ ...paid, creditsGranted: 0 });
+    await render({ ...subscription, expectedOffer: "openship:starter:v9" });
+    expect(container.textContent).toContain(copy.checking);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(container.textContent).toContain(copy.active);
+  });
+  it("does not use unrelated monthly coverage or a return URL as payment proof", async () => {
+    mocks.state.mockResolvedValue(monthlyState);
+    mocks.checkout.mockResolvedValue({ ...paid, creditsGranted: 0 });
+    await render({ ...subscription, expectedOffer: "openship:starter:custom-v2:other" });
+    expect(container.textContent).toContain(copy.checking);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    mocks.checkout.mockResolvedValue({ ...paid, paymentStatus: "unpaid", creditsGranted: 0 });
+    await render({ ...subscription, expectedOffer: "openship:starter:v9" });
+    expect(container.textContent).toContain(copy.checking);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+  it("does not confirm a monthly refund or top-up from existing capacity coverage", async () => {
+    mocks.state.mockResolvedValue(monthlyState);
+    mocks.checkout.mockResolvedValue({ ...paid, creditsGranted: 0, fulfillmentStatus: "refunded" });
+    await render({ ...subscription, expectedOffer: "openship:starter:v9" });
+    expect(container.textContent).toContain(copy.reversed);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    mocks.checkout.mockResolvedValue({ ...paid, kind: "topup", creditsGranted: 0 });
+    await render({ kind: "topup", checkoutId: "cs_selected" });
+    expect(container.textContent).toContain(copy.checking);
+    expect(container.textContent).not.toContain(copy.topupComplete);
   });
   it("scopes checkout verification to the selected subscription and discards a previous workspace's success", async () => {
     await render(subscription, "cws_production");

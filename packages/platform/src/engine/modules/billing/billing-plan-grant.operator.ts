@@ -1,8 +1,7 @@
 /** Trusted operator workflow. No HTTP route, tenant token, or user metadata can call it. */
-import { AppError, generateId, planLimits, type PlanTierId } from "@repo/core";
+import { AppError, type PlanTierId } from "@repo/core";
 import type { BillingPlanGrantRepo } from "@repo/db/factory";
 import type { OblienBillingApi } from "../../lib/oblien-billing-api";
-import { subscriptionOffer } from "./billing-catalog";
 import { cloudBillingLockKey, effectiveCloudPlan, readProviderBilling, reconcilePlanGrant, resolvePlanGrant } from "./billing-plan-grants";
 
 export interface PlanGrantCommand {
@@ -52,7 +51,7 @@ export async function runPlanGrantCommand(args: PlanGrantCommand, deps: {
     }
     const now = deps.now ?? new Date();
     const state = await readProviderBilling(billing, namespace);
-    let row = await grants.current(target.organizationId, namespace);
+    const row = await grants.current(target.organizationId, namespace);
     const base = { email: target.email, organizationId: target.organizationId, workspace: managed?.name ?? target.name, workspaceId: managed?.id, namespace };
 
     if (args.command === "grant") {
@@ -60,26 +59,20 @@ export async function runPlanGrantCommand(args: PlanGrantCommand, deps: {
       if (args.expiresAt && (!Number.isFinite(args.expiresAt.getTime()) || args.expiresAt <= now)) {
         throw new AppError("--expires must be a future ISO timestamp", 400, "BILLING_GRANT_EXPIRY_INVALID");
       }
-      // Also validates that this tier has a finite monthly allowance in the catalog.
-      const offer = subscriptionOffer(args.plan, "monthly");
       if (state.subscription || (!managed && await grants.hasLegacySubscription(target.organizationId))) {
         throw new AppError("This workspace already has a subscription. Complimentary grants do not replace paid billing.", 409, "BILLING_GRANT_SUBSCRIPTION_EXISTS");
       }
-      if (row && (row.planTierId !== args.plan || row.revokedAt || (row.expiresAt?.getTime() ?? null) !== (args.expiresAt?.getTime() ?? null))) {
+      if (!row)
+        throw new AppError("Monthly server capacity requires verified funding at Oblien. A complimentary credit grant cannot purchase a monthly server.", 409, "BILLING_CAPACITY_FUNDING_REQUIRED");
+      const offer = resolvePlanGrant(row, target.organizationId, namespace, now).offer;
+      if (row.planTierId !== args.plan || row.revokedAt || (row.expiresAt?.getTime() ?? null) !== (args.expiresAt?.getTime() ?? null)) {
         throw new AppError("A different grant exists. Revoke it before issuing another plan or duration.", 409, "BILLING_GRANT_CONFLICT");
       }
       if (args.dryRun) return {
-        ...base, dryRun: true, action: row ? "reuse" : "grant", plan: args.plan,
-        charge: 0, monthlyCredits: row ? resolvePlanGrant(row, target.organizationId, namespace, now).offer.credits : offer.credits,
+        ...base, dryRun: true, action: "reuse", plan: args.plan,
+        charge: 0, monthlyCredits: offer.credits,
         expiresAt: args.expiresAt?.toISOString() ?? null,
       };
-      if (!row) {
-        row = await grants.create({
-          id: generateId("bpg"), organizationId: target.organizationId, namespace,
-          planTierId: args.plan, offer, limits: planLimits(args.plan),
-          grantedBy: args.operator.trim(), reason: args.reason.trim(), createdAt: now, expiresAt: args.expiresAt,
-        });
-      }
     } else if (args.command === "show" || args.dryRun) {
       const latest = row ?? await grants.latest(target.organizationId, namespace);
       return {

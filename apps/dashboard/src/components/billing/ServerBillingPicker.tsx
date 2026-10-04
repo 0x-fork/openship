@@ -2,11 +2,9 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { createContext, useContext, useState, useTransition } from "react";
-import Link from "next/link";
 import type { ServerDetail } from "@repo/contracts";
-import { Icon } from "@repo/ui/icons";
 import { useBillingScope } from "./BillingWorkspaceContext";
-import { newServerBillingHref, scopedBillingHref } from "@/lib/billing-links";
+import { scopedBillingHref } from "@/lib/billing-links";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { ServerPicker, ServerRowContent } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
@@ -26,6 +24,7 @@ export function billingServersVisible(inventory: BillingServerInventory | null) 
   return Boolean(
     inventory &&
     (inventory.error ||
+      inventory.servers.length > 1 ||
       inventory.servers.some(
         ({ managed }) =>
           managed &&
@@ -47,7 +46,6 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
   if (!inventory || !billingServersVisible(inventory)) return null;
   const { servers, loading, error, onRetry } = inventory;
   const selected = servers.find((server) => server.managed?.id === workspaceId);
-  const addHref = newServerBillingHref(organizationId);
   const selectServer = (server: ServerDetail) => {
     const id = server.managed?.id;
     if (!id || id === workspaceId || pending) return;
@@ -58,14 +56,6 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
       }),
     );
   };
-  const addServer = (
-    <Button asChild variant="secondary" size={compact ? "default" : "sm"} className="shrink-0">
-      <Link href={addHref}>
-        <Icon name="plus" className="size-4" aria-hidden="true" />
-        {t.servers.setup.addServer}
-      </Link>
-    </Button>
-  );
   const failure = (
     <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground" role="status">
       <p>{copy.billingServersUnavailable}</p>
@@ -85,7 +75,7 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
       <section
         aria-label={copy.billingServers}
         aria-busy={pending || loading}
-        className="flex w-full min-w-0 items-center gap-3 md:w-auto"
+        className="flex min-w-0 flex-1 items-center gap-3 md:flex-none"
       >
         {error ? (
           failure
@@ -103,12 +93,10 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
                 label={copy.chooseBilling}
                 showLabel={false}
                 disabled={pending || loading}
-                onAddServer={() => router.push(addHref)}
               />
             )}
           </div>
         )}
-        {addServer}
         {announcement}
       </section>
     );
@@ -119,10 +107,7 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
       aria-label={copy.billingServers}
       aria-busy={pending || loading}
     >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-foreground">{copy.billingServers}</h2>
-        {addServer}
-      </div>
+      <h2 className="text-sm font-medium text-foreground">{copy.billingServers}</h2>
       {error ? (
         failure
       ) : (

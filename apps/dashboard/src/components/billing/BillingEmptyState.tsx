@@ -6,7 +6,7 @@ import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContex
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
 
-export function BillingEmptyState({ kind }: { kind: "usage" | "payment" | "invoices" | "topups" }) {
+export function BillingEmptyState({ kind }: { kind: "usage" | "payment" | "topups" }) {
   const { t } = useI18n();
   const copy = t.billing.onboarding;
   const { Icon, title, description } = {
@@ -19,11 +19,6 @@ export function BillingEmptyState({ kind }: { kind: "usage" | "payment" | "invoi
       Icon: "credit-card" as const,
       title: copy.paymentTitle,
       description: copy.paymentDescription,
-    },
-    invoices: {
-      Icon: "receipt" as const,
-      title: copy.invoicesTitle,
-      description: copy.invoicesDescription,
     },
     topups: {
       Icon: "coins" as const,

@@ -24,8 +24,8 @@ export function faq(pricing: CloudPricing): FaqItem[] {
         .join(" "),
     },
     {
-      q: "How do usage credits work?",
-      a: "Each billing cycle includes the credits shown on your plan. Apps and builds use the same balance, and how long it lasts depends on your workload. Continuous hosting can require top-ups. Extra credits extend usage without changing your resource limits.",
+      q: "What does a monthly server include?",
+      a: "A monthly server covers its purchased CPU, RAM and disk for the entire paid period. Your apps and builds share those resources, with no second compute-credit allowance. Managed proxy transfer and backups are separate. Existing subscriptions keep their saved terms, shown in Billing.",
     },
     {
       q: "How is capacity shared?",
@@ -33,7 +33,7 @@ export function faq(pricing: CloudPricing): FaqItem[] {
     },
     {
       q: "Can I change or cancel my plan?",
-      a: "You can cancel renewal from Billing and keep access until the end of your paid period. A plan change starts a new full-price billing cycle, without automatic proration or a refund of the previous cycle. Review the details before checkout.",
+      a: "Cancel renewal from Billing and keep access until the end of your paid period. Upgrades use the provider’s prorated price and apply after payment. Resource reductions and billing-mode changes start at renewal. Review the amount due, effective date and any server restarts before confirming. Retained disks can incur storage charges after coverage ends until they are deleted.",
     },
     {
       q: "Is self-hosting really free?",

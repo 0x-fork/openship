@@ -60,7 +60,7 @@ export async function previewSubscriptionChange(ctx: ExecutionContext, input: Pa
     subscriptionPlan(subscription, ctx.organizationId, owner.namespace);
     await assertWorkspaceCheckoutsSettled(current);
     const interval = subscription!.billingInterval === "yearly" ? "annual" : "monthly";
-    const { offer, customLimits } = resolveSubscriptionSelection(input.planTierId, interval, input.custom);
+    const { offer, customLimits } = await resolveSubscriptionSelection(input.planTierId, interval, input.custom);
     if (isDeepStrictEqual(offer, subscription!.offer))
       throw new AppError("This server already has the selected plan", 409, "BILLING_PLAN_UNCHANGED");
     const request = {

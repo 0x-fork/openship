@@ -54,8 +54,8 @@ r.use("/topup-packs", authMiddleware);
 r.use("/portal", authMiddleware);
 
 /* ---------- Dashboard state snapshot ---------- */
-r.get("/credit-alerts", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read provider credit alerts across this organization's managed servers. Each result identifies its subscription; unavailable balances remain unknown." } }, billingLocal.getCreditAlerts);
-r.get("/state", { query: BillingOperationSchemas.getState.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s Cloud billing state, current plan, balance and limits. Self-hosted instances need a connected Cloud account for this data." } }, billingLocal.getState);
+r.get("/credit-alerts", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read monthly compute coverage and metered credit alerts across this organization's managed servers. Each result identifies its server; unavailable billing state remains unknown." } }, billingLocal.getCreditAlerts);
+r.get("/state", { query: BillingOperationSchemas.getState.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the selected Cloud server's saved plan, paid compute coverage, usage and resource limits. Older metered plans also include their credit balance. Self-hosted instances need a connected Cloud account." } }, billingLocal.getState);
 r.get(
   "/checkout",
   { tag: "billing:read", authorizationHandledByOperation: true, mcpExcluded: "Browser checkout configuration; use the billing reads to inspect a plan and complete purchases in Settings → Billing." },
@@ -63,8 +63,8 @@ r.get(
 );
 
 /* ---------- Subscriptions ---------- */
-r.get("/subscription/quote", { query: BillingOperationSchemas.quoteCustomPlan.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Quote a Custom Cloud server's monthly retail price and included usage allowance from CPU, memory in MB, and disk in GB. This read does not create a server or start a purchase. Complete checkout in Billing." } }, billingLocal.quoteCustomPlan);
-r.get("/subscription", { query: BillingOperationSchemas.getSubscription.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the workspace’s current subscription tier, state and billing period." } }, billingLocal.getSubscription);
+r.get("/subscription/quote", { query: BillingOperationSchemas.quoteCustomPlan.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Quote a Custom Cloud server's monthly retail price for its CPU, memory in MiB, and disk in GiB. Monthly compute and storage are covered for the paid period, without a compute-credit allowance. This read does not create a server or start a purchase. Complete checkout in Billing." } }, billingLocal.quoteCustomPlan);
+r.get("/subscription", { query: BillingOperationSchemas.getSubscription.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the selected Cloud server's saved subscription, billing mode, paid period and pending plan change." } }, billingLocal.getSubscription);
 r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal", mcpExcluded: "Starts a paid browser checkout. Purchases and payment authorization are completed in Settings → Billing." }, billingLocal.createSubscription);
 
 /* ---------- Cancellation ---------- */
@@ -79,7 +79,7 @@ r.get("/allowances", { query: BillingOperationSchemas.listAllowanceDetail.input,
 
 
 /* ---------- Top-ups ---------- */
-r.get("/topup-packs", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List available Cloud credit packs and prices. Reading this does not buy credits." } }, billingLocal.listTopupPacks);
+r.get("/topup-packs", { tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "List metered Cloud credit packs and prices. Monthly servers need no compute-credit top-ups. Reading this does not buy credits." } }, billingLocal.listTopupPacks);
 r.post(
   "/topup",
   { body: CreateTopupBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal", mcpExcluded: "Starts a paid browser checkout. Buy credits in Settings → Billing; MCP can list pack prices and current balance." },

@@ -12,6 +12,8 @@ export function creditAlertNotification(input: {
   dashboardUrl: string;
 }) {
   const { eventType, eventId, data, entitlement, organizationId } = input;
+  // Late credit events cannot turn a paid capacity contract into a credit alert.
+  if (entitlement.tierId === "capacity") return null;
   if (data.service !== undefined && data.service !== "workspace_vm") return null;
   const alert = entitlement.quota.alert;
   if (!alert || !["low", "grace", "depleted"].includes(alert.state)) return null;

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "currency": "usd",
   "freeDomainSuffix": ".opsh.io",
   "annual": {
@@ -16,16 +16,27 @@
   "campaigns": [],
   "custom": {
     "resources": {
-      "cpuCores": { "min": 1, "max": 32, "step": 1 },
-      "memoryMb": { "min": 4096, "max": 131072, "step": 1024 },
-      "diskGb": { "min": 25, "max": 2048, "step": 1 }
+      "cpuCores": {
+        "min": 1,
+        "max": 12,
+        "step": 1
+      },
+      "memoryMb": {
+        "min": 4096,
+        "max": 131072,
+        "step": 1024
+      },
+      "diskGb": {
+        "min": 25,
+        "max": 2048,
+        "step": 1
+      }
     },
     "extraMonthlyCents": {
       "cpuCore": 500,
       "memoryGb": 250,
       "diskGb": 10
-    },
-    "extraCreditPercent": 80
+    }
   },
   "plans": [
     {
@@ -115,18 +126,17 @@
       },
       "features": [
         "everythingIn",
-        "usageCredits",
+        "monthlyCoverage",
         "namespaceCapacity",
-        "meteredBuilds",
+        "sharedBuilds",
         "anyWorkload",
         "runningServices",
         "power",
         "projectsUnlimited",
-        "finiteUsage",
         "communitySupport"
       ],
       "billing": {
-        "creditsPerCycle": 400,
+        "creditsPerCycle": 0,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
@@ -139,7 +149,8 @@
           "max_total_vcpus": 1,
           "max_total_ram_mb": 4096,
           "max_total_disk_gb": 25
-        }
+        },
+        "mode": "monthly"
       }
     },
     {
@@ -178,16 +189,16 @@
       },
       "features": [
         "everythingIn",
-        "usageCredits",
+        "monthlyCoverage",
         "namespaceCapacity",
-        "meteredBuilds",
+        "sharedBuilds",
         "runningServices",
         "power",
         "projectsUnlimited",
         "emailSupport"
       ],
       "billing": {
-        "creditsPerCycle": 1700,
+        "creditsPerCycle": 0,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
@@ -200,7 +211,8 @@
           "max_total_vcpus": 2,
           "max_total_ram_mb": 8192,
           "max_total_disk_gb": 32
-        }
+        },
+        "mode": "monthly"
       }
     },
     {
@@ -239,16 +251,16 @@
       },
       "features": [
         "everythingIn",
-        "usageCredits",
+        "monthlyCoverage",
         "namespaceCapacity",
-        "meteredBuilds",
+        "sharedBuilds",
         "runningServices",
         "power",
         "projectsUnlimited",
         "prioritySupport"
       ],
       "billing": {
-        "creditsPerCycle": 3500,
+        "creditsPerCycle": 0,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
@@ -261,7 +273,8 @@
           "max_total_vcpus": 4,
           "max_total_ram_mb": 16384,
           "max_total_disk_gb": 128
-        }
+        },
+        "mode": "monthly"
       }
     },
     {
@@ -300,9 +313,9 @@
       },
       "features": [
         "everythingIn",
-        "usageCredits",
+        "monthlyCoverage",
         "namespaceCapacity",
-        "meteredBuilds",
+        "sharedBuilds",
         "runningServices",
         "power",
         "projectsUnlimited",
@@ -310,7 +323,7 @@
         "prioritySupport"
       ],
       "billing": {
-        "creditsPerCycle": 9000,
+        "creditsPerCycle": 0,
         "yearlyCreditsPerCycle": null,
         "overdraft": 0,
         "suspendThreshold": 0,
@@ -323,7 +336,8 @@
           "max_total_vcpus": 8,
           "max_total_ram_mb": 32768,
           "max_total_disk_gb": 256
-        }
+        },
+        "mode": "monthly"
       }
     },
     {

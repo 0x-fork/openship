@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { quoteCustomResources, type CustomServerResources, type PlanLimits, type PlanTierId } from "@repo/core";
 import type { BillingCustomQuote } from "@repo/contracts";
 import type { OblienOffer } from "../../lib/oblien-billing-api";
-import { fromOblienCredits } from "./billing-credit-units";
+import { monthlyCapacity } from "./billing-capacity";
 
-export const CUSTOM_OFFER_VERSION = "custom-v1";
+export const CUSTOM_OFFER_VERSION = "custom-v2";
+export const isCustomOfferVersion = (version?: string) => version === CUSTOM_OFFER_VERSION || version === "custom-v1";
 
 /** Binds the complete retail terms, including limits, to checkout retries.
  * Key order is canonical because the provider may reorder its saved snapshot. */
@@ -14,18 +15,19 @@ function customOfferReference(tier: PlanTierId, limits: PlanLimits, offer: Oblie
     value && typeof value === "object" && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
       : value);
-  return `openship:custom:v1:${createHash("sha256").update(snapshot).digest("hex")}`;
+  return `openship:custom:${offer.billingMode === "monthly" ? "v2" : "v1"}:${createHash("sha256").update(snapshot).digest("hex")}`;
 }
 
 export function customSubscriptionOffer(resources: CustomServerResources) {
   const terms = quoteCustomResources(resources);
   const offer: OblienOffer = {
     name: "Openship Custom",
-    description: `${resources.cpuCores} vCPU · ${resources.memoryMb / 1024} GB RAM · ${resources.diskGb} GB disk. Builds and apps share the included metered usage allowance.`,
+    description: `${resources.cpuCores} vCPU · ${resources.memoryMb / 1024} GB RAM · ${resources.diskGb} GB disk. CPU, RAM and storage are covered for the paid month.`,
     unitAmount: terms.priceCents,
     currency: "usd",
-    credits: terms.creditsPerCycle,
-    policy: terms.policy,
+    billingMode: "monthly",
+    credits: 0,
+    capacity: monthlyCapacity(terms.resourceLimits),
     resourceLimits: terms.resourceLimits,
   };
   offer.reference = customOfferReference(terms.basePlanTierId, terms.limits, offer);
@@ -35,7 +37,8 @@ export function customSubscriptionOffer(resources: CustomServerResources) {
     reference: offer.reference,
     priceCents: terms.priceCents,
     currency: "usd",
-    monthlyCredits: fromOblienCredits(terms.creditsPerCycle),
+    billingMode: "monthly",
+    monthlyCredits: null,
     breakdown: terms.breakdown,
   };
   return { quote, offer, limits: terms.limits };
@@ -45,7 +48,8 @@ export function customSubscriptionOffer(resources: CustomServerResources) {
 export function validCustomOffer(tier: PlanTierId, limits: PlanLimits, offer: OblienOffer): boolean {
   const resources = offer.resourceLimits;
   const service = limits.maxServiceResources;
-  return Boolean(resources && service && offer.policy &&
+  const monthly = offer.billingMode === "monthly";
+  return Boolean(resources && service && (monthly ? !offer.policy && offer.credits === 0 : offer.policy) &&
     offer.credits <= offer.unitAmount &&
     resources.max_workspaces === 1 &&
     Object.values(resources).every(value => Number.isSafeInteger(value) && value! > 0) &&

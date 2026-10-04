@@ -165,6 +165,21 @@ describe("billing page failure recovery", () => {
       .rejects.toMatchObject({ digest: "NEXT_REDIRECT;replace;/billing/plans;307;" });
   });
 
+  it("redirects invoice bookmarks to the shared payments page with their billing and checkout scope", async () => {
+    mocks.get.mockResolvedValue({ data: { ...free, tier: "starter", workspace: { id: "cws-production" } } });
+    await expect(BillingTabPage({ params: Promise.resolve({ tab: "invoices" }), searchParams: Promise.resolve({
+      organizationId: "org-a", workspaceId: "cws-production", checkout: "success", session_id: "checkout-a",
+    }) })).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/billing/payment?organizationId=org-a&workspaceId=cws-production&checkout=success&session_id=checkout-a;307;",
+    });
+  });
+
+  it("passes the provider's top-up availability to navigation", async () => {
+    mocks.get.mockResolvedValue({ data: { ...free, tier: "starter", topups: { available: true } } });
+    const page = await loadPage();
+    expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view.topupsAvailable).toBe(true);
+  });
+
   it("shows only the plan comparison before the first subscription", async () => {
     mocks.get.mockResolvedValue({ data: free });
     const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({}) });

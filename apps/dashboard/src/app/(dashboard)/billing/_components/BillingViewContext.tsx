@@ -8,6 +8,7 @@ export interface BillingView {
   organizationId?: string;
   workspaceId?: string;
   plansOnly: boolean;
+  topupsAvailable?: boolean;
   newServer?: boolean;
 }
 

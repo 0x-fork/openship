@@ -3,18 +3,11 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
-import {
-  resolveStandard,
-  toPricingLocale,
-  type OblienLimits,
-  type PlanLimits,
-  type PlanTierId,
-} from "@repo/core";
+import type { OblienLimits, PlanLimits, PlanTierId } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { PlanResources } from "./PlanResources";
 import { PlanIcon } from "./PlanIcon";
-import { PlanFeatures } from "./PlanFeatures";
 import { PlanUsageNote } from "./PlanUsageNote";
 
 /* ------------------------------------------------------------------ */
@@ -36,6 +29,7 @@ export interface ApiCampaign {
 
 export interface ApiPlan {
   id: PlanTierId;
+  billingMode?: "monthly" | "metered";
   configuration?: "preset" | "custom";
   offerReference?: string;
   name: string;
@@ -197,7 +191,6 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
 }) => {
   const { t, locale } = useI18n();
   const comparisonId = React.useId();
-  const standard = resolveStandard(toPricingLocale(locale));
   // The reader's own calendar for a campaign deadline. Built once per render
   // rather than per card, and from `locale` (the chosen UI language) rather than
   // the browser default, which is what every other localized date here uses.
@@ -343,7 +336,6 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
               </div>
 
               <PlanResources plan={plan} workspaceScoped={workspaceScoped} />
-              <PlanFeatures plan={plan} />
             </article>
           );
         })}
@@ -369,6 +361,12 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
         </nav>
       )}
       {comparison}
+      <PlanUsageNote
+        plans={plans}
+        interval={interval}
+        workspaceScoped={workspaceScoped}
+        showCapacityNote={!workspaceScoped}
+      />
       {customPlans.map((plan) => (
         <div
           key={plan.id}
@@ -405,24 +403,6 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
           ) : null}
         </div>
       ))}
-      {pricedPlans.some((plan) => plan.id !== "free") && (
-        <section className="px-1">
-          <h3 className="text-sm font-medium text-foreground">{standard.title}</h3>
-          <ul className="mt-3 grid gap-x-6 gap-y-2 @min-[34rem]/pricing:grid-cols-2 @min-[70rem]/pricing:grid-cols-3">
-            {standard.features.map((feature) => (
-              <li key={feature} className="flex items-start gap-2 text-sm text-muted-foreground">
-                <UiIcon
-                  name="check"
-                  className="mt-1 size-3.5 shrink-0 text-primary"
-                  aria-hidden="true"
-                />
-                <span>{feature}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <PlanUsageNote plans={plans} interval={interval} workspaceScoped={workspaceScoped} showCapacityNote={!workspaceScoped} />
     </div>
   );
 };

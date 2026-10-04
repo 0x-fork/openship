@@ -23,6 +23,7 @@ export interface QuotaState {
 }
 
 export function entitlementQuota(entitlement: OblienEntitlement): QuotaState {
+  if (entitlement.tierId === "capacity") return { quotaLimit: null, quotaUsed: 0, quotaRemaining: null };
   const { limit, used, balance } = entitlement.quota;
   return {
     quotaLimit: limit === null ? null : fromOblienCredits(limit),
@@ -124,7 +125,7 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
       limits,
       resourceLimits,
       drift: {
-        quotaMissing: entitlement.quota.limit === null && tier !== "enterprise",
+        quotaMissing: entitlement.tierId !== "capacity" && entitlement.quota.limit === null && tier !== "enterprise",
         statusWas: owner.subscriptionStatus, statusNow: entitlement.status, changed,
       },
     };
@@ -165,8 +166,13 @@ export async function assertCloudCanSpend(orgId: string, workspaceId?: CloudWork
     throw new AppError("Cloud namespace billing policy is not ready", 503, "OBLIEN_NAMESPACE_POLICY_REQUIRED");
   }
   const balance = await getOblienBillingApi().getBalance(entitlement.namespace);
-  if (entitlement.status !== "active" || balance.blocking || (balance.balance !== null && balance.balance <= 0)) {
-    throw new AppError("Your cloud subscription or credit balance needs attention before starting this workload", 402, "CLOUD_BILLING_BLOCKED");
+  const monthly = entitlement.billingMode === "monthly";
+  if (balance.blocking || (monthly
+    ? entitlement.computeCovered !== true || balance.billingMode !== "monthly" || balance.computeCovered !== true
+    : entitlement.status !== "active")) {
+    throw new AppError(monthly
+      ? "This server's paid coverage needs attention. Open billing to review its renewal or payment."
+      : "Your cloud subscription or credit balance needs attention before starting this workload", 402, "CLOUD_BILLING_BLOCKED");
   }
 }
 

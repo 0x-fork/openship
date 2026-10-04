@@ -1,4 +1,6 @@
 import { savedOffer as subscriptionOffer, savedMetadata as subscriptionMetadata } from "../../helpers/saved-cloud-offer";
+import capacityCatalog from "../../fixtures/oblien-capacity-catalog.json";
+import { monthlyCloudBilling } from "../../helpers/monthly-cloud-offer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
@@ -8,6 +10,7 @@ const provider = vi.hoisted(() => ({
   topups: true,
   checkout: vi.fn(),
   catalog: vi.fn(),
+  monthlySupport: vi.fn(),
   entitlement: vi.fn(),
   namespaces: vi.fn(),
   portal: vi.fn(),
@@ -34,6 +37,7 @@ vi.mock("@repo/platform/engine/lib/stripe-client", () => ({ stripe: () => { thro
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienBillingApi: () => ({
     assertResellerSupport: provider.support,
+    assertMonthlyCapacitySupport: provider.monthlySupport,
     getCheckout: provider.checkoutStatus,
     getCatalog: provider.catalog,
     getEntitlement: provider.entitlement,
@@ -119,6 +123,7 @@ beforeEach(() => {
   provider.cloudMode = provider.enabled = provider.topups = true;
   provider.subscriptions.clear();
   provider.support.mockResolvedValue(undefined);
+  provider.monthlySupport.mockResolvedValue(capacityCatalog);
   provider.limits.clear();
   provider.kickoff.mockResolvedValue("simulated-worker");
   provider.quota.mockResolvedValue({ success: true, limits: { cpus: 32, memory_mb: 65536, disk_size_mb: 1048576 }, maxSandboxes: null });
@@ -171,6 +176,35 @@ afterEach(async () => {
 });
 
 describe("billing through the same SDK and HTTP application operations", () => {
+  it("shows verified monthly coverage without credit warnings or top-ups in both transports", async () => {
+    const owner = await seedOwner(), other = await seedOwner();
+    const selected = await billingWorkspace(owner);
+    const monthly = monthlyCloudBilling(owner.orgId, selected.namespace!);
+    monthly.entitlement.capacity!.retention.amountDue = 1.25;
+    provider.subscriptions.set(selected.namespace!, monthly.subscription);
+    provider.entitlement.mockImplementation(async namespace => namespace === selected.namespace
+      ? monthly.entitlement : { success: true, namespace, tierId: null, status: "credit_exhausted",
+        periodStart: null, periodEnd: null, quota: { limit: 0, used: 0, balance: 0 } });
+    const c = await clients(owner), unrelated = await clients(other);
+    for (const client of [c.native, c.remote]) {
+      expect(await client.getState({ workspaceId: selected.id })).toMatchObject({
+        tier: "pro", status: "active", overQuota: false, creditAlert: null, monthlyCreditLimit: null,
+        balance: { quotaLimit: null, quotaRemaining: null, quotaUsed: 0, unlimited: false },
+        compute: { billingMode: "monthly", covered: true, currentPeriod: { end: "2026-11-01T00:00:00Z" },
+          retention: { amountDue: 1.25 }, network: { availableBytes: 0 } },
+        topups: { available: false, status: "unavailable" },
+        plan: { billingMode: "monthly", price: { monthly: 3900 }, monthlyCredits: null },
+      });
+      await expect(client.createTopup({ workspaceId: selected.id, packId: "pack_400" }))
+        .rejects.toMatchObject({ code: "BILLING_TOPUPS_NOT_APPLICABLE" });
+    }
+    for (const client of [unrelated.native, unrelated.remote]) {
+      expect((await client.getState()).compute).toBeNull();
+      await expect(client.getState({ workspaceId: selected.id })).rejects.toMatchObject({ statusCode: 404 });
+    }
+    expect(provider.checkout).not.toHaveBeenCalled();
+  });
+
   it("does not present a linked installation's missing counters as zero server usage", async () => {
     const owner = await seedOwner(), c = await clients(owner);
     const workspace = await billingWorkspace(owner);
@@ -476,7 +510,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
       const state = await client.getState();
       expect(state.monthlyCreditLimit).toBe(0);
       expect(state.balance).toMatchObject({ quotaLimit: null, quotaRemaining: null, unlimited: false });
-      expect(await client.createSubscription({ planTierId: "starter", interval: "monthly" })).toHaveProperty("checkoutUrl");
+      expect(await client.createSubscription({ planTierId: "starter", interval: "monthly", idempotencyKey: "parity-starter-checkout" })).toHaveProperty("checkoutUrl");
     }
   });
 
@@ -491,7 +525,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     });
     for (const client of [c.native, c.remote]) {
       expect(await client.getState()).toMatchObject({ tier: "starter", plan: null, monthlyCreditLimit: null, balance: { quotaRemaining: 1_200_000, unlimited: false }, capabilities: { portal: true, cancellation: true } });
-      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" }))
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly", idempotencyKey: "parity-starter-checkout" }))
         .rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
     }
     expect(provider.catalog).not.toHaveBeenCalled();
@@ -526,7 +560,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     });
     for (const client of [c.native, c.remote]) {
       expect(await client.getState()).toMatchObject({ tier: "pro", billing: { enabled: true }, subscription: { tier: "pro" }, capabilities: { subscriptionChange: false } });
-      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" }))
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly", idempotencyKey: "parity-starter-checkout" }))
         .rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
     }
     expect(provider.entitlement).toHaveBeenCalledTimes(5);
@@ -541,7 +575,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const c = await clients(await seedOwner());
     provider.quota.mockImplementation(() => { throw new Error("Client capacity reads are forbidden"); });
     for (const client of [c.native, c.remote]) {
-      expect(await client.createSubscription({ planTierId: "team", interval: "monthly" })).toHaveProperty("checkoutUrl");
+      expect(await client.createSubscription({ planTierId: "team", interval: "monthly", idempotencyKey: "parity-team-checkout" })).toHaveProperty("checkoutUrl");
       expect((await client.getState()).billing.enabled).toBe(true);
       expect(await client.createPortal()).toHaveProperty("portalUrl");
     }
@@ -556,7 +590,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     provider.subscription.mockRejectedValue(new AppError("Namespace subscription unavailable", 503, "OBLIEN_BILLING_UNAVAILABLE"));
     const c = await clients(await seedOwner());
     for (const client of [c.native, c.remote]) {
-      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly", idempotencyKey: "parity-starter-checkout" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_UNAVAILABLE" });
       await expect(client.createTopup({ packId: CREDIT_PACKS[0]!.id })).rejects.toMatchObject({
         code: "OBLIEN_BILLING_UNAVAILABLE",
       });
@@ -571,10 +605,10 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(await remote.billing.listPlans({ locale: "ar" })).toEqual(native);
     expect(native.locale).toBe("ar");
     for (const [id, monthlyPrice, monthlyCredits] of [
-      ["hobby", 500, 400_000],
-      ["starter", 2000, 1_700_000],
-      ["pro", 3900, 3_500_000],
-      ["team", 9900, 9_000_000],
+      ["hobby", 500, null],
+      ["starter", 2000, null],
+      ["pro", 3900, null],
+      ["team", 9900, null],
     ] as const)
       expect(native.plans.find(plan => plan.id === id)).toMatchObject({
         price: { monthly: monthlyPrice, annual: null },
@@ -590,17 +624,17 @@ describe("billing through the same SDK and HTTP application operations", () => {
   });
 
   it.each([
-    ["hobby", 500, 400],
-    ["starter", 2000, 1700],
-    ["pro", 3900, 3500],
-    ["team", 9900, 9000],
+    ["hobby", 500, 0],
+    ["starter", 2000, 0],
+    ["pro", 3900, 0],
+    ["team", 9900, 0],
   ] as const)("uses the selected tenant and current %s offer without auditing checkout URLs", async (tier, unitAmount, credits) => {
     const owner = await seedOwner(), other = await seedOwner(), c = await clients(owner);
     await db.update(schema.organization).set({ planTierId: "team" }).where(eq(schema.organization.id, other.orgId));
     expect(await c.native.getState()).toEqual(await c.remote.getState());
     expect((await c.native.getState()).tier).toBe("free");
     for (const client of [c.native, c.remote]) {
-      expect(await client.createSubscription({ planTierId: tier, interval: "monthly" })).toEqual({ checkoutUrl: "https://checkout.stripe.com/private-session" });
+      expect(await client.createSubscription({ planTierId: tier, interval: "monthly", idempotencyKey: `parity-${tier}-checkout` })).toEqual({ checkoutUrl: "https://checkout.stripe.com/private-session" });
     }
     const managed = await billingWorkspace(owner);
     expect(managed.namespace).toBeTruthy();
@@ -608,9 +642,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: managed.namespace,
         kind: "subscription",
-        offer: { reference: `openship:${tier}:v8`, unitAmount, credits },
+        offer: { reference: `openship:${tier}:v9`, unitAmount, credits, billingMode: "monthly" },
         billingInterval: "monthly",
-        metadata: { openship_organization: owner.orgId, openship_namespace: managed.namespace, openship_offer_version: "8" },
+        metadata: { openship_organization: owner.orgId, openship_namespace: managed.namespace, openship_offer_version: "9" },
       });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");
@@ -632,7 +666,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     provider.enabled = false;
     const c = await clients(owner);
     for (const client of [c.native, c.remote]) {
-      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "BILLING_NOT_ENABLED" });
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly", idempotencyKey: "parity-starter-checkout" })).rejects.toMatchObject({ code: "BILLING_NOT_ENABLED" });
       await expect(client.createTopup({ packId: CREDIT_PACKS[0]!.id })).rejects.toMatchObject({ code: "BILLING_NOT_ENABLED" });
       expect(await client.createPortal()).toHaveProperty("portalUrl");
       expect((await client.getState()).billing.enabled).toBe(false);
@@ -828,7 +862,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     const c = await clients(await seedOwner());
     for (const client of [c.native, c.remote]) {
       await expect(client.getState()).rejects.toMatchObject({ code: "CLOUD_NOT_CONNECTED" });
-      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly" })).rejects.toMatchObject({ code: "CLOUD_NOT_CONNECTED" });
+      await expect(client.createSubscription({ planTierId: "starter", interval: "monthly", idempotencyKey: "parity-starter-checkout" })).rejects.toMatchObject({ code: "CLOUD_NOT_CONNECTED" });
       expect((await client.listPlans()).plans.length).toBeGreaterThan(0);
     }
     expect(provider.cloudRequest).not.toHaveBeenCalled();

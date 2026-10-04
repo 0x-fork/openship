@@ -20,6 +20,7 @@ export type { BillingResources, BillingCreditAlerts } from "@repo/contracts";
 export interface BillingState {
   workspace?: BillingStateContract["workspace"];
   creditAlert?: BillingStateContract["creditAlert"];
+  compute?: BillingStateContract["compute"];
   tier: PlanTierId;
   status: string;
   currentPeriod: {
