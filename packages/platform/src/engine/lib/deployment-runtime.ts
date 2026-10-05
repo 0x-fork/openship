@@ -1051,8 +1051,10 @@ export async function resolveDeploymentRuntime(
   serverId: string | null;
   /** Physical bind namespace used by durable host-port ownership. */
   hostPortTarget: HostPortTargetIdentity | null;
-  /** Executor that reaches the same host as `routing` (null on cloud). */
+  /** Executor that reaches the same host as `routing`, including managed servers. */
   executor: Platform["executor"];
+  /** Whether the static release mount is shared with this API process. */
+  localHost: boolean;
 }> {
   const snapshot = (dep.meta ?? {}) as DeploymentMeta;
   assertDeploymentProjectTarget(snapshot, dep.projectId);
@@ -1069,6 +1071,7 @@ export async function resolveDeploymentRuntime(
     serverId: resolved.serverId,
     hostPortTarget: resolved.hostPortTarget,
     executor: resolved.platform.executor,
+    localHost: resolved.platform.localHost,
   };
 }
 
