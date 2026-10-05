@@ -1096,6 +1096,8 @@ describe("single-app prebuilt release-image pipeline", () => {
   // readiness gate through — rather than re-deriving the decision by hand, so
   // a regression in the real wiring fails here, not just in a stand-in.
   describe("readiness gate wiring for a server deploy target", () => {
+    // Polling can retry before the deadline. Assert the destination and verdict,
+    // rather than an attempt count that depends on timer scheduling.
     function serverExecutor(forwardPort: () => Promise<never>) {
       return { exec: vi.fn(async () => ""), forwardPort: vi.fn(forwardPort) };
     }
@@ -1140,7 +1142,7 @@ describe("single-app prebuilt release-image pipeline", () => {
       });
 
       await expect(env.healthCheck!(containerId, config)).rejects.toThrow(/never answered/);
-      expect(forwardPort).toHaveBeenCalledTimes(1);
+      expect(forwardPort).toHaveBeenCalledWith("172.18.0.2", 8080);
       expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
     });
 
@@ -1216,7 +1218,7 @@ describe("single-app prebuilt release-image pipeline", () => {
       });
 
       await expect(env.healthCheck!(containerId, config)).resolves.toBeUndefined();
-      expect(forwardPort).toHaveBeenCalledTimes(1);
+      expect(forwardPort).toHaveBeenCalledWith("172.18.0.2", 8080);
       expect(mocks.appendLog).toHaveBeenCalledWith(
         "deployment-1",
         expect.objectContaining({
