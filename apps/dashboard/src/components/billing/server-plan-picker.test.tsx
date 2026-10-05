@@ -7,6 +7,8 @@ import type { BillingCustomQuote, BillingPlans, BillingSubscription, CloudWorksp
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { ModalProvider } from "@/context/ModalContext";
+import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayoutContext";
+import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { baseDictionary } from "@/i18n";
 import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
 import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
@@ -60,8 +62,16 @@ function customQuote(resources: CustomServerResources): BillingCustomQuote {
 let root: Root;
 let host: HTMLDivElement;
 let popup: { opener: object | null; closed: boolean; location: { href: string }; close: ReturnType<typeof vi.fn> };
+function SidebarState() {
+  const { autoCollapse } = useSidebarLayout();
+  const { collapsed } = useSidebarCollapse("plans", autoCollapse);
+  return <output aria-label="Desktop sidebar">{collapsed ? "collapsed" : "expanded"}</output>;
+}
+const sidebarState = () => host.querySelector('output[aria-label="Desktop sidebar"]')?.textContent;
 const render = (node: ReactNode, selfHosted = false) => act(async () => root.render(
-  <I18nProvider><PlatformProvider selfHosted={selfHosted}>{node}</PlatformProvider></I18nProvider>,
+  <I18nProvider><PlatformProvider selfHosted={selfHosted}>
+    <SidebarLayoutProvider><SidebarState />{node}</SidebarLayoutProvider>
+  </PlatformProvider></I18nProvider>,
 ));
 const buttons = (label: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].filter(button => button.textContent?.trim() === label);
 const click = (label: string) => act(async () => {
@@ -112,6 +122,7 @@ describe("plans for an existing server", () => {
     expect(host.querySelector('section[aria-label="Current plan"]')?.textContent).toContain("Starter");
     expect(host.querySelector('section[aria-label="Current plan"]')?.textContent).toContain("$20");
     expect(planNames()).toEqual(["Pro", "Scale"]);
+    expect(sidebarState()).toBe("expanded");
     expect(host.textContent).toContain(copy.plansRoute.upgradeServer);
     expect(h.post).not.toHaveBeenCalled();
   });
@@ -121,18 +132,21 @@ describe("plans for an existing server", () => {
     await render(picker("starter"));
     await click(copy.plansRoute.otherPlans);
     expect(planNames()).toContain("Hobby");
+    expect(sidebarState()).toBe("collapsed");
     expect(host.textContent).toContain(copy.plansRoute.otherPlansHint);
     h.post.mockRejectedValueOnce(new Error("Preview offline"));
     await click(copy.planChange.review);
     expect(h.post).toHaveBeenCalledWith("billing/subscription/change/preview", expect.objectContaining({ workspaceId: "cws-production", planTierId: "hobby" }));
     await click(copy.plansRoute.backToUpgrades);
     expect(planNames()).toEqual(["Pro", "Scale"]);
+    expect(sidebarState()).toBe("expanded");
   });
 
   it("opens Custom from Scale with the saved resources and disables an unchanged purchase", async () => {
     vi.useFakeTimers();
     await render(picker("team", { allocatedDiskGb: 256 }));
     expect(host.querySelector('form[aria-label="Size your server"]')).not.toBeNull();
+    expect(sidebarState()).toBe("expanded");
     expect(input(copy.custom.cpu)?.value).toBe("8");
     expect(input(copy.custom.memory)?.value).toBe("32");
     expect(input(copy.custom.disk)?.value).toBe("256");
@@ -182,9 +196,36 @@ describe("plans for an existing server", () => {
     expect(buttons("Choose Pro")[0]?.disabled).toBe(true);
     expect(h.post).not.toHaveBeenCalled();
   });
+
+  it("keeps navigation expanded while loading and uses the remaining plans when the server changes", async () => {
+    let ready!: (value: typeof catalog) => void;
+    h.get.mockReturnValueOnce(new Promise(resolve => { ready = resolve; }));
+    await render(picker("hobby"));
+    expect(sidebarState()).toBe("expanded");
+    await act(async () => ready(catalog));
+    expect(planNames()).toEqual(["Starter", "Pro", "Scale"]);
+    expect(sidebarState()).toBe("collapsed");
+    await render(picker("pro", { workspaceId: "cws-staging" }));
+    expect(planNames()).toEqual(["Scale"]);
+    expect(sidebarState()).toBe("expanded");
+    expect(h.get).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("buying another managed server", () => {
+  it("uses normal width for Custom and extra width for the full comparison and PAYG", async () => {
+    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
+    await render(<ManagedServerPurchase />);
+    expect(sidebarState()).toBe("collapsed");
+    await click(copy.custom.name);
+    expect(sidebarState()).toBe("expanded");
+    await click(copy.custom.presets);
+    expect(sidebarState()).toBe("collapsed");
+    await click(copy.purchase.payg);
+    expect(sidebarState()).toBe("collapsed");
+    expect(h.post).not.toHaveBeenCalled();
+  });
+
   it("keeps typed resources when switching PAYG tiers and offers a pool that fits the server", async () => {
     h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
     await render(<ManagedServerPurchase />);

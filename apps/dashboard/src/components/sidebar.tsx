@@ -19,6 +19,7 @@ import { useMailScope } from "@/context/MailScopeContext";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import { projectsApi } from "@/lib/api";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
+import { useSidebarLayout } from "@/context/SidebarLayoutContext";
 import { useIssueCounts } from "@/hooks/useIssueCounts";
 import { countProjectCollections, getSidebarNavCountsRevision, subscribeSidebarNavCounts } from "@/lib/sidebar-nav-counts";
 import {
@@ -110,12 +111,16 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   const { toggle } = useTheme();
   const { t } = useI18n();
   const brand = useBrandName();
-  const { collapsed: desktopCollapsed, toggleCollapsed } = useSidebarCollapse(
+  const { autoCollapse } = useSidebarLayout();
+  const collapseScope =
     pathname === "/scale" || pathname.startsWith("/scale/")
       ? "scale"
       : pathname === "/billing/plans"
         ? "plans"
-        : null,
+        : null;
+  const { collapsed: desktopCollapsed, toggleCollapsed } = useSidebarCollapse(
+    collapseScope,
+    collapseScope === "scale" || autoCollapse,
   );
   const collapsed = !mobileOpen && desktopCollapsed;
   const [loggingOut, setLoggingOut] = useState(false);

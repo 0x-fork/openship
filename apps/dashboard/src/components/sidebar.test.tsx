@@ -8,9 +8,11 @@ import { issuesApi, type IssueCounts } from "@/lib/api/issues";
 import { getActiveOrganizationId, setActiveOrganizationId } from "@/lib/api/client";
 import { useIssueCounts } from "@/hooks/useIssueCounts";
 import { Sidebar } from "./sidebar";
+import { SidebarLayoutProvider, useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
 
 const mocks = vi.hoisted(() => ({
   pathname: "/monitoring",
+  widePlans: false,
   summary: vi.fn(),
   feed: vi.fn(),
   organization: vi.fn(),
@@ -64,6 +66,7 @@ let host: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.pathname = "/monitoring";
+  mocks.widePlans = false;
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.organization.mockResolvedValue({ data: { id: "org-a" } });
@@ -81,11 +84,19 @@ afterEach(async () => {
   vi.useRealTimers();
   setActiveOrganizationId(null);
 });
+function PlanLayoutRequest() {
+  useSidebarCollapseRequest(mocks.pathname === "/billing/plans" && mocks.widePlans);
+  return null;
+}
+
 async function render(props: ComponentProps<typeof Sidebar> = {}) {
   await act(async () =>
     root.render(
       <I18nProvider>
-        <Sidebar {...props} />
+        <SidebarLayoutProvider>
+          <Sidebar {...props} />
+          <PlanLayoutRequest />
+        </SidebarLayoutProvider>
       </I18nProvider>,
     ),
   );
@@ -103,7 +114,7 @@ async function navigate(pathname: string) {
 
 describe("Sidebar collapse", () => {
   it.each([
-    ["/billing/plans", false],
+    ["/billing/plans", true],
     ["/billing/overview", true],
     ["/billing/usage", true],
   ])("opens %s with sidebar expanded=%s on direct entry", async (pathname, expanded) => {
@@ -112,6 +123,7 @@ describe("Sidebar collapse", () => {
   });
 
   it("temporarily collapses when opening plans from Home and starts each visit compact", async () => {
+    mocks.widePlans = true;
     await navigate("/");
     expect(sidebarToggle().getAttribute("aria-expanded")).toBe("true");
     await navigate("/billing/plans");
@@ -126,6 +138,7 @@ describe("Sidebar collapse", () => {
   });
 
   it("restores a collapsed preference after manually expanding plans", async () => {
+    mocks.widePlans = true;
     await navigate("/");
     await act(async () => sidebarToggle().click());
     expect(sidebarToggle().getAttribute("aria-expanded")).toBe("false");
@@ -137,6 +150,7 @@ describe("Sidebar collapse", () => {
   });
 
   it("keeps temporary expansion separate between Scale and plans", async () => {
+    mocks.widePlans = true;
     await navigate("/scale");
     await act(async () => sidebarToggle().click());
     expect(sidebarToggle().getAttribute("aria-expanded")).toBe("true");
@@ -150,6 +164,7 @@ describe("Sidebar collapse", () => {
   });
 
   it("opens the mobile drawer fully without changing the desktop preference", async () => {
+    mocks.widePlans = true;
     await navigate("/billing/plans");
     const onCloseMobile = vi.fn();
     await render({ mobileOpen: true, onCloseMobile });
@@ -159,6 +174,21 @@ describe("Sidebar collapse", () => {
     await render();
     expect(sidebarToggle().getAttribute("aria-expanded")).toBe("false");
     await navigate("/");
+    expect(sidebarToggle().getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("waits for a wide comparison and preserves manual expansion when its layout changes", async () => {
+    await navigate("/billing/plans");
+    expect(sidebarToggle().getAttribute("aria-expanded")).toBe("true");
+    mocks.widePlans = true;
+    await render();
+    expect(sidebarToggle().getAttribute("aria-expanded")).toBe("false");
+    await act(async () => sidebarToggle().click());
+    mocks.widePlans = false;
+    await render();
+    expect(sidebarToggle().getAttribute("aria-expanded")).toBe("true");
+    mocks.widePlans = true;
+    await render();
     expect(sidebarToggle().getAttribute("aria-expanded")).toBe("true");
   });
 });

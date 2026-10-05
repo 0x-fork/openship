@@ -204,9 +204,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Deployment plan dialogs use compact title and action rows. Keep explanations in the
   scrollable content so the plans receive most of the available viewport height, including
   on short screens. Keep actions side by side on phones, allowing long labels to wrap.
-- The plans comparison (`/billing/plans`) and Scale canvas open with the desktop sidebar
-  collapsed. Keep the toggle available, restore the normal preference on leaving, and
-  keep manual expansion independent between these sections. Mobile navigation opens fully.
+- On `/billing/plans`, collapse the desktop sidebar automatically for comparisons with
+  three or more visible plans and the PAYG configurator. One or two upgrade choices,
+  Custom, and loading or error states keep the normal sidebar preference. Use the picker's
+  displayed choices; navigation must not fetch or filter plans again. Keep manual toggles
+  across filter and purchase-view changes. The Scale canvas still opens collapsed; restore
+  the normal preference on leaving and keep its override separate. Mobile navigation opens fully.
 
 ## Typography and copy
 

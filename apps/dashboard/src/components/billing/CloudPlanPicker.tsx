@@ -25,6 +25,7 @@ import {
   useCloudPurchase,
 } from "./CloudPurchaseContext";
 import { PayAsYouGoPlan } from "./PayAsYouGoPlan";
+import { useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
 
 export function CloudPlanPicker(props: Parameters<typeof PlanPicker>[0]) {
   return (
@@ -107,6 +108,13 @@ function PlanPicker({
   const selectConfiguration = (configuration: "plans" | "custom", other = showOtherPlans) =>
     setChoice({ key: choiceKey, configuration, other });
   const visiblePlans = compareUpgrades && !showOtherPlans ? choices.upgrades : choices.available;
+  useSidebarCollapseRequest(
+    !preserveProject &&
+      !loading &&
+      !error &&
+      Boolean(payload) &&
+      (payg || (configuration === "plans" && visiblePlans.length > 2)),
+  );
   const canPurchase =
     !complimentary &&
     billingEnabled &&
