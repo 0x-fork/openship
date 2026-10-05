@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sortJsonKeys } from "@repo/core";
 import type { DatabaseDump, Project } from "@repo/db";
 
 export type ProjectPromotion = NonNullable<Project["cloudPromotion"]>;
@@ -26,17 +27,6 @@ export function isProjectPromotion(value: unknown): value is ProjectPromotion {
   );
 }
 
-function ordered(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(ordered);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([a], [b]) => compare(a, b))
-        .map(([key, entry]) => [key, ordered(entry)]),
-    );
-  return value;
-}
-
 // A restart under another locale must not change the transfer checksum.
 function compare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -59,10 +49,10 @@ export function projectPromotionDigest(dump: DatabaseDump): string {
   }
   for (const [name, rows] of Object.entries(tables)) {
     tables[name] = rows
-      .map((row) => ordered(row) as Record<string, unknown>)
+      .map((row) => sortJsonKeys(row) as Record<string, unknown>)
       .sort((a, b) => compare(JSON.stringify(a), JSON.stringify(b)));
   }
   return createHash("sha256")
-    .update(JSON.stringify(ordered({ scope: dump.scope, tables })))
+    .update(JSON.stringify(sortJsonKeys({ scope: dump.scope, tables })))
     .digest("hex");
 }

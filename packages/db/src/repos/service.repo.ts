@@ -2,6 +2,7 @@ import { eq, and, asc, inArray, or, sql } from "drizzle-orm";
 import {
   commandToArgv,
   generateId,
+  sortJsonKeys,
   mergeAdvanced,
   normalizeCustomHostname,
   resolveCommandArgv,
@@ -81,27 +82,9 @@ export function toComposeSpec(s: {
   };
 }
 
-/**
- * Recursively sort object keys so two structurally-equal values stringify
- * identically, while preserving array order. This generalizes the old
- * environment-only sort: reordered maps (env, and now nested `advanced` blocks
- * like healthcheck/labels) must NOT read as drift, but ordered arrays (ports,
- * volumes, dependsOn, healthcheck argv) are order-significant and kept as-is.
- */
-const canonicalize = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    const sorted: Record<string, unknown> = {};
-    for (const k of Object.keys(value as Record<string, unknown>).sort()) {
-      sorted[k] = canonicalize((value as Record<string, unknown>)[k]);
-    }
-    return sorted;
-  }
-  return value;
-};
-
+/** Reordered maps are equal; ports, volumes and argv retain their array order. */
 const composeValuesEqual = (a: unknown, b: unknown): boolean =>
-  JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+  JSON.stringify(sortJsonKeys(a)) === JSON.stringify(sortJsonKeys(b));
 
 /** Compose-field equality (ignores routing + ordering-insensitive env). */
 export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) =>
@@ -446,7 +429,7 @@ export function composeSpecDiff(base: ComposeServiceSpec, next: ComposeServiceSp
   const b = toComposeSpec(base);
   const n = toComposeSpec(next);
   for (const f of fields) {
-    if (JSON.stringify(canonicalize(b[f])) !== JSON.stringify(canonicalize(n[f]))) {
+    if (!composeValuesEqual(b[f], n[f])) {
       changed.push({ field: f, from: b[f], to: n[f] });
     }
   }
