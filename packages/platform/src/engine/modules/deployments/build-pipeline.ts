@@ -760,6 +760,7 @@ async function executeBuildAndDeploy(
       workload,
       runtimeName: runtime.name,
       managedServer: resolved.effectiveTarget === "cloud",
+      rootDirectory: snapshot.rootDirectory,
       outputDirectory: snapshot.outputDirectory,
     });
 

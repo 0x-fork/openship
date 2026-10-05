@@ -12,7 +12,9 @@
  *      as the old inline `instanceof` checks were.
  */
 
+import { posix } from "node:path";
 import type { WorkloadType } from "@repo/core";
+import { resolveStaticOutputPath } from "@repo/adapters";
 
 export type BuildMode = "static-sandbox" | "static-bare" | "normal";
 /** `worker` = a portless long-running process: built normally, but served with
@@ -87,6 +89,7 @@ export function resolveDeployRouting(input: {
   runtimeName: string;
   /** Managed Docker serves static builds in their generated image; bare publishes files. */
   managedServer?: boolean;
+  rootDirectory?: string;
   outputDirectory: string;
 }): DeployRouting {
   if (input.workload === "web") {
@@ -103,10 +106,23 @@ export function resolveDeployRouting(input: {
   // Static, self-hosted → served as files by the edge. Docker-built → doc-root
   // already extracted (serve from release root ""); bare-built → serve from output dir.
   const dockerBuilt = input.runtimeName === "docker";
+  let staticServeOutputDir = "";
+  if (!dockerBuilt) {
+    // Bare keeps the repository tree, while build commands run inside rootDirectory.
+    // Validate both offsets using the same confinement as publication, then save
+    // the document root relative to the release so routing and rollback agree.
+    const buildRoot = "/build";
+    const rootDirectory = input.rootDirectory?.trim().replace(/^\/+|\/+$/g, "") ?? "";
+    const projectRoot = resolveStaticOutputPath(buildRoot, rootDirectory);
+    staticServeOutputDir = posix.relative(
+      buildRoot,
+      resolveStaticOutputPath(projectRoot, input.outputDirectory),
+    );
+  }
   return {
     buildMode: dockerBuilt ? "static-sandbox" : "static-bare",
     deployMode: "static-file-serve",
-    staticServeOutputDir: dockerBuilt ? "" : input.outputDirectory,
+    staticServeOutputDir,
   };
 }
 
