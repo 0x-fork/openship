@@ -17,6 +17,7 @@ export function isProjectPromotion(value: unknown): value is ProjectPromotion {
     !!state.target.organizationId &&
     typeof state.sourceDigest === "string" &&
     /^[0-9a-f]{64}$/.test(state.sourceDigest) &&
+    (state.cleanupInProgress === undefined || typeof state.cleanupInProgress === "boolean") &&
     (state.imported === null ||
       (typeof state.imported === "object" &&
         !Array.isArray(state.imported) &&

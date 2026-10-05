@@ -172,9 +172,10 @@ async function ingestProjectPromotion(
       throw new AppError("The previously imported Cloud project is no longer available. The local copy was preserved.", 409, "TRANSFER_TARGET_MISSING");
 
     const receipt: ProjectPromotion = { ...state, imported };
+    delete receipt.cleanupInProgress;
     await db.transaction(async tx => {
       await restoreSubgraphInTransaction(tx, input.dump, { mode: "merge", remapOrgId: input.organizationId });
-      await tx.update(schema.project).set({ cloudPromotion: receipt }).where(
+      await tx.update(schema.project).set({ cloudPromotion: receipt, deletionInProgress: false }).where(
         and(eq(schema.project.id, projectId), eq(schema.project.organizationId, input.organizationId)),
       );
     });

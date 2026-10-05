@@ -154,6 +154,9 @@ export interface TeardownOptions {
    * runtime + rows but must NOT delete the webhook.
    */
   preserveWebhook?: boolean;
+  /** Protect configuration writes and validate a confirmed transfer snapshot
+   * after the deletion claim, before any destructive cleanup. */
+  validateConfiguration?: () => Promise<void>;
   /**
    * Record-only ("soft") delete: drop just the Openship DB record and LEAVE the
    * server workload + data + on-server manifest intact, so the project can be
@@ -254,7 +257,9 @@ async function teardownProjectLocked(
   // The advisory lock is the real owner; this boolean is an admission signal for
   // DB/runtime writers. Re-setting an old `true` is intentional crash recovery:
   // no live teardown can own it while this caller holds the advisory lock.
-  const claimed = await repos.project.claimDeletion(projectId);
+  const claimed = opts.validateConfiguration
+    ? await repos.project.claimDeletion(projectId, { protectConfiguration: true })
+    : await repos.project.claimDeletion(projectId);
   if (!claimed) {
     let existing: Project | undefined;
     try {
@@ -395,6 +400,8 @@ async function teardownProjectLocked(
       }
       push({ step: "cancel_in_flight", status: "skipped", details: "nothing in flight" });
     }
+
+    await opts.validateConfiguration?.();
 
     // ── Step 2: Unregister GitHub webhook (unless preserving it). ────────
     // promote-to-cloud keeps the webhook: the cloud copy auto-deploys via the

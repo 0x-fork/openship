@@ -1,4 +1,4 @@
-import { eq, and, asc, inArray, sql } from "drizzle-orm";
+import { eq, and, asc, inArray, or, sql } from "drizzle-orm";
 import {
   commandToArgv,
   generateId,
@@ -11,6 +11,7 @@ import {
 } from "@repo/core";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
+import { assertProjectConfigurationWritable, withProjectConfigurationWrite } from "./project-work-admission";
 import { deployment, envVar, project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
 import { liveBuildExecutionCondition } from "./deployment.repo";
@@ -605,10 +606,14 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
   const codec = createConfigurationSecrets(encryption);
 
   function writeUpdate(id: string, data: Partial<NewService>, updatedAt: Date | null = new Date()) {
-    return db
+    const predicate = or(
+      inArray(project.id, db.select({ id: service.projectId }).from(service).where(eq(service.id, id))),
+      data.projectId ? eq(project.id, data.projectId) : undefined,
+    )!;
+    return withProjectConfigurationWrite(db, predicate, async (tx) => tx
       .update(service)
       .set(codec.sealService({ ...data, ...(updatedAt === null ? {} : { updatedAt }) }))
-      .where(eq(service.id, id));
+      .where(eq(service.id, id)).returning());
   }
 
   /** Both Compose writers compare decrypted values before sealing the patch.
@@ -625,7 +630,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     // Omit the timestamp on metadata-only writes: setting the value we read
     // could backdate a concurrent config edit. RETURNING includes those edits
     // in the result instead of echoing a stale read over the persisted row.
-    const [updated] = await writeUpdate(stored.id, patch, configChanged ? new Date() : null).returning();
+    const [updated] = await writeUpdate(stored.id, patch, configChanged ? new Date() : null);
     if (!updated) throw new Error("Service was removed during Compose synchronization");
     return codec.openService(updated);
   }
@@ -816,7 +821,8 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       // Return the persisted defaults and timestamps. Synthesizing a Service
       // from the input omitted fields such as namespaceVolumes and made create
       // disagree with the next read of the same row.
-      const [row] = await db.insert(service).values(codec.sealService({ id, ...data })).returning();
+      const [row] = await withProjectConfigurationWrite(db, eq(project.id, data.projectId), async (tx) =>
+        tx.insert(service).values(codec.sealService({ id, ...data })).returning());
       return codec.openService(row!);
     },
 
@@ -889,6 +895,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       await db.transaction(async (tx) => {
         const [row] = await tx.select({ projectId: service.projectId }).from(service).where(eq(service.id, id));
         if (row) {
+          await assertProjectConfigurationWritable(tx, eq(project.id, row.projectId));
           const [owner] = await tx.select({ compositeRoutes: project.compositeRoutes })
             .from(project).where(eq(project.id, row.projectId)).for("update");
           const routes = owner?.compositeRoutes ?? [];
@@ -914,7 +921,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
      * FK cascade that would remove them automatically).
      */
     async deleteByProjectId(projectId: string) {
-      await db.delete(service).where(eq(service.projectId, projectId));
+      await withProjectConfigurationWrite(db, eq(project.id, projectId), async (tx) => tx.delete(service).where(eq(service.projectId, projectId)));
     },
 
     /** List only the rows of one kind under a project. */
@@ -1428,6 +1435,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       appliedAt: Date;
     }) {
       await db.transaction(async tx => {
+        await assertProjectConfigurationWritable(tx, eq(project.id, input.projectId));
         const [parent] = await tx.select().from(deployment).where(and(
           eq(deployment.id, input.deploymentId),
           eq(deployment.projectId, input.projectId),

@@ -236,6 +236,12 @@ import counts, allowing the source to retry local cleanup without importing or o
 Matching project IDs alone do not authorize cleanup; older duplicates without a receipt require
 review. Both instances must support this endpoint. An older Cloud API rejects it before importing.
 
+Before local cleanup starts, Openship blocks configuration writes and checks the source snapshot
+again. An edit committed before this check preserves the local copy with `TRANSFER_SOURCE_CHANGED`;
+edits attempted during cleanup return `PROJECT_TRANSFER_IN_PROGRESS`. Failed cleanup releases this
+guard so the project remains editable. New builds admitted after import are preserved, not cancelled
+as part of promotion.
+
 Promotion transfers configuration; it does not migrate running workloads or persistent application
 data. Deploying a local project on a connected Cloud server uses `serverId` and does not require
 promotion. See [the desktop MCP workflow](/docs/api/mcp#deploy-a-desktop-folder-on-cloud).

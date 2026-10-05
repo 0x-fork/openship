@@ -100,6 +100,17 @@ beforeEach(async () => {
 });
 
 describe("Cloud promotion receipts and atomic ingest", () => {
+  it("keeps the local cleanup fence off the imported Cloud project", async () => {
+    receipt.cleanupInProgress = true;
+    source.tables.project[0].deletionInProgress = true;
+    await ingestSubgraph(input);
+    const imported = await repos.project.findById(projectId);
+    expect(imported?.deletionInProgress).toBe(false);
+    expect(imported?.cloudPromotion?.cleanupInProgress).toBeUndefined();
+    await repos.project.update(projectId, { buildCommand: "cloud edit" });
+    expect((await repos.project.findById(projectId))?.buildCommand).toBe("cloud edit");
+  });
+
   it("authenticates the HTTP promotion and derives its tenant and user from the session", async () => {
     const endpoint = "/api/cloud/promote-project";
     const body = { dump: input.dump, promotionId: receipt.id };

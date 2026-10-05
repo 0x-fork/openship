@@ -56,6 +56,14 @@ let context: ExecutionContext;
 let projectId: string;
 let imported: DatabaseDump | undefined;
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(async () => {
   remote.ingest.mockReset();
   remote.cleanup.mockReset();
@@ -227,6 +235,134 @@ describe("project promotion recovery", () => {
     });
     expect(remote.cleanup).not.toHaveBeenCalled();
     expect((await repos.project.findById(projectId))?.buildCommand).toBe("new build");
+  });
+
+  it("preserves a settings edit accepted after import confirmation and before cleanup", async () => {
+    await repos.project.update(projectId, {
+      gitOwner: "owner",
+      gitRepo: "app",
+      webhookId: 42,
+    });
+    const { updateProject } =
+      await import("@repo/platform/engine/modules/projects/project-crud.service");
+    const reachedClaim = deferred();
+    const resumeClaim = deferred();
+    const claimDeletion = repos.project.claimDeletion.bind(repos.project);
+    vi.spyOn(repos.project, "claimDeletion").mockImplementationOnce(async (...input) => {
+      reachedClaim.resolve();
+      await resumeClaim.promise;
+      return claimDeletion(...input);
+    });
+    const promotion = promoteProjectToCloud(context, projectId).then(
+      (result) => ({ result, error: undefined }),
+      (error) => ({ result: undefined, error }),
+    );
+    await reachedClaim.promise;
+    try {
+      expect((await repos.project.findById(projectId))?.cloudPromotion?.imported).toBeTruthy();
+      const updated = await updateProject(
+        projectId,
+        { buildCommand: "new build after import" },
+        context.organizationId,
+      );
+      expect(updated.buildCommand).toBe("new build after import");
+      expect(imported?.tables.project[0].buildCommand).not.toBe("new build after import");
+    } finally {
+      resumeClaim.resolve();
+    }
+    const outcome = await promotion;
+    expect(outcome.error).toMatchObject({ code: "TRANSFER_SOURCE_CHANGED" });
+    expect(remote.cleanup).not.toHaveBeenCalled();
+    expect(await repos.project.findById(projectId)).toMatchObject({
+      buildCommand: "new build after import",
+      deletionInProgress: false,
+    });
+    expect(
+      (await repos.project.findById(projectId))?.cloudPromotion?.cleanupInProgress,
+    ).toBeUndefined();
+  });
+
+  it("rejects configuration edits during cleanup and admits them again after cleanup fails", async () => {
+    const { updateProject } =
+      await import("@repo/platform/engine/modules/projects/project-crud.service");
+    const { updateService } =
+      await import("@repo/platform/engine/modules/services/service.service");
+    const { mergeEnvVars } =
+      await import("@repo/platform/engine/modules/projects/project-env.service");
+    const service = await repos.service.create({ projectId, name: "api", image: "node:22" });
+    const reachedCleanup = deferred();
+    const resumeCleanup = deferred();
+    remote.cleanup.mockImplementationOnce(async () => {
+      reachedCleanup.resolve();
+      await resumeCleanup.promise;
+      return { total: 1, succeeded: 0, failed: [{ label: "API", error: "busy" }] };
+    });
+    const promotion = promoteProjectToCloud(context, projectId);
+    await reachedCleanup.promise;
+    const edits = [
+      () => updateProject(projectId, { buildCommand: "new build" }, context.organizationId),
+      () => updateService(context, projectId, service.id, { image: "node:24" }),
+      () =>
+        mergeEnvVars(projectId, context.organizationId, {
+          environment: "production",
+          upserts: [{ key: "NEW_KEY", value: "new value", isSecret: true }],
+          deletes: [],
+        }),
+    ];
+    try {
+      expect((await repos.project.findById(projectId))?.cloudPromotion?.cleanupInProgress).toBe(
+        true,
+      );
+      for (const edit of edits)
+        await expect(edit()).rejects.toMatchObject({ code: "PROJECT_TRANSFER_IN_PROGRESS" });
+    } finally {
+      resumeCleanup.resolve();
+    }
+    expect((await promotion).localRemoved).toBe(false);
+    expect(
+      (await repos.project.findById(projectId))?.cloudPromotion?.cleanupInProgress,
+    ).toBeUndefined();
+    for (const edit of edits) await edit();
+    expect((await repos.project.findById(projectId))?.buildCommand).toBe("new build");
+    expect((await repos.service.findById(service.id))?.image).toBe("node:24");
+  });
+
+  it("preserves work admitted after import instead of cancelling it for cleanup", async () => {
+    await repos.project.update(projectId, { gitOwner: "owner", gitRepo: "app", webhookId: 42 });
+    const claimDeletion = repos.project.claimDeletion.bind(repos.project);
+    let admittedId: string | undefined;
+    vi.spyOn(repos.project, "claimDeletion").mockImplementationOnce(async (...input) => {
+      const admitted = await repos.deployment.create({
+        projectId,
+        organizationId: context.organizationId,
+        branch: "main",
+        status: "queued",
+      });
+      admittedId = admitted?.id;
+      return claimDeletion(...input);
+    });
+    const result = await promoteProjectToCloud(context, projectId);
+    expect(result.localRemoved).toBe(false);
+    expect(admittedId).toBeTruthy();
+    expect((await repos.deployment.findById(admittedId!))?.status).toBe("queued");
+    expect(remote.cleanup).not.toHaveBeenCalled();
+    expect((await repos.project.findById(projectId))?.deletionInProgress).toBe(false);
+  });
+
+  it("reclaims a configuration fence left by a crashed cleanup using the same receipt", async () => {
+    remote.cleanup.mockResolvedValueOnce({
+      total: 1,
+      succeeded: 0,
+      failed: [{ label: "API", error: "busy" }],
+    });
+    await promoteProjectToCloud(context, projectId);
+    await repos.project.claimDeletion(projectId, { protectConfiguration: true });
+    await expect(repos.project.update(projectId, { name: "late edit" })).rejects.toMatchObject({
+      code: "PROJECT_TRANSFER_IN_PROGRESS",
+    });
+    expect((await promoteProjectToCloud(context, projectId)).localRemoved).toBe(true);
+    expect(remote.calls[1].body.promotionId).toBe(remote.calls[0].body.promotionId);
+    expect(await repos.project.findById(projectId)).toBeUndefined();
   });
 
   it("requires the original Cloud account on a later retry", async () => {

@@ -33,6 +33,8 @@ export interface ProjectCloudPromotion {
   target: { apiUrl: string; userId: string; organizationId: string };
   sourceDigest: string;
   imported: Record<string, number> | null;
+  /** Local-only admission fence while a confirmed promotion removes its source. */
+  cleanupInProgress?: boolean;
 }
 
 // ─── Project apps ────────────────────────────────────────────────────────────

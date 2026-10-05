@@ -307,22 +307,28 @@ async function promoteProjectToCloudLocked(ctx: RequestContext, projectId: strin
   // the cloud project and hard-validate the signature. cloudProjectId == the
   // local id (dump/ingest preserves it); the secret ciphertext is copied verbatim.
   const local = await repos.project.findById(projectId);
-  if (local?.gitOwner && local?.gitRepo && local?.webhookId) {
-    await repos.cloudWebhookBinding
-      .upsert({
-        organizationId: ctx.organizationId,
-        cloudProjectId: projectId,
-        gitOwner: local.gitOwner,
-        gitRepo: local.gitRepo,
-        gitBranch: local.gitBranch ?? "",
-        webhookId: local.webhookId,
-        webhookSecret: local.webhookSecret ?? null,
-      });
-  }
-
+  const receipt = local?.cloudPromotion;
+  if (!isProjectPromotion(receipt) || !receipt.imported)
+    throw new AppError("The confirmed transfer receipt is unavailable. The local project was preserved.", 409, "TRANSFER_RECEIPT_INVALID");
   const teardown = await teardownProject(ctx, projectId, {
-    force: true,
+    // Work admitted after the import must be kept, never cancelled as cleanup
+    // of a snapshot that did not contain it.
+    force: false,
     preserveWebhook: true,
+    validateConfiguration: async () => {
+      await assertUnchangedSource(projectId, receipt);
+      if (local?.gitOwner && local?.gitRepo && local?.webhookId) {
+        await repos.cloudWebhookBinding.upsert({
+          organizationId: ctx.organizationId,
+          cloudProjectId: projectId,
+          gitOwner: local.gitOwner,
+          gitRepo: local.gitRepo,
+          gitBranch: local.gitBranch ?? "",
+          webhookId: local.webhookId,
+          webhookSecret: local.webhookSecret ?? null,
+        });
+      }
+    },
   });
   return {
     projectId,
