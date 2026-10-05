@@ -25,7 +25,7 @@ import { RESOURCE_TIER_ORDER } from "../resources";
  */
 
 /** Highest `schemaVersion` this build understands. */
-export const MAX_SUPPORTED_PRICING_SCHEMA = 1;
+export const MAX_SUPPORTED_PRICING_SCHEMA = 2;
 
 /** A limit that may be "unlimited" (null). Non-negative integers only. */
 const limitNumber = z.number().int().nonnegative().nullable();
@@ -69,9 +69,10 @@ const planSchema = z.object({
     monthly: z.number().int().nonnegative().nullable(),
     annual: z.number().int().nonnegative().nullable(),
   }),
-  /** Oblien namespace allowance, independent of the USD price and product copy. */
+  /** Compute contract, independent of checkout copy and application limits. */
   billing: z
     .object({
+      mode: z.enum(["metered", "monthly"]).default("metered"),
       creditsPerCycle: z.number().int().min(0).max(1_000_000_000).nullable(),
       yearlyCreditsPerCycle: z.number().int().min(1).max(1_000_000_000).nullable(),
       overdraft: z.number().int().min(0).max(1_000_000_000),
@@ -172,6 +173,26 @@ const creditPackSchema = z.object({
   sortOrder: z.number().int(),
 });
 
+const resourceRangeSchema = z.object({
+  min: z.number().int().positive(),
+  max: z.number().int().positive(),
+  step: z.number().int().positive(),
+}).strict().refine(range => range.max >= range.min && range.min % range.step === 0 && range.max % range.step === 0,
+  "Resource bounds must be ordered and align with their step");
+
+export const customPricingSchema = z.object({
+  resources: z.object({
+    cpuCores: resourceRangeSchema,
+    memoryMb: resourceRangeSchema,
+    diskGb: resourceRangeSchema,
+  }).strict(),
+  extraMonthlyCents: z.object({
+    cpuCore: z.number().int().positive(),
+    memoryGb: z.number().int().positive(),
+    diskGb: z.number().int().positive(),
+  }).strict(),
+}).strict();
+
 export const pricingCatalogSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -193,6 +214,7 @@ export const pricingCatalogSchema = z
     }),
     /** Time-bounded automatic discounts. Empty = list price. */
     campaigns: z.array(campaignSchema),
+    custom: customPricingSchema,
     plans: z.array(planSchema).min(1),
     creditPacks: z.array(creditPackSchema),
     /**
@@ -228,6 +250,14 @@ export const pricingCatalogSchema = z
       ids.add(plan.id);
     });
 
+    const retailPlans = data.plans.filter(plan => (plan.price.monthly ?? 0) > 0 && !plan.contactSales);
+    if (!retailPlans.length || retailPlans.some(plan => plan.billing.resourceLimits.max_workspaces !== 1)) {
+      ctx.addIssue({ code: "custom", path: ["custom"], message: "Custom pricing requires single-server retail bundles" });
+    }
+    if (data.custom.resources.memoryMb.step % 1024 !== 0) {
+      ctx.addIssue({ code: "custom", path: ["custom", "resources", "memoryMb"], message: "Custom memory increments must be whole GB" });
+    }
+
     data.plans.forEach((plan, i) => {
       // `inherits` drives the "Everything in X" bullet, so a dangling id would
       // render an empty plan name mid-sentence.
@@ -239,12 +269,17 @@ export const pricingCatalogSchema = z
       }
       // Namespace offers use dynamic provider prices; no Stripe price ID is needed.
       const monthlyPurchasable = plan.price.monthly !== null && plan.price.monthly > 0;
-      if (monthlyPurchasable && !plan.billing.creditsPerCycle) {
+      if (monthlyPurchasable && plan.billing.mode === "metered" && !plan.billing.creditsPerCycle) {
         ctx.addIssue({
           code: "custom",
           path: ["plans", i, "billing", "creditsPerCycle"],
           message: `plan "${plan.id}" needs a finite positive namespace allowance`,
         });
+      }
+      if (plan.billing.mode === "monthly" && (plan.billing.creditsPerCycle !== 0 ||
+          plan.billing.yearlyCreditsPerCycle !== null || plan.price.annual !== null ||
+          plan.billing.overdraft !== 0 || plan.billing.suspendThreshold !== 0)) {
+        ctx.addIssue({ code: "custom", path: ["plans", i, "billing"], message: "Monthly capacity has no credit allowance, overdraft or annual purchase" });
       }
       const annualPurchasable = plan.price.annual !== null && plan.price.annual > 0;
       // Oblien wallet funding is 100 credits/USD. Retail allowances must be
