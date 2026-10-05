@@ -3452,7 +3452,7 @@
     },
     "POST /api/projects/folder/upload/:sessionId": {
       "page": "sources",
-      "description": "Upload the gzipped tarball (self-hosted relay, 300 MB limit)."
+      "description": "Upload the gzipped source archive (Cloud and self-hosted, 300 MB limit)."
     },
     "POST /api/services/terminal/ticket": {
       "page": "service-terminal",

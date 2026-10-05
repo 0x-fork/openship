@@ -76,9 +76,9 @@ The response includes `sessionId`, `expiresAt`, and `upload` instructions:
 | `requiresAuth` | Send your bearer credential only when required. |
 | `withCredentials` | Whether a browser upload needs credentials. |
 
-Send a gzip-compressed tar archive to the returned URL. Use the supplied instructions because the upload
-destination can differ by deployment mode. The self-hosted relay is
-`POST /api/projects/folder/upload/:sessionId` and limits uploads to 300 MB.
+Send a gzip-compressed tar archive to the returned URL with the supplied headers and authentication.
+Cloud and self-hosted instances share `POST /api/projects/folder/upload/:sessionId`, with a 300 MB limit.
+Source files are staged privately and prepared on the selected execution server for deployment.
 
 The SDK can perform both session creation and upload for you:
 
@@ -142,6 +142,6 @@ To finish a custom flow, use `projects.ensure()` to record the chosen configurat
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Upload the gzipped tarball (self-hosted relay, 300 MB limit). | HTTP only | `POST /api/projects/folder/upload/:sessionId`<br />`project:write` · Self-hosted |
+| Upload the gzipped source archive (Cloud and self-hosted, 300 MB limit). | HTTP only | `POST /api/projects/folder/upload/:sessionId`<br />`project:write` |
 
 {/* api-operations:end */}
