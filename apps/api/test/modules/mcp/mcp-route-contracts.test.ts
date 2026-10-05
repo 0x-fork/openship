@@ -321,6 +321,8 @@ describe("MCP route input and transport contracts", () => {
 
   it("all workflow references resolve to real tools and unavailable cluster flows stay off Cloud", () => {
     for (const name of [
+      "deploy-a-folder",
+      "deploy-from-git",
       "cluster-and-scale",
       "cluster-database",
       "backup-and-restore",

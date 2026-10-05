@@ -294,6 +294,7 @@ describe("migration chain applies to an existing, populated database", () => {
         const { cloud_workspace_id: _native, cloud_archive_strategy: _archive, ...previous } = old as typeof old & Record<string, unknown>;
         expect(row).toEqual({
           ...previous,
+          cloud_promotion: null,
           server_id: previous.workspace_id
             ? managed.find((server) => server.workspace_id === previous.workspace_id)!.id
             : previous.server_id,

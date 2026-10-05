@@ -21,6 +21,7 @@ import {
   resolveOrgCloudUserId,
   readCloudSession,
   cloudSessionCacheKey,
+  type CloudIdentity,
 } from "./transport";
 import { clearCloudSession } from "./session";
 import { cloudRequestError } from "./request-error";
@@ -40,14 +41,14 @@ import type {
 // still valid.
 const TOKEN_TTL_S = 25 * 60;
 
-export function cloudClient(scope: CloudClientScope): CloudClient {
+export function cloudClient(scope: CloudClientScope, expectedIdentity?: CloudIdentity): CloudClient {
   const isUserScope = "userId" in scope;
 
   /** Authenticated SaaS fetch using the bound scope. */
   const fetchScoped = (path: string, init?: RequestInit) =>
     isUserScope
-      ? cloudFetch(scope.userId, path, init)
-      : cloudFetchAsOrgOwner(scope.organizationId, path, init);
+      ? cloudFetch(scope.userId, path, init, expectedIdentity)
+      : cloudFetchAsOrgOwner(scope.organizationId, path, init, expectedIdentity);
 
   /** Resolve the underlying cloud-linked user id for cache keys. Returns
    *  null when org scope is used and no member has linked Openship Cloud. */
@@ -370,8 +371,11 @@ export function cloudClient(scope: CloudClientScope): CloudClient {
         organizationId: string;
         publicUrl: string;
         imported: Record<string, number>;
+        promotionId?: string;
       }>({
-        path: "/api/cloud/ingest-subgraph",
+        // A separate route makes an older Cloud API fail before importing: it
+        // cannot silently ignore a receipt it does not know how to persist.
+        path: input.promotionId ? "/api/cloud/promote-project" : "/api/cloud/ingest-subgraph",
         body: input,
         errorLabel: "Cloud subgraph ingest",
       });

@@ -37,8 +37,14 @@ import {
 } from "@repo/db";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
 import { AppError } from "@repo/core";
-import { teardownProject } from "@repo/platform/engine/modules/projects/project-teardown";
+import { randomUUID } from "node:crypto";
+import { teardownProject, getActiveProjectState } from "@repo/platform/engine/modules/projects/project-teardown";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
+import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
+import { linkedCloudIdentity } from "../../lib/cloud/server-link";
+import { sameCloudIdentity } from "../../lib/cloud/transport";
+import { isProjectPromotion, projectPromotionDigest, type ProjectPromotion } from "../../lib/cloud/project-promotion";
+import { assertNotControlPlane } from "../../lib/resource-access";
 
 // ─── Typed errors ────────────────────────────────────────────────────────────
 
@@ -56,7 +62,7 @@ export class TransferConflictError extends Error {
     public readonly conflictKind: "id" | "slug",
     public readonly conflictValue: string,
   ) {
-    super(`Target organization already has a project with this ${conflictKind}: ${conflictValue}.`);
+    super(`Target organization already has a project with this ${conflictKind}: ${conflictValue}.${conflictKind === "id" ? " Review both copies before removing either one." : ""}`);
     this.name = "TransferConflictError";
   }
 }
@@ -93,6 +99,8 @@ interface ProjectRow {
   organizationId: string;
   workspaceId: string | null;
   clusterId: string | null;
+  cloudPromotion: ProjectPromotion | null;
+  appTemplateId: string | null;
 }
 
 async function loadProject(projectId: string, organizationId: string): Promise<ProjectRow | null> {
@@ -103,6 +111,8 @@ async function loadProject(projectId: string, organizationId: string): Promise<P
       organizationId: schema.project.organizationId,
       workspaceId: schema.project.workspaceId,
       clusterId: schema.project.clusterId,
+      cloudPromotion: schema.project.cloudPromotion,
+      appTemplateId: schema.project.appTemplateId,
     })
     .from(schema.project)
     .where(eq(schema.project.id, projectId));
@@ -128,9 +138,23 @@ export interface TransferToCloudResult {
 export async function transferProjectToCloud(
   input: TransferToCloudInput,
 ): Promise<TransferToCloudResult> {
+  return withProjectRuntimeLock(input.projectId, () => transferProjectToCloudLocked(input));
+}
+
+async function sourceDigest(projectId: string): Promise<string> {
+  return projectPromotionDigest(await dumpSubgraph({ kind: "project", projectId }));
+}
+
+async function assertUnchangedSource(projectId: string, state: ProjectPromotion): Promise<void> {
+  if (await sourceDigest(projectId) !== state.sourceDigest)
+    throw new AppError("The local project changed after this transfer started. Review both copies before continuing; further local cleanup was stopped.", 409, "TRANSFER_SOURCE_CHANGED");
+}
+
+async function transferProjectToCloudLocked(input: TransferToCloudInput): Promise<TransferToCloudResult> {
   // 1) Pre-flight: project exists in this org and isn't already on cloud.
   const project = await loadProject(input.projectId, input.organizationId);
   if (!project) throw new TransferProjectNotFoundError(input.projectId);
+  assertNotControlPlane(project);
   if (project.workspaceId) {
     throw new TransferAlreadyOnTargetError("cloud");
   }
@@ -151,6 +175,26 @@ export async function transferProjectToCloud(
       "CLUSTER_TRANSFER_UNSUPPORTED",
     );
 
+  // A transfer must not snapshot an in-flight deployment and then cancel work
+  // that was never part of the imported configuration.
+  if ((await getActiveProjectState(project.id)).blocking)
+    throw new AppError("Finish or cancel this project's active work before transferring it.", 409, "TRANSFER_ACTIVE_WORK");
+
+  const target = await linkedCloudIdentity(input.organizationId);
+  let state = project.cloudPromotion;
+  if (state) {
+    if (!isProjectPromotion(state) || !sameCloudIdentity(state.target, target))
+      throw new AppError("Reconnect the Cloud account and workspace used by the original transfer before retrying.", 409, "TRANSFER_CONNECTION_CHANGED");
+    await assertUnchangedSource(project.id, state);
+  } else {
+    state = { id: randomUUID(), target, sourceDigest: await sourceDigest(project.id), imported: null };
+    // Persist BEFORE the network call. A lost response or process restart reuses
+    // this receipt instead of treating an unrelated matching ID as our import.
+    await db.update(schema.project).set({ cloudPromotion: state }).where(
+      and(eq(schema.project.id, project.id), eq(schema.project.organizationId, input.organizationId)),
+    );
+  }
+
   // 2) Dump the project subgraph from local. stripEncrypted: true — the
   //    SaaS can't decrypt local-host blobs; re-link is the operator's
   //    job on the cloud side.
@@ -165,9 +209,16 @@ export async function transferProjectToCloud(
   //    rewrites every organizationId onto the caller's SaaS org.
   const result = await cloudClient({
     organizationId: input.organizationId,
-  }).ingestSubgraph({ dump });
+  }, target).ingestSubgraph({ dump, promotionId: state.id });
 
   if (!result.ok) {
+    // These responses guarantee no import committed. Permit a corrected name
+    // or updated Cloud API on the next attempt; never clear an acknowledged or
+    // uncertain transfer merely because the connection failed.
+    if (!state.imported && ["SLUG_TAKEN", "PK_COLLISION", "INGEST_VALIDATION_FAILED", "INGEST_FORMAT_MISMATCH"].includes(result.code ?? ""))
+      await db.update(schema.project).set({ cloudPromotion: null }).where(
+        and(eq(schema.project.id, project.id), eq(schema.project.organizationId, input.organizationId)),
+      );
     // No cloud session linked for this org.
     if (/not connected/i.test(result.error)) {
       throw new TransferNotConnectedError();
@@ -185,19 +236,29 @@ export async function transferProjectToCloud(
     // code "PK_COLLISION" (typed) or a "duplicate key value" message (legacy
     // SaaS). Reported as a conflict; cleanup is an explicit, runtime-aware
     // operation (not a deploy-triggered auto-delete).
-    if (result.code === "PK_COLLISION" || /duplicate key value/i.test(result.error)) {
+    if (result.code === "PK_COLLISION" || result.code === "TRANSFER_CONFLICT" || /duplicate key value/i.test(result.error)) {
       throw new TransferConflictError("id", project.id);
     }
     throw new TransferCloudCallFailedError(result.error);
   }
+
+  if (result.organizationId !== target.organizationId || result.promotionId !== state.id ||
+    !isProjectPromotion({ ...state, imported: result.imported }))
+    throw new AppError("Cloud did not confirm this transfer's receipt. The local project was preserved.", 502, "TRANSFER_RECEIPT_INVALID");
+  if (!sameCloudIdentity(target, await linkedCloudIdentity(input.organizationId)))
+    throw new AppError("The Cloud connection changed during transfer. Reconnect the original account before retrying.", 409, "TRANSFER_CONNECTION_CHANGED");
+  // An edit during the Cloud call must never be silently erased by cleanup.
+  await assertUnchangedSource(project.id, state);
+  await db.update(schema.project).set({ cloudPromotion: { ...state, imported: result.imported } }).where(
+    and(eq(schema.project.id, project.id), eq(schema.project.organizationId, input.organizationId)),
+  );
 
   // 4) Ingest succeeded — the SaaS now owns this project (cloud-as-source).
   //    The CALLER (transfer.controller) tears down the local runtime AND drops
   //    the local rows via teardownProject({ preserveWebhook: true }) — that
   //    reuses the tested teardown path so a promoted project leaves no orphaned
   //    local container, while keeping the GitHub webhook for the cloud copy.
-  //    We deliberately do NOT touch local state here so a teardown failure is
-  //    reported as recoverable drift rather than a half-deleted project.
+  //    Only the receipt is changed here. Runtime teardown remains retryable.
   //
   // Remaining follow-up (operational, not data): hand custom-domain DNS over to
   // the cloud workspace; the local routes are removed by the teardown but DNS
@@ -222,8 +283,8 @@ export interface PromoteToCloudResult {
  * PROMOTE a local project to Openship Cloud: ingest its subgraph to the SaaS
  * (which becomes the source of truth), then tear down the local runtime + rows
  * via the tested teardown path (keeping the GitHub webhook, since the cloud
- * copy still auto-deploys). Single orchestration reused by BOTH the explicit
- * `/transfer/to-cloud` route AND born-on-cloud (first cloud deploy).
+ * copy still auto-deploys). Used only by the explicit transfer operation;
+ * deploying to a managed server does not transfer control-plane records.
  *
  * Throws (from transferProjectToCloud) if the project is already on cloud or
  * the org isn't connected — callers surface those.
@@ -232,6 +293,10 @@ export async function promoteProjectToCloud(
   ctx: RequestContext,
   projectId: string,
 ): Promise<PromoteToCloudResult> {
+  return withProjectRuntimeLock(projectId, () => promoteProjectToCloudLocked(ctx, projectId));
+}
+
+async function promoteProjectToCloudLocked(ctx: RequestContext, projectId: string): Promise<PromoteToCloudResult> {
   const { imported } = await transferProjectToCloud({
     projectId,
     organizationId: ctx.organizationId,
@@ -241,7 +306,7 @@ export async function promoteProjectToCloud(
   // secret). Persist a binding first so a push forwarded from this box can find
   // the cloud project and hard-validate the signature. cloudProjectId == the
   // local id (dump/ingest preserves it); the secret ciphertext is copied verbatim.
-  const local = await repos.project.findById(projectId).catch(() => null);
+  const local = await repos.project.findById(projectId);
   if (local?.gitOwner && local?.gitRepo && local?.webhookId) {
     await repos.cloudWebhookBinding
       .upsert({
@@ -252,10 +317,7 @@ export async function promoteProjectToCloud(
         gitBranch: local.gitBranch ?? "",
         webhookId: local.webhookId,
         webhookSecret: local.webhookSecret ?? null,
-      })
-      .catch((err) =>
-        console.warn(`[transfer] cloud webhook binding upsert failed for ${projectId}:`, err),
-      );
+      });
   }
 
   const teardown = await teardownProject(ctx, projectId, {

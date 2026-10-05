@@ -26,6 +26,15 @@ import { servers } from "./servers";
 import { computeCluster } from "./compute-cluster";
 import { cloudWorkspace } from "./cloud-workspace";
 
+/** Durable promotion receipt. The destination stores this with the imported
+ * project, so a retry can prove which import it is completing before cleanup. */
+export interface ProjectCloudPromotion {
+  id: string;
+  target: { apiUrl: string; userId: string; organizationId: string };
+  sourceDigest: string;
+  imported: Record<string, number> | null;
+}
+
 // ─── Project apps ────────────────────────────────────────────────────────────
 
 /**
@@ -480,6 +489,8 @@ export const project = pgTable(
      * cleared so the caller can retry). NEVER stays true at rest.
      */
     deletionInProgress: boolean("deletion_in_progress").notNull().default(false),
+    /** Internal transfer journal; never accepted as a project setting. */
+    cloudPromotion: jsonb("cloud_promotion").$type<ProjectCloudPromotion | null>(),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

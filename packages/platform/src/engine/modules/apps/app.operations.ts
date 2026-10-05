@@ -1,3 +1,4 @@
+import { assertCloudProxyScope } from "../../lib/cloud/scope";
 import { AppError, NotFoundError, OperationError, type AppProjectSchemas } from "@repo/contracts";
 import { UNKNOWN_CAPACITY } from "@repo/core";
 import { repos } from "@repo/db";
@@ -17,8 +18,7 @@ function record(ctx: ExecutionContext, operation: string, resourceId: string, af
   audit.recordAsync(operationAuditContext(ctx), { eventType: "project:write", resourceType: "project", resourceId, after: { operation, ...after as object } });
 }
 async function projectAuthority(ctx: ExecutionContext, id: string) {
-  if (ctx.scopeMode === "fixed" && await resolveProjectAuthority(id, ctx.organizationId) === "cloud")
-    throw new AppError("This cloud link has no tenant mapping. Connect directly with the cloud organizationId.", 409, "CLOUD_SCOPE_UNAVAILABLE");
+  if (await resolveProjectAuthority(id, ctx.organizationId) === "cloud") assertCloudProxyScope(ctx);
 }
 
 export const appDependencies: AppDependencies = {

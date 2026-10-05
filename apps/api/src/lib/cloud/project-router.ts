@@ -1,3 +1,4 @@
+import { assertCloudProxyScope } from "@repo/platform/engine/lib/cloud/scope";
 import { resolveProjectAuthority, type ProjectSource } from "@repo/platform/engine/lib/cloud/project-authority";
 export { resolveProjectAuthority, type ProjectSource } from "@repo/platform/engine/lib/cloud/project-authority";
 /**
@@ -69,9 +70,7 @@ export async function proxyToSaaS(
   organizationId: string,
   opts?: { path?: string; body?: string },
 ): Promise<Response> {
-  if (getRequestContext(c).scopeMode === "fixed") {
-    throw new AppError("This cloud link has no tenant mapping. Connect directly with the cloud organizationId.", 409, "CLOUD_SCOPE_UNAVAILABLE");
-  }
+  assertCloudProxyScope(getRequestContext(c));
   const url = new URL(c.req.url);
   const path = opts?.path ?? `${url.pathname}${url.search}`;
   const method = c.req.method.toUpperCase();

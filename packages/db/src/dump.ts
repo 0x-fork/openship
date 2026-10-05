@@ -1588,6 +1588,10 @@ export async function restoreSubgraphInTransaction(
       if (opts.remapOrgId && spec.hasOrganizationId) {
         next.organizationId = opts.remapOrgId;
       }
+      // A copied journal is not proof that THIS destination committed a
+      // promotion. The promotion endpoint writes its receipt in this same
+      // transaction after restore; other transfers never inherit one.
+      if (opts.remapOrgId && spec.sqlName === "project") next.cloudPromotion = null;
       if (encryptedCols) {
         for (const encSpec of encryptedCols) redactEncryptedCell(next, encSpec, colMeta);
       }
@@ -1638,6 +1642,16 @@ export async function restoreSubgraphInTransaction(
             .insert(spec.table)
             .values(batch as never)
             .onConflictDoNothing().returning();
+          // Presence in the dump does not prove that a conflicting shared
+          // parent belongs to the destination tenant. Check AFTER the insert,
+          // including conflicts created concurrently, before attaching children.
+          if (opts.remapOrgId && spec.hasOrganizationId && columns.id && columns.organizationId && written.length < batch.length) {
+            const existing = await tx.select({ id: columns.id, organizationId: columns.organizationId })
+              .from(spec.table).where(inArray(columns.id, batch.map(row => row.id))).for("share");
+            const owned = new Set(existing.filter(row => row.organizationId === opts.remapOrgId).map(row => row.id));
+            if (batch.some(row => !owned.has(row.id)))
+              throw new PkCollisionError(spec.sqlName, new Error("Existing shared parent cannot be reused in this organization."));
+          }
         } else {
           written = await tx.insert(spec.table).values(batch as never).returning();
         }
@@ -1649,6 +1663,7 @@ export async function restoreSubgraphInTransaction(
         if (opts.writtenRows) opts.writtenRows.count += written.length;
       }
     } catch (err) {
+      if (err instanceof PkCollisionError) throw err;
       // PostgreSQL unique_violation = 23505 (PGlite mirrors this).
       // Surface as a typed error so callers (project transfer wizard,
       // cloud ingest) can distinguish "this row already exists on the
