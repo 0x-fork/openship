@@ -3,11 +3,11 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { redirect, useRouter } from "next/navigation";
+import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { ManagedServerSetup, ServerAcquisitionPicker, type ServerAcquisitionMode } from "@/components/servers/ServerAcquisition";
-import { workspaceBillingHref } from "@/components/billing/BillingWorkspaceContext";
+import { ServerAcquisitionPicker } from "@/components/servers/ServerAcquisition";
+import { newServerBillingHref } from "@/lib/billing-links";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ComponentStatus, ServerInfo } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -89,27 +89,14 @@ function ServerSetupLayout({ choice, guidance, children }: {
 export default function AddServerPage() {
   const { selfHosted } = usePlatform();
   const router = useRouter();
-  const { t } = useI18n();
-  const [mode, setMode] = useState<ServerAcquisitionMode>(selfHosted ? "connected" : "managed");
-  const choice = selfHosted ? <ServerAcquisitionPicker value={mode} onChange={setMode} stacked /> : null;
-  if (mode === "connected") return <ConnectedServerSetup choice={choice} />;
-  const setup = <ManagedServerSetup onReady={(server, needsPlan) => router.push(needsPlan
-    ? workspaceBillingHref("/billing/plans", server.id) : `/servers/${server.serverId}`)} />;
+  const { requireCloud } = useCloud();
+  if (!selfHosted) redirect(newServerBillingHref());
   return (
-    <PageContainer className="@container/server-create space-y-6">
-      <Link href="/servers" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-        <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />{t.servers.setup.goToServers}
-      </Link>
-      {selfHosted ? <ServerSetupLayout choice={choice} guidance={
-        <div className="space-y-3 rounded-2xl bg-card p-5">
-          <h2 className="text-base font-medium">{t.billing.workspaces.shared}</h2>
-          <p className="text-sm text-muted-foreground">{t.billing.workspaces.poolHint}</p>
-          <p className="text-sm text-muted-foreground">{t.billing.workspaces.placementHint}</p>
-        </div>
-      }>
-        {setup}
-      </ServerSetupLayout> : setup}
-    </PageContainer>
+    <ConnectedServerSetup choice={
+      <ServerAcquisitionPicker value="connected" stacked onChange={async (mode) => {
+        if (mode === "managed" && await requireCloud("billing")) router.push(newServerBillingHref());
+      }} />
+    } />
   );
 }
 

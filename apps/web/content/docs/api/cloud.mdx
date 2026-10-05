@@ -11,7 +11,8 @@ managed routing, and transfers. The self-hosted connection routes and Cloud cont
 
 There is no named native `cloud` group. To manage Cloud projects through the SDK, use the
 [remote client](/docs/api/sdk/client) with the canonical Cloud API and Cloud organization ID.
-A local owner's Cloud link does not provide verified mapping for a fixed SDK scope; see
+A local owner's Cloud link does not authorize fixed requests or bound/scoped credentials to manage
+Cloud-stored records; see
 [Cloud compatibility](/docs/api/sdk/compatibility#cloud).
 
 ## Self-hosted endpoints
@@ -225,6 +226,27 @@ POST /api/cloud/ingest-subgraph
 />
 
 ```
+POST /api/cloud/promote-project
+```
+
+Explicit project promotion uses this receipt-aware variant with `{ dump, promotionId }`. The source
+persists the transfer ID and original Cloud identity before making the request. Cloud commits the
+receipt in the same transaction as the project data. A retry with that receipt returns the original
+import counts, allowing the source to retry local cleanup without importing or overwriting again.
+Matching project IDs alone do not authorize cleanup; older duplicates without a receipt require
+review. Both instances must support this endpoint. An older Cloud API rejects it before importing.
+
+Before local cleanup starts, Openship blocks configuration writes and checks the source snapshot
+again. An edit committed before this check preserves the local copy with `TRANSFER_SOURCE_CHANGED`;
+edits attempted during cleanup return `PROJECT_TRANSFER_IN_PROGRESS`. Failed cleanup releases this
+guard so the project remains editable. New builds admitted after import are preserved, not cancelled
+as part of promotion.
+
+Promotion transfers configuration; it does not migrate running workloads or persistent application
+data. Deploying a local project on a connected Cloud server uses `serverId` and does not require
+promotion. See [the desktop MCP workflow](/docs/api/mcp#deploy-a-desktop-folder-on-cloud).
+
+```
 POST /api/cloud/export-subgraph
 ```
 
@@ -334,6 +356,7 @@ from the dashboard.
 | Friendly "GitHub connected" close-window page. | `GET /api/cloud/github/oauth-success`<br />`Handler authentication` |
 | Cloud-resolved GitHub OAuth identity (login, avatar) for the caller. | `GET /api/cloud/github/user-status`<br />`cloud:read` |
 | Ingest an org- or project-scope subgraph dump (rate-limited, 50MB cap). | `POST /api/cloud/ingest-subgraph`<br />`cloud:admin` |
+| Import a project and its promotion receipt atomically, or acknowledge the same original import on retry (rate-limited, 50MB cap). | `POST /api/cloud/promote-project`<br />`cloud:admin` |
 | Create a Cloud Page (proxy Oblien `pages.create`). | `POST /api/cloud/pages`<br />`cloud:write` |
 | Delete a Cloud Page by slug. | `POST /api/cloud/pages/delete`<br />`cloud:write` |
 | Disable a Cloud Page by slug. | `POST /api/cloud/pages/disable`<br />`cloud:write` |

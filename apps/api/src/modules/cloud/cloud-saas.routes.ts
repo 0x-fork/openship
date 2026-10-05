@@ -93,18 +93,22 @@ r.post("/send-invitation", { tag: "cloud:write" }, saas.sendInvitation);
 // Path B (org-scope) AND project transfer (project-scope). One pair
 // of endpoints handles both flows via the SubgraphScope discriminator.
 // Rate limit: defense against repeated junk ingest filling storage; bounded blast radius via remapOrgId but still operationally hostile
-r.use("/ingest-subgraph", rateLimiter);
 // 50MB body cap — subgraph dumps are bounded in practice (project/org scope, JSON rows);
 // reject oversized payloads BEFORE auth so DoS uploaders can't burn auth/DB cycles.
-r.use("/ingest-subgraph", bodyLimit({
-  maxSize: 50_000_000,
-  onError: (c) => c.json({
-    error: "Dump exceeds 50MB limit on this endpoint.",
-    code: "PAYLOAD_TOO_LARGE",
-  }, 413),
-}));
-r.use("/ingest-subgraph", cloudSessionAuth);
-r.post("/ingest-subgraph", { tag: "cloud:admin" }, saas.ingestSubgraphHandler);
+// The distinct promotion route fails closed on older Cloud versions that do
+// not persist receipts, while sharing the same ingest and authentication path.
+for (const [path, handler] of [
+  ["/ingest-subgraph", saas.ingestSubgraphHandler],
+  ["/promote-project", saas.promoteProjectHandler],
+] as const) {
+  r.use(path, rateLimiter);
+  r.use(path, bodyLimit({
+    maxSize: 50_000_000,
+    onError: (c) => c.json({ error: "Dump exceeds 50MB limit on this endpoint.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }));
+  r.use(path, cloudSessionAuth);
+  r.post(path, { tag: "cloud:admin" }, handler);
+}
 
 // Rate limit: throttle scope-enumeration / exfiltration attempts (a
 // compromised cloud session could otherwise loop over scopes to map

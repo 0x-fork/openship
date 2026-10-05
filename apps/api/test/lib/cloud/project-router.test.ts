@@ -106,6 +106,16 @@ describe("proxyToSaaS", () => {
     expect(cloudFetchAsOrgOwner).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { credential: { organizationId: "org1", readOnly: false } },
+    { tokenScope: { tokenId: "restricted-token" } },
+  ])("refuses credential-scoped forwarding even without a fixed request: %j", async restriction => {
+    vi.mocked(getRequestContext).mockReturnValueOnce({ organizationId: "org1", scopeMode: "resource", ...restriction } as never);
+    vi.mocked(cloudFetchAsOrgOwner).mockResolvedValue(Response.json({ ok: true }));
+    await expect(proxyToSaaS(fakeCtx({}), "org1")).rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    expect(cloudFetchAsOrgOwner).not.toHaveBeenCalled();
+  });
+
   it("forwards method/path/body but NEVER an identity header", async () => {
     (cloudFetchAsOrgOwner as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Response("ok", { status: 200, headers: { "content-type": "application/json" } }),

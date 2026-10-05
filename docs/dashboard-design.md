@@ -44,6 +44,8 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Add Server keeps the connected/managed choice stacked in the right sidebar above setup
   guidance. On narrow screens, place that same choice before the form and guidance after it.
   Reuse the shared acquisition picker in both setup modes and dialogs.
+  Selecting Get a managed server on `/servers/new` opens Billing's explicit new-server
+  purchase. Keep inline destination dialogs in place so they preserve the deployment form.
   Cloud Add server opens plan selection first. Reuse the same plan and Custom purchase
   component in Billing, managed server setup and destination dialogs. Create the server
   with its default name only after a plan is chosen, then use the shared scoped checkout.

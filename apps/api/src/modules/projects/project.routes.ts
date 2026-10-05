@@ -109,7 +109,7 @@ r.post(
     auditHandledByOperation: true,
     mcp: {
       description:
-        "Register a project from a source directory accessible to the Openship controller. This creates project configuration; deploy separately after reviewing the detected settings.",
+        "Register a project from a source directory accessible to the Openship controller. On desktop, use localPath and an accessible managed serverId to deploy that folder to Cloud without an out-of-band upload. This creates project configuration; deploy the returned projectId separately with buildStrategy:'server' for a managed server. Source location does not choose build location.",
     },
     body: ImportLocalProjectBody,
   },
@@ -215,7 +215,7 @@ r.post(
     body: FolderSessionBody,
     mcp: {
       description:
-        "Folder-upload deploy — STEP 1/4. Opens an upload session for a local source folder and returns `upload` = { url, absoluteUrl, method, headers, requiresAuth }. NEXT, upload the gzipped tarball yourself: POST it to `upload.absoluteUrl` (or resolve the API-relative `upload.url` against your own API base) with the returned headers and Content-Type: application/gzip — and, when `upload.requiresAuth` is true, the SAME Authorization: Bearer token you used to open the session. That byte upload is NOT an MCP tool (raw binary can't cross JSON-RPC) — use an HTTP client. Then call folder/scan. Sequence: session → (out-of-band tarball upload) → folder/scan → projects/ensure → deployments/build/access.",
+        "Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = { url, absoluteUrl, method, headers, requiresAuth }. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access.",
     },
   },
   folder.createSession,

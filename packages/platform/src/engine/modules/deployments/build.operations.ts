@@ -1,3 +1,4 @@
+import { assertCloudProxyScope } from "../../lib/cloud/scope";
 import { AppError, NotFoundError, ValidationError, CLOUD_UNREACHABLE_CODE } from "@repo/core";
 import { isCreateDeploymentResult, type PrepareDeploymentInput } from "@repo/contracts";
 import type { BuildDependencies } from "../../../builds";
@@ -46,9 +47,7 @@ export const buildDependencies: BuildDependencies = {
     // A destination changes where commands run, never where a project is stored.
     // Only projects explicitly owned by Cloud are forwarded to its control plane.
     if (source === "cloud") {
-      // A fixed scope cannot use an owner-account link that has no verified
-      // organization mapping. Deny before transfer or resource creation.
-      if (ctx.scopeMode === "fixed") throw new AppError("This cloud link has no tenant mapping. Connect directly with the cloud organizationId.", 409, "CLOUD_SCOPE_UNAVAILABLE");
+      assertCloudProxyScope(ctx);
       const response = await cloudFetchAsOrgOwner(ctx.organizationId, "/api/deployments/build/access", { method: "POST", body: JSON.stringify(input) });
       if (!response) throw new AppError("Openship Cloud is unreachable", 503, CLOUD_UNREACHABLE_CODE);
       const body = await response.json().catch(() => null) as Record<string, unknown> | null;

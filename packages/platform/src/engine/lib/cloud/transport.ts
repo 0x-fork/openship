@@ -15,6 +15,7 @@
  * No client-side cookies or tokens are ever involved.
  */
 import { repos } from "@repo/db";
+import { SDK_SCOPE_HEADER } from "@repo/contracts";
 import { createHash } from "node:crypto";
 import { cloudRuntimeTarget, cloudRuntimeTargetId, env } from "../../config/env";
 import { decrypt } from "../encryption";
@@ -94,6 +95,7 @@ export async function cloudFetch(
     headers.set(OPENSHIP_VERSION_HEADER, APP_VERSION);
     headers.set(OPENSHIP_PLATFORM_HEADER, env.DEPLOY_MODE);
     headers.set("X-Organization-Id", session.organizationId);
+    headers.set(SDK_SCOPE_HEADER, "fixed");
     headers.set("Authorization", `Bearer ${session.token}`);
     res = await fetch(targetUrl, {
       ...init,

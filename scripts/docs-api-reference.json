@@ -3031,6 +3031,10 @@
       "page": "cloud",
       "description": "Ingest an org- or project-scope subgraph dump (rate-limited, 50MB cap)."
     },
+    "POST /api/cloud/promote-project": {
+      "page": "cloud",
+      "description": "Import a project and its promotion receipt atomically, or acknowledge the same original import on retry (rate-limited, 50MB cap)."
+    },
     "POST /api/cloud/pages": {
       "page": "cloud",
       "description": "Create a Cloud Page (proxy Oblien `pages.create`)."

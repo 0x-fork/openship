@@ -14,19 +14,18 @@ import { cloudRuntimeTarget } from "../../config/env";
 import { encrypt, decrypt } from "../encryption";
 import { cacheStore } from "../cache-store/index";
 import { requestMemo } from "../request-store";
-import { cloudFetch, readCloudJson, resolveOrgCloudUserId, readCloudSession, cloudSessionCacheKey, sameCloudIdentity } from "./transport";
+import { cloudFetch, resolveOrgCloudUserId, readCloudSession, cloudSessionCacheKey, sameCloudIdentity } from "./transport";
+import { fetchCloudConnection, readVerifiedCloudAccount } from "./connection";
 import type { CloudAccount, TokenCache, StoredCloudSession } from "./types";
 
 /** Verify before replacing a connection; token and identity are sealed together. */
 export async function storeCloudSession(userId: string, token: string): Promise<void> {
-  const response = await fetch(`${cloudRuntimeTarget.api}/api/cloud/account`, {
+  const request = (path: string) => fetchCloudConnection(path, {
     headers: { Authorization: `Bearer ${token}` },
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
   });
-  const account = response.ok ? (await readCloudJson<{ user?: CloudAccount }>(response))?.user : null;
-  if (!account || typeof account.id !== "string" || !account.id ||
-    typeof account.organizationId !== "string" || !account.organizationId)
+  const response = await request("/api/cloud/account");
+  const account = response.ok ? await readVerifiedCloudAccount(response, request) : null;
+  if (!account)
     throw new AppError("Could not verify the Cloud account and organization. Reconnect to Openship Cloud.", 401, "CLOUD_IDENTITY_UNVERIFIED");
   const session: StoredCloudSession = {
     token, apiUrl: cloudRuntimeTarget.api,
@@ -139,7 +138,9 @@ async function validateCloudSessionLive(
     }
     if (!res.ok) return { connected: false }; // transient (5xx etc.) — don't clear
 
-    const user = (await readCloudJson<{ user?: CloudAccount }>(res))?.user;
+    const user = await readVerifiedCloudAccount(res, path =>
+      cloudFetch(userId, path, { method: "GET", signal: AbortSignal.timeout(15_000) }, session),
+    ).catch(() => null);
     if (!user || user.id !== session.userId || user.organizationId !== session.organizationId)
       return { connected: false };
     return { user, connected: true };

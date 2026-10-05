@@ -1,3 +1,4 @@
+import { assertCloudProxyScope } from "../../lib/cloud/scope";
 import { AppError, NotFoundError, safeErrorMessage } from "@repo/core";
 import { OperationError, ProjectTransferSchemas } from "@repo/contracts";
 import type { ResourceServices } from "../../../resource-operations";
@@ -7,9 +8,7 @@ import { env } from "../../config/index";
 
 function assertTransferScope(ctx: ExecutionContext) {
   if (env.CLOUD_MODE) throw new NotFoundError("Transfer");
-  // Owner-account sessions do not prove a mapping to the SDK's fixed tenant.
-  if (ctx.scopeMode === "fixed")
-    throw new AppError("This cloud link has no tenant mapping. Connect directly with the cloud organizationId.", 409, "CLOUD_SCOPE_UNAVAILABLE");
+  assertCloudProxyScope(ctx);
 }
 
 async function transferFailure(error: unknown, fallback: string): Promise<never> {
