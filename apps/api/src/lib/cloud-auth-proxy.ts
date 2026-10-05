@@ -13,6 +13,7 @@
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { db, schema, repos, eq } from "@repo/db";
 import { storeCloudSession } from "@repo/platform/engine/lib/cloud/session";
+import { fetchCloudConnection } from "@repo/platform/engine/lib/cloud/connection";
 import { provisionUser } from "@repo/platform/engine/lib/provision-user";
 import { cloudRuntimeTarget, env } from "@repo/platform/engine/config/env";
 import { safeErrorMessage } from "@repo/core";
@@ -252,24 +253,11 @@ async function exchangeCodeWithCloud(
   codeVerifier?: string,
 ): Promise<{ user: CloudUser; sessionToken: string } | null> {
   const url = `${cloudRuntimeTarget.api}/api/cloud/exchange-code`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, code_verifier: codeVerifier }),
-    });
-  } catch (err) {
-    // Network error (DNS, ECONNREFUSED, timeout). The cloud SaaS is
-    // unreachable from this host. Log so the operator can see WHY the
-    // connect popup says "Connection Failed".
-    console.error(
-      `[cloud-auth] exchange-code fetch failed: ${url} — ${
-        safeErrorMessage(err)
-      }`,
-    );
-    return null;
-  }
+  const res = await fetchCloudConnection("/api/cloud/exchange-code", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, code_verifier: codeVerifier }),
+  });
   if (!res.ok) {
     console.error(
       `[cloud-auth] exchange-code returned ${res.status} from ${url}`,

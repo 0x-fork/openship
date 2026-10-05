@@ -63,11 +63,12 @@ describe("pinned Cloud identity", () => {
 
   it("pins authorization headers and refuses a different configured Cloud endpoint", async () => {
     await cloudFetchAsOrgOwner("local-org", "/api/system/servers", {
-      headers: { Authorization: "Bearer forged", "X-Organization-Id": "foreign-org" },
+      headers: { Authorization: "Bearer forged", "X-Organization-Id": "foreign-org", "X-Openship-Scope": "resource" },
     });
     const init = h.fetch.mock.calls[0]![1] as RequestInit;
     expect(new Headers(init.headers).get("Authorization")).toBe(`Bearer ${first.token}`);
     expect(new Headers(init.headers).get("X-Organization-Id")).toBe(first.organizationId);
+    expect(new Headers(init.headers).get("X-Openship-Scope")).toBe("fixed");
     h.fetch.mockClear();
     h.api.api = "https://different-cloud.example.test";
     expect(await cloudFetch("local-owner", "/api/system/servers")).toBeNull();
@@ -110,6 +111,68 @@ describe("pinned Cloud identity", () => {
     await clearCloudSession("local-owner", first);
     expect(h.clear).toHaveBeenCalledWith("local-owner", sealed);
     expect(await readCloudSession("local-owner")).toBeNull();
+  });
+});
+
+describe("legacy Cloud identity verification", () => {
+  const profile = { name: "Cloud user", email: "cloud@example.test", image: null };
+  const identity = () => ({
+    user: { id: first.userId, email: profile.email },
+    session: { userId: first.userId, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+  });
+  let sessionBody: unknown;
+  let organizationBody: unknown;
+  let organizationStatus: number;
+  beforeEach(() => {
+    sessionBody = identity();
+    organizationBody = { data: { organizationId: first.organizationId } };
+    organizationStatus = 200;
+    h.fetch.mockImplementation(async (url: string) => {
+      if (url.endsWith("/api/cloud/account")) return json({ user: profile });
+      if (url.endsWith("/api/auth/get-session")) return json(sessionBody);
+      if (url.endsWith("/api/permissions/org-meta")) return json(organizationBody, organizationStatus);
+      throw new Error("Unexpected identity request");
+    });
+  });
+
+  it.each([
+    ["missing session", () => ({ user: identity().user })],
+    ["mismatched session user", () => ({ ...identity(), session: { ...identity().session, userId: "different-user" } })],
+    ["different account profile", () => ({ ...identity(), user: { ...identity().user, email: "different@example.test" } })],
+    ["expired session", () => ({ ...identity(), session: { ...identity().session, expiresAt: "2000-01-01T00:00:00Z" } })],
+  ] as const)("does not replace a connection after receiving a %s", async (_label, payload) => {
+    sessionBody = payload();
+    await expect(storeCloudSession("local-owner", "replacement")).rejects.toMatchObject({ code: "CLOUD_IDENTITY_UNVERIFIED" });
+    expect(await readCloudSession("local-owner")).toEqual(first);
+  });
+
+  it.each([403, 404, 503])("requires an authorized workspace response even when identity succeeds (HTTP %s)", async status => {
+    organizationStatus = status;
+    await expect(storeCloudSession("local-owner", "replacement")).rejects.toMatchObject({
+      code: status === 503 ? "CLOUD_CONNECTION_UNAVAILABLE" : "CLOUD_IDENTITY_UNVERIFIED",
+    });
+    expect(await readCloudSession("local-owner")).toEqual(first);
+  });
+
+  it.each([{ id: "partial-user" }, { id: null }, { organizationId: "partial-org" }])("does not downgrade a partial identity to legacy discovery: %j", async fields => {
+    h.fetch.mockResolvedValue(json({ user: { ...profile, ...fields } }));
+    await expect(storeCloudSession("local-owner", "replacement")).rejects.toMatchObject({ code: "CLOUD_IDENTITY_UNVERIFIED" });
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    expect(await readCloudSession("local-owner")).toEqual(first);
+  });
+
+  it("refuses a different workspace from legacy discovery without changing the saved connection", async () => {
+    organizationBody = { data: { organizationId: "different-workspace" } };
+    expect(await isCloudConnected("local-owner")).toBe(false);
+    expect(await readCloudSession("local-owner")).toEqual(first);
+    expect(h.clear).not.toHaveBeenCalled();
+  });
+
+  it.each([429, 503])("preserves the connection when Cloud account verification is temporarily unavailable (HTTP %s)", async status => {
+    h.fetch.mockResolvedValue(json({}, status));
+    await expect(storeCloudSession("local-owner", "replacement")).rejects.toMatchObject({ statusCode: 503, code: "CLOUD_CONNECTION_UNAVAILABLE" });
+    expect(await readCloudSession("local-owner")).toEqual(first);
+    expect(h.fetch).toHaveBeenCalledTimes(1);
   });
 });
 

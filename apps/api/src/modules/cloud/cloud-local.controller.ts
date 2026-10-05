@@ -10,7 +10,7 @@
  *   GET  /api/cloud/status          - check connection state
  */
 
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
 import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { getRequestContext } from "../../lib/request-context";
@@ -79,10 +79,10 @@ export async function connectFinalize(c: Context) {
     await storeCloudSession(ctx.userId, data.sessionToken);
     return c.json({ ok: true });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     console.error(
       `[cloud-connect-finalize] unexpected error: ${safeErrorMessage(err)}`,
     );
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
 }
-
