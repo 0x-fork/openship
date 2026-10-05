@@ -150,8 +150,6 @@ function PrepaidCalculator({
 
   return (
     <div className="@container/payg space-y-5">
-      <PaygResourceTiers tiers={payg.tiers} selected={selectedTier} onChange={setTierId}
-        resources={resources} serverCount={count} money={money} />
       <div className="grid items-start gap-5 @min-[52rem]/payg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid min-w-0 items-start gap-5 @min-[64rem]/payg:grid-cols-[minmax(0,1fr)_280px] @min-[80rem]/payg:grid-cols-[minmax(0,1fr)_320px]">
           <section aria-labelledby={`${id}-resources`} className="min-w-0 rounded-2xl bg-card p-5">
@@ -164,6 +162,10 @@ function PrepaidCalculator({
               </span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{copy.sizeHint}</p>
+            <div className="mt-4 border-b border-border/50 pb-5">
+              <PaygResourceTiers tiers={payg.tiers} selected={selectedTier} onChange={setTierId}
+                resources={resources} serverCount={count} money={money} />
+            </div>
             <div className="mt-5">
               <ServerResourceInputs
                 ranges={ranges}
@@ -212,69 +214,11 @@ function PrepaidCalculator({
                 </div>
               </div>
             </div>
-            {estimate && resources && (
-              <div className="mt-4 rounded-xl bg-muted/40 p-3" aria-live="polite">
-                <p className="text-xs font-medium text-muted-foreground">{copy.hourlyBasis}</p>
-                <bdi dir="ltr" className="mt-1 block text-sm font-medium tabular-nums">
-                  {interpolate(copy.cpuFormula, {
-                    cpu: number(resources.cpuCores * count),
-                    percent: number(cpuPercent),
-                    hours: number(estimate.hourlyUsage.cpuVcpuHours),
-                  })}
-                </bdi>
-              </div>
-            )}
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              {copy.activityHint}
-            </p>
             {(!resources || !validCount || !validActivity || !pool) && (
               <p role="alert" className="mt-3 text-sm text-danger">
                 {copy.invalid}
               </p>
             )}
-
-            <details className="group mt-5 rounded-xl bg-muted/40 p-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                {copy.ratesDetails}
-                <Icon
-                  name="chevron-down"
-                  className="size-4 shrink-0 transition-transform group-open:rotate-180"
-                  aria-hidden="true"
-                />
-              </summary>
-              <dl className="mt-2 divide-y divide-border/50">
-                {rates.map((rate) => (
-                  <div
-                    key={rate.label}
-                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm"
-                  >
-                    <dt>
-                      {rate.label}
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {rate.unit}
-                      </span>
-                    </dt>
-                    <dd className="text-end tabular-nums">
-                      {credits((rate.cents / 100) * pricing.creditsPerDollar)}
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {money(rate.cents, 4)}
-                      </span>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {t.billing.compute.paygMetering}
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {interpolate(copy.extras, {
-                  amount: money(pricing.network.managedProxyGiBCents, 4),
-                })}
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {copy.retentionHint}
-              </p>
-            </details>
           </section>
 
           <section aria-labelledby={`${id}-packages`} className="min-w-0 rounded-2xl bg-card p-5">
@@ -394,7 +338,22 @@ function PrepaidCalculator({
                 </div>
               ))}
             </dl>
+            {estimate && resources && (
+              <div className="mt-4 rounded-xl bg-muted/40 p-3">
+                <p className="text-xs font-medium text-muted-foreground">{copy.hourlyBasis}</p>
+                <bdi dir="ltr" className="mt-1 block text-sm font-medium tabular-nums">
+                  {interpolate(copy.cpuFormula, {
+                    cpu: number(resources.cpuCores * count),
+                    percent: number(cpuPercent),
+                    hours: number(estimate.hourlyUsage.cpuVcpuHours),
+                  })}
+                </bdi>
+              </div>
+            )}
           </div>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            {copy.activityHint}
+          </p>
           <details className="group mt-5 border-t border-border/50 pt-4">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
               {copy.runtime}
@@ -427,6 +386,48 @@ function PrepaidCalculator({
               </p>
             )}
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{copy.rangeHint}</p>
+          </details>
+          <details className="group mt-4 border-t border-border/50 pt-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+              {copy.ratesDetails}
+              <Icon
+                name="chevron-down"
+                className="size-4 shrink-0 transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
+            </summary>
+            <dl className="mt-2 divide-y divide-border/50">
+              {rates.map((rate) => (
+                <div
+                  key={rate.label}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm"
+                >
+                  <dt>
+                    {rate.label}
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {rate.unit}
+                    </span>
+                  </dt>
+                  <dd className="text-end tabular-nums">
+                    {credits((rate.cents / 100) * pricing.creditsPerDollar)}
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {money(rate.cents, 4)}
+                    </span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {t.billing.compute.paygMetering}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {interpolate(copy.extras, {
+                amount: money(pricing.network.managedProxyGiBCents, 4),
+              })}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {copy.retentionHint}
+            </p>
           </details>
         </aside>
       </div>

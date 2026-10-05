@@ -36,56 +36,60 @@ export function PaygResourceTiers({
   ] as const;
 
   return (
-    <section aria-label={copy.label} className="@container/pool min-w-0 rounded-2xl bg-card px-5 pb-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-border/50">
+    <section aria-label={copy.label} className="min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <h4 className="text-sm font-medium">{copy.label}</h4>
         <Tabs
           tabs={tiers.map(tier => ({ key: tier.id, label: name(tier) }))}
           value={selected.id}
           onChange={onChange}
           idPrefix={id}
           ariaLabel={copy.label}
+          size="sm"
           className="border-b-0"
         />
-        <p className="pb-2 text-xs text-muted-foreground @min-[40rem]/pool:pb-0">
-          {interpolate(copy.unlock, { amount: money(selected.minimumFundingCents) })}
-        </p>
       </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {interpolate(copy.unlock, { amount: money(selected.minimumFundingCents) })}
+      </p>
       {tiers.map(tier => {
         const usage = resources ? previewPaygPool(tier, resources, serverCount) : null;
         return (
           <div key={tier.id} id={`${id}-panel-${tier.id}`} role="tabpanel"
             aria-labelledby={`${id}-tab-${tier.id}`} hidden={tier.id !== selected.id}>
-            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 @min-[40rem]/pool:grid-cols-4">
-              {fields.map(({ key, label, divisor, unit }) => {
-                const limit = tier.pool[key];
-                const configured = usage?.selected[key];
-                const exceeded = configured !== undefined && configured > limit;
-                return (
-                  <div key={key}>
-                    <dt className="text-xs text-muted-foreground">{label}</dt>
-                    <dd className="mt-1 tabular-nums">
-                      <bdi dir="ltr" className="inline-flex flex-wrap items-baseline gap-x-1.5">
-                        <span className={cn("text-lg font-semibold", exceeded && "text-warning")}>
-                          {configured === undefined ? "—" : number(configured / divisor)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">/ {number(limit / divisor)} {unit}</span>
-                      </bdi>
-                    </dd>
-                    <div role="meter" aria-label={`${label} · ${copy.configured}`} aria-valuemin={0}
-                      aria-valuemax={limit} aria-valuenow={Math.min(configured ?? 0, limit)}
-                      aria-valuetext={configured === undefined ? copy.unavailable : `${number(configured / divisor)} / ${number(limit / divisor)} ${unit}`}
-                      className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
-                      <div className={cn("h-full rounded-full transition-[width] motion-reduce:transition-none", exceeded ? "bg-warning" : "bg-primary/70")}
-                        style={{ width: `${configured === undefined ? 0 : Math.min(100, configured / limit * 100)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </dl>
+            <div className="mt-3 rounded-xl bg-muted/40 p-3.5">
+              <p className="text-xs text-muted-foreground">{copy.configured}</p>
+              <ul aria-label={copy.hint} className="mt-2.5 grid grid-cols-2 gap-x-5 gap-y-3">
+                {fields.map(({ key, label, divisor, unit }) => {
+                  const limit = tier.pool[key];
+                  const configured = usage?.selected[key];
+                  const exceeded = configured !== undefined && configured > limit;
+                  return (
+                    <li key={key} className="min-w-0">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                        <span className="text-xs text-muted-foreground">{label}</span>
+                        <bdi dir="ltr" className="inline-flex items-baseline gap-x-1 text-xs tabular-nums">
+                          <span className={cn("font-semibold", exceeded && "text-warning")}>
+                            {configured === undefined ? "—" : number(configured / divisor)}
+                          </span>
+                          <span className="text-muted-foreground">/ {number(limit / divisor)} {unit}</span>
+                        </bdi>
+                      </div>
+                      <div role="meter" aria-label={`${label} · ${copy.configured}`} aria-valuemin={0}
+                        aria-valuemax={limit} aria-valuenow={Math.min(configured ?? 0, limit)}
+                        aria-valuetext={configured === undefined ? copy.unavailable : `${number(configured / divisor)} / ${number(limit / divisor)} ${unit}`}
+                        className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+                        <div className={cn("h-full rounded-full transition-[width] motion-reduce:transition-none", exceeded ? "bg-warning" : "bg-primary/70")}
+                          style={{ width: `${configured === undefined ? 0 : Math.min(100, configured / limit * 100)}%` }} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
         );
       })}
-      <p className="mt-3 text-xs text-muted-foreground">{copy.hint}</p>
       {preview && !preview.fits && (
         <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning/10 px-3 py-2.5">
           <p className="text-sm">{interpolate(copy.exceeded, { tier: name(selected) })}</p>

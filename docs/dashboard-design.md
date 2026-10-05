@@ -144,10 +144,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
   details in a compact disclosure. Existing metered subscriptions retain their credit view.
   Prepaid PAYG shows package amounts beside their credit value, using the provider's
-  conversion and published resource rates. Put the Openship resource tiers in compact
-  shared tabs above the configurator,
-  with configured resources against the selected tier's aggregate CPU, RAM, disk and
-  server-count limits. Show the cumulative credit-purchase threshold beside the tabs
+  conversion and published resource rates. Keep the Openship resource tiers inside the
+  resource card, using compact shared tabs above its inputs. Show configured resources
+  against the selected tier's aggregate CPU, RAM, disk and server-count limits in a
+  recessed two-column summary. Keep the cumulative credit-purchase threshold by the tabs
   and the selected package's qualifying tier in the credit card. These are pool ceilings,
   not monthly subscriptions or a copy of the reseller owner's Oblien plan. Spending
   credits never lowers a tier. Keep credit-package and resource-tier selections separate;
@@ -161,9 +161,11 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   purchases are supported. A shared balance is funding,
   not a multiplied resource pool; estimates for several hosts must spend that balance
   once. Use three columns when space permits: the resource editor, readable credit
-  package rows in the middle, and the 340px estimate card on the right. Give packages
+  package rows in the middle, and the 340px estimate card on the right, aligned at the top.
+  Keep the CPU-hour explanation and rate details with the estimate. Give packages
   280–320px and let the resource editor use the remaining space. Stack the
   packages below resources at intermediate widths, then stack all sections on mobile.
+  Monthly and PAYG share the catalog's Enterprise contact card at the end of the picker.
   Keep one compact purchase bar visible at the bottom while configuring resources;
   use a translucent popover surface with backdrop blur while keeping its text readable.
   Lead with estimated dollars per hour and the matching credits per hour, with

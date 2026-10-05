@@ -339,9 +339,6 @@ function PlanPicker({
             {copy.noLargerPlan}
           </p>
         )}
-        {contactPlans.length > 0 && (
-          <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
-        )}
       </div>
       {canChooseMode && (
         <div
@@ -352,6 +349,9 @@ function PlanPicker({
         >
           <PayAsYouGoPlan pricing={payload.computePricing} catalog={payload.custom} payg={payload.payg} />
         </div>
+      )}
+      {contactPlans.length > 0 && (
+        <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
       )}
       <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
     </div>
