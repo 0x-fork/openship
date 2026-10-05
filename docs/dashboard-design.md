@@ -145,9 +145,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   details in a compact disclosure. Existing metered subscriptions retain their credit view.
   Prepaid PAYG shows package amounts beside their credit value, using the provider's
   conversion and published resource rates. Keep the Openship resource tiers inside the
-  resource card, using compact shared tabs above its inputs. Show configured resources
-  against the selected tier's aggregate CPU, RAM, disk and server-count limits in a
-  recessed two-column summary. Keep the cumulative credit-purchase threshold by the tabs
+  resource card, using compact shared tabs above its inputs. Present the selected tier's
+  CPU, RAM, disk and server-count limits as plain capacity values in a compact summary
+  that wraps on smaller screens. These limits stay fixed while configuring a server.
+  Keep the cumulative credit-purchase threshold by the tabs
   and the selected package's qualifying tier in the credit card. These are pool ceilings,
   not monthly subscriptions or a copy of the reseller owner's Oblien plan. Spending
   credits never lowers a tier. Keep credit-package and resource-tier selections separate;
@@ -155,7 +156,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   which limits are exceeded and offer the smallest available tier that fits, without
   silently resizing the user's servers. The catalog and unlock display remain a preview
   until verified customer funding and runtime entitlement are connected.
-  Reuse the monthly resource editor for the interactive estimate; PAYG prices come
+  Reuse the monthly resource editor for the interactive estimate, with two resource
+  controls per row when they fit. Configure one server; show its hourly price at full
+  CPU usage and state that basis beside the estimate. PAYG prices come
   directly from usage rates and do not depend on
   monthly-plan quotes or ceilings. Keep the pricing preview until customer-funded
   purchases are supported. A shared balance is funding,
@@ -169,7 +172,7 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   Keep one compact purchase bar visible at the bottom while configuring resources;
   use a translucent popover surface with backdrop blur while keeping its text readable.
   Lead with estimated dollars per hour and the matching credits per hour, with
-  average CPU activity and all-host scope beside them. Keep the CPU, RAM and storage
+  the per-server scope and full-CPU basis beside them. Keep the CPU, RAM and storage
   hourly breakdown visible. Do not turn a full-month projection into a purchase
   requirement or suggest a larger deposit to cover it. Balance duration belongs in
   an optional disclosure and follows prepaid funds divided by resource usage cost;
@@ -177,7 +180,7 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   ceiling requires an enforceable provider quote, not a UI-derived promise.
   Show CPU-hours as allocated vCPUs multiplied by average activity and elapsed time;
   label time online as elapsed time. Show resource-hours and their costs under a clear
-  per-elapsed-hour heading, including all selected hosts. Distinguish active CPU from
+  per-elapsed-hour heading for the configured server. Distinguish active CPU from
   reserved RAM and retained storage. Keep checkout unavailable until customer-funded purchases are
   supported. Do not expose reseller wallet balances or call hypothetical comparisons
   recorded savings.

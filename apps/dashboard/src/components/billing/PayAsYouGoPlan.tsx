@@ -6,7 +6,6 @@ import { Icon } from "@repo/ui/icons";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { optionCardSurface } from "@/components/shared/OptionCard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   estimatePrepaidUsage,
@@ -70,28 +69,24 @@ function PrepaidCalculator({
     memoryMb: String(catalog.resources.memoryMb.min / 1024),
     diskGb: String(catalog.resources.diskGb.min),
   }));
-  const [hosts, setHosts] = useState("1");
-  const [activity, setActivity] = useState("100");
   const resources = readServerResources(values, catalog.resources);
-  const count = Number(hosts),
-    cpuPercent = Number(activity);
-  const validCount = hosts.trim() !== "" && Number.isSafeInteger(count) && count >= 1;
-  const validActivity =
-    activity.trim() !== "" && Number.isFinite(cpuPercent) && cpuPercent >= 0 && cpuPercent <= 100;
-  const pool = resources && validCount ? previewPaygPool(selectedTier, resources, count) : null;
+  const pool = resources ? previewPaygPool(selectedTier, resources, 1) : null;
+  const largerTier = resources && pool && !pool.fits
+    ? payg.tiers.find(tier => previewPaygPool(tier, resources, 1)?.fits)
+    : null;
   const ranges = Object.fromEntries(
     (Object.keys(catalog.resources) as Array<keyof typeof catalog.resources>).map(key => [key, {
       ...catalog.resources[key], max: Math.min(catalog.resources[key].max, selectedTier.pool[key]),
     }]),
   ) as typeof catalog.resources;
   const estimate =
-    resources && validCount && validActivity && pool?.fits
+    resources && pool?.fits
       ? estimatePrepaidUsage({
           pricing,
           resources,
           packageCents,
-          serverCount: count,
-          cpuPercent,
+          serverCount: 1,
+          cpuPercent: 100,
         })
       : null;
   const number = (value: number, digits = 2) =>
@@ -164,57 +159,33 @@ function PrepaidCalculator({
             <p className="mt-1 text-sm text-muted-foreground">{copy.sizeHint}</p>
             <div className="mt-4 border-b border-border/50 pb-5">
               <PaygResourceTiers tiers={payg.tiers} selected={selectedTier} onChange={setTierId}
-                resources={resources} serverCount={count} money={money} />
+                money={money} />
             </div>
             <div className="mt-5">
               <ServerResourceInputs
                 ranges={ranges}
                 values={values}
                 onChange={setValues}
+                columns={2}
               />
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-4 border-t border-border/50 pt-4">
-              <div className="flex flex-col">
-                <label htmlFor={`${id}-hosts`} className="mb-2 block text-sm font-medium">
-                  {copy.hosts}
-                </label>
-                <Input
-                  id={`${id}-hosts`}
-                  type="number"
-                  variant="filled"
-                  min={1}
-                  max={selectedTier.pool.servers}
-                  step={1}
-                  value={hosts}
-                  aria-invalid={!validCount || count > selectedTier.pool.servers}
-                  onChange={(event) => setHosts(event.target.value)}
-                  className="mt-auto"
-                />
+            {pool && !pool.fits && (
+              <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning/10 px-3 py-2.5">
+                <p className="text-sm">
+                  {interpolate(copy.tiers.exceeded, {
+                    tier: interpolate(copy.tiers.name, { level: number(selectedTier.level) }),
+                  })}
+                </p>
+                {largerTier && (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setTierId(largerTier.id)}>
+                    {interpolate(copy.tiers.choose, {
+                      tier: interpolate(copy.tiers.name, { level: number(largerTier.level) }),
+                    })}
+                  </Button>
+                )}
               </div>
-              <div className="flex flex-col">
-                <label htmlFor={`${id}-activity`} className="mb-2 block text-sm font-medium">
-                  {copy.cpuActivity}
-                </label>
-                <div className="relative mt-auto">
-                  <Input
-                    id={`${id}-activity`}
-                    type="number"
-                    variant="filled"
-                    min={0}
-                    max={100}
-                    step="any"
-                    value={activity}
-                    aria-invalid={!validActivity}
-                    onChange={(event) => setActivity(event.target.value)}
-                    className="pe-9"
-                  />
-                  <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    %
-                  </span>
-                </div>
-              </div>
-            </div>
-            {(!resources || !validCount || !validActivity || !pool) && (
+            )}
+            {(!resources || !pool) && (
               <p role="alert" className="mt-3 text-sm text-danger">
                 {copy.invalid}
               </p>
@@ -311,7 +282,7 @@ function PrepaidCalculator({
             </p>
             {estimate && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {interpolate(copy.hourlyHint, { percent: number(cpuPercent) })}
+                {copy.hourlyHint}
               </p>
             )}
             <dl className="mt-5 space-y-4 border-t border-border/50 pt-4 text-sm">
@@ -343,8 +314,8 @@ function PrepaidCalculator({
                 <p className="text-xs font-medium text-muted-foreground">{copy.hourlyBasis}</p>
                 <bdi dir="ltr" className="mt-1 block text-sm font-medium tabular-nums">
                   {interpolate(copy.cpuFormula, {
-                    cpu: number(resources.cpuCores * count),
-                    percent: number(cpuPercent),
+                    cpu: number(resources.cpuCores),
+                    percent: number(100),
                     hours: number(estimate.hourlyUsage.cpuVcpuHours),
                   })}
                 </bdi>
@@ -377,14 +348,6 @@ function PrepaidCalculator({
                 </dd>
               </div>
             </dl>
-            {estimate && cpuPercent > 0 && cpuPercent < 100 && (
-              <p className="mt-3 text-sm">
-                {interpolate(copy.runtimeHint, {
-                  percent: number(cpuPercent),
-                  duration: duration(estimate.coveredElapsedHours),
-                })}
-              </p>
-            )}
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{copy.rangeHint}</p>
           </details>
           <details className="group mt-4 border-t border-border/50 pt-4">

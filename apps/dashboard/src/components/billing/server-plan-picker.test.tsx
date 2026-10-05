@@ -185,23 +185,23 @@ describe("plans for an existing server", () => {
 });
 
 describe("buying another managed server", () => {
-  it("keeps typed resources when switching PAYG tiers and offers a pool that fits all servers", async () => {
+  it("keeps typed resources when switching PAYG tiers and offers a pool that fits the server", async () => {
     h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
     await render(<ManagedServerPurchase />);
     await click(copy.purchase.payg);
     await click("Tier 1");
-    await edit(input(copy.purchase.hosts)!, "3");
+    await edit(input(copy.custom.cpu)!, "3");
     const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
     expect(panel.querySelector('[role="alert"]')?.textContent).toContain("exceeds Tier 1");
-    expect(panel.querySelector("aside")?.textContent).not.toContain("$0.1912");
+    expect(panel.querySelector("aside")?.textContent).not.toContain("$0.1237");
     await click("View Tier 2");
-    expect(input(copy.purchase.hosts)?.value).toBe("3");
+    expect(input(copy.custom.cpu)?.value).toBe("3");
     expect(panel.querySelector('[role="alert"]')).toBeNull();
-    expect(panel.querySelector("aside")?.textContent).toContain("$0.1912");
+    expect(panel.querySelector("aside")?.textContent).toContain("$0.1237");
     await click(copy.purchase.monthly);
     await click(copy.purchase.payg);
     expect(buttons("Tier 2")[0]?.getAttribute("aria-selected")).toBe("true");
-    expect(input(copy.purchase.hosts)?.value).toBe("3");
+    expect(input(copy.custom.cpu)?.value).toBe("3");
     expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
   });
 
@@ -210,7 +210,7 @@ describe("buying another managed server", () => {
     await render(<ManagedServerPurchase />);
     await click(copy.purchase.payg);
     await click("Tier 1");
-    await edit(input(copy.purchase.hosts)!, "3");
+    await edit(input(copy.custom.cpu)!, "3");
     const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
     await act(async () => panel.querySelector<HTMLButtonElement>('button[value="10000"]')!.click());
     expect(buttons("Tier 1")[0]?.getAttribute("aria-selected")).toBe("true");
@@ -224,7 +224,7 @@ describe("buying another managed server", () => {
     expect(h.post).not.toHaveBeenCalled(); expect(h.create).not.toHaveBeenCalled();
   });
 
-  it("previews packages shared across hosts without checkout, and preserves inputs across billing modes", async () => {
+  it("previews one server at full CPU without checkout, and preserves resources across billing modes", async () => {
     h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
     await render(<ManagedServerPurchase />);
     await click(copy.purchase.payg);
@@ -232,6 +232,8 @@ describe("buying another managed server", () => {
     const estimate = panel.querySelector("aside")!;
     expect(estimate.textContent).toContain("$0.0637");
     expect(estimate.textContent).toContain("6.37 credits/hour");
+    expect(estimate.textContent).toContain(copy.purchase.hourlyHint);
+    expect(panel.querySelectorAll('input[type="number"]')).toHaveLength(3);
     expect(estimate.querySelector("details")?.open).toBe(false);
     expect(estimate.textContent).not.toMatch(/30-day|Assumes|Compare monthly hosts/);
     expect(estimate.textContent).toContain("13.1 days");
@@ -239,24 +241,17 @@ describe("buying another managed server", () => {
     await act(async () => panel.querySelector<HTMLButtonElement>('button[value="500"]')!.click());
     expect(estimate.textContent).toContain("3.3 days");
     expect(estimate.textContent).toContain("6.2 days");
-    await edit(input(copy.purchase.hosts)!, "2");
-    expect(estimate.textContent).toContain("1.6 days");
-    expect(estimate.textContent).toContain("$0.1275");
-    await edit(input(copy.purchase.cpuActivity)!, "25");
-    expect(estimate.textContent).toContain("0.5 vCPU-h");
-    expect(estimate.textContent).toContain("1.5 credits");
-    expect(estimate.textContent).toContain("2.5 days");
-    expect(estimate.textContent).toContain("25%");
-    expect(panel.textContent).toContain("2 vCPU × 25% = 0.5 vCPU-h");
-    await edit(input(copy.purchase.cpuActivity)!, "0.1");
-    expect(estimate.textContent).toContain("0.002 vCPU-h");
-    expect(estimate.textContent).toContain("0.006 credits");
-    expect(estimate.textContent).toContain("$0.00006");
+    await edit(input(copy.custom.cpu)!, "2");
+    expect(estimate.textContent).toContain("2.2 days");
+    expect(estimate.textContent).toContain("$0.0937");
+    expect(estimate.textContent).toContain("2 vCPU-h");
+    expect(estimate.textContent).toContain("6 credits");
+    expect(panel.textContent).toContain("2 vCPU × 100% = 2 vCPU-h");
     expect(buttons("Add 500 credits")[0]?.disabled).toBe(true);
     await click(copy.purchase.monthly);
     expect(buttons(copy.purchase.monthly)[0]?.getAttribute("aria-selected")).toBe("true");
     await click(copy.purchase.payg);
-    expect(input(copy.purchase.hosts)?.value).toBe("2");
+    expect(input(copy.custom.cpu)?.value).toBe("2");
     expect(panel.querySelector('button[value="500"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(h.create).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
@@ -281,7 +276,7 @@ describe("buying another managed server", () => {
     h.get.mockResolvedValue({ data: { ...catalog.data, computePricing: { ...computePricing, paygCheckoutAvailable: true } } });
     await render(<ManagedServerPurchase />);
     await click(copy.purchase.payg);
-    await edit(input(copy.purchase.hosts)!, "0");
+    await edit(input(copy.custom.cpu)!, "0");
     const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
     expect(panel.querySelector('[role="alert"]')?.textContent).toBe(copy.purchase.invalid);
     expect(panel.querySelector("aside")?.textContent).not.toContain("13.1 days");

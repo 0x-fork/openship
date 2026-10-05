@@ -62,13 +62,13 @@ transfer allowance cannot end a confirmed paid month of CPU and RAM.
 The **Prepaid PAYG** pricing preview shows Openship resource tiers separately
 from credit packages. **Tier 1**, **Tier 2** and **Tier 3** describe the combined
 CPU, RAM, storage and server limits for a PAYG pool. The tier tabs show the credit
-purchase threshold and your configured resources against that pool. Credit
+purchase threshold and the pool's capacity. These numbers stay fixed while you
+configure a server. Credit
 purchases unlock tiers; spending credits does not lower an unlocked tier.
 Selecting a tier or package in the preview does not grant it.
 
-Customize resources per host, the number of hosts and average CPU activity to
-estimate how they would spend one shared prepaid balance. Adding hosts does not
-multiply the tier's allowance. If a configuration exceeds the selected pool,
+Customize CPU, RAM and storage to estimate one server's hourly cost at full CPU
+usage. Servers share the tier's pool allowance. If a configuration exceeds the selected pool,
 the preview keeps your inputs and offers a larger tier that fits when available.
 The credit card shows which tier the selected package would unlock. Resource
 rates and the credit conversion come from the provider's published catalog:
@@ -77,11 +77,10 @@ active CPU time, reserved RAM time, and retained provisioned storage.
 CPU time is measured in **vCPU-hours**, separately from elapsed time online.
 Four allocated vCPUs averaging 25% activity consume one vCPU-hour in one elapsed
 hour. Two such hosts consume two vCPU-hours during that same hour. The estimator
-shows this calculation and the combined hourly resource usage. Lower CPU
+shows the configured server's hourly resource usage at full CPU activity. Lower CPU
 activity reduces CPU usage; reserved RAM and storage continue to accrue usage.
 The estimate leads with dollars per hour and the equivalent credit deduction,
-with a visible CPU, RAM and storage breakdown. It uses the selected average CPU
-activity across all hosts. Open **Balance estimate** for the duration range from
+with a visible CPU, RAM and storage breakdown. Open **Balance estimate** for the duration range from
 100% CPU activity to idle CPU, including RAM and storage at both ends. These are
 usage scenarios, not a guaranteed number of days or a required monthly deposit.
 
