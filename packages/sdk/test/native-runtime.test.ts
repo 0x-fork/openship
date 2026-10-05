@@ -7,8 +7,10 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { createShip, OperationError, type OwnedShip, type VerifiedIdentity } from "../src/native";
 
-// The engine owns a real worker, so a fetch mock in this test's thread would not
-// reach GitHub validation. Preload only the provider fixture inside each worker.
+const providerFixture = vi.hoisted(() => ({ cloudPlans: null as unknown }));
+
+// The engine owns a real worker, so provider fixtures must run in that worker.
+// Keep the native bridge, authorization, validation and persistence real.
 vi.mock("node:worker_threads", async (original) => {
   const actual = await original<typeof import("node:worker_threads")>();
   return {
@@ -17,10 +19,11 @@ vi.mock("node:worker_threads", async (original) => {
       constructor(filename: string | URL, options: import("node:worker_threads").WorkerOptions = {}) {
         super(filename, {
           ...options,
+          workerData: { ...options.workerData, testCloudPlans: providerFixture.cloudPlans },
           execArgv: [
             ...(options.execArgv ?? []),
             "--import",
-            new URL("./fixtures/github-fetch.mjs", import.meta.url).href,
+            new URL("./fixtures/provider-fetch.mjs", import.meta.url).href,
           ],
         });
       }
@@ -31,6 +34,17 @@ vi.mock("node:worker_threads", async (original) => {
 const execute = promisify(execFile);
 const key = "native-integration-test-persistent-key-32-bytes";
 beforeAll(async () => {
+  // Use the shared presenter so this fixture cannot drift into a second catalog.
+  // Only the generator uses this test credential; owned workers supply their own.
+  const previousToken = process.env.INTERNAL_TOKEN;
+  process.env.INTERNAL_TOKEN = key;
+  try {
+    const { presentCloudPlans } = await import("@repo/platform/engine/modules/billing/billing-catalog");
+    providerFixture.cloudPlans = presentCloudPlans("ar");
+  } finally {
+    if (previousToken === undefined) delete process.env.INTERNAL_TOKEN;
+    else process.env.INTERNAL_TOKEN = previousToken;
+  }
   // Exercise the same Node worker shipped in the npm artifact, with real PGlite.
   await execute("bun", ["run", "build:native"], { cwd: resolve(import.meta.dirname, "../../platform"), maxBuffer: 2 * 1024 * 1024 });
 }, 60_000);
