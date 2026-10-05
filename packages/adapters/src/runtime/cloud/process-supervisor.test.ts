@@ -60,6 +60,32 @@ describe("shared bare lifecycle on a managed server", () => {
     workloads.stop.mockImplementation(async id => { live.set(id, "stopped"); return { success: true }; });
     await expect(supervisor.stop("release-a")).rejects.toThrow("did not persist");
   });
+  it("can archive an already stopped release without issuing an invalid second stop", async () => {
+    await supervisor.deploy(options);
+    await supervisor.stop("release-a");
+    workloads.stop.mockRejectedValue(Object.assign(new Error("already stopped"), { status: 409, code: "invalid_state" }));
+    await supervisor.stop("release-a");
+    expect(workloads.stop).toHaveBeenCalledOnce();
+    expect(await supervisor.getInfo("release-a")).toMatchObject({ status: "stopped" });
+  });
+  it("does not trust a saved stopped state while the live process is still running", async () => {
+    await supervisor.deploy(options);
+    Object.assign(rows.get("openship-release-a")!, { enabled: false, state: "stopped" });
+    await supervisor.stop("release-a");
+    expect(workloads.stop).toHaveBeenCalledOnce();
+    expect(live.get("openship-release-a")).toBe("stopped");
+  });
+  it.each([false, true])("confirms both disabled and stopped state after a conflicting stop (disabled=%s)", async disabled => {
+    await supervisor.deploy(options);
+    workloads.stop.mockImplementation(async id => {
+      live.set(id, "stopped");
+      rows.get(id)!.enabled = !disabled;
+      throw Object.assign(new Error("already stopped"), { status: 409, code: "invalid_state" });
+    });
+    const stop = supervisor.stop("release-a");
+    if (disabled) await expect(stop).resolves.toBeUndefined();
+    else await expect(stop).rejects.toMatchObject({ code: "invalid_state" });
+  });
   it("rejects foreign ownership before changing or deleting a process", async () => {
     await supervisor.deploy(options);
     rows.get("openship-release-a")!.labels = { "openship.project": "project-b", "openship.deployment": "release-a" };

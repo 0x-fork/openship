@@ -292,13 +292,20 @@
     "error": "Dein Abonnement konnte nicht aktualisiert werden. Bitte versuche es erneut."
   },
   "checkout": {
-    "checking": "Dein Cloud-Tarif und Guthaben werden aktualisiert. Die Zahlung kann einen Moment dauern.",
+    "checking": "Checkout wird bestätigt…",
     "active": "Dein Cloud-Tarif ist aktiv.",
-    "pending": "Deine Zahlung wird möglicherweise noch verarbeitet. Aktualisiere diese Seite, um Tarif und Guthaben zu prüfen. Kontaktiere den Support, wenn eine abgeschlossene Zahlung fehlt.",
+    "pending": "Dieser Checkout ist noch nicht bestätigt. Prüfe erneut oder kontaktiere den Support, wenn du bereits bezahlt hast.",
     "support": "Support kontaktieren",
-    "failed": "Dieser Checkout wurde nicht abgeschlossen. Versuche es auf der Abrechnungsseite erneut.",
+    "failed": "Dieser Checkout konnte nicht bestätigt werden. Kontaktiere den Support, bevor du erneut bezahlst.",
     "reversed": "Diese Zahlung wurde erstattet oder angefochten. Prüfe dein Guthaben oder kontaktiere den Support.",
-    "topupComplete": "Deine zusätzlichen Credits wurden hinzugefügt."
+    "topupComplete": "Deine zusätzlichen Credits wurden hinzugefügt.",
+    "paidPending": "Checkout abgeschlossen. Wir prüfen, ob dein Kauf angewendet wurde. Du musst nicht erneut bezahlen.",
+    "paidFailed": "Checkout abgeschlossen, aber wir konnten nicht bestätigen, dass dein Kauf angewendet wurde. Kontaktiere den Support; du musst nicht erneut bezahlen.",
+    "provisioning": "Checkout abgeschlossen. Dein Server wird vorbereitet…",
+    "setupPending": "Checkout abgeschlossen. Die Bereitschaft deines Servers ist noch nicht bestätigt. Prüfe die Einrichtung oder kontaktiere den Support; du musst nicht erneut bezahlen.",
+    "setupFailed": "Checkout abgeschlossen, aber die Servereinrichtung benötigt Aufmerksamkeit. Öffne die Einrichtung zum Wiederholen oder kontaktiere den Support; du musst nicht erneut bezahlen.",
+    "checkAgain": "Erneut prüfen",
+    "viewSetup": "Servereinrichtung öffnen"
   },
   "deployGate": {
     "title": "Tarif zum Bereitstellen auswählen",

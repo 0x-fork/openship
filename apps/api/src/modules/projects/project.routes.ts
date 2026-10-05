@@ -201,11 +201,10 @@ r.get(
 
 /* ─── Folder upload → deploy ─────────────────────────────────────────────
  * Browser-based folder deploy for clients with no filesystem-shared API.
- * `session` returns an opaque upload target: an Oblien workspace token (SaaS,
- * the browser uploads DIRECTLY to Oblien) or a relay path (self-hosted). The
+ * `session` returns an authenticated upload target for private source staging.
+ * Builds transfer that source to the selected connected or managed server. The
  * binary /folder/upload route is excluded from MCP (see mcp-tools). */
-// session + scan run on BOTH SaaS and self-hosted (session provisions the
-// Oblien workspace / staging dir; scan detects on the uploaded source).
+// Session, upload and scan share the same path on SaaS and self-hosted installs.
 r.post(
   "/folder/session",
   {
@@ -251,9 +250,8 @@ r.post(
   },
   folder.revealSessionEnv,
 );
-// The relay upload is SELF-HOSTED ONLY: on the SaaS the browser uploads
-// straight to the Oblien workspace, so the API never receives bytes. localOnly
-// 404s this in CLOUD_MODE; the 300MB bodyLimit only runs once localOnly passes.
+// Source bytes are staged privately on either installation; only the selected
+// execution server runs builds. The operation checks ownership and its ticket.
 r.post(
   "/folder/upload/:sessionId",
   {
@@ -261,7 +259,6 @@ r.post(
     collection: true,
     collectionProject: true,
     auditHandledByOperation: true,
-    localOnly: true,
     mcpExcluded:
       "Binary tarball upload; use the authenticated upload URL from folder/session outside JSON-RPC.",
   },

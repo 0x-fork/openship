@@ -324,6 +324,29 @@ afterEach(async () => {
 });
 
 describe("subscription-owned Cloud workspace lifecycle", () => {
+  it("reconciles each server once without an ambiguous organization billing pass", async () => {
+    const sibling = await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Second server" });
+    await ensureNamespace(owner.orgId, sibling.id);
+    await db.update(schema.organization).set({ oblienNamespace: "previous-org-namespace" }).where(eq(schema.organization.id, owner.orgId));
+    const quota = await import("@repo/platform/engine/modules/billing/billing-oblien-quota");
+    const workspaces = await import("@repo/platform/engine/modules/cloud-workspaces/cloud-workspace.service");
+    const reconcile = vi.spyOn(quota, "reconcileOblienEntitlement").mockResolvedValue({
+      quotaMissing: false, changed: false, statusWas: "active", statusNow: "active",
+    });
+    const provision = vi.spyOn(workspaces, "requestPaidWorkspaceProvisioning").mockResolvedValue();
+    try {
+      const { runEntitlementReconcile } = await import("@repo/platform/engine/modules/billing/billing-anniversary.cron");
+      const stats = await runEntitlementReconcile();
+      expect(stats.errors).toBe(0);
+      expect(reconcile.mock.calls.filter(([organizationId]) => organizationId === owner.orgId))
+        .toEqual(expect.arrayContaining([[owner.orgId, workspace.id], [owner.orgId, sibling.id]]));
+      expect(reconcile.mock.calls.filter(([organizationId]) => organizationId === owner.orgId)).toHaveLength(2);
+      expect(reconcile.mock.calls.every(([, workspaceId]) => !!workspaceId)).toBe(true);
+    } finally {
+      reconcile.mockRestore();
+      provision.mockRestore();
+    }
+  });
   it("passes the production route scanner and requires authentication and ownership", async () => {
     expect(scanRoutes(app).errors).toEqual([]);
     expect((await app.request("/api/system/servers")).status).toBe(401);
@@ -800,25 +823,57 @@ describe("workspace payment and deletion races", () => {
     await assertWorkspaceCheckoutsSettled((await repos.cloudWorkspace.findById(workspace.id))!);
     expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toEqual([]);
   });
-  it("does not strand a never-created checkout after explicit offer rejection", async () => {
+  it.each([
+    ["invalid_offer", 400], ["invalid_redirect_url", 400], ["billing_redirect_not_allowed", 400],
+    ["reseller_enterprise_required", 503], ["billing_offer_underfunded", 400],
+    ["capacity_price_below_cost", 400], ["insufficient_redeemable_balance", 503],
+  ] as const)("does not strand a never-created checkout after %s rejection", async (providerCode, statusCode) => {
     h.billing.createCheckout.mockRejectedValueOnce(
-      new OperationError("Invalid offer", 400, "OBLIEN_BILLING_ERROR", {
-        providerCode: "invalid_offer",
+      new OperationError("Invalid offer", statusCode, "OBLIEN_BILLING_ERROR", {
+        providerCode, checkoutRejected: true,
       }),
     );
     await expect(purchase()).rejects.toThrow("Invalid offer");
     expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toEqual([]);
   });
-  it("preserves an uncertain charge even if a replay later rejects, and keeps subscription checks after settlement", async () => {
+  it.each(["invalid_offer", "insufficient_redeemable_balance"])("preserves an uncertain charge even if a replay later rejects with %s", async providerCode => {
     h.billing.createCheckout.mockRejectedValueOnce(new Error("timeout"));
     await expect(purchase()).rejects.toThrow("timeout");
     h.billing.createCheckout.mockRejectedValue(
       new OperationError("Invalid offer", 400, "OBLIEN_BILLING_ERROR", {
-        providerCode: "invalid_offer",
+        providerCode, checkoutRejected: true,
       }),
     );
     await expect(purchase()).rejects.toThrow("Invalid offer");
     expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toHaveLength(1);
+  });
+  it("releases an expired lost checkout before tracking its replacement", async () => {
+    const original = checkout();
+    h.billing.createCheckout.mockRejectedValueOnce(new Error("response lost"));
+    await expect(purchase(original)).rejects.toThrow("response lost");
+    h.billing.createCheckout.mockRejectedValueOnce(
+      new OperationError("Expired checkout", 410, "OBLIEN_BILLING_ERROR", {
+        providerCode: "checkout_expired", checkoutExpired: true,
+      }),
+    );
+    const replacement = checkout();
+    const result = await purchase(replacement);
+    expect(h.billing.createCheckout.mock.calls.map(([input]) => input)).toEqual([original, original, replacement]);
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toEqual([
+      { request: replacement, checkoutId: result.checkoutId },
+    ]);
+  });
+  it("does not retain an expired key when the caller retries that same key", async () => {
+    const input = checkout();
+    h.billing.createCheckout.mockRejectedValueOnce(new Error("response lost"));
+    await expect(purchase(input)).rejects.toThrow("response lost");
+    h.billing.createCheckout.mockRejectedValue(
+      new OperationError("Expired checkout", 410, "OBLIEN_BILLING_ERROR", {
+        providerCode: "checkout_expired", checkoutExpired: true,
+      }),
+    );
+    await expect(purchase(input)).rejects.toMatchObject({ statusCode: 410 });
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toEqual([]);
   });
 });
 

@@ -6,6 +6,10 @@ import { getOblienBillingApi } from "../../lib/oblien-client";
 import { oblienCheckoutInputSchema, type OblienCheckout } from "../../lib/oblien-billing-api";
 import { hasPendingSubscriptionChange } from "./billing-subscription";
 
+function isExpiredCheckout(error: unknown): boolean {
+  return error instanceof OperationError && error.details?.checkoutExpired === true;
+}
+
 /** Call only under the billing lock. A lost create response is recovered with
  * the exact persisted provider request; it never becomes an untracked charge. */
 export async function reconcileWorkspaceCheckouts(owner: CloudWorkspace) {
@@ -15,7 +19,17 @@ export async function reconcileWorkspaceCheckouts(owner: CloudWorkspace) {
     const request = oblienCheckoutInputSchema.parse(intent.request);
     if (request.namespace !== owner.namespace)
       throw new Error("Checkout namespace does not match its workspace");
-    const checkoutId = intent.checkoutId ?? (await billing.createCheckout(request)).checkoutId;
+    let checkoutId = intent.checkoutId;
+    if (!checkoutId) {
+      try {
+        checkoutId = (await billing.createCheckout(request)).checkoutId;
+      } catch (error) {
+        // A scoped replay can expire before its checkout ID was recovered.
+        // Only the provider's explicit terminal response releases that intent.
+        if (isExpiredCheckout(error)) continue;
+        throw error;
+      }
+    }
     const { checkout } = await billing.getCheckout(owner.namespace!, checkoutId);
     if (checkout.status !== "expired" && !(checkout.status === "complete" && checkout.fulfilled)) {
       pending.push({ request, checkoutId });
@@ -68,19 +82,12 @@ export async function createTrackedWorkspaceCheckout(
   try {
     result = await billing.createCheckout(request);
   } catch (error) {
-    // Only a fresh, explicitly rejected request is known never to have opened
-    // a payment. An earlier lost response must remain tracked for recovery.
+    // Confirmed expiry is terminal even after a lost response. Other refusals
+    // release only fresh attempts; an earlier uncertain purchase stays tracked.
     if (
-      !existing &&
-      error instanceof OperationError &&
-      error.statusCode < 500 &&
-      [
-        "invalid_plan",
-        "invalid_pack",
-        "invalid_offer",
-        "billing_redirect_not_allowed",
-        "reseller_enterprise_required",
-      ].includes(String(error.details?.providerCode))
+      isExpiredCheckout(error) || (
+        !existing && error instanceof OperationError && error.details?.checkoutRejected === true
+      )
     ) {
       await repos.cloudWorkspace.setPendingCheckouts(
         owner.id,

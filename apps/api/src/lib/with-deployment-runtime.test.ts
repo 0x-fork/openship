@@ -20,6 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   disposed: 0,
   created: 0,
+  cleanup: undefined as (() => Promise<void>) | undefined,
 }));
 
 // Only the transport is faked. The error CLASSIFIERS stay real on purpose: they
@@ -35,6 +36,7 @@ vi.mock("@repo/adapters", async () => {
         return {
           dispose: async () => {
             h.disposed += 1;
+            await h.cleanup?.();
           },
         };
       },
@@ -60,6 +62,7 @@ describe("withDeploymentRuntime", () => {
   beforeEach(() => {
     h.disposed = 0;
     h.created = 0;
+    h.cleanup = undefined;
   });
 
   it("returns the action's value and disposes the transport", async () => {
@@ -123,6 +126,44 @@ describe("withDeploymentRuntime", () => {
 
     expect((err as { statusCode?: number }).statusCode).toBeUndefined();
     expect((err as Error).message).toContain("no such container");
+  });
+
+  it.each([false, true])("keeps managed admission until asynchronous transport cleanup finishes (action fails: %s)", async (fails) => {
+    const { withDeploymentRuntime } = await import("@repo/platform/engine/lib/deployment-runtime");
+    const { withManagedCommandTracking, currentManagedCommandTracking } = await import("../../../../packages/adapters/src/runtime/cloud/command-tracking");
+    const pending = new Set<string>();
+    let finish!: () => void;
+    const cleaning = new Promise<void>(resolve => { finish = resolve; });
+    let started!: () => void;
+    const cleanupStarted = new Promise<void>(resolve => { started = resolve; });
+    h.cleanup = async () => {
+      // Cloud Docker closes its socket before removing staged source files.
+      await Promise.resolve();
+      const tracking = currentManagedCommandTracking()!;
+      await tracking.record({ workspaceId: "owned-vm", marker: "source-cleanup" });
+      started();
+      await cleaning;
+      await tracking.complete("source-cleanup");
+    };
+    let settled = false;
+    const operation = withManagedCommandTracking({
+      record: async command => { pending.add(command.marker); },
+      complete: async marker => { pending.delete(marker); },
+    }, () => withDeploymentRuntime(dep, async () => {
+      if (fails) throw new Error("app failed readiness");
+      return "ready";
+    })).then(value => ({ value }), error => ({ error })).finally(() => { settled = true; });
+    try {
+      await cleanupStarted;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(pending.size).toBe(1);
+      expect(settled).toBe(false);
+    } finally {
+      finish();
+      await operation;
+    }
+    expect(pending.size).toBe(0);
+    expect(await operation).toEqual(fails ? { error: new Error("app failed readiness") } : { value: "ready" });
   });
 });
 

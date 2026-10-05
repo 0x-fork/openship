@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "@repo/workspace",
@@ -192,7 +193,7 @@
         "dockerode": "^4.0.9",
         "ignore": "^7.0.5",
         "ioredis": "^5.10.0",
-        "oblien": "2.8.0",
+        "oblien": "2.8.1",
         "ssh2": "^1.17.0",
         "tar-fs": "^2.1.4",
         "undici": "^7.29.1",
@@ -2459,7 +2460,7 @@
 
     "object-keys": ["object-keys@1.1.1", "", {}, "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA=="],
 
-    "oblien": ["oblien@2.8.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-5AkwXaYp6bThHxJi46hfLfdy0zjN7BrTSC9wIbP5PMVm3hpfm+hE0Z/Nk2ZTsyVl9JBi1m74E96gpQrIYs6UjQ=="],
+    "oblien": ["oblien@2.8.1", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-QHVc/WFq7FU5u4C7sC2a7CcxgM6IAFG+PhN7rO/E5XeG8fLHaciikk5q0FyXzgegKvWyXfLCfi41VZILQVNqtA=="],
 
     "obug": ["obug@2.1.1", "", {}, "sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ=="],
 

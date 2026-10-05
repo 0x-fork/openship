@@ -125,7 +125,7 @@ export { ensureCloudProjectVolume } from "./runtime/cloud/docker-volume";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
 export { CloudServerConnection } from "./runtime/cloud/server-connection";
-export { withManagedCommandTracking } from "./runtime/cloud/command-tracking";
+export { withManagedCommandTracking, currentManagedCommandTracking } from "./runtime/cloud/command-tracking";
 export { BuildLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,

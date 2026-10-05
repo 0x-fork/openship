@@ -176,6 +176,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   after payment; downgrades wait for paid renewal. Keep pending payment and
   cancellation actions in the selected server's billing card, preserve retry
   identity after uncertain responses, and never replace the page with a loader.
+- Checkout returns verify payment, paid coverage and managed-server readiness separately.
+  Show the subscription welcome only when setup is complete. Keep preparation and failure
+  notices compact and above the billing columns, with a recheck action and a link to the existing server Activity tab
+  for logs and retry. A paid setup failure must never direct the customer to pay again.
 - Plan cards respond to their container: one column on phones, two at intermediate widths,
   and four when readable. Offer links to each plan above a stacked comparison; never rely
   on hidden horizontal overflow to reveal additional plans.

@@ -115,6 +115,19 @@ export default async function BillingTabPage({
   return (
     <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly, topupsAvailable: state.topups?.available === true }}>
       <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
+        {(query.checkout === "success" || query.topup === "success") && (
+          <BillingCheckoutStatus
+            kind={query.topup === "success" ? "topup" : "subscription"}
+            checkoutId={typeof query.session_id === "string" ? query.session_id : undefined}
+            expectedTier={typeof query.tier === "string" ? query.tier : undefined}
+            expectedOffer={typeof query.offer === "string" ? query.offer : undefined}
+            expectedInterval={
+              query.interval === "monthly" || query.interval === "annual"
+                ? query.interval
+                : undefined
+            }
+          />
+        )}
         <BillingContent
           key={`${view.contextKey}:${state.workspace?.id ?? "unsubscribed"}`}
           layout={activeTab === "plans" ? "plans" : "details"}
@@ -124,19 +137,6 @@ export default async function BillingTabPage({
             )
           }
         >
-          {(query.checkout === "success" || query.topup === "success") && (
-            <BillingCheckoutStatus
-              kind={query.topup === "success" ? "topup" : "subscription"}
-              checkoutId={typeof query.session_id === "string" ? query.session_id : undefined}
-              expectedTier={typeof query.tier === "string" ? query.tier : undefined}
-              expectedOffer={typeof query.offer === "string" ? query.offer : undefined}
-              expectedInterval={
-                query.interval === "monthly" || query.interval === "annual"
-                  ? query.interval
-                  : undefined
-              }
-            />
-          )}
           {renderTab()}
         </BillingContent>
       </BillingWorkspaceProvider>

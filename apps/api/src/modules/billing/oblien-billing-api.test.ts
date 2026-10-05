@@ -225,7 +225,7 @@ describe("Oblien billing SDK and transport contract", () => {
     }).catch(error => error);
     expect(error).toMatchObject({ statusCode: 503, code: "OBLIEN_CHECKOUT_UNAVAILABLE",
       message: "Cloud payments require an account configuration update by Openship. Contact Openship support.",
-      details: { providerCode: "reseller_enterprise_required" },
+      details: { providerCode: "reseller_enterprise_required", checkoutRejected: true },
     });
     expect(JSON.stringify(error)).not.toMatch(/private|accountTier/);
     expect(error.message).not.toMatch(/enterprise|upgrade/i);
@@ -301,6 +301,8 @@ describe("Oblien billing SDK and transport contract", () => {
   });
   it.each([
     [400, "billing_redirect_not_allowed", "return links are not configured"],
+    [400, "invalid_redirect_url", "valid HTTPS return link"],
+    [400, "capacity_price_below_cost", "Cloud pricing is not configured correctly"],
     [409, "billing_idempotency_conflict", "no longer matches the original request"],
     [409, "billing_checkout_reconciliation_required", "earlier checkout needs to be reviewed"],
   ] as const)("explains %s/%s without starting another payment", async (status, code, message) => {
@@ -317,9 +319,46 @@ describe("Oblien billing SDK and transport contract", () => {
       })
       .catch((error) => error);
     expect(error).toMatchObject({ statusCode: status, details: { providerCode: code } });
+    expect(error.details.checkoutRejected).toBe(status === 400 ? true : undefined);
     expect(error.message).toContain(message);
     expect(error.message).not.toContain("private");
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("does not classify a provider outage as a confirmed checkout rejection", async () => {
+    const { api } = setup({ success: false, code: "invalid_offer" }, 500);
+    const error = await api.createCheckout({
+      namespace: "os-one", kind: "subscription", offer, metadata, billingInterval: "monthly",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt",
+    }).catch(error => error);
+    expect(error.details.checkoutRejected).toBeUndefined();
+  });
+  it.each([410, 404, 500].flatMap(status => ["checkout_expired", "capacity_checkout_expired"].map(code => [status, code] as const)))("trusts only the explicit checkout expiry (%s/%s)", async (status, code) => {
+    const { api } = setup({ success: false, code, message: "private provider detail" }, status);
+    const error = await api.createCheckout({
+      namespace: "os-one", kind: "subscription", offer, metadata, billingInterval: "monthly",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt",
+    }).catch(error => error);
+    expect(error).toMatchObject({ statusCode: status === 500 ? 503 : status,
+      message: "This checkout has expired. Choose your plan again to start a new checkout.",
+      details: { providerCode: code },
+    });
+    expect(error.details.checkoutExpired).toBe(status === 410 ? true : undefined);
+    expect(error.details.checkoutRejected).toBeUndefined();
+  });
+  it.each([402, 500])("handles HTTP %s reseller funding failures without exposing the owner's wallet", async status => {
+    const { api } = setup({ success: false, code: "insufficient_redeemable_balance",
+      message: "Private wallet funding detail", requiredCredits: 625, eligibleCredits: 0, walletCredits: 11780,
+    }, status);
+    const error = await api.createCheckout({
+      namespace: "os-one", kind: "subscription", offer, metadata, billingInterval: "monthly",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt",
+    }).catch(error => error);
+    expect(error).toMatchObject({ statusCode: 503, code: "OBLIEN_CHECKOUT_UNAVAILABLE",
+      message: "Cloud server purchases are temporarily unavailable. Contact Openship support.",
+      details: { providerCode: "insufficient_redeemable_balance" },
+    });
+    expect(error.details.checkoutRejected).toBe(status === 402 ? true : undefined);
+    expect(JSON.stringify([error, vi.mocked(console.warn).mock.calls])).not.toMatch(/Private|625|11780|walletCredits|eligibleCredits/);
   });
   it.each(["sk_private", "test-secret", "user@private.test", "bad\nreference", "x".repeat(129)])("does not expose unsafe diagnostic reference %s", async reference => {
     const error = await setup({ success: false, code: "billing_storage_unavailable", details: { reference } }, 503)

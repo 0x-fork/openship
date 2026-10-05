@@ -187,8 +187,10 @@ beforeEach(() => {
 describe("Cloud Docker project teardown", () => {
   const listRoutes = vi.fn(async () => ["app.opsh.io", "console.opsh.io"]);
   const cleanupProject = vi.fn(async () => {});
+  const hostState = vi.fn(async () => "running");
   const cloudDocker = Object.assign(Object.create(CloudDockerRuntime.prototype), {
     name: "docker", projectId: "p1",
+    connection: { state: hostState },
     supports: (cap: string) => ["projectContainerSweep", "hostContainerQuery"].includes(cap),
     listProjectContainerIds: vi.fn(async () => []), listAllContainers: vi.fn(async () => []),
     listProjectImages: vi.fn(async () => []), inspectNamedVolumes: vi.fn(async () => ["project-data"]),
@@ -207,6 +209,7 @@ describe("Cloud Docker project teardown", () => {
     h.serviceRows.dep_1 = [serviceRow({ containerId: "web-container", imageRef: IMAGE_TAG })];
     listRoutes.mockResolvedValue(["app.opsh.io", "console.opsh.io"]);
     cleanupProject.mockResolvedValue();
+    hostState.mockReset().mockResolvedValue("running");
     h.removeRoute.mockResolvedValue();
     h.resolveCloudPlatform.mockResolvedValue({ platform: { runtime: cloudDocker, routing } });
   });
@@ -231,6 +234,31 @@ describe("Cloud Docker project teardown", () => {
     expect(result.failed).toContainEqual(expect.objectContaining({ ref: "app.opsh.io", type: "route" }));
     expect(cloudDocker.removeVolume).not.toHaveBeenCalled();
     expect(cleanupProject).not.toHaveBeenCalled();
+  });
+  it("cleans owned routes after the provider confirms its VM is gone without contacting Docker", async () => {
+    hostState.mockRejectedValue(Object.assign(new Error("Workspace not found"), { status: 404 }));
+    h.localRuntime = docker;
+    const manifest = await collectProjectManifest(ownedProject as never, { wipeVolumes: true });
+    expect(manifest.resources.map(resource => resource.type)).toEqual(["route", "route"]);
+    expect(manifest.runtimes).toEqual([]);
+    expect(cloudDocker.docker.ping).not.toHaveBeenCalled();
+    expect(resolveDeploymentRuntime).not.toHaveBeenCalled();
+    expect((await executeCleanup(manifest)).failed).toEqual([]);
+    expect(h.removeRoute).toHaveBeenCalledWith("app.opsh.io");
+    expect(cloudDocker.destroy).not.toHaveBeenCalled();
+    expect(cleanupProject).not.toHaveBeenCalled();
+    expect(docker.listProjectContainerIds).not.toHaveBeenCalled();
+  });
+  it.each([403, 500, undefined])("retains ownership when the host read fails with %s", async status => {
+    hostState.mockRejectedValue(Object.assign(new Error("Provider unavailable"), { status }));
+    await expect(collectProjectManifest(ownedProject as never)).rejects.toThrow("could not confirm");
+    expect(cloudDocker.docker.ping).not.toHaveBeenCalled();
+    expect(h.removeRoute).not.toHaveBeenCalled();
+  });
+  it("does not mistake a Docker 404 for a deleted host", async () => {
+    vi.mocked(cloudDocker.docker.ping).mockRejectedValueOnce(Object.assign(new Error("Bridge unavailable"), { status: 404 }));
+    await expect(collectProjectManifest(ownedProject as never)).rejects.toThrow("could not confirm");
+    expect(h.removeRoute).not.toHaveBeenCalled();
   });
   it("fails before cleanup if a deployment claims another workspace", async () => {
     h.deployments[0]!.meta = { managedServer: { projectId: "p1", workspaceId: "other-vm", ownerWorkspaceId: "owner-workspace" } };

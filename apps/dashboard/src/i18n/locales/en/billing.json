@@ -277,13 +277,20 @@
     "openStripe": "Open Stripe portal"
   },
   "checkout": {
-    "checking": "Refreshing your Cloud plan and balance. Payment may take a moment to process.",
+    "checking": "Confirming your checkout…",
     "active": "Your Cloud plan is active.",
-    "pending": "Your payment may still be processing. Refresh this page to check your plan and balance. Contact support if a completed payment is missing.",
+    "pending": "We haven’t confirmed this checkout yet. Check again, or contact support if you’ve already paid.",
     "support": "Contact support",
-    "failed": "This checkout was not completed. Return to billing to try again.",
+    "failed": "This checkout could not be confirmed. Contact support before starting another payment.",
     "reversed": "This payment was refunded or disputed. Check your current balance or contact support.",
-    "topupComplete": "Your additional credits have been added."
+    "topupComplete": "Your additional credits have been added.",
+    "paidPending": "Checkout complete. We’re confirming your purchase was applied. You don’t need to pay again.",
+    "paidFailed": "Checkout complete, but we couldn’t confirm your purchase was applied. Contact support; you don’t need to pay again.",
+    "provisioning": "Checkout complete. Preparing your server…",
+    "setupPending": "Checkout complete. Your server isn’t confirmed ready yet. Check setup or contact support; you don’t need to pay again.",
+    "setupFailed": "Checkout complete, but server setup needs attention. Open setup to retry or contact support; you don’t need to pay again.",
+    "checkAgain": "Check again",
+    "viewSetup": "View server setup"
   },
   "subscription": {
     "title": "Subscription",

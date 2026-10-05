@@ -292,13 +292,20 @@
     "error": "Não foi possível atualizar sua assinatura. Tente novamente."
   },
   "checkout": {
-    "checking": "Atualizando seu plano e saldo do Cloud. O pagamento pode levar um momento para ser processado.",
+    "checking": "Confirmando sua compra…",
     "active": "Seu plano do Cloud está ativo.",
-    "pending": "Seu pagamento ainda pode estar sendo processado. Atualize esta página para verificar seu plano e saldo. Contate o suporte se um pagamento concluído não aparecer.",
+    "pending": "Ainda não confirmamos esta compra. Verifique novamente ou contate o suporte se já pagou.",
     "support": "Contatar suporte",
-    "failed": "Este pagamento não foi concluído. Volte à faturação para tentar novamente.",
+    "failed": "Não foi possível confirmar esta compra. Contate o suporte antes de fazer outro pagamento.",
     "reversed": "Este pagamento foi reembolsado ou contestado. Verifique o saldo ou contacte o suporte.",
-    "topupComplete": "Os seus créditos adicionais foram adicionados."
+    "topupComplete": "Os seus créditos adicionais foram adicionados.",
+    "paidPending": "Compra concluída. Estamos confirmando que ela foi aplicada. Você não precisa pagar novamente.",
+    "paidFailed": "Compra concluída, mas não pudemos confirmar que ela foi aplicada. Contate o suporte; você não precisa pagar novamente.",
+    "provisioning": "Compra concluída. Preparando seu servidor…",
+    "setupPending": "Compra concluída. Ainda não confirmamos que seu servidor está pronto. Verifique a configuração ou contate o suporte; você não precisa pagar novamente.",
+    "setupFailed": "Compra concluída, mas a configuração do servidor precisa de atenção. Abra a configuração para tentar novamente ou contate o suporte; você não precisa pagar novamente.",
+    "checkAgain": "Verificar novamente",
+    "viewSetup": "Ver configuração do servidor"
   },
   "deployGate": {
     "title": "Escolha um plano para implantar",

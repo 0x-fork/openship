@@ -12,6 +12,14 @@ const allowance = amount.nonnegative().nullable();
 const date = z.string().refine((value) => Number.isFinite(Date.parse(value))).nullable();
 const namespace = z.string().min(1).max(128);
 const timestamp = (value: string | null) => value === null ? null : Date.parse(value);
+// These validation refusals occur before a checkout is opened. Use the original
+// provider status: an operator's funding or eligibility error is presented as 503.
+const REJECTED_CHECKOUT_CODES = new Set([
+  "invalid_plan", "invalid_pack", "invalid_offer", "invalid_redirect_url",
+  "billing_redirect_not_allowed", "reseller_enterprise_required", "billing_offer_underfunded",
+  "capacity_price_below_cost", "insufficient_redeemable_balance",
+]);
+const EXPIRED_CHECKOUT_CODES = new Set(["checkout_expired", "capacity_checkout_expired"]);
 
 export const oblienCatalogSchema = z.object({
   success: z.literal(true),
@@ -305,9 +313,12 @@ export class OblienBillingApi {
       // Do not forward provider bodies: they can contain account or payment data.
       const code = providerErrorCode(payload);
       const diagnostic = providerDiagnostic(payload, [this.options.clientId, this.options.clientSecret]);
+      const checkoutExpired = method === "POST" && path === "/billing/checkout" &&
+        response.status === 410 && EXPIRED_CHECKOUT_CODES.has(code);
       // Oblien can return SQL failures as HTTP 400. Those are provider faults,
       // not invalid customer input; preserving 400 also hid them from API logs.
-      const providerFailure = PROVIDER_FAILURES.has(code) || /^ER_[A-Z0-9_]+$/.test(code) || ![400, 404, 409, 422, 429].includes(response.status);
+      const providerFailure = PROVIDER_FAILURES.has(code) || /^ER_[A-Z0-9_]+$/.test(code) ||
+        (!checkoutExpired && ![400, 404, 409, 422, 429].includes(response.status));
       const status = providerFailure ? 503 : response.status;
       console.warn("[oblien:billing] Provider request failed", {
         method,
@@ -329,8 +340,11 @@ export class OblienBillingApi {
         billing_customer_conflict: "This organization's billing needs to be separated from a legacy account. Contact support.",
         billing_identity_conflict: "This organization's billing identity needs to be verified. Contact support.",
         billing_redirect_not_allowed: "Cloud billing return links are not configured. Contact Openship support.",
+        invalid_redirect_url: "Cloud billing requires a valid HTTPS return link. Contact Openship support.",
         billing_idempotency_conflict: "This checkout attempt no longer matches the original request. Contact Openship support before starting another payment.",
         billing_checkout_reconciliation_required: "An earlier checkout needs to be reviewed. Contact Openship support before starting another payment.",
+        checkout_expired: "This checkout has expired. Choose your plan again to start a new checkout.",
+        capacity_checkout_expired: "This checkout has expired. Choose your plan again to start a new checkout.",
         invalid_offer: "This Cloud offer is not configured correctly. Contact Openship support.",
         reseller_enterprise_required: "Cloud payments require an account configuration update by Openship. Contact Openship support.",
         billing_provider_configuration_error: "Cloud payments are not configured correctly. Contact Openship support.",
@@ -347,7 +361,9 @@ export class OblienBillingApi {
         plan_change_not_found: "This plan change was not found for the selected server.",
         capacity_billing_unavailable: "Monthly server purchases are temporarily unavailable. Existing paid servers keep their coverage.",
         billing_capacity_unavailable: "The requested server capacity is temporarily unavailable. Choose another size or try again later.",
-        billing_offer_underfunded: "This server's price needs updating before it can be purchased. Contact Openship support.",
+        billing_offer_underfunded: "Cloud pricing is not configured correctly for this server. Contact Openship support.",
+        capacity_price_below_cost: "Cloud pricing is not configured correctly for this server. Contact Openship support.",
+        insufficient_redeemable_balance: "Cloud server purchases are temporarily unavailable. Contact Openship support.",
       };
       const checkoutUnavailable = path === "/billing/checkout" && providerFailure;
       const message = Object.hasOwn(known, code) ? known[code]
@@ -356,6 +372,9 @@ export class OblienBillingApi {
       throw new OperationError(diagnostic.reference ? `${message} Reference: ${diagnostic.reference}.` : message,
         status, checkoutUnavailable ? "OBLIEN_CHECKOUT_UNAVAILABLE" : "OBLIEN_BILLING_ERROR", {
           ...(Object.hasOwn(known, code) ? { providerCode: code } : {}),
+          ...(checkoutExpired ? { checkoutExpired: true } : {}),
+          ...(path === "/billing/checkout" && [400, 402, 403, 409, 422].includes(response.status) && REJECTED_CHECKOUT_CODES.has(code)
+            ? { checkoutRejected: true } : {}),
           ...(Object.keys(diagnostic).length ? { details: diagnostic } : {}),
         });
     }

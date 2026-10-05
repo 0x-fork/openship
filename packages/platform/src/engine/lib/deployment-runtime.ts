@@ -1,5 +1,6 @@
 import {
   createPlatform,
+  currentManagedCommandTracking,
   DockerRuntime,
   BareRuntime,
   isHostChannelUnavailableError,
@@ -1161,10 +1162,12 @@ export async function withDeploymentRuntime<T>(
 /**
  * THE disposal step, so "how do we release a transport" has one answer.
  *
- * Best-effort and non-blocking on purpose: a transport that is already dead can't
+ * Best-effort: a transport that is already dead can't
  * be closed politely, and a teardown failure must never replace the caller's real
  * error. Every caller releases unconditionally: even a bare runtime can borrow
- * a pooled SSH connection. Process-owned runtimes are excluded below.
+ * a pooled SSH connection. Managed admission waits for disposal because it can
+ * execute remote source cleanup after closing the transport. Other callers release
+ * in the background. Process-owned runtimes are excluded below.
  */
 export function disposeRuntime(runtime: RuntimeAdapter | null | undefined): void {
   release(runtime);
@@ -1175,7 +1178,10 @@ export function disposeRuntime(runtime: RuntimeAdapter | null | undefined): void
  *  decided to release, and those don't share an interface. */
 function release(layer: { dispose?: () => Promise<void> } | null | undefined): void {
   if (!layer || ownedByProcessPlatform(layer)) return;
-  try { void trackBackgroundWork(Promise.resolve(layer.dispose?.()).catch(() => {})); }
+  try {
+    const completion = trackBackgroundWork(Promise.resolve(layer.dispose?.()).catch(() => {}));
+    currentManagedCommandTracking()?.defer(completion);
+  }
   catch { /* Teardown must not replace the operation's error. */ }
 }
 

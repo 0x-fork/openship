@@ -95,6 +95,7 @@ vi.mock("@repo/adapters", () => {
 
   return {
     BuildLogger,
+    LocalExecutor: class LocalExecutor {},
     BareRuntime: class BareRuntime {},
     DockerRuntime: class DockerRuntime {},
     CloudRuntime: class CloudRuntime {},
@@ -280,7 +281,8 @@ import { repos } from "@repo/db";
 import { isMultiServiceRuntime } from "@repo/adapters";
 import { shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/index";
 import { platform } from "@repo/platform/engine/lib/platform-config";
-import { resolveDeploymentPlatform } from "@repo/platform/engine/lib/deployment-runtime";
+import { resolveDeploymentPlatform, resolveDeploymentRuntime } from "@repo/platform/engine/lib/deployment-runtime";
+import { runDeployPipeline as runRealDeployPipeline } from "../../../../../packages/adapters/src/runtime/deploy-pipeline";
 import {
   kickoffBuild,
   resolveServicePipelineMode,
@@ -535,6 +537,29 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.prepareImage.mock.invocationCallOrder[0]).toBeLessThan(mocks.runReleaseCommand.mock.invocationCallOrder[0]!);
     expect(mocks.runReleaseCommand.mock.invocationCallOrder[1]).toBeLessThan(mocks.withHostPortTargetLock.mock.invocationCallOrder[0]!);
     expect(mocks.withHostPortTargetLock.mock.invocationCallOrder[0]).toBeLessThan(mocks.deploy.mock.invocationCallOrder[0]!);
+  });
+
+  it.each(["local", "server", "cloud"])("retires the old Docker container after a successful %s swap with snapshots enabled", async target => {
+    const previous = deployment({ id: "previous-deployment", containerId: "old-container", status: "ready" });
+    const next = deployment();
+    mocks.findDeploymentById.mockImplementation(async id => id === "previous-deployment" ? previous : next);
+    resolvedPlatform.effectiveTarget = target as never;
+    vi.mocked(resolveDeploymentRuntime).mockResolvedValue({ runtime: resolvedRuntime } as never);
+    const running = new Set(["old-container"]);
+    mocks.deploy.mockImplementation(async () => {
+      running.add("container-1");
+      return { status: "success", containerId: "container-1" };
+    });
+    mocks.destroy.mockImplementation(async id => { running.delete(id); });
+    mocks.runDeployPipeline.mockImplementation(runRealDeployPipeline);
+
+    await kickoffBuild(project({ activeDeploymentId: "previous-deployment", defaultRollbackStrategy: "snapshot" }), next);
+    await drainDeploymentExecutions();
+
+    expect(mocks.onSuccess).toHaveBeenCalledOnce();
+    expect(running).toEqual(new Set(["container-1"]));
+    expect(mocks.destroy).toHaveBeenCalledExactlyOnceWith("old-container");
+    expect(mocks.deploy.mock.invocationCallOrder[0]).toBeLessThan(mocks.destroy.mock.invocationCallOrder[0]!);
   });
 
   it("a release failure never activates the candidate or stops the existing app", async () => {
@@ -1075,7 +1100,7 @@ describe("single-app prebuilt release-image pipeline", () => {
       return { exec: vi.fn(async () => ""), forwardPort: vi.fn(forwardPort) };
     }
 
-    function useTarget(effectiveTarget: string, executor: { forwardPort: unknown } | null) {
+    function useTarget(effectiveTarget: string, executor: { forwardPort?: unknown; exec?: unknown } | null) {
       resolvedPlatform.effectiveTarget = effectiveTarget as never;
       resolvedPlatform.platform = { ...resolvedPlatform.platform, executor } as never;
     }
@@ -1116,6 +1141,20 @@ describe("single-app prebuilt release-image pipeline", () => {
 
       await expect(env.healthCheck!(containerId, config)).rejects.toThrow(/never answered/);
       expect(forwardPort).toHaveBeenCalledTimes(1);
+      expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
+    });
+
+    it.each(["docker", "bare"])("enforces a managed %s app's HTTP gate through its server", async (mode) => {
+      resolvedRuntime.name = mode;
+      const exec = vi.fn(async () => "OPENSHIP_PROBE 503 1");
+      useTarget("cloud", { exec });
+      const { env, containerId, config } = await captureEnvironment({
+        enabled: true, onFailure: "fail", stabilization: false,
+        timeoutSeconds: 0.01, path: "/ready",
+      });
+
+      await expect(env.healthCheck!(containerId, config)).rejects.toThrow(/never answered/);
+      expect(exec).toHaveBeenCalledWith(expect.stringContaining("/ready'"), expect.anything());
       expect(mocks.sshWithHostExecutor).not.toHaveBeenCalled();
     });
 
@@ -1198,8 +1237,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     it.each(["cloud", "cluster"])(
       "stays excluded for a %s target even with probing enabled",
       async (target) => {
-        // An ordinary Cloud runtime has no comparable target executor (unlike a
-        // Cloud Docker workspace) — `null` here matches that ordinary case.
+        // Missing a remote execution channel must never fall back to the controller.
         useTarget(target, null);
 
         const { env, containerId, config } = await captureEnvironment({

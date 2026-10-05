@@ -1106,7 +1106,7 @@ describe("deployment inspection HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
   const usage = { cpuPercent: 12, memoryMb: 64, diskMb: 128, networkRxBytes: 123, networkTxBytes: 456 };
   const cases = [
-    { method: "containerInfo", engine: h.deploymentContainerInfo, result: { containerId: "primary-service", status: "running", hostPortByContainerPort: { "8080": 49100 }, usage } },
+    { method: "containerInfo", engine: h.deploymentContainerInfo, result: { containerId: "primary-service", status: "running", hostPortByContainerPort: { "8080": 49100 }, usage, resources: { cpuCores: 0.25, memoryMb: 512 } } },
     { method: "containerUsage", engine: h.deploymentContainerUsage, result: usage },
     { method: "pendingActions", engine: h.deploymentPendingActions, result: [] },
   ] as const;

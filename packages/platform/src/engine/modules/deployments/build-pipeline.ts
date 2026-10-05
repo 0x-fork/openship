@@ -141,7 +141,6 @@ import {
   strictRefreshImages,
 } from "./pinned-artifacts";
 import { snapshotToClass } from "./deployment-class";
-import { shouldRetainArtifact } from "./rollback/restore-plan";
 import { resolveClonePlan } from "./clone-plan";
 import { collapseTerminalLogs } from "./terminal-logs";
 import { sanitizeLogsForPersistence } from "./build-log-sanitize";
@@ -2043,9 +2042,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           }
           return verdict.failure;
         },
-        // The shared probe uses the server target's executor, as compose does.
-        // Cloud and cluster targets do not use this remote probe path.
-        readinessWorksRemotely: phase.effectiveTarget === "server",
+        // Connected and managed servers share the same probe through their own
+        // executor. A cluster without a comparable host does not use this path.
+        readinessWorksRemotely: runtime.name !== "kubernetes" && Boolean(phase.targetExecutor),
       };
 
   // A worker serves through the running-process lifecycle (baseServe, since
@@ -2257,16 +2256,6 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     }
   }
 
-  // Overlap-capable = the new deployment can run alongside the old one (docker
-  // unique-name + random host port; cloud isolated workspace). Bare binds a
-  // fixed port and static is file-backed → stop-first. Drives the cutover order
-  // AND the snapshot-artifact gate below.
-  // Zero-downtime overlap (run new + old together, then swap) needs each to bind
-  // its own host port. A PINNED loopback port can't be double-bound, so
-  // loopback-port docker deploys stop-then-start (brief blip, like bare).
-  // container-ip keeps overlap.
-  const canOverlap = serve.canOverlap;
-
   // Runtime deploy environment (preflight + activate + deactivate + resolvers).
   const deployEnv = buildDeployEnvironment(phase, {
     serve,
@@ -2317,29 +2306,18 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     }
   }
 
-  // R1 gate: when the runtime can overlap two versions AND this project keeps
-  // artifacts, leave stopping the old one to archivePreviousDeployment — it keeps
-  // serving until then (still zero-downtime) and gets stop-and-RETAIN rather than
-  // a plain stop. Otherwise the pipeline stops it itself; bare (non-overlap)
-  // always stops first. previousContainerId stays accurate either way; the flag
-  // only controls WHO deactivates.
-  //
-  // Reads the project's LIVE retention preference, not the frozen
-  // `deployment.rollback_strategy` — that column is history only, and keying
-  // behaviour off it is what made a retention change apply to nothing that
-  // already existed.
-  const deactivateOldInPipeline = !(canOverlap && shouldRetainArtifact(project));
-
   // Sanitized rather than passed through: this reaches generated nginx config, and
   // the row can also carry a value seeded from a repo config, not just the API.
   const proxySettings = sanitizeProxySettings(project.routingConfig?.proxy);
 
+  // The shared pipeline retires the previous workload after a successful swap.
+  // Snapshot retention keeps Docker images and stopped Bare releases, not live
+  // copies of old containers.
   const deployResult = await runDeployPipeline(
     deployEnv,
     {
       config: deployConfig,
       previousContainerId: prevDep?.containerId ?? undefined,
-      deactivatePrevious: deactivateOldInPipeline,
       domains: toRoutedDomainInputs(routableDomains),
       routing,
       ssl: deploySsl,

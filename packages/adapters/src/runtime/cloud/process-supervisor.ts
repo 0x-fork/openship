@@ -244,12 +244,27 @@ export class CloudProcessSupervisor implements ProcessSupervisor {
 
   private async stopUnlocked(deploymentId: string) {
     await this.server.state();
-    const saved = await this.read(deploymentId);
+    const saved = await this.read(deploymentId, true);
     if (!saved) return;
+    // Retention and rollback may stop the same release again. Verify both the
+    // live process and persisted restart setting before treating that as done.
+    if (saved.enabled === false && managedProcessState(saved) === "stopped") return;
     const workloads = this.server.workspace().workloads;
     // The provider's Stop action persists enabled=false with the transition.
     // A separate settings update is not part of its lifecycle contract.
-    const stopped = await workloads.stop(saved.id);
+    let stopped: Awaited<ReturnType<typeof workloads.stop>>;
+    try {
+      stopped = await workloads.stop(saved.id);
+    } catch (error) {
+      // Another completed stop (or an uncertain response retried by the caller)
+      // can race this read. A conflict is success only after confirming the state.
+      if ((error as { status?: number; code?: string })?.status === 409 &&
+          (error as { code?: string }).code === "invalid_state") {
+        const current = await this.read(deploymentId, true);
+        if (current?.enabled === false && managedProcessState(current) === "stopped") return;
+      }
+      throw error;
+    }
     if (!stopped.success) throw new Error("Could not stop the application process");
     await this.waitForState(deploymentId, "stopped");
     if ((await this.require(deploymentId)).enabled !== false)

@@ -292,13 +292,20 @@
     "error": "Aboneliğiniz güncellenemedi. Lütfen tekrar deneyin."
   },
   "checkout": {
-    "checking": "Cloud planınız ve bakiyeniz güncelleniyor. Ödemenin işlenmesi biraz sürebilir.",
+    "checking": "Satın alma işleminiz doğrulanıyor…",
     "active": "Cloud planınız etkin.",
-    "pending": "Ödemeniz hâlâ işleniyor olabilir. Planınızı ve bakiyenizi kontrol etmek için bu sayfayı yenileyin. Tamamlanmış bir ödeme görünmüyorsa destekle iletişime geçin.",
+    "pending": "Bu satın alma işlemi henüz doğrulanmadı. Tekrar kontrol edin veya ödeme yaptıysanız destekle iletişime geçin.",
     "support": "Destekle iletişime geç",
-    "failed": "Bu ödeme tamamlanmadı. Tekrar denemek için faturalandırmaya dönün.",
+    "failed": "Bu satın alma işlemi doğrulanamadı. Yeni bir ödeme yapmadan önce destekle iletişime geçin.",
     "reversed": "Bu ödeme iade edildi veya itiraz edildi. Bakiyenizi kontrol edin ya da destekle iletişime geçin.",
-    "topupComplete": "Ek kredileriniz eklendi."
+    "topupComplete": "Ek kredileriniz eklendi.",
+    "paidPending": "Satın alma tamamlandı. Satın aldıklarınızın hesabınıza yansıdığını doğruluyoruz. Tekrar ödeme yapmanız gerekmiyor.",
+    "paidFailed": "Satın alma tamamlandı, ancak satın aldıklarınızın hesabınıza yansıdığını doğrulayamadık. Destekle iletişime geçin; tekrar ödeme yapmanız gerekmiyor.",
+    "provisioning": "Satın alma tamamlandı. Sunucunuz hazırlanıyor…",
+    "setupPending": "Satın alma tamamlandı. Sunucunuzun hazır olduğu henüz doğrulanmadı. Kurulumu kontrol edin veya destekle iletişime geçin; tekrar ödeme yapmanız gerekmiyor.",
+    "setupFailed": "Satın alma tamamlandı, ancak sunucu kurulumu ilgi gerektiriyor. Tekrar denemek için kurulumu açın veya destekle iletişime geçin; tekrar ödeme yapmanız gerekmiyor.",
+    "checkAgain": "Tekrar kontrol et",
+    "viewSetup": "Sunucu kurulumunu görüntüle"
   },
   "deployGate": {
     "title": "Dağıtım için bir plan seçin",

@@ -373,6 +373,7 @@ export async function collectProjectManifest(
   }
 
   const managedRuntimes = new Map<"docker" | "bare", RuntimeAdapter>();
+  let managedHostMissing = false;
   if (dockerBinding?.workspaceId) {
     // Inventory the owned host even when a failed deployment saved no process ID.
     // Sidecars always use Docker; a bare main app also needs its process inventory.
@@ -391,18 +392,35 @@ export async function collectProjectManifest(
         resolvedRuntimes.add(runtime);
         if (!(runtime instanceof CloudDockerRuntime) && !(runtime instanceof BareRuntime))
           throw new Error("Managed server cleanup resolved to an unexpected runtime");
-        // A failed first deployment may never have opened its Docker bridge.
-        // Establish it once before starting the short per-resource read timers.
-        // This connects only to the existing running server; it never starts a VM.
+        // Only the scoped provider's host read can establish that a VM is gone.
+        // A missing container, stopped host or failed Docker bridge cannot.
         if (runtime instanceof CloudDockerRuntime) {
-          await withTimeout(runtime.docker.ping(), CONNECT_TIMEOUT_MS,
-            "connect to managed server for cleanup", () => disposeRuntime(runtime));
+          try {
+            await withTimeout(runtime.connection.state(), INSPECT_TIMEOUT_MS,
+              "inspect managed server for cleanup");
+          } catch (error) {
+            if ((error as { status?: number })?.status !== 404) throw error;
+            managedHostMissing = true;
+          }
+          if (!managedHostMissing) {
+            // A failed first deployment may never have opened its Docker bridge.
+            // Connect only to the existing running host; never resume it here.
+            await withTimeout(runtime.docker.ping(), CONNECT_TIMEOUT_MS,
+              "connect to managed server for cleanup", () => disposeRuntime(runtime));
+          }
         }
         const routing = resolved.platform.routing;
         if (!(routing instanceof CloudInfraProvider)) throw new Error("Managed server routing is unavailable");
         if (!cloudRouteContexts.length) {
           cloudRouteContexts.push({ key: `cloud:${dockerBinding.workspaceId}`, routing });
           for (const hostname of await routing.listProjectRouteHostnames()) pushRoute(hostname, `cloud route ${hostname}`);
+        }
+        if (managedHostMissing) {
+          // Pages/routes outlive their source VM, so retain their ownership-checked
+          // cleanup above, but never reconnect to or recreate the deleted host.
+          disposeRuntime(runtime);
+          resolvedRuntimes.delete(runtime);
+          break;
         }
         if (runtime instanceof DockerRuntime) dockerRuntimes.add(runtime);
         managedRuntimes.set(runtimeMode, runtime);
@@ -462,6 +480,7 @@ export async function collectProjectManifest(
   for (const dep of allDeps) {
     const managedHost = (dep.meta as DeploymentMeta | null)?.managedServer;
     if (managedHost) {
+      if (managedHostMissing) continue;
       const mode = (dep.meta as DeploymentMeta).runtimeMode === "bare" ? "bare" : "docker";
       const runtime = managedRuntimes.get(mode);
       const docker = managedRuntimes.get("docker");
