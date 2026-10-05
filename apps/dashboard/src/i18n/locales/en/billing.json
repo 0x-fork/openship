@@ -716,7 +716,7 @@
     "monthly": "Monthly hosts",
     "payg": "Prepaid PAYG",
     "title": "Prepaid hosting",
-    "description": "Add credits, choose your resources, and pay for usage across your hosts.",
+    "description": "Choose a resource tier, add credits, and pay for server usage.",
     "rates": "Resource usage",
     "cpuUnit": "Per active vCPU-hour",
     "memoryUnit": "Per GiB-hour",
@@ -735,7 +735,7 @@
     "hosts": "Number of hosts",
     "cpuActivity": "Average CPU activity",
     "activityHint": "1 vCPU-hour is one vCPU at 100% for one elapsed hour. Reserved RAM and storage still accrue usage.",
-    "invalid": "Check the resource ranges, choose 1–100 hosts, and set CPU activity between 0% and 100%.",
+    "invalid": "Check the resource ranges, server count, and CPU activity between 0% and 100%.",
     "ratesDetails": "Resource rates and billing details",
     "extras": "Optional managed proxy: {amount}/GiB, billed separately. Public app routes are separate.",
     "retentionHint": "Pausing does not release RAM charges. Retained storage remains billable until deleted.",
@@ -754,7 +754,21 @@
     "rangeHint": "At the displayed usage rates, with RAM and storage included.",
     "perHour": "/ hour",
     "creditsPerHour": "{amount} credits/hour",
-    "hourlyHint": "All selected hosts · {percent}% average CPU"
+    "hourlyHint": "All selected hosts · {percent}% average CPU",
+    "tiers": {
+      "label": "Resource tier",
+      "name": "Tier {level}",
+      "configured": "Configured / pool limit",
+      "unavailable": "Configuration incomplete",
+      "servers": "Servers",
+      "unlock": "Unlocks after {amount} in credit purchases",
+      "hint": "Configured resources / pool limit · Shared across your PAYG servers.",
+      "exceeded": "This configuration exceeds {tier}. Reduce the resources to fit.",
+      "choose": "View {tier}",
+      "fundingHint": "Credit purchases unlock tiers. Using your balance won’t lower your tier.",
+      "packageUnlock": "This package unlocks {tier}",
+      "packageTooSmall": "{tier} needs {amount} in total credit purchases."
+    }
   },
   "compute": {
     "covered": "Compute covered",

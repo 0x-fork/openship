@@ -716,7 +716,7 @@
     "monthly": "Serveurs mensuels",
     "payg": "Usage prépayé",
     "title": "Hébergement prépayé",
-    "description": "Ajoutez des crédits, choisissez vos ressources et payez selon l’usage de vos serveurs.",
+    "description": "Choisissez un palier de ressources, ajoutez des crédits et payez l’utilisation de vos serveurs.",
     "rates": "Utilisation des ressources",
     "cpuUnit": "Par heure-vCPU active",
     "memoryUnit": "Par Go-heure",
@@ -735,7 +735,7 @@
     "hosts": "Nombre de serveurs",
     "cpuActivity": "Activité CPU moyenne",
     "activityHint": "Une heure-vCPU correspond à un vCPU à 100% pendant une heure écoulée. La RAM et le stockage réservés restent facturés.",
-    "invalid": "Vérifiez les plages de ressources, choisissez 1 à 100 serveurs et une activité CPU entre 0% et 100%.",
+    "invalid": "Vérifiez les plages de ressources, le nombre de serveurs et l’activité CPU entre 0 % et 100 %.",
     "ratesDetails": "Tarifs des ressources et facturation",
     "extras": "Proxy géré facultatif : {amount}/GiB, facturé séparément. Les routes publiques des applications sont distinctes.",
     "retentionHint": "La mise en pause n’arrête pas les frais de RAM. Le stockage conservé reste facturé jusqu’à sa suppression.",
@@ -754,7 +754,21 @@
     "rangeHint": "Aux tarifs d’utilisation affichés, RAM et stockage inclus.",
     "perHour": "/ heure",
     "creditsPerHour": "{amount} crédits/heure",
-    "hourlyHint": "Tous les serveurs sélectionnés · {percent}% de CPU en moyenne"
+    "hourlyHint": "Tous les serveurs sélectionnés · {percent}% de CPU en moyenne",
+    "tiers": {
+      "label": "Palier de ressources",
+      "name": "Palier {level}",
+      "configured": "Configuré / limite du pool",
+      "unavailable": "Configuration incomplète",
+      "servers": "Serveurs",
+      "unlock": "Débloqué après {amount} d’achats de crédits",
+      "hint": "Ressources configurées / limite du pool · Partagées entre vos serveurs PAYG.",
+      "exceeded": "Cette configuration dépasse {tier}. Réduisez les ressources pour respecter ses limites.",
+      "choose": "Voir {tier}",
+      "fundingHint": "Les achats de crédits débloquent les paliers. Dépenser votre solde ne réduit pas votre palier.",
+      "packageUnlock": "Ce pack débloque {tier}",
+      "packageTooSmall": "{tier} nécessite un total de {amount} d’achats de crédits."
+    }
   },
   "compute": {
     "covered": "Calcul couvert",

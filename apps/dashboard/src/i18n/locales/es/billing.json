@@ -716,7 +716,7 @@
     "monthly": "Servidores mensuales",
     "payg": "Uso prepago",
     "title": "Hosting prepago",
-    "description": "Añade créditos, elige tus recursos y paga por el uso de tus servidores.",
+    "description": "Elige un nivel de recursos, añade créditos y paga por el uso de tus servidores.",
     "rates": "Uso de recursos",
     "cpuUnit": "Por hora-vCPU activa",
     "memoryUnit": "Por GiB-hora",
@@ -735,7 +735,7 @@
     "hosts": "Número de servidores",
     "cpuActivity": "Actividad media de CPU",
     "activityHint": "Una hora-vCPU equivale a una vCPU al 100% durante una hora transcurrida. La RAM y el almacenamiento reservados siguen generando uso.",
-    "invalid": "Revisa los rangos, elige entre 1 y 100 servidores y una actividad de CPU entre 0% y 100%.",
+    "invalid": "Revisa los rangos de recursos, el número de servidores y la actividad de CPU entre el 0 % y el 100 %.",
     "ratesDetails": "Tarifas de recursos y facturación",
     "extras": "Proxy gestionado opcional: {amount}/GiB, facturado aparte. Las rutas públicas de las apps son independientes.",
     "retentionHint": "Pausar no elimina el coste de RAM. El almacenamiento retenido se cobra hasta eliminarlo.",
@@ -754,7 +754,21 @@
     "rangeHint": "Con las tarifas de uso mostradas, incluyendo RAM y almacenamiento.",
     "perHour": "/ hora",
     "creditsPerHour": "{amount} créditos/hora",
-    "hourlyHint": "Todos los servidores seleccionados · CPU media del {percent}%"
+    "hourlyHint": "Todos los servidores seleccionados · CPU media del {percent}%",
+    "tiers": {
+      "label": "Nivel de recursos",
+      "name": "Nivel {level}",
+      "configured": "Configurado / límite del conjunto",
+      "unavailable": "Configuración incompleta",
+      "servers": "Servidores",
+      "unlock": "Se desbloquea al comprar {amount} en créditos",
+      "hint": "Recursos configurados / límite del conjunto · Compartidos entre tus servidores PAYG.",
+      "exceeded": "Esta configuración supera {tier}. Reduce los recursos para ajustarla.",
+      "choose": "Ver {tier}",
+      "fundingHint": "Las compras de créditos desbloquean niveles. Gastar el saldo no reduce tu nivel.",
+      "packageUnlock": "Este paquete desbloquea {tier}",
+      "packageTooSmall": "{tier} requiere compras de créditos por un total de {amount}."
+    }
   },
   "compute": {
     "covered": "Cómputo cubierto",

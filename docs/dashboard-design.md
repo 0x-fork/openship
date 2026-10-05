@@ -144,8 +144,19 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
   details in a compact disclosure. Existing metered subscriptions retain their credit view.
   Prepaid PAYG shows package amounts beside their credit value, using the provider's
-  conversion and published resource rates. Reuse the monthly resource editor for its
-  interactive estimate; PAYG prices come directly from usage rates and do not depend on
+  conversion and published resource rates. Put the Openship resource tiers in compact
+  shared tabs above the configurator,
+  with configured resources against the selected tier's aggregate CPU, RAM, disk and
+  server-count limits. Show the cumulative credit-purchase threshold beside the tabs
+  and the selected package's qualifying tier in the credit card. These are pool ceilings,
+  not monthly subscriptions or a copy of the reseller owner's Oblien plan. Spending
+  credits never lowers a tier. Keep credit-package and resource-tier selections separate;
+  changing either must preserve resource inputs. An oversized configuration should show
+  which limits are exceeded and offer the smallest available tier that fits, without
+  silently resizing the user's servers. The catalog and unlock display remain a preview
+  until verified customer funding and runtime entitlement are connected.
+  Reuse the monthly resource editor for the interactive estimate; PAYG prices come
+  directly from usage rates and do not depend on
   monthly-plan quotes or ceilings. Keep the pricing preview until customer-funded
   purchases are supported. A shared balance is funding,
   not a multiplied resource pool; estimates for several hosts must spend that balance

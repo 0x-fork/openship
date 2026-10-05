@@ -36,7 +36,7 @@ const plans: ApiPlan[] = (["hobby", "starter", "pro", "team", "enterprise"] as c
     listPrice: { monthly: source.price.monthly }, effectivePrice: { monthly: source.price.monthly }, campaign: null };
 });
 const offer = (id: PlanTierId) => plans.find(plan => plan.id === id)!;
-const catalog = { data: { plans, custom: PRICING.custom, ui: pricingUi("en"), annual: { enabled: false, monthsFree: 0 } } };
+const catalog = { data: { plans, custom: PRICING.custom, payg: PRICING.payg, ui: pricingUi("en"), annual: { enabled: false, monthsFree: 0 } } };
 const computePricing: NonNullable<BillingPlans["computePricing"]> = {
   tariffId: "test-tariff", currency: "usd", creditsPerDollar: 100, paygCapPercent: 125,
   usage: { activeVcpuHourCents: 3, reservedGiBHourCents: 0.8, retainedGiBMonthCents: 5, monthHours: 720 },
@@ -185,6 +185,45 @@ describe("plans for an existing server", () => {
 });
 
 describe("buying another managed server", () => {
+  it("keeps typed resources when switching PAYG tiers and offers a pool that fits all servers", async () => {
+    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
+    await render(<ManagedServerPurchase />);
+    await click(copy.purchase.payg);
+    await click("Tier 1");
+    await edit(input(copy.purchase.hosts)!, "3");
+    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
+    expect(panel.querySelector('[role="alert"]')?.textContent).toContain("exceeds Tier 1");
+    expect(panel.querySelector("aside")?.textContent).not.toContain("$0.1912");
+    await click("View Tier 2");
+    expect(input(copy.purchase.hosts)?.value).toBe("3");
+    expect(panel.querySelector('[role="alert"]')).toBeNull();
+    expect(panel.querySelector("aside")?.textContent).toContain("$0.1912");
+    await click(copy.purchase.monthly);
+    await click(copy.purchase.payg);
+    expect(buttons("Tier 2")[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(input(copy.purchase.hosts)?.value).toBe("3");
+    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
+  });
+
+  it("keeps resource limits separate from credit packages and never treats a selection as paid access", async () => {
+    h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
+    await render(<ManagedServerPurchase />);
+    await click(copy.purchase.payg);
+    await click("Tier 1");
+    await edit(input(copy.purchase.hosts)!, "3");
+    const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
+    await act(async () => panel.querySelector<HTMLButtonElement>('button[value="10000"]')!.click());
+    expect(buttons("Tier 1")[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(panel.querySelector('[role="alert"]')?.textContent).toContain("exceeds Tier 1");
+    expect(panel.textContent).toContain("This package unlocks Tier 3");
+    expect(buttons("Add 10,000 credits")[0]?.disabled).toBe(true);
+    await click("Tier 3");
+    await act(async () => panel.querySelector<HTMLButtonElement>('button[value="500"]')!.click());
+    expect(buttons("Tier 3")[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(panel.textContent).toContain("Tier 3 needs $50.00 in total credit purchases");
+    expect(h.post).not.toHaveBeenCalled(); expect(h.create).not.toHaveBeenCalled();
+  });
+
   it("previews packages shared across hosts without checkout, and preserves inputs across billing modes", async () => {
     h.get.mockResolvedValue({ data: { ...catalog.data, computePricing } });
     await render(<ManagedServerPurchase />);

@@ -1,10 +1,31 @@
 import type { BillingPlans } from "@repo/contracts";
 import type { CustomServerResources } from "@repo/core";
 
-/** Suggested deposits for the UI preview. These are not legacy allowance packs
- * or checkout offers; no payment or capacity API accepts these selections. */
-export const PREPAID_PACKAGE_CENTS = [500, 2000, 5000, 10000] as const;
 export type ComputePricing = NonNullable<BillingPlans["computePricing"]>;
+export type PaygTier = NonNullable<BillingPlans["payg"]>["tiers"][number];
+
+/** Selected allocation across all proposed servers, not their metered CPU activity.
+ * This is a pricing preview; Oblien remains responsible for runtime admission. */
+export function previewPaygPool(tier: PaygTier, resources: CustomServerResources, serverCount: number) {
+  if (![resources.cpuCores, resources.memoryMb, resources.diskGb, serverCount]
+    .every(value => Number.isSafeInteger(value) && value > 0)) return null;
+  const selected = {
+    cpuCores: resources.cpuCores * serverCount,
+    memoryMb: resources.memoryMb * serverCount,
+    diskGb: resources.diskGb * serverCount,
+    servers: serverCount,
+  };
+  if (!Object.values(selected).every(value => Number.isSafeInteger(value) && value > 0)) return null;
+  const exceeded = (Object.keys(selected) as Array<keyof typeof selected>)
+    .filter(key => selected[key] > tier.pool[key]);
+  return { selected, exceeded, fits: exceeded.length === 0 };
+}
+
+/** Prospective access from this credit purchase, not a customer's current entitlement. */
+export function previewPaygTier(tiers: PaygTier[], purchaseCents: number) {
+  if (!Number.isSafeInteger(purchaseCents) || purchaseCents <= 0) return null;
+  return [...tiers].reverse().find(tier => tier.minimumFundingCents <= purchaseCents) ?? null;
+}
 
 export function hasPrepaidRates(
   pricing: BillingPlans["computePricing"],

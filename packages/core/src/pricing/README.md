@@ -29,6 +29,29 @@ proxy. Expired disks are retained for at least 30 days with no automatic deletio
 retained storage remains billable until deletion. The UI discloses provider
 retention terms and amounts due instead of treating them as compute credits.
 
+## PAYG resource tiers
+
+`pricing.json#payg` owns the PAYG resource tiers and suggested credit packages.
+The API publishes this catalog as `GET /api/billing/plans` → `payg`; the dashboard
+must not derive customer tiers from the reseller owner's Oblien account plan.
+
+| Tier | Credit purchases to unlock | Pool vCPU | Pool RAM | Pool disk | Servers |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | $5 | 2 | 8 GiB | 64 GiB | 2 |
+| 2 | $20 | 4 | 16 GiB | 128 GiB | 4 |
+| 3 | $50 | 8 | 32 GiB | 256 GiB | 8 |
+
+These are Openship pool allowances shared across servers, not monthly prices or
+provider account upgrades. Unlocking is based on cumulative verified credit
+purchases, not the declining spendable balance. One server may use the whole
+pool within effective provider limits. Adding servers does not multiply it.
+Usage rates and credit conversion remain provider-owned.
+
+The current PAYG surface previews this catalog and validates proposed allocations.
+It does not grant access, change namespaces or activate checkout. Persisted
+customer funding and runtime entitlement must be integrated before selling PAYG;
+the preview's package selection is never payment evidence.
+
 ## Provider checkout and authority
 
 New purchases use the existing tracked `/billing/checkout` flow:
@@ -52,7 +75,7 @@ Fully discounted, fulfilled purchases use the same checks. Pending, refunded,
 disputed or superseded payments never show a successful new subscription.
 
 `GET /billing/capacity/catalog` advertises deployed purchase capabilities and rates.
-Openship uses `oblien@2.8.0` and the existing SDK transport. Missing monthly Stripe
+Openship uses `oblien@2.8.1` and the existing SDK transport. Missing monthly Stripe
 support stops new sales without hiding existing subscription management. Provider
 price admission stays at Oblien; Openship does not copy its affordability or
 proration calculation into another pricing engine.

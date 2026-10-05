@@ -11,23 +11,27 @@ import { cn } from "@/lib/utils";
 import {
   estimatePrepaidUsage,
   hasPrepaidRates,
-  PREPAID_PACKAGE_CENTS,
+  previewPaygPool,
+  previewPaygTier,
   type ComputePricing,
 } from "@/lib/prepaid-estimate";
 import { useCloudPurchase } from "./CloudPurchaseContext";
 import { readServerResources, ServerResourceInputs } from "./ServerResourceInputs";
+import { PaygResourceTiers } from "./PaygResourceTiers";
 
 /** Preview only. Selecting resources or credits never authorizes a purchase. */
 export function PayAsYouGoPlan({
   pricing,
   catalog,
+  payg,
 }: {
   pricing?: BillingPlans["computePricing"];
   catalog?: BillingPlans["custom"];
+  payg?: BillingPlans["payg"];
 }) {
   const { t } = useI18n();
   const purchase = useCloudPurchase();
-  if (!hasPrepaidRates(pricing) || !catalog)
+  if (!hasPrepaidRates(pricing) || !catalog || !payg?.tiers.length || !payg.creditPackagesCents.length)
     return (
       <section className="rounded-2xl bg-card p-5">
         <h3 className="text-base font-semibold">{t.billing.purchase.preview}</h3>
@@ -42,20 +46,25 @@ export function PayAsYouGoPlan({
         </Button>
       </section>
     );
-  return <PrepaidCalculator pricing={pricing} catalog={catalog} />;
+  return <PrepaidCalculator pricing={pricing} catalog={catalog} payg={payg} />;
 }
 
 function PrepaidCalculator({
   pricing,
   catalog,
+  payg,
 }: {
   pricing: ComputePricing;
   catalog: NonNullable<BillingPlans["custom"]>;
+  payg: NonNullable<BillingPlans["payg"]>;
 }) {
   const { t, locale } = useI18n();
   const copy = t.billing.purchase;
   const id = useId();
-  const [packageCents, setPackageCents] = useState<number>(PREPAID_PACKAGE_CENTS[1]);
+  const [packageCents, setPackageCents] = useState<number>(payg.creditPackagesCents[1] ?? payg.creditPackagesCents[0]!);
+  const [tierId, setTierId] = useState(() => previewPaygTier(payg.tiers, packageCents)?.id ?? payg.tiers[0]!.id);
+  const selectedTier = payg.tiers.find(tier => tier.id === tierId) ?? payg.tiers[0]!;
+  const packageTier = previewPaygTier(payg.tiers, packageCents);
   const [values, setValues] = useState(() => ({
     cpuCores: String(catalog.resources.cpuCores.min),
     memoryMb: String(catalog.resources.memoryMb.min / 1024),
@@ -66,12 +75,17 @@ function PrepaidCalculator({
   const resources = readServerResources(values, catalog.resources);
   const count = Number(hosts),
     cpuPercent = Number(activity);
-  const validCount =
-    hosts.trim() !== "" && Number.isSafeInteger(count) && count >= 1 && count <= 100;
+  const validCount = hosts.trim() !== "" && Number.isSafeInteger(count) && count >= 1;
   const validActivity =
     activity.trim() !== "" && Number.isFinite(cpuPercent) && cpuPercent >= 0 && cpuPercent <= 100;
+  const pool = resources && validCount ? previewPaygPool(selectedTier, resources, count) : null;
+  const ranges = Object.fromEntries(
+    (Object.keys(catalog.resources) as Array<keyof typeof catalog.resources>).map(key => [key, {
+      ...catalog.resources[key], max: Math.min(catalog.resources[key].max, selectedTier.pool[key]),
+    }]),
+  ) as typeof catalog.resources;
   const estimate =
-    resources && validCount && validActivity
+    resources && validCount && validActivity && pool?.fits
       ? estimatePrepaidUsage({
           pricing,
           resources,
@@ -135,7 +149,9 @@ function PrepaidCalculator({
   ];
 
   return (
-    <div className="@container/payg">
+    <div className="@container/payg space-y-5">
+      <PaygResourceTiers tiers={payg.tiers} selected={selectedTier} onChange={setTierId}
+        resources={resources} serverCount={count} money={money} />
       <div className="grid items-start gap-5 @min-[52rem]/payg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid min-w-0 items-start gap-5 @min-[64rem]/payg:grid-cols-[minmax(0,1fr)_280px] @min-[80rem]/payg:grid-cols-[minmax(0,1fr)_320px]">
           <section aria-labelledby={`${id}-resources`} className="min-w-0 rounded-2xl bg-card p-5">
@@ -150,7 +166,7 @@ function PrepaidCalculator({
             <p className="mt-1 text-sm text-muted-foreground">{copy.sizeHint}</p>
             <div className="mt-5">
               <ServerResourceInputs
-                ranges={catalog.resources}
+                ranges={ranges}
                 values={values}
                 onChange={setValues}
               />
@@ -165,10 +181,10 @@ function PrepaidCalculator({
                   type="number"
                   variant="filled"
                   min={1}
-                  max={100}
+                  max={selectedTier.pool.servers}
                   step={1}
                   value={hosts}
-                  aria-invalid={!validCount}
+                  aria-invalid={!validCount || count > selectedTier.pool.servers}
                   onChange={(event) => setHosts(event.target.value)}
                   className="mt-auto"
                 />
@@ -211,7 +227,7 @@ function PrepaidCalculator({
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
               {copy.activityHint}
             </p>
-            {(!resources || !validCount || !validActivity) && (
+            {(!resources || !validCount || !validActivity || !pool) && (
               <p role="alert" className="mt-3 text-sm text-danger">
                 {copy.invalid}
               </p>
@@ -281,7 +297,7 @@ function PrepaidCalculator({
               role="group"
               aria-labelledby={`${id}-packages`}
             >
-              {PREPAID_PACKAGE_CENTS.map((amount) => (
+              {payg.creditPackagesCents.map((amount) => (
                 <button
                   key={amount}
                   type="button"
@@ -315,6 +331,22 @@ function PrepaidCalculator({
                 </button>
               ))}
             </div>
+            {packageTier && (
+              <p className="mt-4 text-sm font-medium">
+                {interpolate(copy.tiers.packageUnlock, {
+                  tier: interpolate(copy.tiers.name, { level: number(packageTier.level) }),
+                })}
+              </p>
+            )}
+            {packageCents < selectedTier.minimumFundingCents && (
+              <p className="mt-2 text-xs text-warning">
+                {interpolate(copy.tiers.packageTooSmall, {
+                  tier: interpolate(copy.tiers.name, { level: number(selectedTier.level) }),
+                  amount: money(selectedTier.minimumFundingCents),
+                })}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">{copy.tiers.fundingHint}</p>
           </section>
         </div>
         <aside aria-labelledby={`${id}-estimate`} className="min-w-0 rounded-2xl bg-card p-5">

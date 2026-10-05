@@ -350,7 +350,7 @@ function PlanPicker({
           id={`${purchase.id}-panel-payg`}
           aria-labelledby={`${purchase.id}-tab-payg`}
         >
-          <PayAsYouGoPlan pricing={payload.computePricing} catalog={payload.custom} />
+          <PayAsYouGoPlan pricing={payload.computePricing} catalog={payload.custom} payg={payload.payg} />
         </div>
       )}
       <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />

@@ -220,6 +220,7 @@ export function presentCloudPlans(requestedLocale?: string, capacityCatalog?: Ob
     locale,
     annual: { enabled: PRICING.annual.enabled, monthsFree: PRICING.annual.monthsFree },
     custom: { resources: PRICING.custom.resources, extraMonthlyCents: PRICING.custom.extraMonthlyCents },
+    payg: structuredClone(PRICING.payg),
     ...(capacityCatalog ? { computePricing: {
       tariffId: capacityCatalog.tariffId, currency: capacityCatalog.currency,
       creditsPerDollar: capacityCatalog.tariff.creditsPerDollar,

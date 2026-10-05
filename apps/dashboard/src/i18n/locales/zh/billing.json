@@ -716,7 +716,7 @@
     "monthly": "包月主机",
     "payg": "预付按量计费",
     "title": "预付费托管",
-    "description": "充值积分、选择资源，并按各台主机的用量付费。",
+    "description": "选择资源等级、添加额度，并按服务器用量付费。",
     "rates": "资源用量",
     "cpuUnit": "每个活跃vCPU小时",
     "memoryUnit": "每 GiB 小时",
@@ -735,7 +735,7 @@
     "hosts": "主机数量",
     "cpuActivity": "平均 CPU 活跃率",
     "activityHint": "1 vCPU小时指1个vCPU以100%活跃率运行1个实际小时。预留内存和存储仍会持续计费。",
-    "invalid": "请检查资源范围，选择 1–100 台主机，并将 CPU 活跃率设为 0%–100%。",
+    "invalid": "请检查资源范围、服务器数量和 0% 至 100% 之间的 CPU 活跃度。",
     "ratesDetails": "资源单价与计费详情",
     "extras": "可选托管代理：{amount}/GiB，单独计费。应用的公共路由不属于此项。",
     "retentionHint": "暂停不会停止内存计费。保留的存储在删除前仍会计费。",
@@ -754,7 +754,21 @@
     "rangeHint": "按所显示的使用单价估算，包含内存和存储费用。",
     "perHour": "/ 小时",
     "creditsPerHour": "{amount}额度/小时",
-    "hourlyHint": "所有选定主机 · 平均CPU使用率{percent}%"
+    "hourlyHint": "所有选定主机 · 平均CPU使用率{percent}%",
+    "tiers": {
+      "label": "资源等级",
+      "name": "等级 {level}",
+      "configured": "已配置 / 资源池上限",
+      "unavailable": "配置未完成",
+      "servers": "服务器",
+      "unlock": "累计购买 {amount} 额度后解锁",
+      "hint": "已配置资源 / 资源池上限 · 由您的 PAYG 服务器共享。",
+      "exceeded": "此配置超出了{tier}的限制，请减少资源以满足限制。",
+      "choose": "查看{tier}",
+      "fundingHint": "购买额度可解锁等级，消耗余额不会降低等级。",
+      "packageUnlock": "此套餐可解锁{tier}",
+      "packageTooSmall": "{tier}需要累计购买 {amount} 的额度。"
+    }
   },
   "compute": {
     "covered": "计算资源已包含",

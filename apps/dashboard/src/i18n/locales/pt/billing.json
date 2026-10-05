@@ -716,7 +716,7 @@
     "monthly": "Servidores mensais",
     "payg": "Uso pré-pago",
     "title": "Hospedagem pré-paga",
-    "description": "Adicione créditos, escolha os recursos e pague pelo uso dos seus servidores.",
+    "description": "Escolha um nível de recursos, adicione créditos e pague pela utilização dos servidores.",
     "rates": "Uso de recursos",
     "cpuUnit": "Por hora-vCPU ativa",
     "memoryUnit": "Por GiB-hora",
@@ -735,7 +735,7 @@
     "hosts": "Número de servidores",
     "cpuActivity": "Atividade média da CPU",
     "activityHint": "Uma hora-vCPU equivale a uma vCPU a 100% por uma hora decorrida. RAM e armazenamento reservados continuam gerando uso.",
-    "invalid": "Confira os limites, escolha de 1 a 100 servidores e atividade de CPU entre 0% e 100%.",
+    "invalid": "Verifique os intervalos de recursos, o número de servidores e a atividade da CPU entre 0% e 100%.",
     "ratesDetails": "Tarifas de recursos e cobrança",
     "extras": "Proxy gerenciado opcional: {amount}/GiB, cobrado separadamente. As rotas públicas dos apps são independentes.",
     "retentionHint": "Pausar não elimina as cobranças de RAM. O armazenamento retido é cobrado até ser excluído.",
@@ -754,7 +754,21 @@
     "rangeHint": "Com as tarifas de uso exibidas, incluindo RAM e armazenamento.",
     "perHour": "/ hora",
     "creditsPerHour": "{amount} créditos/hora",
-    "hourlyHint": "Todos os servidores selecionados · média de {percent}% de CPU"
+    "hourlyHint": "Todos os servidores selecionados · média de {percent}% de CPU",
+    "tiers": {
+      "label": "Nível de recursos",
+      "name": "Nível {level}",
+      "configured": "Configurado / limite do conjunto",
+      "unavailable": "Configuração incompleta",
+      "servers": "Servidores",
+      "unlock": "Desbloqueado após {amount} em compras de créditos",
+      "hint": "Recursos configurados / limite do conjunto · Partilhados entre os seus servidores PAYG.",
+      "exceeded": "Esta configuração excede {tier}. Reduza os recursos para respeitar os limites.",
+      "choose": "Ver {tier}",
+      "fundingHint": "As compras de créditos desbloqueiam níveis. Gastar o saldo não reduz o seu nível.",
+      "packageUnlock": "Este pacote desbloqueia {tier}",
+      "packageTooSmall": "{tier} requer um total de {amount} em compras de créditos."
+    }
   },
   "compute": {
     "covered": "Computação coberta",

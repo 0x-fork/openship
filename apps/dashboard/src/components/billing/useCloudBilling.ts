@@ -11,11 +11,7 @@ import { randomUUID } from "@/lib/random-uuid";
 import { trackCloudEvent } from "@/lib/cloud-analytics";
 import type { ApiPlan, ApiPricingUi } from "./PricingCards";
 
-interface PlansPayload {
-  custom: BillingPlans["custom"];
-  computePricing?: BillingPlans["computePricing"];
-  locale: string;
-  annual: { enabled: boolean; monthsFree: number };
+interface PlansPayload extends Omit<BillingPlans, "ui" | "plans"> {
   ui: ApiPricingUi;
   plans: ApiPlan[];
 }
