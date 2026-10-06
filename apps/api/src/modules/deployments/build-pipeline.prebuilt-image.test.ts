@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   onDeploymentReady: vi.fn(),
   createSession: vi.fn(),
   appendLog: vi.fn(),
+  promptUser: vi.fn(),
+  cancelPendingPrompt: vi.fn(),
   ensureRoutingReady: vi.fn(),
   prepareTargetPinnedHostPorts: vi.fn(),
   allocateAndReservePinnedHostPort: vi.fn(),
@@ -170,7 +172,8 @@ vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   createSession: (...args: unknown[]) => mocks.createSession(...args),
   appendLog: (...args: unknown[]) => mocks.appendLog(...args),
   updateStatus: vi.fn(),
-  promptUser: vi.fn(),
+  promptUser: (...args: unknown[]) => mocks.promptUser(...args),
+  cancelPendingPrompt: (...args: unknown[]) => mocks.cancelPendingPrompt(...args),
   endSession: vi.fn(),
   broadcastServiceStatus: vi.fn(),
   broadcastInstallPhase: vi.fn(),
@@ -190,7 +193,7 @@ vi.mock("@repo/platform/engine/modules/deployments/compose/index", () => ({
 }));
 
 vi.mock("@repo/platform/engine/modules/backups/triggers/pre-deploy", () => ({
-  firePreDeployBackups: vi.fn(async () => ({ enqueued: 0, failed: 0 })),
+  firePreDeployBackups: vi.fn(async () => ({ enqueued: 0, completed: 0 })),
 }));
 
 vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
@@ -291,6 +294,7 @@ function allocatePinnedHostPort(input: {
 
 import { repos } from "@repo/db";
 import { isMultiServiceRuntime } from "@repo/adapters";
+import { firePreDeployBackups } from "@repo/platform/engine/modules/backups/triggers/pre-deploy";
 import { executeComposePipeline, resolveProjectServicePreflightServices, shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/index";
 import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
 import { resolveBuildResources } from "@repo/platform/engine/lib/resources";
@@ -308,6 +312,7 @@ import {
   releaseDeploymentExecution,
   requestDeploymentCancellation,
   waitForDeploymentQuiescence,
+  raceDeploymentCancellation,
 } from "@repo/platform/engine/modules/deployments/deployment-cancellation";
 
 const SOURCE_IMAGE = "ghcr.io/acme/release-app:v1.2.3";
@@ -408,6 +413,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(false);
     vi.mocked(resolveProjectServicePreflightServices).mockResolvedValue([]);
     vi.mocked(isMultiServiceRuntime).mockReturnValue(false);
+    vi.mocked(firePreDeployBackups).mockResolvedValue({ enqueued: 0, completed: 0 });
     mocks.findCloudDockerBinding.mockResolvedValue(undefined);
     mocks.withWorkspaceActivity.mockImplementation(async (_id, work) => work());
     const adapter = runtime();
@@ -494,6 +500,154 @@ describe("single-app prebuilt release-image pipeline", () => {
       usesManagedRouting: true,
     } as never;
     vi.mocked(resolveDeploymentPlatform).mockResolvedValue(resolvedPlatform);
+  });
+
+  it.each([null, "workspace-1"])(
+    "waits for pre-deploy backups before workspace admission or a prebuilt cutover (workspace: %s)",
+    async (workspaceId) => {
+      let finishBackup!: () => void;
+      const backupFinished = new Promise<void>((resolve) => {
+        finishBackup = resolve;
+      });
+      vi.mocked(firePreDeployBackups).mockImplementationOnce(async () => {
+        await backupFinished;
+        return { enqueued: 1, completed: 1 };
+      });
+      try {
+        await run(deployment(), { workspaceId });
+        await vi.waitFor(() => expect(firePreDeployBackups).toHaveBeenCalledOnce());
+        // Waiting inside this lock strands the backup worker that needs it.
+        expect(mocks.withWorkspaceActivity).not.toHaveBeenCalled();
+        expect(mocks.prepareImage).not.toHaveBeenCalled();
+        expect(mocks.runDeployPipeline).not.toHaveBeenCalled();
+        expect(mocks.deploy).not.toHaveBeenCalled();
+        expect(mocks.destroy).not.toHaveBeenCalled();
+
+        finishBackup();
+        await drainDeploymentExecutions();
+        expect(mocks.onSuccess).toHaveBeenCalledOnce();
+        expect(mocks.deploy).toHaveBeenCalledOnce();
+      } finally {
+        finishBackup();
+        await drainDeploymentExecutions();
+      }
+    },
+  );
+
+  it("fails before touching the running app when a pre-deploy backup fails", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(firePreDeployBackups).mockImplementationOnce(async (opts) => {
+      opts.log?.("Backup bkr_db failed; deployment stopped.", "warn");
+      throw new Error("Pre-deploy backup bkr_db failed");
+    });
+    try {
+      await run();
+      await drainDeploymentExecutions();
+      expect(mocks.updateDeploymentStatus).toHaveBeenCalledWith("deployment-1", "failed", {
+        errorMessage: "Pre-deploy backup bkr_db failed",
+      });
+      expect(mocks.updateBuildSession).toHaveBeenCalledWith("build-session-1", {
+        status: "failed",
+      });
+      expect(mocks.updateBuildSession).toHaveBeenCalledWith("build-session-1", {
+        logs: [
+          expect.objectContaining({
+            message: "Backup bkr_db failed; deployment stopped.",
+            level: "warn",
+          }),
+        ],
+      });
+      expect(mocks.cancelPendingPrompt).toHaveBeenCalledWith("deployment-1");
+      expect(mocks.withWorkspaceActivity).not.toHaveBeenCalled();
+      expect(mocks.deploy).not.toHaveBeenCalled();
+      expect(mocks.destroy).not.toHaveBeenCalled();
+      expect(mocks.stop).not.toHaveBeenCalled();
+      expect(mocks.onSuccess).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("publishes the backup dialog before workspace admission and preserves the explicit bypass in build logs", async () => {
+    const prompt = {
+      promptId: "backup-1",
+      title: "Backup failed",
+      message: "Choose",
+      actions: [{ id: "skip:1", label: "Continue without backup" }],
+    };
+    let answer!: (action: string) => void;
+    mocks.promptUser.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    vi.mocked(firePreDeployBackups).mockImplementationOnce(async (opts) => {
+      opts.log?.("Backup failed; waiting for a decision.", "warn");
+      expect(await opts.promptUser!(prompt)).toBe("skip:1");
+      opts.log?.("User chose Continue without backup.", "warn");
+      return { enqueued: 1, completed: 0 };
+    });
+    await run();
+    await vi.waitFor(() => expect(mocks.promptUser).toHaveBeenCalledWith("deployment-1", prompt));
+    expect(mocks.withWorkspaceActivity).not.toHaveBeenCalled();
+    expect(mocks.deploy).not.toHaveBeenCalled();
+    expect(mocks.updateBuildSession).toHaveBeenCalledWith("build-session-1", {
+      logs: [
+        expect.objectContaining({
+          message: "Backup failed; waiting for a decision.",
+          level: "warn",
+        }),
+      ],
+    });
+    answer("skip:1");
+    await drainDeploymentExecutions();
+    expect(mocks.onSuccess).toHaveBeenCalledOnce();
+    expect(mocks.onSuccess.mock.calls[0]![0].persistLogs()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "User chose Continue without backup.", level: "warn" }),
+      ]),
+    );
+    expect(mocks.cancelPendingPrompt).toHaveBeenCalledWith("deployment-1");
+  });
+
+  it("does not open a late backup prompt after cancellation while its logs are being saved", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    let finishSave!: () => void;
+    mocks.updateBuildSession.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    vi.mocked(firePreDeployBackups).mockImplementationOnce(async (opts) => {
+      opts.log?.("Waiting for a backup decision.", "warn");
+      await raceDeploymentCancellation(
+        opts.promptUser!({
+          promptId: "backup-1",
+          title: "Backup failed",
+          message: "Choose",
+          actions: [],
+        }),
+        opts.signal,
+      );
+      return { enqueued: 1, completed: 0 };
+    });
+    try {
+      await run();
+      await vi.waitFor(() => expect(mocks.updateBuildSession).toHaveBeenCalled());
+      requestDeploymentCancellation("deployment-1");
+      await drainDeploymentExecutions();
+      finishSave();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mocks.promptUser).not.toHaveBeenCalled();
+      expect(mocks.cancelPendingPrompt).toHaveBeenCalledWith("deployment-1");
+      expect(mocks.withWorkspaceActivity).not.toHaveBeenCalled();
+      expect(mocks.deploy).not.toHaveBeenCalled();
+    } finally {
+      finishSave?.();
+      log.mockRestore();
+    }
   });
 
   it.each(["docker", "kubernetes"])("%s pulls the frozen image, skips source builds, and freezes the digest", async (runtimeName) => {

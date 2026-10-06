@@ -342,6 +342,7 @@ export function useDeploymentBuild(
         deploymentFailed: false,
         deploymentCanceled: false,
         cancellationPending: false,
+        pendingPrompt: null,
         currentProgress: 100,
         currentStepIndex: 5,
         isDeploying: false,
@@ -399,6 +400,7 @@ export function useDeploymentBuild(
         deploymentSuccess: false,
         deploymentCanceled: false,
         cancellationPending: false,
+        pendingPrompt: null,
         isDeploying: false,
         failureMessage: errorMessage,
         warningMessage: "",
@@ -1057,8 +1059,9 @@ export function useDeploymentBuild(
   }, [state.deploymentId, buildStream]);
 
   // Recover a disconnected stream or a queued build's missing start timestamp,
-  // reconcile terminal timing, and wait for cancellation acknowledgement. Never
-  // overlap reads or keep polling a settled result.
+  // reconcile terminal timing, and wait for cancellation acknowledgement. A held
+  // prompt also polls: its answer may come from another tab or lose its HTTP
+  // acknowledgement. Never overlap reads or keep polling a settled result.
   useEffect(() => {
     const deploymentId = state.deploymentId;
     const active =
@@ -1072,7 +1075,7 @@ export function useDeploymentBuild(
     const needsStatus =
       waitingCancellation ||
       needsTerminalStatus ||
-      (active && (!buildStream.isConnected || !state.buildStartedAt));
+      (active && (!buildStream.isConnected || !state.buildStartedAt || !!state.pendingPrompt));
     if (!deploymentId || !needsStatus) return;
 
     let cancelled = false;
@@ -1120,6 +1123,11 @@ export function useDeploymentBuild(
             deploymentFailed: !isLive && status === "failed",
             deploymentCanceled: !isLive && status === "cancelled",
             cancellationPending: !!data.cancellationPending,
+            pendingPrompt: isLive
+              ? data.pendingPrompt?.promptId === prev.pendingPrompt?.promptId
+                ? prev.pendingPrompt
+                : (data.pendingPrompt ?? null)
+              : null,
             buildStartedAt: data.buildStartedAt ?? null,
             buildDurationMs: data.buildDurationMs ?? null,
             phaseDurations: data.phaseDurations ?? prev.phaseDurations,
@@ -1169,6 +1177,7 @@ export function useDeploymentBuild(
     state.deploymentFailed,
     state.deploymentCanceled,
     state.cancellationPending,
+    state.pendingPrompt,
     state.buildStartedAt,
     buildStream.isConnected,
     buildStream.disconnect,
@@ -1344,6 +1353,7 @@ export function useDeploymentBuild(
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
           cancellationPending: !!data.cancellationPending,
+          pendingPrompt: isActive ? (data.pendingPrompt ?? null) : null,
           isDeploying: isLive,
           screenshots: !isActive ? (data.screenshots || []) : [],
           failureMessage: !isActive
@@ -1581,16 +1591,31 @@ export function useDeploymentBuild(
     }));
   }, []);
 
-  const respondToPrompt = useCallback(async (action: string) => {
-    if (!state.deploymentId) return;
-    setState((prev) => ({ ...prev, pendingPrompt: null }));
-    try {
-      await deployApi.buildRespond(state.deploymentId, action);
-    } catch (err) {
-      console.error("[Deployment] Failed to respond to prompt:", err);
-      showToast("Failed to respond to prompt", "error", "Error");
-    }
-  }, [state.deploymentId, showToast]);
+  const respondToPrompt = useCallback(
+    async (action: string) => {
+      const { deploymentId, pendingPrompt } = state;
+      if (!deploymentId || !pendingPrompt) throw new Error("No deployment decision is pending.");
+      try {
+        const result = await deployApi.buildRespond(deploymentId, action);
+        if (!result?.success)
+          throw new Error(
+            "This decision is no longer pending. Refresh to see the current deployment state.",
+          );
+        // A quick retry can publish the NEXT prompt before this request returns.
+        // Clear only the decision this request answered, never its replacement.
+        setState((prev) =>
+          prev.pendingPrompt?.promptId === pendingPrompt.promptId
+            ? { ...prev, pendingPrompt: null }
+            : prev,
+        );
+      } catch (err) {
+        console.error("[Deployment] Failed to respond to prompt:", err);
+        showToast("Failed to respond to prompt", "error", "Error");
+        throw err;
+      }
+    },
+    [state.deploymentId, state.pendingPrompt, showToast],
+  );
 
   return {
     state,
