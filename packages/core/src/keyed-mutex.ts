@@ -1,6 +1,15 @@
 /** Tail of the in-flight chain per scopeKey. Each tail always resolves. */
 const tails = new Map<string, Promise<unknown>>();
 
+/** Run only if the scope is idle; recovery must never queue behind live work. */
+export function tryWithKeyedMutex<T>(
+  scopeKey: string,
+  fn: () => Promise<T>,
+): Promise<T | undefined> {
+  if (tails.has(scopeKey)) return Promise.resolve(undefined);
+  return withKeyedMutex(scopeKey, fn);
+}
+
 /**
  * Run `fn` after every earlier call for the same `scopeKey` has finished — an
  * in-process mutex keyed by scope. Different scopeKeys never block each other.

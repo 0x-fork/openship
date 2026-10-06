@@ -100,4 +100,4 @@ export * from "./cluster-storage";
 export * from "./cluster-workload";
 export * from "./cluster-database";
 
-export { withKeyedMutex } from "./keyed-mutex";
+export { withKeyedMutex, tryWithKeyedMutex } from "./keyed-mutex";

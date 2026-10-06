@@ -18,7 +18,7 @@
 
 import { withAdvisoryLock, tryAcquireAdvisoryLock } from "@repo/db";
 import type { ProvisionLock } from "@repo/adapters";
-import { withKeyedMutex } from "@repo/core";
+import { withKeyedMutex, tryWithKeyedMutex } from "@repo/core";
 export { withKeyedMutex } from "@repo/core";
 
 /**
@@ -35,8 +35,7 @@ export function createProvisionLock(scopeKey: string): ProvisionLock {
 /** Recovery must not queue behind a live worker and mistake its eventual exit
  * for a crashed owner. Try both lock layers, leaving active work untouched. */
 export async function tryWithProvisionLock<T>(scopeKey: string, work: () => Promise<T>): Promise<T | undefined> {
-  if (tails.has(scopeKey)) return undefined;
-  return withKeyedMutex(scopeKey, async () => {
+  return tryWithKeyedMutex(scopeKey, async () => {
     const lock = await tryAcquireAdvisoryLock(scopeKey);
     if (!lock) return undefined;
     try { return await work(); }
