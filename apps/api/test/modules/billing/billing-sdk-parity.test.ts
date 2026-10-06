@@ -911,6 +911,21 @@ describe("plan changes from a linked self-hosted installation", () => {
     return { actor, session, linked, server, project, external, pair };
   }
 
+  it("reads plan changes from a sponsored server through HTTP and the SDK", async () => {
+    const { linked, external, pair } = await setup();
+    const sponsoredQuote = { ...quote, current: { ...quote.current, priceCents: 0 }, unusedTimeCredit: 0 };
+    const sponsoredChange = { ...change, current: sponsoredQuote.current };
+    external.mockImplementation(async url => Response.json({
+      data: String(url).endsWith("/preview") ? sponsoredQuote : sponsoredChange,
+    }));
+    for (const client of await pair()) {
+      expect(await client.previewSubscriptionChange({ workspaceId: linked.id, planTierId: "starter", idempotencyKey: "review-sponsored-server" }))
+        .toMatchObject({ current: { priceCents: 0 }, next: { priceCents: 2000 }, unusedTimeCredit: 0 });
+      expect(await client.getSubscriptionChange({ workspaceId: linked.id, changeId: change.id })).toEqual(sponsoredChange);
+    }
+    expect(provider.checkout).not.toHaveBeenCalled();
+  });
+
   it("uses the stored Cloud identity and the same remote operations through HTTP and the SDK", async () => {
     const { actor, session, linked, project, external, pair } = await setup();
     for (const client of await pair()) {

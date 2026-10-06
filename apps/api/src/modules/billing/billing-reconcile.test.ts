@@ -80,6 +80,17 @@ describe("Oblien-managed entitlements", () => {
       purchasedBytes: 1024, consumedBytes: 1024, reservedBytes: 0, availableBytes: 0 };
     await expect(assertCloudCanSpend("org_1")).resolves.toBeUndefined();
   });
+  it("requires funded coverage even when the monthly subscription is fully sponsored", async () => {
+    const state = useMonthly();
+    state.subscription.offer!.unitAmount = 0;
+    await expect(assertCloudCanSpend("org_1")).resolves.toBeUndefined();
+    state.entitlement.computeCovered = state.entitlement.capacity!.computeCovered = false;
+    state.entitlement.capacity!.status = "payment_required";
+    h.balance.mockResolvedValue({ ...state.balance, computeCovered: false });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
+    expect(h.setQuota).not.toHaveBeenCalled();
+    expect(h.resetQuota).not.toHaveBeenCalled();
+  });
   it("uses current paid coverage during a renewal payment problem", async () => {
     const state = useMonthly();
     state.subscription.status = "past_due";
