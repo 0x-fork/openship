@@ -14,7 +14,10 @@
     "description": "Your Cloud plan is active. Let's put it to work.",
     "dismiss": "Close welcome",
     "openProjects": "Open projects",
-    "viewPlan": "View my plan"
+    "viewPlan": "View my plan",
+    "serverTitle": "{name} is ready",
+    "serverDescription": "Your {plan} plan is active. Apps and builds share this server’s resources.",
+    "openServer": "Open server"
   },
   "capacity": {
     "title": "Capacity & usage",
@@ -790,5 +793,21 @@
     "paygMetering": "PAYG measures active CPU, reserved RAM while running or paused, and provisioned storage while retained.",
     "buildHint": "Builds run on this server and share its resources with your apps.",
     "usageIncluded": "Resource activity is included in your paid server. It does not spend compute credits."
+  },
+  "checkoutUnavailable": {
+    "capacityTitle": "This server size is unavailable",
+    "capacityDescription": "We can’t provision this size right now. Keep your selection and try again, or request an availability update.",
+    "checkoutTitle": "Checkout is temporarily unavailable",
+    "checkoutDescription": "Your selection is saved. Try again shortly, or ask our team to follow up.",
+    "emailLabel": "Email for updates",
+    "notificationHint": "Our support team will follow up with you about availability.",
+    "notify": "Notify me",
+    "notifying": "Saving request…",
+    "receivedTitle": "Request received",
+    "receivedDescription": "Your request is saved. Our support team will follow up at {email}.",
+    "retry": "Try checkout again",
+    "close": "Close",
+    "done": "Done",
+    "requestFailed": "We couldn’t save your request. Try again or email support@openship.io."
   }
 }

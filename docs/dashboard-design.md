@@ -201,6 +201,14 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   Show the subscription welcome only when setup is complete. Keep preparation and failure
   notices compact and above the billing columns, with a recheck action and a link to the existing server Activity tab
   for logs and retry. A paid setup failure must never direct the customer to pay again.
+  The welcome names the purchased server, shows its saved CPU, RAM and disk, and links to
+  that server and its billing. Remember dismissal per customer, server and checkout.
+- Unavailable server capacity or checkout opens the shared compact checkout feedback dialog.
+  Preserve the selected resources, server and retry identity. Offer an explicit email-update
+  request through the existing Cloud support intake; confirm it only after a saved receipt.
+  Explain that the support team follows up, without promising an automatic inventory alert.
+  Connected self-hosted installations offer direct email contact; Cloud intake accepts
+  browser submissions only from its trusted dashboard origins.
 - Plan cards respond to their container: one column on phones, two at intermediate widths,
   and four when readable. Offer links to each plan above a stacked comparison; never rely
   on hidden horizontal overflow to reveal additional plans.

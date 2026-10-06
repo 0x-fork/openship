@@ -27,6 +27,7 @@ import {
 } from "./CloudPurchaseContext";
 import { PayAsYouGoPlan } from "./PayAsYouGoPlan";
 import { useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
+import { CloudCheckoutFeedback } from "./CloudCheckoutFeedback";
 
 export function CloudPlanPicker(props: Parameters<typeof PlanPicker>[0]) {
   return (
@@ -154,6 +155,8 @@ function PlanPicker({
     error: checkoutError,
     checkoutUrl,
     quoteRevision,
+    unavailable,
+    dismissUnavailable,
   } = useCloudCheckout({
     enabled: canPurchase && !purchaseDisabled && !payg,
     preserveProject,
@@ -416,6 +419,8 @@ function PlanPicker({
             <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
           )}
           <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
+          <CloudCheckoutFeedback failure={unavailable} plans={payload.plans} onClose={dismissUnavailable}
+            onRetry={failure => void startCheckout(failure.planTierId, failure.interval, failure.custom)} />
         </div>
       </div>
     </div>

@@ -14,7 +14,10 @@
     "description": "Cloud planınız etkin. Şimdi kullanmaya başlayabilirsiniz.",
     "dismiss": "Karşılama penceresini kapat",
     "openProjects": "Projeleri aç",
-    "viewPlan": "Planımı görüntüle"
+    "viewPlan": "Planımı görüntüle",
+    "serverTitle": "{name} hazır",
+    "serverDescription": "{plan} planınız etkin. Uygulamalar ve derlemeler bu sunucunun kaynaklarını paylaşır.",
+    "openServer": "Sunucuyu aç"
   },
   "capacity": {
     "title": "Kapasite ve Kullanım",
@@ -790,5 +793,21 @@
     "paygMetering": "Kullandıkça öde; etkin CPU, çalışırken veya duraklatıldığında ayrılmış RAM ve korunduğu sürece sağlanmış depolamayı ölçer.",
     "buildHint": "Derlemeler bu sunucuda çalışır ve kaynakları uygulamalarınızla paylaşır.",
     "usageIncluded": "Kaynak etkinliği ücretini ödediğiniz sunucuya dahildir ve işlem kredisi harcamaz."
+  },
+  "checkoutUnavailable": {
+    "capacityTitle": "Bu sunucu boyutu kullanılamıyor",
+    "capacityDescription": "Şu anda bu boyutu sağlayamıyoruz. Seçiminizi koruyup yeniden deneyin veya kullanılabilirlik hakkında bilgi isteyin.",
+    "checkoutTitle": "Ödeme geçici olarak kullanılamıyor",
+    "checkoutDescription": "Seçiminiz kaydedildi. Biraz sonra yeniden deneyin veya ekibimizden size ulaşmasını isteyin.",
+    "emailLabel": "Güncellemeler için e-posta",
+    "notificationHint": "Destek ekibimiz kullanılabilirlik hakkında size bilgi verecek.",
+    "notify": "Bana bildir",
+    "notifying": "İstek kaydediliyor…",
+    "receivedTitle": "İstek alındı",
+    "receivedDescription": "İsteğiniz kaydedildi. Destek ekibimiz {email} adresinden size ulaşacak.",
+    "retry": "Ödemeyi yeniden dene",
+    "close": "Kapat",
+    "done": "Tamam",
+    "requestFailed": "İsteğiniz kaydedilemedi. Yeniden deneyin veya support@openship.io adresine e-posta gönderin."
   }
 }

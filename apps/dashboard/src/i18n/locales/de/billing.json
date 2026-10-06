@@ -14,7 +14,10 @@
     "description": "Dein Cloud-Tarif ist aktiv. Legen wir los.",
     "dismiss": "Willkommensmeldung schließen",
     "openProjects": "Projekte öffnen",
-    "viewPlan": "Meinen Tarif ansehen"
+    "viewPlan": "Meinen Tarif ansehen",
+    "serverTitle": "{name} ist bereit",
+    "serverDescription": "Dein {plan}-Tarif ist aktiv. Apps und Builds teilen sich die Ressourcen dieses Servers.",
+    "openServer": "Server öffnen"
   },
   "capacity": {
     "title": "Kapazität & Nutzung",
@@ -790,5 +793,21 @@
     "paygMetering": "PAYG misst aktive CPU, reservierten RAM im laufenden oder pausierten Zustand und bereitgestellten Speicher bis zur Löschung.",
     "buildHint": "Builds laufen auf diesem Server und teilen seine Ressourcen mit deinen Apps.",
     "usageIncluded": "Die Ressourcenaktivität ist im bezahlten Server enthalten und verbraucht keine Compute-Credits."
+  },
+  "checkoutUnavailable": {
+    "capacityTitle": "Diese Servergröße ist nicht verfügbar",
+    "capacityDescription": "Wir können diese Größe derzeit nicht bereitstellen. Behalte deine Auswahl und versuche es erneut oder frage nach der Verfügbarkeit.",
+    "checkoutTitle": "Die Zahlung ist vorübergehend nicht verfügbar",
+    "checkoutDescription": "Deine Auswahl ist gespeichert. Versuche es gleich erneut oder bitte unser Team um Rückmeldung.",
+    "emailLabel": "E-Mail für Updates",
+    "notificationHint": "Unser Support-Team meldet sich bei dir zur Verfügbarkeit.",
+    "notify": "Benachrichtigen",
+    "notifying": "Anfrage wird gespeichert…",
+    "receivedTitle": "Anfrage erhalten",
+    "receivedDescription": "Deine Anfrage ist gespeichert. Unser Support-Team meldet sich unter {email}.",
+    "retry": "Zahlung erneut versuchen",
+    "close": "Schließen",
+    "done": "Fertig",
+    "requestFailed": "Deine Anfrage konnte nicht gespeichert werden. Versuche es erneut oder schreibe an support@openship.io."
   }
 }

@@ -14,7 +14,10 @@
     "description": "Tu plan Cloud está activo. Es hora de ponerlo en marcha.",
     "dismiss": "Cerrar bienvenida",
     "openProjects": "Abrir proyectos",
-    "viewPlan": "Ver mi plan"
+    "viewPlan": "Ver mi plan",
+    "serverTitle": "{name} está listo",
+    "serverDescription": "Tu plan {plan} está activo. Las aplicaciones y las compilaciones comparten los recursos de este servidor.",
+    "openServer": "Abrir servidor"
   },
   "capacity": {
     "title": "Capacidad y uso",
@@ -790,5 +793,21 @@
     "paygMetering": "El pago por uso mide CPU activa, RAM reservada mientras se ejecuta o pausa y almacenamiento aprovisionado mientras se conserve.",
     "buildHint": "Las compilaciones se ejecutan en este servidor y comparten recursos con tus aplicaciones.",
     "usageIncluded": "La actividad de recursos está incluida en tu servidor pagado y no consume créditos de cómputo."
+  },
+  "checkoutUnavailable": {
+    "capacityTitle": "Este tamaño de servidor no está disponible",
+    "capacityDescription": "No podemos ofrecer este tamaño ahora. Mantén tu selección e inténtalo de nuevo o solicita una actualización de disponibilidad.",
+    "checkoutTitle": "El pago no está disponible temporalmente",
+    "checkoutDescription": "Tu selección está guardada. Inténtalo de nuevo en breve o pide a nuestro equipo que se ponga en contacto.",
+    "emailLabel": "Correo para actualizaciones",
+    "notificationHint": "Nuestro equipo de soporte te informará sobre la disponibilidad.",
+    "notify": "Avísame",
+    "notifying": "Guardando solicitud…",
+    "receivedTitle": "Solicitud recibida",
+    "receivedDescription": "Tu solicitud está guardada. Nuestro equipo de soporte te contactará en {email}.",
+    "retry": "Reintentar el pago",
+    "close": "Cerrar",
+    "done": "Listo",
+    "requestFailed": "No pudimos guardar tu solicitud. Inténtalo de nuevo o escribe a support@openship.io."
   }
 }

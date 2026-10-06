@@ -312,6 +312,7 @@ export class OblienBillingApi {
     if (!response.ok || (payload as { success?: unknown } | null)?.success !== true) {
       // Do not forward provider bodies: they can contain account or payment data.
       const code = providerErrorCode(payload);
+      const capacityUnavailable = code === "capacity_unavailable" || code === "billing_capacity_unavailable";
       const diagnostic = providerDiagnostic(payload, [this.options.clientId, this.options.clientSecret]);
       const checkoutExpired = method === "POST" && path === "/billing/checkout" &&
         response.status === 410 && EXPIRED_CHECKOUT_CODES.has(code);
@@ -360,7 +361,8 @@ export class OblienBillingApi {
         billing_change_not_cancelable: "This plan change can no longer be canceled. Refresh its status.",
         plan_change_not_found: "This plan change was not found for the selected server.",
         capacity_billing_unavailable: "Monthly server purchases are temporarily unavailable. Existing paid servers keep their coverage.",
-        billing_capacity_unavailable: "The requested server capacity is temporarily unavailable. Choose another size or try again later.",
+        capacity_unavailable: "This server size is temporarily unavailable. Please try again later or contact support.",
+        billing_capacity_unavailable: "This server size is temporarily unavailable. Please try again later or contact support.",
         billing_offer_underfunded: "Cloud pricing is not configured correctly for this server. Contact Openship support.",
         capacity_price_below_cost: "Cloud pricing is not configured correctly for this server. Contact Openship support.",
         insufficient_redeemable_balance: "Cloud server purchases are temporarily unavailable. Contact Openship support.",
@@ -370,7 +372,8 @@ export class OblienBillingApi {
         : checkoutUnavailable ? "Cloud checkout is temporarily unavailable. Please try again later."
           : "Cloud billing could not complete this request. Please retry.";
       throw new OperationError(diagnostic.reference ? `${message} Reference: ${diagnostic.reference}.` : message,
-        status, checkoutUnavailable ? "OBLIEN_CHECKOUT_UNAVAILABLE" : "OBLIEN_BILLING_ERROR", {
+        status, capacityUnavailable ? "CLOUD_CAPACITY_UNAVAILABLE"
+          : checkoutUnavailable ? "OBLIEN_CHECKOUT_UNAVAILABLE" : "OBLIEN_BILLING_ERROR", {
           ...(Object.hasOwn(known, code) ? { providerCode: code } : {}),
           ...(checkoutExpired ? { checkoutExpired: true } : {}),
           ...(path === "/billing/checkout" && [400, 402, 403, 409, 422].includes(response.status) && REJECTED_CHECKOUT_CODES.has(code)

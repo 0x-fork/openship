@@ -14,7 +14,10 @@
     "description": "你的 Cloud 套餐已生效，开始使用吧。",
     "dismiss": "关闭欢迎窗口",
     "openProjects": "打开项目",
-    "viewPlan": "查看我的套餐"
+    "viewPlan": "查看我的套餐",
+    "serverTitle": "{name} 已就绪",
+    "serverDescription": "您的 {plan} 套餐已生效。应用和构建共享此服务器的资源。",
+    "openServer": "打开服务器"
   },
   "capacity": {
     "title": "容量与用量",
@@ -790,5 +793,21 @@
     "paygMetering": "按量付费计量活跃 CPU、运行或暂停时预留的内存，以及仍被保留的已分配存储。",
     "buildHint": "构建在此服务器上运行，与应用共享资源。",
     "usageIncluded": "资源活动已包含在已付款服务器中，不消耗计算积分。"
+  },
+  "checkoutUnavailable": {
+    "capacityTitle": "此服务器规格暂不可用",
+    "capacityDescription": "我们目前无法提供此规格。请保留选择并重试，或申请接收可用性通知。",
+    "checkoutTitle": "支付暂时不可用",
+    "checkoutDescription": "您的选择已保存。请稍后重试，或请我们的团队与您联系。",
+    "emailLabel": "接收通知的邮箱",
+    "notificationHint": "支持团队会向您跟进可用情况。",
+    "notify": "通知我",
+    "notifying": "正在保存请求…",
+    "receivedTitle": "已收到请求",
+    "receivedDescription": "您的请求已保存。支持团队将通过 {email} 与您联系。",
+    "retry": "重试支付",
+    "close": "关闭",
+    "done": "完成",
+    "requestFailed": "无法保存您的请求。请重试或发送邮件至 support@openship.io。"
   }
 }

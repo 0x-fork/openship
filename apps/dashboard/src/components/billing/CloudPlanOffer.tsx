@@ -9,6 +9,7 @@ import { PlanIcon } from "./PlanIcon";
 import { PlanCapacity } from "./PlanResources";
 import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
+import { CloudCheckoutFeedback } from "./CloudCheckoutFeedback";
 
 /** A compact starting offer; the plans tab holds the full comparison. */
 export function CloudPlanOffer({ state }: { state: BillingState }) {
@@ -116,6 +117,8 @@ export function CloudPlanOffer({ state }: { state: BillingState }) {
           <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" aria-hidden="true" />
         </Link>
       </Button>
+      <CloudCheckoutFeedback failure={checkout.unavailable} plans={payload?.plans} onClose={checkout.dismissUnavailable}
+        onRetry={failure => void checkout.startCheckout(failure.planTierId, failure.interval, failure.custom)} />
     </section>
   );
 }
