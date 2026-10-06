@@ -75,11 +75,7 @@ export function AppSettingsTab() {
   }
 
   if (!s.view || s.view.management?.kind !== "schema" || s.view.groups.length === 0) {
-    return (
-      <div className="bg-card rounded-2xl border border-border/50 p-6 text-sm text-muted-foreground">
-        {ps.unmanaged}
-      </div>
-    );
+    return null;
   }
 
   const hasAdvanced = hasAdvancedFields(s.view.groups);
