@@ -7,16 +7,13 @@ import { fetchUpdateAsset } from "../../src/main/update-download";
 
 // Only the updater is loaded. This process has its own profile and downloads,
 // no application windows, no API, and no access to the user's Openship state.
-const directory = process.argv[2]!;
+const directory = process.argv.at(-1)!;
 const downloads = join(directory, "downloads");
 mkdirSync(downloads);
 app.setName("Openship updater regression test");
 app.setPath("userData", join(directory, "profile"));
 app.setPath("temp", downloads);
 app.commandLine.appendSwitch("disable-gpu");
-// Hosted Linux runners may disable user namespaces. This fixture never opens a
-// renderer or runs downloaded code; the application's sandbox stays unchanged.
-if (process.platform === "linux") app.commandLine.appendSwitch("no-sandbox");
 
 const version = "9.8.7";
 const name = "Openship.AppImage";

@@ -43,9 +43,15 @@ it("downloads and verifies redirected updates in real Electron, with cancellatio
     const headless = process.platform === "linux" && !process.env.DISPLAY;
     const env = { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "true" };
     delete env.ELECTRON_RUN_AS_NODE;
+    // CI cannot use Electron's SUID helper. This must be set before Electron
+    // starts, not inside the fixture. No renderer or downloaded code is run;
+    // the production application's sandbox is unchanged.
+    const args = [...(process.platform === "linux" ? ["--no-sandbox"] : []), entry, directory];
     const result = await promisify(execFile)(headless ? "xvfb-run" : electron,
-      headless ? ["-a", electron, entry, directory] : [entry, directory],
-      { env, timeout: 30_000, maxBuffer: 1024 * 1024 });
+      headless ? ["-a", electron, ...args] : args,
+      { env, timeout: 30_000, maxBuffer: 1024 * 1024 }).catch(error => {
+        throw new Error(`Electron updater test failed (exit ${error.code}, signal ${error.signal ?? "none"})\n${error.stdout ?? ""}\n${error.stderr ?? ""}`, { cause: error });
+      });
     expect(result.stdout).toContain("Electron updater regression checks passed");
   } finally {
     await rm(directory, { recursive: true, force: true });
