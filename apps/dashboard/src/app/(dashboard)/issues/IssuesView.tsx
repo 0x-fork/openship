@@ -86,7 +86,7 @@ export function IssuesView() {
   // static "issue" row with no sign the work is already underway.
   useReattachActiveFix({ install: selfHosted }, presentRecoveredOperation);
 
-  const [issues, setIssues] = useState<SystemIssue[]>([]);
+  const [feedIssues, setIssues] = useState<SystemIssue[]>([]);
   const [counts, setCounts] = useState<IssueCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
@@ -153,7 +153,7 @@ export function IssuesView() {
   );
 
   const reloadAfterChange = useCallback(() => load({ silent: true, fresh: true }), [load]);
-  const { busyId, resolve, infraFix } = useIssueActions(reloadAfterChange, presentOperation);
+  const { busyIds, resolve, infraFix, issues } = useIssueActions(reloadAfterChange, presentOperation, feedIssues);
   const monitoringScan = useMonitoringScan({
     enabled: selfHosted,
     online,
@@ -441,7 +441,7 @@ export function IssuesView() {
             ) : (
               <IssueList
                 issues={filtered}
-                busyId={busyId}
+                busyIds={busyIds}
                 onResolve={resolve}
                 onInfraFix={infraFix}
                 onRecheck={monitoringScan.canRescan ? monitoringScan.recheckHealth : undefined}

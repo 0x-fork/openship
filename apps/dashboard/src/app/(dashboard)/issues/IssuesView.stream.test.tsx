@@ -345,7 +345,7 @@ describe("monitoring connection recovery", () => {
 
   it("does not start a queued refresh in another workspace", async () => {
     const pendingOverview = await finishScanWhileFeedLoads();
-    setActiveOrganizationId("org-2");
+    await act(async () => setActiveOrganizationId("org-2"));
     await act(async () => pendingOverview.resolve(emptyFeed));
     expect(mocks.list).toHaveBeenCalledTimes(2);
     expect(mocks.toast).not.toHaveBeenCalled();

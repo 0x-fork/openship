@@ -2434,7 +2434,14 @@ export async function evaluateDrift(
   // question we're no longer asking — treat it as unknown, not as drift.
   if (upstream.mode !== driftMode(p)) return { supported: false as const };
 
-  const deployed = await resolveDeployedDrift(p, upstream.mode);
+  const [deployed, inFlight] = await Promise.all([
+    resolveDeployedDrift(p, upstream.mode),
+    repos.deployment.listInFlightByProject(p.id),
+  ]);
+  // Use the deployment admission query, including a worker still finishing after
+  // cancellation/cutover. A terminal-looking row alone cannot re-enable Update.
+  const active = inFlight[0];
+  const inProgressDeploymentId = active?.id ?? null;
 
   if (upstream.mode === "commit" && deployed.mode === "commit") {
     const latestSha = upstream.key === commitSourceKey(p) ? upstream.latestSha : null;
@@ -2451,20 +2458,15 @@ export async function evaluateDrift(
         behind = projectMatchesChanges(root, compare.files, p.monorepoSharedPaths);
       }
     }
-    // Is the latest commit already deploying? Then there's nothing to redeploy —
-    // it's in flight, so the nudge is suppressed. Computed live, which is why
-    // pressing Update quiets every surface immediately.
-    const latestInProgress =
-      behind && latestSha
-        ? Boolean(
-            await repos.deployment.findInProgressByCommit(p.id, latestSha).catch(() => undefined),
-          )
-        : false;
+    const latestInProgress = Boolean(
+      active && (active.trigger === "update" || (behind && latestSha && active.commitSha === latestSha)),
+    );
     return {
       supported: true as const,
       mode: "commit" as const,
       behind,
       latestInProgress,
+      inProgressDeploymentId,
       branch: projectBranch(p),
       latestSha,
       latestMessage: latestSha ? upstream.latestMessage : null,
@@ -2476,19 +2478,15 @@ export async function evaluateDrift(
     const latest = upstream.key === releaseSourceKey(p) ? upstream.latestVersion : null;
     const current = deployed.currentVersion;
     const behind = Boolean(latest && current && compareSemver(latest, current) > 0);
-    const latestInProgress =
-      behind && latest
-        ? Boolean(
-            await repos.deployment
-              .findInProgressByReleaseVersion(p.id, latest)
-              .catch(() => undefined),
-          )
-        : false;
+    const latestInProgress = Boolean(
+      active && (active.trigger === "update" || (behind && latest && active.releaseVersion === latest)),
+    );
     return {
       supported: true as const,
       mode: "release" as const,
       behind,
       latestInProgress,
+      inProgressDeploymentId,
       latestVersion: latest,
       currentVersion: current,
       pinned: upstream.pinned,
@@ -2532,7 +2530,8 @@ export async function evaluateDrift(
       supported: true as const,
       mode: "image" as const,
       behind: services.some((s) => s.behind),
-      latestInProgress: false,
+      latestInProgress: active?.trigger === "update",
+      inProgressDeploymentId,
       services,
     };
   }
