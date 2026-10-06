@@ -8,6 +8,7 @@ import { scopedBillingHref } from "@/lib/billing-links";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { ServerPicker, ServerRowContent } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
+import { matchesWorkspace } from "@/lib/server-reference";
 
 interface BillingServerInventory {
   servers: ServerDetail[];
@@ -45,10 +46,10 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
   const copy = t.billing.workspaces;
   if (!inventory || !billingServersVisible(inventory)) return null;
   const { servers, loading, error, onRetry } = inventory;
-  const selected = servers.find((server) => server.managed?.id === workspaceId);
+  const selected = servers.find((server) => matchesWorkspace(server, workspaceId));
   const selectServer = (server: ServerDetail) => {
     const id = server.managed?.id;
-    if (!id || id === workspaceId || pending) return;
+    if (!id || matchesWorkspace(server, workspaceId) || pending) return;
     setRequestedName(server.name || copy.singular);
     startTransition(() =>
       router.push(scopedBillingHref(pathname, { workspaceId: id, organizationId }), {
@@ -113,7 +114,7 @@ export function ServerBillingPicker({ compact = false }: { compact?: boolean }) 
       ) : (
         <div className="max-h-64 space-y-1 overflow-y-auto p-0.5">
           {servers.map((server) => {
-            const selected = server.managed?.id === workspaceId;
+            const selected = matchesWorkspace(server, workspaceId);
             const row = <ServerRowContent server={server} active={selected} />;
             if (servers.length === 1 && selected) {
               return (

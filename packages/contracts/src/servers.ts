@@ -88,6 +88,12 @@ export const HostChannelSchema = Type.Object(
 
 const serverFields = {
   id: Type.String(),
+  source: Type.Optional(Type.Union([Type.Literal("local"), Type.Literal("cloud")])),
+  /** Canonical IDs for an explicitly linked destination, for UI selection only. */
+  cloudReference: Type.Optional(Type.Object({
+    serverId: Type.String(),
+    workspaceId: Type.String(),
+  }, { additionalProperties: false })),
   purpose: Type.Optional(Type.Union([Type.Literal("deployment"), Type.Literal("migration_source")])),
   name: nullableString,
   isLocal: Type.Boolean(),

@@ -885,8 +885,8 @@ describe("plan changes from a linked self-hosted installation", () => {
     effectiveAt: quote.effectiveAt, current: quote.current, next: quote.next, amountDueNow: 636,
     cancelable: true, appliedAt: null, errorCode: null, paymentUrl: "https://invoice.stripe.com/i/test", paymentExpiresAt: null,
   };
-  async function setup() {
-    const actor = await seedOwner();
+  async function setup(options?: Parameters<typeof seedOwner>[0]) {
+    const actor = await seedOwner(options);
     provider.cloudMode = false;
     const session = { apiUrl: cloudRuntimeTarget.api, userId: `cloud_${actor.userId}`,
       organizationId: `cloud_${actor.orgId}`, token: "synthetic-cloud-session" };
@@ -978,6 +978,61 @@ describe("plan changes from a linked self-hosted installation", () => {
     await grant("project", project.id);
     for (const client of reviewers) expect(await client.confirmSubscriptionChange(confirm)).toEqual(change);
     expect(external).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens canonical Cloud billing without replicating a server or subscription", async () => {
+    const { actor, external } = await setup({ bound: false });
+    const before = await repos.cloudWorkspace.listByOrganization(actor.orgId);
+    const response = await localApp.request("/api/billing/subscription/change/preview", {
+      method: "POST", headers: { ...actor.auth, "X-Organization-Id": actor.orgId, "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId: "cloud-only-workspace", planTierId: "starter", idempotencyKey: "review-cloud-only-server" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { id: quote.id } });
+    expect(external).toHaveBeenCalledOnce();
+    expect(JSON.parse(String((external.mock.calls[0] as unknown as [string, RequestInit])[1].body)).workspaceId).toBe("cloud-only-workspace");
+    expect(await repos.cloudWorkspace.listByOrganization(actor.orgId)).toEqual(before);
+  });
+
+  it("rechecks local project access before confirming a canonical Cloud plan change", async () => {
+    const { actor, linked, external } = await setup({ bound: false });
+    const list = repos.project.listByWorkspace.bind(repos.project);
+    vi.spyOn(repos.project, "listByWorkspace").mockImplementationOnce(async (...args) => {
+      const projects = await list(...args);
+      // Access can be revoked while reviewing a shared server's affected apps.
+      await db.delete(schema.member).where(eq(schema.member.userId, actor.userId));
+      return projects;
+    });
+    const response = await localApp.request("/api/billing/subscription/change", {
+      method: "POST", headers: { ...actor.auth, "X-Organization-Id": actor.orgId, "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId: linked.remote!.workspaceId, quoteId: quote.id, confirmRestart: true }),
+    });
+    expect(response.status).toBe(404);
+    expect(external).not.toHaveBeenCalled();
+  });
+
+  it("requires locally scoped callers to use their explicit server link", async () => {
+    const { linked, external, pair } = await setup();
+    for (const client of await pair()) {
+      await expect(client.confirmSubscriptionChange({ workspaceId: linked.remote!.workspaceId, quoteId: quote.id, confirmRestart: true }))
+        .rejects.toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    }
+    expect(external).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a restricted billing grant into access to the owner's Cloud account", async () => {
+    const { actor, linked, external } = await setup();
+    const member = await seedBaseOwner({ bound: false });
+    await db.update(schema.organization).set({ isTeam: true }).where(eq(schema.organization.id, actor.orgId));
+    await db.insert(schema.member).values({ id: `billing-reader-${member.userId}`, organizationId: actor.orgId, userId: member.userId, role: "restricted" });
+    await repos.resourceGrant.upsert({ organizationId: actor.orgId, userId: member.userId, resourceType: "billing", resourceId: "*", permissions: ["admin"], grantedByUserId: actor.userId });
+    const response = await localApp.request("/api/billing/subscription/change", {
+      method: "POST", headers: { ...member.auth, "X-Organization-Id": actor.orgId, "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId: linked.remote!.workspaceId, quoteId: quote.id, confirmRestart: true }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CLOUD_SCOPE_UNAVAILABLE" });
+    expect(external).not.toHaveBeenCalled();
   });
 
   it("rejects a changed Cloud connection or another tenant's link before making a billing request", async () => {

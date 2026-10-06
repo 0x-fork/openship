@@ -29,6 +29,7 @@
 
 import type { Context } from "hono";
 import { openServerShell } from "@repo/platform/engine/lib/server-execution";
+import { prepareCloudTerminal, cloudTerminalHandlers } from "../../lib/cloud/terminal-bridge";
 import { createProvisionLock } from "@repo/platform/engine/lib/provision-lock";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
@@ -115,6 +116,8 @@ export async function issueTicket(c: Context) {
   const body = await c.req.json().catch(() => ({}));
   const serverId = typeof body?.serverId === "string" ? body.serverId : "";
   if (!serverId) return c.json({ error: "serverId required" }, 400);
+  const cloud = await prepareCloudTerminal(ctx, "server", serverId);
+  if (cloud) return c.json({ success: true, ...issueTerminalTicket(ctx, serverId, cloud) });
 
   // Primary gate: opening a PTY is administrative. Even at ticket-mint
   // time we want to reject restricted users without an admin grant — the
@@ -238,6 +241,8 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
   if (!allowed) {
     return openInitFailure("server_not_found", "Server not found", 4404);
   }
+  if (ticket?.cloud) return cloudTerminalHandlers({ kind: "server", id: pathServerId,
+    userId, organizationId: activeOrgId, cloud: ticket.cloud, resumeToken });
   // Org-scoped lookup: returns 404 indistinguishably whether the server
   // doesn't exist or belongs to a different org. This is the cross-tenant
   // host-shell gate (defense in depth alongside the permission check above).

@@ -49,6 +49,7 @@ import {
 import { authMiddleware } from "../middleware/auth";
 import { rateLimiterFor } from "../middleware/rate-limiter";
 import { localOnly } from "../middleware/local-only";
+import { cloudResourceRouter } from "./cloud/resource-router";
 
 export interface SecureRouterOptions {
   /**
@@ -190,6 +191,10 @@ export function secureRouter<T extends Hono>(
     if (!isPublicSpec(mergedSpec) && (mergedSpec as PermissionSpec).body &&
         !(mergedSpec as PermissionSpec).bodyValidatedByOperation) {
       chain.push(tbValidator("json", (mergedSpec as PermissionSpec).body!));
+    }
+    if (!isPublicSpec(mergedSpec)) {
+      const gateway = cloudResourceRouter(`${basePath}${path}`, mergedSpec);
+      if (gateway) chain.push(gateway);
     }
     chain.push(...handlers);
 

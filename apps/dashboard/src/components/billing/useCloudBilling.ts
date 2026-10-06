@@ -11,6 +11,7 @@ import { randomUUID } from "@/lib/random-uuid";
 import { trackCloudEvent } from "@/lib/cloud-analytics";
 import { checkoutFailureKind, type CheckoutFailure } from "@/lib/checkout-failure";
 import { useSession } from "@/lib/auth-client";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import type { ApiPlan, ApiPricingUi } from "./PricingCards";
 
 interface PlansPayload extends Omit<BillingPlans, "ui" | "plans"> {
@@ -49,7 +50,8 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   const { t } = useI18n();
   const { workspaceId: billingWorkspaceId, organizationId } = useBillingScope();
   const { data: session } = useSession();
-  const ownerKey = `${session?.user.id}:${organizationId ?? session?.session?.activeOrganizationId}`;
+  const cloudKey = useCloudResourceKey();
+  const ownerKey = `${cloudKey}:${session?.user.id}:${organizationId ?? session?.session?.activeOrganizationId}`;
   const workspaceId = selectedWorkspaceId ?? billingWorkspaceId ?? undefined;
   const [subscribing, setSubscribing] = useState<PlanTierId | "custom" | null>(null);
   const [error, setError] = useState<string | null>(null);

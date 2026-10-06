@@ -7,6 +7,7 @@ import {
   useContext,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -27,12 +28,18 @@ import { Button } from "@/components/ui/button";
 import { openAuthWindow } from "@/utils/authWindow";
 import type { CloudCapability } from "@repo/core";
 import { useCloudCapabilityCopy, type CloudRequirementPrompt } from "./cloud/capability-copy";
+import { CloudResourceContext } from "./CloudResourceContext";
+import { useRouter } from "next/navigation";
+import { setApiResourceScope } from "@/lib/api/client";
+import { clearProjectEndpointCaches } from "@/hooks/useProjectEndpoints";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
 interface CloudUser {
+  id?: string;
+  organizationId?: string;
   name: string;
   email: string;
   image?: string | null;
@@ -100,6 +107,7 @@ const FEATURES = [
 ];
 
 export function CloudProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const { selfHosted, deployMode, cloudApiUrl } = usePlatform();
   const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
   const hasNativeCloudAccess = !canConnectCloud;
@@ -191,26 +199,25 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   }, [checkStatus, contextKey]);
 
   const isConnected = hasNativeCloudAccess || connected;
+  const resourceKey = `${contextKey}:${hasNativeCloudAccess ? "native" : !current ? "pending"
+    : connected ? `${cloudApiUrl}:${cloudUser?.id ?? cloudUser?.email ?? ""}:${cloudUser?.organizationId ?? ""}` : "disconnected"}`;
+  // Layout effects run before resource hooks start their passive fetches.
+  useLayoutEffect(() => {
+    setApiResourceScope(resourceKey);
+    clearProjectEndpointCaches();
+  }, [resourceKey]);
 
-  // GitHub `cloud-app` mode is backed by the cloud session: connecting or
-  // disconnecting Openship Cloud changes which GitHub auth mode resolves
-  // and whether a token is available. So whenever the cloud connection
-  // TRANSITIONS, re-resolve GitHub state — this is the single wiring point
-  // that keeps the GitHub card honest across every connect/disconnect path
-  // (settings button, modal, popup postMessage, desktop poll), not just one.
-  //
-  // The `loading` gate skips the in-flight initial status check so we don't
-  // fire a spurious refresh on mount (GitHub already has its SSR data); the
-  // first SETTLED value becomes the baseline, and only real changes after
-  // that trigger a GitHub refresh.
-  const prevConnectedRef = useRef<boolean | null>(null);
+  // Refresh account-backed UI after connect, disconnect or a different Cloud
+  // identity. The first settled status keeps the server-rendered baseline.
+  const previousResourceKey = useRef<string | null>(null);
   useEffect(() => {
     if (loading) return;
-    const prev = prevConnectedRef.current;
-    prevConnectedRef.current = isConnected;
-    if (prev === null || prev === isConnected) return;
+    const prev = previousResourceKey.current;
+    previousResourceKey.current = resourceKey;
+    if (prev === null || prev === resourceKey) return;
     void refreshGitHub();
-  }, [isConnected, loading, refreshGitHub]);
+    router.refresh();
+  }, [resourceKey, loading, refreshGitHub, router]);
 
   // Settle every pending requireCloud promise once, then clear the batch
   // atomically (reassign before calling, so a resolver that re-enters can't
@@ -224,7 +231,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setModalFeature(null);
     setConnecting(false);
-    prevConnectedRef.current = null;
+    previousResourceKey.current = null;
     return () => {
       ++statusRequest.current;
       if (pollRef.current) clearInterval(pollRef.current);
@@ -402,7 +409,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     <CloudContext.Provider
       value={{ connected: isConnected, cloudUser, loading, connecting, requireCloud, startConnect, refresh: async () => { await checkStatus(); }, setConnected }}
     >
-      {children}
+      <CloudResourceContext.Provider value={resourceKey}>{children}</CloudResourceContext.Provider>
 
       {/* ── Connect Modal ──────────────────────────────────── */}
       {modalFeature && (

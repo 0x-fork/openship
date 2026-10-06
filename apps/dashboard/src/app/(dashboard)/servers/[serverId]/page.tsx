@@ -1,4 +1,5 @@
 "use client";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
@@ -84,7 +85,8 @@ export default function ServerDetailPage({
   params: Promise<{ serverId: string }>;
 }) {
   const { serverId } = use(params);
-  return <ServerDetail key={serverId} serverId={serverId} />;
+  const resourceKey = useCloudResourceKey();
+  return <ServerDetail key={`${resourceKey}:${serverId}`} serverId={serverId} />;
 }
 
 function ServerDetail({ serverId }: { serverId: string }) {

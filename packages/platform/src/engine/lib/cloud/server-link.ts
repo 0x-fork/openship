@@ -102,13 +102,9 @@ export async function confirmLinkedServerDeletion(row: CloudWorkspace): Promise<
 
 export async function availableCloudServers(organizationId: string): Promise<ServerDetail[]> {
   if (env.CLOUD_MODE) return [];
-  const identity = await linkedCloudIdentity(organizationId);
-  const result = await remoteCloudRequest<{ servers: ServerDetail[] }>(organizationId, "/api/system/servers/destinations", undefined, identity);
-  if (!Array.isArray(result.servers) || result.servers.some(server => !Value.Check(ServerDetailSchema, server) ||
-    (server.managed && server.managed.serverId !== server.id)))
-    throw new AppError("Cloud returned an invalid server list", 502, "INVALID_CLOUD_RESPONSE");
+  const { identity, servers } = await (await import("./server-inventory")).readCloudServerInventory(organizationId);
   const linked = await repos.cloudWorkspace.listByOrganization(organizationId);
-  return result.servers.filter(server => server.managed && !linked.some(row => row.remote &&
+  return servers.filter(server => !linked.some(row => row.remote &&
     sameCloudIdentity(row.remote, identity) && row.remote.serverId === server.id));
 }
 

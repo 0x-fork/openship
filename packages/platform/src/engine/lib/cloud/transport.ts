@@ -91,7 +91,7 @@ export async function cloudFetch(
   let res: Response;
   try {
     const headers = new Headers(init?.headers);
-    headers.set("Content-Type", "application/json");
+    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     headers.set(OPENSHIP_VERSION_HEADER, APP_VERSION);
     headers.set(OPENSHIP_PLATFORM_HEADER, env.DEPLOY_MODE);
     headers.set("X-Organization-Id", session.organizationId);
@@ -111,13 +111,65 @@ export async function cloudFetch(
   }
   console.log(`[cloud-client] ← ${method} ${targetUrl} ${res.status}`);
 
+  // An account switch can finish while the upstream request is in flight.
+  // Do not deliver the previous account's inventory, credentials or response.
+  const current = await readCloudSession(userId);
+  if (!current || !sameCloudIdentity(session, current)) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
+
   if (res.status === 401) {
     console.warn(
       `[cloud-client] 401 from SaaS for ${path} — leaving stored session intact; caller should surface the auth error.`,
     );
   }
 
+  if (res.body && res.headers.get("content-type")?.includes("text/event-stream"))
+    return pinnedCloudStream(res, userId, session);
   return res;
+}
+
+/** Live logs stop when the account is disconnected or replaced. Keep normal
+ * stream backpressure; do not buffer an entire deployment in this gateway. */
+function pinnedCloudStream(response: Response, userId: string, identity: CloudIdentity): Response {
+  const reader = response.body!.getReader();
+  let ended = false;
+  let checking = false;
+  let timer: ReturnType<typeof setInterval>;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      timer = setInterval(() => {
+        if (ended || checking) return;
+        checking = true;
+        void readCloudSession(userId).then(current => {
+          if (!ended && (!current || !sameCloudIdentity(identity, current))) {
+            ended = true; clearInterval(timer);
+            controller.close();
+            void reader.cancel().catch(() => {});
+          }
+        }).catch(() => {
+          if (ended) return;
+          ended = true; clearInterval(timer);
+          controller.close();
+          void reader.cancel().catch(() => {});
+        }).finally(() => { checking = false; });
+      }, 5_000);
+      timer.unref?.();
+    },
+    async pull(controller) {
+      try {
+        const next = await reader.read();
+        if (ended) return;
+        if (next.done) { ended = true; clearInterval(timer); controller.close(); }
+        else controller.enqueue(next.value);
+      } catch (error) {
+        if (!ended) { ended = true; clearInterval(timer); controller.error(error); }
+      }
+    },
+    async cancel(reason) { ended = true; clearInterval(timer); await reader.cancel(reason); },
+  });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
 /**

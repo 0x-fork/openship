@@ -15,10 +15,11 @@ import { ManagedServerPlan } from "./managed/ManagedServerPlan";
 import { ManagedServerActionFeedback } from "./managed/ManagedServerActionFeedback";
 import { ServerCapacityRecovery } from "./managed/ServerCapacityRecovery";
 import { useManagedServerActions } from "./managed/useManagedServerActions";
+import { CloudResourceContext } from "@/context/CloudResourceContext";
 
 const h = vi.hoisted(() => ({
   organizationId: "org-a", list: vi.fn(), usage: vi.fn(), ensure: vi.fn(),
-  previewResize: vi.fn(), resize: vi.fn(), add: vi.fn(), retry: vi.fn(),
+  previewResize: vi.fn(), resize: vi.fn(), add: vi.fn(), retry: vi.fn(), connect: vi.fn(),
 }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "user-a" }, session: { activeOrganizationId: h.organizationId } } }),
@@ -26,6 +27,7 @@ vi.mock("@/lib/auth-client", () => ({
 vi.mock("@/lib/api/system", () => ({ systemApi: {
   listServerDestinations: h.list, serverUsage: h.usage, ensureServer: h.ensure,
   previewServerResize: h.previewResize, resizeServer: h.resize,
+  connectManagedServer: h.connect,
 } }));
 vi.mock("@/lib/api/settings", () => ({ settingsApi: { get: async () => ({ defaultServerId: null }) } }));
 vi.mock("@/components/servers/add-server-modal", () => ({ useAddServerModal: () => h.add }));
@@ -138,6 +140,49 @@ it("keeps a saved binding readable without listing other servers", async () => {
   expect(host.textContent).toContain("Saved destination");
   expect(h.list).not.toHaveBeenCalled();
   expect(ready).toHaveBeenLastCalledWith(true);
+});
+
+it("uses the existing verified link flow before selecting a discovered Cloud deployment server", async () => {
+  const pending = deferred<CloudWorkspaceSummary>();
+  h.list.mockResolvedValue({ servers: [{ ...server, source: "cloud" }] });
+  h.connect.mockReturnValueOnce(pending.promise);
+  const changed = vi.fn(), ready = vi.fn();
+  function Picker() {
+    const [value, setValue] = useState<AppDestination | null>(null);
+    return <AppDestinationPicker value={value} onReadyChange={ready} onChange={next => { changed(next); setValue(next); }} />;
+  }
+  await render(<Picker />, true);
+  expect(h.connect).toHaveBeenCalledExactlyOnceWith({ serverId: server.id });
+  expect(ready).toHaveBeenLastCalledWith(false);
+  expect(changed).not.toHaveBeenCalled();
+  const linked = { ...workspace, id: "linked-workspace", serverId: "linked-server" };
+  h.list.mockResolvedValue({ servers: [{ ...server, id: linked.serverId, source: "local", managed: linked,
+    cloudReference: { serverId: server.id, workspaceId: workspace.id } }] });
+  await act(async () => pending.resolve(linked));
+  expect(changed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ deployTarget: "cloud", serverId: linked.serverId, workspaceId: linked.id }));
+  expect(ready).toHaveBeenLastCalledWith(true);
+  expect(h.ensure).not.toHaveBeenCalled();
+});
+
+it("shows a saved Cloud destination through its local alias without making another link", async () => {
+  h.list.mockResolvedValue({ servers: [{ ...server, id: "linked-server", source: "local", cloudReference: { serverId: server.id, workspaceId: workspace.id } }] });
+  const ready = vi.fn();
+  await render(<ServerSelector value={server.id} forDeployment onSelect={vi.fn()} onReadyChange={ready} />, true);
+  expect(host.textContent).toContain("Production");
+  expect(ready).toHaveBeenLastCalledWith(true);
+  expect(h.connect).not.toHaveBeenCalled();
+});
+
+it("ignores a pending server selection completed after switching the Cloud account", async () => {
+  const pending = deferred<CloudWorkspaceSummary>(), changed = vi.fn();
+  h.list.mockResolvedValue({ servers: [{ ...server, source: "cloud" }] });
+  h.connect.mockReturnValueOnce(pending.promise);
+  await render(<CloudResourceContext.Provider value="account-a"><ServerSelector forDeployment onSelect={changed} /></CloudResourceContext.Provider>, true);
+  h.list.mockResolvedValue({ servers: [] });
+  await render(<CloudResourceContext.Provider value="account-b"><ServerSelector forDeployment onSelect={changed} /></CloudResourceContext.Provider>, true);
+  await act(async () => pending.resolve({ ...workspace, id: "previous-workspace", serverId: "previous-server" }));
+  expect(changed).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("Production");
 });
 
 function Actions({ initial = workspace }: { initial?: CloudWorkspaceSummary }) {

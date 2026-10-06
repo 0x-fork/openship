@@ -323,12 +323,25 @@ describe("billing navigation by server ownership", () => {
     expect(tabs()).toHaveLength(4);
   });
 
-  it("does not fetch managed destinations or change self-hosted server navigation", async () => {
+  it("loads the shared managed inventory in self-hosted mode without changing the current billing scope", async () => {
     await render(page(), true);
     expect(tabs()).toHaveLength(4);
     expect(picker()).toBeNull();
     expect(host.querySelector('a[href*="newServer=1"]')).toBeNull();
-    expect(h.list).not.toHaveBeenCalled();
+    expect(h.list).toHaveBeenCalledOnce();
     expect(h.router.replace).not.toHaveBeenCalled();
+  });
+
+  it("shows Cloud servers beside an installation's own server and recognizes a canonical checkout scope", async () => {
+    const own = { ...production, id: "own-server", name: "Own VPS", managed: null, connection: "ssh" as const };
+    const linked = { ...production, cloudReference: { serverId: "cloud-production", workspaceId: "cloud-workspace" } };
+    h.list.mockResolvedValue({ servers: [own, linked, { ...staging, source: "cloud" }] });
+    h.query = "workspaceId=cloud-workspace";
+    await render(page({ requestedWorkspaceId: "cloud-workspace", workspaceId: "cloud-workspace" }), true);
+    expect(serverButton("Production").getAttribute("aria-pressed")).toBe("true");
+    expect(serverButton("Staging").getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector("aside")?.textContent).not.toContain("Own VPS");
+    await act(async () => serverButton("Staging").click());
+    expect(h.router.push).toHaveBeenLastCalledWith("/billing/overview?workspaceId=cws-staging", { scroll: false });
   });
 });

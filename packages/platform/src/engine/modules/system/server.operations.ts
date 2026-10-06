@@ -58,6 +58,7 @@ import { clusterRuntimeCollection } from "./cluster-runtime.operations";
 import { clusterStorageCollection } from "./cluster-storage.operations";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { authorization } from "../../lib/authorization";
+import { mergeCloudServerInventory } from "../../lib/cloud/server-inventory";
 
 function validateConnectionOptions(settings: Parameters<typeof assertSshSettings>[0]): void {
   try {
@@ -101,10 +102,11 @@ async function listServers(ctx: ExecutionContext, live = true) {
     // whole list. An annotation that can break the page it annotates is a gate.
     all.map((s) => (s.isLocal ? localServerHostChannel(s.id).catch(() => null) : null)),
   );
-  return Promise.all(all.map(async (s, i) => {
+  const local = await Promise.all(all.map(async (s, i) => {
     const cloud = s.workspaceId ? await managed.summary(await requireCloudWorkspace(ctx.organizationId, s.workspaceId), live) : null;
-    return { ...serializeServer(s, cloud), projectCount: cloud?.projectCount ?? projectCounts[s.id] ?? 0, hostChannel: channels[i] ?? null };
+    return { ...serializeServer(s, cloud)!, projectCount: cloud?.projectCount ?? projectCounts[s.id] ?? 0, hostChannel: channels[i] ?? null };
   }));
+  return mergeCloudServerInventory(ctx, local);
 }
 
 /** GET /servers/:id - get a single server. */

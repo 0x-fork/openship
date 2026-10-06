@@ -27,6 +27,7 @@ import { env } from "@repo/platform/engine/config/env";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
+import type { CloudTerminalTicket } from "./cloud/terminal-bridge";
 
 // ─── Tickets ────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ interface Ticket {
   expiresAt: number;
   /** Once true, the ticket has been consumed and can never be redeemed again. */
   used: boolean;
+  cloud?: CloudTerminalTicket;
 }
 
 const tickets = new Map<string, Ticket>();
@@ -65,6 +67,7 @@ function newToken(): string {
 export function issueTerminalTicket(
   ctx: RequestContext,
   serverId: string,
+  cloud?: CloudTerminalTicket,
 ): { token: string; expiresIn: number } {
   cleanupExpiredTickets();
   const ttl = env.TERMINAL_TICKET_TTL_MS;
@@ -76,6 +79,7 @@ export function issueTerminalTicket(
     serverId,
     expiresAt: Date.now() + ttl,
     used: false,
+    ...(cloud && { cloud }),
   });
   return { token, expiresIn: Math.floor(ttl / 1000) };
 }
@@ -90,6 +94,7 @@ export function consumeTerminalTicket(token: string): {
   userId: string;
   organizationId: string;
   serverId: string;
+  cloud?: CloudTerminalTicket;
 } | null {
   if (!token) return null;
   const ticket = tickets.get(token);
@@ -103,6 +108,7 @@ export function consumeTerminalTicket(token: string): {
     userId: ticket.userId,
     organizationId: ticket.organizationId,
     serverId: ticket.serverId,
+    ...(ticket.cloud && { cloud: ticket.cloud }),
   };
 }
 

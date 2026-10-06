@@ -8,6 +8,7 @@ export function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>,
   if (!s) return null;
   return {
     id: s.id,
+    source: "local" as const,
     purpose: s.purpose,
     name: s.name,
     // The auto-registered host row (VPS / server-host mode). The dashboard
@@ -25,7 +26,7 @@ export function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>,
     sshJumpHost: s.sshJumpHost,
     sshTransport: s.sshTransport ?? "direct",
     sshArgs: s.sshArgs,
-    createdAt: s.createdAt,
+    createdAt: s.createdAt.toISOString(),
     // ISO country for the row's flag; null for hostnames/private IPs or until
     // the geo DB is warmed (callers prime it via primeGeo before serializing).
     country: s.sshHost ? countryForIp(s.sshHost) : null,

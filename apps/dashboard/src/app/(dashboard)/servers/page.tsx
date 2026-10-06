@@ -26,6 +26,7 @@ import { useServerClustersOverview } from "@/hooks/useServerClustersOverview";
 import { ServerDeletionModal } from "@/components/servers/ServerDeletionModal";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
 import { newServerBillingHref } from "@/lib/billing-links";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
 const FLAGS = CountryFlags as Record<
@@ -67,6 +68,9 @@ const STATUS: Record<Reachability, { dot: string; text: string }> = {
 };
 
 export default function ServersPage() {
+  const resourceKey = useCloudResourceKey();
+  const resourceRef = useRef(resourceKey);
+  resourceRef.current = resourceKey;
   const { t } = useI18n();
   const router = useRouter();
   const { selfHosted, deployMode, isServerHost, hostControlEnabled } = usePlatform();
@@ -108,12 +112,15 @@ export default function ServersPage() {
       current = false;
     };
   }, [clustersEligible, clusterCapabilitiesAttempt]);
-  const [servers, setServers] = useState<ServerEntry[]>([]);
+  const [serverRows, setServers] = useState<ServerEntry[]>([]);
+  const [serversOwner, setServersOwner] = useState(resourceKey);
+  const servers = serversOwner === resourceKey ? serverRows : [];
   const [removeServer, setRemoveServer] = useState<ServerEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fetching = useRef(false);
+  const fetching = useRef<string | null>(null);
+  const fetchRequest = useRef(0);
   /** Live reachability per server (see probeReachability). */
   const [reach, setReach] = useState<Record<string, Reachability>>({});
   /**
@@ -126,11 +133,14 @@ export default function ServersPage() {
   const [forwardCounts, setForwardCounts] = useState<Record<string, number>>({});
 
   const fetchServers = useCallback(async () => {
-    if (fetching.current) return;
-    fetching.current = true;
+    if (fetching.current === resourceKey) return;
+    fetching.current = resourceKey;
+    const request = ++fetchRequest.current;
     try {
       setRefreshing(true);
       const list = await systemApi.listServers();
+      if (resourceRef.current !== resourceKey || request !== fetchRequest.current) return;
+      setServersOwner(resourceKey);
       setServers(
         list.map((s) => ({
           id: s.id,
@@ -147,15 +157,22 @@ export default function ServersPage() {
       );
       setError(null);
     } catch (error) {
-      setError(getApiErrorMessage(error));
+      if (resourceRef.current === resourceKey && request === fetchRequest.current) setError(getApiErrorMessage(error));
     } finally {
-      fetching.current = false;
-      setLoading(false);
-      setRefreshing(false);
+      if (resourceRef.current === resourceKey && request === fetchRequest.current) {
+        fetching.current = null;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, []);
+  }, [resourceKey]);
 
   useEffect(() => {
+    setServers([]);
+    setReach({});
+    setReachHint({});
+    setForwardCounts({});
+    setLoading(true);
     fetchServers();
   }, [fetchServers]);
 
