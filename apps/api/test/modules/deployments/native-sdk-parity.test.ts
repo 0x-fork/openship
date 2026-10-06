@@ -390,6 +390,10 @@ import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 
 const secret = "secret-that-must-not-leave-the-presenter";
+function storedServerFixture(id?: string) {
+  const server = serverFixture(id);
+  return { ...server, createdAt: new Date(server.createdAt) };
+}
 const app = new Hono();
 app.onError(handleApiError);
 app.route("/api/health", healthRoutes);
@@ -1057,13 +1061,13 @@ beforeEach(() => {
   h.services.set("service-b", { projectId: "project-b" });
   h.domains.set("domain-a", { projectId: "project-a" });
   h.domains.set("domain-b", { projectId: "project-b" });
-  h.servers.set("server-a", { ...serverFixture(), organizationId: "org-a", sshPrivateKey: "enc1:stored-secret" });
-  h.servers.set("server-b", { ...serverFixture("server-b"), organizationId: "org-b" });
+  h.servers.set("server-a", { ...storedServerFixture(), organizationId: "org-a", sshPrivateKey: "enc1:stored-secret" });
+  h.servers.set("server-b", { ...storedServerFixture("server-b"), organizationId: "org-b" });
   h.serverWithExecutor.mockImplementation(async (_id, work) => work({ exec: h.monitorExec }));
   h.serverExec.mockResolvedValue({ output: "private-output", exitCode: 0, timedOut: false, truncated: false, durationMs: 1 });
   h.serverWorkloads.mockResolvedValue([]);
   h.serverRateRead.mockResolvedValue({ rps: 10, burst: 20, whitelist: [] });
-  h.serverCreate.mockImplementation(async data => ({ ...serverFixture("server-new"), ...data, organizationId: "org-a" }));
+  h.serverCreate.mockImplementation(async data => ({ ...storedServerFixture("server-new"), ...data, organizationId: "org-a" }));
   h.serverUpdate.mockImplementation(async (id, patch) => ({ ...h.servers.get(id), ...patch }));
   h.componentCheck.mockImplementation(async (_executor, names: string[]) => names.map(name => ({
     name, label: name, description: `${name} component`, installable: true, installed: true, healthy: true, message: "ready",
