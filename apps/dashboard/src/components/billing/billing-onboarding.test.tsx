@@ -15,6 +15,7 @@ import { isNewCloudCustomer } from "@/lib/billing-presentation";
 import { BillingPlanSummary, BillingSidebar, BillingPaymentsPanel } from "@/app/(dashboard)/billing/_components/billing-shared";
 import { BillingOverview } from "./BillingOverview";
 import { BillingCapacity } from "./BillingCapacity";
+import { BillingComputeCoverage } from "./BillingComputeCoverage";
 import { PlanResources } from "./PlanResources";
 import { PlanUsageNote } from "./PlanUsageNote";
 import { BillingResourceUsage } from "./BillingResourceUsage";
@@ -511,6 +512,32 @@ describe("complimentary Cloud plans", () => {
 });
 
 describe("customer credit limits", () => {
+  it.each([false, true])("shows provider transfer usage with unlimited=%s", async unlimited => {
+    const compute = monthlyCompute();
+    compute.network = { ...compute.network, included: true, unlimited, status: "active",
+      availableBytes: unlimited ? null : 193 * 1024 ** 3,
+      periodConsumedBytes: 7 * 1024 ** 3, consumedBytes: 19 * 1024 ** 3 };
+    await render(<BillingComputeCoverage state={{ ...paid, compute }} />);
+    expect(container.textContent).toContain(unlimited ? copy.capacity.unlimited : "193 GiB available");
+    expect(container.textContent).toContain("Used this period: 7 GiB");
+    expect(container.textContent).not.toContain("19 GiB");
+    expect(container.textContent).not.toContain(copy.compute.transferRecovery);
+  });
+  it.each(["active", "low", "grace", "blocked"] as const)("uses provider transfer status %s instead of guessing from zero bytes", async status => {
+    const compute = monthlyCompute();
+    compute.network = { ...compute.network, included: true, purchasedBytes: 1024, status, availableBytes: 0 };
+    await render(<BillingComputeCoverage state={{ ...paid, compute }} />);
+    expect(container.textContent).toContain(copy.compute.covered);
+    expect(container.textContent?.includes(copy.compute.transferRecovery)).toBe(status === "blocked");
+  });
+  it("does not show unlimited access for expired monthly coverage", async () => {
+    const compute = monthlyCompute({ covered: false, status: "expired" });
+    compute.network = { ...compute.network, included: true, unlimited: true, status: "inactive", availableBytes: 0 };
+    await render(<BillingComputeCoverage state={{ ...paid, compute }} />);
+    expect(container.textContent).toContain("0 GiB available");
+    expect(container.textContent).toContain(copy.compute.recovery);
+    expect(container.textContent).not.toContain(copy.capacity.unlimited);
+  });
   it("shows paid monthly coverage without a credit donut or exhausted-balance copy", async () => {
     const monthly = { ...paid, compute: monthlyCompute(), monthlyCreditLimit: null,
       balance: { total: null, quotaLimit: null, quotaUsed: 0, quotaRemaining: null },

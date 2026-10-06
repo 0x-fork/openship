@@ -778,7 +778,7 @@
       "shared": "Uygulama ve derlemeler kapasiteyi paylaşır",
       "fullCapacity": "Her hizmet kullanılabilir kapasitenin tamamını kullanabilir"
     },
-    "extras": "Yönetilen proxy trafiği isteğe bağlıdır ve ayrı satın alınır. Yedekler yapılandırılan hedefi kullanır. Kapsam sona erdikten sonra saklanan depolama silinene kadar ücretlendirilir.",
+    "extras": "Aylık sunucular yönetilen internet trafiğini içerir; kotanızı Faturalama bölümünde görebilirsiniz. Yedekler yapılandırılmış hedeflerini kullanır. Kapsam sona erdikten sonra saklanan depolama silinene kadar faturalandırılır.",
     "paidThrough": "{date} tarihine kadar ödendi",
     "recovery": "İşlem erişimini geri yüklemek için yenilemeyi veya ödemeyi kontrol edin.",
     "storageDue": "Korunan depolama borcu: {amount}",
@@ -787,7 +787,7 @@
     "comparisonHint": "Yalnızca kullanım karşılaştırmasıdır; nakit tasarruf veya ek ücret değildir.",
     "proxyTransfer": "Yönetilen proxy trafiği",
     "transferRemaining": "{amount} GiB kullanılabilir",
-    "proxyHint": "Bu kotayı yalnızca isteğe bağlı yönetilen İnternet proxy hizmeti kullanır. Uygulamaların genel rotaları ayrıdır.",
+    "proxyHint": "Git klonlarını, paket indirmelerini ve diğer yönetilen internet trafiğini kapsar. Uygulamaların genel rotaları ayrıdır.",
     "transferRecovery": "Kullanılabilir proxy trafiği yok. Eklemek için destekle iletişime geçin; ödenmiş işlem kapsamı devam eder.",
     "retention": "İşlem süresi dolduktan sonra korunan depolama silinene kadar {amount}/GiB-ay tutarındadır. Diskler en az {days} gün korunur ve otomatik silinmez.",
     "paygMetering": "Kullandıkça öde; etkin CPU, çalışırken veya duraklatıldığında ayrılmış RAM ve korunduğu sürece sağlanmış depolamayı ölçer.",

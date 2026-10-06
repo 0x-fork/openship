@@ -778,7 +778,7 @@
       "shared": "Capacidade compartilhada entre apps e builds",
       "fullCapacity": "Capacidade total disponível para qualquer serviço"
     },
-    "extras": "O tráfego do proxy gerenciado é opcional e comprado separadamente. Os backups usam o destino configurado. Após o fim da cobertura, o armazenamento retido é cobrado até ser excluído.",
+    "extras": "Servidores mensais incluem tráfego de internet gerenciado; consulte sua franquia em Cobrança. Os backups usam o destino configurado. Após o fim da cobertura, o armazenamento retido é cobrado até ser excluído.",
     "paidThrough": "Pago até {date}",
     "recovery": "Verifique a renovação ou o pagamento para restaurar o acesso à computação.",
     "storageDue": "Saldo do armazenamento retido: {amount}",
@@ -787,7 +787,7 @@
     "comparisonHint": "Apenas uma comparação de uso; não é economia em dinheiro nem cobrança adicional.",
     "proxyTransfer": "Tráfego do proxy gerenciado",
     "transferRemaining": "{amount} GiB disponíveis",
-    "proxyHint": "Somente o proxy de Internet gerenciado opcional usa esta franquia. As rotas públicas dos apps são separadas.",
+    "proxyHint": "Inclui clones do Git, downloads de pacotes e outro tráfego de internet gerenciado. As rotas públicas dos apps são separadas.",
     "transferRecovery": "Não há tráfego de proxy disponível. Contate o suporte para adicionar; a computação paga continua coberta.",
     "retention": "Após o fim da computação, o armazenamento retido custa {amount}/GiB-mês até ser excluído. Os discos são mantidos por pelo menos {days} dias, sem exclusão automática.",
     "paygMetering": "A cobrança sob demanda mede CPU ativa, RAM reservada durante execução ou pausa e armazenamento provisionado enquanto mantido.",

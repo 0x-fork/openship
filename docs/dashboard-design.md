@@ -120,6 +120,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Credit warnings belong in Billing's overview for the selected server. Reuse its loaded
   billing state and scoped links; keep the notice inline. Monthly servers have no compute
   credit warnings. Other pages do not mount a credit tray or poll all server balances.
+  Transfer uses the provider's current-period usage and explicit unlimited benefit.
+  Zero available bytes alone does not mean blocked access; respect its grace/status.
+  Expired compute coverage never presents an unlimited benefit as active access.
 - Plan comparisons lead with CPU, memory, storage and service/project limits. Keep build
   time separate from runtime capacity; show minutes only when the offer defines a time
   allowance. Summarize monthly coverage and shared capacity in the common checklist

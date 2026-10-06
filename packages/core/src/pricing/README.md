@@ -23,9 +23,10 @@ pool; optional container limits do not reserve another VM. Source builds run on
 the same host using measured headroom and the shared execution/activity locks.
 Another server requires its own namespace and subscription.
 
-The provider's compute product excludes backups and optional managed proxy
-transfer. Public app routes are a separate edge service, not that paid outbound
-proxy. Expired disks are retained for at least 30 days with no automatic deletion;
+Monthly servers include the provider's managed internet-transfer benefit. Read
+`capacity.network` for its allowance and explicit unlimited flag; do not derive
+it from CPU counts or rewrite saved compute tariffs. Public app routes and
+backups are separate. Expired disks are retained for at least 30 days with no automatic deletion;
 retained storage remains billable until deletion. The UI discloses provider
 retention terms and amounts due instead of treating them as compute credits.
 

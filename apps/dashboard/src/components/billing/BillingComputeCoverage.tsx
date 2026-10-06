@@ -6,7 +6,7 @@ import type { BillingState } from "@/lib/api/billing";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { formatBillingNumber } from "@/lib/billing-usage";
 
-/** Paid coverage and optional transfer come from the same saved provider
+/** Paid coverage and transfer benefits come from the same provider
  * contract. Transfer exhaustion must never be presented as compute exhaustion. */
 export function BillingComputeCoverage({ state }: { state: BillingState }) {
   const { t, locale } = useI18n();
@@ -16,6 +16,13 @@ export function BillingComputeCoverage({ state }: { state: BillingState }) {
   const money = (dollars: number) => new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(dollars);
   const periodEnd = compute.currentPeriod.end;
   const transfer = compute.network;
+  const unlimited = compute.covered && transfer.unlimited === true && transfer.availableBytes === null
+    && transfer.status !== "inactive" && transfer.status !== "blocked";
+  const available = unlimited ? t.billing.capacity.unlimited
+    : transfer.availableBytes === null ? copy.needsAttention
+      : interpolate(copy.transferRemaining, { amount: formatBillingNumber(transfer.availableBytes / 1024 ** 3, locale) });
+  const blocked = transfer.status === "blocked" || (transfer.status === undefined
+    && transfer.purchasedBytes > 0 && transfer.availableBytes !== null && transfer.availableBytes <= 0);
   return (
     <section className="space-y-3 rounded-2xl bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -42,9 +49,12 @@ export function BillingComputeCoverage({ state }: { state: BillingState }) {
             <p className="mt-1 text-xs">{copy.comparisonHint}</p>
           </div>}
           <div>
-            <p className="font-medium text-foreground">{copy.proxyTransfer}: <bdi>{interpolate(copy.transferRemaining, { amount: formatBillingNumber(transfer.availableBytes / 1024 ** 3, locale) })}</bdi></p>
+            <p className="font-medium text-foreground">{copy.proxyTransfer}: <bdi>{available}</bdi></p>
+            {transfer.periodConsumedBytes !== undefined && <p className="mt-1 text-xs">
+              {t.billing.overview.usedThisPeriod}: <bdi>{formatBillingNumber(transfer.periodConsumedBytes / 1024 ** 3, locale)} GiB</bdi>
+            </p>}
             <p className="mt-1 text-xs">{copy.proxyHint}</p>
-            {transfer.purchasedBytes > 0 && transfer.availableBytes <= 0 && <p className="mt-1 text-warning">{copy.transferRecovery}</p>}
+            {!unlimited && blocked && <p className="mt-1 text-warning">{copy.transferRecovery}</p>}
           </div>
           <p className="text-xs">{interpolate(copy.retention, { days: String(compute.retention.minimumDays), amount: money(compute.retention.storagePerGiBMonth) })}</p>
           <Link href="/support" className="inline-block font-medium text-foreground hover:underline">{t.billing.portal.supportButton}</Link>

@@ -778,7 +778,7 @@
       "shared": "Gemeinsame Kapazität für Apps und Builds",
       "fullCapacity": "Volle verfügbare Kapazität für jeden Dienst"
     },
-    "extras": "Verkehr über den verwalteten Proxy ist optional und wird separat gekauft. Backups verwenden ihr konfiguriertes Ziel. Nach Ende der Abdeckung wird aufbewahrter Speicher bis zur Löschung berechnet.",
+    "extras": "Monatliche Server enthalten verwalteten Internet-Datenverkehr; dein Kontingent findest du unter Abrechnung. Backups nutzen ihr konfiguriertes Ziel. Nach Ende der Abdeckung wird aufbewahrter Speicher bis zur Löschung berechnet.",
     "paidThrough": "Bezahlt bis {date}",
     "recovery": "Prüfe Verlängerung oder Zahlung, um die Rechenleistung wieder zu nutzen.",
     "storageDue": "Offener Betrag für aufbewahrten Speicher: {amount}",
@@ -787,7 +787,7 @@
     "comparisonHint": "Nur ein Nutzungsvergleich; keine Geldersparnis oder Zusatzgebühr.",
     "proxyTransfer": "Verwalteter Proxy-Datenverkehr",
     "transferRemaining": "{amount} GiB verfügbar",
-    "proxyHint": "Nur der optionale verwaltete Internet-Proxy nutzt dieses Kontingent. Öffentliche App-Routen sind separat.",
+    "proxyHint": "Umfasst Git-Klone, Paketdownloads und anderen verwalteten Internet-Datenverkehr. Öffentliche App-Routen sind separat.",
     "transferRecovery": "Kein Proxy-Datenverkehr verfügbar. Kontaktiere den Support zum Nachkaufen; bezahlte Rechenleistung bleibt abgedeckt.",
     "retention": "Nach Ablauf kostet aufbewahrter Speicher {amount}/GiB-Monat bis zur Löschung. Datenträger bleiben mindestens {days} Tage erhalten, ohne automatische Löschung.",
     "paygMetering": "PAYG misst aktive CPU, reservierten RAM im laufenden oder pausierten Zustand und bereitgestellten Speicher bis zur Löschung.",
