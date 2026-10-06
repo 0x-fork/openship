@@ -110,9 +110,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
   One server is a summary; several servers switch billing directly from the visible list.
   Keep one Get server action in the page header across billing tabs; the sidebar only
-  selects the server being inspected. Plans uses the full page width with the shared
-  compact server picker beside that action. Show its saved subscription and capacity below
-  the tabs; an inactive subscription uses a short inline notice. New purchases use the plan introduction
+  selects the server being inspected. Plans keeps the shared compact server picker beside
+  that action. With one or two preset choices, show the saved subscription and capacity in
+  the standard 340px right column when the container has room; stack it first on smaller
+  screens. Wider comparisons and Custom keep the compact summary below the tabs. Use the
+  picker's displayed choices for this layout too; an inactive subscription uses a short
+  inline notice. New purchases use the plan introduction
   as the page title and description. Keep Plans / Custom beside Back to billing in the
   header, using matching 40px controls. Purchasing does not require a server-name field.
   An existing server without a plan keeps the server selector, including when every

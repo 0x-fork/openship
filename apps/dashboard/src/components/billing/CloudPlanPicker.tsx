@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { BillingPlansSkeleton } from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
+import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
 
 import { useEffect, useState, type ReactNode } from "react";
 import { PricingCards } from "@/components/billing/PricingCards";
@@ -49,7 +50,10 @@ function PlanPicker({
   prepareWorkspace,
   purchaseDetails,
   purchaseDisabled = false,
+  billingState,
 }: {
+  /** Existing server's saved terms, supplied by the billing route. */
+  billingState?: BillingState;
   workspaceId?: string;
   currentPlan: PlanTierId;
   currentOffer?: ApiPlan | null;
@@ -108,6 +112,20 @@ function PlanPicker({
   const selectConfiguration = (configuration: "plans" | "custom", other = showOtherPlans) =>
     setChoice({ key: choiceKey, configuration, other });
   const visiblePlans = compareUpgrades && !showOtherPlans ? choices.upgrades : choices.available;
+  const summaryAside = Boolean(
+    billingState &&
+    hasPlan &&
+    !loading &&
+    !error &&
+    payload &&
+    !payg &&
+    configuration === "plans" &&
+    visiblePlans.length > 0 &&
+    visiblePlans.length <= 2,
+  );
+  const summary = billingState ? (
+    <BillingPlanSummary state={billingState} compact={!summaryAside} />
+  ) : null;
   useSidebarCollapseRequest(
     !preserveProject &&
       !loading &&
@@ -157,23 +175,34 @@ function PlanPicker({
       void (canModify ? changes.review(planTierId) : startCheckout(planTierId, interval));
   };
 
-  if (loading) return <BillingPlansSkeleton />;
+  if (loading)
+    return (
+      <div className="space-y-5">
+        {summary}
+        <BillingPlansSkeleton />
+      </div>
+    );
 
   if (error || !payload) {
     return (
-      <div className="rounded-2xl bg-card p-5">
-        <p className="text-sm text-muted-foreground">
-          {error || t.billing.plansRoute.genericError}
-        </p>
-        <Button type="button" variant="secondary" size="sm" onClick={retry} className="mt-3">
-          {t.billing.plansRoute.tryAgain}
-        </Button>
+      <div className="space-y-5">
+        {summary}
+        <div className="rounded-2xl bg-card p-5">
+          <p className="text-sm text-muted-foreground">
+            {error || t.billing.plansRoute.genericError}
+          </p>
+          <Button type="button" variant="secondary" size="sm" onClick={retry} className="mt-3">
+            {t.billing.plansRoute.tryAgain}
+          </Button>
+        </div>
       </div>
     );
   }
 
   const copy = t.billing.plansRoute;
-  const contactPlans = payload.plans.filter((plan) => plan.price.monthly === null && plan.contactSales);
+  const contactPlans = payload.plans.filter(
+    (plan) => plan.price.monthly === null && plan.contactSales,
+  );
   const title = hasPlan
     ? showOtherPlans
       ? copy.otherPlans
@@ -266,102 +295,129 @@ function PlanPicker({
     ) : null;
 
   return (
-    <div className="space-y-5">
-      {canChooseMode && purchase.tabs === "inline" && <CloudPurchaseTabs />}
-      {canChooseMode ? (
-        <CloudPurchaseHeaderContent details={details} controls={controls} />
-      ) : (
-        details
-      )}
+    <div className="@container/plans">
       <div
-        hidden={payg}
-        role={canChooseMode ? "tabpanel" : undefined}
-        id={canChooseMode ? `${purchase.id}-panel-monthly` : undefined}
-        aria-labelledby={canChooseMode ? `${purchase.id}-tab-monthly` : undefined}
-        className="space-y-5"
+        className={
+          summaryAside
+            ? "grid items-start gap-6 @min-[64rem]/plans:grid-cols-[minmax(0,1fr)_340px]"
+            : "space-y-5"
+        }
       >
-        {subscription?.pendingChange && (
-          <SubscriptionChangeStatus
-            key={`${selectedWorkspaceId}:${subscription.pendingChange.id}`}
-            initial={subscription.pendingChange}
-            workspaceId={selectedWorkspaceId}
-          />
+        {summary && (
+          <aside
+            className={
+              summaryAside
+                ? "min-w-0 @min-[64rem]/plans:col-start-2 @min-[64rem]/plans:row-start-1"
+                : undefined
+            }
+          >
+            {summary}
+          </aside>
         )}
-        {checkoutUrl && <CloudCheckoutNotice checkoutUrl={checkoutUrl} />}
-        {checkoutError && (
-          <p role="alert" className="text-sm text-danger">
-            {checkoutError}
-          </p>
-        )}
-        {changes.error && !changes.open && (
-          <p role="alert" className="text-sm text-danger">
-            {changes.error}
-          </p>
-        )}
-        {!selectable && !subscription?.pendingChange && (
-          <p className="text-sm text-muted-foreground">
-            {complimentary
-              ? t.billing.complimentary.changeViaSupport
-              : billingEnabled
-                ? t.billing.plansRoute.changeViaSupport
-                : t.billing.plansRoute.billingUnavailable}{" "}
-            <a href="mailto:support@openship.io" className="text-primary hover:underline">
-              {t.billing.portal.supportButton}
-            </a>
-          </p>
-        )}
-        {configuration === "custom" && payload.custom ? (
-          <CustomPlanConfigurator
-            key={`${selectedWorkspaceId}:${currentOffer?.offerReference ?? currentPlan}`}
-            catalog={payload.custom}
-            plans={payload.plans}
-            ui={payload.ui}
-            currentOffer={currentOffer}
-            subscription={subscription}
-            allocatedDiskGb={allocatedDiskGb}
-            disabled={!selectable || purchaseDisabled || payg}
-            busy={busy}
-            actionLabel={canModify ? t.billing.planChange.review : undefined}
-            quoteRevision={quoteRevision}
-            onSelect={(quote) => {
-              const custom = { resources: quote.resources, quoteReference: quote.reference };
-              void (canModify
-                ? changes.review(quote.basePlanTierId, custom)
-                : startCheckout(quote.basePlanTierId, "monthly", custom));
-            }}
-          />
-        ) : visiblePlans.length > 0 ? (
-          <PricingCards
-            plans={visiblePlans}
-            ui={payload.ui}
-            currentPlan={selectedCurrentPlan}
-            onSelectPlan={handleSelectPlan}
-            subscribingPlan={subscribing}
-            purchasesDisabled={!selectable || changes.busy || purchaseDisabled || payg}
-            selectionLabel={canModify ? t.billing.planChange.review : undefined}
-            interval={interval}
-            workspaceScoped={workspaceScoped}
-          />
-        ) : (
-          <p className="rounded-2xl bg-card p-5 text-sm text-muted-foreground">
-            {copy.noLargerPlan}
-          </p>
-        )}
-      </div>
-      {canChooseMode && (
         <div
-          hidden={!payg}
-          role="tabpanel"
-          id={`${purchase.id}-panel-payg`}
-          aria-labelledby={`${purchase.id}-tab-payg`}
+          className={`min-w-0 space-y-5 ${summaryAside ? "@min-[64rem]/plans:col-start-1 @min-[64rem]/plans:row-start-1" : ""}`}
         >
-          <PayAsYouGoPlan pricing={payload.computePricing} catalog={payload.custom} payg={payload.payg} />
+          {canChooseMode && purchase.tabs === "inline" && <CloudPurchaseTabs />}
+          {canChooseMode ? (
+            <CloudPurchaseHeaderContent details={details} controls={controls} />
+          ) : (
+            details
+          )}
+          <div
+            hidden={payg}
+            role={canChooseMode ? "tabpanel" : undefined}
+            id={canChooseMode ? `${purchase.id}-panel-monthly` : undefined}
+            aria-labelledby={canChooseMode ? `${purchase.id}-tab-monthly` : undefined}
+            className="space-y-5"
+          >
+            {subscription?.pendingChange && (
+              <SubscriptionChangeStatus
+                key={`${selectedWorkspaceId}:${subscription.pendingChange.id}`}
+                initial={subscription.pendingChange}
+                workspaceId={selectedWorkspaceId}
+              />
+            )}
+            {checkoutUrl && <CloudCheckoutNotice checkoutUrl={checkoutUrl} />}
+            {checkoutError && (
+              <p role="alert" className="text-sm text-danger">
+                {checkoutError}
+              </p>
+            )}
+            {changes.error && !changes.open && (
+              <p role="alert" className="text-sm text-danger">
+                {changes.error}
+              </p>
+            )}
+            {!selectable && !subscription?.pendingChange && (
+              <p className="text-sm text-muted-foreground">
+                {complimentary
+                  ? t.billing.complimentary.changeViaSupport
+                  : billingEnabled
+                    ? t.billing.plansRoute.changeViaSupport
+                    : t.billing.plansRoute.billingUnavailable}{" "}
+                <a href="mailto:support@openship.io" className="text-primary hover:underline">
+                  {t.billing.portal.supportButton}
+                </a>
+              </p>
+            )}
+            {configuration === "custom" && payload.custom ? (
+              <CustomPlanConfigurator
+                key={`${selectedWorkspaceId}:${currentOffer?.offerReference ?? currentPlan}`}
+                catalog={payload.custom}
+                plans={payload.plans}
+                ui={payload.ui}
+                currentOffer={currentOffer}
+                subscription={subscription}
+                allocatedDiskGb={allocatedDiskGb}
+                disabled={!selectable || purchaseDisabled || payg}
+                busy={busy}
+                actionLabel={canModify ? t.billing.planChange.review : undefined}
+                quoteRevision={quoteRevision}
+                onSelect={(quote) => {
+                  const custom = { resources: quote.resources, quoteReference: quote.reference };
+                  void (canModify
+                    ? changes.review(quote.basePlanTierId, custom)
+                    : startCheckout(quote.basePlanTierId, "monthly", custom));
+                }}
+              />
+            ) : visiblePlans.length > 0 ? (
+              <PricingCards
+                plans={visiblePlans}
+                ui={payload.ui}
+                currentPlan={selectedCurrentPlan}
+                onSelectPlan={handleSelectPlan}
+                subscribingPlan={subscribing}
+                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || payg}
+                selectionLabel={canModify ? t.billing.planChange.review : undefined}
+                interval={interval}
+                workspaceScoped={workspaceScoped}
+              />
+            ) : (
+              <p className="rounded-2xl bg-card p-5 text-sm text-muted-foreground">
+                {copy.noLargerPlan}
+              </p>
+            )}
+          </div>
+          {canChooseMode && (
+            <div
+              hidden={!payg}
+              role="tabpanel"
+              id={`${purchase.id}-panel-payg`}
+              aria-labelledby={`${purchase.id}-tab-payg`}
+            >
+              <PayAsYouGoPlan
+                pricing={payload.computePricing}
+                catalog={payload.custom}
+                payg={payload.payg}
+              />
+            </div>
+          )}
+          {contactPlans.length > 0 && (
+            <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
+          )}
+          <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
         </div>
-      )}
-      {contactPlans.length > 0 && (
-        <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
-      )}
-      <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
+      </div>
     </div>
   );
 }

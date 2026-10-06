@@ -118,7 +118,8 @@ afterEach(async () => {
 
 describe("plans for an existing server", () => {
   it("shows the saved paid plan once and offers only larger presets by default", async () => {
-    await render(<><BillingPlanSummary compact state={{ tier: "starter", status: "active", plan: offer("starter"), subscription: subscription("starter") } as BillingState} />{picker("starter")}</>);
+    await render(picker("starter", { billingState: { tier: "starter", status: "active", plan: offer("starter"), subscription: subscription("starter") } as BillingState }));
+    expect(host.querySelectorAll('section[aria-label="Current plan"]')).toHaveLength(1);
     expect(host.querySelector('section[aria-label="Current plan"]')?.textContent).toContain("Starter");
     expect(host.querySelector('section[aria-label="Current plan"]')?.textContent).toContain("$20");
     expect(planNames()).toEqual(["Pro", "Scale"]);

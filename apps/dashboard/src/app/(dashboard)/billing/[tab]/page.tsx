@@ -5,7 +5,7 @@ import { BillingUsage } from "@/components/billing/BillingUsage";
 import { BillingTopups } from "@/components/billing/BillingTopups";
 import { BillingPlansRoute } from "../_components/BillingPlansRoute";
 import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
-import { BillingPlanSummary, BillingSidebar, BillingPaymentsPanel } from "../_components/billing-shared";
+import { BillingSidebar, BillingPaymentsPanel } from "../_components/billing-shared";
 import { BILLING_TABS } from "../_components/billing-tabs";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { getBillingPageState, getDefaultBillingWorkspace } from "../_components/billing-state";
@@ -85,9 +85,8 @@ export default async function BillingTabPage({
         return <BillingUsage state={state} />;
       case "plans":
         return (
-          <>
-          {!plansOnly && <BillingPlanSummary state={state} compact />}
           <BillingPlansRoute
+            billingState={plansOnly ? undefined : state}
             currentPlan={state.tier as PlanTierId}
             currentOffer={state.plan}
             allocatedDiskGb={state.capacity?.diskGb?.used}
@@ -96,7 +95,6 @@ export default async function BillingTabPage({
             billingEnabled={state.billing?.enabled === true}
             canChangeSubscription={state.capabilities?.subscriptionChange === true}
           />
-          </>
         );
       case "topups":
         return <BillingTopups state={state} />;
