@@ -6,26 +6,16 @@
       "severity": "recommended",
       "announce": true,
       "affects": ">=0.8.0 <0.8.2",
-      "modes": ["desktop"],
       "title": "Install the desktop update manually once",
       "message": "The updater in Desktop 0.8.0 and 0.8.1 can fail with 'Redirect was cancelled'. Please download and install 0.8.2 manually once from https://github.com/oblien/openship/releases/tag/v0.8.2 in your browser. Quit Openship and replace the application. Keep application data to preserve your projects, servers and settings.",
       "action": {
         "label": "Download installer",
         "kind": "open-url",
         "url": "https://github.com/oblien/openship/releases/tag/v0.8.2"
-      }
-    },
-    {
-      "id": "update-0.8.1",
-      "severity": "recommended",
-      "announce": true,
-      "affects": "<0.8.1",
-      "title": "Update to Openship 0.8.1",
-      "message": "Openship 0.8.1 is available. See the release notes for what's new — updating is recommended.",
-      "action": {
-        "label": "Update now",
-        "kind": "update"
-      }
+      },
+      "modes": [
+        "desktop"
+      ]
     }
   ]
 }
