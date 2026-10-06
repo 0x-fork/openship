@@ -38,16 +38,23 @@ Self-hosted SSH servers keep their existing setup and management controls.
 
 ## Use Cloud from self-hosted Openship
 
-In **Servers → Add server**, choose a managed Cloud server and connect your
-Openship Cloud account. You can purchase a new server or link one you already
-administer. It then appears in the same destination picker as your SSH servers.
-Deployments, jobs, logs, terminals and backups use the existing application flow.
+Connect your Openship Cloud account in **Settings → Cloud** or **Servers → Add
+server**. Your existing Cloud projects, apps and managed servers appear alongside
+local resources. A server already linked to this installation appears once.
+You can purchase another server from the same dashboard; its subscription and
+provisioning stay in Cloud.
 
-Project settings stay on the installation that created them. Cloud manages the
-server's subscription and records its linked projects so a host cannot be deleted
-while another installation still uses it. The connection is pinned to your Cloud
-account and organization; switching accounts requires reconnecting the original
-account before managing its existing servers.
+Cloud-owned projects keep their settings, deployment history and operations in
+Cloud. Viewing them does not create local copies. For a local project, selecting
+a managed server verifies your access and creates an execution link using the
+same destination picker as your SSH servers. Deployments, jobs, logs, terminals
+and backups use the existing application flow.
+
+Cloud records linked local projects so a host cannot be deleted while another
+installation still uses it. Connections are pinned to the Cloud account and
+organization. Switching accounts refreshes the inventory; existing execution
+links require their original account. Locally scoped automation credentials can
+use explicitly granted links, but do not inherit the owner's Cloud inventory.
 
 ## Understand capacity and usage
 

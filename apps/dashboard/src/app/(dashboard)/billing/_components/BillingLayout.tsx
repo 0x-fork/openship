@@ -16,7 +16,6 @@ import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@repo/ui/icons";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
-import { usePlatform } from "@/context/PlatformContext";
 import { CloudPurchaseProvider } from "@/components/billing/CloudPurchaseContext";
 import { newServerBillingHref } from "@/lib/billing-links";
 import { BILLING_TABS } from "./billing-tabs";
@@ -36,8 +35,7 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
     segment === "plans" &&
     searchParams.get("newServer") === "1" &&
     !["checkout", "topup", "session_id"].some((key) => searchParams.has(key));
-  const { selfHosted } = usePlatform();
-  const inventory = useServerDestinations(!selfHosted);
+  const inventory = useServerDestinations();
   const [view, setView] = useState<BillingView | null>(null);
   const organizationMatches = !organizationId || organizationId === inventory.organizationId;
   const currentView =
@@ -74,7 +72,7 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
       ? "payment"
       : (BILLING_TABS.find((tab) => tab.key === segment)?.key ?? "overview");
   const serverInventory =
-    !selfHosted && organizationMatches
+    organizationMatches
       ? {
           servers,
           loading: inventory.loading,
@@ -89,7 +87,7 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
         <BillingViewProvider value={reportView}>
           <BillingServerInventoryProvider value={serverInventory}>
             <CloudPurchaseProvider
-              scopeKey={`${inventory.contextKey}:${organizationId ?? ""}:${newServer ? "new" : (workspaceId ?? "unsubscribed")}`}
+              scopeKey={`${inventory.resourceKey}:${organizationId ?? ""}:${newServer ? "new" : (workspaceId ?? "unsubscribed")}`}
               tabs={plansOnly ? "header" : "none"}
             >
               <BillingHeader>

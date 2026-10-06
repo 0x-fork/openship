@@ -50,7 +50,7 @@ export function DeployDefaults() {
       setSaving(false);
     }
   }
-  const selection = useServerSelection({ value: serverId, disabled: loading || saving, onSelect: server => { void save(server); } });
+  const selection = useServerSelection({ value: serverId, forDeployment: true, disabled: loading || saving, onSelect: server => { void save(server); } });
   return (
     <SettingsSection icon="rocket" title={t.settings.deployDefaults.title}
       description={t.settings.deployDefaults.description} iconBg="bg-primary/10" iconColor="text-primary" collapsible>

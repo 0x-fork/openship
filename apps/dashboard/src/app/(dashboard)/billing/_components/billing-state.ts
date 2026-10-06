@@ -110,7 +110,6 @@ async function fetchBillingState(workspaceId?: string): Promise<BillingFetchResu
 /** Pick a billing view only after an unscoped read reports multiple servers.
  * This uses the same authorized inventory as the picker, never a mutation default. */
 export async function getDefaultBillingWorkspace(): Promise<string | undefined> {
-  if ((await getDeploymentInfo()).selfHosted) return undefined;
   try {
     const data = await serverApi.get<{ servers: ServerDetail[] }>("system/servers/destinations", { cache: "no-store" });
     const servers = data.servers.filter(server => server.managed);

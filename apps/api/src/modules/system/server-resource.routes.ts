@@ -118,6 +118,7 @@ r.get(
   {
     tag: "server:read",
     authorizationHandledByOperation: true,
+    query: Type.Object({ serverId: ResourceIdSchema }, { additionalProperties: false }),
     mcpExcluded:
       "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming.",
   },

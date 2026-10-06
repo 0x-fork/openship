@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { deployApi, projectsApi, getApiErrorMessage } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { Button } from "@/components/ui/button";
 import { DeploymentsFilters } from "./DeploymentsFilters";
 import { DeploymentsList } from "./DeploymentsList";
@@ -27,9 +28,10 @@ interface DeploymentsContentProps {
   appTemplateId?: string;
 }
 
-export const DeploymentsContent: React.FC<DeploymentsContentProps> = (props) => (
-  <DeploymentHistory key={props.projectId ?? "all-projects"} {...props} />
-);
+export const DeploymentsContent: React.FC<DeploymentsContentProps> = (props) => {
+  const resourceKey = useCloudResourceKey();
+  return <DeploymentHistory key={`${resourceKey}:${props.projectId ?? "all-projects"}`} {...props} />;
+};
 
 const PAGE_SIZE = 20;
 

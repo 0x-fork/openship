@@ -65,10 +65,20 @@ describe("resolveProjectSource", () => {
     expect(repos.project.findById).not.toHaveBeenCalled();
   });
 
-  it("honors the X-Project-Source: cloud hint without a DB read", async () => {
+  it("resolves a Cloud hint through the same authority check", async () => {
     const c = fakeCtx({ headers: { "x-project-source": "cloud" } });
+    vi.mocked(repos.project.findById).mockResolvedValue(undefined);
+    vi.mocked(resolveOrgCloudUserId).mockResolvedValue("owner1");
     expect(await resolveProjectSource(c, "p1", "org1")).toBe("cloud");
-    expect(repos.project.findById).not.toHaveBeenCalled();
+    expect(repos.project.findById).toHaveBeenCalledWith("p1");
+  });
+
+  it("never overrides a local record or DB failure with a Cloud hint", async () => {
+    const c = fakeCtx({ headers: { "x-project-source": "cloud" } });
+    vi.mocked(repos.project.findById).mockResolvedValue({ id: "p1" } as never);
+    expect(await resolveProjectSource(c, "p1", "org1")).toBe("local");
+    vi.mocked(repos.project.findById).mockRejectedValue(new Error("DB offline"));
+    await expect(resolveProjectSource(c, "p1", "org1")).rejects.toThrow("DB offline");
   });
 
   it("honors the local hint", async () => {
@@ -96,7 +106,7 @@ describe("resolveProjectSource", () => {
 
 describe("proxyToSaaS", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     (env as { CLOUD_MODE: boolean }).CLOUD_MODE = false;
   });
 

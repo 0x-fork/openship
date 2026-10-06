@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ServerDetail } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
-import type { ServerInfo } from "@/lib/api/system";
+import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { ServerPicker, ServerRowContent } from "@/components/shared/ServerPicker";
@@ -15,6 +15,7 @@ import { serverPreference } from "@/lib/server-preference";
 import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
 import { dockerMigrationApi } from "@/lib/api/server-migration";
 import { getApiErrorMessage } from "@/lib/api/client";
+import { matchesServer } from "@/lib/server-reference";
 
 export interface ServerOption {
   id: string;
@@ -83,28 +84,60 @@ export function useServerSelection({
 }: ServerSelectorProps, enabled = true) {
   const { selfHosted, deployMode } = usePlatform();
   const restrictedSource = migrationSource && !selfHosted;
-  const { data, loading: destinationsLoading, error, refresh, contextKey } = useServerDestinations(enabled && !readOnly, restrictedSource ? "migration-source" : "deployment");
+  const { data, loading: destinationsLoading, error, refresh, contextKey, resourceKey } = useServerDestinations(enabled && !readOnly, restrictedSource ? "migration-source" : "deployment");
+  const [linking, setLinking] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [preference, setPreference] = useState<{ contextKey: string; serverId: string | null } | null>(null);
   const loadingPreference = useSavedDefault && !readOnly && preference?.contextKey !== contextKey;
-  const loading = destinationsLoading || loadingPreference;
+  const loading = destinationsLoading || loadingPreference || linking;
   const [internalId, setInternalId] = useState<string | null>(null);
   const autoSelected = useRef(false);
   const canAddServer = restrictedSource || selfHosted || requiredCapability !== "ssh";
   const openAddServer = useAddServerModal({ connectedOnly: requiredCapability === "ssh" || restrictedSource, migrationSource: restrictedSource });
-  const selectedId = value === undefined ? internalId : value;
+  const requestedId = value === undefined ? internalId : value;
+  const selectedId = data?.servers.find(server => matchesServer(server, requestedId))?.id ?? requestedId;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
-  const selectionContext = useRef(contextKey);
-  selectionContext.current = contextKey;
+  const selectionContext = useRef(resourceKey);
+  selectionContext.current = resourceKey;
+  const selectionRequest = useRef(0);
 
   useEffect(() => {
     autoSelected.current = false;
     setInternalId(null);
     setActionError(null);
     setRemoving(false);
-  }, [contextKey]);
+    setLinking(false);
+    selectionRequest.current++;
+  }, [resourceKey]);
+
+  async function selectServer(server: ServerDetail) {
+    autoSelected.current = true;
+    const owner = resourceKey;
+    const request = ++selectionRequest.current;
+    setActionError(null);
+    try {
+      let selected = option(server);
+      if (selfHosted && forDeployment && server.source === "cloud") {
+        // Choosing an execution destination is the existing verified link
+        // action. Browsing the Cloud inventory never creates this capability.
+        setLinking(true);
+        const link = await systemApi.connectManagedServer({ serverId: server.id });
+        if (selectionContext.current !== owner || request !== selectionRequest.current) return;
+        selected = option({ ...server, id: link.serverId, source: "local", managed: link,
+          cloudReference: { serverId: server.id, workspaceId: server.managed!.id } });
+        refresh();
+      }
+      if (selectionContext.current !== owner || request !== selectionRequest.current) return;
+      setInternalId(selected.id);
+      onSelectRef.current(selected);
+    } catch (error) {
+      if (selectionContext.current === owner && request === selectionRequest.current) setActionError(getApiErrorMessage(error));
+    } finally {
+      if (selectionContext.current === owner && request === selectionRequest.current) setLinking(false);
+    }
+  }
 
   useEffect(() => {
     if (!enabled || readOnly || !useSavedDefault) return;
@@ -147,9 +180,7 @@ export function useServerSelection({
         ?? rows.find(row => row.id === remembered)
         ?? (useSavedDefault ? rows.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
         ?? rows[0]!;
-      const selected = option(preferred);
-      setInternalId(selected.id);
-      onSelectRef.current(selected);
+      void selectServer(preferred);
     }
   }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, useSavedDefault, preference, deployMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -162,7 +193,7 @@ export function useServerSelection({
 
   function addServer() {
     if (!canAddServer) return;
-    const owner = contextKey;
+    const owner = resourceKey;
     openAddServer((server) => {
       if (selectionContext.current !== owner) return;
       if ((!restrictedSource && requiredCapability && !server.capabilities?.[requiredCapability]) || excludeIds?.includes(server.id)) {
@@ -176,14 +207,12 @@ export function useServerSelection({
     });
   }
   const select = (id: string) => {
-    autoSelected.current = true;
-    setInternalId(id);
     const server = rows.find((row) => row.id === id);
-    onSelectRef.current(server ? option(server) : null);
+    if (server) void selectServer(server);
   };
   const removeSource = async () => {
     if (!restrictedSource || !selectedId || removing) return;
-    const owner = contextKey;
+    const owner = resourceKey;
     setRemoving(true); setActionError(null);
     try {
       await dockerMigrationApi.deleteSource(selectedId);

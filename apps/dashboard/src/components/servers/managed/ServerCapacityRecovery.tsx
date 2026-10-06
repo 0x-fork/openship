@@ -1,4 +1,5 @@
 "use client";
+import { matchesWorkspace } from "@/lib/server-reference";
 
 import { useId, useState } from "react";
 import Link from "next/link";
@@ -24,7 +25,7 @@ export function ServerCapacityRecovery({
   const title = useId();
   const { dialog, onKeyDown } = useDialogFocus(onClose);
   const { data, error: fetchError, loading } = useServerDestinations();
-  const server = data?.servers.find((row) => workspaceId ? row.managed?.id === workspaceId : data.servers.length === 1 && !!row.managed);
+  const server = data?.servers.find((row) => workspaceId ? matchesWorkspace(row, workspaceId) : data.servers.length === 1 && !!row.managed);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   async function retry() {

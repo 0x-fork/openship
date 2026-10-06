@@ -10,8 +10,12 @@ export async function assertCloudTenantScope(ctx: Pick<ExecutionContext, "organi
 /** A local grant cannot authorize access through the owner's Cloud credential.
  * Managed server execution uses its separately verified server binding instead.
  * The credential restriction also applies when a caller omits organizationId. */
+export function canProxyCloudResources(ctx: ExecutionContext): boolean {
+  return ctx.scopeMode !== "fixed" && !ctx.tokenScope && ctx.role !== "restricted" && !ctx.credential?.organizationId;
+}
+
 export function assertCloudProxyScope(ctx: ExecutionContext): void {
-  if (ctx.scopeMode === "fixed" || ctx.tokenScope || ctx.credential?.organizationId) {
+  if (!canProxyCloudResources(ctx)) {
     throw new AppError(
       "This credential is scoped to this Openship instance. To deploy from desktop, select a connected managed server with serverId and keep the project here. To manage projects stored in Cloud, authorize a separate connection to the Cloud API's /api/mcp and use its organizationId. Omitting organizationId does not widen this credential's access.",
       409,
