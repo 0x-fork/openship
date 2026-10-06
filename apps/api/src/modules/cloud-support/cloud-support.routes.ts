@@ -11,6 +11,8 @@ import {
 import { secureRouter } from "../../lib/secure-router";
 import { rateLimit } from "../../lib/rate-limit";
 import { internalAuth } from "../../middleware/internal-auth";
+import { authMiddleware } from "../../middleware/auth";
+import { getRequestContext } from "../../lib/request-context";
 
 const r = secureRouter(new Hono(), { module: "cloud-support", basePath: "/api/cloud/support" });
 r.use("*", async (c, next) => {
@@ -42,6 +44,56 @@ const statusBody = Type.Object(
 function ticketId(c: Context) {
   return parseInput(CloudSupportIdSchema, c.req.param("id"));
 }
+
+const customer = {
+  reason:
+    "Private Cloud account support. Requires a real browser session; the service checks the session user on every ticket, including cursors. Organization grants and API tokens do not grant access.",
+};
+async function customerLimit(c: Context, subjectId: string, reply = false) {
+  const result = await rateLimit({
+    policy: reply ? "support-reply" : "support-contact",
+    subjectId,
+  });
+  if (!result.allowed) {
+    c.header("Retry-After", String(Math.ceil(result.resetMs / 1000)));
+    throw new AppError("Too many support messages. Please try again later.", 429);
+  }
+}
+
+r.public("get", "/mine", customer, authMiddleware, async (c) => {
+  const query = c.req.query();
+  return c.json(
+    await cloudSupport.listForCustomer(getRequestContext(c), {
+      ...query,
+      limit: Number(query.limit ?? "25"),
+    }),
+  );
+});
+r.public("post", "/mine", customer, authMiddleware, limitBody, async (c) => {
+  const result = await cloudSupport.submitForCustomer(
+    getRequestContext(c),
+    await json(c),
+    (subject) => customerLimit(c, subject),
+  );
+  deliverCloudSupport();
+  return c.json(result, 201);
+});
+r.public("get", "/mine/:id", customer, authMiddleware, async (c) =>
+  c.json(await cloudSupport.getForCustomer(getRequestContext(c), ticketId(c))),
+);
+r.public("post", "/mine/:id/replies", customer, authMiddleware, limitBody, async (c) => {
+  const result = await cloudSupport.replyForCustomer(
+    getRequestContext(c),
+    ticketId(c),
+    await json(c),
+    (subject) => customerLimit(c, subject, true),
+  );
+  deliverCloudSupport();
+  return c.json(result, 201);
+});
+r.public("patch", "/mine/:id", customer, authMiddleware, limitBody, async (c) =>
+  c.json(await cloudSupport.setStatusForCustomer(getRequestContext(c), ticketId(c), await json(c))),
+);
 
 r.public(
   "post",

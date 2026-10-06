@@ -99,6 +99,11 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   imports. The page and modal share the whole preparation layout and controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
+  Cloud adds Support as the final entry, under Help. The private support center uses a
+  searchable ticket list beside a conversation or new-ticket form, stacking on narrow
+  containers with a Back to tickets action. Use the shared theme surfaces and controls.
+  Tickets belong to the signed-in account, not its selected team. Keep the draft after a
+  failed send and reuse the request identity on retry; switching accounts clears private state.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
   same project data and status handling. Apps uses a compact installed list with Home's
   app illustration and a link to the full catalog alongside it. The illustration's icons
@@ -218,7 +223,8 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   that server and its billing. Remember dismissal per customer, server and checkout.
 - Unavailable server capacity or checkout opens the shared compact checkout feedback dialog.
   Preserve the selected resources, server and retry identity. Offer an explicit email-update
-  request through the existing Cloud support intake; confirm it only after a saved receipt.
+  request through the signed-in Cloud support inbox; confirm it only after a saved receipt
+  and link to the resulting ticket. Use the session email for replies.
   Explain that the support team follows up, without promising an automatic inventory alert.
   Connected self-hosted installations offer direct email contact; Cloud intake accepts
   browser submissions only from its trusted dashboard origins.

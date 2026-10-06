@@ -97,6 +97,8 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
   return [
     { section: "main", items: MAIN_ITEMS },
     ...(selfHosted ? [infrastructure, settings] : [settings, infrastructure]),
+    // Private tickets belong to the Cloud session, not a linked host's local account.
+    ...(!selfHosted ? [{ section: "help", items: [{ key: "support", href: "/support", icon: "help-circle" as const }] }] : []),
   ].filter((s) => s.items.length > 0);
 }
 

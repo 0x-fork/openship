@@ -71,7 +71,8 @@ describe("getNavSections (the platform rail)", () => {
 
   it("includes Billing before Cloud infrastructure without exposing self-hosted mail", () => {
     const s = getNavSections(true, false);
-    expect(sectionsOf(s)).toEqual(["main", "settings", "infrastructure"]);
+    expect(sectionsOf(s)).toEqual(["main", "settings", "infrastructure", "help"]);
+    expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
     expect(keysOf(find(s, "settings"))).toEqual(["backups", "settings", "billing", "audit"]);
     expect(keysOf(find(s, "infrastructure"))).toEqual(["servers", "jobs"]);
   });
@@ -80,6 +81,7 @@ describe("getNavSections (the platform rail)", () => {
     const s = getNavSections(true, true);
     expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings"]);
     const keys = s.flatMap((x) => keysOf(x));
+    expect(keys).not.toContain("support");
     for (const host of ["servers", "emails", "jobs"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
     }
