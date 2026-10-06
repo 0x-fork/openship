@@ -24,10 +24,12 @@ import {
   AppError,
   FREE_DOMAIN_SUFFIX,
   planLimits,
+  planServiceResources,
   resolvePlan,
-  PRICING,
   RESOURCE_TIER_ORDER,
   RESOURCE_TIER_SPECS,
+  formatCpuCores,
+  formatMemoryMb,
   type PlanTierId,
   type PlanLimits,
   type OblienLimits,
@@ -36,8 +38,15 @@ import {
 import { repos } from "@repo/db";
 import { env } from "../config/env";
 import { isCloudManagedHostname } from "./public-endpoints";
-import { resolveBuildResources, resolveCloudServiceResources, resolveRuntimeResources } from "./resources";
+import {
+  cloudDockerNeedsBuild,
+  cloudDockerResources,
+  resolveInheritedResources,
+  resolveRuntimeResources,
+  type CloudServiceResourceInput,
+} from "./resources";
 import type { ResourceConfig, RuntimeAdapter } from "@repo/adapters";
+import { cloudBillingOwner, requireCloudWorkspace, type CloudWorkspaceScope } from "./cloud-workspace-scope";
 
 /**
  * A refusal the user can act on by upgrading. 402 Payment Required is the
@@ -54,6 +63,7 @@ export class PlanUpgradeRequiredError extends AppError {
       | "build-minutes-exhausted"
       | "free-subdomain-limit"
       | "resource-tier"
+      | "workspace-capacity"
       | "running-services"
       | "project-limit",
     /** The tier that refused, for telemetry and copy. */
@@ -85,21 +95,22 @@ export class FreeSubdomainLimitError extends PlanUpgradeRequiredError {
 }
 
 /** The org's current tier. Unknown/missing → the catalog's most restrictive. */
-async function planFor(organizationId: string): Promise<{ tier: PlanTierId; limits: PlanLimits; resourceLimits: OblienLimits }> {
+async function planFor(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<{ tier: PlanTierId; limits: PlanLimits; resourceLimits: OblienLimits }> {
   const org = await repos.organization.findById(organizationId);
-  if (env.CLOUD_MODE && org?.oblienNamespace) {
+  const owner = env.CLOUD_MODE ? await cloudBillingOwner(organizationId, workspaceId) : null;
+  if (owner?.namespace) {
     const { syncOblienEntitlement } = await import("../modules/billing/billing-oblien-quota");
     // Plan lookups are reads. Token issuance and actual spend operations still
     // synchronize provider resource limits before allowing a workload to start.
-    return await syncOblienEntitlement(organizationId, { syncResourceLimits: false });
+    return await syncOblienEntitlement(organizationId, { syncResourceLimits: false, workspaceId: owner.workspaceId });
   }
-  const tier = (org?.planTierId ?? "free") as PlanTierId;
+  const tier = (owner?.planTierId ?? org?.planTierId ?? "free") as PlanTierId;
   return { tier, limits: planLimits(tier), resourceLimits: resolvePlan(tier).oblienLimits };
 }
 
 /** The org's tier, for callers that need to name it in their own error. */
-export async function currentPlanTier(organizationId: string): Promise<PlanTierId> {
-  return (await planFor(organizationId)).tier;
+export async function currentPlanTier(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<PlanTierId> {
+  return (await planFor(organizationId, workspaceId)).tier;
 }
 
 /* ─── Static-only workloads ──────────────────────────────────────────────── */
@@ -148,10 +159,11 @@ export interface DeployShape {
 export async function assertPlanAllowsDeployShape(
   organizationId: string,
   shape: DeployShape,
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const { tier, limits } = await planFor(organizationId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
 
   if (!limits.services) {
     const runsServices =
@@ -182,10 +194,10 @@ export async function assertPlanAllowsDeployShape(
  * container is a container by definition, so there is no shape to inspect —
  * these paths never build and never pass through the deploy gate above.
  */
-export async function assertPlanAllowsServices(organizationId: string): Promise<void> {
+export async function assertPlanAllowsServices(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const { tier, limits } = await planFor(organizationId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
   if (!limits.services) {
     throw new PlanUpgradeRequiredError(
       "Your plan can deploy static sites only. Databases, one-click apps and multi-service stacks need a paid plan.",
@@ -204,74 +216,85 @@ export async function assertPlanAllowsServices(organizationId: string): Promise<
  * can share one VM. Openship also enforces the selected per-service tier inside
  * that host, so a container cannot silently exceed its service configuration.
  *
- * Sizes are compared through `RESOURCE_TIER_ORDER` — the deploy wizard's own
- * ordering — so "larger than your plan" means the same thing here and in the
- * picker. A `custom` size is compared on its numbers against the tier's spec.
+ * Named presets and custom sizes are compared on CPU and RAM against the
+ * purchased service ceiling, independently of the workspace allocation.
  */
 export async function assertPlanAllowsResourceTier(
   organizationId: string,
   requested: { tier?: string | null; cpuCores?: number | null; memoryMb?: number | null },
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const { tier, limits } = await planFor(organizationId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
   assertResourcesFitPlan(tier, requested, limits);
 }
 
-function assertResourcesFitPlan(
+export function assertResourcesFitPlan(
   tier: PlanTierId,
   requested: { tier?: string | null; cpuCores?: number | null; memoryMb?: number | null },
   limits: PlanLimits,
 ): void {
-  const maxTier = limits.maxResourceTier;
-  if (maxTier === null) return; // uncapped (enterprise)
-
-  const ceiling = RESOURCE_TIER_SPECS[maxTier];
-  const refuse = () => {
+  const ceiling = planServiceResources(limits);
+  if (ceiling === null) return;
+  const refuse = (): never => {
     throw new PlanUpgradeRequiredError(
-      `Your plan allows up to ${ceiling.cpuCores} vCPU and ${Math.round(ceiling.memoryMb / 1024)} GB RAM per service. Upgrade for bigger machines.`,
+      `Your plan allows up to ${formatCpuCores(ceiling.cpuCores)} and ${formatMemoryMb(ceiling.memoryMb)} RAM per service. Upgrade for bigger machines.`,
       "resource-tier",
       tier,
     );
   };
 
-  // A named tier: compare position in the shared order, so an unknown name is
-  // treated as over-limit rather than waved through.
+  // Resolve named presets before comparing; unknown names cannot bypass the cap.
   const requestedTier = requested.tier?.trim();
-  if (requestedTier && requestedTier !== "custom") {
-    const wantIdx = RESOURCE_TIER_ORDER.indexOf(requestedTier as never);
-    const maxIdx = RESOURCE_TIER_ORDER.indexOf(maxTier);
-    if (wantIdx < 0 || wantIdx > maxIdx) refuse();
-    return;
+  let size = requested;
+  if (requestedTier === "unlimited") {
+    size = { cpuCores: 0, memoryMb: 0 };
+  } else if (requestedTier && requestedTier !== "custom") {
+    const preset = RESOURCE_TIER_ORDER.find(name => name === requestedTier);
+    if (!preset) return refuse();
+    size = RESOURCE_TIER_SPECS[preset];
   }
 
-  // Custom numbers: either dimension over the ceiling is over-limit. `0` means
-  // "unlimited" in ResourceValues and must never read as "small".
-  const cpu = requested.cpuCores ?? 0;
-  const mem = requested.memoryMb ?? 0;
-  if (!Number.isFinite(cpu) || !Number.isFinite(mem) || cpu <= 0 || mem <= 0 || cpu > ceiling.cpuCores || mem > ceiling.memoryMb) refuse();
+  // Zero adds no container cap: the subscribed server already enforces its
+  // allocation. Positive custom limits must still fit that allocation.
+  const cpu = size.cpuCores ?? 0;
+  const mem = size.memoryMb ?? 0;
+  if (!Number.isFinite(cpu) || !Number.isFinite(mem) || cpu < 0 || mem < 0 || cpu > ceiling.cpuCores || mem > ceiling.memoryMb) refuse();
 }
 
 type CloudDeploymentLimits = {
   projectId?: string;
+  workspaceId?: string;
   resources?: ResourceConfig | Record<string, unknown> | null;
   buildResources?: ResourceConfig | Record<string, unknown> | null;
   runsApplication?: boolean;
-  /** A native main app may also have separately managed auxiliary services. */
-  nativeApplication?: boolean;
-  services?: Array<{ name?: string; enabled?: boolean; advanced?: { resources?: ResourceConfig | Record<string, unknown> | null } | null }>;
+  /** A single app may also have separately managed auxiliary services. */
+  mainApplication?: boolean;
+  /** Internally pinned images use the same no-build decision as the deployer. */
+  retainedImages?: Readonly<Record<string, string>>;
+  services?: CloudServiceResourceInput[];
 };
 
-type CloudServiceAllowance = Pick<CloudDeploymentLimits, "projectId" | "runsApplication" | "nativeApplication" | "services">;
+type CloudServiceAllowance = Pick<CloudDeploymentLimits, "projectId" | "workspaceId" | "runsApplication" | "mainApplication" | "services">;
+
+async function workspaceForProject(organizationId: string, projectId?: string, selectedWorkspaceId?: string) {
+  if (!projectId) return (await cloudBillingOwner(organizationId, selectedWorkspaceId)).workspaceId;
+  const project = await repos.project.findByIdInOrganization(projectId, organizationId);
+  if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
+  if (selectedWorkspaceId && selectedWorkspaceId !== project.workspaceId) throw new AppError("The selected workspace differs from this project", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+  return project.workspaceId ?? null;
+}
 
 async function assertServiceAllowance(
   organizationId: string,
   tier: PlanTierId,
   input: CloudServiceAllowance,
   limits: PlanLimits,
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<void> {
   const services = input.services?.filter((service) => service.enabled !== false);
-  const nativeApplication = input.nativeApplication ?? (!services && input.runsApplication);
+  const mainApplication = input.mainApplication ?? (!services && input.runsApplication);
   if (services?.length && !limits.services) {
     throw new PlanUpgradeRequiredError("Your plan can deploy static sites only. Service stacks need a paid plan.", "static-only", tier);
   }
@@ -280,18 +303,22 @@ async function assertServiceAllowance(
     if (limit !== null) {
       // A failed count is unknown, never zero. Include a frozen/imported stack
       // even when its service definitions have not reached the database yet.
-      const nativeProject = nativeApplication ? input.projectId : undefined;
+      const mainProject = mainApplication ? input.projectId : undefined;
       const prospective = input.projectId && services?.every(service => !!service.name)
         ? { projectId: input.projectId, serviceNames: services.map(service => service.name!) }
         : undefined;
-      const counted = prospective
-        ? await repos.service.countRunningForOrg(organizationId, [], nativeProject, prospective)
-        : await repos.service.countRunningForOrg(organizationId, [], nativeProject);
-      const used = nativeApplication ? counted + 1 : Math.max(counted, services?.length ?? 1);
-      if (used > limit) throw new PlanUpgradeRequiredError(
-        `Your plan includes ${limit} services. Stop and disable a service, remove it, or upgrade before deploying.`,
-        "running-services", tier,
-      );
+      const counted = await repos.service.countRunningForOrg(organizationId, [], mainProject, prospective, workspaceId);
+      const used = mainApplication
+        ? counted + 1
+        : !input.projectId
+          ? counted + (services?.length ?? 1)
+          : Math.max(counted, services?.length ?? 1);
+      if (used > limit)
+        throw new PlanUpgradeRequiredError(
+          `Your plan includes ${limit} services. Stop and disable a service, remove it, or upgrade before deploying.`,
+          "running-services",
+          tier,
+        );
     }
   }
 }
@@ -299,8 +326,9 @@ async function assertServiceAllowance(
 /** The same slot/plan gate for new deployments and existing-container resumes. */
 export async function assertCloudServiceAllowance(organizationId: string, input: CloudServiceAllowance): Promise<void> {
   if (!env.CLOUD_MODE) return;
-  const { tier, limits } = await planFor(organizationId);
-  await assertServiceAllowance(organizationId, tier, input, limits);
+  const workspaceId = await workspaceForProject(organizationId, input.projectId, input.workspaceId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
+  await assertServiceAllowance(organizationId, tier, input, limits, workspaceId);
 }
 
 /** Validate the effective configuration on every deployment entry and again
@@ -308,37 +336,22 @@ export async function assertCloudServiceAllowance(organizationId: string, input:
  * must obey the same limits as the dashboard's resource picker. */
 export async function assertCloudDeploymentLimits(organizationId: string, input: CloudDeploymentLimits): Promise<void> {
   if (!env.CLOUD_MODE) return;
-  const { tier, limits, resourceLimits: policy } = await planFor(organizationId);
-  await assertServiceAllowance(organizationId, tier, input, limits);
+  const workspaceId = await workspaceForProject(organizationId, input.projectId, input.workspaceId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
+  await assertServiceAllowance(organizationId, tier, input, limits, workspaceId);
   const services = input.services?.filter(service => service.enabled !== false);
   for (const service of services ?? []) {
     assertResourcesFitPlan(
       tier,
-      resolveCloudServiceResources(service.advanced?.resources, input.resources),
+      resolveInheritedResources(service.advanced?.resources, input.resources),
       limits,
     );
   }
-  if (input.nativeApplication ?? (!services && input.runsApplication)) {
+  if (input.mainApplication ?? (!services && input.runsApplication)) {
     assertResourcesFitPlan(
       tier,
-      resolveRuntimeResources(input.resources, { isCloud: true }),
+      resolveRuntimeResources(input.resources),
       limits,
-    );
-  }
-  if (services?.length && !input.nativeApplication && services.every(service => {
-    const candidate = service as typeof service & { build?: unknown; image?: string | null; kind?: string };
-    return Boolean(candidate.image || (candidate.advanced as { imageTemplate?: unknown } | null)?.imageTemplate) &&
-      !candidate.build && !(candidate.advanced as { build?: unknown } | null)?.build;
-  })) return;
-  const build = resolveBuildResources(input.buildResources, { isCloud: true });
-  const maximum = { cpuCores: policy.max_vcpus ?? PRICING.oblien.buildResources.cpuCores,
-    memoryMb: policy.max_ram_mb ?? PRICING.oblien.buildResources.memoryMb,
-    diskGb: policy.max_disk_gb ?? PRICING.oblien.buildResources.diskGb };
-  if (limits.maxResourceTier !== null && (!Number.isFinite(build.cpuCores) || !Number.isFinite(build.memoryMb) ||
-      build.cpuCores > maximum.cpuCores || build.memoryMb > maximum.memoryMb || build.diskMb > maximum.diskGb * 1024)) {
-    throw new PlanUpgradeRequiredError(
-      `Builds on this plan support up to ${maximum.cpuCores} vCPU and ${maximum.memoryMb / 1024} GB RAM. Reduce the build allocation.`,
-      "resource-tier", tier,
     );
   }
 }
@@ -350,10 +363,11 @@ export async function assertCloudRuntimeLimits(organizationId: string,
   runtime: Pick<RuntimeAdapter, "getContainerInfo" | "supports">,
   containers: ReadonlyArray<{ containerId: string;
     allocatedResources?: { containerId: string; cpuCores: number; memoryMb: number } | null }>,
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<void> {
   if (!env.CLOUD_MODE || containers.length === 0) return;
-  const { tier, limits } = await planFor(organizationId);
-  if (limits.maxResourceTier === null) return;
+  const { tier, limits } = await planFor(organizationId, workspaceId);
+  if (runtime.supports("dockerHost") === false || planServiceResources(limits) === null) return;
   for (const container of containers) {
     const info = await runtime.getContainerInfo(container.containerId);
     const recorded = container.allocatedResources;
@@ -378,9 +392,9 @@ export async function assertCloudRuntimeLimits(organizationId: string,
  * cloud org, free or enterprise, got the same `CLOUD_MAX_PROJECTS_PER_USER` of 2,
  * so a $99 customer was capped at two projects).
  */
-export async function planProjectLimit(organizationId: string): Promise<number | null> {
+export async function planProjectLimit(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<number | null> {
   if (!env.CLOUD_MODE) return null;
-  return (await planFor(organizationId)).limits.maxProjects;
+  return (await planFor(organizationId, workspaceId)).limits.maxProjects;
 }
 
 /* ─── Application service allowance ─────────────────────────────────────── */
@@ -389,31 +403,49 @@ export async function planProjectLimit(organizationId: string): Promise<number |
  * Refuse a new running service past the tier's allowance.
  *
  * Compose services share one VM, so workspace count cannot enforce this limit.
- * Count enabled definitions, disabled definitions with a live container, and
- * single-app deployments (including queued reservations). Creation/enabling
- * holds the organization quota lock through the database write.
+ * Count enabled definitions in activated projects, disabled definitions with a
+ * live container, and single-app deployments (including queued reservations).
+ * Callers hold the organization quota lock through the reservation write.
  */
 export async function assertRunningServiceQuota(
   organizationId: string,
   addingCount = 1,
   replacingServiceIds: readonly string[] = [],
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const { tier, limits } = await planFor(organizationId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
   const limit = limits.runningServices;
   if (limit === null) return;
 
-  const used = await repos.service.countRunningForOrg(organizationId, replacingServiceIds);
+  const used = await repos.service.countRunningForOrg(organizationId, replacingServiceIds, undefined, undefined, workspaceId);
   if (used + addingCount <= limit) return;
 
   throw new PlanUpgradeRequiredError(
     limit === 0
       ? "Choose a Cloud plan to run apps, databases and workers."
-      : `Your plan includes ${limit} running services and you're using ${used}. Upgrade to run more, or remove a service first.`,
+      : `Your plan includes ${limit} service slots and ${used} are reserved. Stop and disable a service, remove it, or upgrade to run more.`,
     "running-services",
     tier,
   );
+}
+
+/** Draft edits do not start services or reserve slots. Re-read the project
+ * inside the caller's organization quota lock so creation/enabling cannot use
+ * stale lifecycle state after waiting for another mutation. Deployment admission
+ * reserves a draft's frozen service names before any provisioning starts. */
+export async function assertServiceDefinitionQuota(
+  organizationId: string,
+  projectId: string,
+  addingCount = 1,
+  replacingServiceIds: readonly string[] = [],
+): Promise<void> {
+  if (!env.CLOUD_MODE || addingCount === 0) return;
+  const project = await repos.project.findByIdInOrganization(projectId, organizationId);
+  if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
+  if (!project.activeDeploymentId) return;
+  await assertRunningServiceQuota(organizationId, addingCount, replacingServiceIds, project.workspaceId ?? null);
 }
 
 /* ─── Build minutes ──────────────────────────────────────────────────────── */
@@ -480,14 +512,16 @@ export interface BuildMinuteUsage {
 export async function getBuildMinuteUsage(
   organizationId: string,
   snapshot?: { tier: PlanTierId; limits: PlanLimits },
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<BuildMinuteUsage> {
   const org = await repos.organization.findById(organizationId);
-  const { tier, limits } = snapshot ?? (await planFor(organizationId));
+  const { tier, limits } = snapshot ?? (await planFor(organizationId, workspaceId));
   const limitMinutes = limits.buildMinutesPerMonth;
-  const { from, to } = buildMinutePeriod(org?.createdAt ?? new Date(), new Date());
+  const owner = workspaceId ? await requireCloudWorkspace(organizationId, workspaceId) : org;
+  const { from, to } = buildMinutePeriod(owner?.createdAt ?? new Date(), new Date());
 
   const millis = await repos.deployment
-    .sumBuildMillisForOrg(organizationId, from, to);
+    .sumBuildMillisForOrg(organizationId, from, to, workspaceId);
   const usedMinutes = Math.floor(millis / 60_000);
 
   return {
@@ -508,10 +542,10 @@ export async function getBuildMinuteUsage(
  * clean 402 instead of a `failed` deployment they have to clean up. Cloud static
  * builds also consume resources and require a paid build allowance.
  */
-export async function assertBuildMinutesAvailable(organizationId: string): Promise<void> {
+export async function assertBuildMinutesAvailable(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
-  const usage = await getBuildMinuteUsage(organizationId);
+  const usage = await getBuildMinuteUsage(organizationId, undefined, workspaceId);
   if (!usage.exhausted) return;
 
   throw new PlanUpgradeRequiredError(
@@ -571,8 +605,8 @@ export interface FreeSubdomainSlot {
  * Filtered with the SAME predicate the cap counts on, so the list and the number
  * always agree.
  */
-export async function listFreeSubdomains(organizationId: string): Promise<FreeSubdomainSlot[]> {
-  const rows = await repos.domain.listForOrgWithProject(organizationId);
+export async function listFreeSubdomains(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<FreeSubdomainSlot[]> {
+  const rows = await repos.domain.listForOrgWithProject(organizationId, workspaceId);
   return rows
     .filter((r) => isCloudManagedHostname(r.hostname))
     .map((r) => ({
@@ -589,20 +623,17 @@ export async function listFreeSubdomains(organizationId: string): Promise<FreeSu
 export async function getFreeSubdomainUsage(
   organizationId: string,
   snapshot?: { tier: PlanTierId; limits: PlanLimits },
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<FreeSubdomainUsage> {
-  const { tier, limits } = snapshot ?? (await planFor(organizationId));
+  const { tier, limits } = snapshot ?? (await planFor(organizationId, workspaceId));
   const limit = limits.freeSubdomains;
 
-  if (limit === null) {
-    return { planTierId: tier, limit: null, used: 0, remaining: null };
-  }
-
-  const hostnames = await repos.domain.listHostnamesForOrg(organizationId);
+  const hostnames = await repos.domain.listHostnamesForOrg(organizationId, workspaceId);
   const used = new Set(
     hostnames.filter((h) => isCloudManagedHostname(h)).map((h) => h.trim().toLowerCase()),
   ).size;
 
-  return { planTierId: tier, limit, used, remaining: Math.max(0, limit - used) };
+  return { planTierId: tier, limit, used, remaining: limit === null ? null : Math.max(0, limit - used) };
 }
 
 /**
@@ -620,6 +651,7 @@ export async function getFreeSubdomainUsage(
 export async function assertFreeSubdomainQuota(
   organizationId: string,
   candidateHostnames: readonly (string | null | undefined)[],
+  workspaceId?: CloudWorkspaceScope,
 ): Promise<void> {
   if (!env.CLOUD_MODE) return;
 
@@ -628,14 +660,14 @@ export async function assertFreeSubdomainQuota(
     .map((h) => h.trim().toLowerCase());
   if (candidates.length === 0) return;
 
-  const { tier, limits } = await planFor(organizationId);
+  const { tier, limits } = await planFor(organizationId, workspaceId);
   const limit = limits.freeSubdomains;
   if (limit === null) return;
 
   // Itemized, not just counted: the refusal has to tell the user WHERE their
   // slots went, or a subdomain from a forgotten CLI deploy is an unsolvable
   // riddle. Same predicate as the count, so they can't disagree.
-  const held = await listFreeSubdomains(organizationId);
+  const held = await listFreeSubdomains(organizationId, workspaceId);
   const existing = new Set(held.map((s) => s.hostname.trim().toLowerCase()));
   const before = existing.size;
   for (const c of candidates) existing.add(c);

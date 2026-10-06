@@ -1,5 +1,25 @@
 {
   "appInstall": {
+    "configurationLoading": "A carregar a configuração da aplicação…",
+    "catalogLoadFailed": "Não foi possível carregar os detalhes da aplicação. Tente novamente antes de instalar.",
+    "routingLoadFailed": "Não foi possível carregar o encaminhamento guardado. Tente novamente antes de instalar.",
+    "retryConfiguration": "Tentar novamente",
+    "hostFitHint": "Você pode continuar. O desempenho nesta máquina pode ser limitado.",
+    "cloudFitTitle": "Este app precisa de um plano Cloud maior",
+    "upgradePlan": "Melhorar plano",
+    "checkingCapacity": "Verificando capacidade…",
+    "checkCapacityAgain": "Verificar novamente",
+    "cloudFitUnavailable": "Não foi possível verificar a capacidade. Ela será verificada novamente ao implantar.",
+    "withoutDomainsTitle": "Continuar sem domínios?",
+    "withoutDomainsBody": "Estes serviços web só estarão acessíveis através das suas portas publicadas. Pode adicionar domínios mais tarde no projeto.",
+    "withoutDomainsCloudBody": "Estes serviços web não terão um URL público no Cloud. Os outros serviços desta aplicação continuarão a ter acesso. Pode adicionar domínios mais tarde no projeto.",
+    "addDomains": "Adicionar domínios",
+    "continueWithoutDomains": "Continuar sem domínios",
+    "generatedDomainsTitle": "Usar domínios gratuitos?",
+    "generatedDomainsBody": "Estes pontos de acesso terão URLs públicos gratuitos. Pode escolher os nomes antes de instalar.",
+    "useGeneratedDomains": "Usar domínios gratuitos",
+    "editDomains": "Editar domínios",
+    "routePortCloudDesc": "Privado neste espaço de trabalho Cloud. Adicione um domínio para obter um URL público.",
     "exposeTitle": "Domínios e roteamento"
   },
   "settingSection": {
@@ -595,7 +615,7 @@
   },
   "resources": {
     "title": "Potência da máquina",
-    "description": "Limites de CPU e memória para os contêineres deste projeto.",
+    "description": "Os projetos compartilham este servidor. Adicione limites de CPU ou memória apenas se necessário.",
     "loading": "Lendo a máquina de destino…",
     "unavailable": "Potência da máquina indisponível",
     "loadFailed": "Não foi possível carregar a potência da máquina",
@@ -605,9 +625,9 @@
     "appliesOnNextDeploy": "Os limites são aplicados quando o contêiner é recriado — reimplante para a alteração ter efeito.",
     "tiers": {
       "unlimited": {
-        "name": "Sem limites",
-        "description": "Usar a máquina inteira (padrão)",
-        "spec": "Capacidade da máquina"
+        "name": "Capacidade total",
+        "description": "Usar a CPU e RAM disponíveis do servidor (padrão)",
+        "spec": "Compartilhada com outros projetos"
       },
       "micro": {
         "name": "Micro",
@@ -649,6 +669,10 @@
       "updated": "Potência da máquina atualizada",
       "updateFailed": "Falha ao atualizar a potência da máquina",
       "invalidValues": "CPU e memória devem ser 0 ou um número positivo"
+    },
+    "customized": {
+      "name": "Personalizada",
+      "description": "Escolha um perfil ou defina seus limites"
     }
   },
   "sleep": {

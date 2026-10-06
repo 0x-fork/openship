@@ -35,6 +35,7 @@ export * from "./backup-image-detect";
 export * from "./backup-storage";
 export * from "./runtime-config";
 export * from "./resources";
+export * from "./cloud-capacity";
 export * from "./rollback-window";
 export * from "./deployment-history";
 export * from "./secret-keys";
@@ -57,7 +58,9 @@ export {
   type AppTemplateRejection,
 } from "./apps/schema";
 export * from "./apps/install-phases";
+export * from "./apps/install-routing";
 export * from "./pricing";
+export * from "./pricing/custom";
 export {
   pricingCatalogSchema,
   pricingCopySchema,
@@ -87,6 +90,7 @@ export type { ExecutionAuthority } from "./execution-authority";
 export * from "./sse";
 export * from "./infrastructure";
 export * from "./managed-network";
+export type { ManagedCommandRef } from "./managed-command";
 export * from "./network-firewall";
 export * from "./network-access";
 

@@ -20,6 +20,7 @@ afterEach(() => {
   root = undefined;
   host.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function render(element: React.ReactNode) {
@@ -132,6 +133,44 @@ describe("shared icon rendering", () => {
 
 describe("icon configuration and recovery", () => {
   const theme: IconTheme = { name: "custom", icons: { server: { file: "custom server.png", mode: "color" } } };
+
+  it("recovers a CDN image that failed before hydration attached its error handler", async () => {
+    const probes: HTMLImageElement[] = [];
+    vi.stubGlobal(
+      "Image",
+      class {
+        constructor() {
+          const probe = document.createElement("img");
+          probes.push(probe);
+          return probe;
+        }
+      },
+    );
+    const element = (
+      <IconProvider baseUrl="https://icons.example.test">
+        <Icon name="google" />
+      </IconProvider>
+    );
+    host.innerHTML = renderToString(element);
+    // This error is lost: the server markup has no React handler yet.
+    failImage();
+    const recoverableError = vi.fn();
+    await act(async () => {
+      root = hydrateRoot(host, element, { onRecoverableError: recoverableError });
+    });
+    expect(imageSource()).toBe(iconAssetUrl(outlineModern.google, "https://icons.example.test"));
+    expect(probes).toHaveLength(1);
+    expect(probes[0].src).toBe(imageSource());
+    act(() => {
+      probes[0].dispatchEvent(new Event("error"));
+    });
+    expect(imageSource()).toBe(iconAssetUrl(outlineModern.google));
+    expect(host.querySelector("mask")).toBeNull();
+    expect(probes[0].onerror).toBeNull();
+    failImage();
+    expect(probes).toHaveLength(1);
+    expect(recoverableError).not.toHaveBeenCalled();
+  });
 
   it("inherits the parent asset host while overriding only the selected artwork", () => {
     render(<IconProvider baseUrl="https://icons.example.test/artwork/"><IconProvider theme={theme}><Icon name="server" /><Icon name="search" /></IconProvider></IconProvider>);

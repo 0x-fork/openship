@@ -1802,10 +1802,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       throw err;
     }
     const recordEnv = `OPENSHIP_DNS_RECORD_FILE=${sq(recordPath)}`;
+    // Certbot validates the first word as an executable before invoking a shell.
+    // env preserves the assignment and inherited CERTBOT_* variables.
     return {
       dir,
-      authCommand: `${recordEnv} ${sq(authPath)}`,
-      cleanupCommand: opts.dnsCleanupHookScript ? `${recordEnv} ${sq(cleanupPath)}` : undefined,
+      authCommand: `env ${recordEnv} ${sq(authPath)}`,
+      cleanupCommand: opts.dnsCleanupHookScript ? `env ${recordEnv} ${sq(cleanupPath)}` : undefined,
     };
   }
 
