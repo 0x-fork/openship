@@ -296,6 +296,42 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
       // Session admission can fail at capacity. It belongs inside the worker's
       // failure/lease cleanup so the claimed deployment cannot remain stuck.
       sessionManager.createSession(dep.id, project.id);
+      const preDeployLogs: LogEntry[] = [];
+      const persistPreDeployLogs = async () => {
+        if (preDeployLogs.length === 0) return;
+        await repos.deployment
+          .updateBuildSession(buildSession.id, {
+            logs: sanitizeLogsForPersistence(collapseTerminalLogs(preDeployLogs)),
+          })
+          .catch((error) =>
+            console.error(`[DEPLOY] Could not save backup logs for ${dep.id}:`, error),
+          );
+      };
+      // Backup workers need workspace admission themselves. Complete this gate
+      // before taking that lock, for every entry point and runtime (including
+      // cached builds / Compose). Failures reach the normal failure handler.
+      try {
+        await firePreDeployBackups({
+          projectId: project.id,
+          organizationId: dep.organizationId,
+          signal: cancellationSignal,
+          log: (message, level = "info") => {
+            const entry: LogEntry = { timestamp: new Date().toISOString(), level, message };
+            preDeployLogs.push(entry);
+            sessionManager.appendLog(dep.id, entry);
+          },
+          promptUser: async (prompt) => {
+            await persistPreDeployLogs();
+            throwIfDeploymentCancelled(cancellationSignal);
+            return sessionManager.promptUser(dep.id, prompt);
+          },
+        });
+      } finally {
+        // Cancellation may originate on another replica. Do not strand a held
+        // prompt, and retain the backup progress/decision even if no build ran.
+        sessionManager.cancelPendingPrompt(dep.id);
+        await persistPreDeployLogs();
+      }
       const { withCloudWorkspaceActivity } = await import("../../lib/cloud-workspace-lock");
       await withCloudWorkspaceActivity(project.workspaceId, async () => {
         // Cancellation/recovery can win while this worker waits for the server.
@@ -304,7 +340,13 @@ export async function kickoffBuild(project: Project, dep: Deployment): Promise<s
           const current = await repos.deployment.findById(dep.id);
           if (!current || !["building", "deploying"].includes(current.status)) return;
         }
-        await executeBuildAndDeploy(project, dep, buildSession.id, cancellationSignal);
+        await executeBuildAndDeploy(
+          project,
+          dep,
+          buildSession.id,
+          cancellationSignal,
+          preDeployLogs,
+        );
       }, cancellationSignal, { scope: `project:${project.id}` });
     } catch (err) {
       console.error(`[DEPLOY] Fatal error for ${dep.id}:`, err);
@@ -626,6 +668,7 @@ async function executeBuildAndDeploy(
   dep: Deployment,
   buildSessionId: string,
   cancellationSignal?: AbortSignal,
+  initialLogs: LogEntry[] = [],
 ) {
   const plat = platform();
   throwIfDeploymentCancelled(cancellationSignal);
@@ -641,7 +684,7 @@ async function executeBuildAndDeploy(
   }
   const routeState = await resolveProjectRouteState(project);
 
-  const logs: LogEntry[] = [];
+  const logs: LogEntry[] = [...initialLogs];
   const MAX_LOG_ENTRIES = 50_000;
 
   const logCallback = (entry: LogEntry) => {
@@ -1091,35 +1134,6 @@ async function executeBuildAndDeploy(
       }
       return relay;
     };
-
-    // Pre-deploy backups — the project's ONLY call site, deliberately here:
-    // outside the mode branch so single-app, static-edge AND compose deploys are
-    // covered, and outside the entry points so the button, a webhook push, a CLI
-    // deploy, an app update and a rollback rebuild all reach it through
-    // kickoffBuild. Both halves of that were bugs: it once lived in
-    // executeServerDeploy only (the compose path, which tears down old containers
-    // in deployComposeServices, ran with NO backup) and it once had a second call
-    // in redeployBuildSession behind an opt-in only the app-update path passed
-    // (which enqueued a duplicate run per policy for the same cutover). Adding
-    // another call anywhere in this path duplicates runs, it does not add safety.
-    //
-    // Best-effort + policy-gated: we await only the enqueue (durably queued
-    // before anything is destroyed), never the run — a failing or slow backup
-    // must not block the deploy. See triggers/pre-deploy.ts for why "before the
-    // build" is what gives the run time to finish before the cutover.
-    try {
-      const preBackup = await firePreDeployBackups({
-        projectId: project.id,
-        organizationId: dep.organizationId,
-      });
-      if (preBackup.enqueued > 0 || preBackup.failed > 0) {
-        logger.log(`[pre-deploy-backup] enqueued=${preBackup.enqueued} failed=${preBackup.failed}`);
-      }
-    } catch (err) {
-      logger.log(
-        `[pre-deploy-backup] trigger crashed (ignoring, best-effort): ${safeErrorMessage(err)}`,
-      );
-    }
 
     if (useServicePipeline && isMultiServiceRuntime(runtime)) {
       // A compose project's release phase would have to name a SERVICE to run in
@@ -2277,8 +2291,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     ? createTrackedSslProvider(ssl, domainByHostname, (m) => logger.log(`${m}\n`))
     : ssl;
 
-  // (Pre-deploy backups now fire once in executeBuildAndDeploy, covering all
-  // deploy modes — see the firePreDeployBackups call before the compose branch.)
+  // Pre-deploy backups have completed in kickoffBuild before workspace admission.
 
   // Reap leftover containers from a previous MULTI-SERVICE / monorepo
   // deployment when this deploy collapses to single-app mode. runDeployPipeline
