@@ -16,6 +16,15 @@ const monthlyPro = (): NonNullable<OblienSubscription> => ({ ...savedPro(),
   offer: subscriptionOffer("pro", "monthly"), metadata: subscriptionMetadata("pro", "org-a", "ns-a") });
 
 describe("funded Cloud offers and isolated capacity", () => {
+  it("publishes Openship PAYG pool tiers independently of provider account plans and usage prices", () => {
+    const catalog = presentCloudPlans();
+    expect(catalog.payg).toEqual(PRICING.payg);
+    expect(Value.Check(BillingPlansSchema, catalog)).toBe(true);
+    expect(catalog.payg?.tiers.map(tier => tier.minimumFundingCents)).toEqual([500, 2000, 5000]);
+    catalog.payg!.tiers[0]!.pool.cpuCores = 999;
+    expect(presentCloudPlans().payg!.tiers[0]!.pool.cpuCores).toBe(2);
+    expect(catalog.computePricing).toBeUndefined();
+  });
   it("publishes the provider's credit conversion and cap factor without activating customer PAYG checkout", () => {
     const provider = oblienCapacityCatalogSchema.parse(capacityFixture);
     provider.tariff.creditsPerDollar = 200;

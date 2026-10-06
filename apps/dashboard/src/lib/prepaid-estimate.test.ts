@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { estimatePrepaidUsage, hasPrepaidRates, type ComputePricing } from "./prepaid-estimate";
+import { PRICING } from "@repo/core";
+import { estimatePrepaidUsage, hasPrepaidRates, previewPaygPool, previewPaygTier, type ComputePricing } from "./prepaid-estimate";
 
 const pricing: ComputePricing = {
   tariffId: "test-tariff",
@@ -25,6 +26,27 @@ const input = {
 };
 
 describe("prepaid pricing preview", () => {
+  it("compares every configured server with one shared tier pool", () => {
+    const tier = PRICING.payg.tiers[1]!;
+    expect(previewPaygPool(tier, input.resources, 4)).toEqual({
+      selected: { cpuCores: 4, memoryMb: 16384, diskGb: 100, servers: 4 }, exceeded: [], fits: true,
+    });
+    expect(previewPaygPool(tier, input.resources, 5)?.exceeded).toEqual(["cpuCores", "memoryMb", "servers"]);
+    expect(previewPaygPool(tier, { ...input.resources, diskGb: 40 }, 4)?.exceeded).toEqual(["diskGb"]);
+    expect(previewPaygPool(tier, { cpuCores: 4, memoryMb: 16384, diskGb: 128 }, 1)?.fits).toBe(true);
+    expect(previewPaygPool(tier, { ...input.resources, cpuCores: 1.5 }, 2)).toBeNull();
+    expect(previewPaygPool(tier, input.resources, -1)).toBeNull();
+  });
+
+  it("previews the tier unlocked by a purchase without changing resource prices or credit conversion", () => {
+    expect(previewPaygTier(PRICING.payg.tiers, 499)).toBeNull();
+    expect(previewPaygTier(PRICING.payg.tiers, 500)?.id).toBe("tier_1");
+    expect(previewPaygTier(PRICING.payg.tiers, 1999)?.id).toBe("tier_1");
+    expect(previewPaygTier(PRICING.payg.tiers, 2000)?.id).toBe("tier_2");
+    expect(previewPaygTier(PRICING.payg.tiers, 5000)?.id).toBe("tier_3");
+    expect(previewPaygTier(PRICING.payg.tiers, 10000)?.id).toBe("tier_3");
+    expect(previewPaygTier(PRICING.payg.tiers, Number.NaN)).toBeNull();
+  });
   it("uses active CPU, reserved GiB of memory and retained storage, with the provider credit conversion", () => {
     const result = estimatePrepaidUsage(input)!;
     expect(result.balanceCredits).toBe(500);
