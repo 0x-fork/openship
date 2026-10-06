@@ -57,6 +57,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   containers; the managed server's purchased allocation stays separate.
   In destination settings, offer Full capacity and Customized as peer selection cards;
   Customized keeps the presets visible below. Keep a Back action in the page header.
+- Project Settings presents curated app fields and project-wide controls in one flow.
+  Keep shared environment, machine power and rollback settings there, including for
+  Compose and monorepo projects. Apps & Services owns the service list and per-service
+  editors; do not embed that page or add App settings / Deployment modes inside Settings.
 - Destination, runtime and resource choices share [OptionCard](../apps/dashboard/src/components/shared/OptionCard.tsx),
   including its selected border and radio marker. Do not introduce a separate switch style.
 - Base grids on the available container width so expanded navigation does not squeeze fields.

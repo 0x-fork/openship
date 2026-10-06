@@ -19,7 +19,6 @@ import { ServiceDetailPanel } from "./services/ServiceDetailPanel";
 import { AddServiceModal } from "./services/AddServiceModal";
 import { LinkedAppsCard } from "./services/LinkedAppsCard";
 import { ServiceListItem } from "./services/ServiceListItem";
-import { ResourceSettings } from "./ResourceSettings";
 import { hasSeparateApplication } from "@/lib/project-application";
 import { ProjectApplicationCard } from "./services/ProjectApplicationCard";
 
@@ -566,13 +565,6 @@ export const ServicesTab = () => {
       {/* Apps wired into this project — not services we own (no container, no
           start/stop), but part of what it runs against. */}
       <LinkedAppsCard projectId={id} />
-
-      {/* Project-wide cpu/memory caps. This lives here (not only in the Runtime
-          tab) because the Runtime tab is HIDDEN for a service-first project —
-          which is exactly the shape that had no way to change the limits its
-          containers ran with. A service can still override per-service via its
-          compose `mem_limit`. */}
-      <ResourceSettings />
 
       <AddServiceModal
         projectId={id}
