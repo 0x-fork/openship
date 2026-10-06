@@ -3,14 +3,12 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Icon as UiIcon } from "@repo/ui/icons";
+import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { AppLogo } from "@/components/AppLogo";
 import { Button } from "@/components/ui/button";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
 import { getProjectStatus } from "@/utils/project-status";
-import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { encodeLocalSlug, encodeRepoSlug, encodeProjectSlug } from "@/utils/repoSlug";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
@@ -134,17 +132,9 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
               <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
             </Link>
           </Button>
-          <div className="flex size-8 shrink-0 items-center justify-center" aria-hidden="true">
-            {isApp ? <AppLogo appId={appTemplateId} className="size-8" />
-              : framework ? framework.icon("var(--foreground)")
-                : <UiIcon name="folder-code" className="size-7 text-muted-foreground" />}
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-2xl font-medium tracking-tight text-foreground" title={projectData.name}>
-              {projectData.name || t.projects.detail.projectFallback}
-            </h1>
-            <ProjectStatusBadge project={projectData} className="mt-1 rounded-full px-2 py-0.5 text-xs font-medium" />
-          </div>
+          <h1 className="min-w-0 truncate text-2xl font-medium tracking-tight text-foreground" title={projectData.name}>
+            {projectData.name || t.projects.detail.projectFallback}
+          </h1>
         </div>
         <Button
           variant="ghost"
@@ -181,12 +171,12 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
               </div>
             ) : hasSource ? (
               <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-                {hasRepoSource && <DetailItem label={t.projects.draft.repository} value={`${projectData.gitOwner}/${projectData.gitRepo}`} />}
-                {hasRepoSource && projectData.gitBranch && <DetailItem label={t.projects.draft.branch} value={String(projectData.gitBranch)} />}
-                {hasLocalSource && <DetailItem label={t.projects.draft.localPath} value={String(projectData.localPath)} />}
-                {framework && <DetailItem label={t.projects.draft.framework} value={framework.name} />}
-                {projectData.options?.buildCommand && <DetailItem label={t.projects.draft.build} value={String(projectData.options.buildCommand)} code />}
-                {projectData.options?.outputDirectory && <DetailItem label={t.projectSettings.build.runtime.outputDirectory} value={String(projectData.options.outputDirectory)} code />}
+                {hasRepoSource && <DetailItem icon="folder-code" label={t.projects.draft.repository} value={`${projectData.gitOwner}/${projectData.gitRepo}`} />}
+                {hasRepoSource && projectData.gitBranch && <DetailItem icon="git-branch" label={t.projects.draft.branch} value={String(projectData.gitBranch)} />}
+                {hasLocalSource && <DetailItem icon="folder" label={t.projects.draft.localPath} value={String(projectData.localPath)} />}
+                {framework && <DetailItem icon="code" label={t.projects.draft.framework} value={framework.name} />}
+                {projectData.options?.buildCommand && <DetailItem icon="terminal" label={t.projects.draft.build} value={String(projectData.options.buildCommand)} code />}
+                {projectData.options?.outputDirectory && <DetailItem icon="folder-out" label={t.projectSettings.build.runtime.outputDirectory} value={String(projectData.options.outputDirectory)} code />}
               </dl>
             ) : (
               <p className="rounded-xl bg-background p-4 text-sm text-muted-foreground">{t.projects.draft.noSourceText}</p>
@@ -239,10 +229,23 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
   );
 }
 
-function DetailItem({ label, value, code = false }: { label: string; value: string; code?: boolean }) {
+function DetailItem({ icon, label, value, code = false }: {
+  icon: IconName;
+  label: string;
+  value: string;
+  code?: boolean;
+}) {
   return (
-    <div className="min-w-0 space-y-1">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+    <div className="relative min-w-0 space-y-1 ps-12">
+      <dt className="text-xs text-muted-foreground">
+        <span
+          aria-hidden="true"
+          className="absolute start-0 top-0.5 flex size-9 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground"
+        >
+          <UiIcon name={icon} className="size-4" />
+        </span>
+        {label}
+      </dt>
       <dd className={`whitespace-pre-wrap break-words text-sm text-foreground ${code ? "font-mono" : ""}`}>{value}</dd>
     </div>
   );
