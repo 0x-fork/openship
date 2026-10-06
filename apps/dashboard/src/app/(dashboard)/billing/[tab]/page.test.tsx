@@ -302,11 +302,22 @@ describe("billing page failure recovery", () => {
     expect(mocks.get).toHaveBeenCalledOnce();
   });
 
-  it("leaves self-hosted Cloud scope resolution with its connected account", async () => {
+  it("selects a connected Cloud server from the self-hosted mixed inventory for billing", async () => {
     mocks.getDeploymentInfo.mockResolvedValue({ selfHosted: true });
-    mocks.get.mockRejectedValueOnce(new ServerApiError(400, "Choose server", { code: "CLOUD_WORKSPACE_REQUIRED" }));
-    expect((await unavailablePage()).props.reason).toBe("workspace-required");
-    expect(mocks.get).toHaveBeenCalledOnce();
+    const state = { ...free, tier: "starter", workspace: { id: "cws-cloud" } };
+    mocks.get.mockRejectedValueOnce(new ServerApiError(400, "Choose server", { code: "CLOUD_WORKSPACE_REQUIRED" }))
+      .mockResolvedValueOnce({ servers: [
+        { id: "own-ssh-server", source: "local", managed: null },
+        { id: "cloud-server", source: "cloud", managed: { id: "cws-cloud", planTierId: "starter" } },
+      ] }).mockResolvedValueOnce({ data: state });
+
+    const page = await loadPage();
+
+    expect(findElement<{ state: unknown }>(page, BillingOverview)?.props.state).toBe(state);
+    expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view.workspaceId).toBe("cws-cloud");
+    expect(mocks.get).toHaveBeenNthCalledWith(2, "system/servers/destinations", { cache: "no-store" });
+    expect(mocks.get).toHaveBeenLastCalledWith("billing/state?workspaceId=cws-cloud", { cache: "no-store", timeout: 45_000 });
+    expect(mocks.get).toHaveBeenCalledTimes(3);
   });
 
   it("does not copy malformed error codes into logs", async () => {
