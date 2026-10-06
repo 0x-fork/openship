@@ -657,7 +657,7 @@ export async function createService(
   await assertFreeEndpointsAllowed(
     ctx.organizationId,
     resolveServicePublicEndpoints({ ...routing, ports: data.ports ?? [] }),
-    "managed-compose-domains",
+    { capability: "managed-compose-domains", workspaceId: project.workspaceId },
   );
 
   // Refuse the row too, not just its start: a static-only tier can never run
@@ -964,7 +964,7 @@ export async function updateService(
         const hostname = publicEndpointHostname(endpoint)?.toLowerCase();
         return hostname ? !priorHosts.has(hostname) : false;
       }),
-      "managed-compose-domains",
+      { capability: "managed-compose-domains", workspaceId: project.workspaceId },
     );
   }
 
