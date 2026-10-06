@@ -583,6 +583,22 @@ export function normalizeRoutingFields(input: {
   };
 }
 
+/** Compose sync keeps omitted routing fields. Share the merge with validation
+ * so the admission check sees exactly the routes that will be persisted. */
+export function normalizeComposeRoutingFields(
+  input: Parameters<typeof normalizeRoutingFields>[0],
+  stored?: Parameters<typeof normalizeRoutingFields>[0],
+) {
+  return normalizeRoutingFields({
+    exposed: input.exposed ?? (stored?.exposed || false),
+    exposedPort: input.exposedPort ?? stored?.exposedPort,
+    domain: input.domain ?? stored?.domain,
+    customDomain: input.customDomain ?? stored?.customDomain,
+    domainType: input.domainType ?? stored?.domainType,
+    publicEndpoints: input.publicEndpoints ?? stored?.publicEndpoints,
+  });
+}
+
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createServiceRepo(db: Database, encryption: ConfigurationEncryption) {
@@ -1070,14 +1086,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         const p = composeParsed[i];
         const ex = existingByName.get(p.name);
 
-        const routing = normalizeRoutingFields({
-          exposed: p.exposed ?? (ex?.exposed || false),
-          exposedPort: p.exposedPort ?? ex?.exposedPort,
-          domain: p.domain ?? ex?.domain,
-          customDomain: p.customDomain ?? ex?.customDomain,
-          domainType: p.domainType ?? ex?.domainType,
-          publicEndpoints: p.publicEndpoints ?? ex?.publicEndpoints,
-        });
+        const routing = normalizeComposeRoutingFields(p, ex);
 
         if (ex) {
           // Update existing - preserve the operator's `enabled` choice AND their

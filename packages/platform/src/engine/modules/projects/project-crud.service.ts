@@ -70,6 +70,7 @@ import {
   deriveNextProjectRouteState,
   listProjectRouteRows,
   persistProjectRouteState,
+  prepareProjectRouteState,
   reapplyProjectLiveRoutes,
   resolveProjectRouteState,
   syncProjectRouteState,
@@ -79,7 +80,7 @@ import { applyProjectRouting } from "../domains/routing-apply.service";
 import { markRoutingWarning, syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { resolveDeploymentEnvironment } from "../deployments/deployment-environment";
-import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
+import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
 import { currentPlanTier, planProjectLimit, PlanUpgradeRequiredError } from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
@@ -591,7 +592,7 @@ function environmentNameFromSlug(slug: string) {
   );
 }
 
-type ResolvedCreateProjectBody = TCreateProjectBody & { workspaceId?: string };
+type ResolvedCreateProjectBody = TCreateProjectBody & Pick<TEnsureProjectBody, "services"> & { workspaceId?: string };
 
 async function ensureProjectApp(data: ResolvedCreateProjectBody, slug: string, organizationId: string) {
   return withProjectCreationLock(organizationId, async () => {
@@ -953,10 +954,13 @@ async function createProductionProject(
   // written on a disconnected instance (no dead "Pending" route persisted). The
   // auto-derived default (data.publicEndpoints undefined) is deliberately NOT
   // gated — that path must keep working on a self-hosted instance.
-  if (data.publicEndpoints !== undefined) {
+  if (data.publicEndpoints !== undefined || data.services?.length) {
     await assertFreeEndpointsAllowed(
       organizationId,
-      normalizeStoredPublicEndpoints(data.publicEndpoints),
+      [
+        ...normalizeStoredPublicEndpoints(data.publicEndpoints),
+        ...(data.services?.length ? composeEndpointChanges(data.services).endpoints : []),
+      ],
       { workspaceId: data.workspaceId },
     );
   }
@@ -1558,24 +1562,37 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
     }
 
+    // Validate explicit route changes before saving any of the accompanying
+    // field edits. In particular, ensure must not silently accept a refused URL.
+    const nextRoutes = data.publicEndpoints !== undefined || update.slug !== undefined || update.port !== undefined
+      ? await prepareProjectRouteState(project, {
+          nextPublicEndpoints: data.publicEndpoints,
+          slug: typeof update.slug === "string" ? update.slug : project.slug,
+        })
+      : null;
+    if (data.services?.length) {
+      const routes = composeEndpointChanges(data.services, await repos.service.listByProject(project.id));
+      await assertFreeEndpointsAllowed(organizationId, [
+        ...routes.endpoints, ...(nextRoutes?.publicEndpoints ?? []),
+      ], {
+        capability: "managed-compose-domains", workspaceId: project.workspaceId,
+        knownHostnames: [...routes.knownHostnames, ...(nextRoutes?.projectDomains ?? []).map(domain => domain.hostname)],
+      });
+    }
+
     if (Object.keys(update).length > 0) {
       await persistProjectFields(project.id, update);
     }
 
-    // Reconcile routes AFTER persisting the project (best-effort) so a route-sync
-    // failure can't discard the field edits we just committed; the next deploy
-    // re-syncs routes. Same ordering as updateOptions.
-    if (
-      data.publicEndpoints !== undefined ||
-      update.slug !== undefined ||
-      update.port !== undefined
-    ) {
-      await syncProjectRouteState(project, {
-        nextPublicEndpoints: data.publicEndpoints,
-        slug: typeof update.slug === "string" ? update.slug : project.slug,
-      }).catch((err) =>
-        console.warn(`[ensureProject] route sync failed (non-fatal): ${safeErrorMessage(err)}`),
-      );
+    // Surface an explicit route failure; incidental port re-sync remains
+    // best-effort and will be retried on the next deploy.
+    if (nextRoutes) {
+      try {
+        await persistProjectRouteState(project.id, nextRoutes.publicEndpoints, nextRoutes.projectDomains);
+      } catch (err) {
+        if (data.publicEndpoints !== undefined || update.slug !== undefined) throw err;
+        console.warn(`[ensureProject] route sync failed (non-fatal): ${safeErrorMessage(err)}`);
+      }
     }
 
     if (
@@ -1714,16 +1731,11 @@ export async function updateProject(
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  // Reject a bogus custom hostname before the field edits below are committed — the
-  // route sync happens after them, so validating there alone would 400 a request
-  // that had already written the rest of the patch. Net-new only (the endpoint list
-  // is authoritative, so a save echoes back hostnames the project already has —
-  // including any bad one predating this gate, which must stay removable). #342
-  if (data.publicEndpoints !== undefined) {
-    assertValidCustomDomains([{ publicEndpoints: data.publicEndpoints }], {
-      known: (await listProjectRouteRows(projectId).catch(() => [])).map((row) => row.hostname),
-    });
-  }
+  // Shared route validation covers custom hostnames and scoped free-domain
+  // allowances before any accompanying project fields are written.
+  const nextRoutes = data.publicEndpoints !== undefined
+    ? await prepareProjectRouteState(p, { nextPublicEndpoints: data.publicEndpoints })
+    : null;
 
   // SECURITY (mass-assignment): pick ONLY the allow-listed editable fields from
   // the (unvalidated, type-cast) request body. A raw `{ ...data }` spread let a
@@ -1862,31 +1874,8 @@ export async function updateProject(
     // Snapshot the live hostnames before the sync so re-application can tear
     // down any the edit drops — AND so the free-cloud gate only fires for
     // NET-NEW free routes.
-    const beforeState = await resolveProjectRouteState(p).catch(() => null);
+    const beforeState = nextRoutes ?? await resolveProjectRouteState(p).catch(() => null);
     const previousHostnames = beforeState?.projectDomains.map((d) => d.hostname) ?? [];
-
-    // Atomic gate: a free (*.opsh.io) route only resolves behind the Openship
-    // Cloud edge — refuse before any write so a disconnected instance can't
-    // INTRODUCE a dead route. Only gate endpoints whose hostname isn't already
-    // live: re-validating the WHOLE set blocked removing/editing a route whenever
-    // another, already-persisted free route stayed in the set (you can't remove
-    // api.openship.io because app.openship.io is still there). Removal never
-    // introduces anything, so it never gates. Skipped for slug/port re-syncs.
-    if (data.publicEndpoints !== undefined) {
-      // Already-live hostnames = DB domain rows ∪ the resolved route endpoints
-      // (the latter also covers a PENDING route that has no domain row yet), so a
-      // remaining pending route is never mistaken for net-new.
-      const priorHosts = new Set(
-        [...previousHostnames, ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname)]
-          .filter((h): h is string => typeof h === "string" && h.length > 0)
-          .map((h) => h.trim().toLowerCase()),
-      );
-      const netNew = normalizeStoredPublicEndpoints(data.publicEndpoints).filter((endpoint) => {
-        const host = publicEndpointHostname(endpoint)?.trim().toLowerCase();
-        return host ? !priorHosts.has(host) : false;
-      });
-      await assertFreeEndpointsAllowed(organizationId, netNew, { workspaceId: p.workspaceId });
-    }
 
     // Best-effort ONLY for an incidental re-sync (a port edit) — the field edit
     // is already committed and the next deploy re-syncs routes. But when the
@@ -1895,10 +1884,11 @@ export async function updateProject(
     // was persisted (silent drop). Fail loudly so the real reason (e.g. a slug
     // conflict) surfaces to the user instead of a false success.
     try {
-      await syncProjectRouteState(p, {
-        nextPublicEndpoints: data.publicEndpoints,
-        slug: p.slug,
-      });
+      if (nextRoutes) {
+        await persistProjectRouteState(projectId, nextRoutes.publicEndpoints, nextRoutes.projectDomains);
+      } else {
+        await syncProjectRouteState(p, { slug: p.slug });
+      }
     } catch (err) {
       if (data.publicEndpoints !== undefined) throw err;
       console.warn(`[updateProject] route sync failed (non-fatal): ${safeErrorMessage(err)}`);

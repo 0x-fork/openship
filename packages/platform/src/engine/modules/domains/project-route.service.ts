@@ -14,6 +14,7 @@ import {
   type StoredPublicEndpoint,
 } from "../../lib/public-endpoints";
 import { assertValidCustomDomain, assertValidCustomDomains } from "../../lib/custom-domain-guard";
+import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
 import { resolveLiveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import {
   describeCandidatePorts,
@@ -237,27 +238,40 @@ export async function persistProjectRouteState(
   });
 }
 
-export async function syncProjectRouteState(
-  project: ProjectRouteProject,
-  input: {
-    projectDomains?: Domain[];
-    nextPublicEndpoints?: NextPublicEndpointsInput;
-    slug?: string | null;
-    customDomain?: string | null;
-    /**
-     * Deploy-only: never destroy custom-domain configuration during this sync.
-     * Left unset by the Domains editor so explicit removals still apply.
-     */
-    preserveCustomDomains?: boolean;
-  },
+type ProjectRouteWriteInput = {
+  projectDomains?: Domain[];
+  nextPublicEndpoints?: NextPublicEndpointsInput;
+  slug?: string | null;
+  customDomain?: string | null;
+  /** Deploy-only: keep custom-domain configuration omitted from the snapshot.
+   * Editors leave this unset so explicit removals still apply. */
+  preserveCustomDomains?: boolean;
+};
+
+/** Validate the intended routes before callers persist project field changes.
+ * Both editors and deploy-time default routes use this same owner and baseline. */
+export async function prepareProjectRouteState(
+  project: ProjectRouteProject & Pick<Project, "organizationId" | "workspaceId">,
+  input: ProjectRouteWriteInput,
 ): Promise<ProjectRouteState> {
   const projectDomains = input.projectDomains ?? (await listProjectRouteRows(project.id));
   const nextState = deriveNextProjectRouteState(project, {
     ...input,
     projectDomains,
   });
+  await assertFreeEndpointsAllowed(project.organizationId, nextState.publicEndpoints, {
+    workspaceId: project.workspaceId,
+    knownHostnames: projectDomains.map(domain => domain.hostname),
+  });
+  return nextState;
+}
 
-  await persistProjectRouteState(project.id, nextState.publicEndpoints, projectDomains, {
+export async function syncProjectRouteState(
+  project: ProjectRouteProject & Pick<Project, "organizationId" | "workspaceId">,
+  input: ProjectRouteWriteInput,
+): Promise<ProjectRouteState> {
+  const nextState = await prepareProjectRouteState(project, input);
+  await persistProjectRouteState(project.id, nextState.publicEndpoints, nextState.projectDomains, {
     preserveCustomDomains: input.preserveCustomDomains,
   });
   const refreshedDomains = await listProjectRouteRows(project.id);

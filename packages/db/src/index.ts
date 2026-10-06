@@ -80,6 +80,7 @@ export {
   createServiceDeploymentRepo,
   createPersonalAccessTokenRepo,
   normalizeRoutingFields,
+  normalizeComposeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
   reconcileComposeSpec,

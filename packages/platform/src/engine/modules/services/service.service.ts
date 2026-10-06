@@ -106,7 +106,7 @@ import {
   resolveServicePublicEndpoints,
 } from "../../lib/public-endpoints";
 import { resolveRuntimeResources } from "../../lib/resources";
-import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
+import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
 import { assertCloudDeploymentLimits, assertCloudRuntimeLimits, assertPlanAllowsServices, assertRunningServiceQuota, assertServiceDefinitionQuota } from "../../lib/plan-guard";
 import { env } from "../../config/env";
 import { createProvisionLock } from "../../lib/provision-lock";
@@ -1450,7 +1450,7 @@ export async function syncComposeServices(
     domainType?: "free" | "custom";
     /** Multi-route services. `syncFromCompose` persists these (service.repo
      *  normalizeRoutingFields), so they're declared here to be gated below. */
-    publicEndpoints?: Array<{ customDomain?: string; domainType?: string }>;
+    publicEndpoints?: NonNullable<Parameters<typeof normalizeRoutingFields>[0]["publicEndpoints"]>;
   }[],
 ) {
   const project = await repos.project.findById(projectId);
@@ -1471,6 +1471,11 @@ export async function syncComposeServices(
   // Hostnames the stored rows already carry are exempt: a re-sync of a project
   // holding a bad one (persisted before #342) must not be refused wholesale.
   assertValidCustomDomains(parsed, { known: customHostnamesOf(stored) });
+  const routes = composeEndpointChanges(parsed, stored);
+  await assertFreeEndpointsAllowed(ctx.organizationId, routes.endpoints, {
+    capability: "managed-compose-domains", workspaceId: project.workspaceId,
+    knownHostnames: routes.knownHostnames,
+  });
 
   // #332: argv needs no restoring here. This endpoint accepts `command` as a string
   // whose stored form is a lossy join, but `syncFromCompose` (composeWritePatch →
