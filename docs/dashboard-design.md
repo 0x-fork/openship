@@ -120,7 +120,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   selects the server being inspected. Plans keeps the shared compact server picker beside
   that action. With one or two preset choices, show the saved subscription and capacity in
   the standard 340px right column when the container has room; stack it first on smaller
-  screens. Wider comparisons and Custom keep the compact summary below the tabs. Use the
+  screens. Keep a single priced offer at a maximum of 26rem, shrinking to the available
+  width on small screens. Complimentary-plan support guidance belongs inside the saved-plan
+  summary; dialogs without that summary retain their inline guidance. Wider comparisons and
+  Custom keep the compact summary below the tabs. Use the
   picker's displayed choices for this layout too; an inactive subscription uses a short
   inline notice. New purchases use the plan introduction
   as the page title and description. Keep Plans / Custom beside Back to billing in the

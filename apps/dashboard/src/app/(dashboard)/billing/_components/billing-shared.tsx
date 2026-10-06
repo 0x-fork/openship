@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { PLANS } from "@repo/core";
@@ -50,10 +51,12 @@ export function BillingPlanSummary({
   state,
   compact = false,
   showPlanAction = false,
+  notice,
 }: {
   state: BillingState;
   compact?: boolean;
   showPlanAction?: boolean;
+  notice?: ReactNode;
 }) {
   const { t, locale } = useI18n();
   const hasPlan = !needsCloudPlan(state);
@@ -180,6 +183,7 @@ export function BillingPlanSummary({
       {hasPlan && plan && (
         <PlanCapacity plan={plan} workspaceScoped={Boolean(state.workspace)} compact={compact} />
       )}
+      {notice && <div className={compact ? "basis-full" : undefined}>{notice}</div>}
       {showPlanAction && (
         <Button asChild variant="secondary" className="w-full">
           <Link href="/billing/plans">

@@ -124,9 +124,6 @@ function PlanPicker({
     visiblePlans.length > 0 &&
     visiblePlans.length <= 2,
   );
-  const summary = billingState ? (
-    <BillingPlanSummary state={billingState} compact={!summaryAside} />
-  ) : null;
   useSidebarCollapseRequest(
     !preserveProject &&
       !loading &&
@@ -149,6 +146,25 @@ function PlanPicker({
     !subscription.pendingChange,
   );
   const selectable = canPurchase || canModify;
+  const supportNotice = !selectable && !subscription?.pendingChange ? (
+    <p className="text-sm leading-6 text-muted-foreground">
+      {complimentary
+        ? t.billing.complimentary.changeViaSupport
+        : billingEnabled
+          ? t.billing.plansRoute.changeViaSupport
+          : t.billing.plansRoute.billingUnavailable}{" "}
+      <a href="mailto:support@openship.io" className="text-primary hover:underline">
+        {t.billing.portal.supportButton}
+      </a>
+    </p>
+  ) : null;
+  const summary = billingState ? (
+    <BillingPlanSummary
+      state={billingState}
+      compact={!summaryAside}
+      notice={complimentary ? supportNotice : null}
+    />
+  ) : null;
   const {
     startCheckout,
     subscribing,
@@ -351,18 +367,7 @@ function PlanPicker({
                 {changes.error}
               </p>
             )}
-            {!selectable && !subscription?.pendingChange && (
-              <p className="text-sm text-muted-foreground">
-                {complimentary
-                  ? t.billing.complimentary.changeViaSupport
-                  : billingEnabled
-                    ? t.billing.plansRoute.changeViaSupport
-                    : t.billing.plansRoute.billingUnavailable}{" "}
-                <a href="mailto:support@openship.io" className="text-primary hover:underline">
-                  {t.billing.portal.supportButton}
-                </a>
-              </p>
-            )}
+            {(!complimentary || !billingState) && supportNotice}
             {configuration === "custom" && payload.custom ? (
               <CustomPlanConfigurator
                 key={`${selectedWorkspaceId}:${currentOffer?.offerReference ?? currentPlan}`}
