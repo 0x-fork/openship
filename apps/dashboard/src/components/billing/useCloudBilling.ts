@@ -1,6 +1,6 @@
 "use client";
 
-import { useBillingWorkspace } from "./BillingWorkspaceContext";
+import { useBillingScope } from "./BillingWorkspaceContext";
 import { useEffect, useRef, useState } from "react";
 import type { PlanTierId } from "@repo/core";
 import type { BillingPlans, CustomSubscriptionSelection } from "@repo/contracts";
@@ -9,6 +9,8 @@ import { api, ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { endpoints } from "@/lib/api/endpoints";
 import { randomUUID } from "@/lib/random-uuid";
 import { trackCloudEvent } from "@/lib/cloud-analytics";
+import { checkoutFailureKind, type CheckoutFailure } from "@/lib/checkout-failure";
+import { useSession } from "@/lib/auth-client";
 import type { ApiPlan, ApiPricingUi } from "./PricingCards";
 
 interface PlansPayload extends Omit<BillingPlans, "ui" | "plans"> {
@@ -45,11 +47,14 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   prepareWorkspace?: () => Promise<string>;
 }) {
   const { t } = useI18n();
-  const billingWorkspaceId = useBillingWorkspace();
-  const workspaceId = selectedWorkspaceId ?? billingWorkspaceId;
+  const { workspaceId: billingWorkspaceId, organizationId } = useBillingScope();
+  const { data: session } = useSession();
+  const ownerKey = `${session?.user.id}:${organizationId ?? session?.session?.activeOrganizationId}`;
+  const workspaceId = selectedWorkspaceId ?? billingWorkspaceId ?? undefined;
   const [subscribing, setSubscribing] = useState<PlanTierId | "custom" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState<CheckoutFailure | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const attempts = useRef(new Map<string, string>());
   const busy = useRef(false);
@@ -58,9 +63,9 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     generation.current++;
     busy.current = false;
     attempts.current.clear();
-    setSubscribing(null); setCheckoutUrl(null); setError(null);
+    setSubscribing(null); setCheckoutUrl(null); setError(null); setUnavailable(null);
     return () => { generation.current++; };
-  }, [workspaceId]);
+  }, [workspaceId, ownerKey]);
 
   async function startCheckout(planTierId: PlanTierId, interval: "monthly" | "annual", custom?: CustomSubscriptionSelection) {
     if (!enabled || busy.current || planTierId === "free" || planTierId === "enterprise") return;
@@ -73,14 +78,18 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     setSubscribing(custom ? "custom" : planTierId);
     setError(null);
     setCheckoutUrl(null);
+    setUnavailable(null);
+    let targetWorkspaceId = workspaceId;
+    let requestId: string | undefined;
     try {
-      const targetWorkspaceId = prepareWorkspace ? await prepareWorkspace() : workspaceId;
+      targetWorkspaceId = prepareWorkspace ? await prepareWorkspace() : workspaceId;
       if (version !== generation.current) { checkoutTab?.close(); return; }
       if (prepareWorkspace && !targetWorkspaceId) throw new Error(t.billing.plansRoute.checkoutError);
       const attempt = `${targetWorkspaceId ?? "initial"}:${custom?.quoteReference ?? planTierId}:${interval}`;
       if (!attempts.current.has(attempt)) attempts.current.set(attempt, randomUUID());
+      requestId = attempts.current.get(attempt)!;
       const res = await api.post<{ data: { checkoutUrl: string } }>(endpoints.billing.subscription, {
-        planTierId, interval, workspaceId: targetWorkspaceId, custom, idempotencyKey: attempts.current.get(attempt),
+        planTierId, interval, workspaceId: targetWorkspaceId, custom, idempotencyKey: requestId,
       });
       if (version !== generation.current) { checkoutTab?.close(); return; }
       const url = new URL(res.data.checkoutUrl);
@@ -95,7 +104,9 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     } catch (err) {
       checkoutTab?.close();
       if (version !== generation.current) return;
-      setError(getApiErrorMessage(err, t.billing.plansRoute.checkoutError));
+      const kind = checkoutFailureKind(err);
+      if (kind) setUnavailable({ kind, requestId: requestId ?? randomUUID(), planTierId, interval, workspaceId: targetWorkspaceId, custom });
+      else setError(getApiErrorMessage(err, t.billing.plansRoute.checkoutError));
       if (err instanceof ApiError && (err.body as { code?: string } | undefined)?.code === "BILLING_QUOTE_CHANGED") {
         setQuoteRevision(value => value + 1);
       }
@@ -106,5 +117,5 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
       }
     }
   }
-  return { startCheckout, subscribing, error, checkoutUrl, quoteRevision };
+  return { startCheckout, subscribing, error, checkoutUrl, quoteRevision, unavailable, dismissUnavailable: () => setUnavailable(null) };
 }

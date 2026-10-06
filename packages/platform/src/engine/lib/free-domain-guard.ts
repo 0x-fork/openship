@@ -1,6 +1,7 @@
 import type { CloudCapability } from "@repo/core";
 import { requireCloud } from "./cloud/require-cloud";
 import { assertFreeSubdomainQuota } from "./plan-guard";
+import type { CloudWorkspaceScope } from "./cloud-workspace-scope";
 import {
   cloudManagedHostnameOf,
   storedPublicEndpointsNeedCloud,
@@ -27,11 +28,13 @@ export async function assertFreeEndpointsAllowed(
     | Array<Pick<StoredPublicEndpoint, "domainType" | "domain" | "customDomain">>
     | null
     | undefined,
-  capability: CloudCapability = "managed-project-domain",
+  // Callers derive workspace ownership from the authorized server/project, never
+  // an independent client selector. Losing it makes multi-server plans ambiguous.
+  options: { capability?: CloudCapability; workspaceId?: CloudWorkspaceScope } = {},
 ): Promise<void> {
   // Only custom domains in play → no Cloud edge needed.
   if (!storedPublicEndpointsNeedCloud(endpoints)) return;
-  await requireCloud(capability, { organizationId });
+  await requireCloud(options.capability ?? "managed-project-domain", { organizationId });
 
   // Then the plan allowance. Order matters: "connect Cloud" must be answered
   // before "you've used all 10", because an unconnected instance can't have a
@@ -42,5 +45,6 @@ export async function assertFreeEndpointsAllowed(
   await assertFreeSubdomainQuota(
     organizationId,
     (endpoints ?? []).map(cloudManagedHostnameOf),
+    options.workspaceId,
   );
 }

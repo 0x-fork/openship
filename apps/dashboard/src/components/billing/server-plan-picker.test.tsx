@@ -20,6 +20,7 @@ import { CloudPlanPicker } from "./CloudPlanPicker";
 import { CloudPurchaseProvider, CloudPurchaseTabs } from "./CloudPurchaseContext";
 import type { ApiPlan } from "./PricingCards";
 import type { BillingState } from "@/lib/api/billing";
+import { ApiError } from "@/lib/api/client";
 
 const h = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), create: vi.fn(), available: vi.fn(), connect: vi.fn(), readServer: vi.fn(), selected: vi.fn(),
@@ -494,6 +495,33 @@ describe("buying another managed server", () => {
     expect(started).toHaveBeenCalledWith(server, "https://checkout.example.test/new-server");
     expect(popup.location.href).toBe("https://checkout.example.test/new-server");
     expect(popup.opener).toBeNull();
+  });
+
+  it("keeps the new server and exact purchase when retrying from unavailable-capacity feedback", async () => {
+    h.post.mockRejectedValueOnce(new ApiError(503, "Unavailable", {
+      code: "CLOUD_CAPACITY_UNAVAILABLE", error: "Raw provider failure",
+    }));
+    await render(<BillingWorkspaceProvider workspaceId="cws-already-paid"><ManagedServerPurchase preserveProject /></BillingWorkspaceProvider>);
+    await click("Choose Pro");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(copy.checkoutUnavailable.capacityTitle);
+    expect(document.body.textContent).not.toContain("Raw provider failure");
+    expect(popup.close).toHaveBeenCalledOnce();
+    expect(h.post.mock.calls[0]![1]).toMatchObject({ workspaceId: server.id, planTierId: "pro" });
+    await click(copy.checkoutUnavailable.retry);
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.post.mock.calls[1]).toEqual(h.post.mock.calls[0]);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("discards an unavailable checkout when the customer changes organization", async () => {
+    h.post.mockRejectedValueOnce(new ApiError(503, "Unavailable", { code: "OBLIEN_CHECKOUT_UNAVAILABLE" }));
+    await render(<ManagedServerPurchase preserveProject />);
+    await click("Choose Hobby");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(copy.checkoutUnavailable.checkoutTitle);
+    h.org = "org-b";
+    await render(<ManagedServerPurchase preserveProject />);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(h.post).toHaveBeenCalledOnce();
   });
 
   it("does not start checkout from an old organization after its server creation completes", async () => {

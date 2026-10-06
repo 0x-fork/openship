@@ -54,11 +54,11 @@ const state = {
 };
 let container: HTMLDivElement;
 let root: Root;
-async function render(props: Parameters<typeof BillingCheckoutStatus>[0], workspaceId?: string) {
+async function render(props: Parameters<typeof BillingCheckoutStatus>[0], workspaceId?: string, organizationId?: string) {
   await act(async () =>
     root.render(
       <I18nProvider>
-        <BillingWorkspaceProvider workspaceId={workspaceId}><BillingCheckoutStatus {...props} /></BillingWorkspaceProvider>
+        <BillingWorkspaceProvider workspaceId={workspaceId} organizationId={organizationId}><BillingCheckoutStatus {...props} /></BillingWorkspaceProvider>
       </I18nProvider>,
     ),
   );
@@ -419,6 +419,41 @@ describe("confirmed Cloud subscription welcome", () => {
   const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
   const dismiss = () =>
     document.querySelector<HTMLButtonElement>(`button[aria-label="${welcome.dismiss}"]`)!;
+
+  it("welcomes the purchased managed server with its saved custom capacity and scoped links", async () => {
+    mocks.state.mockResolvedValue({ ...monthlyState, plan: { ...monthlyState.plan, name: "Custom",
+      resourceLimits: { max_total_vcpus: 6, max_total_ram_mb: 24576, max_total_disk_gb: 180 } } });
+    mocks.checkout.mockResolvedValue({ ...paid, creditsGranted: 0 });
+    await render(subscription, "cws_selected", "org_1");
+    expect(dialog()?.textContent).toContain("Launch server is ready");
+    expect(dialog()?.textContent).toContain("Your Custom plan is active");
+    const capacity = [...dialog()!.querySelectorAll("dl dd")].map(node => node.textContent);
+    expect(capacity).toEqual(["6", "24 GB", "180 GB"]);
+    expect(dialog()?.querySelector('a[href="/servers/srv_selected"]')).not.toBeNull();
+    expect(dialog()?.querySelector('a[href="/billing/overview?workspaceId=cws_selected&organizationId=org_1"]')).not.toBeNull();
+    expect(dialog()?.querySelector('a[href="/library"]')).toBeNull();
+  });
+
+  it("shows a welcome for each purchased server, while remembering the first server's dismissal", async () => {
+    mocks.state.mockResolvedValue(monthlyState);
+    mocks.checkout.mockResolvedValue({ ...paid, creditsGranted: 0 });
+    await render(subscription, "cws_selected");
+    await act(async () => dismiss().click());
+    expect(dialog()).toBeNull();
+    mocks.state.mockResolvedValue({ ...monthlyState,
+      workspace: { ...monthlyState.workspace, id: "cws_second", serverId: "srv_second", name: "Second server" } });
+    mocks.checkout.mockResolvedValue({ ...paid, id: "cs_second", creditsGranted: 0 });
+    mocks.server.mockResolvedValue({ id: "srv_second", managed: { ...readyServer.managed, id: "cws_second", serverId: "srv_second" } });
+    await render({ ...subscription, checkoutId: "cs_second" }, "cws_second");
+    expect(dialog()?.textContent).toContain("Second server is ready");
+    expect(dialog()?.querySelector('a[href="/servers/srv_second"]')).not.toBeNull();
+    await act(async () => dismiss().click());
+    mocks.state.mockResolvedValue(monthlyState);
+    mocks.checkout.mockResolvedValue({ ...paid, creditsGranted: 0 });
+    mocks.server.mockResolvedValue(readyServer);
+    await render(subscription, "cws_selected");
+    expect(dialog()).toBeNull();
+  });
 
   it("celebrates the verified plan with its live allowances and a first-project action", async () => {
     await render(subscription);

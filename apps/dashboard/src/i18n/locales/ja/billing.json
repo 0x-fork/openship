@@ -14,7 +14,10 @@
     "description": "Cloud プランが有効になりました。さっそく使ってみましょう。",
     "dismiss": "ウェルカム画面を閉じる",
     "openProjects": "プロジェクトを開く",
-    "viewPlan": "自分のプランを見る"
+    "viewPlan": "自分のプランを見る",
+    "serverTitle": "{name} の準備ができました",
+    "serverDescription": "{plan} プランが有効になりました。アプリとビルドはこのサーバーのリソースを共有します。",
+    "openServer": "サーバーを開く"
   },
   "capacity": {
     "title": "容量と使用状況",
@@ -790,5 +793,21 @@
     "paygMetering": "従量課金は稼働中のCPU、実行中または一時停止中に予約されたRAM、保持中のプロビジョニング済みストレージを計測します。",
     "buildHint": "ビルドはこのサーバーで実行され、アプリとリソースを共有します。",
     "usageIncluded": "リソースの利用は支払い済みサーバーに含まれ、コンピュートクレジットを消費しません。"
+  },
+  "checkoutUnavailable": {
+    "capacityTitle": "このサーバーサイズは利用できません",
+    "capacityDescription": "現在このサイズを提供できません。選択内容を保持して再試行するか、利用可能状況の通知をリクエストしてください。",
+    "checkoutTitle": "お支払いを一時的に利用できません",
+    "checkoutDescription": "選択内容は保存されています。しばらくしてから再試行するか、サポートチームへの連絡をリクエストしてください。",
+    "emailLabel": "通知先メールアドレス",
+    "notificationHint": "サポートチームが利用可能状況についてご連絡します。",
+    "notify": "通知を希望",
+    "notifying": "リクエストを保存中…",
+    "receivedTitle": "リクエストを受け付けました",
+    "receivedDescription": "リクエストを保存しました。サポートチームが {email} にご連絡します。",
+    "retry": "お支払いを再試行",
+    "close": "閉じる",
+    "done": "完了",
+    "requestFailed": "リクエストを保存できませんでした。再試行するか、support@openship.io にメールしてください。"
   }
 }

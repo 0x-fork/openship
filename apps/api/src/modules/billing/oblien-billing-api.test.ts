@@ -216,6 +216,20 @@ describe("Oblien billing SDK and transport contract", () => {
     await expect(api.getEntitlement("os-one")).rejects.toThrow("Cloud billing could not complete");
     expect(fetcher).toHaveBeenCalledOnce();
   });
+  it.each(["capacity_unavailable", "billing_capacity_unavailable"])("identifies unavailable capacity (%s) without abandoning an uncertain checkout", async code => {
+    const { api, fetcher } = setup({ success: false, code,
+      message: "private provider capacity details", details: { customer: "cus_private" } }, 503);
+    const error = await api.createCheckout({ namespace: "os-one", kind: "subscription", offer, metadata,
+      billingInterval: "monthly", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io",
+      idempotencyKey: "private-attempt" }).catch(error => error);
+    expect(error).toMatchObject({ statusCode: 503, code: "CLOUD_CAPACITY_UNAVAILABLE",
+      message: "This server size is temporarily unavailable. Please try again later or contact support.",
+      details: { providerCode: code } });
+    expect(error.details).not.toHaveProperty("checkoutRejected");
+    expect(error.details).not.toHaveProperty("checkoutExpired");
+    expect(JSON.stringify(error)).not.toMatch(/private|test-secret/);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it("treats reseller eligibility as an operator setup issue without asking the customer to upgrade", async () => {
     const { api, fetcher } = setup({ success: false, code: "reseller_enterprise_required",
       message: "private owner identity", details: { accountTier: "free", requiredAccountTier: "enterprise" } }, 403);

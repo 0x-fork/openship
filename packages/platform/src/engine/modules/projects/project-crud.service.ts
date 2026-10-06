@@ -957,6 +957,7 @@ async function createProductionProject(
     await assertFreeEndpointsAllowed(
       organizationId,
       normalizeStoredPublicEndpoints(data.publicEndpoints),
+      { workspaceId: data.workspaceId },
     );
   }
   // Same placement, same reason as the free-endpoint gate above: refuse a bogus
@@ -1884,7 +1885,7 @@ export async function updateProject(
         const host = publicEndpointHostname(endpoint)?.trim().toLowerCase();
         return host ? !priorHosts.has(host) : false;
       });
-      await assertFreeEndpointsAllowed(organizationId, netNew);
+      await assertFreeEndpointsAllowed(organizationId, netNew, { workspaceId: p.workspaceId });
     }
 
     // Best-effort ONLY for an incidental re-sync (a port edit) — the field edit

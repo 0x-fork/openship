@@ -92,6 +92,7 @@ import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { deleteFolderSession } from "@repo/platform/engine/modules/projects/folder/session-store";
 import { rm } from "node:fs/promises";
+import * as platformConfig from "@repo/platform/engine/lib/platform-config";
 
 // Real HTTP authorization, SQL ownership, billing reconciliation, provisioning
 // and operation workers. Only provider transport/execution is simulated here;
@@ -1244,5 +1245,61 @@ describe("provider subscription changes through billing and the shared server wo
     expect(h.billing.changePlan).toHaveBeenCalledOnce();
     expect(accepted.size).toBe(1);
     expect(h.client.resize).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("managed server free-domain scope", () => {
+  beforeEach(() => {
+    const platform = vi.spyOn(platformConfig, "platform").mockReturnValue({ target: "cloud", runtime: { name: "docker" } } as never);
+    return () => platform.mockRestore();
+  });
+  it.each(["create", "ensure"] as const)("keeps the selected server for free-domain validation during project %s with two servers", async entry => {
+    await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid second server" });
+    const sdk = await nativeShip();
+    const server = (await repos.server.findByWorkspace(workspace.id, owner.orgId))!;
+    const input = { name: `Routed ${entry}`, serverId: server.id, port: 3200,
+      publicEndpoints: [{ domainType: "free" as const, domain: `routed-${entry}`, port: 3200 }] };
+    const result = entry === "create" ? await sdk.projects.create(input) : await sdk.projects.ensure(input);
+    const id = "project_id" in result ? result.project_id : result.id;
+    expect(await repos.project.findById(id)).toMatchObject({ serverId: server.id, workspaceId: workspace.id });
+    expect((await repos.domain.listByProject(id)).map(domain => domain.hostname)).toContain(`routed-${entry}.opsh.io`);
+    expect(h.billing.getEntitlement).toHaveBeenCalled();
+    expect(h.billing.getEntitlement.mock.calls.every(([namespace]: [string]) => namespace === workspace.namespace)).toBe(true);
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("uses the saved server for project and service domain edits with an unpaid sibling server", async () => {
+    subscribe("starter");
+    const sdk = await nativeShip();
+    const server = (await repos.server.findByWorkspace(workspace.id, owner.orgId))!;
+    const project = await sdk.projects.create({ name: "Routed app", serverId: server.id, port: 3200 });
+    await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid second server" });
+    await sdk.projects.update(project.id, {
+      publicEndpoints: [{ domainType: "free", domain: "routed-app-updated", port: 3200 }],
+    });
+    expect((await repos.domain.listByProject(project.id)).map(domain => domain.hostname)).toContain("routed-app-updated.opsh.io");
+    const service = await sdk.services.create(project.id, {
+      name: "console", image: "nginx:alpine", ports: ["8080:80"],
+      exposed: true, exposedPort: "80", domainType: "free", domain: "routed-console",
+    });
+    await sdk.services.update(project.id, service.id, { domainType: "free", domain: "routed-console-updated" });
+    expect(await repos.service.findById(service.id)).toMatchObject({ domain: "routed-console-updated" });
+    expect(h.billing.getEntitlement).toHaveBeenCalled();
+    expect(h.billing.getEntitlement.mock.calls.every(([namespace]: [string]) => namespace === workspace.namespace)).toBe(true);
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("does not use a paid sibling's allowance or write a project for an unauthorized server", async () => {
+    const sdk = await nativeShip();
+    const unpaid = await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid server" });
+    const unpaidServer = (await repos.server.findByWorkspace(unpaid.id, owner.orgId))!;
+    const input = { name: "Refused app", port: 3200,
+      publicEndpoints: [{ domainType: "free" as const, domain: "refused-app", port: 3200 }] };
+    await expect(sdk.projects.create({ ...input, serverId: unpaidServer.id })).rejects.toMatchObject({ code: "PLAN_UPGRADE_REQUIRED" });
+    const outsider = await seedOwner();
+    const foreign = await repos.cloudWorkspace.create({ organizationId: outsider.orgId, name: "Foreign server" });
+    const foreignServer = (await repos.server.findByWorkspace(foreign.id, outsider.orgId))!;
+    await expect(sdk.projects.create({ ...input, serverId: foreignServer.id })).rejects.toMatchObject({ statusCode: 404 });
+    expect((await repos.projectGroup.listByOrganization(owner.orgId, { page: 1, perPage: 1 })).total).toBe(0);
+    expect(h.billing.getEntitlement).not.toHaveBeenCalled();
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
   });
 });

@@ -14,7 +14,10 @@
     "description": "Votre offre Cloud est active. À vous de jouer.",
     "dismiss": "Fermer le message de bienvenue",
     "openProjects": "Ouvrir les projets",
-    "viewPlan": "Voir mon offre"
+    "viewPlan": "Voir mon offre",
+    "serverTitle": "{name} est prêt",
+    "serverDescription": "Votre offre {plan} est active. Les applications et les builds partagent les ressources de ce serveur.",
+    "openServer": "Ouvrir le serveur"
   },
   "capacity": {
     "title": "Capacité et utilisation",
@@ -790,5 +793,21 @@
     "paygMetering": "La facturation à l’usage mesure le CPU actif, la RAM réservée en fonctionnement ou en pause et le stockage provisionné tant qu’il est conservé.",
     "buildHint": "Les builds s’exécutent sur ce serveur et partagent ses ressources avec vos applications.",
     "usageIncluded": "L’activité des ressources est incluse dans votre serveur payé et ne consomme aucun crédit de calcul."
+  },
+  "checkoutUnavailable": {
+    "capacityTitle": "Cette taille de serveur est indisponible",
+    "capacityDescription": "Nous ne pouvons pas fournir cette taille actuellement. Conservez votre sélection et réessayez ou demandez à être informé de sa disponibilité.",
+    "checkoutTitle": "Le paiement est temporairement indisponible",
+    "checkoutDescription": "Votre sélection est enregistrée. Réessayez dans un instant ou demandez à notre équipe de vous recontacter.",
+    "emailLabel": "E-mail pour les nouvelles",
+    "notificationHint": "Notre équipe d’assistance vous tiendra au courant de la disponibilité.",
+    "notify": "Me prévenir",
+    "notifying": "Enregistrement de la demande…",
+    "receivedTitle": "Demande reçue",
+    "receivedDescription": "Votre demande est enregistrée. Notre équipe d’assistance vous contactera à {email}.",
+    "retry": "Réessayer le paiement",
+    "close": "Fermer",
+    "done": "Terminé",
+    "requestFailed": "Impossible d’enregistrer votre demande. Réessayez ou écrivez à support@openship.io."
   }
 }
