@@ -50,15 +50,18 @@ describe("Cloud Docker build execution limits", () => {
     expect(command).toContain("cd '/tmp/build dir'");
     expect(command).not.toContain("--use");
     expect(command).toContain("trap ");
-    expect(h.executor.exec.mock.calls.at(-1)![0]).toContain("buildx rm --force --keep-state");
+    expect(h.executor.exec.mock.calls.at(-1)![0]).toContain("buildx rm --force 'openship-");
+    expect(command).not.toContain("--keep-state");
+    expect(h.executor.exec.mock.calls.at(-1)![0]).not.toContain("--keep-state");
   });
   it.each([1, 137])(
-    "removes only the project's builder after a failed build (exit %s)",
+    "removes the project's builder and cache after a failed build (exit %s)",
     async (code) => {
       const h = fixture();
       h.executor.streamExec.mockResolvedValue({ code, output: "" });
       await expect(h.run()).rejects.toThrow(`docker build exited with code ${code}`);
-      expect(h.executor.exec.mock.calls.at(-1)![0]).toContain("buildx rm --force --keep-state");
+      expect(h.executor.exec.mock.calls.at(-1)![0]).toContain("buildx rm --force 'openship-");
+      expect(h.executor.exec.mock.calls.at(-1)![0]).not.toContain("--keep-state");
       expect(h.executor.exec.mock.calls.at(-1)![0]).not.toContain("prune");
     },
   );
@@ -70,7 +73,8 @@ describe("Cloud Docker build execution limits", () => {
       return { code: 0, output: "" };
     });
     await expect(h.run(controller.signal)).rejects.toMatchObject({ name: "BuildCancelledError" });
-    expect(h.executor.exec.mock.calls.at(-1)![0]).toContain("buildx rm --force --keep-state");
+    expect(h.executor.exec.mock.calls.at(-1)![0]).toContain("buildx rm --force 'openship-");
+    expect(h.executor.exec.mock.calls.at(-1)![0]).not.toContain("--keep-state");
   });
   it("applies the same budget to the legacy Cloud Docker builder", async () => {
     const h = fixture("cloud", false);
