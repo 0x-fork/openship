@@ -1,7 +1,7 @@
 import { createConfigurationSecrets } from "@repo/db/configuration-secrets";
 import { createEncryption } from "@repo/db/encryption";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -94,7 +94,10 @@ vi.mock("@repo/platform/engine/modules/deployments/preflight", () => ({
 
 vi.mock("@repo/platform/engine/lib/cluster-deployment-target", () => ({ requireClusterDeploymentTarget }));
 
-vi.mock("@repo/platform/engine/modules/deployments/prepare.service", () => ({
+vi.mock("@repo/platform/engine/modules/deployments/prepare.service", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@repo/platform/engine/modules/deployments/prepare.service")
+  >()),
   resolveProjectInfo,
   resolveProjectSourceEnv,
 }));
@@ -185,7 +188,7 @@ function baseProject(overrides: Record<string, unknown> = {}) {
     hasBuild: true,
     resources: null,
     buildResources: null,
-    cloudWorkspaceId: null,
+    workspaceId: null,
     runtimeMode: "docker",
     defaultRollbackStrategy: "git",
     ...overrides,
@@ -225,6 +228,10 @@ function installStatefulComposeRepo<T extends Record<string, unknown>>(initial: 
   let stored = structuredClone(initial);
   const writes: Array<Record<string, unknown>> = [];
   const db = {
+    transaction: async (run: (tx: Database) => Promise<unknown>) => run(db),
+    select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({
+      for: async () => [{ deletionInProgress: false, cloudPromotion: null }],
+    }) }) }) }),
     query: { service: { findMany: async () => [stored] } },
     update: () => ({
       set: (data: Record<string, unknown>) => ({
@@ -491,7 +498,7 @@ describe("resolveSnapshotTarget", () => {
       id: "project-1",
       organizationId: "org-1",
       activeDeploymentId: null,
-      cloudWorkspaceId: null,
+      workspaceId: null,
       serverId: null,
       runtimeMode: null,
       ...overrides,
@@ -518,10 +525,10 @@ describe("resolveSnapshotTarget", () => {
     expect(t).toMatchObject({ deployTarget: "server", serverId: "srv_1" });
   });
 
-  it("lets cloud win over a stray serverId and drops the serverId", async () => {
-    const t = await resolveSnapshotTarget(project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }));
+  it("keeps the managed server identity on a Cloud target", async () => {
+    const t = await resolveSnapshotTarget(project({ workspaceId: "ws_1", serverId: "srv_1" }));
     expect(t.deployTarget).toBe("cloud");
-    expect(t.serverId).toBeUndefined();
+    expect(t.serverId).toBe("srv_1");
   });
 
   it("lets an explicit override win over the durable binding", async () => {
@@ -882,6 +889,81 @@ describe("triggerDeployment", () => {
     expect(kickoffBuild).toHaveBeenCalledOnce();
   });
 
+  it.each(["repository", "subfolder"])(
+    "refreshes a subfolder deployment from its %s manifest using the real parser and reconciler",
+    async (manifestLocation) => {
+      const localPath = mkdtempSync(join(tmpdir(), "openship-subfolder-deploy-"));
+      try {
+        mkdirSync(join(localPath, "go-api"));
+        writeFileSync(join(localPath, "go-api", "Dockerfile"), "FROM node:22-alpine\n");
+        const config = {
+          rootDirectory: manifestLocation === "repository" ? "go-api" : "./",
+          env: { API_URL: "https://source.example.com" },
+          services: [{ name: "web", build: ".", env: { SOURCE_VALUE: "refreshed" } }],
+        };
+        writeFileSync(
+          join(localPath, "openship.json"),
+          JSON.stringify(
+            manifestLocation === "repository"
+              ? config
+              : { framework: "fastapi", env: { OTHER_APP_SECRET: "not-for-this-project" } },
+          ),
+        );
+        if (manifestLocation === "subfolder") {
+          writeFileSync(join(localPath, "go-api", "openship.json"), JSON.stringify(config));
+        }
+
+        const baseline = { ...composeServices[0], buildArgs: {}, environment: {} };
+        const state = installStatefulComposeRepo({
+          ...baseline,
+          projectId: "project-1",
+          environment: { OPERATOR_VALUE: "keep-me" },
+          importedSpec: toComposeSpec(baseline),
+        });
+        repos.project.findById.mockResolvedValue(
+          baseProject({
+            localPath,
+            rootDirectory: "go-api",
+            composePath: null,
+          }),
+        );
+        const actualPrepare = await vi.importActual<
+          typeof import("@repo/platform/engine/modules/deployments/prepare.service")
+        >("@repo/platform/engine/modules/deployments/prepare.service");
+        resolveProjectInfo.mockImplementationOnce(actualPrepare.resolveProjectInfo);
+        const actualPipeline = await vi.importActual<
+          typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+        >("@repo/platform/engine/modules/deployments/build-pipeline");
+        resolveServicePipelineMode.mockImplementationOnce(
+          actualPipeline.resolveServicePipelineMode,
+        );
+
+        await triggerDeployment(ctx, { projectId: "project-1" });
+
+        expect(state.stored().environment).toEqual({
+          SOURCE_VALUE: "refreshed",
+          OPERATOR_VALUE: "keep-me",
+        });
+        expect(repos.service.reconcileFromCompose).toHaveBeenCalledOnce();
+        expect(repos.deployment.create).toHaveBeenCalledOnce();
+        const queued = repos.deployment.create.mock.calls[0]![0];
+        expect(queued.meta.rootDirectory).toBe("go-api");
+        expect(queued.meta.composeServices).toEqual([
+          expect.objectContaining({
+            name: "web",
+            build: ".",
+            environment: { SOURCE_VALUE: "refreshed", OPERATOR_VALUE: "keep-me" },
+          }),
+        ]);
+        expect(decrypt(queued.envVars.API_URL)).toBe("https://source.example.com");
+        expect(queued.envVars.OTHER_APP_SECRET).toBeUndefined();
+        expect(kickoffBuild).toHaveBeenCalledOnce();
+      } finally {
+        rmSync(localPath, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("reconciles a code-only webhook when a persisted image expression depends on env", async () => {
     repos.project.findById.mockResolvedValue(
       baseProject({
@@ -951,7 +1033,7 @@ describe("triggerDeployment", () => {
     expect(resolveProjectInfo).toHaveBeenCalledOnce();
   });
 
-  it("persists exact scope and force-pull intent for an incoming multi-service hook", async () => {
+  it.each(["webhook", "update"])("persists the exact service scope for an %s deployment", async (trigger) => {
     const targets = ["svc-api", "svc-worker"];
     repos.service.listByProject.mockResolvedValue([
       { id: "svc-api", name: "api", enabled: true, advanced: null },
@@ -968,17 +1050,17 @@ describe("triggerDeployment", () => {
       projectId: "project-1",
       serviceIds: targets,
       strictServiceScope: true,
-      forcePullImages: true,
-      trigger: "webhook",
+      forcePullImages: trigger === "webhook",
+      trigger,
     });
 
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        trigger: "webhook",
+        trigger,
         meta: expect.objectContaining({
           targetServiceIds: targets,
           strictServiceScope: true,
-          forcePullImages: true,
+          ...(trigger === "webhook" ? { forcePullImages: true } : {}),
         }),
       }),
     );
@@ -997,7 +1079,7 @@ describe("triggerDeployment", () => {
     expect(meta.strictServiceScope).toBeUndefined();
   });
 
-  it("rejects a stale exact target after compose reconciliation and queues nothing", async () => {
+  it.each(["webhook", "update"])("%s rejects a stale exact target after compose reconciliation and queues nothing", async (trigger) => {
     repos.service.listByProject.mockResolvedValue([
       { id: "svc-api", name: "api", enabled: true, advanced: null },
     ]);
@@ -1008,7 +1090,7 @@ describe("triggerDeployment", () => {
         serviceIds: ["svc-api", "svc-deleted"],
         strictServiceScope: true,
         forcePullImages: true,
-        trigger: "webhook",
+        trigger,
       }),
     ).rejects.toThrow(/svc-deleted/);
 
@@ -1016,7 +1098,7 @@ describe("triggerDeployment", () => {
     expect(kickoffBuild).not.toHaveBeenCalled();
   });
 
-  it("rejects replacing a namespace provider without its dependent", async () => {
+  it.each(["webhook", "update"])("%s rejects replacing a namespace provider without its dependent", async (trigger) => {
     repos.service.listByProject.mockResolvedValue([
       { id: "svc-vpn", name: "vpn", enabled: true, advanced: null },
       {
@@ -1033,7 +1115,7 @@ describe("triggerDeployment", () => {
         serviceIds: ["svc-vpn"],
         strictServiceScope: true,
         forcePullImages: true,
-        trigger: "webhook",
+        trigger,
       }),
     ).rejects.toThrow(/svc-sidecar/);
 
@@ -1111,6 +1193,7 @@ describe("triggerDeployment", () => {
         gitOwner: "acme",
         gitRepo: "app",
         localPath: null,
+        rootDirectory: "deploy",
       }),
     );
 
@@ -1129,6 +1212,7 @@ describe("triggerDeployment", () => {
         repo: "app",
         branch: "main",
         composePath: "deploy/stack.yml",
+        rootDirectory: "deploy",
       }),
     );
     expect(repos.service.reconcileFromCompose).toHaveBeenCalledWith("project-1", composeServices);
@@ -1179,6 +1263,7 @@ describe("triggerDeployment", () => {
       baseProject({
         composePath: "deploy/stack.yml",
         localPath: "/opt/apps/payments",
+        rootDirectory: "deploy",
         gitProvider: "local",
         gitOwner: null,
         gitRepo: null,
@@ -1196,6 +1281,7 @@ describe("triggerDeployment", () => {
       source: "local",
       path: "/opt/apps/payments",
       composePath: "deploy/stack.yml",
+      rootDirectory: "deploy",
       env: {},
     });
     expect(repos.service.reconcileFromCompose).toHaveBeenCalledWith("project-1", composeServices);
@@ -1279,34 +1365,44 @@ describe("triggerDeployment", () => {
     expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
   });
 
-  it("reconciles native services when openship.json changes", async () => {
-    repos.project.findById.mockResolvedValue(
-      baseProject({
-        gitProvider: "github",
-        gitUrl: "https://github.com/acme/app.git",
-        gitOwner: "acme",
-        gitRepo: "app",
-        localPath: null,
-      }),
-    );
-    repos.service.listByProject.mockResolvedValue([
-      {
-        ...composeServices[0],
+  it.each(["", "go-api"])(
+    "reconciles native services when openship.json changes under %j",
+    async (rootDirectory) => {
+      repos.project.findById.mockResolvedValue(
+        baseProject({
+          gitProvider: "github",
+          gitUrl: "https://github.com/acme/app.git",
+          gitOwner: "acme",
+          gitRepo: "app",
+          localPath: null,
+          rootDirectory,
+        }),
+      );
+      repos.service.listByProject.mockResolvedValue([
+        {
+          ...composeServices[0],
+          projectId: "project-1",
+          importedSpec: { buildArgs: { APP_PACKAGE: "@myorg/web" } },
+        },
+      ]);
+
+      await triggerDeployment(ctx, {
         projectId: "project-1",
-        importedSpec: { buildArgs: { APP_PACKAGE: "@myorg/web" } },
-      },
-    ]);
+        trigger: "webhook",
+        commitSha: "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5",
+        changedPaths: [rootDirectory ? `${rootDirectory}/openship.json` : "openship.json"],
+      });
 
-    await triggerDeployment(ctx, {
-      projectId: "project-1",
-      trigger: "webhook",
-      commitSha: "1eeaf7692a19ee6e7ecb64b9d1a5c3ee7c0ac2f5",
-      changedPaths: ["openship.json"],
-    });
-
-    expect(resolveProjectInfo).toHaveBeenCalledOnce();
-    expect(repos.service.reconcileFromCompose).toHaveBeenCalledWith("project-1", composeServices);
-  });
+      expect(resolveProjectInfo).toHaveBeenCalledOnce();
+      expect(resolveProjectInfo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "github",
+          rootDirectory,
+        }),
+      );
+      expect(repos.service.reconcileFromCompose).toHaveBeenCalledWith("project-1", composeServices);
+    },
+  );
 
   it("refuses an existing-project redeploy when changed Compose config is unsafe", async () => {
     repos.project.findById.mockResolvedValue(
@@ -1775,7 +1871,7 @@ describe("triggerDeployment", () => {
       baseProject({
         framework: "nextjs",
         activeDeploymentId: "dep-live",
-        cloudWorkspaceId: "ws-live",
+        workspaceId: "ws-live",
       }),
     );
     repos.deployment.findById.mockResolvedValue({

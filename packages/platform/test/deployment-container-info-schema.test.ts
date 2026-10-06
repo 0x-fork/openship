@@ -1,85 +1,108 @@
-import { describe, expect, it } from "vitest";
-import { CloudRuntime, DockerRuntime } from "@repo/adapters";
-import { DeploymentControlSchemas } from "@repo/contracts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CloudDockerRuntime, DockerRuntime, type ContainerInfo } from "@repo/adapters";
+import { AnalyticsProjectSchemas, DeploymentControlSchemas } from "@repo/contracts";
 import { presentOperationOutput } from "../src/resource-operations";
 
-/**
- * `DeploymentContainerInfoSchema` (packages/contracts/src/deployment-controls.ts)
- * declares `additionalProperties: false`. The Docker and Cloud runtime adapters
- * (packages/adapters/src/runtime/docker.ts, packages/adapters/src/runtime/cloud.ts)
- * each populate a `resources` field on `getContainerInfo()` results — a real
- * field on the `ContainerInfo` type (packages/adapters/src/types.ts) — but the
- * schema never declared it. Docker omits the field for a missing container;
- * Cloud includes it only when the workspace response reports it.
- *
- * `presentOperationOutput()` (packages/platform/src/resource-operations.ts) is
- * what the real `GET /:id/info` route (apps/api/src/modules/deployments/
- * deployment.routes.ts) and its MCP tool (the route's `mcp` block makes it an
- * MCP tool, see apps/api/src/modules/mcp/mcp-tools.ts) call before returning a
- * `containerInfo` result to a caller. This test calls it directly.
- *
- * Before the fix, passing either tested adapter result to
- * `presentOperationOutput()` throws `500 INVALID_OPERATION_RESPONSE` because
- * `resources` is undeclared.
- */
-describe("DeploymentContainerInfoSchema agrees with what runtime adapters return", () => {
-  it("accepts the Docker runtime's getContainerInfo() output, including resources", async () => {
-    const runtime = await DockerRuntime.create({
-      dockerSocketPath: "/tmp/openship-test-absent.sock",
-    });
-    (runtime as unknown as { _docker: unknown })._docker = {
+const runtimes: DockerRuntime[] = [];
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map((runtime) => runtime.dispose()));
+  vi.restoreAllMocks();
+});
+
+async function createRuntime(kind: "Docker" | "Cloud", workspaceStatus = "running") {
+  const runtime =
+    kind === "Docker"
+      ? await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" })
+      : await CloudDockerRuntime.forWorkspace(
+          {
+            workspaces: {
+              get: async () => ({
+                id: "workspace-a",
+                namespace: "namespace-a",
+                status: "active",
+                info: { status: workspaceStatus },
+              }),
+            },
+          } as never,
+          {
+            projectId: "project-a",
+            ownerWorkspaceId: "managed-a",
+            workspaceId: "workspace-a",
+            namespace: "namespace-a",
+            provisionLock: { run: (fn) => fn() },
+            resolveRegistryAuth: async () => undefined,
+          },
+        );
+  runtimes.push(runtime);
+  return runtime;
+}
+
+// These are the shared response boundaries used by HTTP, SDK, and MCP calls.
+function present(info: ContainerInfo) {
+  return [
+    presentOperationOutput(
+      DeploymentControlSchemas.containerInfo,
+      info,
+      "deployments.containerInfo",
+    ),
+    presentOperationOutput(AnalyticsProjectSchemas.containerInfo, info, "analytics.containerInfo"),
+  ];
+}
+
+describe.each(["Docker", "Cloud"] as const)("%s container-info responses", (kind) => {
+  it.each([
+    {
+      name: "explicit limits",
+      hostConfig: { NanoCpus: 500_000_000, Memory: 512 * 1024 * 1024 },
+      expected: { cpuCores: 0.5, memoryMb: 512 },
+    },
+    {
+      name: "full server capacity",
+      hostConfig: { NanoCpus: 0, Memory: 0 },
+      expected: { cpuCores: 0, memoryMb: 0 },
+    },
+  ])("preserves $name through output validation", async ({ hostConfig, expected }) => {
+    const runtime = await createRuntime(kind);
+    // Mock only Docker I/O; ownership checks, limit decoding, and schemas are real.
+    vi.spyOn(runtime, "docker", "get").mockReturnValue({
       getContainer: () => ({
         inspect: async () => ({
-          HostConfig: { NanoCpus: 500_000_000, Memory: 512 * 1024 * 1024 },
+          Config: { Labels: { "openship.project": "project-a" } },
+          HostConfig: hostConfig,
           State: { Status: "exited", Running: false },
           NetworkSettings: { Networks: {} },
         }),
       }),
-    };
-    const info = await runtime.getContainerInfo("stopped-container");
-    expect(info).toMatchObject({ status: "stopped", resources: { cpuCores: 0.5, memoryMb: 512 } });
-    expect(() =>
-      presentOperationOutput(
-        DeploymentControlSchemas.containerInfo,
-        info,
-        "deployments.containerInfo",
-      ),
-    ).not.toThrow();
+    } as never);
+    const info = await runtime.getContainerInfo("service-a");
+    for (const result of present(info)) {
+      expect(result).toEqual({ containerId: "service-a", status: "stopped", resources: expected });
+    }
   });
 
-  it("accepts the Cloud runtime's getContainerInfo() output, including resources", async () => {
-    const client = {
-      workspace: () => ({
-        start: async () => {},
-        get: async () => ({
-          id: "native",
-          status: "active",
-          info: { status: "stopped" },
-          resources: { cpus: 4, memory_mb: 8192 },
-        }),
-        apiAccess: { rawToken: async () => ({}) },
+  it("accepts a missing container without resource information", async () => {
+    const runtime = await createRuntime(kind);
+    vi.spyOn(runtime, "docker", "get").mockReturnValue({
+      getContainer: () => ({
+        inspect: async () => {
+          throw Object.assign(new Error("No such container"), { statusCode: 404 });
+        },
       }),
-    };
-    const runtime = new CloudRuntime(client as never, { namespace: "org" });
-    const info = await runtime.getContainerInfo("native");
-    expect(info).toMatchObject({ status: "stopped", resources: { cpuCores: 4, memoryMb: 8192 } });
-    expect(() =>
-      presentOperationOutput(
-        DeploymentControlSchemas.containerInfo,
-        info,
-        "deployments.containerInfo",
-      ),
-    ).not.toThrow();
+    } as never);
+    const info = await runtime.getContainerInfo("missing-container");
+    for (const result of present(info)) {
+      expect(result).toEqual({ containerId: "missing-container", status: "missing" });
+    }
   });
+});
 
-  it("still accepts a runtime that reports no resources at all (Kubernetes, Bare)", () => {
-    const minimal = { containerId: "c1", status: "running" };
-    expect(() =>
-      presentOperationOutput(
-        DeploymentControlSchemas.containerInfo,
-        minimal,
-        "deployments.containerInfo",
-      ),
-    ).not.toThrow();
-  });
+it("accepts a stopped Cloud server without inspecting or inventing container limits", async () => {
+  const runtime = await createRuntime("Cloud", "stopped");
+  const getContainer = vi.fn();
+  vi.spyOn(runtime, "docker", "get").mockReturnValue({ getContainer } as never);
+  const info = await runtime.getContainerInfo("service-a");
+  for (const result of present(info)) {
+    expect(result).toEqual({ containerId: "service-a", status: "stopped" });
+  }
+  expect(getContainer).not.toHaveBeenCalled();
 });
