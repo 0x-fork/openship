@@ -3,6 +3,26 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
+## 0.8.2
+
+### Desktop update recovery
+
+**Desktop users on 0.8.0 or 0.8.1: please install this update manually once.**
+The built-in updater in those versions can fail with **"Redirect was cancelled"**.
+Download the installer for your operating system from the
+[0.8.2 release](https://github.com/oblien/openship/releases/tag/v0.8.2), quit Openship,
+and replace the installed application. Keep your application data: your local
+projects, servers and settings are preserved. Subsequent desktop updates use the
+fixed downloader.
+
+- Fixed GitHub release redirects in the desktop updater while retaining trusted
+  download hosts, SHA-256 checks and publisher signature verification.
+- Added a real Electron download test to the existing CI and release test gate,
+  covering installer and proof redirects, blocked destinations, redirect loops,
+  cancellation and incomplete-download cleanup.
+- This redirect bug affects the desktop installer updater. The server/CLI update
+  path is separate and does not need this manual recovery step.
+
 ## 0.8.1
 
 Openship Cloud now runs projects on managed servers with their own monthly plans.
