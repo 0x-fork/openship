@@ -223,6 +223,29 @@ describe("DockerRuntime build cancellation", () => {
     expect(sweep).toContain(`'/tmp/openship-build-session-sweep'-*`);
   });
 
+  it("leaves deployed containers with inherited image build labels to the deployment cleanup owner", async () => {
+    const remove = vi.fn(async () => undefined);
+    const getContainer = vi.fn(() => ({ remove }));
+    const executor = { exec: vi.fn(async () => "") } as unknown as CommandExecutor;
+    const { runtime } = runtimeWith(executor, {
+      _docker: {
+        listContainers: vi.fn(async () => [
+          { Id: "builder", Labels: { "openship.build": "cancel-owned-svc-api" } },
+          { Id: "application", Labels: {
+            "openship.build": "cancel-owned-svc-api", "openship.deployment": "deployment-current",
+          } },
+          { Id: "other-builder", Labels: { "openship.build": "unrelated-build" } },
+        ]),
+        getContainer,
+      },
+    });
+
+    await runtime.cancelBuild("cancel-owned");
+
+    expect(getContainer).toHaveBeenCalledExactlyOnceWith("builder");
+    expect(remove).toHaveBeenCalledExactlyOnceWith({ force: true });
+  });
+
   it("cancels every compose service build under the parent session id", async () => {
     let enteredBuild!: () => void;
     const buildStarted = new Promise<void>((resolve) => {

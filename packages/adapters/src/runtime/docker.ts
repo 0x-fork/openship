@@ -3545,6 +3545,10 @@ export class DockerRuntime implements RuntimeAdapter {
     for (const c of containers) {
       const buildId = c.Labels?.[OPENSHIP_LABEL.build];
       if (!buildId || !cancelCovers(sessionId, buildId)) continue;
+      // Runtime containers inherit the image's build label. The deployment
+      // worker owns their teardown (and may be preserving them for a record-only
+      // delete), so interrupting a build must never remove a deployed workload.
+      if (c.Labels?.[OPENSHIP_LABEL.deployment]) continue;
       try {
         await this.docker.getContainer(c.Id).remove({ force: true });
       } catch {
