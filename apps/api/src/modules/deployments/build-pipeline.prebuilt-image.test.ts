@@ -294,7 +294,7 @@ function allocatePinnedHostPort(input: {
 }
 
 import { repos } from "@repo/db";
-import { isMultiServiceRuntime } from "@repo/adapters";
+import { ensurePortAvailable, isMultiServiceRuntime } from "@repo/adapters";
 import { firePreDeployBackups } from "@repo/platform/engine/modules/backups/triggers/pre-deploy";
 import { executeComposePipeline, resolveProjectServicePreflightServices, shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/index";
 import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
@@ -412,6 +412,7 @@ async function run(dep = deployment(), projectOverrides: Record<string, unknown>
 describe("single-app prebuilt release-image pipeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(ensurePortAvailable).mockReset().mockResolvedValue(undefined);
     vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(false);
     vi.mocked(resolveProjectServicePreflightServices).mockResolvedValue([]);
     vi.mocked(isMultiServiceRuntime).mockReturnValue(false);
@@ -1093,6 +1094,9 @@ describe("single-app prebuilt release-image pipeline", () => {
       expect.objectContaining({ hostPort: 30_000 }),
       expect.any(Function),
     );
+    expect(ensurePortAvailable).toHaveBeenCalledExactlyOnceWith(
+      resolvedPlatform.platform.executor, 30_000, expect.anything(), expect.any(Function),
+    );
     expect(mocks.convergeTargetHostPortClaimsUnlocked).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: "project-1",
@@ -1106,6 +1110,43 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.convergeTargetHostPortClaimsUnlocked.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.onSuccess.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it.each([
+    { routeStrategy: "container-ip", managed: true },
+    { routeStrategy: "loopback-port", managed: false },
+  ])(
+    "does not confuse a Docker port with an occupied host port ($routeStrategy, managed=$managed)",
+    async ({ routeStrategy, managed }) => {
+      resolvedPlatform.usesManagedRouting = managed;
+      vi.mocked(ensurePortAvailable).mockRejectedValue(new Error("Host port 80 belongs to the edge"));
+      mocks.runDeployPipeline.mockImplementationOnce(runRealDeployPipeline);
+
+      await run(deployment({ meta: { ...snapshot(), port: 80 } }), { routeStrategy });
+      await drainDeploymentExecutions();
+
+      expect(mocks.onSuccess).toHaveBeenCalledOnce();
+      expect(mocks.deploy).toHaveBeenCalledOnce();
+      expect(ensurePortAvailable).not.toHaveBeenCalled();
+      expect(mocks.promptUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the host-port conflict check for an unrouted Bare app", async () => {
+    resolvedRuntime.name = "bare";
+    resolvedPlatform.usesManagedRouting = false;
+    vi.mocked(ensurePortAvailable).mockRejectedValue(new Error("Host port 8080 is occupied"));
+    mocks.runDeployPipeline.mockImplementationOnce(runRealDeployPipeline);
+
+    await run();
+    await drainDeploymentExecutions();
+
+    expect(ensurePortAvailable).toHaveBeenCalledExactlyOnceWith(
+      resolvedPlatform.platform.executor, 8080, expect.anything(), expect.any(Function),
+    );
+    expect(mocks.onFailure).toHaveBeenCalledOnce();
+    expect(mocks.deploy).not.toHaveBeenCalled();
+    expect(mocks.onSuccess).not.toHaveBeenCalled();
   });
 
   it("deploys an unrouted native app without reserving routed host ports or preparing an edge", async () => {
