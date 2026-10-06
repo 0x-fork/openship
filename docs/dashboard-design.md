@@ -38,6 +38,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   then stack on smaller containers. Catalog installs keep their destination and action together.
   Source deployments use the same destination summary above configuration and target-settings
   screen in Cloud and self-hosted mode; do not add a separate destination panel to the sidebar.
+- Single-app deployment progress uses 32px phase markers with 18–20px glyphs. Keep the
+  connectors centered and separated from each marker by the card-colored ring, with the
+  current phase and step count underneath.
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.
