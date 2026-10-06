@@ -46,7 +46,25 @@ terms and credit displays; updating Openship does not convert them.
 | **Usage** | Recorded resource usage over the selected period. |
 | **Plans** | Review upgrades or other plans, including Custom resources. |
 | **Top-ups** | Shown only for eligible saved metered subscriptions. |
-| **Payments** | Invoices and cards in the server's scoped Stripe portal. |
+| **Payments** | Unfinished payments, plus invoices and cards in the server's scoped Stripe portal. |
+
+## Finish or cancel a checkout
+
+Open **Pending payments** in the Billing header to find unfinished payments across
+your Cloud servers, including servers without an active plan. Connected desktop and
+self-hosted installations offer the same recovery flow without creating local
+execution links. A server's **Payments** tab lists its own unfinished payments;
+the header action lists all of your Cloud servers' payments.
+
+**Resume payment** opens the original checkout with its saved plan and price.
+**Cancel payment** closes a supported checkout after the provider confirms it
+cannot be paid. If confirmation is still pending, retry cancellation or refresh;
+do not start a competing purchase. Payments that have already been submitted link
+to their verification status instead.
+
+After confirmed cancellation or expiry, choose another plan or delete the unused
+server using the existing delete confirmation. If cancellation is unavailable,
+resume the payment, wait for expiry, or contact support.
 
 ## Change or cancel a plan
 

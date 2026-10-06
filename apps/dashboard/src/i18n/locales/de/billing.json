@@ -809,5 +809,42 @@
     "close": "Schließen",
     "done": "Fertig",
     "requestFailed": "Deine Anfrage konnte nicht gespeichert werden. Versuche es erneut oder schreibe an support@openship.io."
+  },
+  "pendingPayments": {
+    "title": "Ausstehende Zahlungen",
+    "description": "Setze die Zahlung fort oder storniere sie, um einen anderen Tarif zu wählen.",
+    "allServers": "Unvollständige Zahlungen für deine verwalteten Server.",
+    "loading": "Zahlungen werden geprüft…",
+    "count": "Ausstehend: {count}",
+    "refresh": "Aktualisieren",
+    "loadError": "Die ausstehenden Zahlungen konnten nicht geladen werden. Versuche es erneut.",
+    "actionError": "Die Aktion konnte nicht bestätigt werden. Aktualisiere vor einem erneuten Versuch den Zahlungsstatus.",
+    "empty": "Keine unvollständigen Zahlungen.",
+    "canceled": "Zahlung storniert oder abgelaufen",
+    "monthly": "pro Monat",
+    "annual": "pro Jahr",
+    "oneTime": "einmalige Zahlung",
+    "cancelUnavailable": "Diese Zahlung kann derzeit nicht storniert werden. Aktualisiere den Status oder kontaktiere den Support.",
+    "support": "Support kontaktieren",
+    "cancelHint": "Der Zahlungslink wird geschlossen. Danach kannst du einen anderen Tarif wählen.",
+    "confirmCancel": "Stornierung bestätigen",
+    "keep": "Zahlung behalten",
+    "opening": "Wird geöffnet…",
+    "recover": "Zahlung wiederherstellen",
+    "resume": "Zahlung fortsetzen",
+    "retryCancel": "Stornierung erneut versuchen",
+    "cancel": "Zahlung stornieren",
+    "viewStatus": "Zahlungsstatus anzeigen",
+    "choosePlan": "Tarif wählen",
+    "deleteServer": "Unbenutzten Server löschen",
+    "openPayment": "Zahlung öffnen",
+    "removing": "Die Serverlöschung wurde angefordert. Du kannst den Fortschritt unter Server verfolgen.",
+    "states": {
+      "open": "Zahlung ausstehend",
+      "unconfirmed": "Ursprünglichen Zahlungslink wiederherstellen",
+      "processing": "Zahlung übermittelt · Status wird bestätigt",
+      "canceling": "Stornierung wird bestätigt…",
+      "unavailable": "Zahlungsstatus vorübergehend nicht verfügbar"
+    }
   }
 }

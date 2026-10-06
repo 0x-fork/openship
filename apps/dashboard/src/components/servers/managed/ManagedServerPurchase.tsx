@@ -54,6 +54,7 @@ function Purchase({
         subscription={null}
         billingEnabled={billingEnabled}
         prepareWorkspace={prepareWorkspace}
+        onWorkspaceRemoved={id => { if (created.current?.id === id) created.current = null; }}
         purchaseDisabled={sessionPending}
         preserveProject={preserveProject}
         onCheckoutStarted={(checkoutUrl) => {

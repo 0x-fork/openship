@@ -165,6 +165,15 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   Payments and invoices share one tab and the existing scoped Stripe portal. Show Top-ups
   only when the billing API enables them for the selected server; the purchase-view choice
   must never override paid terms or provider entitlement.
+  Keep Pending payments accessible in the Billing header even for unpaid servers. Cloud
+  lists unfinished payments across the organization's servers. Connected installations
+  use the same Cloud inventory, filtered to a selected server when requested, without
+  creating local execution links. Preserve local aliases for explicitly linked servers
+  and clear payment state when the connected Cloud account changes. Reuse the same compact recovery list in
+  Payments and in the unfinished-checkout dialog. Show saved offer terms and the server
+  name, with Resume and provider-supported cancellation. Never present a pending or
+  unknown cancellation as complete. After confirmed cancellation, offer another plan
+  and reuse the existing delete confirmation for an unused, unpaid server.
 - Monthly servers show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with

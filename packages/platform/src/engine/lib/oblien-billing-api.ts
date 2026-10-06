@@ -464,6 +464,31 @@ export class OblienBillingApi {
     );
   }
 
+  private async capacityCheckoutResponse(response: Promise<unknown>, slug: string) {
+    const result = await this.validate(response, z.object({
+      success: z.literal(true), namespace,
+      pendingCheckout: z.object({
+        quote: z.object({ id: z.string().min(1), namespace, paymentSource: z.enum(["wallet", "stripe"]) }),
+        checkoutId: z.string().min(1).nullable(), url: z.url().nullable(),
+      }).nullable(),
+    }), slug);
+    if (result.pendingCheckout) {
+      if (result.pendingCheckout.quote.namespace !== slug)
+        throw new AppError("Cloud billing returned a different checkout namespace", 502, "OBLIEN_BILLING_NAMESPACE_MISMATCH");
+      if (result.pendingCheckout.url) this.validateCheckoutUrl(result.pendingCheckout.url);
+    }
+    return result;
+  }
+
+  /** The capacity contract owns reservation release and payment cancellation. */
+  getPendingCapacityCheckout(slug: string) {
+    return this.capacityCheckoutResponse(this.billing.capacity(slug), slug);
+  }
+
+  cancelCapacityCheckout(slug: string, input: { quoteId: string; idempotencyKey: string }) {
+    return this.capacityCheckoutResponse(this.billing.cancelCapacityChange(slug, input), slug);
+  }
+
   getBalance(slug: string) {
     return this.validate(this.billing.balance(slug), z.object({
       success: z.literal(true), namespace, blocking: z.boolean(), balance: amount.nullable(),

@@ -809,5 +809,42 @@
     "close": "閉じる",
     "done": "完了",
     "requestFailed": "リクエストを保存できませんでした。再試行するか、support@openship.io にメールしてください。"
+  },
+  "pendingPayments": {
+    "title": "未完了のお支払い",
+    "description": "お支払いを再開するか、キャンセルして別のプランを選んでください。",
+    "allServers": "管理対象サーバーの未完了のお支払いです。",
+    "loading": "お支払いを確認中…",
+    "count": "未完了：{count}",
+    "refresh": "更新",
+    "loadError": "未完了のお支払いを読み込めませんでした。もう一度お試しください。",
+    "actionError": "操作を確認できませんでした。お支払い状況を更新してから再度お試しください。",
+    "empty": "未完了のお支払いはありません。",
+    "canceled": "キャンセル済み、または期限切れ",
+    "monthly": "月額",
+    "annual": "年額",
+    "oneTime": "一回払い",
+    "cancelUnavailable": "このお支払いは現在キャンセルできません。更新するか、サポートにお問い合わせください。",
+    "support": "サポートに問い合わせる",
+    "cancelHint": "お支払いリンクを閉じます。その後、別のプランを選べます。",
+    "confirmCancel": "キャンセルを確定",
+    "keep": "お支払いを維持",
+    "opening": "開いています…",
+    "recover": "お支払いを復元",
+    "resume": "お支払いを再開",
+    "retryCancel": "キャンセルを再試行",
+    "cancel": "お支払いをキャンセル",
+    "viewStatus": "お支払い状況を確認",
+    "choosePlan": "プランを選ぶ",
+    "deleteServer": "未使用のサーバーを削除",
+    "openPayment": "お支払いを開く",
+    "removing": "サーバーの削除をリクエストしました。サーバーページで進捗を確認できます。",
+    "states": {
+      "open": "お支払い待ち",
+      "unconfirmed": "元のお支払いリンクを復元してください",
+      "processing": "お支払い送信済み・状況を確認中",
+      "canceling": "キャンセルを確認中…",
+      "unavailable": "お支払い状況は一時的に利用できません"
+    }
   }
 }

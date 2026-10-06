@@ -21,6 +21,7 @@ import { getBillingResources } from "./billing-resources.service";
 import { customSubscriptionOffer } from "./billing-custom-offer";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 export { previewSubscriptionChange, confirmSubscriptionChange, getSubscriptionChange, cancelSubscriptionChange } from "./billing-plan-change";
+export { listCheckouts, resumeCheckout, cancelCheckout } from "./billing-checkout-recovery";
 
 /* ---------- Plans (public) ---------- */
 

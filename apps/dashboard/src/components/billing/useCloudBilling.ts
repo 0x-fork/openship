@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import type { PlanTierId } from "@repo/core";
 import type { BillingPlans, CustomSubscriptionSelection } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
-import { api, ApiError, getApiErrorMessage } from "@/lib/api/client";
+import { api, ApiError, getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
+import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
 import { endpoints } from "@/lib/api/endpoints";
 import { randomUUID } from "@/lib/random-uuid";
 import { trackCloudEvent } from "@/lib/cloud-analytics";
@@ -40,12 +41,13 @@ export function useCloudPlans() {
 }
 
 /** Shared hosted checkout, including duplicate-click and uncertain-payment retries. */
-export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace }: {
+export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace, onWorkspaceRemoved }: {
   enabled: boolean;
   workspaceId?: string;
   preserveProject?: boolean;
   onCheckoutStarted?: (checkoutUrl: string) => void;
   prepareWorkspace?: () => Promise<string>;
+  onWorkspaceRemoved?: (workspaceId: string) => void;
 }) {
   const { t } = useI18n();
   const { workspaceId: billingWorkspaceId, organizationId } = useBillingScope();
@@ -57,6 +59,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   const [error, setError] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState<CheckoutFailure | null>(null);
+  const [pending, setPending] = useState<{ workspaceId?: string } | null>(null);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const attempts = useRef(new Map<string, string>());
   const busy = useRef(false);
@@ -65,7 +68,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     generation.current++;
     busy.current = false;
     attempts.current.clear();
-    setSubscribing(null); setCheckoutUrl(null); setError(null); setUnavailable(null);
+    setSubscribing(null); setCheckoutUrl(null); setError(null); setUnavailable(null); setPending(null);
     return () => { generation.current++; };
   }, [workspaceId, ownerKey]);
 
@@ -75,17 +78,17 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     const version = generation.current;
     trackCloudEvent({ event: "cloud_checkout_clicked", properties: { kind: "subscription", surface: preserveProject ? "onboarding" : "billing" } });
     // Open within the user's click, preserving unfinished project configuration.
-    const checkoutTab = preserveProject ? window.open("about:blank", "_blank") : null;
-    if (checkoutTab) checkoutTab.opener = null;
+    const navigation = beginCheckoutNavigation(preserveProject);
     setSubscribing(custom ? "custom" : planTierId);
     setError(null);
     setCheckoutUrl(null);
     setUnavailable(null);
+    setPending(null);
     let targetWorkspaceId = workspaceId;
     let requestId: string | undefined;
     try {
       targetWorkspaceId = prepareWorkspace ? await prepareWorkspace() : workspaceId;
-      if (version !== generation.current) { checkoutTab?.close(); return; }
+      if (version !== generation.current) { navigation.close(); return; }
       if (prepareWorkspace && !targetWorkspaceId) throw new Error(t.billing.plansRoute.checkoutError);
       const attempt = `${targetWorkspaceId ?? "initial"}:${custom?.quoteReference ?? planTierId}:${interval}`;
       if (!attempts.current.has(attempt)) attempts.current.set(attempt, randomUUID());
@@ -93,21 +96,18 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
       const res = await api.post<{ data: { checkoutUrl: string } }>(endpoints.billing.subscription, {
         planTierId, interval, workspaceId: targetWorkspaceId, custom, idempotencyKey: requestId,
       });
-      if (version !== generation.current) { checkoutTab?.close(); return; }
-      const url = new URL(res.data.checkoutUrl);
-      if (url.protocol !== "https:") throw new Error(t.billing.plansRoute.checkoutError);
+      if (version !== generation.current) { navigation.close(); return; }
+      const url = navigation.navigate(res.data.checkoutUrl);
       if (preserveProject) {
-        if (checkoutTab && !checkoutTab.closed) checkoutTab.location.href = url.href;
-        setCheckoutUrl(url.href);
-        onCheckoutStarted?.(url.href);
-      } else {
-        window.location.href = url.href;
+        setCheckoutUrl(url);
+        onCheckoutStarted?.(url);
       }
     } catch (err) {
-      checkoutTab?.close();
+      navigation.close();
       if (version !== generation.current) return;
       const kind = checkoutFailureKind(err);
-      if (kind) setUnavailable({ kind, requestId: requestId ?? randomUUID(), planTierId, interval, workspaceId: targetWorkspaceId, custom });
+      if (getApiErrorCode(err) === "CLOUD_WORKSPACE_CHECKOUT_PENDING") setPending({ workspaceId: targetWorkspaceId });
+      else if (kind) setUnavailable({ kind, requestId: requestId ?? randomUUID(), planTierId, interval, workspaceId: targetWorkspaceId, custom });
       else setError(getApiErrorMessage(err, t.billing.plansRoute.checkoutError));
       if (err instanceof ApiError && (err.body as { code?: string } | undefined)?.code === "BILLING_QUOTE_CHANGED") {
         setQuoteRevision(value => value + 1);
@@ -119,5 +119,15 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
       }
     }
   }
-  return { startCheckout, subscribing, error, checkoutUrl, quoteRevision, unavailable, dismissUnavailable: () => setUnavailable(null) };
+  return { startCheckout, subscribing, error, checkoutUrl, quoteRevision, unavailable, dismissUnavailable: () => setUnavailable(null),
+    recovery: {
+      isOpen: pending !== null, workspaceId: pending?.workspaceId, preserveProject,
+      onClose: () => setPending(null),
+      onCleared: () => { attempts.current.clear(); setError(null); },
+      onCheckoutStarted: (url: string) => { setCheckoutUrl(url); onCheckoutStarted?.(url); },
+      onServerRemoved: (id: string) => {
+        attempts.current.clear(); setCheckoutUrl(null); onWorkspaceRemoved?.(id);
+      },
+    },
+  };
 }

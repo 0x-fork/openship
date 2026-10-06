@@ -10,6 +10,7 @@ import { PlanCapacity } from "./PlanResources";
 import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
 import { CloudCheckoutFeedback } from "./CloudCheckoutFeedback";
+import { CheckoutRecoveryDialog } from "./CheckoutRecovery";
 
 /** A compact starting offer; the plans tab holds the full comparison. */
 export function CloudPlanOffer({ state }: { state: BillingState }) {
@@ -119,6 +120,7 @@ export function CloudPlanOffer({ state }: { state: BillingState }) {
       </Button>
       <CloudCheckoutFeedback failure={checkout.unavailable} plans={payload?.plans} onClose={checkout.dismissUnavailable}
         onRetry={failure => void checkout.startCheckout(failure.planTierId, failure.interval, failure.custom)} />
+      <CheckoutRecoveryDialog {...checkout.recovery} />
     </section>
   );
 }

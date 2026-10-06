@@ -12,7 +12,7 @@ import { BillingContent } from "./BillingContent";
 
 const h = vi.hoisted(() => ({
   userId: "user-a", organizationId: "org-a", path: "/billing/overview", query: "",
-  list: vi.fn(), router: { push: vi.fn(), replace: vi.fn() },
+  list: vi.fn(), checkouts: vi.fn(), router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
 }));
 vi.mock("@/lib/auth-client", () => ({ useSession: () => ({
   data: { user: { id: h.userId }, session: { activeOrganizationId: h.organizationId } },
@@ -21,6 +21,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => h.path, useSearchParams: () => new URLSearchParams(h.query), useRouter: () => h.router,
 }));
 vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: h.list } }));
+vi.mock("@/lib/api/billing", async original => ({ ...await original<typeof import("@/lib/api/billing")>(), billingApi: { listCheckouts: h.checkouts } }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ startConnect: vi.fn(), refresh: vi.fn() }) }));
 
 function server(id: string, name: string, tier = "starter"): ServerDetail {
@@ -60,6 +61,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.userId = "user-a"; h.organizationId = "org-a"; h.path = "/billing/overview"; h.query = "";
   h.list.mockResolvedValue({ servers: [] });
+  h.checkouts.mockResolvedValue({ items: [] });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {
@@ -67,6 +69,19 @@ afterEach(async () => {
 });
 
 describe("billing navigation by server ownership", () => {
+  it.each([false, true])("keeps all pending payments reachable for an unpaid server (self-hosted: %s)", async selfHosted => {
+    h.path = "/billing/plans";
+    h.query = "workspaceId=cws-draft";
+    h.list.mockResolvedValue({ servers: [draft] });
+    await render(page({ plansOnly: true, workspaceId: "cws-draft", requestedWorkspaceId: "cws-draft" }), selfHosted);
+    const pending = [...host.querySelectorAll<HTMLButtonElement>("header button")].find(node => node.textContent?.includes(baseDictionary.billing.pendingPayments.title));
+    expect(pending).toBeDefined();
+    expect(h.checkouts).not.toHaveBeenCalled();
+    await act(async () => pending!.click());
+    expect(h.checkouts).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(baseDictionary.billing.pendingPayments.empty);
+    expect(purchaseTabs()).toHaveLength(2);
+  });
   it("shows one payments tab and offers top-ups only when the scoped billing state allows them", async () => {
     h.query = "workspaceId=cws-production";
     await render(page({ requestedWorkspaceId: "cws-production", workspaceId: "cws-production", topupsAvailable: false }));

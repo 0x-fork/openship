@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **443 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **444 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -88,6 +88,7 @@ The current API has **443 unique tools**. Permission tags below describe the rou
 
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
+| `get_billing_checkouts`<br />`GET /api/billing/checkouts` | List unfinished payments for the organization's managed servers, optionally scoped to one server. Saved offers and verified payment state only; no checkout is created or resumed and no payment URL is exposed. Recover payments in Billing. | `billing:read` |
 | `get_billing_subscription_change`<br />`GET /api/billing/subscription/change` | Read a provider-confirmed subscription change for the selected managed server. Queued, payment_pending and scheduled do not activate new capacity; applied confirms the new terms. Server resizing uses its existing operation status. | `billing:read` |
 | `post_billing_subscription_change_preview`<br />`POST /api/billing/subscription/change/preview` | Preview an existing managed server's plan change using the provider's prorated price and next renewal date. Saves an expiring quote without charging. Uses trusted preset or Custom resources, preserves the billing interval, and lists projects that would restart. Complete confirmation in Billing. | `billing:write` |
 
@@ -609,6 +610,8 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/backup-runs/:runId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/billing/cancel` | Paid subscription renewal is managed by the account owner in Settings → Billing; MCP exposes the resulting subscription state. |
 | `GET /api/billing/checkout` | Browser checkout configuration; use the billing reads to inspect a plan and complete purchases in Settings → Billing. |
+| `POST /api/billing/checkout/cancel` | Cancels an unfinished hosted payment and releases its capacity reservation. Financial actions are completed in Billing. |
+| `POST /api/billing/checkout/resume` | Resumes a paid browser checkout using its original offer and identity. Complete payment in Billing. |
 | `POST /api/billing/oblien-webhook` | Oblien webhook — verified via X-Webhook-Signature, not user session |
 | `GET /api/billing/plans` | Public pricing endpoint — read by marketing site + signup flow before auth |
 | `POST /api/billing/portal` | Creates an account billing-portal session. Open Settings → Billing to manage payment details. |

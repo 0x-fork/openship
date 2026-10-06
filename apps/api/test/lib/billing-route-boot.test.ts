@@ -17,7 +17,8 @@ it.each([
     ),
   ).toBe(true);
   for (const [method, path] of [["POST", "/subscription/change/preview"], ["POST", "/subscription/change"],
-    ["GET", "/subscription/change"], ["POST", "/subscription/change/cancel"]]) {
+    ["GET", "/subscription/change"], ["POST", "/subscription/change/cancel"],
+    ["GET", "/checkouts"], ["POST", "/checkout/resume"], ["POST", "/checkout/cancel"]]) {
     expect(app.routes.some(route => route.method === method && route.path === `/api/billing${path}`)).toBe(true);
   }
 

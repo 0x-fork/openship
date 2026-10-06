@@ -1,7 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
 import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody, CustomServerResourcesSchema, PreviewSubscriptionChangeBody, ConfirmSubscriptionChangeBody, SubscriptionChangeScopeSchema } from "./billing-inputs";
-import { CloudWorkspaceResizePreviewSchema } from "./cloud-workspaces";
+import { CloudWorkspaceResizePreviewSchema, CloudWorkspaceSchema } from "./cloud-workspaces";
 import type { ResourceOperationSchema, ScopedOperations } from "./resource-operations";
 
 const numberOrNull = Type.Union([Type.Number(), Type.Null()]);
@@ -138,6 +138,24 @@ export const BillingCheckoutStatusSchema = Type.Object({
   fulfilled: Type.Boolean(),
   creditsGranted: Type.Number(),
 });
+export const BillingPendingCheckoutSchema = Type.Object({
+  id: Type.String(), checkoutId: stringOrNull,
+  server: CloudWorkspaceSchema,
+  kind: Type.Union([Type.Literal("subscription"), Type.Literal("topup")]),
+  name: Type.String(), amountCents: Type.Integer({ minimum: 0 }), currency: Type.Literal("usd"),
+  interval: Type.Union([Type.Literal("monthly"), Type.Literal("annual"), Type.Null()]),
+  state: Type.Union((["open", "unconfirmed", "processing", "canceling", "unavailable"] as const).map(value => Type.Literal(value))),
+  canResume: Type.Boolean(), canCancel: Type.Boolean(),
+});
+export const BillingPendingCheckoutsSchema = Type.Object({ items: Type.Array(BillingPendingCheckoutSchema) });
+export const BillingCheckoutActionInputSchema = Type.Object({
+  workspaceId: Type.String({ minLength: 1, maxLength: 128 }),
+  id: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+}, { additionalProperties: false });
+export const BillingCheckoutActionResultSchema = Type.Object({
+  status: Type.Union((["ready", "processing", "expired", "canceling"] as const).map(value => Type.Literal(value))),
+  checkoutId: stringOrNull, checkoutUrl: stringOrNull,
+});
 export const BillingCreditAlertSchema = Type.Object({
   state: Type.Union(["ok", "low", "grace", "depleted", "unlimited", "disabled"].map(value => Type.Literal(value))),
   namespace: Type.String(), percent: numberOrNull, threshold: numberOrNull, thresholds: Type.Array(Type.Number()),
@@ -196,6 +214,9 @@ export const BillingPublicSchemas = {
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BillingOperationSchemas = {
   quoteCustomPlan: { action: "read", input: CustomServerResourcesSchema, output: BillingCustomQuoteSchema },
+  listCheckouts: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingPendingCheckoutsSchema },
+  resumeCheckout: { action: "write", input: BillingCheckoutActionInputSchema, output: BillingCheckoutActionResultSchema },
+  cancelCheckout: { action: "admin", input: BillingCheckoutActionInputSchema, output: BillingCheckoutActionResultSchema },
   getCheckout: {
     action: "read",
     input: Type.Object(
@@ -237,6 +258,10 @@ export type BillingSubscription = Static<typeof BillingSubscriptionSchema>;
 export type BillingPlanChange = Static<typeof BillingPlanChangeSchema>;
 export type BillingPlanChangeQuote = Static<typeof BillingPlanChangeQuoteSchema>;
 export type BillingCheckoutStatus = Static<typeof BillingCheckoutStatusSchema>;
+export type BillingPendingCheckout = Static<typeof BillingPendingCheckoutSchema>;
+export type BillingPendingCheckouts = Static<typeof BillingPendingCheckoutsSchema>;
+export type BillingCheckoutActionInput = Static<typeof BillingCheckoutActionInputSchema>;
+export type BillingCheckoutActionResult = Static<typeof BillingCheckoutActionResultSchema>;
 export type BillingCreditPack = Static<typeof BillingCreditPackSchema>;
 export type BillingPlans = Static<typeof BillingPlansSchema>;
 export type BillingCustomQuote = Static<typeof BillingCustomQuoteSchema>;

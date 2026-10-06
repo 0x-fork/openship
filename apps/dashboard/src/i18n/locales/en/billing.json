@@ -809,5 +809,42 @@
     "close": "Close",
     "done": "Done",
     "requestFailed": "We couldn’t save your request. Try again or email support@openship.io."
+  },
+  "pendingPayments": {
+    "title": "Pending payments",
+    "description": "Resume your payment, or cancel it to choose another plan.",
+    "allServers": "Unfinished payments across your managed servers.",
+    "loading": "Checking payments…",
+    "count": "Pending: {count}",
+    "refresh": "Refresh",
+    "loadError": "We couldn’t load your pending payments. Try again.",
+    "actionError": "We couldn’t confirm this action. Refresh the payment status before trying again.",
+    "empty": "No unfinished payments.",
+    "canceled": "Payment canceled or expired",
+    "monthly": "per month",
+    "annual": "per year",
+    "oneTime": "one-time payment",
+    "cancelUnavailable": "Cancellation isn’t available for this payment right now. Refresh or contact support.",
+    "support": "Contact support",
+    "cancelHint": "The payment link will close. You can then choose another plan.",
+    "confirmCancel": "Confirm cancellation",
+    "keep": "Keep payment",
+    "opening": "Opening…",
+    "recover": "Recover payment",
+    "resume": "Resume payment",
+    "retryCancel": "Retry cancellation",
+    "cancel": "Cancel payment",
+    "viewStatus": "View payment status",
+    "choosePlan": "Choose a plan",
+    "deleteServer": "Delete unused server",
+    "openPayment": "Open payment",
+    "removing": "Server deletion requested. You can follow its progress in Servers.",
+    "states": {
+      "open": "Awaiting payment",
+      "unconfirmed": "Recover the original payment link",
+      "processing": "Payment submitted · confirming its status",
+      "canceling": "Confirming cancellation…",
+      "unavailable": "Payment status is temporarily unavailable"
+    }
   }
 }

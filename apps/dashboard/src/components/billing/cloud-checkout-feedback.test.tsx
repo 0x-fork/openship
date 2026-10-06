@@ -23,6 +23,7 @@ vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: {
   user: { id: "customer", name: "Customer", email: "customer@example.test" },
   session: { activeOrganizationId: "org-selected" },
 } }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 const copy = baseDictionary.billing.checkoutUnavailable;
 const receipt = { id: "SUP-0123456789ABCDEF01234567", createdAt: "2026-10-06T00:00:00Z" };
 const source = resolvePlan("starter");
@@ -59,6 +60,21 @@ afterEach(async () => {
 });
 
 describe("checkout availability feedback", () => {
+  it("opens payment recovery from the compact offer instead of showing the unresolved checkout error", async () => {
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [] } } : {
+      data: { plans: [plan], ui: pricingUi("en"), annual: { enabled: false, monthsFree: 0 } },
+    });
+    h.post.mockRejectedValueOnce(new ApiError(409, "Blocked", { code: "CLOUD_WORKSPACE_CHECKOUT_PENDING", error: "Raw blocked checkout" }));
+    await render(<CloudPlanOffer state={{ tier: "free", status: "inactive", billing: { enabled: true },
+      balance: { quotaUsed: 0, quotaRemaining: 0, quotaLimit: 0 } } as BillingState} />);
+    const choose = [...document.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent?.includes("Starter"));
+    expect(choose).toBeDefined();
+    await act(async () => choose!.click());
+    expect(dialog()?.textContent).toContain(baseDictionary.billing.pendingPayments.title);
+    expect(dialog()?.textContent).toContain(baseDictionary.billing.pendingPayments.empty);
+    expect(document.body.textContent).not.toContain("Raw blocked checkout");
+    expect(h.get).toHaveBeenCalledWith("billing/checkouts", { params: { workspaceId: "cws-selected" } });
+  });
   it("shows the chosen offer and asks before sending an availability request", async () => {
     await render();
     expect(dialog()?.textContent).toContain(copy.capacityTitle);

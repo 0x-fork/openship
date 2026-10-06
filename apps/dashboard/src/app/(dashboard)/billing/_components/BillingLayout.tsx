@@ -22,6 +22,7 @@ import { BILLING_TABS } from "./billing-tabs";
 import { BillingTabBar } from "./BillingTabBar";
 import { BillingHeader } from "./BillingHeader";
 import { BillingViewProvider, type BillingView } from "./BillingViewContext";
+import { PendingPaymentsButton } from "@/components/billing/CheckoutRecovery";
 
 /** Persistent route chrome. Only the tab content suspends while its scoped state loads. */
 export function BillingLayout({ children }: { children: React.ReactNode }) {
@@ -91,6 +92,8 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
               tabs={plansOnly ? "header" : "none"}
             >
               <BillingHeader>
+                {organizationMatches && (servers.length > 0 || Boolean(workspaceId)) &&
+                  <PendingPaymentsButton />}
                 {billingServersVisible(serverInventory) &&
                   (newServer ? (
                     <Button asChild variant="secondary" className="shrink-0">

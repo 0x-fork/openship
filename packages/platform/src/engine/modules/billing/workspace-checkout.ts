@@ -6,8 +6,15 @@ import { getOblienBillingApi } from "../../lib/oblien-client";
 import { oblienCheckoutInputSchema, type OblienCheckout } from "../../lib/oblien-billing-api";
 import { hasPendingSubscriptionChange } from "./billing-subscription";
 
-function isExpiredCheckout(error: unknown): boolean {
+export function isExpiredCheckout(error: unknown): boolean {
   return error instanceof OperationError && error.details?.checkoutExpired === true;
+}
+
+export function workspaceCheckoutRequest(owner: CloudWorkspace, intent: CloudWorkspace["pendingCheckouts"][number]) {
+  const request = oblienCheckoutInputSchema.parse(intent.request);
+  if (!owner.namespace || request.namespace !== owner.namespace)
+    throw new Error("Checkout namespace does not match its workspace");
+  return request;
 }
 
 /** Call only under the billing lock. A lost create response is recovered with
@@ -16,9 +23,7 @@ export async function reconcileWorkspaceCheckouts(owner: CloudWorkspace) {
   const billing = getOblienBillingApi();
   const pending: CloudWorkspace["pendingCheckouts"] = [];
   for (const intent of owner.pendingCheckouts) {
-    const request = oblienCheckoutInputSchema.parse(intent.request);
-    if (request.namespace !== owner.namespace)
-      throw new Error("Checkout namespace does not match its workspace");
+    const request = workspaceCheckoutRequest(owner, intent);
     let checkoutId = intent.checkoutId;
     if (!checkoutId) {
       try {
@@ -32,7 +37,7 @@ export async function reconcileWorkspaceCheckouts(owner: CloudWorkspace) {
     }
     const { checkout } = await billing.getCheckout(owner.namespace!, checkoutId);
     if (checkout.status !== "expired" && !(checkout.status === "complete" && checkout.fulfilled)) {
-      pending.push({ request, checkoutId });
+      pending.push({ ...intent, request, checkoutId });
     }
   }
   if (owner.pendingCheckouts.length)
@@ -66,6 +71,8 @@ export async function createTrackedWorkspaceCheckout(
       409,
       "IDEMPOTENCY_KEY_CONFLICT",
     );
+  if (existing?.cancellation)
+    throw new AppError("This checkout is being canceled. Check its payment status before continuing.", 409, "CLOUD_WORKSPACE_CHECKOUT_PENDING");
   if (!existing) {
     if (request.kind === "subscription" && pending.some(item => item.request.kind === "subscription"))
       throw new AppError("This server already has an unfinished checkout. Resume that payment or wait for it to expire before choosing another plan.", 409, "CLOUD_WORKSPACE_CHECKOUT_PENDING");
@@ -97,6 +104,8 @@ export async function createTrackedWorkspaceCheckout(
     }
     throw error;
   }
+  if (existing?.checkoutId && result.checkoutId !== existing.checkoutId)
+    throw new AppError("Cloud billing returned a different checkout for this purchase", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
   await repos.cloudWorkspace.setPendingCheckouts(
     owner.id,
     owner.organizationId,

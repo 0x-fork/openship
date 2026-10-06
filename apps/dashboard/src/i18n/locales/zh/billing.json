@@ -809,5 +809,42 @@
     "close": "关闭",
     "done": "完成",
     "requestFailed": "无法保存您的请求。请重试或发送邮件至 support@openship.io。"
+  },
+  "pendingPayments": {
+    "title": "待完成付款",
+    "description": "继续付款，或取消后选择其他方案。",
+    "allServers": "所有托管服务器的未完成付款。",
+    "loading": "正在检查付款…",
+    "count": "待完成：{count}",
+    "refresh": "刷新",
+    "loadError": "无法加载待完成付款。请重试。",
+    "actionError": "无法确认此操作。请刷新付款状态后重试。",
+    "empty": "没有未完成的付款。",
+    "canceled": "付款已取消或已过期",
+    "monthly": "每月",
+    "annual": "每年",
+    "oneTime": "一次性付款",
+    "cancelUnavailable": "此付款目前无法取消。请刷新或联系支持。",
+    "support": "联系支持",
+    "cancelHint": "付款链接将关闭。之后您可以选择其他方案。",
+    "confirmCancel": "确认取消",
+    "keep": "保留付款",
+    "opening": "正在打开…",
+    "recover": "恢复付款链接",
+    "resume": "继续付款",
+    "retryCancel": "重试取消",
+    "cancel": "取消付款",
+    "viewStatus": "查看付款状态",
+    "choosePlan": "选择方案",
+    "deleteServer": "删除未使用的服务器",
+    "openPayment": "打开付款",
+    "removing": "已请求删除服务器。您可以在“服务器”中查看进度。",
+    "states": {
+      "open": "等待付款",
+      "unconfirmed": "恢复原付款链接",
+      "processing": "付款已提交 · 正在确认状态",
+      "canceling": "正在确认取消…",
+      "unavailable": "付款状态暂时不可用"
+    }
   }
 }

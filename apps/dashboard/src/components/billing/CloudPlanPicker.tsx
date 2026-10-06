@@ -28,6 +28,7 @@ import {
 import { PayAsYouGoPlan } from "./PayAsYouGoPlan";
 import { useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
 import { CloudCheckoutFeedback } from "./CloudCheckoutFeedback";
+import { CheckoutRecoveryDialog } from "./CheckoutRecovery";
 
 export function CloudPlanPicker(props: Parameters<typeof PlanPicker>[0]) {
   return (
@@ -49,6 +50,7 @@ function PlanPicker({
   currentOffer,
   allocatedDiskGb,
   prepareWorkspace,
+  onWorkspaceRemoved,
   purchaseDetails,
   purchaseDisabled = false,
   billingState,
@@ -67,6 +69,7 @@ function PlanPicker({
   onCheckoutStarted?: (checkoutUrl?: string) => void;
   /** New server acquisition resolves its identity only after choosing a plan. */
   prepareWorkspace?: () => Promise<string>;
+  onWorkspaceRemoved?: (workspaceId: string) => void;
   purchaseDetails?: ReactNode;
   purchaseDisabled?: boolean;
 }) {
@@ -173,12 +176,14 @@ function PlanPicker({
     quoteRevision,
     unavailable,
     dismissUnavailable,
+    recovery,
   } = useCloudCheckout({
     enabled: canPurchase && !purchaseDisabled && !payg,
     preserveProject,
     onCheckoutStarted,
     workspaceId,
     prepareWorkspace,
+    onWorkspaceRemoved,
   });
   const selectedCurrentPlan =
     hasPlan && subscription?.configuration !== "custom" ? choices.current : null;
@@ -426,6 +431,7 @@ function PlanPicker({
           <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
           <CloudCheckoutFeedback failure={unavailable} plans={payload.plans} onClose={dismissUnavailable}
             onRetry={failure => void startCheckout(failure.planTierId, failure.interval, failure.custom)} />
+          <CheckoutRecoveryDialog {...recovery} />
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { BillingOperationSchemas, OperationError, isRecord, normalizeBillingCreditPacks } from "@repo/contracts";
+import { BillingOperationSchemas, OperationError, isRecord, normalizeBillingCreditPacks, type CloudWorkspaceSummary } from "@repo/contracts";
 import { createPublicBillingOperations, type BillingDependencies } from "../../../billing";
 import type { ExecutionContext } from "../../../context";
 import type { ScopedServices } from "../../../resource-operations";
@@ -6,7 +6,7 @@ import { env } from "../../config/env";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import * as service from "./billing-application.service";
 import { proxyToCloudBilling } from "./billing-local.service";
-import { linkedCloudIdentity, requireLinkedCloudServer } from "../../lib/cloud/server-link";
+import { linkedCloudIdentity, requireLinkedCloudServer, localizeCloudSummary } from "../../lib/cloud/server-link";
 import { sameCloudIdentity } from "../../lib/cloud/transport";
 import { requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
 import { authorization } from "../../lib/authorization";
@@ -20,6 +20,9 @@ const routes = {
   getSubscriptionChange: ["GET", "/subscription/change"],
   cancelSubscriptionChange: ["POST", "/subscription/change/cancel"],
   getCheckout: ["GET", "/checkout"],
+  listCheckouts: ["GET", "/checkouts"],
+  resumeCheckout: ["POST", "/checkout/resume"],
+  cancelCheckout: ["POST", "/checkout/cancel"],
   getCreditAlerts: ["GET", "/credit-alerts"],
   getState: ["GET", "/state"], getResources: ["GET", "/resources"], getSubscription: ["GET", "/subscription"],
   createSubscription: ["POST", "/subscription"], cancelSubscription: ["POST", "/cancel"],
@@ -46,6 +49,9 @@ async function invoke(name: keyof typeof BillingOperationSchemas, ctx: Execution
       const match = links.find(row => row.remote?.workspaceId === workspaceId && sameCloudIdentity(identity, row.remote));
       if (match) linked = await requireLinkedCloudServer(ctx.organizationId, match.id);
     }
+    // Account-wide recovery follows Cloud inventory access. Scoped automation
+    // must use its explicitly granted local server link instead.
+    if (name === "listCheckouts" && !workspaceId) assertCloudProxyScope(ctx);
     if (linked && (name === "previewSubscriptionChange" || name === "confirmSubscriptionChange")) {
       const server = await requireWorkspaceServer(ctx.organizationId, linked.id);
       await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
@@ -64,6 +70,12 @@ async function invoke(name: keyof typeof BillingOperationSchemas, ctx: Execution
         typeof body.code === "string" ? body.code : undefined, body);
     }
     data = isRecord(result.payload) ? result.payload.data : undefined;
+    if (local && linked && name === "listCheckouts" && isRecord(data) && Array.isArray(data.items)) {
+      data = { ...data, items: await Promise.all(data.items.map(async item => {
+        if (!isRecord(item)) throw new OperationError("Cloud returned an invalid checkout", 502, "INVALID_CLOUD_RESPONSE");
+        return { ...item, server: await localizeCloudSummary(linked, item.server as CloudWorkspaceSummary) };
+      })) };
+    }
     if (linked && isRecord(data) && isRecord(data.workspace)) {
       if (data.workspace.id !== linked.remote.workspaceId)
         throw new OperationError("Cloud billing returned a different server", 502, "CLOUD_SERVER_IDENTITY_MISMATCH");

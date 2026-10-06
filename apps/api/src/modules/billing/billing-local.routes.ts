@@ -16,10 +16,11 @@ import { Hono } from "hono";
 import { BillingOperationSchemas, CreateSubscriptionBody, CreateTopupBody } from "@repo/contracts";
 import { authMiddleware } from "../../middleware";
 import { billingPlanChangeRoutes } from "./billing-plan-change.routes";
+import { billingCheckoutRoutes } from "./billing-checkout.routes";
 import { secureRouter } from "../../lib/secure-router";
 import * as billingLocal from "./billing.controller";
 
-export const billingLocalRoutes = new Hono().route("/", billingPlanChangeRoutes);
+export const billingLocalRoutes = new Hono().route("/", billingPlanChangeRoutes).route("/", billingCheckoutRoutes);
 const r = secureRouter(billingLocalRoutes, {
   module: "billing-local",
   basePath: "/api/billing",
