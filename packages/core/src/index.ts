@@ -99,3 +99,5 @@ export * from "./cluster-runtime";
 export * from "./cluster-storage";
 export * from "./cluster-workload";
 export * from "./cluster-database";
+
+export { withKeyedMutex, tryWithKeyedMutex } from "./keyed-mutex";
