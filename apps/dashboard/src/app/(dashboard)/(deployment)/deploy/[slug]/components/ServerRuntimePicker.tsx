@@ -2,27 +2,55 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import React, { useMemo } from "react";
+import React, { useEffect } from "react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { OptionCard } from "@/components/shared/OptionCard";
-import type { RuntimeMode } from "@/context/deployment/types";
+import { usesServiceDeployment, type RuntimeMode } from "@/context/deployment/types";
 
-/** Connected and managed servers share this runtime choice. Deployment config
- * owns the sandboxed default and preserves an existing project's saved value. */
+/** Connected and managed servers share this choice and its capacity-based default.
+ * An existing project or an explicit source/user choice always wins. */
 
 // Below this RAM the sandbox engine contends for memory with the app — on a
 // 512MB/1GB VPS that's a real problem. Above it Docker's overhead is
 // single-digit-% CPU + ~30-80MB RAM, negligible vs. the isolation upside.
 const TWO_GB = 2 * 1024 * 1024 * 1024;
 
-const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
+/** Keep the default active on both wizard views, including when the destination
+ * editor is closed. Monitoring and the choice have one owner above both views. */
+export function useServerRuntimeSelection({ enabled = true, memoryMb }: { enabled?: boolean; memoryMb?: number }) {
   const { config, updateConfig } = useDeployment();
-  const { t } = useI18n();
-  // Live memory changes the Direct caveat, never the selected runtime.
+  // A managed server's purchased capacity is available before live monitoring.
   const { stats } = useMonitorStream(config.serverId ?? null, enabled && !!config.serverId);
 
+  const totalMemory = memoryMb && memoryMb > 0 ? memoryMb * 1024 * 1024 : stats?.memTotal;
+  const memoryKnown = typeof totalMemory === "number" && Number.isFinite(totalMemory) && totalMemory > 0;
+  const lowRam = memoryKnown && totalMemory < TWO_GB;
+  const requiresDocker = config.projectType === "docker" || usesServiceDeployment(config) ||
+    (config.projectType === "monorepo" && config.serviceDeploymentMode !== "single");
+  const recommendedMode: RuntimeMode = lowRam && !requiresDocker ? "bare" : "docker";
+
+  useEffect(() => {
+    if (!enabled || !config.serverId || !memoryKnown || config.projectId || config.runtimeModeExplicit || requiresDocker) return;
+    if (config.runtimeMode !== recommendedMode) updateConfig({ runtimeMode: recommendedMode });
+  }, [enabled, config.serverId, config.projectId, config.runtimeModeExplicit, config.runtimeMode,
+    memoryKnown, recommendedMode, requiresDocker, updateConfig]);
+
+  return {
+    selected: config.runtimeMode,
+    recommendedMode,
+    lowRam,
+    ramGB: memoryKnown ? (totalMemory / (1024 * 1024 * 1024)).toFixed(1) : null,
+    select: (runtimeMode: RuntimeMode) => updateConfig({ runtimeMode, runtimeModeExplicit: true }),
+  };
+}
+
+export type ServerRuntimeSelection = ReturnType<typeof useServerRuntimeSelection>;
+
+const ServerRuntimePicker: React.FC<{ selection: ServerRuntimeSelection }> = ({ selection }) => {
+  const { t } = useI18n();
+  const { selected, recommendedMode, lowRam, ramGB, select } = selection;
   const runtimeOptions: Array<{
     value: RuntimeMode;
     label: string;
@@ -42,15 +70,6 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
       icon: <UiIcon name="terminal" className="size-5" />,
     },
   ];
-
-  const lowRam = useMemo(() => (stats ? stats.memTotal < TWO_GB : false), [stats]);
-  // Sandbox is the default everywhere — the safe, isolated norm. On a very small
-  // box Direct uses less RAM, but that's surfaced as a caveat when the user
-  // actually picks Direct (below), not a silent default flip. Keeps the common
-  // case one obvious choice instead of a machine-dependent guess.
-  const recommendedMode: RuntimeMode = "docker";
-  const ramGB = stats ? (stats.memTotal / (1024 * 1024 * 1024)).toFixed(1) : null;
-  const selected = config.runtimeMode;
 
   return (
     // Runtime and resource controls share the destination page's section rhythm.
@@ -73,7 +92,7 @@ const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }
             key={option.value}
             value={option.value}
             selected={selected === option.value}
-            onSelect={() => updateConfig({ runtimeMode: option.value })}
+            onSelect={() => select(option.value)}
             icon={option.icon}
             label={option.label}
             description={option.description}

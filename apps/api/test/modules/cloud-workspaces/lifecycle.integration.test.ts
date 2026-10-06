@@ -93,6 +93,7 @@ import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { deleteFolderSession } from "@repo/platform/engine/modules/projects/folder/session-store";
 import { rm } from "node:fs/promises";
 import * as platformConfig from "@repo/platform/engine/lib/platform-config";
+import { buildConfigSnapshot, createQueuedDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 
 // Real HTTP authorization, SQL ownership, billing reconciliation, provisioning
 // and operation workers. Only provider transport/execution is simulated here;
@@ -1266,6 +1267,104 @@ describe("managed server free-domain scope", () => {
     expect(h.billing.getEntitlement).toHaveBeenCalled();
     expect(h.billing.getEntitlement.mock.calls.every(([namespace]: [string]) => namespace === workspace.namespace)).toBe(true);
     expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("uses the selected metered server's entitlement and allowance", async () => {
+    subscribe("starter");
+    const saved = subscriptions.get(workspace.namespace!)!;
+    delete saved.offer!.billingMode;
+    delete saved.offer!.capacity;
+    Object.assign(saved.offer!, { reference: "openship:starter:v8", credits: 1700,
+      policy: { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" } });
+    saved.metadata!.openship_offer_version = "8";
+    await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid sibling" });
+    const sdk = await nativeShip();
+    const server = (await repos.server.findByWorkspace(workspace.id, owner.orgId))!;
+    const project = await sdk.projects.create({ name: "Metered app", serverId: server.id, port: 3200,
+      publicEndpoints: [{ domainType: "free", domain: "metered-app", port: 3200 }] });
+    await sdk.projects.ensure({ projectId: project.id, name: project.name,
+      publicEndpoints: [{ domainType: "free", domain: "metered-renamed", port: 3200 }] });
+    await sdk.services.sync(project.id, { services: [{ name: "web", image: "nginx:alpine",
+      ports: ["80"], exposed: true, exposedPort: "80", domainType: "free", domain: "metered-service" }] });
+    expect((await repos.domain.listByProject(project.id)).map(domain => domain.hostname)).toEqual(["metered-renamed.opsh.io"]);
+    expect((await repos.service.listByProject(project.id))[0]?.domain).toBe("metered-service");
+    expect(h.billing.getEntitlement).toHaveBeenCalled();
+    expect(h.billing.getEntitlement.mock.calls.every(([namespace]: [string]) => namespace === workspace.namespace)).toBe(true);
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it.each(["ensure", "update"] as const)("refuses excess free domains before %s changes an existing project's fields", async entry => {
+    const sdk = await nativeShip();
+    const project = await addProject(`Quota ${entry}`);
+    await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid sibling" });
+    const publicEndpoints = Array.from({ length: 11 }, (_, i) => ({
+      domainType: "free" as const, domain: `quota-${entry}-${i}`, port: 3200 + i,
+    }));
+    const patch = { publicEndpoints, startCommand: "must-not-be-persisted" };
+    await expect(entry === "ensure"
+      ? sdk.projects.ensure({ projectId: project.id, name: project.name, ...patch })
+      : sdk.projects.update(project.id, patch)).rejects.toMatchObject({ code: "PLAN_UPGRADE_REQUIRED", reason: "free-subdomain-limit" });
+    expect((await repos.project.findById(project.id))?.startCommand).toBe(project.startCommand);
+    expect(await repos.domain.listByProject(project.id)).toEqual([]);
+  });
+  it.each(["sync", "ensure", "create"] as const)("checks all incoming Compose free domains before %s writes services", async entry => {
+    const sdk = await nativeShip();
+    const server = (await repos.server.findByWorkspace(workspace.id, owner.orgId))!;
+    const project = entry === "create" ? null : await addProject(`Compose ${entry}`);
+    await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid sibling" });
+    const services = Array.from({ length: 11 }, (_, i) => ({ name: `web-${i}`, image: "nginx:alpine",
+      ports: ["80"], exposed: true, exposedPort: "80", domainType: "free" as const, domain: `compose-${entry}-${i}` }));
+    const result = entry === "sync" ? sdk.services.sync(project!.id, { services })
+      : entry === "ensure" ? sdk.projects.ensure({ projectId: project!.id, name: project!.name, services })
+      : sdk.projects.ensure({ name: "Compose create", serverId: server.id, services });
+    await expect(result).rejects.toMatchObject({ code: "PLAN_UPGRADE_REQUIRED", reason: "free-subdomain-limit" });
+    if (project) expect(await repos.service.listByProject(project.id)).toEqual([]);
+    else expect((await repos.projectGroup.listByOrganization(owner.orgId, { page: 1, perPage: 1 })).total).toBe(0);
+  });
+  it("checks generated service domains before queueing a deployment or creating a VM", async () => {
+    const project = await addProject("Generated routes");
+    await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid sibling" });
+    const services = Array.from({ length: 11 }, (_, i) => ({
+      name: `web-${i}`, image: "nginx:alpine", exposed: true, exposedPort: "80", ports: ["80"],
+    }));
+    await expect(createQueuedDeployment({
+      projectId: project.id, organizationId: owner.orgId, branch: "main", environment: "production", framework: "docker-compose",
+      meta: { ...buildConfigSnapshot(project, "main"), managedWorkspaceId: workspace.id,
+        composeServices: services, serviceDeploymentMode: "services" },
+      envVars: {},
+    })).rejects.toMatchObject({ code: "PLAN_UPGRADE_REQUIRED", reason: "free-subdomain-limit" });
+    expect((await repos.deployment.listByProject(project.id)).rows).toEqual([]);
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("does not count dormant routes outside an exclusive service deployment", async () => {
+    const project = await addProject("Exclusive routes");
+    for (let i = 0; i < 10; i++) await repos.domain.create({
+      projectId: project.id, hostname: `held-${i}.opsh.io`, domainType: "free", targetPort: 3200 + i,
+    });
+    const selected = await repos.service.create({ projectId: project.id, name: "internal", image: "redis:alpine" });
+    await repos.service.create({ projectId: project.id, name: "dormant", image: "nginx:alpine",
+      exposed: true, exposedPort: "80", ports: ["80"] });
+    const queued = await createQueuedDeployment({
+      projectId: project.id, organizationId: owner.orgId, branch: "main", environment: "production", framework: "docker-compose",
+      meta: { ...buildConfigSnapshot(project, "main"), managedWorkspaceId: workspace.id, serviceDeploymentMode: "services" },
+      envVars: {}, serviceIds: [selected.id], strictServiceScope: true,
+    });
+    expect(queued).toMatchObject({ status: "queued" });
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+  it("keeps existing free routes editable when the server's allowance is full", async () => {
+    const sdk = await nativeShip();
+    const project = await addProject("Existing routes");
+    for (let i = 0; i < 10; i++) await repos.domain.create({
+      projectId: project.id, hostname: `editable-${i}.opsh.io`, domainType: "free", targetPort: 3200 + i,
+    });
+    await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Unpaid sibling" });
+    h.billing.getEntitlement.mockClear();
+    await sdk.projects.ensure({ projectId: project.id, name: project.name, startCommand: "new-command",
+      publicEndpoints: Array.from({ length: 10 }, (_, i) => ({ domainType: "free", domain: `editable-${i}`, port: 4200 + i })),
+    });
+    expect((await repos.project.findById(project.id))?.startCommand).toBe("new-command");
+    expect((await repos.domain.listByProject(project.id)).map(domain => domain.targetPort).sort()).toEqual(
+      Array.from({ length: 10 }, (_, i) => 4200 + i));
+    expect(h.billing.getEntitlement).not.toHaveBeenCalled();
   });
   it("uses the saved server for project and service domain edits with an unpaid sibling server", async () => {
     subscribe("starter");

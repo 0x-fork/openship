@@ -1,12 +1,39 @@
 import type { CloudCapability } from "@repo/core";
+import { normalizeComposeRoutingFields, type Service } from "@repo/db";
 import { requireCloud } from "./cloud/require-cloud";
 import { assertFreeSubdomainQuota } from "./plan-guard";
 import type { CloudWorkspaceScope } from "./cloud-workspace-scope";
 import {
   cloudManagedHostnameOf,
+  publicEndpointHostname,
+  resolveServicePublicEndpoints,
   storedPublicEndpointsNeedCloud,
   type StoredPublicEndpoint,
 } from "./public-endpoints";
+
+type ComposeRouteInput = Parameters<typeof normalizeComposeRoutingFields>[0] & {
+  name: string;
+  kind?: string | null;
+  ports?: string[] | null;
+};
+
+/** Resolve the complete Compose write using the repository's merge rule. Raw
+ * input alone misses inherited exposure, primary ports and secondary routes. */
+export function composeEndpointChanges(parsed: readonly ComposeRouteInput[], stored: readonly Service[] = []) {
+  const current = stored.filter(service => !service.kind || service.kind === "compose");
+  const byName = new Map(current.map(service => [service.name, service]));
+  return {
+    endpoints: parsed.filter(service => !service.kind || service.kind === "compose").flatMap(service => {
+      const previous = byName.get(service.name);
+      return resolveServicePublicEndpoints({
+        ...normalizeComposeRoutingFields(service, previous),
+        ports: service.ports ?? previous?.ports ?? [],
+      });
+    }),
+    knownHostnames: current.flatMap(service => resolveServicePublicEndpoints({ ...service, exposed: true }))
+      .map(publicEndpointHostname),
+  };
+}
 
 /**
  * Atomic gate for free (*.opsh.io) routes. A free managed subdomain only
@@ -30,10 +57,22 @@ export async function assertFreeEndpointsAllowed(
     | undefined,
   // Callers derive workspace ownership from the authorized server/project, never
   // an independent client selector. Losing it makes multi-server plans ambiguous.
-  options: { capability?: CloudCapability; workspaceId?: CloudWorkspaceScope } = {},
+  options: {
+    capability?: CloudCapability;
+    workspaceId?: CloudWorkspaceScope;
+    /** Persisted route identities, including paused service routes. Editing or
+     * removing them must not require a new connection or another domain slot. */
+    knownHostnames?: Iterable<string | null | undefined>;
+  } = {},
 ): Promise<void> {
   // Only custom domains in play → no Cloud edge needed.
   if (!storedPublicEndpointsNeedCloud(endpoints)) return;
+  const known = new Set(Array.from(options.knownHostnames ?? [])
+    .filter((hostname): hostname is string => !!hostname)
+    .map(hostname => hostname.trim().toLowerCase()));
+  const candidates = (endpoints ?? []).map(cloudManagedHostnameOf)
+    .filter((hostname): hostname is string => !!hostname && !known.has(hostname.toLowerCase()));
+  if (!candidates.length) return;
   await requireCloud(options.capability ?? "managed-project-domain", { organizationId });
 
   // Then the plan allowance. Order matters: "connect Cloud" must be answered
@@ -44,7 +83,7 @@ export async function assertFreeEndpointsAllowed(
   // succeed and change nothing.
   await assertFreeSubdomainQuota(
     organizationId,
-    (endpoints ?? []).map(cloudManagedHostnameOf),
+    candidates,
     options.workspaceId,
   );
 }

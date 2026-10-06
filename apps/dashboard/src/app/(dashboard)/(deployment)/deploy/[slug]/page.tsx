@@ -14,6 +14,7 @@ import RoutingSection from "@/components/import-project/RoutingSection";
 import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import Sidebar from "./components/Sidebar";
 import DeployTargetStep, { DeployTargetSummary } from "./components/DeployTargetStep";
+import { useServerRuntimeSelection } from "./components/ServerRuntimePicker";
 // Clone-strategy gate moved from inline render to a preflight modal
 // triggered from <Sidebar>'s handleDeploy. The inline placement was
 // wrong (showed before the user clicked Deploy). See
@@ -148,6 +149,11 @@ const DeployRepository: React.FC = () => {
             buildStrategy: "server",
         }),
     }, !loading && savedTargetState !== "pending" && config.deployTarget !== "cluster");
+
+    const runtimeSelection = useServerRuntimeSelection({
+        memoryMb: serverSelection.selected?.managed?.resources?.memoryMb,
+        enabled: !loading && !isRescanning && !state.isDeploying && savedTargetState !== "pending" && config.deployTarget !== "cluster",
+    });
 
     const [step, setStep] = useState<"target" | "config">("config");
 
@@ -321,6 +327,7 @@ const DeployRepository: React.FC = () => {
                 {step === "target" && (
                     <DeployTargetStep
                         serverSelection={serverSelection}
+                        runtimeSelection={runtimeSelection}
                         onContinue={() => setStep("config")}
                         onBack={() => setStep("config")}
                         projectId={projectId}

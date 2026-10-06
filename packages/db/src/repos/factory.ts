@@ -119,6 +119,7 @@ export {
 export {
   createServiceRepo,
   normalizeRoutingFields,
+  normalizeComposeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
   reconcileComposeSpec,

@@ -16,7 +16,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
 import { useToast } from "@/context/ToastContext";
 import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode, CloudResourceTier } from "@/context/deployment/types";
-import ServerRuntimePicker from "./ServerRuntimePicker";
+import ServerRuntimePicker, { type ServerRuntimeSelection } from "./ServerRuntimePicker";
 import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -268,12 +268,13 @@ interface DeployTargetStepProps {
   /** Existing project whose rollback and backup settings can be edited. */
   projectId?: string | null;
   serverSelection: ServerSelection;
+  runtimeSelection: ServerRuntimeSelection;
   onContinue: () => void;
   onBack: () => void;
 
 }
 
-const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, onContinue, onBack, projectId }) => {
+const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, runtimeSelection, onContinue, onBack, projectId }) => {
   const { config, updateConfig } = useDeployment();
   const { selfHosted, deployMode } = usePlatform();
   const destinationReady = serverSelection.ready;
@@ -475,7 +476,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, on
             <>
               {showRuntimeIsolation && (
                 <section className="rounded-2xl bg-card p-5" aria-label={t.deploy.runtime.heading}>
-                  <ServerRuntimePicker />
+                  <ServerRuntimePicker selection={runtimeSelection} />
                 </section>
               )}
               {showResourceLimits && (

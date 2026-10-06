@@ -79,6 +79,8 @@ import {
   unmaskBuildArgs,
 } from "../../lib/secret-env";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
+import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
+import { resolveServicePublicEndpoints } from "../../lib/public-endpoints";
 import {
   assertBuildMinutesAvailable,
   assertPlanAllowsDeployShape,
@@ -1384,6 +1386,20 @@ async function createQueuedDeploymentUnlocked(opts: {
       const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
+      if (mode.useServicePipeline) {
+        // An exclusive migration/service deployment must not validate dormant
+        // routes belonging to services it will never activate.
+        const targetNames = meta.strictServiceScope && meta.targetServiceIds?.length
+          ? new Set((await repos.service.listByProject(project.id))
+              .filter(service => meta.targetServiceIds!.includes(service.id)).map(service => service.name))
+          : null;
+        await assertFreeEndpointsAllowed(opts.organizationId,
+          mode.servicePreflightServices.filter(service => service.enabled !== false && (!targetNames || targetNames.has(service.name)))
+            .flatMap(service => resolveServicePublicEndpoints(service, { projectSlug: project.slug })), {
+            capability: "managed-compose-domains", workspaceId: project.workspaceId,
+            knownHostnames: (await repos.domain.listByProject(project.id)).map(domain => domain.hostname),
+          });
+      }
       const runsApplication = mode.useServicePipeline || meta.runtimeMode !== "bare" || snapshotToClass(meta).workload !== "static";
       meta = {
         ...meta,
@@ -1947,6 +1963,12 @@ export async function requestBuildAccess(
     // Best-effort: a persist failure must never block the deploy.
     const composeOnly = effectiveServices.filter((s) => serviceKind(s) === "compose");
     if (composeOnly.length) {
+      const storedServices = await repos.service.listByProject(project.id);
+      const routes = composeEndpointChanges(composeOnly, storedServices);
+      await assertFreeEndpointsAllowed(project.organizationId, routes.endpoints, {
+        capability: "managed-compose-domains", workspaceId: project.workspaceId,
+        knownHostnames: routes.knownHostnames,
+      });
       // #342: these rows' custom hostnames become vhosts like any other, so they
       // carry the same shape gate as the service editors — and it runs on the set
       // ACTUALLY persisted, which includes the compose a folder upload adopts when
@@ -1956,8 +1978,7 @@ export async function requestBuildAccess(
       // syncProjectRouteState further down. Costs a query only when a custom service
       // hostname is actually declared; throws BEFORE the best-effort persist below.
       if (customHostnamesOf(composeOnly).length) {
-        const rows = await repos.service.listByProject(project.id).catch(() => []);
-        assertValidCustomDomains(composeOnly, { known: customHostnamesOf(rows) });
+        assertValidCustomDomains(composeOnly, { known: customHostnamesOf(storedServices) });
       }
       await repos.service
         // removeMissing: false — deploy-time sync creates and updates only. A
