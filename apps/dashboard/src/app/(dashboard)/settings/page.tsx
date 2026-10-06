@@ -8,6 +8,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *
  * Tabs:
  *   - general        → appearance, build preferences, language, interface, preferences
+ *   - security       → authenticator 2FA, recovery codes and passkeys
  *   - tokens         → clone credentials, API access tokens
  *   - mcp             → MCP connection (endpoint + client config)
  *   - team           → organization members + invitations (moved from /members)
@@ -145,8 +146,14 @@ function SettingsPageInner() {
               {/* Per-user shell: full platform vs Openship Mail's mail-only rail.
                   Renders nothing on the SaaS. */}
               <ProductViewSetting />
-              {authMode === "local" && <><TwoFactorSetting /><PasskeysSetting /></>}
               <PreferencesSetting />
+            </>
+          )}
+
+          {activeTab === "security" && authMode === "local" && (
+            <>
+              <TwoFactorSetting />
+              <PasskeysSetting />
             </>
           )}
 

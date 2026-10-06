@@ -194,6 +194,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 
 ## Typography and copy
 
+Account protection lives in **Settings → Security**, using the existing settings
+navigation and section cards. Keep authenticator setup, recovery codes, and
+passkeys together for accounts hosted on that instance. Enrollment verifies a
+code before showing protection as enabled; setup keys and recovery codes stay
+inside that account's current flow and clear when the account changes.
+
 Use the existing Gellix / SF Arabic font stack and semantic text colors. `text-sm` is 14px;
 the dashboard overrides `text-xs` to **13px**, with a 20px line height.
 Use `text-sm` for field labels, controls, and primary list information; use `text-xs` for hints

@@ -58,6 +58,7 @@
     "title": "الإعدادات",
     "tabs": {
       "general": "عام",
+      "security": "الأمان",
       "git": "Git",
       "tokens": "رموز واجهة البرمجة",
       "mcp": "MCP",

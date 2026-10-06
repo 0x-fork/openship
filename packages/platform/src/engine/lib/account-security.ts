@@ -10,8 +10,11 @@ import {
 import { expireCookie } from "better-auth/cookies";
 import { twoFactor } from "better-auth/plugins";
 import { resolvePasskeyConfig } from "./passkey-config";
+import { atomicSecurityEndpoint } from "./account-security-transaction";
+import type { Database } from "@repo/db/factory";
 
 interface AccountSecurityOptions {
+  database: Database;
   dashboardUrl: string;
   getAuthMode: () => Promise<"none" | "local" | "cloud">;
 }
@@ -37,17 +40,53 @@ export function accountSecurityPlugins(options: AccountSecurityOptions) {
   const passkeys = passkey(resolvePasskeyConfig(options.dashboardUrl));
   const mfa = twoFactor({ issuer: "Openship" });
   const challenge = mfa.hooks.after[0]!;
+  const atomic = <T extends Parameters<typeof atomicSecurityEndpoint>[1]>(endpoint: T) =>
+    atomicSecurityEndpoint(options.database, endpoint);
+
+  const securedPasskeys = {
+    ...passkeys,
+    endpoints: {
+      ...passkeys.endpoints,
+      verifyPasskeyRegistration: atomic(passkeys.endpoints.verifyPasskeyRegistration),
+      verifyPasskeyAuthentication: atomic(passkeys.endpoints.verifyPasskeyAuthentication),
+      deletePasskey: atomic(passkeys.endpoints.deletePasskey),
+      updatePasskey: atomic(passkeys.endpoints.updatePasskey),
+    },
+  };
 
   const factors = {
     ...mfa,
     endpoints: {
       ...mfa.endpoints,
+      enableTwoFactor: atomicSecurityEndpoint(
+        options.database,
+        mfa.endpoints.enableTwoFactor,
+        async (ctx) => {
+          const session = await getSessionFromCtx(ctx, { disableCookieCache: true });
+          if (!session) throw new APIError("UNAUTHORIZED");
+          // Re-enabling replaces the secret before confirmation. Check under the
+          // account lock so a competing enrollment cannot replace a working factor.
+          if ("twoFactorEnabled" in session.user && session.user.twoFactorEnabled) {
+            throw new APIError("CONFLICT", {
+              code: "TWO_FACTOR_ALREADY_ENABLED",
+              message:
+                "Two-factor authentication is already enabled. Disable it before setting up a different authenticator.",
+            });
+          }
+        },
+      ),
+      disableTwoFactor: atomic(mfa.endpoints.disableTwoFactor),
+      verifyTOTP: atomic(mfa.endpoints.verifyTOTP),
+      verifyBackupCode: atomic(mfa.endpoints.verifyBackupCode),
+      generateBackupCodes: atomic(mfa.endpoints.generateBackupCodes),
       // Reuse the framework's server-only endpoint and sensitive-session
       // validation for OAuth-only users. Existing passwords cannot be replaced.
-      setAccountPassword: createAuthEndpoint(
-        "/account-security/set-password",
-        { ...setPassword.options, use: [...setPassword.options.use, freshSessionMiddleware] },
-        async (ctx) => setPassword({ ...ctx, asResponse: false, returnHeaders: false }),
+      setAccountPassword: atomic(
+        createAuthEndpoint(
+          "/account-security/set-password",
+          { ...setPassword.options, use: [...setPassword.options.use, freshSessionMiddleware] },
+          async (ctx) => setPassword({ ...ctx, asResponse: false, returnHeaders: false }),
+        ),
       ),
     },
     hooks: {
@@ -103,19 +142,7 @@ export function accountSecurityPlugins(options: AccountSecurityOptions) {
                   .join("; "),
               );
             }
-            const session = await getSessionFromCtx(ctx, { disableCookieCache: true });
-            if (ctx.path === "/two-factor/enable") {
-              if (!session) throw new APIError("UNAUTHORIZED");
-              // Re-enabling replaces the secret before it is confirmed. Require
-              // a password-verified disable before replacing a working factor.
-              if ("twoFactorEnabled" in session.user && session.user.twoFactorEnabled) {
-                throw new APIError("CONFLICT", {
-                  code: "TWO_FACTOR_ALREADY_ENABLED",
-                  message:
-                    "Two-factor authentication is already enabled. Disable it before setting up a different authenticator.",
-                });
-              }
-            }
+            await getSessionFromCtx(ctx, { disableCookieCache: true });
             if (
               ctx.path.startsWith("/passkey/") &&
               typeof ctx.body?.name === "string" &&
@@ -195,5 +222,5 @@ export function accountSecurityPlugins(options: AccountSecurityOptions) {
       ],
     },
   };
-  return [passkeys, factors] as const;
+  return [securedPasskeys, factors] as const;
 }

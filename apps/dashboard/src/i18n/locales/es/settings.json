@@ -58,6 +58,7 @@
     "title": "Ajustes",
     "tabs": {
       "general": "General",
+      "security": "Seguridad",
       "git": "Git",
       "tokens": "Tokens de API",
       "mcp": "MCP",

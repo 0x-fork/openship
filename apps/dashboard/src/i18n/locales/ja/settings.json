@@ -58,6 +58,7 @@
     "title": "設定",
     "tabs": {
       "general": "一般",
+      "security": "セキュリティ",
       "git": "Git",
       "tokens": "API トークン",
       "mcp": "MCP",

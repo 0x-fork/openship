@@ -58,6 +58,7 @@
     "title": "Ayarlar",
     "tabs": {
       "general": "Genel",
+      "security": "Güvenlik",
       "git": "Git",
       "tokens": "API jetonları",
       "mcp": "MCP",

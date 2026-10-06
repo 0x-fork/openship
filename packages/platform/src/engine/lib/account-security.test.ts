@@ -5,7 +5,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { createDatabase, schema, type DatabaseConnection } from "@repo/db/factory";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { accountSecurityPlugins } from "./account-security";
 import webauthnFixture from "./__fixtures__/passkey.json";
 
@@ -114,7 +114,11 @@ function createAuth() {
       },
     },
     plugins: [
-      ...accountSecurityPlugins({ dashboardUrl: DASHBOARD, getAuthMode: async () => mode }),
+      ...accountSecurityPlugins({
+        database: connection.db,
+        dashboardUrl: DASHBOARD,
+        getAuthMode: async () => mode,
+      }),
       bearer(),
       emailOTP({
         async sendVerificationOTP({ otp }) {
@@ -127,9 +131,10 @@ function createAuth() {
 let auth: ReturnType<typeof createAuth>;
 
 class Browser {
+  constructor(private readonly instance = auth) {}
   cookies = new Map<string, string>();
   async request(path: string, body?: unknown) {
-    const response = await auth.handler(
+    const response = await this.instance.handler(
       new Request(`${API}/api/auth${path}`, {
         method: body === undefined ? "GET" : "POST",
         headers: {
@@ -189,7 +194,11 @@ async function enroll() {
 }
 
 beforeAll(async () => {
-  connection = await createDatabase({ driver: "pglite", dataDir: "memory://" });
+  connection = await createDatabase(
+    process.env.OPENSHIP_SECURITY_TEST_PG_URL
+      ? { driver: "pg", url: process.env.OPENSHIP_SECURITY_TEST_PG_URL }
+      : { driver: "pglite", dataDir: "memory://" },
+  );
   auth = createAuth();
 }, 60_000);
 afterAll(async () => connection?.close());
@@ -247,6 +256,117 @@ describe("account security through real Better Auth HTTP endpoints", () => {
       (await browser.request("/two-factor/verify-totp", { code: await totp(user.id) })).status,
     ).toBe(200);
     expect((await browser.request("/get-session")).data.user.id).toBe(user.id);
+  });
+
+  it("keeps 2FA enabled if removing its secret fails", async () => {
+    const user = await enroll();
+    const [factor] = await connection.db
+      .select()
+      .from(schema.twoFactor)
+      .where(eq(schema.twoFactor.userId, user.id));
+    // Fail the real DB delete, including when the endpoint uses a transaction.
+    await connection.db.execute(
+      sql`CREATE TABLE security_test_factor_reference (factor_id text REFERENCES two_factor(id))`,
+    );
+    try {
+      await connection.db.execute(
+        sql`INSERT INTO security_test_factor_reference VALUES (${factor!.id})`,
+      );
+      expect(
+        (await user.browser.request("/two-factor/disable", { password: PASSWORD })).status,
+      ).toBe(500);
+    } finally {
+      await connection.db.execute(sql`DROP TABLE security_test_factor_reference`);
+    }
+    const [saved] = await connection.db
+      .select()
+      .from(schema.user)
+      .where(eq(schema.user.id, user.id));
+    expect(saved!.twoFactorEnabled).toBe(true);
+    const browser = new Browser();
+    expect(
+      (await browser.request("/sign-in/email", { email: user.email, password: PASSWORD })).data,
+    ).toEqual({ twoFactorRedirect: true });
+  });
+
+  it("does not expose a cached authenticated session if creating the 2FA challenge fails", async () => {
+    const user = await enroll();
+    const browser = new Browser();
+    await connection.db.execute(
+      sql`ALTER TABLE verification ADD CONSTRAINT security_test_challenge_failure CHECK (identifier NOT LIKE '2fa-%') NOT VALID`,
+    );
+    try {
+      const result = await browser.request("/sign-in/email", {
+        email: user.email,
+        password: PASSWORD,
+      });
+      expect(result.status).toBe(500);
+      expect(result.headers.has("set-auth-token")).toBe(false);
+    } finally {
+      await connection.db.execute(
+        sql`ALTER TABLE verification DROP CONSTRAINT security_test_challenge_failure`,
+      );
+    }
+    expect((await browser.request("/get-session")).data).toBeNull();
+  });
+
+  it("rolls back enrollment if issuing the replacement session fails, and permits retry", async () => {
+    const user = await account();
+    expect((await user.browser.request("/two-factor/enable", { password: PASSWORD })).status).toBe(
+      200,
+    );
+    const code = await totp(user.id);
+    await connection.db.execute(
+      sql`ALTER TABLE session ADD CONSTRAINT security_test_session_failure CHECK (false) NOT VALID`,
+    );
+    try {
+      const result = await user.browser.request("/two-factor/verify-totp", { code });
+      expect(result.status).toBe(500);
+      expect(result.headers.has("set-auth-token")).toBe(false);
+      const [saved] = await connection.db
+        .select()
+        .from(schema.user)
+        .where(eq(schema.user.id, user.id));
+      expect(saved!.twoFactorEnabled).toBe(false);
+    } finally {
+      await connection.db.execute(
+        sql`ALTER TABLE session DROP CONSTRAINT security_test_session_failure`,
+      );
+    }
+    expect((await user.browser.request("/two-factor/verify-totp", { code })).status).toBe(200);
+    expect((await user.browser.request("/get-session")).data.user.twoFactorEnabled).toBe(true);
+  });
+
+  it("consumes a pending authenticator challenge once across simultaneous retries on separate auth instances", async () => {
+    const user = await enroll();
+    const first = new Browser();
+    await first.request("/sign-in/email", { email: user.email, password: PASSWORD });
+    const retry = new Browser(createAuth());
+    retry.cookies = new Map(first.cookies);
+    const code = await totp(user.id);
+    const results = await Promise.all(
+      [first, retry].map((browser) => browser.request("/two-factor/verify-totp", { code })),
+    );
+    expect(results.filter((result) => result.status === 200)).toHaveLength(1);
+    expect(results.filter((result) => result.status === 401)).toHaveLength(1);
+  });
+
+  it("does not replace an authenticator while its enrollment is being confirmed", async () => {
+    const user = await account();
+    await user.browser.request("/two-factor/enable", { password: PASSWORD });
+    const code = await totp(user.id);
+    const replacement = new Browser();
+    replacement.cookies = new Map(user.browser.cookies);
+    const [replace, verify] = await Promise.all([
+      replacement.request("/two-factor/enable", { password: PASSWORD }),
+      user.browser.request("/two-factor/verify-totp", { code }),
+    ]);
+    expect([replace.status, verify.status].filter((status) => status === 200)).toHaveLength(1);
+    const [saved] = await connection.db
+      .select()
+      .from(schema.user)
+      .where(eq(schema.user.id, user.id));
+    expect(saved!.twoFactorEnabled).toBe(verify.status === 200);
   });
 
   it("consumes a recovery code once, including competing requests, and rotates recovery codes", async () => {
@@ -438,6 +558,33 @@ describe("account security through real Better Auth HTTP endpoints", () => {
       (await user.browser.request("/passkey/delete-passkey", { id: registered.data.id })).status,
     ).toBe(200);
   });
+
+  it.each([false, true])(
+    "consumes a passkey challenge once across auth instances (existing sessions: %s)",
+    async (existingSessions) => {
+      const user = await account();
+      const options = await user.browser.request("/passkey/generate-register-options");
+      const credential = registerCredential(options.data.challenge);
+      expect((await user.browser.request("/passkey/verify-registration", credential)).status).toBe(
+        200,
+      );
+
+      const first = existingSessions ? (await account()).browser : new Browser();
+      const login = await first.request("/passkey/generate-authenticate-options");
+      const second = new Browser(createAuth());
+      second.cookies = existingSessions ? (await account()).browser.cookies : new Map();
+      for (const [name, value] of first.cookies) {
+        if (name.includes("better-auth-passkey")) second.cookies.set(name, value);
+      }
+      const assertion = authenticateCredential(credential.response.id, login.data.challenge);
+      const results = await Promise.all([
+        first.request("/passkey/verify-authentication", assertion),
+        second.request("/passkey/verify-authentication", assertion),
+      ]);
+      expect(results.map((result) => result.status).sort()).toEqual([200, 400]);
+      expect(results.filter((result) => result.headers.has("set-auth-token"))).toHaveLength(1);
+    },
+  );
 
   it("rejects wrong WebAuthn origins, RP IDs, expired challenges and reused assertions", async () => {
     const user = await account();

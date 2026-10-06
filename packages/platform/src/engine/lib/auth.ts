@@ -356,6 +356,7 @@ export const auth = betterAuth({
   /* ---------- Plugins ---------- */
   plugins: [
     ...accountSecurityPlugins({
+      database: db,
       // DB-discovered self-app domains construct URLs; they do not grant trust.
       dashboardUrl: env.OPENSHIP_PUBLIC_URL || localDashboardUrl,
       getAuthMode,

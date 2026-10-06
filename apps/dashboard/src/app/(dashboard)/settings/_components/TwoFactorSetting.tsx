@@ -20,10 +20,16 @@ type Step =
   | { kind: "recovery"; codes: string[] };
 
 export function TwoFactorSetting() {
+  const account = authClient.useSession();
+  // Switching accounts must clear setup keys, recovery codes and pending inputs.
+  return <TwoFactorControls key={account.data?.user.id ?? "signed-out"} account={account} />;
+}
+
+function TwoFactorControls({ account }: { account: ReturnType<typeof authClient.useSession> }) {
   const { t } = useI18n();
   const copy = t.settings.accountSecurity;
   const { showToast } = useToast();
-  const { data: session, error: sessionError, isPending, refetch } = authClient.useSession();
+  const { data: session, error: sessionError, isPending, refetch } = account;
   const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState("");
   const [reload, setReload] = useState(0);

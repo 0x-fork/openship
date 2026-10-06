@@ -58,6 +58,7 @@
     "title": "Paramètres",
     "tabs": {
       "general": "Général",
+      "security": "Sécurité",
       "git": "Git",
       "tokens": "Jetons d'API",
       "mcp": "MCP",

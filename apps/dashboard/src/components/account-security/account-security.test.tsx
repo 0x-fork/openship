@@ -82,6 +82,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("isSecureContext", true);
   vi.stubGlobal("PublicKeyCredential", class {});
+  h.user.id = "owner";
   h.user.twoFactorEnabled = false;
   h.sessionError = null;
   h.params = new URLSearchParams("returnTo=%2Fmcp%2Fauthorize%3Fclient_id%3Dexample");
@@ -216,6 +217,36 @@ describe("account security settings", () => {
     await click(copy.done);
     expect(container.textContent).not.toContain(codes[0]);
     expect(container.querySelector("#authenticator-secret")).toBeNull();
+  });
+
+  it("discards a pending setup response when the signed-in account changes", async () => {
+    let resolveSetup!: (value: unknown) => void;
+    h.enable.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSetup = resolve;
+      }),
+    );
+    await render(<TwoFactorSetting />);
+    await click(copy.enable);
+    await fill("security-password", "test-password");
+    await submit();
+    expect(h.enable).toHaveBeenCalledTimes(1);
+
+    h.user.id = "another-account";
+    await render(<TwoFactorSetting />);
+    await act(async () => {
+      resolveSetup({
+        data: {
+          totpURI: "otpauth://totp/Openship:owner?secret=JBSWY3HPEHPK3VXP&issuer=Openship",
+          backupCodes: codes,
+        },
+        error: null,
+      });
+    });
+    expect(button(copy.enable)).toBeTruthy();
+    expect(container.querySelector("#authenticator-secret")).toBeNull();
+    expect(container.querySelector("#enroll-authenticator-code")).toBeNull();
+    expect(container.textContent).not.toContain(codes[0]);
   });
 
   it("supports OAuth-only accounts without accepting mismatched password confirmation", async () => {

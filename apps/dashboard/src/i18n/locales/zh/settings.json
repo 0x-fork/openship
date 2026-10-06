@@ -58,6 +58,7 @@
     "title": "设置",
     "tabs": {
       "general": "常规",
+      "security": "安全",
       "git": "Git",
       "tokens": "API 令牌",
       "mcp": "MCP",
