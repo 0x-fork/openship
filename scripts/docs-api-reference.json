@@ -3735,6 +3735,30 @@
       "page": "servers",
       "section": "Legacy network URLs",
       "description": "Compatibility alias for `PATCH /api/system/networks/preparations/:preparationId/connections`."
+    },
+    "GET /api/cloud/support/mine": {
+      "page": "support",
+      "description": "List the signed-in customer’s tickets with status, search and cursor pagination. Uses the personal Cloud session, including on connected local installations."
+    },
+    "GET /api/cloud/support/session": {
+      "page": "support",
+      "description": "Read the private support account and connection binding. Local installations require the caller’s own verified Cloud link; shared organization credentials never grant private ticket access."
+    },
+    "POST /api/cloud/support/mine": {
+      "page": "support",
+      "description": "Save an account-owned Cloud support ticket and queue the existing receipt and team notification."
+    },
+    "GET /api/cloud/support/mine/:id": {
+      "page": "support",
+      "description": "Read the customer’s own conversation without internal delivery metadata."
+    },
+    "POST /api/cloud/support/mine/:id/replies": {
+      "page": "support",
+      "description": "Save an idempotent customer reply, notify support and reopen the conversation."
+    },
+    "PATCH /api/cloud/support/mine/:id": {
+      "page": "support",
+      "description": "Open or resolve the signed-in customer’s own ticket."
     }
   }
 }

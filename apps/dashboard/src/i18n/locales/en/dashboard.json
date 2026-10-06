@@ -55,6 +55,7 @@
     }
   },
   "nav": {
+    "support": "Support",
     "scale": "Scale",
     "home": "Home",
     "new-project": "New Project",
@@ -76,6 +77,7 @@
     "addMailbox": "Add mailbox",
     "webmail": "Webmail",
     "sections": {
+      "help": "Help",
       "main": "Main",
       "settings": "Settings",
       "infrastructure": "Infrastructure",
