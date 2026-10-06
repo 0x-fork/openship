@@ -479,6 +479,7 @@ async function driftItem(
     kind: status.mode,
     behind: status.behind,
     latestInProgress: status.latestInProgress,
+    inProgressDeploymentId: status.inProgressDeploymentId,
     currentLabel: view.currentLabel,
     latestLabel: view.latestLabel,
     detail: view.detail,
@@ -529,7 +530,7 @@ export async function listOrganizationUpdates(
 
   // Deterministic despite the concurrency: behind first, then by name.
   items.sort((a, b) => Number(b.behind) - Number(a.behind) || a.name.localeCompare(b.name));
-  return opts?.behindOnly ? items.filter((i) => i.behind) : items;
+  return opts?.behindOnly ? items.filter((i) => i.behind || i.latestInProgress) : items;
 }
 
 /**
@@ -565,7 +566,7 @@ export async function getProjectDrift(
  * backups/triggers/pre-deploy.ts), so the opt-in this path used to pass enqueued
  * a SECOND run per policy for the same cutover.
  *
- * No post-deploy rescan: the deployed half is always read live, while the
+ * No post-deploy rescan: deployed state and progress are read live, while the
  * upstream result remains valid until the next poll.
  */
 export async function applyProjectUpdate(ctx: RequestContext, projectId: string) {

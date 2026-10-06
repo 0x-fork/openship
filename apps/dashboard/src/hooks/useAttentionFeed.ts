@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { systemApi } from "@/lib/api";
+import { getActiveOrganizationId } from "@/lib/api/client";
 import { issuesApi, type SystemIssue } from "@/lib/api/issues";
 import { useIssueActions } from "@/components/issues/useIssueActions";
 import { usePlatform } from "@/context/PlatformContext";
@@ -27,15 +28,17 @@ export function useAttentionFeed() {
   const [issues, setIssues] = useState<SystemIssue[] | null>(null);
 
   const load = useCallback(async () => {
+    const organizationId = getActiveOrganizationId();
     try {
       const res = await issuesApi.list();
-      setIssues(res?.data ?? []);
+      if (organizationId === getActiveOrganizationId()) setIssues(res?.data ?? []);
     } catch {
-      setIssues([]); // fail-soft → the column falls back to the product tip
+      // A failed refresh must not hide a deployment that is still updating.
+      if (organizationId === getActiveOrganizationId()) setIssues((previous) => previous ?? []);
     }
   }, []);
 
-  const { busyId, resolve, infraFix } = useIssueActions(load);
+  const { busyIds, resolve, infraFix, issues: visibleIssues } = useIssueActions(load, undefined, issues ?? undefined);
 
   const autoScanRan = useRef(false);
   useEffect(() => {
@@ -60,12 +63,12 @@ export function useAttentionFeed() {
   }, [load, selfHosted]);
 
   const { broken, behind } = useMemo(() => {
-    const rows = issues ?? [];
+    const rows = visibleIssues;
     return {
       broken: rows.filter((i) => i.severity !== "advisory"),
       behind: rows.filter((i) => i.severity === "advisory"),
     };
-  }, [issues]);
+  }, [visibleIssues]);
 
   // Which cards the operator has hidden, re-derived from storage every time the feed
   // changes rather than remembered here: a hide is only valid for the exact set it was
@@ -105,7 +108,7 @@ export function useAttentionFeed() {
      */
     cards: (showBroken ? 1 : 0) + (showBehind ? 1 : 0),
     hide,
-    busyId,
+    busyIds,
     resolve,
     infraFix,
   };

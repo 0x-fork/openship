@@ -32,8 +32,7 @@ const updateStatusRepo = vi.hoisted(() => ({
 }));
 const deploymentRepo = vi.hoisted(() => ({
   findById: vi.fn(),
-  findInProgressByCommit: vi.fn(),
-  findInProgressByReleaseVersion: vi.fn(),
+  listInFlightByProject: vi.fn(),
 }));
 const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn(), listByDeployment: vi.fn() }));
 const resolveUpstreamDrift = vi.hoisted(() => vi.fn());
@@ -158,8 +157,7 @@ beforeEach(() => {
   updateStatusRepo.upsert.mockResolvedValue(undefined);
   updateStatusRepo.deleteByProject.mockResolvedValue(undefined);
   deploymentRepo.findById.mockResolvedValue({ id: "dep_live", projectId: "proj_1", organizationId: "org_1", commitSha: SHIPPED });
-  deploymentRepo.findInProgressByCommit.mockResolvedValue(undefined);
-  deploymentRepo.findInProgressByReleaseVersion.mockResolvedValue(undefined);
+  deploymentRepo.listInFlightByProject.mockResolvedValue([]);
   serviceRepo.listByProject.mockResolvedValue([]);
   serviceRepo.listByDeployment.mockResolvedValue([]);
 });
@@ -199,6 +197,20 @@ describe("a project with no cached row", () => {
         detail: expect.objectContaining({ latestSha: NEWER, key: "oblien/openship#main" }),
       }),
     );
+  });
+
+  it("keeps an update in the behind-only feed until its worker finishes, without re-polling upstream", async () => {
+    const p = project();
+    setup([p], [cachedRow({ key: commitSourceKey(p), latestSha: SHIPPED, ageMs: 1_000 })]);
+    deploymentRepo.listInFlightByProject.mockResolvedValue([
+      { id: "dep_update", commitSha: SHIPPED, trigger: "update", status: "ready" },
+    ]);
+    expect(await listOrganizationUpdates(ctx, { behindOnly: true })).toEqual([
+      expect.objectContaining({ behind: false, latestInProgress: true, inProgressDeploymentId: "dep_update" }),
+    ]);
+    expect(resolveUpstreamDrift).not.toHaveBeenCalled();
+    deploymentRepo.listInFlightByProject.mockResolvedValue([]);
+    expect(await listOrganizationUpdates(ctx, { behindOnly: true })).toEqual([]);
   });
 
   it("does not poll a project with nothing deployed to be behind", async () => {

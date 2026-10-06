@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   project: { findById: vi.fn() },
-  deployment: { findById: vi.fn() },
+  deployment: { findById: vi.fn(), listInFlightByProject: vi.fn() },
   service: { listByProject: vi.fn(), listByDeployment: vi.fn() },
   updateStatus: { upsert: vi.fn(), deleteByProject: vi.fn() },
   fetch: vi.fn(),
@@ -78,6 +78,7 @@ function setup(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.deployment.listInFlightByProject.mockResolvedValue([]);
   h.deploy.mockResolvedValue({ deployment: { id: "dep_next" } });
   h.fetch.mockImplementation(async (url: string) => {
     if (url.includes("/private/") || url.includes("/host-only/")) {
