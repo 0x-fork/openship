@@ -41,7 +41,7 @@ describe("server subscription choices", () => {
   });
 
   it("does not advertise a smaller disk for an inactive or subscribed server", () => {
-    expect(choices(undefined, 32).available.map(plan => plan.id)).toEqual(["starter", "pro", "team"]);
+    expect(choices(undefined, 128).available.map(plan => plan.id)).toEqual(["starter", "pro", "team"]);
     expect(choices(plan("team"), 256).available.map(plan => plan.id)).toEqual(["team"]);
     expect(choices(plan("team"), 256).upgrades).toEqual([]);
   });

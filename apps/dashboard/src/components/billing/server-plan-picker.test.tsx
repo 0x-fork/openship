@@ -146,12 +146,12 @@ describe("plans for an existing server", () => {
 
   it("opens Custom from Scale with the saved resources and disables an unchanged purchase", async () => {
     vi.useFakeTimers();
-    await render(picker("team", { allocatedDiskGb: 256 }));
+    await render(picker("team", { allocatedDiskGb: 600 }));
     expect(host.querySelector('form[aria-label="Size your server"]')).not.toBeNull();
     expect(sidebarState()).toBe("expanded");
     expect(input(copy.custom.cpu)?.value).toBe("8");
     expect(input(copy.custom.memory)?.value).toBe("32");
-    expect(input(copy.custom.disk)?.value).toBe("256");
+    expect(input(copy.custom.disk)?.value).toBe("600");
     await flushQuote();
     expect(buttons(copy.pricing.currentPlan)[0]?.disabled).toBe(true);
     await edit(input(copy.custom.cpu)!, "9");
@@ -160,7 +160,7 @@ describe("plans for an existing server", () => {
     h.post.mockRejectedValueOnce(new Error("Preview offline"));
     await click(copy.planChange.review);
     expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription/change/preview", expect.objectContaining({
-      workspaceId: "cws-production", custom: { resources: { cpuCores: 9, memoryMb: 32768, diskGb: 256 }, quoteReference: "quoted-9-32768-256" },
+      workspaceId: "cws-production", custom: { resources: { cpuCores: 9, memoryMb: 32768, diskGb: 600 }, quoteReference: "quoted-9-32768-600" },
     }));
     expect(h.post.mock.calls.some(([path]) => path === "billing/subscription")).toBe(false);
   });
@@ -178,7 +178,7 @@ describe("plans for an existing server", () => {
   });
 
   it("restores an inactive server through its own checkout without offering smaller disks", async () => {
-    await render(picker("free", { currentOffer: null, subscription: null, preserveProject: true, allocatedDiskGb: 32 }));
+    await render(picker("free", { currentOffer: null, subscription: null, preserveProject: true, allocatedDiskGb: 128 }));
     expect(planNames()).toEqual(["Starter", "Pro", "Scale"]);
     await click("Choose Starter");
     expect(h.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ workspaceId: "cws-production", planTierId: "starter" }));
@@ -236,11 +236,11 @@ describe("buying another managed server", () => {
     await edit(input(copy.custom.cpu)!, "3");
     const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
     expect(panel.querySelector('[role="alert"]')?.textContent).toContain("exceeds Tier 1");
-    expect(panel.querySelector("aside")?.textContent).not.toContain("$0.1237");
+    expect(panel.querySelector("aside")?.textContent).not.toContain("$0.1077");
     await click("View Tier 2");
     expect(input(copy.custom.cpu)?.value).toBe("3");
     expect(panel.querySelector('[role="alert"]')).toBeNull();
-    expect(panel.querySelector("aside")?.textContent).toContain("$0.1237");
+    expect(panel.querySelector("aside")?.textContent).toContain("$0.1077");
     await click(copy.purchase.monthly);
     await click(copy.purchase.payg);
     expect(buttons("Tier 2")[0]?.getAttribute("aria-selected")).toBe("true");
@@ -273,20 +273,20 @@ describe("buying another managed server", () => {
     await click(copy.purchase.payg);
     const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
     const estimate = panel.querySelector("aside")!;
-    expect(estimate.textContent).toContain("$0.0637");
-    expect(estimate.textContent).toContain("6.37 credits/hour");
+    expect(estimate.textContent).toContain("$0.0477");
+    expect(estimate.textContent).toContain("4.77 credits/hour");
     expect(estimate.textContent).toContain(copy.purchase.hourlyHint);
     expect(panel.querySelectorAll('input[type="number"]')).toHaveLength(3);
     expect(estimate.querySelector("details")?.open).toBe(false);
     expect(estimate.textContent).not.toMatch(/30-day|Assumes|Compare monthly hosts/);
-    expect(estimate.textContent).toContain("13.1 days");
-    expect(estimate.textContent).toContain("24.7 days");
+    expect(estimate.textContent).toContain("17.5 days");
+    expect(estimate.textContent).toContain("47 days");
     await act(async () => panel.querySelector<HTMLButtonElement>('button[value="500"]')!.click());
-    expect(estimate.textContent).toContain("3.3 days");
-    expect(estimate.textContent).toContain("6.2 days");
+    expect(estimate.textContent).toContain("4.4 days");
+    expect(estimate.textContent).toContain("11.7 days");
     await edit(input(copy.custom.cpu)!, "2");
-    expect(estimate.textContent).toContain("2.2 days");
-    expect(estimate.textContent).toContain("$0.0937");
+    expect(estimate.textContent).toContain("2.7 days");
+    expect(estimate.textContent).toContain("$0.0777");
     expect(estimate.textContent).toContain("2 vCPU-h");
     expect(estimate.textContent).toContain("6 credits");
     expect(panel.textContent).toContain("2 vCPU × 100% = 2 vCPU-h");
@@ -310,7 +310,7 @@ describe("buying another managed server", () => {
     await edit(input(copy.custom.cpu)!, "4");
     await act(async () => { await vi.advanceTimersByTimeAsync(600); });
     const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
-    expect(panel.querySelector("aside")?.textContent).toContain("$0.1537");
+    expect(panel.querySelector("aside")?.textContent).toContain("$0.1377");
     expect(h.get).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
   });
@@ -322,7 +322,7 @@ describe("buying another managed server", () => {
     await edit(input(copy.custom.cpu)!, "0");
     const panel = document.getElementById(buttons(copy.purchase.payg)[0]!.getAttribute("aria-controls")!)!;
     expect(panel.querySelector('[role="alert"]')?.textContent).toBe(copy.purchase.invalid);
-    expect(panel.querySelector("aside")?.textContent).not.toContain("13.1 days");
+    expect(panel.querySelector("aside")?.textContent).not.toContain("17.5 days");
     const buy = buttons("Add 2,000 credits")[0]!;
     expect(buy.disabled).toBe(true);
     await act(async () => buy.click());

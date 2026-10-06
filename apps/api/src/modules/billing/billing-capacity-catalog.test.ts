@@ -82,7 +82,7 @@ describe("funded Cloud offers and isolated capacity", () => {
     const subscription = monthlyPro();
     subscription.offer!.reference = `openship:pro:v${version}`;
     subscription.metadata!.openship_offer_version = version;
-    subscription.offer!.billingMode = "metered";
+    subscription.offer!.billingMode = "payg";
     subscription.offer!.credits = 100;
     subscription.offer!.policy = { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" };
     delete subscription.offer!.capacity;
