@@ -3,6 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pricingUi, resolvePlan } from "@repo/core";
+import { CLOUD_SUPPORT_ACCOUNT_HEADER } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { baseDictionary } from "@/i18n";
@@ -80,6 +81,7 @@ describe("checkout availability feedback", () => {
     expect(body).toMatchObject({ requestId: failure.requestId, category: "billing", subject: "Cloud capacity availability" });
     expect(body).not.toHaveProperty("email");
     expect(body).not.toHaveProperty("ownerUserId");
+    expect(h.post.mock.calls[0]![2].headers[CLOUD_SUPPORT_ACCOUNT_HEADER]).toBe("customer");
     expect(body.message).toContain("Server reference: cws-selected");
     expect(dialog()?.querySelector<HTMLInputElement>('input[type="email"]')?.readOnly).toBe(true);
     await act(async () => complete(receipt));

@@ -12,6 +12,7 @@ import {
   type CloudSupportCustomerDetail,
   type CloudSupportCustomerList,
   type CloudSupportCustomerTicket,
+  type CloudSupportSession,
 } from "@repo/contracts";
 import type { CloudSupportRepo, CloudSupportTicket } from "@repo/db/repos";
 import type { ExecutionContext } from "../../../context";
@@ -50,13 +51,38 @@ export class CloudSupportService {
     this.requireCloud();
     // Account support can contain private conversations unrelated to an
     // organization's infrastructure grants. API tokens never inherit access.
-    if (ctx.sessionKind !== "cookie" || !ctx.userId || ctx.user?.id !== ctx.userId)
+    // Cloud links carry a real Better Auth session as a server-side Bearer.
+    // PAT/OAuth bearers are different principals and never inherit this access.
+    if (
+      !["cookie", "bearer"].includes(ctx.sessionKind) ||
+      ctx.principalKind ||
+      ctx.tokenScope ||
+      ctx.credential ||
+      !ctx.sessionId ||
+      !ctx.userId ||
+      ctx.user?.id !== ctx.userId
+    )
       throw new AppError(
         "Sign in to Openship Cloud to manage your support tickets.",
         403,
         "SUPPORT_SESSION_REQUIRED",
       );
     return ctx.user;
+  }
+
+  assertCustomerAccount(ctx: ExecutionContext, expectedKey?: string) {
+    const user = this.customer(ctx);
+    if (expectedKey !== undefined && expectedKey !== user.id)
+      throw new AppError(
+        "Your support account changed. Reload Support before continuing.",
+        409,
+        "SUPPORT_ACCOUNT_CHANGED",
+      );
+  }
+
+  sessionForCustomer(ctx: ExecutionContext): CloudSupportSession {
+    const user = this.customer(ctx);
+    return { account: { id: user.id, name: user.name, email: user.email, key: user.id } };
   }
 
   async submitForCustomer(

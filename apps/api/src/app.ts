@@ -344,6 +344,11 @@ if (env.CLOUD_MODE) {
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
   app.route("/api/cloud", cloudLocalRoutes);
 
+  /** Private support uses the caller's personal Cloud connection. */
+  const { cloudSupportLocalRoutes } =
+    await import("./modules/cloud-support/cloud-support-local.routes");
+  app.route("/api/cloud/support", cloudSupportLocalRoutes);
+
   /** Billing proxy - cloud-connected local instances proxy to SaaS */
   const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
   app.route("/api/billing", billingLocalRoutes);

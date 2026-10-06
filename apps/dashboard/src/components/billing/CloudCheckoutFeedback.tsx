@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/Modal";
 import { usePlatform } from "@/context/PlatformContext";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
-import { cloudSupportApi } from "@/lib/api/cloud-support";
+import { createCloudSupportApi } from "@/lib/api/cloud-support";
 import { supportTicketHref } from "@/components/support/support-shared";
 import { useSession } from "@/lib/auth-client";
 import type { CheckoutFailure } from "@/lib/checkout-failure";
@@ -90,7 +90,7 @@ function FeedbackContent({ failure, plan, onClose, onRetry }: {
     setError(false);
     const contact = email.trim().toLowerCase();
     try {
-      const receipt = await cloudSupportApi.create(request);
+      const receipt = await createCloudSupportApi(session.user.id).create(request);
       if (mounted.current) { setReceivedEmail(contact); setTicketId(receipt.id); }
     } catch {
       if (mounted.current) setError(true);

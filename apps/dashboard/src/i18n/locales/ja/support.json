@@ -62,5 +62,12 @@
   "emailSupport": "メールで問い合わせ",
   "privateHint": "チケットはあなたとOpenshipサポートチームにのみ表示されます。",
   "viewTicket": "チケットを見る",
-  "signIn": "ログインしてチケットを確認"
+  "signIn": "ログインしてチケットを確認",
+  "linkedAs": "Cloudアカウント: {email}",
+  "checkingConnection": "Cloudアカウントを確認中…",
+  "cloudTitle": "Cloudアカウントのサポート",
+  "teamConnectionDescription": "チームはCloudに接続されています。個人のチケットを表示するには、ご自身のCloudアカウントにログインしてください。",
+  "connectDescription": "設定でCloudアカウントを接続すると、ここでチケットを管理できます。Cloudのサポートを直接開くこともできます。",
+  "connectionFailed": "Cloudへの接続を確認できませんでした。もう一度試すか、Cloudのサポートを開いてください。",
+  "openCloud": "Cloudのサポートを開く"
 }

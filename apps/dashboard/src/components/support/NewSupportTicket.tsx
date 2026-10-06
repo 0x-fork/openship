@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cloudSupportApi } from "@/lib/api/cloud-support";
+import { useSupportApi } from "./support-api";
 
 export function NewSupportTicket({
   initialCategory,
@@ -21,6 +21,7 @@ export function NewSupportTicket({
   onCreated: (id: string) => void;
 }) {
   const { t } = useI18n();
+  const cloudSupportApi = useSupportApi();
   const copy = t.support;
   const id = useId();
   const [category, setCategory] = useState(initialCategory);
@@ -124,7 +125,7 @@ export function NewSupportTicket({
         </div>
         <p className="flex items-start gap-2 break-words text-xs leading-5 text-muted-foreground">
           <Icon name="mail" className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <span>{interpolate(copy.signedInAs, { email })}</span>
+          <span className="min-w-0 break-all">{interpolate(copy.signedInAs, { email })}</span>
         </p>
         {failed && (
           <p role="alert" className="rounded-xl bg-danger/5 p-3 text-sm text-danger">

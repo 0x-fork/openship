@@ -13,6 +13,7 @@ import { SidebarLayoutProvider, useSidebarCollapseRequest } from "@/context/Side
 const mocks = vi.hoisted(() => ({
   pathname: "/monitoring",
   widePlans: false,
+  cloudConnected: false,
   summary: vi.fn(),
   feed: vi.fn(),
   organization: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock("@/lib/auth-client", () => ({
 vi.mock("@/context/AuthContext", () => ({
   useAuth: () => ({ user: { id: "user-a", name: "Operator" } }),
 }));
-vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: false }) }));
+vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: mocks.cloudConnected }) }));
 vi.mock("@/context/PlatformContext", () => ({
   usePlatform: () => ({ selfHosted: true, deployMode: "docker", productView: "platform" }),
 }));
@@ -67,6 +68,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.pathname = "/monitoring";
   mocks.widePlans = false;
+  mocks.cloudConnected = false;
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.organization.mockResolvedValue({ data: { id: "org-a" } });
@@ -88,6 +90,30 @@ function PlanLayoutRequest() {
   useSidebarCollapseRequest(mocks.pathname === "/billing/plans" && mocks.widePlans);
   return null;
 }
+
+it("shows Support last when the self-hosted account connects to Cloud, and removes it on disconnect", async () => {
+  await render();
+  expect(host.querySelector('a[href="/support"]')).toBeNull();
+  mocks.cloudConnected = true;
+  await render();
+  const links = [...host.querySelectorAll('nav a[href]')];
+  expect(links.at(-1)?.getAttribute("href")).toBe("/support");
+  mocks.cloudConnected = false;
+  await render();
+  expect(host.querySelector('a[href="/support"]')).toBeNull();
+});
+
+it.each([
+  { workspaceId: "managed-workspace" },
+  { deployTarget: "cloud" },
+  { source: "cloud" },
+])("keeps Support reachable for an existing Cloud project when disconnected: %o", async (cloudProject) => {
+  mocks.projects.mockResolvedValue({ success: true, projects: [{ id: "cloud-project", ...cloudProject }] });
+  await render();
+  expect(host.querySelector('nav a[href="/support"]')).not.toBeNull();
+  expect(host.querySelector('nav a[href="/billing"]')).toBeNull();
+  expect(mocks.projects).toHaveBeenCalledOnce();
+});
 
 async function render(props: ComponentProps<typeof Sidebar> = {}) {
   await act(async () =>

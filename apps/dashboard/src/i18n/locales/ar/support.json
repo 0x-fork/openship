@@ -62,5 +62,12 @@
   "emailSupport": "راسل الدعم",
   "privateHint": "تذاكرك خاصة بك وبفريق دعم Openship فقط.",
   "viewTicket": "عرض التذكرة",
-  "signIn": "سجّل الدخول لعرض تذاكرك"
+  "signIn": "سجّل الدخول لعرض تذاكرك",
+  "linkedAs": "حساب Cloud: {email}",
+  "checkingConnection": "جارٍ التحقق من حسابك على Cloud…",
+  "cloudTitle": "الدعم لحسابك على Cloud",
+  "teamConnectionDescription": "فريقك متصل بـ Cloud. سجّل الدخول إلى حسابك الشخصي على Cloud لعرض تذاكر الدعم الخاصة بك.",
+  "connectDescription": "اربط حسابك على Cloud من الإعدادات لإدارة التذاكر هنا، أو افتح الدعم على Cloud.",
+  "connectionFailed": "تعذّر التحقق من اتصالك بـ Cloud. حاول مجددًا أو افتح الدعم على Cloud.",
+  "openCloud": "فتح الدعم على Cloud"
 }

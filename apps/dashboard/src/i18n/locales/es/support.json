@@ -62,5 +62,12 @@
   "emailSupport": "Contactar por correo",
   "privateHint": "Tus tickets son privados entre tú y el equipo de soporte de Openship.",
   "viewTicket": "Ver ticket",
-  "signIn": "Inicia sesión para ver tus tickets"
+  "signIn": "Inicia sesión para ver tus tickets",
+  "linkedAs": "Cuenta de Cloud: {email}",
+  "checkingConnection": "Verificando tu cuenta de Cloud…",
+  "cloudTitle": "Soporte para tu cuenta de Cloud",
+  "teamConnectionDescription": "Tu equipo está conectado a Cloud. Inicia sesión en tu propia cuenta de Cloud para ver tus tickets privados.",
+  "connectDescription": "Conecta tu cuenta de Cloud en Ajustes para gestionar los tickets aquí, o abre Soporte en Cloud.",
+  "connectionFailed": "No pudimos verificar tu conexión con Cloud. Inténtalo de nuevo o abre Soporte en Cloud.",
+  "openCloud": "Abrir Soporte en Cloud"
 }

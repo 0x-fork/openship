@@ -62,5 +62,12 @@
   "emailSupport": "Email support",
   "privateHint": "Your tickets are private to you and the Openship support team.",
   "viewTicket": "View ticket",
-  "signIn": "Sign in to view your tickets"
+  "signIn": "Sign in to view your tickets",
+  "linkedAs": "Cloud account: {email}",
+  "checkingConnection": "Checking your Cloud account…",
+  "cloudTitle": "Support for your Cloud account",
+  "teamConnectionDescription": "Your team is connected to Cloud. Sign in to your own Cloud account to view your private tickets.",
+  "connectDescription": "Connect your Cloud account in Settings to manage tickets here, or open Support on Cloud.",
+  "connectionFailed": "We couldn’t verify your Cloud connection. Try again or open Support on Cloud.",
+  "openCloud": "Open Support in Cloud"
 }

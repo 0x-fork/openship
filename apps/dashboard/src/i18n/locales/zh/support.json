@@ -62,5 +62,12 @@
   "emailSupport": "邮件联系支持",
   "privateHint": "只有你和 Openship 支持团队可以查看你的工单。",
   "viewTicket": "查看工单",
-  "signIn": "登录以查看你的工单"
+  "signIn": "登录以查看你的工单",
+  "linkedAs": "Cloud 账户：{email}",
+  "checkingConnection": "正在验证你的 Cloud 账户…",
+  "cloudTitle": "Cloud 账户支持",
+  "teamConnectionDescription": "你的团队已连接 Cloud。请登录你自己的 Cloud 账户以查看私人支持工单。",
+  "connectDescription": "在设置中连接你的 Cloud 账户，即可在此管理工单，也可以直接打开 Cloud 支持。",
+  "connectionFailed": "无法验证你的 Cloud 连接。请重试或打开 Cloud 支持。",
+  "openCloud": "打开 Cloud 支持"
 }

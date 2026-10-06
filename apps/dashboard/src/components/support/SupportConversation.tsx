@@ -6,7 +6,7 @@ import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { cloudSupportApi } from "@/lib/api/cloud-support";
+import { useSupportApi } from "./support-api";
 import { TicketStatus, TicketTime } from "./support-shared";
 
 /** Mounted with a ticket/account key so late work cannot affect another conversation. */
@@ -18,6 +18,7 @@ export function SupportConversation({
   onChanged: () => void;
 }) {
   const { t } = useI18n();
+  const cloudSupportApi = useSupportApi();
   const copy = t.support;
   const id = useId();
   const [detail, setDetail] = useState<CloudSupportCustomerDetail | null>(null);
@@ -52,7 +53,7 @@ export function SupportConversation({
     } finally {
       if (mounted.current && request === generation.current) setLoading(false);
     }
-  }, [ticketId, onChanged]);
+  }, [ticketId, onChanged, cloudSupportApi]);
 
   useEffect(() => {
     mounted.current = true;

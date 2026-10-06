@@ -79,9 +79,9 @@ describe("getNavSections (the platform rail)", () => {
 
   it("keeps Infrastructure before Settings on a cloud-linked self-hosted box", () => {
     const s = getNavSections(true, true);
-    expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings"]);
+    expect(sectionsOf(s)).toEqual(["main", "infrastructure", "settings", "help"]);
     const keys = s.flatMap((x) => keysOf(x));
-    expect(keys).not.toContain("support");
+    expect(s.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
     for (const host of ["servers", "emails", "jobs"]) {
       expect(keys.indexOf(host), host).toBeLessThan(keys.indexOf("billing"));
     }
@@ -96,6 +96,13 @@ describe("getNavSections (the platform rail)", () => {
 });
 
 describe("getMailNavSections (the Openship Mail rail)", () => {
+  it("ends with Support when connected to Cloud, including during mail setup", () => {
+    for (const loaded of [false, true]) {
+      const connected = mailAt({ supportAvailable: true, loaded });
+      expect(connected.at(-1)?.items.at(-1)).toMatchObject({ key: "support", href: "/support" });
+      expect(mailAt({ supportAvailable: false, loaded }).flatMap((s) => keysOf(s))).not.toContain("support");
+    }
+  });
   it("shows one entry pointing at the real route before the list loads", () => {
     const mail = find(mailAt({ loaded: false }), "mail");
     expect(keysOf(mail)).toEqual(["emails"]);

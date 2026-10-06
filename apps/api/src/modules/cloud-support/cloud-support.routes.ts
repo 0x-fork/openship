@@ -1,7 +1,12 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { Type } from "@sinclair/typebox";
-import { CloudSupportStatusSchema, CloudSupportIdSchema, parseInput } from "@repo/contracts";
+import {
+  CLOUD_SUPPORT_ACCOUNT_HEADER,
+  CloudSupportStatusSchema,
+  CloudSupportIdSchema,
+  parseInput,
+} from "@repo/contracts";
 import { ValidationError, AppError } from "@repo/core";
 import { env } from "@repo/platform/engine/config/env";
 import {
@@ -47,7 +52,14 @@ function ticketId(c: Context) {
 
 const customer = {
   reason:
-    "Private Cloud account support. Requires a real browser session; the service checks the session user on every ticket, including cursors. Organization grants and API tokens do not grant access.",
+    "Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access.",
+};
+const customerAccount: MiddlewareHandler = async (c, next) => {
+  cloudSupport.assertCustomerAccount(
+    getRequestContext(c),
+    c.req.header(CLOUD_SUPPORT_ACCOUNT_HEADER),
+  );
+  await next();
 };
 async function customerLimit(c: Context, subjectId: string, reply = false) {
   const result = await rateLimit({
@@ -60,7 +72,10 @@ async function customerLimit(c: Context, subjectId: string, reply = false) {
   }
 }
 
-r.public("get", "/mine", customer, authMiddleware, async (c) => {
+r.public("get", "/session", customer, authMiddleware, customerAccount, (c) =>
+  c.json(cloudSupport.sessionForCustomer(getRequestContext(c))),
+);
+r.public("get", "/mine", customer, authMiddleware, customerAccount, async (c) => {
   const query = c.req.query();
   return c.json(
     await cloudSupport.listForCustomer(getRequestContext(c), {
@@ -69,7 +84,7 @@ r.public("get", "/mine", customer, authMiddleware, async (c) => {
     }),
   );
 });
-r.public("post", "/mine", customer, authMiddleware, limitBody, async (c) => {
+r.public("post", "/mine", customer, authMiddleware, customerAccount, limitBody, async (c) => {
   const result = await cloudSupport.submitForCustomer(
     getRequestContext(c),
     await json(c),
@@ -78,20 +93,28 @@ r.public("post", "/mine", customer, authMiddleware, limitBody, async (c) => {
   deliverCloudSupport();
   return c.json(result, 201);
 });
-r.public("get", "/mine/:id", customer, authMiddleware, async (c) =>
+r.public("get", "/mine/:id", customer, authMiddleware, customerAccount, async (c) =>
   c.json(await cloudSupport.getForCustomer(getRequestContext(c), ticketId(c))),
 );
-r.public("post", "/mine/:id/replies", customer, authMiddleware, limitBody, async (c) => {
-  const result = await cloudSupport.replyForCustomer(
-    getRequestContext(c),
-    ticketId(c),
-    await json(c),
-    (subject) => customerLimit(c, subject, true),
-  );
-  deliverCloudSupport();
-  return c.json(result, 201);
-});
-r.public("patch", "/mine/:id", customer, authMiddleware, limitBody, async (c) =>
+r.public(
+  "post",
+  "/mine/:id/replies",
+  customer,
+  authMiddleware,
+  customerAccount,
+  limitBody,
+  async (c) => {
+    const result = await cloudSupport.replyForCustomer(
+      getRequestContext(c),
+      ticketId(c),
+      await json(c),
+      (subject) => customerLimit(c, subject, true),
+    );
+    deliverCloudSupport();
+    return c.json(result, 201);
+  },
+);
+r.public("patch", "/mine/:id", customer, authMiddleware, customerAccount, limitBody, async (c) =>
   c.json(await cloudSupport.setStatusForCustomer(getRequestContext(c), ticketId(c), await json(c))),
 );
 

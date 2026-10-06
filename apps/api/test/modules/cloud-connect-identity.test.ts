@@ -9,8 +9,9 @@ import {
   storeCloudSession,
   getCloudConnectionStatusForOrg,
 } from "@repo/platform/engine/lib/cloud/session";
-import { readCloudSession } from "@repo/platform/engine/lib/cloud/transport";
+import { cloudFetch, readCloudSession } from "@repo/platform/engine/lib/cloud/transport";
 import { cloudSaasRoutes } from "../../src/modules/cloud/cloud-saas.routes";
+import { cloudSupportRoutes } from "../../src/modules/cloud-support/cloud-support.routes";
 import { permissionsRoutes } from "../../src/modules/permissions/permissions.routes";
 import { handleApiError } from "../../src/middleware/error-handler";
 import { shutdownRateLimit } from "../../src/lib/rate-limit";
@@ -29,6 +30,11 @@ let sessionId: string;
 const requests: Array<{ path: string; organizationId: string | null }> = [];
 const app = new Hono()
   .onError(handleApiError)
+  .use("/api/cloud/support/*", async (c, next) => {
+    // The real API's proxy middleware supplies this before the intake limiter.
+    c.set("clientIp", "192.0.2.10");
+    await next();
+  })
   .use("/api/cloud/account", async (c, next) => {
     await next();
     if (legacy && c.res.status === 200) {
@@ -41,6 +47,7 @@ const app = new Hono()
     }
   })
   .route("/api/cloud", cloudSaasRoutes)
+  .route("/api/cloud/support", cloudSupportRoutes)
   .route("/api/permissions", permissionsRoutes)
   .get("/api/auth/get-session", (c) => auth.handler(c.req.raw));
 
@@ -81,6 +88,18 @@ beforeEach(async () => {
 });
 
 describe("Cloud connection across account API versions", () => {
+  it("authenticates the real linked session for private support, without accepting a PAT", async () => {
+    await storeCloudSession(local.userId, token);
+    const response = await cloudFetch(local.userId, "/api/cloud/support/session");
+    expect(response?.status, await response?.clone().text()).toBe(200);
+    expect((await response!.json()).account).toMatchObject({ id: cloud.userId, key: cloud.userId });
+    const inbox = await cloudFetch(local.userId, "/api/cloud/support/mine");
+    expect(inbox?.status).toBe(200);
+    expect(await inbox!.json()).toEqual({ tickets: [], nextCursor: null });
+    const rejected = await app.request("/api/cloud/support/session", { headers: cloud.auth });
+    expect(rejected.status).toBe(403);
+    expect((await rejected.json()).code).toBe("SUPPORT_SESSION_REQUIRED");
+  });
   it.each([false, true])(
     "connects and verifies the server-authenticated identity (legacy profile: %s)",
     async (older) => {

@@ -9,7 +9,11 @@ import { AppError, SUPPORT_EMAIL } from "@repo/core";
 import type { Database } from "@repo/db";
 import type { ExecutionContext } from "@repo/platform";
 import type { Context, Next } from "hono";
-import { CloudSupportCustomerDetailSchema, parseInput } from "@repo/contracts";
+import {
+  CLOUD_SUPPORT_ACCOUNT_HEADER,
+  CloudSupportCustomerDetailSchema,
+  parseInput,
+} from "@repo/contracts";
 import { createCloudSupportRepo } from "../../../../../packages/db/src/repos/cloud-support.repo";
 import { CloudSupportService } from "@repo/platform/engine/modules/cloud-support/service";
 
@@ -80,7 +84,15 @@ beforeAll(async () => {
       "utf8",
     ),
   );
-  await client.exec(readFileSync(new URL("../../../../../packages/db/drizzle/0167_cloud_support_customers.sql", import.meta.url), "utf8"));
+  await client.exec(
+    readFileSync(
+      new URL(
+        "../../../../../packages/db/drizzle/0167_cloud_support_customers.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(client);
   repo = createCloudSupportRepo(db as unknown as Database);
   state.service = new CloudSupportService({ enabled: () => state.env.CLOUD_MODE, repo, send });
@@ -517,9 +529,36 @@ describe("private Cloud customer support", () => {
     expect((await call("/mine?ownerUserId=someone")).status).toBe(400);
   });
 
-  it("requires cookie authentication and remains unavailable in self-hosted mode", async () => {
+  it("accepts a real linked Cloud session while keeping the same account-owned history", async () => {
+    state.customer = { ...customerContext(), sessionKind: "bearer" };
+    expect(await (await call("/session")).json()).toEqual({
+      account: { ...state.customer.user, key: state.customer.userId },
+    });
+    const ticket = await createCustomerTicket();
+    state.customer = customerContext();
+    expect(
+      (await (await call("/mine")).json()).tickets.map((row: { id: string }) => row.id),
+    ).toEqual([ticket.id]);
+    expect(await repo.find(ticket.id)).toMatchObject({
+      ownerUserId: "customer-one",
+      email: "customer-one@example.com",
+    });
+    const changedAccount = await app.request("/api/cloud/support/mine", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [CLOUD_SUPPORT_ACCOUNT_HEADER]: "earlier-cloud-account",
+      },
+      body: JSON.stringify(customerInput()),
+    });
+    expect(changedAccount.status).toBe(409);
+    expect(await repo.list({ limit: 25 })).toHaveLength(1);
+  });
+
+  it("rejects API/native credentials and keeps the Cloud operator/intake router off local instances", async () => {
     const ticket = await createCustomerTicket();
     const paths = [
+      ["GET", "/session"],
       ["GET", "/mine"],
       ["POST", "/mine", customerInput()],
       ["GET", `/mine/${ticket.id}`],
@@ -529,8 +568,18 @@ describe("private Cloud customer support", () => {
     state.customer = null;
     for (const [method, path, body] of paths)
       expect((await call(path, method, body)).status).toBe(401);
-    for (const sessionKind of ["bearer", "zero-auth", "native"] as const) {
-      state.customer = { ...customerContext(), sessionKind };
+    for (const credential of [
+      { sessionKind: "bearer", principalKind: "pat" },
+      { sessionKind: "bearer", principalKind: "oauth" },
+      { sessionKind: "bearer", tokenScope: { tokenId: "scoped-pat" } },
+      {
+        sessionKind: "cookie",
+        credential: { organizationId: "shared-organization", readOnly: true },
+      },
+      { sessionKind: "zero-auth" },
+      { sessionKind: "native" },
+    ] as const) {
+      state.customer = { ...customerContext(), ...credential };
       for (const [method, path, body] of paths)
         expect((await call(path, method, body)).status).toBe(403);
     }

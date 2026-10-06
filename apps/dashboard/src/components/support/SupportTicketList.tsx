@@ -7,7 +7,7 @@ import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cloudSupportApi } from "@/lib/api/cloud-support";
+import { useSupportApi } from "./support-api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { supportTicketHref, TicketStatus, TicketTime } from "./support-shared";
 
@@ -19,6 +19,7 @@ export function SupportTicketList({
   revision: number;
 }) {
   const { t } = useI18n();
+  const cloudSupportApi = useSupportApi();
   const copy = t.support;
   const [filter, setFilter] = useState<"all" | "open" | "resolved">("all");
   const [search, setSearch] = useState("");
@@ -67,7 +68,7 @@ export function SupportTicketList({
         if (mounted.current && generation.current === request) setLoading(false);
       }
     },
-    [filter, query, key, copy.loadFailed],
+    [filter, query, key, copy.loadFailed, cloudSupportApi],
   );
 
   useEffect(() => {

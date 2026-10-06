@@ -2,11 +2,6 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ deployment: vi.fn() }));
 vi.mock("@/lib/server/session", () => ({ getDeploymentInfoOrNull: h.deployment }));
-vi.mock("next/navigation", () => ({
-  notFound: () => {
-    throw new Error("NEXT_NOT_FOUND");
-  },
-}));
 vi.mock("@/components/api-unavailable", () => ({ ApiUnavailable: () => null }));
 vi.mock("@/components/support/SupportCenter", () => ({ SupportCenter: () => null }));
 import SupportPage from "./page";
@@ -23,10 +18,10 @@ it.each([
   { selfHosted: true, deployMode: "docker", authMode: "cloud" },
   { selfHosted: false, deployMode: "desktop", authMode: "cloud" },
 ])(
-  "does not expose the support page on $deployMode with selfHosted=$selfHosted",
+  "lets the support center resolve the linked account on $deployMode with selfHosted=$selfHosted",
   async (deployment) => {
     h.deployment.mockResolvedValue(deployment);
-    await expect(SupportPage()).rejects.toThrow("NEXT_NOT_FOUND");
+    expect((await SupportPage()).type).toBe(SupportCenter);
   },
 );
 it("does not assume Cloud when deployment information is unavailable", async () => {

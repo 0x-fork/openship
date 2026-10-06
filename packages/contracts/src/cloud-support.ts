@@ -51,6 +51,27 @@ export const CloudSupportReceiptSchema = Type.Object(
 );
 export type CloudSupportReceipt = Static<typeof CloudSupportReceiptSchema>;
 
+/** A connection binding, never a credential. Local relays require it on ticket requests. */
+export const CLOUD_SUPPORT_ACCOUNT_HEADER = "X-Openship-Support-Account";
+export const CloudSupportSessionSchema = Type.Object(
+  {
+    account: Type.Union([
+      Type.Object(
+        {
+          key: Type.String({ minLength: 1, maxLength: 512 }),
+          id: Type.String(),
+          name: Type.Union([Type.String(), Type.Null()]),
+          email: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+      Type.Null(),
+    ]),
+  },
+  { additionalProperties: false },
+);
+export type CloudSupportSession = Static<typeof CloudSupportSessionSchema>;
+
 export const CloudSupportCategorySchema = Type.Union([
   Type.Literal("deployment"),
   Type.Literal("billing"),
