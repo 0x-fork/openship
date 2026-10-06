@@ -309,11 +309,10 @@ async function stopTrackedBuildContainer(
 }
 
 /**
- * A deployment build and its cancellation request may resolve separate
- * DockerRuntime instances — the cancel endpoint takes `platform().runtime`, not
- * the per-server runtime that ran the build. Build session ids are process-wide
- * and globally unique, so cancellation state must be process-wide too or the
- * cancelling runtime cannot reach the builder's controller.
+ * Build recovery and cleanup may resolve a different DockerRuntime instance
+ * from the one that started the build. Build session ids are globally unique,
+ * so a process-wide registry lets cancellation reach the owning controller
+ * across adapter instances. Remote cleanup still uses the selected transport.
  */
 const activeDockerBuilds = new Map<string, AbortController>();
 const pendingDockerBuildCancellations = new Map<string, ReturnType<typeof setTimeout>>();
