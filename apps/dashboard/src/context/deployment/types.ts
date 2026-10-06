@@ -328,6 +328,7 @@ export interface DeploymentModeSnapshot {
   buildImage: string;
   buildStrategy: BuildStrategy;
   runtimeMode: RuntimeMode;
+  runtimeModeExplicit?: boolean;
   publicEndpoints: PublicEndpoint[];
   options: DeploymentOptions;
 }
@@ -414,6 +415,9 @@ export interface DeploymentConfig {
   serverName?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode: RuntimeMode;
+  /** Saved project, source declaration or user choice; automatic recommendations
+   * must never overwrite it when server capacity becomes available. */
+  runtimeModeExplicit?: boolean;
   projectType: ProjectType;
   framework: FrameworkId;
   detectedFramework: FrameworkId | null;

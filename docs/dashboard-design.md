@@ -63,6 +63,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   editors; do not embed that page or add App settings / Deployment modes inside Settings.
 - Destination, runtime and resource choices share [OptionCard](../apps/dashboard/src/components/shared/OptionCard.tsx),
   including its selected border and radio marker. Do not introduce a separate switch style.
+  New single-app setups default to Direct on servers with less than 2 GiB RAM, using
+  purchased capacity when available and live monitoring otherwise. Preserve saved projects
+  and explicit source/user choices; Compose and image workloads keep their Docker runtime.
 - Base grids on the available container width so expanded navigation does not squeeze fields.
   Routing cards use two columns when their controls fit comfortably and one column otherwise.
 - Keep section spacing consistent (`gap-6` between main columns, `space-y-4` for sidebar items).

@@ -58,11 +58,9 @@ export interface PlatformConfig {
   /** Deployment target */
   target: PlatformTarget;
   /**
-   * Runtime mode for self-hosted (ignored for cloud/desktop).
-   *
-   * This is the ONLY choice for self-hosted - everything else follows:
-   *   - "docker" → Docker containers + Nginx + certbot (default)
-   *   - "bare"   → Node.js processes + Nginx + certbot
+   * Runtime mode for connected and managed servers (desktop always uses Bare).
+   * Both destinations use the same Docker/Bare adapters with their own executor.
+   * Routing uses Nginx on connected servers and the managed edge on Cloud.
    */
   runtime?: "docker" | "bare";
   /** Docker connection options (only for docker runtime) */

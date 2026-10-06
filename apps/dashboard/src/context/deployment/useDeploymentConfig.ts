@@ -906,6 +906,7 @@ export function useDeploymentConfig() {
                     preparedContext.projectType !== "docker"
                   ? response.runtimeMode
                   : normalizeRuntimeMode(preparedContext.projectType),
+          runtimeModeExplicit: !!projectId || !!response.runtimeMode,
           packageManager: runtimeConfig.packageManager,
           buildImage: runtimeConfig.buildImage,
           branch,
