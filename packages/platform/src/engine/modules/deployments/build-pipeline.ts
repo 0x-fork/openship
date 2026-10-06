@@ -2017,6 +2017,10 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
             }
             return;
           }
+          // Without an explicit host publish, a container's port belongs to
+          // its own network namespace. Checking it on the host can pause an
+          // unrelated Docker deployment on the edge's port (e.g. nginx on 80).
+          if (runtime.name !== "bare") return;
           // Bare: the app owns 127.0.0.1:<port> on the host, so its declared
           // ports are the ones to check.
           const ports = Array.from(
