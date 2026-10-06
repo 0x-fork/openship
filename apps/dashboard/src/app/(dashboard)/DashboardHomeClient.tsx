@@ -48,15 +48,21 @@ import { useAttentionFeed } from "@/hooks/useAttentionFeed";
 
 interface DashboardHomeClientProps {
   initialData?: any;
+  hostedCloud: boolean;
   planCard?: ReactNode;
 }
 
-export default function DashboardHomeClient({ initialData, planCard }: DashboardHomeClientProps) {
+export default function DashboardHomeClient({
+  initialData,
+  hostedCloud,
+  planCard,
+}: DashboardHomeClientProps) {
   const { user } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
   
   const { projects, numbers, loading, removeProject } = useDashboardHome(initialData);
+  const sourceProjects = projects.filter((project) => !project.isApp);
   /** Read once here, not inside the card: the count decides the column's layout below. */
   const attention = useAttentionFeed();
 
@@ -103,10 +109,10 @@ export default function DashboardHomeClient({ initialData, planCard }: Dashboard
                       {loading
                         ? t.dashboard.home.loading
                         : interpolate(
-                            projects.length === 1
+                            sourceProjects.length === 1
                               ? t.dashboard.home.projectCountOne
                               : t.dashboard.home.projectCountOther,
-                            { count: String(projects.length) },
+                            { count: String(sourceProjects.length) },
                           )}
                     </p>
                   </div>
@@ -132,19 +138,19 @@ export default function DashboardHomeClient({ initialData, planCard }: Dashboard
                     </div>
                   ))}
                 </div>
-              ) : projects.length === 0 ? (
+              ) : sourceProjects.length === 0 ? (
                 <HomeWelcome />
               ) : (
                 <div className="divide-y divide-border/50">
-                  {projects.slice(0, 6).map((p) => (
+                  {sourceProjects.slice(0, 6).map((p) => (
                     <ProjectCard key={p.id} project={p} preferAppLogo onChanged={() => removeProject(p.id)} />
                   ))}
-                  {projects.length > 6 && (
+                  {sourceProjects.length > 6 && (
                     <Link
                       href="/projects"
                       className="block px-5 py-3 text-center text-sm text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors"
                     >
-                      {interpolate(t.dashboard.home.viewAllProjects, { count: String(projects.length) })}
+                      {interpolate(t.dashboard.home.viewAllProjects, { count: String(sourceProjects.length) })}
                     </Link>
                   )}
                 </div>
@@ -209,7 +215,7 @@ export default function DashboardHomeClient({ initialData, planCard }: Dashboard
 
             {/* Alerts replace the activity summary; Apps stays accessible and
                 Quick Tip uses only the space left after these cards. */}
-            {attention.cards === 0 && (
+            {attention.cards === 0 && (!hostedCloud || projects.length > 0) && (
               <div className="bg-card rounded-2xl border border-border/50 p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <UiIcon name="activity" className="size-4 text-muted-foreground" />

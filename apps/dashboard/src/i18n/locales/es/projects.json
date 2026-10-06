@@ -103,7 +103,7 @@
     "deletionInProgress": "Ya se está ejecutando otra eliminación para este proyecto",
     "deletionInProgressTitle": "Eliminación en curso",
     "confirmForceOrphan": "Algunos recursos no se pudieron eliminar del servidor. ¿Eliminar el proyecto de todos modos y limpiarlos automáticamente más tarde?",
-    "teardownFailedAt": "El desmontaje falló en: {reasons}. Reintenta o fuerza la eliminación para dejarlos huérfanos.",
+    "teardownFailedAt": "No se pudo completar la limpieza: {reasons}. El proyecto sigue guardado. Vuelve a intentar eliminarlo después de resolver el problema.",
     "teardownFailed": "Falló el desmontaje",
     "cleanupFailedTitle": "Falló la limpieza",
     "alreadyDeleted": "El proyecto ya fue eliminado",
@@ -194,7 +194,8 @@
     "targetPending": "Se elige al desplegar",
     "type": "Tipo",
     "typeApp": "App",
-    "typeProject": "Proyecto"
+    "typeProject": "Proyecto",
+    "subtextNoSource": "Conecta una fuente para configurar tu primer despliegue."
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name}: se conservaron tus ediciones",
     "failedResolveDrift": "No se pudo resolver la divergencia",
     "failedCreateService": "No se pudo crear el servicio",
-    "requestFailed": "La solicitud falló"
+    "requestFailed": "La solicitud falló",
+    "application": "Aplicación",
+    "applicationHint": "Se administra mediante los despliegues de este proyecto.",
+    "companionsTitle": "Añadir otra aplicación o servicio"
   },
   "serviceStatus": {
     "checking": "Comprobando…",

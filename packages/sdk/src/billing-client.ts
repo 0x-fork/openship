@@ -6,8 +6,14 @@ export function createRemoteBillingOperations(http: HttpClient): BillingOperatio
   return Object.freeze({
     ...createRemoteScopedOperations(http, BillingPublicSchemas, { listPlans: { method: "GET", path: () => "/billing/plans", envelope: "data" } }),
     ...createRemoteScopedOperations(http, BillingOperationSchemas, {
+      quoteCustomPlan: { method: "GET", path: () => "/billing/subscription/quote", envelope: "data" },
+      previewSubscriptionChange: { method: "POST", path: () => "/billing/subscription/change/preview", envelope: "data" },
+      confirmSubscriptionChange: { method: "POST", path: () => "/billing/subscription/change", envelope: "data" },
+      getSubscriptionChange: { method: "GET", path: () => "/billing/subscription/change", envelope: "data" },
+      cancelSubscriptionChange: { method: "POST", path: () => "/billing/subscription/change/cancel", envelope: "data" },
       getCheckout: { method: "GET", path: () => "/billing/checkout", envelope: "data" },
       getState: { method: "GET", path: () => "/billing/state", envelope: "data" },
+      getCreditAlerts: { method: "GET", path: () => "/billing/credit-alerts", envelope: "data" },
       getResources: { method: "GET", path: () => "/billing/resources", envelope: "data" },
       getSubscription: { method: "GET", path: () => "/billing/subscription", envelope: "data" },
       createSubscription: { method: "POST", path: () => "/billing/subscription", envelope: "data" },

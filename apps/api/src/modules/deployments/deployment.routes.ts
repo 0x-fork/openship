@@ -87,7 +87,7 @@ r.post(
     auditHandledByOperation: true,
     mcp: {
       description:
-        "Deploy — the wizard 'Deploy' action. Starts the build + deployment. For a folder-upload deploy pass projectId (from projects/ensure) and uploadSessionId (from folder/session). Wizard settings (envVars, publicEndpoints, buildStrategy, runtimeMode, cloudResourceTier) are optional. Returns { success, deployment_id, project_id }. Do NOT set deployTarget:'cloud' on a self-hosted instance — it triggers promote-to-cloud; leave it unset and the upload session mode decides.",
+        "Start the build and deployment for projectId. For uploaded source also pass uploadSessionId. The project's selected serverId determines where it runs; deployTarget alone does not select a managed server or transfer project records. Managed servers require buildStrategy:'server'. A desktop project imported from localPath can build on its connected Cloud server without a folder upload or transfer_to_cloud. Returns { success, deployment_id, project_id }.",
     },
   },
   ctrl.buildAccess,

@@ -60,6 +60,7 @@
         "@bomb.sh/tab": "^0.0.22",
         "@clack/prompts": "^0.11.0",
         "@repo/adapters": "workspace:*",
+        "@repo/contracts": "workspace:*",
         "@repo/core": "workspace:*",
         "@repo/onboarding": "workspace:*",
         "@repo/sdk": "workspace:*",
@@ -193,7 +194,7 @@
         "dockerode": "^4.0.9",
         "ignore": "^7.0.5",
         "ioredis": "^5.10.0",
-        "oblien": "2.5.0",
+        "oblien": "2.8.1",
         "ssh2": "^1.17.0",
         "tar-fs": "^2.1.4",
         "undici": "^7.29.1",
@@ -378,9 +379,6 @@
     "esbuild",
     "electron",
   ],
-  "patchedDependencies": {
-    "oblien@2.5.0": "packages/adapters/patches/oblien@2.5.0.patch",
-  },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
 
@@ -2476,7 +2474,7 @@
 
     "object-keys": ["object-keys@1.1.1", "", {}, "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA=="],
 
-    "oblien": ["oblien@2.5.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-uHeG/oghIzign65bKL5VekWhdi/g15rGhSoAq3+FbNmQul8gYXmy1Oyx6APFs9ib0g/2KRj1uCfPXd6y1V2mzA=="],
+    "oblien": ["oblien@2.8.1", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-QHVc/WFq7FU5u4C7sC2a7CcxgM6IAFG+PhN7rO/E5XeG8fLHaciikk5q0FyXzgegKvWyXfLCfi41VZILQVNqtA=="],
 
     "obug": ["obug@2.1.1", "", {}, "sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ=="],
 

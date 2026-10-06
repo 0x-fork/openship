@@ -19,7 +19,7 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
-import { useSession, authClient } from "@/lib/auth-client";
+import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/components/i18n-provider";
 import { systemApi } from "@/lib/api/system";
 
@@ -111,7 +111,13 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
 
 export function SettingsSidebar() {
   const router = useRouter();
-  const { data: session } = useSession();
+  // The dashboard layout seeds AuthContext with the server-validated user.
+  // Reading Better Auth's client store directly here made the first render
+  // depend on whether its session request won the race with hydration: SSR
+  // omitted the email while a fast client cache included it, producing React
+  // hydration error #418. The seeded context is identical on both sides and
+  // still reconciles to the live session after mount.
+  const { user } = useAuth();
   const { t } = useI18n();
   const { tabs, activeTab } = useSettingsTabs();
   const infraIssues = useInfraIssuesCount();
@@ -120,15 +126,6 @@ export function SettingsSidebar() {
     const url = tabId === "general" ? "/settings" : `/settings?tab=${tabId}`;
     router.replace(url, { scroll: false });
   };
-
-  // Resolve active org name for the header card.
-  const orgClient = (authClient as unknown as {
-    organization: {
-      getFullOrganization: () => Promise<{ data?: { id: string; name: string } | null }>;
-    };
-  }).organization;
-  // Note: simple sync read — we just use the session.user email/name in the header.
-  // The full org name is shown in the AccountSwitcher dropdown elsewhere.
 
   return (
     <div className="space-y-3">
@@ -139,8 +136,8 @@ export function SettingsSidebar() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground truncate">{t.settings.sidebar.title}</p>
-            {session?.user?.email && (
-              <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+            {user?.email && (
+              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
             )}
           </div>
         </div>

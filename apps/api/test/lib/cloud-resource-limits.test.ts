@@ -4,7 +4,7 @@ const h = vi.hoisted(() => ({ quota: vi.fn(), get: vi.fn(), update: vi.fn() }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienClient: () => ({ workspaces: { getQuota: h.quota }, namespaces: { get: h.get, update: h.update } }),
 }));
-import { cloudNamespaceLimits, initialCloudNamespaceLimits, readCloudCapacity, syncCloudResourceLimits } from "@repo/platform/engine/lib/cloud-resource-limits";
+import { cloudNamespaceLimits, initialCloudNamespaceLimits, readCloudCapacity, readCloudCapacityPool, syncCloudResourceLimits } from "@repo/platform/engine/lib/cloud-resource-limits";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -21,8 +21,8 @@ describe("Oblien-owned namespace capacity", () => {
       effective_resource_limits: cloudNamespaceLimits("pro"),
       allocated_resource_usage: { workspaces: 3, vcpus: 2.5, ram_mb: 4096, disk_gb: 48.5, pending_updates: 1 },
     } });
-    expect(await readCloudCapacity("tenant-a")).toEqual({ workspaces: { used: 3, max: 6 }, vcpus: { used: 2.5, max: 4 },
-      ramMb: { used: 4096, max: 8192 }, diskGb: { used: 48.5, max: 128 } });
+    expect(await readCloudCapacity("tenant-a")).toEqual({ workspaces: { used: 3, max: 1 }, vcpus: { used: 2.5, max: 4 },
+      ramMb: { used: 4096, max: 16384 }, diskGb: { used: 48.5, max: 128 } });
     expect(h.quota).not.toHaveBeenCalled(); expect(h.update).not.toHaveBeenCalled();
   });
   it("does not return another namespace's capacity", async () => {
@@ -32,9 +32,24 @@ describe("Oblien-owned namespace capacity", () => {
   it("leaves capacity unavailable when the provider has no verified allocation", async () => {
     h.get.mockResolvedValue({ success: true, data: { slug: "tenant-a" } });
     expect(await readCloudCapacity("tenant-a")).toEqual({});
+    await expect(readCloudCapacityPool("tenant-a")).rejects.toMatchObject({ code: "CLOUD_CAPACITY_UNAVAILABLE" });
+  });
+  it("converts disk to MB for admission without confusing zero and unlimited", async () => {
+    h.get.mockResolvedValue({ success: true, data: { slug: "tenant-a",
+      effective_resource_limits: { max_workspaces: null, max_total_vcpus: 0, max_total_ram_mb: 8192, max_total_disk_gb: 16 },
+      allocated_resource_usage: { workspaces: 0, vcpus: 0, ram_mb: 0, disk_gb: 1.25, pending_updates: 0 },
+    } });
+    expect(await readCloudCapacityPool("tenant-a")).toEqual({ workspaces: { used: 0, max: null }, cpuCores: { used: 0, max: 0 },
+      memoryMb: { used: 0, max: 8192 }, diskMb: { used: 1280, max: 16384 } });
+  });
+  it("does not turn malformed provider measurements into free capacity", async () => {
+    h.get.mockResolvedValue({ success: true, data: { slug: "tenant-a",
+      allocated_resource_usage: { vcpus: -2 },
+    } });
+    await expect(readCloudCapacityPool("tenant-a")).rejects.toMatchObject({ statusCode: 503, code: "CLOUD_CAPACITY_UNAVAILABLE" });
   });
   it("declares finite retail VM and aggregate caps without reading enterprise owner capacity", async () => {
-    expect(cloudNamespaceLimits("team")).toEqual({ max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_disk_gb: 64, max_total_vcpus: 8, max_total_ram_mb: 16384, max_total_disk_gb: 256 });
+    expect(cloudNamespaceLimits("team")).toEqual({ max_workspaces: 1, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 256, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 256 });
     await expect(initialCloudNamespaceLimits()).resolves.toEqual({ max_workspaces: 0, max_vcpus: 1, max_ram_mb: 1024, max_disk_gb: 8, max_total_vcpus: 0, max_total_ram_mb: 0, max_total_disk_gb: 0 });
     await syncCloudResourceLimits("tenant-a", "team");
     expect(h.update).toHaveBeenCalledWith("ns-a", { resource_limits: cloudNamespaceLimits("team") });

@@ -1,10 +1,11 @@
-import { ilike, type SQL, eq, and, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
-import { generateId, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery } from "@repo/core";
+import { ilike, type SQL, eq, and, asc, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { generateId, AppError, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
+import { isDeepStrictEqual } from "node:util";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
-import { deployment, buildSession, project } from "../schema";
+import { deployment, buildSession, project, service } from "../schema";
 import { detailOf } from "./storable-detail";
-import { withProjectWorkAdmission } from "./project-work-admission";
+import { assertProjectConfigurationWritable, withProjectConfigurationWrite, withProjectWorkAdmission } from "./project-work-admission";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,26 @@ export type Deployment = typeof deployment.$inferSelect;
 export type NewDeployment = typeof deployment.$inferInsert;
 export type BuildSession = typeof buildSession.$inferSelect;
 export type NewBuildSession = typeof buildSession.$inferInsert;
+
+export interface DeploymentResourceChanges {
+  expectedActiveDeploymentId: string;
+  expectedProjectUpdatedAt: Date;
+  /** Verify every sibling covered by the restart preview; write only edits. */
+  services: Array<{ serviceId: string; expectedResources: unknown; expectedUpdatedAt: Date; resources?: ResourceValues }>;
+}
+
+/** A terminal outcome does not end the worker's durable execution lease. */
+export function liveBuildExecutionCondition() {
+  // Keep inner columns explicit: relational queries alias interpolated columns
+  // to the outer deployment table.
+  return sql`exists (
+    select 1 from "build_session" as "active_build_session"
+    where "active_build_session"."deployment_id" = ${deployment.id}
+      and "active_build_session"."project_id" = ${deployment.projectId}
+      and "active_build_session"."started_at" is not null
+      and "active_build_session"."finished_at" is null
+  )`;
+}
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
@@ -85,6 +106,14 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       }));
     },
 
+    async findCapacityAdjustment(projectId: string, organizationId: string, key: string) {
+      return codec.openDeployment(await db.query.deployment.findFirst({
+        where: and(eq(deployment.projectId, projectId), eq(deployment.organizationId, organizationId),
+          sql`${deployment.meta} -> 'capacityAdjustment' ->> 'key' = ${key}`),
+        orderBy: [desc(deployment.createdAt)],
+      }));
+    },
+
     /** All deployments in a given status (e.g. "reconciling") — drives the
      *  reconcile sweep. Bounded to avoid pulling an unbounded history. */
     async listByStatus(status: string, limit = 200) {
@@ -119,14 +148,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           eq(deployment.projectId, projectId),
           or(
             inArray(deployment.status, ["queued", "building", "deploying"]),
-            sql`exists (
-              select 1
-              from "build_session" as "active_build_session"
-              where "active_build_session"."deployment_id" = ${deployment.id}
-                and "active_build_session"."project_id" = ${deployment.projectId}
-                and "active_build_session"."started_at" is not null
-                and "active_build_session"."finished_at" is null
-            )`,
+            liveBuildExecutionCondition(),
           ),
         ),
       })).map(codec.openDeployment);
@@ -206,6 +228,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
      */
     async create(
       data: Omit<NewDeployment, "id"> & { id?: string },
+      resourceChanges?: DeploymentResourceChanges,
     ): Promise<Deployment | undefined> {
       // `id` is normally generated; re-import (live re-attach) passes the ORIGINAL
       // deployment id so the still-running containers (labelled `openship.deployment=<id>`)
@@ -236,6 +259,38 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           .values(codec.sealDeployment({ id, ...rest }))
           .onConflictDoNothing()
           .returning();
+        if (inserted && resourceChanges) {
+          const [owner] = await tx.select().from(project).where(eq(project.id, rest.projectId));
+          if (owner?.activeDeploymentId !== resourceChanges.expectedActiveDeploymentId ||
+              owner.updatedAt.getTime() !== resourceChanges.expectedProjectUpdatedAt.getTime()) {
+            throw new AppError("The active deployment changed. Review the resource adjustment again.", 409, "CLOUD_CAPACITY_CHANGED");
+          }
+          // Advanced settings are encrypted as one JSON value. Open the locked
+          // row and reseal only that field; JSONB path updates bypass the codec.
+          const siblings = await tx.select().from(service).where(eq(service.projectId, rest.projectId))
+            .orderBy(asc(service.id)).for("update");
+          const expected = new Map(resourceChanges.services.map(change => [change.serviceId, change]));
+          if (expected.size !== resourceChanges.services.length || siblings.length !== expected.size ||
+              siblings.some(row => !expected.has(row.id))) {
+            throw new AppError("The project's services changed. Review the adjustment again.", 409, "CLOUD_CAPACITY_CHANGED");
+          }
+          for (const row of siblings) {
+            const change = expected.get(row.id)!;
+            const current = codec.openService(row);
+            if (!current || current.updatedAt.getTime() !== change.expectedUpdatedAt.getTime() ||
+                !isDeepStrictEqual(current.advanced?.resources ?? null, change.expectedResources ?? null)) {
+              throw new AppError("Service resources changed. Review the adjustment again.", 409, "CLOUD_CAPACITY_CHANGED");
+            }
+            if (change.resources) await tx.update(service).set(codec.sealService({
+              advanced: { ...current.advanced, resources: change.resources },
+              updatedAt: new Date(),
+            })).where(eq(service.id, current.id));
+          }
+          // The saved overrides, deployment intent and queue entry commit
+          // together. A failed admission cannot leave settings half-saved.
+          await tx.insert(buildSession).values({ id: generateId("bld"), deploymentId: id,
+            projectId: rest.projectId, status: "queued" });
+        }
         return codec.openDeployment(inserted as Deployment | undefined);
       });
     },
@@ -727,13 +782,14 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         .where(eq(deployment.id, id));
     },
 
-    /** Toggle the user-tagged pin. The endpoint enforces the per-project
-     *  pin cap before calling this; this method is unguarded. */
+    /** Toggle the user-tagged pin. The endpoint enforces the per-project cap;
+     * this write also participates in promotion's configuration fence. */
     async setPinned(id: string, pinned: boolean) {
-      await db
+      const predicate = inArray(project.id, db.select({ id: deployment.projectId }).from(deployment).where(eq(deployment.id, id)));
+      await withProjectConfigurationWrite(db, predicate, async (tx) => tx
         .update(deployment)
         .set({ pinned, updatedAt: new Date() })
-        .where(eq(deployment.id, id));
+        .where(eq(deployment.id, id)));
     },
 
     /** Count pinned ready deployments for a project. Used by the pin
@@ -787,7 +843,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
      * `durationMs` for the org's deployments started in [from, to]. Openship's
      * own metric (Oblien does not meter build separately). Bounded by period.
      */
-    async sumBuildMillisForOrg(organizationId: string, from: Date, to: Date): Promise<number> {
+    async sumBuildMillisForOrg(organizationId: string, from: Date, to: Date, workspaceId?: string | null): Promise<number> {
       const [row] = await db
         .select({ total: sql<number>`coalesce(sum(${buildSession.durationMs}), 0)` })
         .from(buildSession)
@@ -797,6 +853,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
             eq(deployment.organizationId, organizationId),
             gte(buildSession.startedAt, from),
             lte(buildSession.startedAt, to),
+            deploymentWorkspaceScope(workspaceId),
           ),
         );
       return Number(row?.total ?? 0);
@@ -904,6 +961,8 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
 
     async deleteDeployment(id: string): Promise<boolean> {
       return db.transaction(async (tx) => {
+        await assertProjectConfigurationWritable(tx, inArray(project.id,
+          tx.select({ id: deployment.projectId }).from(deployment).where(eq(deployment.id, id))));
         const [row] = await tx
           .select({ id: deployment.id, projectId: deployment.projectId })
           .from(deployment)
@@ -941,3 +1000,4 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     },
   };
 }
+import { deploymentWorkspaceScope } from "./workspace-scope";

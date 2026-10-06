@@ -109,6 +109,26 @@
     "unmanaged": "Bu uygulamanın henüz yapılandırılabilir bir ayarı yok."
   },
   "appInstall": {
+    "configurationLoading": "Uygulama yapılandırması yükleniyor…",
+    "catalogLoadFailed": "Uygulama ayrıntıları yüklenemedi. Yüklemeden önce yeniden deneyin.",
+    "routingLoadFailed": "Kaydedilmiş yönlendirme yüklenemedi. Yüklemeden önce yeniden deneyin.",
+    "retryConfiguration": "Yeniden dene",
+    "hostFitHint": "Devam edebilirsiniz. Bu makinede performans sınırlı olabilir.",
+    "cloudFitTitle": "Bu uygulama daha büyük bir Cloud planı gerektiriyor",
+    "upgradePlan": "Planı yükselt",
+    "checkingCapacity": "Kapasite kontrol ediliyor…",
+    "checkCapacityAgain": "Yeniden kontrol et",
+    "cloudFitUnavailable": "Kapasite kontrol edilemedi. Dağıtım sırasında yeniden kontrol edilecek.",
+    "withoutDomainsTitle": "Alan adları olmadan devam edilsin mi?",
+    "withoutDomainsBody": "Bu web uç noktalarına yalnızca yayınlanan bağlantı noktalarından erişilebilecek. Daha sonra projeden alan adları ekleyebilirsiniz.",
+    "withoutDomainsCloudBody": "Bu web uç noktalarının Cloud üzerinde herkese açık bir URL’si olmayacak. Bu uygulamadaki diğer hizmetler erişmeye devam edebilir. Daha sonra projeden alan adları ekleyebilirsiniz.",
+    "addDomains": "Alan adı ekle",
+    "continueWithoutDomains": "Alan adı olmadan devam et",
+    "generatedDomainsTitle": "Ücretsiz alan adları kullanılsın mı?",
+    "generatedDomainsBody": "Bu uç noktalar ücretsiz, herkese açık URL’ler alacak. Yüklemeden önce adlarını kendiniz seçebilirsiniz.",
+    "useGeneratedDomains": "Ücretsiz alan adları kullan",
+    "editDomains": "Alan adlarını düzenle",
+    "routePortCloudDesc": "Bu Cloud çalışma alanına özel. Herkese açık bir URL için alan adı ekleyin.",
     "exposeTitle": "Alan adları ve yönlendirme",
     "install": "Kur",
     "installing": "Kuruluyor…",
@@ -733,7 +753,7 @@
   },
   "resources": {
     "title": "Makine gücü",
-    "description": "Bu projenin konteynerleri için CPU ve bellek sınırları.",
+    "description": "Projeler bu sunucuyu paylaşır. Yalnızca gerekirse CPU veya bellek sınırı ekleyin.",
     "loading": "Hedef makine okunuyor…",
     "unavailable": "Makine gücü kullanılamıyor",
     "loadFailed": "Makine gücü yüklenemedi",
@@ -743,9 +763,9 @@
     "appliesOnNextDeploy": "Sınırlar konteyner yeniden oluşturulduğunda uygulanır — değişikliğin etkili olması için yeniden dağıtın.",
     "tiers": {
       "unlimited": {
-        "name": "Sınır yok",
-        "description": "Makinenin tamamını kullan (varsayılan)",
-        "spec": "Makine kapasitesi"
+        "name": "Tam kapasite",
+        "description": "Sunucunun kullanılabilir CPU ve RAM kapasitesini kullan (varsayılan)",
+        "spec": "Diğer projelerle paylaşılır"
       },
       "micro": {
         "name": "Micro",
@@ -787,6 +807,10 @@
       "updated": "Makine gücü güncellendi",
       "updateFailed": "Makine gücü güncellenemedi",
       "invalidValues": "CPU ve bellek 0 veya pozitif bir sayı olmalıdır"
+    },
+    "customized": {
+      "name": "Özelleştirilmiş",
+      "description": "Hazır ayar seçin veya kendi sınırlarınızı belirleyin"
     }
   },
   "sleep": {
