@@ -160,6 +160,7 @@ import {
   startExecStream,
   daemonConnectionFrom,
   installDockerodeBuildKitSessionWorkaround,
+  setDockerodeRawStreamFactory,
 } from "./docker-exec-stream";
 import { resolveComposeCmd, resolveComposeEntrypoint } from "./compose-cmd";
 import {
@@ -1157,6 +1158,9 @@ export class DockerRuntime implements RuntimeAdapter {
 
   protected async initializeDocker(): Promise<void> {
     this._docker = new Dockerode(await this.transport.establish());
+    if (this.transport.openStream) {
+      setDockerodeRawStreamFactory(this._docker, this.transport.openStream);
+    }
     // dockerode opens BuildKit's reverse h2c session through `node:http`; Bun
     // rejects Docker's 101 response as UnrequestedUpgrade (#745). Keep
     // dockerode's gRPC session implementation, but carry that one upgrade over
