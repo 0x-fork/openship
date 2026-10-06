@@ -927,8 +927,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
   const removeEnvironment = useCallback(
     (environmentId: string) => {
-      const remaining = removeProjectEnvironment(environments, environmentId);
-      setEnvironments(remaining);
+      // A deletion can finish after this provider switches to another project.
+      // Filter the current list; never replace it with the request's old list.
+      setEnvironments((current) => removeProjectEnvironment(current, environmentId));
       invalidateProjectCachesFor(projectEnvironmentIds(environmentId, environments));
     },
     [environments],
