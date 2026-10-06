@@ -501,8 +501,9 @@ describe("Oblien monthly capacity contract", () => {
         .toThrow(/does not match/);
     }
   });
-  it("sends a monthly offer through the existing hosted checkout without a credit policy", async () => {
+  it.each([0, 3900])("sends a %s-cent monthly offer through the existing hosted checkout without a credit policy", async unitAmount => {
     const { subscription } = monthlyCloudBilling("org-one", "os-one");
+    subscription.offer!.unitAmount = unitAmount;
     const { api, fetcher } = setup({ success: true, url: "https://checkout.stripe.com/c/pay/test", checkoutId: "cs_monthly" });
     await api.createCheckout({ kind: "subscription", namespace: "os-one", billingInterval: "monthly",
       offer: subscription.offer!, metadata: subscription.metadata!, idempotencyKey: "saved-monthly-order",
@@ -510,10 +511,26 @@ describe("Oblien monthly capacity contract", () => {
     const [url, request] = fetcher.mock.calls[0]!;
     expect(String(url)).toBe("https://api.oblien.com/billing/checkout");
     const sent = JSON.parse(String(request?.body));
-    expect(sent.offer).toMatchObject({ unitAmount: 3900, credits: 0, billingMode: "monthly", capacity: { vcpus: 4, memoryMb: 16384, diskGb: 128, workspaces: 1 } });
+    expect(sent.offer).toMatchObject({ unitAmount, credits: 0, billingMode: "monthly", capacity: { vcpus: 4, memoryMb: 16384, diskGb: 128, workspaces: 1 } });
     expect(sent.offer).not.toHaveProperty("policy");
     expect(sent.idempotencyKey).toBe("saved-monthly-order");
-    expect(sent.allowPromotionCodes).toBe(true);
+    expect(sent.allowPromotionCodes).toBe(unitAmount > 0);
+  });
+  it("retains a sponsored monthly subscription and verifies its funded capacity", async () => {
+    const { entitlement, subscription } = monthlyCloudBilling("org-one", "os-one");
+    subscription.offer!.unitAmount = 0;
+    const received = await setup({ success: true, namespace: "os-one", subscription }).api.getSubscription("os-one");
+    expect(received.subscription?.offer?.unitAmount).toBe(0);
+    expect(() => assertOblienEntitlementMatchesSubscription(entitlement, received.subscription)).not.toThrow();
+    entitlement.capacity!.capacity = { ...entitlement.capacity!.capacity, vcpus: 2 };
+    expect(() => assertOblienEntitlementMatchesSubscription(entitlement, received.subscription)).toThrow(/does not match/);
+  });
+  it("rejects free metered offers and unsupported monthly prices", () => {
+    expect(oblienOfferSchema.safeParse({ ...offer, unitAmount: 0 }).success).toBe(false);
+    const { subscription } = monthlyCloudBilling();
+    for (const unitAmount of [-1, 1, 99, 100.5, 1_000_001]) {
+      expect(oblienOfferSchema.safeParse({ ...subscription.offer, unitAmount }).success).toBe(false);
+    }
   });
   it("rejects hybrid monthly credit offers and missing pools", () => {
     const { subscription } = monthlyCloudBilling();
