@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   withHostPortTargetLock: vi.fn((_target, fn: () => unknown) => fn()),
   withWorkspaceActivity: vi.fn(),
   sshWithHostExecutor: vi.fn(),
+  sampleCloudWorkspaceResources: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -58,6 +59,7 @@ vi.mock("@repo/db", () => ({
       findById: (...args: unknown[]) => mocks.findDeploymentById(...args),
     },
     service: {
+      listByProject: vi.fn(async () => []),
       listByDeployment: vi.fn(async () => []),
       syncFromCompose: vi.fn(async () => undefined),
     },
@@ -150,9 +152,17 @@ vi.mock("@repo/platform/engine/modules/settings/settings.service", () => ({
 vi.mock("@repo/platform/engine/lib/encryption", () => ({
   decryptEnvMap: (env: Record<string, string>) => env,
 }));
-vi.mock("@repo/platform/engine/lib/resources", () => ({
+vi.mock("@repo/platform/engine/lib/resources", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@repo/platform/engine/lib/resources")>(),
   resolveRuntimeResources: vi.fn(() => ({})),
   resolveBuildResources: vi.fn(() => ({})),
+}));
+vi.mock("@repo/platform/engine/lib/plan-guard", () => ({
+  assertCloudDeploymentLimits: vi.fn(async () => undefined),
+}));
+vi.mock("@repo/platform/engine/lib/cloud-workspace-host", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@repo/platform/engine/lib/cloud-workspace-host")>(),
+  sampleCloudWorkspaceResources: (...args: unknown[]) => mocks.sampleCloudWorkspaceResources(...args),
 }));
 vi.mock("../../lib/request-context", () => ({ buildBackgroundContext: vi.fn(() => ({})) }));
 
@@ -162,6 +172,8 @@ vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   updateStatus: vi.fn(),
   promptUser: vi.fn(),
   endSession: vi.fn(),
+  broadcastServiceStatus: vi.fn(),
+  broadcastInstallPhase: vi.fn(),
 }));
 
 vi.mock("@repo/platform/engine/modules/deployments/service-checks", () => ({
@@ -279,7 +291,10 @@ function allocatePinnedHostPort(input: {
 
 import { repos } from "@repo/db";
 import { isMultiServiceRuntime } from "@repo/adapters";
-import { shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/index";
+import { executeComposePipeline, resolveProjectServicePreflightServices, shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/index";
+import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
+import { resolveBuildResources } from "@repo/platform/engine/lib/resources";
+import { env } from "@repo/platform/engine/config/index";
 import { platform } from "@repo/platform/engine/lib/platform-config";
 import { resolveDeploymentPlatform, resolveDeploymentRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import { runDeployPipeline as runRealDeployPipeline } from "../../../../../packages/adapters/src/runtime/deploy-pipeline";
@@ -391,6 +406,7 @@ describe("single-app prebuilt release-image pipeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(false);
+    vi.mocked(resolveProjectServicePreflightServices).mockResolvedValue([]);
     vi.mocked(isMultiServiceRuntime).mockReturnValue(false);
     mocks.findCloudDockerBinding.mockResolvedValue(undefined);
     mocks.withWorkspaceActivity.mockImplementation(async (_id, work) => work());
@@ -647,6 +663,61 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
     expect(mocks.runReleaseCommand).not.toHaveBeenCalled();
     expect(mocks.deploy).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("source services reach the shared builder with the resolved budget (Cloud mode: %s)", async (cloudMode) => {
+    const originalCloudMode = env.CLOUD_MODE;
+    Object.assign(env, { CLOUD_MODE: cloudMode });
+    const resources = cloudMode
+      ? { cpuCores: 1.5, memoryMb: 2800, diskMb: 25_600 }
+      : { cpuCores: 0.5, memoryMb: 512, diskMb: 8192 };
+    const services = ["api", "worker"].map(name => ({
+      id: `svc-${name}`, name, kind: "compose", enabled: true,
+      image: null, build: `./${name}`, dockerfile: "Dockerfile", advanced: {},
+    }));
+    vi.mocked(repos.service.listByProject).mockResolvedValue(services as never);
+    vi.mocked(resolveProjectServicePreflightServices).mockResolvedValue(services as never);
+    vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(true);
+    vi.mocked(isMultiServiceRuntime).mockReturnValue(true);
+    vi.mocked(resolveBuildResources).mockReturnValue(resources);
+    mocks.sampleCloudWorkspaceResources.mockResolvedValue({
+      capacity: { cpuCores: 2, memoryMb: 4000, diskMb: 25_600 },
+      usage: { available: true, memoryAvailableMb: 3000, cpuPercent: 25 },
+    });
+    const buildImages = vi.fn(async (specs) => {
+      for (const spec of specs) {
+        spec.onResult({ status: "running", imageRef: `openship/test:${spec.serviceName}` });
+      }
+    });
+    Object.assign(resolvedRuntime, { buildImages });
+    vi.mocked(executeComposePipeline).mockImplementationOnce(async (options) => {
+      const result = await buildComposeImages(options);
+      expect(result.buildFailures.size).toBe(0);
+      expect(result.builtImageRefs.size).toBe(2);
+    });
+    try {
+      await run(deployment({ meta: {
+        ...snapshot(), releaseImageRef: undefined, source: "git", build: "dockerfile",
+        serviceDeploymentMode: "services", repoUrl: "https://github.com/acme/services",
+        buildResources: cloudMode ? null : resources,
+        ...(cloudMode ? { managedServer: { ownerWorkspaceId: "workspace-1" } } : {}),
+        composeServices: services,
+      } }));
+      await drainDeploymentExecutions();
+      expect(mocks.reportPipelineError).not.toHaveBeenCalled();
+      expect(buildImages).toHaveBeenCalledOnce();
+      expect(buildImages.mock.calls[0]![0].map((spec: { serviceName: string; config: { resources: unknown } }) => ({
+        name: spec.serviceName, resources: spec.config.resources,
+      }))).toEqual(services.map(service => ({ name: service.name, resources })));
+      if (cloudMode) {
+        expect(mocks.sampleCloudWorkspaceResources).toHaveBeenCalledExactlyOnceWith("org-1", "workspace-1");
+      } else {
+        expect(mocks.sampleCloudWorkspaceResources).not.toHaveBeenCalled();
+      }
+    } finally {
+      Object.assign(env, { CLOUD_MODE: originalCloudMode });
+      vi.mocked(resolveBuildResources).mockReturnValue({} as never);
+    }
   });
 
   it("refuses release commands on a static deployment before creating its runtime", async () => {
