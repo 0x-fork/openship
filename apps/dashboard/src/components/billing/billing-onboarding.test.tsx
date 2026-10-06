@@ -31,6 +31,7 @@ import { monthlyCompute } from "../../../test/helpers/monthly-billing";
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), usage: vi.fn() }));
 vi.mock("@/lib/api/system", () => ({ systemApi: { serverUsage: mocks.usage } }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import("@/lib/api/client")>(), api: { get: mocks.get, post: mocks.post } }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: { user: { id: "billing-viewer" }, session: { activeOrganizationId: "billing-org" } } }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const copy = baseDictionary.billing;
@@ -89,7 +90,7 @@ function button(label: string) {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  mocks.get.mockResolvedValue(payload);
+  mocks.get.mockImplementation(async (path: string) => path === "billing/checkouts" ? { data: { items: [] } } : payload);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -152,7 +153,8 @@ describe("Cloud billing before the first subscription", () => {
     for (const message of [copy.onboarding.paymentTitle, copy.onboarding.topupsTitle, copy.onboarding.usageTitle]) expect(container.textContent).toContain(message);
     expect(container.textContent).not.toContain(copy.portal.openButton);
     expect(container.querySelectorAll('a[href="/billing/plans"]')).toHaveLength(3);
-    expect(mocks.get).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(copy.pendingPayments.empty);
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/checkouts", { params: { workspaceId: undefined } });
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
@@ -185,7 +187,8 @@ describe("existing server billing", () => {
     mocks.post.mockRejectedValueOnce(new Error("Portal temporarily unavailable"));
     await render(<BillingWorkspaceProvider workspaceId="cws-production"><BillingPaymentsPanel portalAvailable /></BillingWorkspaceProvider>);
     expect(container.textContent).toContain(copy.paymentPanel.title);
-    expect(container.querySelectorAll("button")).toHaveLength(1);
+    expect([...container.querySelectorAll("button")].filter(item => item.textContent === copy.paymentPanel.openStripe)).toHaveLength(1);
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("billing/checkouts", { params: { workspaceId: "cws-production" } });
     await act(async () => button(copy.paymentPanel.openStripe).click());
     expect(mocks.post).toHaveBeenCalledExactlyOnceWith("billing/portal", { workspaceId: "cws-production" });
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Portal temporarily unavailable");

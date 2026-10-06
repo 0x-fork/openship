@@ -125,6 +125,7 @@ function CheckoutList({ titleId, ...props }: RecoveryProps & { titleId?: string 
     try {
       const result = await billingApi.listCheckouts(props.workspaceId);
       if (!mounted.current || revision.current !== request) return;
+      if (!Array.isArray(result?.items)) throw new Error(copy.loadError);
       setItems(result.items);
       if (!result.items.length) onCleared.current?.();
     } catch (err) {

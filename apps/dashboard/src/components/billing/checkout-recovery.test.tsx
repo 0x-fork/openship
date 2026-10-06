@@ -260,6 +260,17 @@ describe("unfinished checkout recovery", () => {
     expect(h.started).toHaveBeenCalledWith(ready.checkoutUrl);
   });
 
+  it("keeps the last confirmed list when a refresh returns a malformed response", async () => {
+    await render();
+    h.get.mockResolvedValueOnce({ data: { unexpected: true } });
+    await click(copy.refresh);
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain(copy.loadError);
+    expect(dialog()?.textContent).toContain(item.name);
+    expect(dialog()?.textContent).not.toContain(copy.empty);
+    expect(h.cleared).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+  });
+
   it("ignores payment results from an earlier customer and closes their reserved tab", async () => {
     let finish!: (value: unknown) => void;
     h.post.mockReturnValueOnce(
