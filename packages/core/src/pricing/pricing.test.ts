@@ -29,6 +29,7 @@ import {
   type PricingLocale,
 } from "./index";
 import { pricingCatalogSchema, pricingCopySchema, planLimitsSchema } from "./schema";
+import { quoteCustomResources } from "./custom";
 import { RESOURCE_TIER_ORDER, RESOURCE_TIER_SPECS } from "../resources";
 
 const localesDir = fileURLToPath(new URL("./locales", import.meta.url));
@@ -273,8 +274,8 @@ describe("pricing catalog (pricing.json)", () => {
   });
 
   it.each([
-    ["hobby", 1, 4096], ["starter", 2, 8192], ["pro", 4, 16384], ["team", 8, 32768],
-  ] as const)("allows one %s service the full workspace CPU and RAM pool", (id, cpuCores, memoryMb) => {
+    ["hobby", 1, 2048, 40], ["starter", 2, 8192, 128], ["pro", 4, 16384, 250], ["team", 8, 32768, 600],
+  ] as const)("allows one %s service the full workspace CPU and RAM pool", (id, cpuCores, memoryMb, diskGb) => {
     const limits = planServiceResources(planLimits(id));
     expect(limits).toEqual({ cpuCores, memoryMb });
     expect(cpuCores).toBe(PLANS[id].oblienLimits.max_total_vcpus);
@@ -282,6 +283,11 @@ describe("pricing catalog (pricing.json)", () => {
     expect(memoryMb).toBe(PLANS[id].oblienLimits.max_total_ram_mb);
     expect(memoryMb).toBe(PLANS[id].oblienLimits.max_ram_mb);
     expect(PLANS[id].oblienLimits.max_disk_gb).toBe(PLANS[id].oblienLimits.max_total_disk_gb);
+    expect(PLANS[id].oblienLimits.max_total_disk_gb).toBe(diskGb);
+    expect(quoteCustomResources({ cpuCores, memoryMb, diskGb })).toMatchObject({
+      resources: { cpuCores, memoryMb, diskGb },
+      priceCents: PRICING.plans.find(plan => plan.id === id)!.price.monthly,
+    });
     expect(resolvePlan(id).features).toContain(`Up to ${cpuCores} vCPU and ${memoryMb / 1024} GB RAM per app`);
   });
 
@@ -638,7 +644,7 @@ describe("pricing resolution", () => {
   it("formats capacity and metered pack counts for the locale", () => {
     expect(resolvePlan("team", "en").features).toContain("CPU, RAM and storage covered for the paid month");
     // Arabic is pinned to Latin numerals so a price stays legible.
-    expect(resolvePlan("team", "ar").features.join(" ")).toMatch(/256/);
+    expect(resolvePlan("team", "ar").features.join(" ")).toMatch(/600/);
     expect(resolveCreditPacks("ar").find(pack => pack.id === "pack_1700")!.name).toMatch(/1,700/);
   });
 

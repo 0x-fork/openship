@@ -5,14 +5,14 @@ limits. The API serves those terms through `GET /api/billing/plans`; dashboard,
 website and linked installations share the catalog. Oblien owns provider pricing,
 payment settlement, resource admission, metering and paid coverage.
 
-## Monthly server offers (v9)
+## Monthly server offers (v10)
 
 | Plan | Monthly price | vCPU | RAM | Disk | Managed servers |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Hobby | $5 | 1 | 4 GiB | 25 GiB | 1 |
-| Starter | $20 | 2 | 8 GiB | 32 GiB | 1 |
-| Pro | $39 | 4 | 16 GiB | 128 GiB | 1 |
-| Scale | $99 | 8 | 32 GiB | 256 GiB | 1 |
+| Hobby | $5 | 1 | 2 GiB | 40 GiB | 1 |
+| Starter | $20 | 2 | 8 GiB | 128 GiB | 1 |
+| Pro | $39 | 4 | 16 GiB | 250 GiB | 1 |
+| Scale | $99 | 8 | 32 GiB | 600 GiB | 1 |
 
 Each subscription covers its server's CPU, RAM and storage for the full paid
 month, without a second compute-credit allowance. CPU is shared vCPU, not a
@@ -76,7 +76,7 @@ Fully discounted, fulfilled purchases use the same checks. Pending, refunded,
 disputed or superseded payments never show a successful new subscription.
 
 `GET /billing/capacity/catalog` advertises deployed purchase capabilities and rates.
-Openship uses `oblien@2.8.1` and the existing SDK transport. Missing monthly Stripe
+Openship uses `oblien@2.10.0` and the existing SDK transport. Missing monthly Stripe
 support stops new sales without hiding existing subscription management. Provider
 price admission stays at Oblien; Openship does not copy its affordability or
 proration calculation into another pricing engine.
@@ -91,8 +91,9 @@ An accepted tariff and real settlement still need verification before release.
 Custom reuses the same subscription and resize flow. Retail additions remain
 $5 per extra vCPU, $2.50 per extra GiB RAM and $0.10 per extra GiB disk. The quote
 compares every preset plus additions and selects the least expensive bundle.
-For example, 1 vCPU / 4 GiB / 50 GiB costs $7.50; 3 vCPU / 12 GiB / 80 GiB costs
-$39. A bundle discount does not enlarge the selected server. Current Custom CPU
+For example, 1 vCPU / 2 GiB / 50 GiB costs $6; 3 vCPU / 12 GiB / 80 GiB costs
+$35. A bundle discount does not enlarge the selected server. Custom starts at
+2 GiB RAM, matching Hobby. Current Custom CPU
 selection stops at the provider's 12-vCPU per-VM ceiling.
 
 `GET /api/billing/subscription/quote` returns the retail price and a fingerprint
@@ -112,7 +113,9 @@ requires a fresh restart review. Disk shrinking remains unavailable.
 ## Saved contracts and metered compatibility
 
 Renewals use saved prices, resource limits, periods and billing mode. A catalog
-edit never rewrites paid terms. Older v1–v8 and `custom-v1` metered offers retain
+edit never rewrites paid terms. Existing v9 monthly subscriptions keep their
+original RAM and disk allocation; adopting v10 uses an explicit plan change.
+Older v1–v8 and `custom-v1` metered offers retain
 their finite allowances; they can adopt monthly capacity through the explicit
 provider plan-change flow at renewal. Older incomplete v1 snapshots retain their
 existing safety ceilings. Unknown references or ownership mismatches fail closed.

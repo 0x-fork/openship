@@ -47,12 +47,46 @@ describe("funded Cloud offers and isolated capacity", () => {
       expect(Object.values(offer.resourceLimits!).every(value => Number.isInteger(value) && value! > 0)).toBe(true);
       expect(offer.policy).toBeUndefined();
       expect(presentCloudPlans().plans.find(plan => plan.id === tier)?.resourceLimits).toEqual(offer.resourceLimits);
-      expect(offer.reference).toBe(`openship:${tier}:v9`);
+      expect(offer.reference).toBe(`openship:${tier}:v10`);
       const saved = subscriptionPlan({ ...savedPro(), offer, metadata: subscriptionMetadata(tier, "org-a", "ns-a") });
       const published = presentCloudPlans().plans.find(plan => plan.id === tier)!;
       expect(planServiceResources(saved.limits)).toEqual(planServiceResources(published.limits));
     }
     expect(Value.Check(BillingPlansSchema, presentCloudPlans())).toBe(true);
+  });
+  it.each([
+    ["hobby", 1, 4096, 25], ["starter", 2, 8192, 32], ["pro", 4, 16384, 128], ["team", 8, 32768, 256],
+  ] as const)("retains the saved monthly v9 %s allocation after publishing v10", async (tier, vcpus, memoryMb, diskGb) => {
+    const offer = subscriptionOffer(tier, "monthly");
+    const metadata = subscriptionMetadata(tier, "org-a", "ns-a");
+    offer.reference = `openship:${tier}:v9`;
+    offer.capacity = { vcpus, memoryMb, diskGb, workspaces: 1 };
+    offer.resourceLimits = { max_workspaces: 1, max_vcpus: vcpus, max_ram_mb: memoryMb, max_disk_gb: diskGb,
+      max_total_vcpus: vcpus, max_total_ram_mb: memoryMb, max_total_disk_gb: diskGb };
+    metadata.openship_offer_version = "9";
+    metadata.openship_limits = JSON.stringify({ ...JSON.parse(metadata.openship_limits!),
+      maxServiceResources: { cpuCores: vcpus, memoryMb } });
+    const subscription = { ...savedPro(), offer, metadata };
+    const before = structuredClone(subscription);
+    expect(subscriptionPlan(subscription, "org-a", "ns-a")).toMatchObject({
+      resourceLimits: offer.resourceLimits, limits: { maxServiceResources: { cpuCores: vcpus, memoryMb } },
+    });
+    expect(await cloudPlan(tier, subscription)).toMatchObject({
+      price: { monthly: offer.unitAmount }, billingMode: "monthly", resourceLimits: offer.resourceLimits,
+    });
+    expect(subscription).toEqual(before);
+    expect(subscriptionOffer(tier, "monthly").reference).not.toBe(offer.reference);
+    expect(() => subscriptionPlan(subscription, "org-b", "ns-a")).toThrow(/could not be verified/);
+  });
+  it.each(["9", "10"])("rejects metered terms under a monthly v%s reference", version => {
+    const subscription = monthlyPro();
+    subscription.offer!.reference = `openship:pro:v${version}`;
+    subscription.metadata!.openship_offer_version = version;
+    subscription.offer!.billingMode = "metered";
+    subscription.offer!.credits = 100;
+    subscription.offer!.policy = { overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" };
+    delete subscription.offer!.capacity;
+    expect(() => subscriptionPlan(subscription, "org-a", "ns-a")).toThrow(/could not be verified/);
   });
   it("a top-up only adds metered credits and cannot raise hardware limits or grace", () => {
     for (const pack of PRICING.creditPacks) {
@@ -153,8 +187,8 @@ describe("funded Cloud offers and isolated capacity", () => {
     const saved = subscriptionPlan(subscription, "org-a", "ns-a");
     expect(await cloudPlan("pro", subscription)).toMatchObject({ price: { monthly: 4000 }, monthlyCredits: 3_500_000,
       limits: saved.limits, resourceLimits: subscription.offer.resourceLimits });
-    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v9", unitAmount: 3900, credits: 0, billingMode: "monthly",
-      capacity: { vcpus: 4, memoryMb: 16384, diskGb: 128, workspaces: 1 } });
+    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v10", unitAmount: 3900, credits: 0, billingMode: "monthly",
+      capacity: { vcpus: 4, memoryMb: 16384, diskGb: 250, workspaces: 1 } });
     expect(subscription).toEqual(before);
   });
   it.each(["4", "5", "6", "7"])("rejects unverifiable service ceilings in v%s", version => {
@@ -182,10 +216,10 @@ describe("funded Cloud offers and isolated capacity", () => {
     expect(() => subscriptionPlan(savedPro(), "org-b", "ns-a")).toThrow(/could not be verified/);
     expect(() => subscriptionPlan(savedPro(), "org-a", "ns-b")).toThrow(/could not be verified/);
   });
-  it("publishes Hobby with 25 GB while preserving the paid v5 storage and credits", async () => {
+  it("publishes Hobby with 40 GB while preserving the paid v5 storage and credits", async () => {
     const offer = subscriptionOffer("hobby", "monthly");
-    expect(offer).toMatchObject({ reference: "openship:hobby:v9", unitAmount: 500, credits: 0, billingMode: "monthly",
-      resourceLimits: { max_disk_gb: 25, max_total_disk_gb: 25 } });
+    expect(offer).toMatchObject({ reference: "openship:hobby:v10", unitAmount: 500, credits: 0, billingMode: "monthly",
+      resourceLimits: { max_disk_gb: 40, max_total_disk_gb: 40 } });
     const subscription = { ...savedPro(), offer: savedOffer("hobby", "monthly"), metadata: savedMetadata("hobby", "org-a", "ns-a") };
     const before = structuredClone(subscription);
     expect(subscriptionPlan(subscription, "org-a", "ns-a").resourceLimits).toMatchObject({ max_disk_gb: 16, max_total_disk_gb: 16 });
@@ -204,8 +238,8 @@ describe("funded Cloud offers and isolated capacity", () => {
       limits: { maxServiceResources: { cpuCores: 4, memoryMb: 4096 } },
       resourceLimits: { max_ram_mb: 8192, max_total_ram_mb: 8192, max_disk_gb: 32 },
     });
-    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v9",
-      resourceLimits: { max_ram_mb: 16384, max_total_ram_mb: 16384, max_disk_gb: 128 } });
+    expect(subscriptionOffer("pro", "monthly")).toMatchObject({ reference: "openship:pro:v10",
+      resourceLimits: { max_ram_mb: 16384, max_total_ram_mb: 16384, max_disk_gb: 250 } });
     expect(subscription).toEqual(before);
   });
 });

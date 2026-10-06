@@ -1,5 +1,8 @@
 # Cloud monthly capacity and provider handoff — 2026-10-04
 
+This is a historical provider-price comparison for the resource sizes below.
+For current retail resources, see [the pricing catalog](../packages/core/src/pricing/README.md).
+
 Openship and Oblien are part of the same company. The product decision is to sell
 one managed server per subscription, with CPU, RAM and disk covered continuously
 for the paid month. Keep the agreed retail prices and resources:

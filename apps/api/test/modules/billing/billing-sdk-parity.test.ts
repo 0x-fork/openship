@@ -608,7 +608,7 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.quota).not.toHaveBeenCalled();
     expect(provider.checkout).toHaveBeenCalledTimes(2);
     for (const [input] of provider.checkout.mock.calls) {
-      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 1, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 256, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 256 });
+      expect(input.offer.resourceLimits).toEqual({ max_workspaces: 1, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 600, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 600 });
     }
   });
 
@@ -668,9 +668,9 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect(input).toMatchObject({
         namespace: managed.namespace,
         kind: "subscription",
-        offer: { reference: `openship:${tier}:v9`, unitAmount, credits, billingMode: "monthly" },
+        offer: { reference: `openship:${tier}:v10`, unitAmount, credits, billingMode: "monthly" },
         billingInterval: "monthly",
-        metadata: { openship_organization: owner.orgId, openship_namespace: managed.namespace, openship_offer_version: "9" },
+        metadata: { openship_organization: owner.orgId, openship_namespace: managed.namespace, openship_offer_version: "10" },
       });
       expect(input).not.toHaveProperty("customer");
       expect(input).not.toHaveProperty("line_items");

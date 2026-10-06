@@ -39,12 +39,13 @@ export const CLOUD_EDGE_BANDWIDTH_GB: Readonly<Record<PlanTierId, number | null>
 };
 
 // Version price/term changes so checkout retries cannot reuse an earlier quote.
-export const OFFER_VERSION = "9";
+export const OFFER_VERSION = "10";
+const MONTHLY_OFFER_VERSIONS: ReadonlySet<string> = new Set(["9", OFFER_VERSION]);
 const TOPUP_OFFER_VERSION = "3";
 export const offerReference = (tier: PlanTierId) => `openship:${tier}:v${OFFER_VERSION}`;
 
 export function supportedOfferReference(reference: string | undefined, tier: PlanTierId): boolean {
-  return reference === offerReference(tier) || reference === `openship:${tier}:v8` || reference === `openship:${tier}:v7` || reference === `openship:${tier}:v6` || reference === `openship:${tier}:v5` || reference === `openship:${tier}:v4` || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
+  return [...MONTHLY_OFFER_VERSIONS].some(version => reference === `openship:${tier}:v${version}`) || reference === `openship:${tier}:v8` || reference === `openship:${tier}:v7` || reference === `openship:${tier}:v6` || reference === `openship:${tier}:v5` || reference === `openship:${tier}:v4` || reference === `openship:${tier}:v3` || (tier !== "hobby" &&
     (reference === `openship:${tier}:v1` || reference === `openship:${tier}:v2`));
 }
 
@@ -52,9 +53,9 @@ export function supportedOfferReference(reference: string | undefined, tier: Pla
  * These contracts cannot inherit the larger v7 RAM/disk from the public catalog. */
 function inheritedResourceLimits(tier: PlanTierId): ReturnType<typeof cloudNamespaceLimits> {
   const limits = cloudNamespaceLimits(tier);
-  if (tier === "starter") Object.assign(limits, { max_workspaces: 3, max_ram_mb: 6144, max_total_ram_mb: 6144 });
-  if (tier === "pro") Object.assign(limits, { max_workspaces: 6, max_vcpus: 2, max_ram_mb: 8192, max_total_ram_mb: 8192, max_disk_gb: 32 });
-  if (tier === "team") Object.assign(limits, { max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_total_ram_mb: 16384, max_disk_gb: 64 });
+  if (tier === "starter") Object.assign(limits, { max_workspaces: 3, max_ram_mb: 6144, max_total_ram_mb: 6144, max_disk_gb: 32, max_total_disk_gb: 32 });
+  if (tier === "pro") Object.assign(limits, { max_workspaces: 6, max_vcpus: 2, max_ram_mb: 8192, max_total_ram_mb: 8192, max_disk_gb: 32, max_total_disk_gb: 128 });
+  if (tier === "team") Object.assign(limits, { max_workspaces: 12, max_vcpus: 4, max_ram_mb: 12288, max_total_ram_mb: 16384, max_disk_gb: 64, max_total_disk_gb: 256 });
   return limits;
 }
 
@@ -100,6 +101,7 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
   const version = metadata?.openship_offer_version;
   const custom = isCustomOfferVersion(version);
   const monthly = offer?.billingMode === "monthly";
+  const monthlyVersion = custom ? version === CUSTOM_OFFER_VERSION : MONTHLY_OFFER_VERSIONS.has(version ?? "");
   if (!PLAN_IDS.includes(tier) || tier === "free" || !offer || !metadata ||
       (!custom && (!supportedOfferReference(offer.reference, tier) || offer.reference !== `openship:${tier}:v${version}`)) ||
       !metadata.openship_organization || !metadata.openship_namespace ||
@@ -111,11 +113,11 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
   if (!parsed.success) invalidContract();
   if (monthly) {
     if (subscription.billingInterval !== "monthly" || offer.credits !== 0 || offer.policy ||
-        version !== (custom ? CUSTOM_OFFER_VERSION : OFFER_VERSION) || !offer.capacity) invalidContract();
+        !monthlyVersion || !offer.capacity) invalidContract();
     try {
       if (!isDeepStrictEqual(monthlyCapacity(offer.resourceLimits as ReturnType<typeof cloudNamespaceLimits>), offer.capacity)) invalidContract();
     } catch { invalidContract(); }
-  } else if (version === OFFER_VERSION || version === CUSTOM_OFFER_VERSION) invalidContract();
+  } else if (monthlyVersion) invalidContract();
   if (custom) {
     if (subscription.billingInterval !== "monthly" || !validCustomOffer(tier, parsed.data, offer)) invalidContract();
     return { tier, limits: parsed.data, resourceLimits: offer.resourceLimits as ReturnType<typeof cloudNamespaceLimits> };

@@ -22,7 +22,7 @@
         "step": 1
       },
       "memoryMb": {
-        "min": 4096,
+        "min": 2048,
         "max": 131072,
         "step": 1024
       },
@@ -140,7 +140,7 @@
         "maxResourceTier": "low",
         "maxServiceResources": {
           "cpuCores": 1,
-          "memoryMb": 4096
+          "memoryMb": 2048
         },
         "computeMinutesPerMonth": null,
         "buildMinutesPerMonth": null,
@@ -168,11 +168,11 @@
         "resourceLimits": {
           "max_workspaces": 1,
           "max_vcpus": 1,
-          "max_ram_mb": 4096,
-          "max_disk_gb": 25,
+          "max_ram_mb": 2048,
+          "max_disk_gb": 40,
           "max_total_vcpus": 1,
-          "max_total_ram_mb": 4096,
-          "max_total_disk_gb": 25
+          "max_total_ram_mb": 2048,
+          "max_total_disk_gb": 40
         },
         "mode": "monthly"
       }
@@ -231,10 +231,10 @@
           "max_workspaces": 1,
           "max_vcpus": 2,
           "max_ram_mb": 8192,
-          "max_disk_gb": 32,
+          "max_disk_gb": 128,
           "max_total_vcpus": 2,
           "max_total_ram_mb": 8192,
-          "max_total_disk_gb": 32
+          "max_total_disk_gb": 128
         },
         "mode": "monthly"
       }
@@ -293,10 +293,10 @@
           "max_workspaces": 1,
           "max_vcpus": 4,
           "max_ram_mb": 16384,
-          "max_disk_gb": 128,
+          "max_disk_gb": 250,
           "max_total_vcpus": 4,
           "max_total_ram_mb": 16384,
-          "max_total_disk_gb": 128
+          "max_total_disk_gb": 250
         },
         "mode": "monthly"
       }
@@ -356,10 +356,10 @@
           "max_workspaces": 1,
           "max_vcpus": 8,
           "max_ram_mb": 32768,
-          "max_disk_gb": 256,
+          "max_disk_gb": 600,
           "max_total_vcpus": 8,
           "max_total_ram_mb": 32768,
-          "max_total_disk_gb": 256
+          "max_total_disk_gb": 600
         },
         "mode": "monthly"
       }

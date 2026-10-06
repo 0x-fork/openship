@@ -112,11 +112,11 @@ describe("Cloud customer checkout", () => {
       kind: "subscription",
       billingInterval: "monthly",
       offer: {
-        reference: "openship:starter:v9",
+        reference: "openship:starter:v10",
         unitAmount: 2000,
         credits: 0, billingMode: "monthly",
-        capacity: { vcpus: 2, memoryMb: 8192, diskGb: 32, workspaces: 1 },
-        resourceLimits: { max_workspaces: 1, max_disk_gb: 32, max_total_vcpus: 2, max_total_ram_mb: 8192, max_total_disk_gb: 32 },
+        capacity: { vcpus: 2, memoryMb: 8192, diskGb: 128, workspaces: 1 },
+        resourceLimits: { max_workspaces: 1, max_disk_gb: 128, max_total_vcpus: 2, max_total_ram_mb: 8192, max_total_disk_gb: 128 },
       },
       metadata: {
         openship_plan: "starter",
@@ -139,9 +139,9 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({
       namespace: "ns-org-a",
       offer: expect.objectContaining({
-        reference: "openship:hobby:v9", unitAmount: 500, credits: 0, billingMode: "monthly",
-        resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 4096, max_disk_gb: 25,
-          max_total_vcpus: 1, max_total_ram_mb: 4096, max_total_disk_gb: 25 },
+        reference: "openship:hobby:v10", unitAmount: 500, credits: 0, billingMode: "monthly",
+        resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 2048, max_disk_gb: 40,
+          max_total_vcpus: 1, max_total_ram_mb: 2048, max_total_disk_gb: 40 },
       }),
     }));
     expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("planTierId");
@@ -162,8 +162,8 @@ describe("Cloud customer checkout", () => {
     const input = h.checkout.mock.calls[0]![0];
     expect(input.offer).toMatchObject({
       unitAmount: 9900, credits: 0, billingMode: "monthly",
-      capacity: { vcpus: 8, memoryMb: 32768, diskGb: 256, workspaces: 1 },
-      resourceLimits: { max_workspaces: 1, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 256, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 256 },
+      capacity: { vcpus: 8, memoryMb: 32768, diskGb: 600, workspaces: 1 },
+      resourceLimits: { max_workspaces: 1, max_vcpus: 8, max_ram_mb: 32768, max_disk_gb: 600, max_total_vcpus: 8, max_total_ram_mb: 32768, max_total_disk_gb: 600 },
     });
     expect(JSON.parse(input.metadata.openship_limits).runningServices).toBeNull();
     expect(h.quota).not.toHaveBeenCalled();

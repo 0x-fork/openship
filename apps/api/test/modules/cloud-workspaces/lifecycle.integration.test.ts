@@ -439,8 +439,8 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     expect(h.client.resize).not.toHaveBeenCalled();
     expect(vms.get(targets[0]!.workspaceId).resources).toMatchObject({
       cpus: 1,
-      memory_mb: 4096,
-      disk_size_mb: 25600,
+      memory_mb: 2048,
+      disk_size_mb: 40960,
     });
     await db.delete(schema.project).where(eq(schema.project.id, a.id));
     expect((await repos.cloudDockerWorkspace.find(b.id, owner.orgId))?.workspaceId).toBe(
@@ -1236,7 +1236,7 @@ describe("provider subscription changes through billing and the shared server wo
   it("schedules a lower-priced custom offer with retained disk and applies it only after paid renewal", async () => {
     subscribe("starter"); await provision(); await addProject("API");
     const client = await billingClient(true);
-    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 32 }).quote;
+    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 128 }).quote;
     const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,
       custom: { resources: custom.resources, quoteReference: custom.reference }, idempotencyKey: randomUUID() });
     expect(quote).toMatchObject({ direction: "downgrade", amountDueNow: 0, effectiveAt: "2026-11-01T00:00:00Z" });
@@ -1252,7 +1252,7 @@ describe("provider subscription changes through billing and the shared server wo
     const appliedEventId = `event_${randomUUID()}`;
     expect((await event(change.id, "subscription.change.applied", appliedEventId)).status).toBe(200);
     await drainBackgroundWork();
-    expect(h.client.resize).toHaveBeenCalledExactlyOnceWith(expect.any(String), { cpus: 1, memory_mb: 4096, disk_size_mb: 32768, apply: true });
+    expect(h.client.resize).toHaveBeenCalledExactlyOnceWith(expect.any(String), { cpus: 1, memory_mb: 4096, disk_size_mb: 131072, apply: true });
     expect((await event(change.id, "subscription.change.applied", appliedEventId)).status).toBe(200);
     expect((await event(change.id, "subscription.change.failed")).status).toBe(200);
     await drainBackgroundWork();
@@ -1262,7 +1262,7 @@ describe("provider subscription changes through billing and the shared server wo
   it("honors the provider's renewal date for a resource reduction that costs more", async () => {
     subscribe("starter"); await provision(); await addProject("API");
     const client = await billingClient(true);
-    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 16384, diskGb: 32 }).quote;
+    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 16384, diskGb: 128 }).quote;
     expect(custom.priceCents).toBeGreaterThan(2000);
     const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,
       custom: { resources: custom.resources, quoteReference: custom.reference }, idempotencyKey: randomUUID() });
@@ -1276,7 +1276,7 @@ describe("provider subscription changes through billing and the shared server wo
     paid(change.id);
     await reconcileWorkspaceSubscriptionChange(owner.orgId, workspace.id);
     await drainBackgroundWork();
-    expect(h.client.resize).toHaveBeenCalledExactlyOnceWith(expect.any(String), { cpus: 1, memory_mb: 16384, disk_size_mb: 32768, apply: true });
+    expect(h.client.resize).toHaveBeenCalledExactlyOnceWith(expect.any(String), { cpus: 1, memory_mb: 16384, disk_size_mb: 131072, apply: true });
   });
 
   it("adopts monthly coverage from a saved metered subscription at renewal without a second checkout", async () => {
@@ -1312,7 +1312,7 @@ describe("provider subscription changes through billing and the shared server wo
     await expect(client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "hobby", idempotencyKey: randomUUID() }))
       .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_DISK_SHRINK" });
     expect(h.billing.previewPlanChange).not.toHaveBeenCalled();
-    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 32 }).quote;
+    const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 128 }).quote;
     const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,
       custom: { resources: custom.resources, quoteReference: custom.reference }, idempotencyKey: randomUUID() });
     const change = await client.confirmSubscriptionChange({ workspaceId: workspace.id, quoteId: quote.id, confirmRestart: true });
