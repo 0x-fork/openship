@@ -160,6 +160,7 @@ import {
   startExecStream,
   daemonConnectionFrom,
   installDockerodeBuildKitSessionWorkaround,
+  setDockerodeRawStreamFactory,
 } from "./docker-exec-stream";
 import { resolveComposeCmd, resolveComposeEntrypoint } from "./compose-cmd";
 import {
@@ -1157,6 +1158,9 @@ export class DockerRuntime implements RuntimeAdapter {
 
   protected async initializeDocker(): Promise<void> {
     this._docker = new Dockerode(await this.transport.establish());
+    if (this.transport.openStream) {
+      setDockerodeRawStreamFactory(this._docker, this.transport.openStream);
+    }
     // dockerode opens BuildKit's reverse h2c session through `node:http`; Bun
     // rejects Docker's 101 response as UnrequestedUpgrade (#745). Keep
     // dockerode's gRPC session implementation, but carry that one upgrade over
@@ -1604,7 +1608,7 @@ export class DockerRuntime implements RuntimeAdapter {
     const boundedBuildKit = buildKit && cloudLimits && Object.keys(cloudLimits).length > 0;
     const builderName = boundedBuildKit
       ? `openship-${createHash("sha256").update(config.projectId).digest("hex").slice(0, 24)}` : undefined;
-    const removeBuilder = builderName ? `docker buildx rm --force --keep-state ${sq(builderName)}` : undefined;
+    const removeBuilder = builderName ? `docker buildx rm --force ${sq(builderName)}` : undefined;
     const builderEnv = buildKit ? "DOCKER_BUILDKIT=1 " : "";
     const ownershipHost = buildKit ? null : newBuildOwnershipHost();
     // `--progress` is a buildx flag, NOT a docker-build flag: a CLI without the
@@ -1651,8 +1655,10 @@ export class DockerRuntime implements RuntimeAdapter {
         ...(cloudLimits.memory ? [`memory=${cloudLimits.memory}`, `memory-swap=${cloudLimits.memory}`] : []),
         ...(cloudLimits.cpuquota ? [`cpu-quota=${cloudLimits.cpuquota}`, `cpu-period=${cloudLimits.cpuperiod}`] : []),
       ].map(option => `--driver-opt ${sq(option)}`).join(" ");
-      // One stable cache per project workspace; remove the worker after every
-      // build while retaining its cache for the next one. No global --use.
+      // The temporary worker and its cache share the server's disk with apps.
+      // Remove both after each build; --load retains the resulting app image.
+      // Keeping detached state here can fill the host between deployments.
+      // The name stays project-scoped, and no global --use is changed.
       // The remote trap also runs if the control-plane stream disconnects.
       buildCmd = [
         "set -e",

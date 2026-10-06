@@ -83,7 +83,6 @@ export interface ComposePipelineOpts {
   composeInterpolationEnv: Record<string, string>;
   buildEnvVars: Record<string, string>;
   buildResources: ResourceConfig;
-  serviceBuildResources?: Record<string, ResourceConfig>;
   runtimeResources: ResourceConfig;
   gitToken?: string;
   /** Path to the git-credential relay helper on the build host (desktop relay).
@@ -284,7 +283,6 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     composeInterpolationEnv,
     buildEnvVars,
     buildResources,
-    serviceBuildResources: opts.serviceBuildResources,
     gitToken,
     gitCredentialHelperPath,
     gitSsh,

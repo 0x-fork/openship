@@ -139,10 +139,22 @@ export function createCloudDockerTransport(open: () => Promise<Duplex>): DockerT
   let directory: string | undefined;
   let closed = false;
   const sockets = new Set<Duplex>();
+  const openStream = async () => {
+    if (closed) throw new Error("Cloud Docker transport is closed");
+    const stream = await open();
+    if (closed) { stream.destroy(); throw new Error("Cloud Docker transport is closed"); }
+    sockets.add(stream);
+    stream.once("close", () => sockets.delete(stream));
+    return stream;
+  };
   return {
     kind: "cloud",
     description: "Docker inside an Oblien workspace",
     unreachableHint: "Check that the project's Oblien Docker workspace is running and reachable.",
+    // Bun closes a node:net upload's read side on end(). Upgraded streams use
+    // this same authenticated bridge directly, preserving stdin EOF and the
+    // daemon's final output without another local socket hop.
+    openStream,
     async establish() {
       if (closed) throw new Error("Cloud Docker transport is closed");
       const prefix = "openship-cloud-docker-";
@@ -158,6 +170,10 @@ export function createCloudDockerTransport(open: () => Promise<Duplex>): DockerT
         ? `\\\\.\\pipe\\openship-cloud-docker-${randomUUID()}`
         : join(directory, "docker.sock");
       server = createServer({ allowHalfOpen: true }, (client: Socket) => {
+        // Bun does not inherit the listener's allowHalfOpen option on accepted
+        // sockets. Stdin EOF must still let queued writes and Docker's final
+        // response drain before the WebSocket is closed.
+        client.allowHalfOpen = true;
         sockets.add(client);
         client.on("error", () => {});
         client.once("close", () => sockets.delete(client));
@@ -171,11 +187,10 @@ export function createCloudDockerTransport(open: () => Promise<Duplex>): DockerT
         pending.once("close", () => sockets.delete(pending));
         client.once("close", () => pending.destroy());
         client.pipe(pending);
-        void open().then((upstream) => {
+        void openStream().then((upstream) => {
           if (closed || client.destroyed) { upstream.destroy(); return; }
-          sockets.add(upstream);
           upstream.on("error", () => client.destroy());
-          upstream.once("close", () => { sockets.delete(upstream); client.destroy(); });
+          upstream.once("close", () => client.destroy());
           client.once("close", () => upstream.destroy());
           pending.pipe(upstream).pipe(client);
         }, (error: unknown) => {
