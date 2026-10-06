@@ -110,9 +110,12 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
   One server is a summary; several servers switch billing directly from the visible list.
   Keep one Get server action in the page header across billing tabs; the sidebar only
-  selects the server being inspected. Plans uses the full page width with the shared
-  compact server picker beside that action. Show its saved subscription and capacity below
-  the tabs; an inactive subscription uses a short inline notice. New purchases use the plan introduction
+  selects the server being inspected. Plans keeps the shared compact server picker beside
+  that action. With one or two preset choices, show the saved subscription and capacity in
+  the standard 340px right column when the container has room; stack it first on smaller
+  screens. Wider comparisons and Custom keep the compact summary below the tabs. Use the
+  picker's displayed choices for this layout too; an inactive subscription uses a short
+  inline notice. New purchases use the plan introduction
   as the page title and description. Keep Plans / Custom beside Back to billing in the
   header, using matching 40px controls. Purchasing does not require a server-name field.
   An existing server without a plan keeps the server selector, including when every
@@ -144,19 +147,35 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
   details in a compact disclosure. Existing metered subscriptions retain their credit view.
   Prepaid PAYG shows package amounts beside their credit value, using the provider's
-  conversion and published resource rates. Reuse the monthly resource editor for its
-  interactive estimate; PAYG prices come directly from usage rates and do not depend on
+  conversion and published resource rates. Keep the Openship resource tiers inside the
+  resource card, using compact shared tabs above its inputs. Present the selected tier's
+  CPU, RAM, disk and server-count limits as plain capacity values in a compact summary
+  that wraps on smaller screens. These limits stay fixed while configuring a server.
+  Keep the cumulative credit-purchase threshold by the tabs
+  and the selected package's qualifying tier in the credit card. These are pool ceilings,
+  not monthly subscriptions or a copy of the reseller owner's Oblien plan. Spending
+  credits never lowers a tier. Keep credit-package and resource-tier selections separate;
+  changing either must preserve resource inputs. An oversized configuration should show
+  which limits are exceeded and offer the smallest available tier that fits, without
+  silently resizing the user's servers. The catalog and unlock display remain a preview
+  until verified customer funding and runtime entitlement are connected.
+  Reuse the monthly resource editor for the interactive estimate, with two resource
+  controls per row when they fit. Configure one server; show its hourly price at full
+  CPU usage and state that basis beside the estimate. PAYG prices come
+  directly from usage rates and do not depend on
   monthly-plan quotes or ceilings. Keep the pricing preview until customer-funded
   purchases are supported. A shared balance is funding,
   not a multiplied resource pool; estimates for several hosts must spend that balance
   once. Use three columns when space permits: the resource editor, readable credit
-  package rows in the middle, and the 340px estimate card on the right. Give packages
+  package rows in the middle, and the 340px estimate card on the right, aligned at the top.
+  Keep the CPU-hour explanation and rate details with the estimate. Give packages
   280–320px and let the resource editor use the remaining space. Stack the
   packages below resources at intermediate widths, then stack all sections on mobile.
+  Monthly and PAYG share the catalog's Enterprise contact card at the end of the picker.
   Keep one compact purchase bar visible at the bottom while configuring resources;
   use a translucent popover surface with backdrop blur while keeping its text readable.
   Lead with estimated dollars per hour and the matching credits per hour, with
-  average CPU activity and all-host scope beside them. Keep the CPU, RAM and storage
+  the per-server scope and full-CPU basis beside them. Keep the CPU, RAM and storage
   hourly breakdown visible. Do not turn a full-month projection into a purchase
   requirement or suggest a larger deposit to cover it. Balance duration belongs in
   an optional disclosure and follows prepaid funds divided by resource usage cost;
@@ -164,7 +183,7 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   ceiling requires an enforceable provider quote, not a UI-derived promise.
   Show CPU-hours as allocated vCPUs multiplied by average activity and elapsed time;
   label time online as elapsed time. Show resource-hours and their costs under a clear
-  per-elapsed-hour heading, including all selected hosts. Distinguish active CPU from
+  per-elapsed-hour heading for the configured server. Distinguish active CPU from
   reserved RAM and retained storage. Keep checkout unavailable until customer-funded purchases are
   supported. Do not expose reseller wallet balances or call hypothetical comparisons
   recorded savings.
@@ -188,11 +207,20 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 - Deployment plan dialogs use compact title and action rows. Keep explanations in the
   scrollable content so the plans receive most of the available viewport height, including
   on short screens. Keep actions side by side on phones, allowing long labels to wrap.
-- The plans comparison (`/billing/plans`) and Scale canvas open with the desktop sidebar
-  collapsed. Keep the toggle available, restore the normal preference on leaving, and
-  keep manual expansion independent between these sections. Mobile navigation opens fully.
+- On `/billing/plans`, collapse the desktop sidebar automatically for comparisons with
+  three or more visible plans and the PAYG configurator. One or two upgrade choices,
+  Custom, and loading or error states keep the normal sidebar preference. Use the picker's
+  displayed choices; navigation must not fetch or filter plans again. Keep manual toggles
+  across filter and purchase-view changes. The Scale canvas still opens collapsed; restore
+  the normal preference on leaving and keep its override separate. Mobile navigation opens fully.
 
 ## Typography and copy
+
+Account protection lives in **Settings → Security**, using the existing settings
+navigation and section cards. Keep authenticator setup, recovery codes, and
+passkeys together for accounts hosted on that instance. Enrollment verifies a
+code before showing protection as enabled; setup keys and recovery codes stay
+inside that account's current flow and clear when the account changes.
 
 Use the existing Gellix / SF Arabic font stack and semantic text colors. `text-sm` is 14px;
 the dashboard overrides `text-xs` to **13px**, with a 20px line height.

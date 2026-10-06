@@ -1174,7 +1174,6 @@ async function executeBuildAndDeploy(
           composeInterpolationEnv: envMap,
           buildEnvVars: buildEnv.envVars,
           buildResources,
-          serviceBuildResources: (env.CLOUD_MODE ? {} : undefined),
           runtimeResources: prodResources,
           gitToken: gitCred.token,
           gitCredentialHelperPath: composeRelay?.scriptPath,

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { once } from "node:events";
+import { PassThrough } from "node:stream";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Runtime } from "oblien";
 import type { ManagedCommandRef } from "@repo/core";
@@ -46,6 +47,15 @@ describe("Oblien Docker byte transport", () => {
   });
   upstream.on("upgrade", (req, socket, head) => {
     socket.write("HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n");
+    if (req.url?.startsWith("/containers/restore/attach?")) {
+      socket.allowHalfOpen = true;
+      const chunks = head.length ? [head] : [];
+      socket.on("data", data => chunks.push(Buffer.from(data)));
+      // A restore helper produces its final output only after stdin reaches EOF.
+      // Keep the peer writable so the Cloud bridge must preserve both directions.
+      socket.on("end", () => socket.end(Buffer.concat(chunks)));
+      return;
+    }
     if (req.url === "/half-close") {
       const chunks = head.length ? [head] : [];
       socket.on("data", data => chunks.push(data));
@@ -278,8 +288,46 @@ describe("Oblien Docker byte transport", () => {
       await once(socket, "end");
     } finally { socket.destroy(); }
   });
+  it("drains a Bun attach upload and receives the result after stdin ends", async () => {
+    const script = `
+      import { dockerWebSocketStream } from ${JSON.stringify(new URL("./docker-transport.ts", import.meta.url).pathname)};
+      import { DockerRuntime } from ${JSON.stringify(new URL("../docker.ts", import.meta.url).pathname)};
+      import { startAttachStream, daemonConnectionFrom } from ${JSON.stringify(new URL("../docker-exec-stream.ts", import.meta.url).pathname)};
+      import { randomBytes } from "node:crypto";
+      import { once } from "node:events";
+      const runtime = await DockerRuntime.create({ transport: "cloud", executor: {},
+        cloudConnection: () => dockerWebSocketStream(new WebSocket(${JSON.stringify(bridgeUrl)})) });
+      const connection = daemonConnectionFrom(runtime.docker);
+      const data = randomBytes(3 * 1024 * 1024 + 17);
+      let stream;
+      try {
+        stream = await startAttachStream(connection, "restore", { stdin: true, stdout: true, stderr: true });
+        const output = [];
+        stream.on("data", chunk => output.push(Buffer.from(chunk)));
+        const end = once(stream, "end");
+        stream.end(data);
+        await end;
+        const received = Buffer.concat(output);
+        if (!received.equals(data)) throw new Error("Attach upload lost its response: " + received.length + " / " + data.length);
+        process.stdout.write("ok");
+      } finally { stream?.destroy(); await runtime.dispose(); }
+    `;
+    const { stdout } = await promisify(execFile)("bun", ["--eval", script], { timeout: 20_000 });
+    expect(stdout).toBe("ok");
+  });
   it("reports a broken upstream instead of falling back to another Docker host", async () => {
     await expect(roundtrip("/broken")).rejects.toThrow();
     expect(await roundtrip("/_ping")).toEqual(Buffer.from("OK"));
+  });
+  it("revokes direct streams on disposal, including connections still opening", async () => {
+    let resolve!: (stream: PassThrough) => void;
+    const t = createCloudDockerTransport(() => new Promise(done => { resolve = done; }));
+    const opening = t.openStream!();
+    await t.close();
+    const stream = new PassThrough();
+    resolve(stream);
+    await expect(opening).rejects.toThrow("transport is closed");
+    expect(stream.destroyed).toBe(true);
+    await expect(t.openStream!()).rejects.toThrow("transport is closed");
   });
 });

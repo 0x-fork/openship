@@ -201,11 +201,12 @@ describe("billing page failure recovery", () => {
     expect(mocks.get).not.toHaveBeenCalled();
   });
 
-  it("shows the saved subscription above Plans, without the server sidebar", async () => {
+  it("passes the saved subscription to the adaptive plan layout, without a duplicate sidebar", async () => {
     const state = { ...free, tier: "starter", workspace: { id: "cws-existing", provisioned: true } };
     mocks.get.mockResolvedValue({ data: state });
     const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }), searchParams: Promise.resolve({ workspaceId: "cws-existing" }) });
-    expect(findElement<{ state: unknown; compact: boolean }>(page, BillingPlanSummary)?.props).toMatchObject({ state, compact: true });
+    expect(findElement<{ billingState: unknown }>(page, BillingPlansRoute)?.props.billingState).toBe(state);
+    expect(findElement(page, BillingPlanSummary)).toBeUndefined();
     expect(findElement<{ layout: string; sidebar: unknown }>(page, BillingContent)?.props).toMatchObject({ layout: "plans", sidebar: null });
   });
 

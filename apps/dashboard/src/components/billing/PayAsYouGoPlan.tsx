@@ -6,28 +6,31 @@ import { Icon } from "@repo/ui/icons";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { optionCardSurface } from "@/components/shared/OptionCard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   estimatePrepaidUsage,
   hasPrepaidRates,
-  PREPAID_PACKAGE_CENTS,
+  previewPaygPool,
+  previewPaygTier,
   type ComputePricing,
 } from "@/lib/prepaid-estimate";
 import { useCloudPurchase } from "./CloudPurchaseContext";
 import { readServerResources, ServerResourceInputs } from "./ServerResourceInputs";
+import { PaygResourceTiers } from "./PaygResourceTiers";
 
 /** Preview only. Selecting resources or credits never authorizes a purchase. */
 export function PayAsYouGoPlan({
   pricing,
   catalog,
+  payg,
 }: {
   pricing?: BillingPlans["computePricing"];
   catalog?: BillingPlans["custom"];
+  payg?: BillingPlans["payg"];
 }) {
   const { t } = useI18n();
   const purchase = useCloudPurchase();
-  if (!hasPrepaidRates(pricing) || !catalog)
+  if (!hasPrepaidRates(pricing) || !catalog || !payg?.tiers.length || !payg.creditPackagesCents.length)
     return (
       <section className="rounded-2xl bg-card p-5">
         <h3 className="text-base font-semibold">{t.billing.purchase.preview}</h3>
@@ -42,42 +45,48 @@ export function PayAsYouGoPlan({
         </Button>
       </section>
     );
-  return <PrepaidCalculator pricing={pricing} catalog={catalog} />;
+  return <PrepaidCalculator pricing={pricing} catalog={catalog} payg={payg} />;
 }
 
 function PrepaidCalculator({
   pricing,
   catalog,
+  payg,
 }: {
   pricing: ComputePricing;
   catalog: NonNullable<BillingPlans["custom"]>;
+  payg: NonNullable<BillingPlans["payg"]>;
 }) {
   const { t, locale } = useI18n();
   const copy = t.billing.purchase;
   const id = useId();
-  const [packageCents, setPackageCents] = useState<number>(PREPAID_PACKAGE_CENTS[1]);
+  const [packageCents, setPackageCents] = useState<number>(payg.creditPackagesCents[1] ?? payg.creditPackagesCents[0]!);
+  const [tierId, setTierId] = useState(() => previewPaygTier(payg.tiers, packageCents)?.id ?? payg.tiers[0]!.id);
+  const selectedTier = payg.tiers.find(tier => tier.id === tierId) ?? payg.tiers[0]!;
+  const packageTier = previewPaygTier(payg.tiers, packageCents);
   const [values, setValues] = useState(() => ({
     cpuCores: String(catalog.resources.cpuCores.min),
     memoryMb: String(catalog.resources.memoryMb.min / 1024),
     diskGb: String(catalog.resources.diskGb.min),
   }));
-  const [hosts, setHosts] = useState("1");
-  const [activity, setActivity] = useState("100");
   const resources = readServerResources(values, catalog.resources);
-  const count = Number(hosts),
-    cpuPercent = Number(activity);
-  const validCount =
-    hosts.trim() !== "" && Number.isSafeInteger(count) && count >= 1 && count <= 100;
-  const validActivity =
-    activity.trim() !== "" && Number.isFinite(cpuPercent) && cpuPercent >= 0 && cpuPercent <= 100;
+  const pool = resources ? previewPaygPool(selectedTier, resources, 1) : null;
+  const largerTier = resources && pool && !pool.fits
+    ? payg.tiers.find(tier => previewPaygPool(tier, resources, 1)?.fits)
+    : null;
+  const ranges = Object.fromEntries(
+    (Object.keys(catalog.resources) as Array<keyof typeof catalog.resources>).map(key => [key, {
+      ...catalog.resources[key], max: Math.min(catalog.resources[key].max, selectedTier.pool[key]),
+    }]),
+  ) as typeof catalog.resources;
   const estimate =
-    resources && validCount && validActivity
+    resources && pool?.fits
       ? estimatePrepaidUsage({
           pricing,
           resources,
           packageCents,
-          serverCount: count,
-          cpuPercent,
+          serverCount: 1,
+          cpuPercent: 100,
         })
       : null;
   const number = (value: number, digits = 2) =>
@@ -135,7 +144,7 @@ function PrepaidCalculator({
   ];
 
   return (
-    <div className="@container/payg">
+    <div className="@container/payg space-y-5">
       <div className="grid items-start gap-5 @min-[52rem]/payg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid min-w-0 items-start gap-5 @min-[64rem]/payg:grid-cols-[minmax(0,1fr)_280px] @min-[80rem]/payg:grid-cols-[minmax(0,1fr)_320px]">
           <section aria-labelledby={`${id}-resources`} className="min-w-0 rounded-2xl bg-card p-5">
@@ -148,117 +157,39 @@ function PrepaidCalculator({
               </span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{copy.sizeHint}</p>
+            <div className="mt-4 border-b border-border/50 pb-5">
+              <PaygResourceTiers tiers={payg.tiers} selected={selectedTier} onChange={setTierId}
+                money={money} />
+            </div>
             <div className="mt-5">
               <ServerResourceInputs
-                ranges={catalog.resources}
+                ranges={ranges}
                 values={values}
                 onChange={setValues}
+                columns={2}
               />
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-4 border-t border-border/50 pt-4">
-              <div className="flex flex-col">
-                <label htmlFor={`${id}-hosts`} className="mb-2 block text-sm font-medium">
-                  {copy.hosts}
-                </label>
-                <Input
-                  id={`${id}-hosts`}
-                  type="number"
-                  variant="filled"
-                  min={1}
-                  max={100}
-                  step={1}
-                  value={hosts}
-                  aria-invalid={!validCount}
-                  onChange={(event) => setHosts(event.target.value)}
-                  className="mt-auto"
-                />
-              </div>
-              <div className="flex flex-col">
-                <label htmlFor={`${id}-activity`} className="mb-2 block text-sm font-medium">
-                  {copy.cpuActivity}
-                </label>
-                <div className="relative mt-auto">
-                  <Input
-                    id={`${id}-activity`}
-                    type="number"
-                    variant="filled"
-                    min={0}
-                    max={100}
-                    step="any"
-                    value={activity}
-                    aria-invalid={!validActivity}
-                    onChange={(event) => setActivity(event.target.value)}
-                    className="pe-9"
-                  />
-                  <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    %
-                  </span>
-                </div>
-              </div>
-            </div>
-            {estimate && resources && (
-              <div className="mt-4 rounded-xl bg-muted/40 p-3" aria-live="polite">
-                <p className="text-xs font-medium text-muted-foreground">{copy.hourlyBasis}</p>
-                <bdi dir="ltr" className="mt-1 block text-sm font-medium tabular-nums">
-                  {interpolate(copy.cpuFormula, {
-                    cpu: number(resources.cpuCores * count),
-                    percent: number(cpuPercent),
-                    hours: number(estimate.hourlyUsage.cpuVcpuHours),
+            {pool && !pool.fits && (
+              <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning/10 px-3 py-2.5">
+                <p className="text-sm">
+                  {interpolate(copy.tiers.exceeded, {
+                    tier: interpolate(copy.tiers.name, { level: number(selectedTier.level) }),
                   })}
-                </bdi>
+                </p>
+                {largerTier && (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setTierId(largerTier.id)}>
+                    {interpolate(copy.tiers.choose, {
+                      tier: interpolate(copy.tiers.name, { level: number(largerTier.level) }),
+                    })}
+                  </Button>
+                )}
               </div>
             )}
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              {copy.activityHint}
-            </p>
-            {(!resources || !validCount || !validActivity) && (
+            {(!resources || !pool) && (
               <p role="alert" className="mt-3 text-sm text-danger">
                 {copy.invalid}
               </p>
             )}
-
-            <details className="group mt-5 rounded-xl bg-muted/40 p-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-                {copy.ratesDetails}
-                <Icon
-                  name="chevron-down"
-                  className="size-4 shrink-0 transition-transform group-open:rotate-180"
-                  aria-hidden="true"
-                />
-              </summary>
-              <dl className="mt-2 divide-y divide-border/50">
-                {rates.map((rate) => (
-                  <div
-                    key={rate.label}
-                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm"
-                  >
-                    <dt>
-                      {rate.label}
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {rate.unit}
-                      </span>
-                    </dt>
-                    <dd className="text-end tabular-nums">
-                      {credits((rate.cents / 100) * pricing.creditsPerDollar)}
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {money(rate.cents, 4)}
-                      </span>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {t.billing.compute.paygMetering}
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {interpolate(copy.extras, {
-                  amount: money(pricing.network.managedProxyGiBCents, 4),
-                })}
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {copy.retentionHint}
-              </p>
-            </details>
           </section>
 
           <section aria-labelledby={`${id}-packages`} className="min-w-0 rounded-2xl bg-card p-5">
@@ -281,7 +212,7 @@ function PrepaidCalculator({
               role="group"
               aria-labelledby={`${id}-packages`}
             >
-              {PREPAID_PACKAGE_CENTS.map((amount) => (
+              {payg.creditPackagesCents.map((amount) => (
                 <button
                   key={amount}
                   type="button"
@@ -315,6 +246,22 @@ function PrepaidCalculator({
                 </button>
               ))}
             </div>
+            {packageTier && (
+              <p className="mt-4 text-sm font-medium">
+                {interpolate(copy.tiers.packageUnlock, {
+                  tier: interpolate(copy.tiers.name, { level: number(packageTier.level) }),
+                })}
+              </p>
+            )}
+            {packageCents < selectedTier.minimumFundingCents && (
+              <p className="mt-2 text-xs text-warning">
+                {interpolate(copy.tiers.packageTooSmall, {
+                  tier: interpolate(copy.tiers.name, { level: number(selectedTier.level) }),
+                  amount: money(selectedTier.minimumFundingCents),
+                })}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">{copy.tiers.fundingHint}</p>
           </section>
         </div>
         <aside aria-labelledby={`${id}-estimate`} className="min-w-0 rounded-2xl bg-card p-5">
@@ -335,7 +282,7 @@ function PrepaidCalculator({
             </p>
             {estimate && (
               <p className="mt-2 text-xs text-muted-foreground">
-                {interpolate(copy.hourlyHint, { percent: number(cpuPercent) })}
+                {copy.hourlyHint}
               </p>
             )}
             <dl className="mt-5 space-y-4 border-t border-border/50 pt-4 text-sm">
@@ -362,7 +309,22 @@ function PrepaidCalculator({
                 </div>
               ))}
             </dl>
+            {estimate && resources && (
+              <div className="mt-4 rounded-xl bg-muted/40 p-3">
+                <p className="text-xs font-medium text-muted-foreground">{copy.hourlyBasis}</p>
+                <bdi dir="ltr" className="mt-1 block text-sm font-medium tabular-nums">
+                  {interpolate(copy.cpuFormula, {
+                    cpu: number(resources.cpuCores),
+                    percent: number(100),
+                    hours: number(estimate.hourlyUsage.cpuVcpuHours),
+                  })}
+                </bdi>
+              </div>
+            )}
           </div>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            {copy.activityHint}
+          </p>
           <details className="group mt-5 border-t border-border/50 pt-4">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
               {copy.runtime}
@@ -386,15 +348,49 @@ function PrepaidCalculator({
                 </dd>
               </div>
             </dl>
-            {estimate && cpuPercent > 0 && cpuPercent < 100 && (
-              <p className="mt-3 text-sm">
-                {interpolate(copy.runtimeHint, {
-                  percent: number(cpuPercent),
-                  duration: duration(estimate.coveredElapsedHours),
-                })}
-              </p>
-            )}
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{copy.rangeHint}</p>
+          </details>
+          <details className="group mt-4 border-t border-border/50 pt-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+              {copy.ratesDetails}
+              <Icon
+                name="chevron-down"
+                className="size-4 shrink-0 transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
+            </summary>
+            <dl className="mt-2 divide-y divide-border/50">
+              {rates.map((rate) => (
+                <div
+                  key={rate.label}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm"
+                >
+                  <dt>
+                    {rate.label}
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {rate.unit}
+                    </span>
+                  </dt>
+                  <dd className="text-end tabular-nums">
+                    {credits((rate.cents / 100) * pricing.creditsPerDollar)}
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {money(rate.cents, 4)}
+                    </span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {t.billing.compute.paygMetering}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {interpolate(copy.extras, {
+                amount: money(pricing.network.managedProxyGiBCents, 4),
+              })}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {copy.retentionHint}
+            </p>
           </details>
         </aside>
       </div>
