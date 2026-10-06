@@ -155,6 +155,7 @@ import { type DeploymentConfigSnapshot } from "./build.service";
 import * as settingsService from "../settings/settings.service";
 import {
   registerDeploymentExecution,
+  bindDeploymentBuildCancellation,
   raceDeploymentCancellation,
   deploymentCancellationKeepsProvisioned,
   completeDeploymentExecution,
@@ -634,6 +635,7 @@ async function executeBuildAndDeploy(
   // `plat`'s own runtime is the process-wide singleton and is deliberately never
   // added: disposing it would close the control plane's own Docker transport.
   const transports = new Set<RuntimeAdapter>();
+  let finishBuildCancellation: (() => Promise<void>) | undefined;
 
   const snapshot = dep.meta as DeploymentConfigSnapshot | null;
   if (!snapshot) {
@@ -742,6 +744,11 @@ async function executeBuildAndDeploy(
     );
 
     runtime = resolved.platform.runtime;
+    const buildRuntime = runtime;
+    finishBuildCancellation = bindDeploymentBuildCancellation(
+      cancellationSignal,
+      () => buildRuntime.cancelBuild(buildSessionId),
+    );
     if (cancellationSignal) runtime.setOperationSignal?.(cancellationSignal);
     routing = resolved.platform.routing;
     ssl = resolved.platform.ssl;
@@ -1409,6 +1416,7 @@ async function executeBuildAndDeploy(
     await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
       ? { errorCode: capacityError.code, errorDetails: capacityError.details } : undefined);
   } finally {
+    await finishBuildCancellation?.();
     // The deploy is over either way — release the loopback bridges it opened.
     // Safe here and not earlier: the readiness/stabilization gate runs INLINE as
     // the pipeline's healthCheck hook, so nothing still needs a transport once

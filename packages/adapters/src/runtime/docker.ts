@@ -1790,7 +1790,9 @@ export class DockerRuntime implements RuntimeAdapter {
     config: BuildConfig,
     remoteContextDir: string,
     log: BuildLogger,
+    signal?: AbortSignal,
   ): Promise<void> {
+    signal?.throwIfAborted();
     const executor = this.connectionOptions?.executor;
     if (!executor) throw new Error("Clone-on-server requires an SSH executor on connectionOptions");
 
@@ -1813,6 +1815,7 @@ export class DockerRuntime implements RuntimeAdapter {
             token: config.gitToken,
             destDir: remoteContextDir,
             onLog: (entry) => log.log(entry.message, parseLogLevel(entry.message)),
+            signal,
           });
           // Check for submodules. If present, the tarball is missing submodule contents.
           const hasSubmodules = await executor
@@ -1826,8 +1829,11 @@ export class DockerRuntime implements RuntimeAdapter {
           }
           // A tarball has no .git, but strip defensively in case a repo tracks one.
           await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
+          signal?.throwIfAborted();
           return;
         } catch (err) {
+          // A cancelled download must not start a fresh git clone.
+          signal?.throwIfAborted();
           log.log(
             `Tarball download failed (${safeErrorMessage(err)}); falling back to git clone.\n`,
             "warn",
@@ -1870,16 +1876,19 @@ export class DockerRuntime implements RuntimeAdapter {
           ? `the server's own git credentials (${config.gitAmbient.via})`
           : "token";
     log.log(`Cloning ${config.repoUrl} on the server → ${remoteContextDir} (${authLabel})...\n`);
-    await executor.exec(`rm -rf ${dir} && mkdir -p ${dir}`);
-
     const run = async (operation: "clone" | "fetch" | "checkout" | "submodule", cmd: string) => {
+      signal?.throwIfAborted();
       const { code } = await executor.streamExec(cmd, (entry) =>
         log.log(entry.message, parseLogLevel(entry.message)),
+        { signal },
       );
+      signal?.throwIfAborted();
       if (code !== 0) throw new Error(`git ${operation} on server exited with code ${code}`);
     };
 
     try {
+      signal?.throwIfAborted();
+      await executor.exec(`rm -rf ${dir} && mkdir -p ${dir}`);
       if (config.commitSha) {
         // Clone and commit selection are deliberately separate. A network/auth
         // failure means no repository exists and must surface as-is; treating
@@ -2469,7 +2478,7 @@ export class DockerRuntime implements RuntimeAdapter {
         const remoteContextDir = `/tmp/openship-build-${config.sessionId}`;
         try {
           this.emitDockerStep(log, "clone", "running", "Cloning source on the server...");
-          await this.cloneSourceOnRemote(config, remoteContextDir, log);
+          await this.cloneSourceOnRemote(config, remoteContextDir, log, abort.signal);
           if (abort.signal.aborted) throw new BuildCancelledError();
           this.emitDockerStep(log, "clone", "completed", "Source cloned on the server");
           const { remoteBuildDir, dockerfileName } = await this.resolveRemoteDockerfile(
@@ -2483,7 +2492,7 @@ export class DockerRuntime implements RuntimeAdapter {
             signal: abort.signal,
           });
         } finally {
-          sshExecutor.exec(`rm -rf ${sq(remoteContextDir)}`).catch(() => {
+          await sshExecutor.exec(`rm -rf ${sq(remoteContextDir)}`, { timeout: 10_000 }).catch(() => {
             /* best effort */
           });
         }
@@ -3150,11 +3159,29 @@ export class DockerRuntime implements RuntimeAdapter {
     // their context the day per-service cancellation exists.
     const allCancelled = (): boolean =>
       [...abortControllers.values()].every((c) => c.signal.aborted);
+    // Source preparation belongs to all services. Abort it only when the last
+    // consumer cancels, so cancelling one service cannot starve its siblings.
+    const sourceAbort = new AbortController();
+    const cancelSource = () => {
+      if (allCancelled()) sourceAbort.abort();
+    };
+    for (const controller of abortControllers.values()) {
+      controller.signal.addEventListener("abort", cancelSource, { once: true });
+    }
+    cancelSource();
     const cancelledResult = (sessionId: string, startedAt: number): BuildResult => ({
       sessionId,
       status: "cancelled",
       durationMs: Date.now() - startedAt,
     });
+    const cancelledBatch = () => {
+      const startedAt = Date.now();
+      return specs.map(spec => {
+        const result = cancelledResult(spec.config.sessionId, startedAt);
+        spec.onResult?.(result);
+        return { serviceName: spec.serviceName, result };
+      });
+    };
 
     let tree: Awaited<ReturnType<typeof prepareSourceTree>> | null = null;
     try {
@@ -3162,12 +3189,7 @@ export class DockerRuntime implements RuntimeAdapter {
       // clone: it is the most expensive thing this method does on the host, and a
       // build nobody is waiting for should not pay for a full `git clone`.
       if (allCancelled()) {
-        const startedAt = Date.now();
-        return specs.map((spec) => {
-          const result = cancelledResult(spec.config.sessionId, startedAt);
-          spec.onResult?.(result);
-          return { serviceName: spec.serviceName, result };
-        });
+        return cancelledBatch();
       }
 
       // Acquire the shared source ONCE: clone-on-server clones directly on the
@@ -3175,7 +3197,7 @@ export class DockerRuntime implements RuntimeAdapter {
       // transfer the tree below).
       if (cloneOnServer) {
         prepareLogger.step("clone", "running", "Cloning source on the server...");
-        await this.cloneSourceOnRemote(source, remoteContextDir, prepareLogger);
+        await this.cloneSourceOnRemote(source, remoteContextDir, prepareLogger, sourceAbort.signal);
         prepareLogger.step("clone", "completed", "Source cloned on the server");
       } else {
         prepareLogger.step("clone", "running", "Preparing shared build context...");
@@ -3473,12 +3495,16 @@ export class DockerRuntime implements RuntimeAdapter {
         }
       }
       return results;
+    } catch (error) {
+      if (allCancelled()) return cancelledBatch();
+      throw error;
     } finally {
       for (const [sessionId, abort] of abortControllers) {
+        abort.signal.removeEventListener("abort", cancelSource);
         releaseDockerBuild(sessionId, abort);
       }
       if (isSsh) {
-        this.connectionOptions?.executor?.exec(`rm -rf ${sq(remoteContextDir)}`).catch(() => {
+        await this.connectionOptions?.executor?.exec(`rm -rf ${sq(remoteContextDir)}`, { timeout: 10_000 }).catch(() => {
           /* best effort */
         });
       }

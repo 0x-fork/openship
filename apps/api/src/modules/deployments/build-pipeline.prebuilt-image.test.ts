@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   prepareImage: vi.fn(),
   runReleaseCommand: vi.fn(),
   build: vi.fn(),
+  cancelBuild: vi.fn(),
   deploy: vi.fn(),
   destroy: vi.fn(),
   stop: vi.fn(),
@@ -322,6 +323,7 @@ function runtime() {
     prepareImage: (...args: unknown[]) => mocks.prepareImage(...args),
     runReleaseCommand: (...args: unknown[]) => mocks.runReleaseCommand(...args),
     build: (...args: unknown[]) => mocks.build(...args),
+    cancelBuild: (...args: unknown[]) => mocks.cancelBuild(...args),
     deploy: (...args: unknown[]) => mocks.deploy(...args),
     destroy: (...args: unknown[]) => mocks.destroy(...args),
     stop: (...args: unknown[]) => mocks.stop(...args),
@@ -423,6 +425,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     mocks.setDeploymentStatus.mockResolvedValue(undefined);
     mocks.getContainerInfo.mockResolvedValue({ ipAddress: "172.18.0.2" });
     mocks.destroy.mockResolvedValue(undefined);
+    mocks.cancelBuild.mockResolvedValue(undefined);
     mocks.runReleaseCommand.mockResolvedValue(undefined);
     mocks.resolveBuildGitToken.mockResolvedValue({});
     mocks.prepareImage.mockResolvedValue({
@@ -717,6 +720,58 @@ describe("single-app prebuilt release-image pipeline", () => {
     } finally {
       Object.assign(env, { CLOUD_MODE: originalCloudMode });
       vi.mocked(resolveBuildResources).mockReturnValue({} as never);
+    }
+  });
+
+  it("cancels the selected Docker builder and waits for its cleanup before releasing the deployment", async () => {
+    const services = ["api", "web"].map(name => ({
+      id: `svc-${name}`, name, kind: "compose", enabled: true,
+      image: null, build: `./${name}`, dockerfile: "Dockerfile", advanced: {},
+    }));
+    vi.mocked(repos.service.listByProject).mockResolvedValue(services as never);
+    vi.mocked(resolveProjectServicePreflightServices).mockResolvedValue(services as never);
+    vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(true);
+    vi.mocked(isMultiServiceRuntime).mockReturnValue(true);
+
+    let finishBuild!: () => void;
+    let finishCleanup!: () => void;
+    const building = new Promise<void>(resolve => { finishBuild = resolve; });
+    const cleaning = new Promise<void>(resolve => { finishCleanup = resolve; });
+    const buildImages = vi.fn(async specs => {
+      await building;
+      for (const spec of specs) spec.onResult({ status: "cancelled" });
+    });
+    const cancelSelected = vi.fn(async () => {
+      finishBuild();
+      await cleaning;
+    });
+    Object.assign(resolvedRuntime, { buildImages, cancelBuild: cancelSelected });
+    const cancelDefault = vi.fn();
+    vi.mocked(platform).mockReturnValue({
+      ...platform(), target: "desktop", runtime: { name: "bare", cancelBuild: cancelDefault },
+    } as never);
+    vi.mocked(executeComposePipeline).mockImplementationOnce(async options => {
+      await buildComposeImages(options);
+    });
+    const dep = await run(deployment({ meta: {
+      ...snapshot(), releaseImageRef: undefined, source: "git", build: "dockerfile",
+      serviceDeploymentMode: "services", composeServices: services,
+    } }));
+    try {
+      await vi.waitFor(() => expect(buildImages).toHaveBeenCalledOnce());
+      Object.assign(dep, { status: "cancelled" });
+      requestDeploymentCancellation("deployment-1");
+      await vi.waitFor(() => expect(cancelSelected).toHaveBeenCalledExactlyOnceWith("build-session-1"));
+      expect(cancelDefault).not.toHaveBeenCalled();
+      expect(mocks.acknowledgeBuildExecutionFinished).not.toHaveBeenCalled();
+      finishCleanup();
+      await drainDeploymentExecutions();
+      expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledExactlyOnceWith("build-session-1");
+      expect(mocks.deploy).not.toHaveBeenCalled();
+    } finally {
+      finishBuild();
+      finishCleanup();
+      await drainDeploymentExecutions();
     }
   });
 
