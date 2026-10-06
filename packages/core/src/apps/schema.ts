@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { compareSemver } from "../updates/semver";
+import { MIN_CPU_CORES, MIN_MEMORY_MB } from "../resources";
 
 /**
  * Runtime shape gate for a repo-fetched app-catalog overlay. The BUNDLED catalog
@@ -64,6 +65,14 @@ const serviceSpec = z.object({
   name: z.string(),
   /** Prebuilt image to pull. Exactly one of `image`/`build` must be set per service. */
   image: z.string().optional(),
+  resources: z
+    .object({
+      cpuCores: z.number().min(MIN_CPU_CORES),
+      memoryMb: z.number().int().min(MIN_MEMORY_MB),
+      diskMb: z.number().int().min(64),
+    })
+    .strict()
+    .optional(),
   /** Inline build context (see `serviceBuild`) — mutually exclusive with `image`. */
   build: serviceBuild.optional(),
   ports: z.array(z.string()).optional(),

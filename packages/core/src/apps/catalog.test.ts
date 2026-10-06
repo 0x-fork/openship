@@ -103,6 +103,22 @@ const base = {
 } as const;
 
 describe("app template — versioning + engine gate (parseAppTemplate)", () => {
+  it("accepts explicit resource profiles and rejects unlimited or malformed allocations", () => {
+    const resources = { cpuCores: 0.25, memoryMb: 256, diskMb: 8192 };
+    const profile = (value: unknown) => ({
+      ...base,
+      services: [{ ...base.services[0], resources: value }],
+    });
+    expect(appTemplateSchema.parse(profile(resources)).services![0]!.resources).toEqual(resources);
+    for (const invalid of [
+      { ...resources, cpuCores: 0 },
+      { ...resources, memoryMb: 64 },
+      { ...resources, diskMb: "8192" },
+      { ...resources, privileged: true },
+      { cpuCores: 1, memoryMb: 1024 },
+    ])
+      expect(isValidAppTemplate(profile(invalid))).toBe(false);
+  });
   it("accepts a well-formed entry (no version/engine constraints)", () => {
     expect(parseAppTemplate(base, { engineVersion: "0.3.0" })).toEqual({ ok: true });
   });

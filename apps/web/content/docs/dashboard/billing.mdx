@@ -1,54 +1,78 @@
 ---
 title: Billing
-description: The Billing area (Openship Cloud only) shows your plan, usage, and invoices. Self-hosted Openship has no billing.
+description: Manage each Openship Cloud server's coverage, usage, upgrades and payments, including from a linked self-hosted installation.
 ---
 
-<Callout title="Openship Cloud only">
-Billing manages **Openship Cloud** resources for the selected organization.
-Self-hosted resources are free; linked installations can manage Cloud billing.
+<Callout title="Openship Cloud resources">
+Billing manages the selected Cloud server. Your own servers are free to manage;
+linked self-hosted installations can also manage Cloud billing.
 </Callout>
 
-## Self-hosted has no billing
+## Choose a server
 
-A plain **self-hosted** Openship has nothing to pay and shows no billing data —
-the Billing area simply doesn't appear. You only pay for your own infrastructure.
+Select a server in Billing to inspect its own plan, usage and payments. The right
+card lists existing servers on usage and history tabs; Plans keeps a compact
+selector in the header. **Get server** opens a separate server purchase. A server
+without a plan keeps the selector so you can return to another server.
 
-## Openship Cloud
+A first purchase shows **Monthly hosts** and **Prepaid PAYG**. Monthly plans
+and Custom use the same purchase controls. The PAYG pricing preview lets you
+choose a credit package and estimate usage for your chosen CPU, RAM, storage
+and host count. It shows the provider's published rates and a proposed retail
+cap; purchases are not available yet. Switching views never changes an existing plan.
 
-On Cloud, **Billing** is where you watch usage, change plan, and pull invoices.
-Plans, prices, and per-plan limits are published on the
-[pricing page](/pricing); the header strip on this screen shows how much of your
-plan's metered credits and provider-reported capacity. CPU, RAM and disk allocation are shared across the namespace, including stopped workspaces and pending changes; credits are not minutes.
-Cloud traffic is measured, but an unknown traffic ceiling is not displayed as
-unlimited. Openship owns plan pricing and limits; each organization's purchased
-terms are kept for renewals.
+## Coverage and usage
+
+Monthly subscriptions include the purchased CPU, RAM and disk for the full paid
+month, without another compute-credit allowance. Overview shows coverage and the
+paid-through date. Usage shows recorded CPU time and resource measurements.
+The server page separates actual usage from provisioned capacity; unavailable
+measurements stay unknown.
+
+Managed proxy transfer and backups are separate. Proxy-transfer exhaustion does
+not end paid compute coverage. Existing metered subscriptions keep their saved
+terms and credit displays; updating Openship does not convert them.
 
 | Tab | What it does |
 | --- | --- |
-| **Overview** | Current plan, billing period, and credit balance. |
-| **Usage** | Metered usage over the period, charted. |
-| **Plans** | Upgrade or downgrade — starts a Stripe Checkout session. |
-| **Top-ups** | One-shot credits for an existing plan, without changing resource limits. |
-| **Payment Method** | Opens the Stripe portal to manage cards. |
-| **Invoices** | Opens the Stripe portal to download invoices. |
+| **Overview** | Current plan, period, coverage and renewal controls. |
+| **Usage** | Recorded resource usage over the selected period. |
+| **Plans** | Review upgrades or other plans, including Custom resources. |
+| **Top-ups** | Shown only for eligible saved metered subscriptions. |
+| **Payments** | Invoices and cards in the server's scoped Stripe portal. |
 
-Cancelling from **Plans** flips the subscription to end at the close of the
-period you've already paid for; new billable work is then blocked. You can resume
-renewal before that period ends. Cancellation does not delete resources.
+## Change or cancel a plan
 
-Plan replacement starts a new full-price cycle without automatic proration.
-The return page verifies the specific checkout and credit delivery. It shows
-pending, refunded, disputed or failed states instead of inferring success from
-the browser URL. Invoices and payment methods open the selected organization's
-portal, isolated from other customers and the reseller account.
+**Review change** shows the provider's amount due now, effective date and projects
+that may restart. Upgrades apply after payment. Resource reductions and changes
+of billing mode take effect at renewal. Review the actual quote before confirming.
+If payment needs authentication, use **Complete payment**. Pending operations stay
+visible and can be canceled when allowed; retries reuse the same operation.
 
-For the endpoints behind this screen, see the [billing API](/docs/api/billing).
+After payment, the existing server resize worker applies the approved resources.
+If projects changed after review, **Apply plan capacity** asks for an updated
+restart confirmation. A resize can be retried without buying the plan again.
+Disks can grow but cannot shrink in place; use Custom to retain storage while
+reducing other resources, or migrate to another server.
 
-## Credit warnings and recovery
+Canceling renewal preserves the paid period. When coverage ends, compute stops
+and retained disks follow the saved storage terms. Retention does not mean free
+storage: billing continues until deletion, with no automatic deletion at the
+minimum retention review date. Overview shows these terms and any storage amount
+due. Invoices and cards stay scoped to this server, not other customers or the
+provider account.
 
-When Cloud credits run low, a persistent dashboard banner links to the affected workspace's
-billing page. The final warning level, grace credits, and exhaustion also show a dismissible
-dialog. Credit-pack purchases appear only when top-ups are available.
+## Make room for another deployment
 
-See [credit warnings and recovery](/docs/guides/billing#credit-warnings-and-recovery) for
-warning levels, notifications, and how the balance refreshes after a purchase.
+Apps and source builds share the managed server. A new project does not reserve
+another VM or disk, and container sizes are limits within the existing host.
+Image-only installs do not allocate a source builder. Inspect server usage,
+stop an idle service if memory is tight, or review a larger plan. See
+[Servers](/docs/dashboard/servers) for progress, logs and recovery.
+
+## Credit warnings
+
+Only saved metered subscriptions show low-credit notices. Monthly coverage does
+not depend on an old credit balance. See
+[credit warnings and recovery](/docs/guides/billing#credit-warnings-and-recovery)
+for the metered flow, and the [billing API](/docs/api/billing) for the endpoints.

@@ -103,7 +103,7 @@
     "deletionInProgress": "Bu proje için başka bir silme işlemi zaten çalışıyor",
     "deletionInProgressTitle": "Silme işlemi devam ediyor",
     "confirmForceOrphan": "Bazı kaynaklar sunucudan kaldırılamadı. Proje yine de silinsin ve kalan kaynaklar daha sonra otomatik olarak temizlensin mi?",
-    "teardownFailedAt": "Kaldırma işlemi şurada başarısız oldu: {reasons}. Tekrar deneyin veya yetim bırakmak için zorla silin.",
+    "teardownFailedAt": "Temizleme tamamlanamadı: {reasons}. Proje hâlâ kayıtlı. Sorunu çözdükten sonra silmeyi yeniden deneyin.",
     "teardownFailed": "Kaldırma başarısız oldu",
     "cleanupFailedTitle": "Temizlik başarısız oldu",
     "alreadyDeleted": "Proje zaten silinmiş",
@@ -194,7 +194,8 @@
     "deleteConfirmPrefix": "Kalıcı olarak silinsin mi: ",
     "deleteConfirmSuffix": "?",
     "cancel": "İptal",
-    "delete": "Sil"
+    "delete": "Sil",
+    "subtextNoSource": "İlk dağıtımını yapılandırmak için bir kaynak bağla."
   },
   "overview": {
     "platformCloud": "Openship Bulut",
@@ -338,7 +339,10 @@
     "toastKeptEdits": "{name}: düzenlemeleriniz korundu",
     "failedResolveDrift": "Yapılandırma çakışması giderilemedi",
     "failedCreateService": "Servis oluşturulamadı",
-    "requestFailed": "İstek başarısız oldu"
+    "requestFailed": "İstek başarısız oldu",
+    "application": "Uygulama",
+    "applicationHint": "Bu projenin dağıtımları üzerinden yönetilir.",
+    "companionsTitle": "Başka bir uygulama veya servis ekle"
   },
   "serviceStatus": {
     "checking": "Kontrol ediliyor…",

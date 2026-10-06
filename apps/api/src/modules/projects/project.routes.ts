@@ -109,7 +109,7 @@ r.post(
     auditHandledByOperation: true,
     mcp: {
       description:
-        "Register a project from a source directory accessible to the Openship controller. This creates project configuration; deploy separately after reviewing the detected settings.",
+        "Register a project from a source directory accessible to the Openship controller. On desktop, use localPath and an accessible managed serverId to deploy that folder to Cloud without an out-of-band upload. This creates project configuration; deploy the returned projectId separately with buildStrategy:'server' for a managed server. Source location does not choose build location.",
     },
     body: ImportLocalProjectBody,
   },
@@ -201,11 +201,10 @@ r.get(
 
 /* ─── Folder upload → deploy ─────────────────────────────────────────────
  * Browser-based folder deploy for clients with no filesystem-shared API.
- * `session` returns an opaque upload target: an Oblien workspace token (SaaS,
- * the browser uploads DIRECTLY to Oblien) or a relay path (self-hosted). The
+ * `session` returns an authenticated upload target for private source staging.
+ * Builds transfer that source to the selected connected or managed server. The
  * binary /folder/upload route is excluded from MCP (see mcp-tools). */
-// session + scan run on BOTH SaaS and self-hosted (session provisions the
-// Oblien workspace / staging dir; scan detects on the uploaded source).
+// Session, upload and scan share the same path on SaaS and self-hosted installs.
 r.post(
   "/folder/session",
   {
@@ -216,7 +215,7 @@ r.post(
     body: FolderSessionBody,
     mcp: {
       description:
-        "Folder-upload deploy — STEP 1/4. Opens an upload session for a local source folder and returns `upload` = { url, absoluteUrl, method, headers, requiresAuth }. NEXT, upload the gzipped tarball yourself: POST it to `upload.absoluteUrl` (or resolve the API-relative `upload.url` against your own API base) with the returned headers and Content-Type: application/gzip — and, when `upload.requiresAuth` is true, the SAME Authorization: Bearer token you used to open the session. That byte upload is NOT an MCP tool (raw binary can't cross JSON-RPC) — use an HTTP client. Then call folder/scan. Sequence: session → (out-of-band tarball upload) → folder/scan → projects/ensure → deployments/build/access.",
+        "Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = { url, absoluteUrl, method, headers, requiresAuth }. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access.",
     },
   },
   folder.createSession,
@@ -251,9 +250,8 @@ r.post(
   },
   folder.revealSessionEnv,
 );
-// The relay upload is SELF-HOSTED ONLY: on the SaaS the browser uploads
-// straight to the Oblien workspace, so the API never receives bytes. localOnly
-// 404s this in CLOUD_MODE; the 300MB bodyLimit only runs once localOnly passes.
+// Source bytes are staged privately on either installation; only the selected
+// execution server runs builds. The operation checks ownership and its ticket.
 r.post(
   "/folder/upload/:sessionId",
   {
@@ -261,7 +259,6 @@ r.post(
     collection: true,
     collectionProject: true,
     auditHandledByOperation: true,
-    localOnly: true,
     mcpExcluded:
       "Binary tarball upload; use the authenticated upload URL from folder/session outside JSON-RPC.",
   },

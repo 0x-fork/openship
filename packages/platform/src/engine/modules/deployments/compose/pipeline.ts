@@ -53,6 +53,8 @@ import {
   throwIfDeploymentCancelled,
 } from "../deployment-cancellation";
 import { assertExactServiceTargets } from "../exact-service-targets";
+import { strictRefreshImages } from "../pinned-artifacts";
+import { cloudCapacityFailure } from "../../../lib/cloud-capacity";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -81,6 +83,7 @@ export interface ComposePipelineOpts {
   composeInterpolationEnv: Record<string, string>;
   buildEnvVars: Record<string, string>;
   buildResources: ResourceConfig;
+  serviceBuildResources?: Record<string, ResourceConfig>;
   runtimeResources: ResourceConfig;
   gitToken?: string;
   /** Path to the git-credential relay helper on the build host (desktop relay).
@@ -264,32 +267,11 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
    * already-running containers in place) sets this on the snapshot.
    */
   const strictScope = !dep.forceAll && !!targetServiceIds && Boolean(snapshot.strictServiceScope);
+  const getCurrentServices = () => repos.service.listByProject(project.id);
 
-  // Service rows can change after request-time/reconciliation validation. Do
-  // one final fail-closed check in the worker before any image build, pull, or
-  // container replacement begins.
-  const checksCloudImageRefresh =
-    snapshot.forcePullImages && runtime.name === "cloud" && !runtime.supports("dockerHost") && Boolean(project.activeDeploymentId);
-  let currentServices: Awaited<ReturnType<typeof repos.service.listByProject>> | undefined;
-  const getCurrentServices = async () => {
-    currentServices ??= await repos.service.listByProject(project.id);
-    return currentServices;
-  };
-  if ((strictScope && targetServiceIds) || checksCloudImageRefresh) {
-    const services = await getCurrentServices();
-    if (strictScope && targetServiceIds) {
-      assertExactServiceTargets(services, [...targetServiceIds]);
-    }
+  if (strictScope && targetServiceIds) {
+    assertExactServiceTargets(await getCurrentServices(), [...targetServiceIds]);
   }
-  // Read this before building too. If the ownership query is unavailable, the
-  // safe result is a failed deployment with no newly-created artifact to leak.
-  const priorCloudWorkspaceServiceIds = checksCloudImageRefresh
-    ? new Set(
-        (await listActiveServiceDeployments(project))
-          .filter((row) => Boolean(row.containerId))
-          .map((row) => row.serviceId),
-      )
-    : undefined;
   const keepProvisionedOnCancel = () => deploymentCancellationKeepsProvisioned(opts.signal);
 
   const composeBuild = await buildComposeImages({
@@ -302,6 +284,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     composeInterpolationEnv,
     buildEnvVars,
     buildResources,
+    serviceBuildResources: opts.serviceBuildResources,
     gitToken,
     gitCredentialHelperPath,
     gitSsh,
@@ -325,6 +308,13 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     return;
   }
 
+  const capacityFailure = composeBuild.buildErrorCauses
+    ?.map(cause => cloudCapacityFailure(cause, project.id, buildResources)).find(Boolean);
+  if (capacityFailure) {
+    await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
+    throw capacityFailure;
+  }
+
   // An exact multi-service webhook is one coordinated rollout. If any selected
   // image failed to build, stop before the first service cutover instead of
   // updating only the successful half of the requested cohort.
@@ -344,45 +334,6 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     await onFailure(ctx, message, composeBuild.durationMs);
     return;
   }
-
-  // Cloud preserves an image service's only durable disk by reusing its
-  // existing workspace. That also preserves the workspace's original image,
-  // so a forced mutable-tag refresh cannot be honoured safely there without
-  // deleting user data. Refuse the whole cohort before any service is touched;
-  // Docker remains the supported image-refresh runtime.
-  if (checksCloudImageRefresh && priorCloudWorkspaceServiceIds) {
-    const blockedIds = new Set(
-      [...composeBuild.imageRefs.keys()].filter(
-        (serviceId) =>
-          (!targetServiceIds || targetServiceIds.has(serviceId)) &&
-          !composeBuild.builtImageRefs.has(serviceId) &&
-          priorCloudWorkspaceServiceIds.has(serviceId),
-      ),
-    );
-    if (blockedIds.size > 0) {
-      const services = await getCurrentServices();
-      const blockedNames = services
-        .filter((service) => blockedIds.has(service.id))
-        .map((service) => service.name);
-      const message =
-        `Cannot refresh mutable image${blockedNames.length === 1 ? "" : "s"} for cloud service${blockedNames.length === 1 ? "" : "s"} ` +
-        `${blockedNames.join(", ")} without replacing persistent workspace data. ` +
-        "Use a self-hosted Docker target for forced image refreshes.";
-      logger.log(`${message}\n`, "error");
-      await recordCohortAbort({
-        dep,
-        services,
-        targetServiceIds,
-        failures: new Map([...blockedIds].map((id) => [id, message])),
-        reason: "cloud cannot safely refresh an existing image workspace",
-        logger,
-      });
-      await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
-      await onFailure(ctx, message, composeBuild.durationMs);
-      return;
-    }
-  }
-
   if (composeBuild.buildFailures.size > 0) {
     logger.log(
       `Build phase completed with ${composeBuild.buildFailures.size} failed service image${composeBuild.buildFailures.size === 1 ? "" : "s"}. Deploying available services...\n`,
@@ -419,6 +370,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       serverId: snapshot.serverId,
       targetServiceIds,
       strictScope,
+      retainedImages: strictRefreshImages(snapshot),
       forcePullImages: snapshot.forcePullImages,
       onArtifactActivationStart: () => {
         artifactActivationStarted = true;

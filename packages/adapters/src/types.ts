@@ -55,16 +55,10 @@ export const DEFAULT_RESOURCE_CONFIG: ResourceConfig = {
 };
 
 /**
- * Build resources. Sized for memory-hungry production builds (Next.js / webpack
- * routinely need several GB); 4 cores + 8 GB is the resource-schema ceiling
- * (project.schema.ts UpdateResourcesBody).
- *
- * DERIVED from the pricing catalog rather than typed here, because every plan's
- * Oblien ceiling is computed to fit this machine: `max_vcpus`/`max_ram_mb`/
- * `max_disk_gb` are per-WORKSPACE caps and a build gets its own workspace, so a
- * tier sized below this number cannot build at all — Oblien 409s the create. Two
- * independent copies of it meant a bump here could silently un-buildable the
- * cheapest tier; now raising it raises every ceiling with it.
+ * Default for direct Cloud adapter callers without an engine-selected budget.
+ * The SaaS engine selects CPU/RAM from Oblien's current shared-pool headroom,
+ * using saved build settings only as upper limits. It uses this catalog value
+ * for the default build disk, not a fixed CPU/RAM reservation.
  */
 export const DEFAULT_BUILD_RESOURCE_CONFIG: ResourceConfig = {
   cpuCores: PRICING.oblien.buildResources.cpuCores,
@@ -117,19 +111,10 @@ export interface BuildConfig {
   inlineSourceFiles?: Array<{ path: string; content: string }>;
   /** Where the build runs: "server" (clone/copy to workspace) or "local" (build on host, transfer dist) */
   buildStrategy?: BuildStrategy;
-  /**
-   * Cloud folder-upload flow: adopt this ALREADY-PROVISIONED cloud workspace
-   * instead of creating a fresh one. The browser uploaded the source straight
-   * into it, so the build attaches to it and (with `sourceStaged`) skips clone
-   * and source transfer. Ignored by non-cloud runtimes.
-   */
-  cloudWorkspaceId?: string;
-  /**
-   * Source is ALREADY present at the runtime's project dir (uploaded out of
-   * band — the folder-upload flow). Skips both the git clone and the local
-   * source transfer; install/build run against what's already there.
-   */
+  /** Trusted uploaded/release bytes supplied by the control plane. Never executes source locally. */
+  /** Source hook already populated the target directory; skip cloning. */
   sourceStaged?: boolean;
+  sourceTransfer?: (executor: CommandExecutor, directory: string, onLog: LogCallback) => Promise<void>;
   /** Detected framework / stack */
   stack: string;
   /** Docker image for the build container (e.g. "node:22", "oven/bun:latest") */
@@ -433,6 +418,9 @@ export interface BuildResult {
   durationMs?: number;
   /** Human-readable error description when status is "failed" */
   errorMessage?: string;
+  /** In-process cause for orchestration recovery. Never persist or send the raw
+   * provider error to clients; the engine exposes only allowlisted diagnostics. */
+  errorCause?: unknown;
   /**
    * Start command chosen BY THE BUILD (overrides the snapshot's when set).
    * The snapshot's startCommand is fixed before the build runs, so a build that

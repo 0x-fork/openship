@@ -179,6 +179,17 @@
           "description": "Container image to pull. Pin a version — unpinned tags are rejected in review. Exactly one of image|build per service.",
           "type": "string"
         },
+        "resources": {
+          "description": "Initial container CPU, memory and disk limits. Saved as editable service resources; explicit settings survive a failed-install retry.",
+          "type": "object",
+          "required": ["cpuCores", "memoryMb", "diskMb"],
+          "additionalProperties": false,
+          "properties": {
+            "cpuCores": { "type": "number", "minimum": 0.25 },
+            "memoryMb": { "type": "integer", "minimum": 128 },
+            "diskMb": { "type": "integer", "minimum": 64 }
+          }
+        },
         "build": {
           "description": "Inline Docker build context — build the service image instead of pulling it (a base image needing extra packages + a provisioning ENTRYPOINT). Mutually exclusive with image. Built on the deploy host via the normal build pipeline.",
           "type": "object",

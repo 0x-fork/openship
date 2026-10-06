@@ -1,5 +1,25 @@
 {
   "appInstall": {
+    "configurationLoading": "正在加载应用配置…",
+    "catalogLoadFailed": "无法加载应用详情。请重试后再安装。",
+    "routingLoadFailed": "无法加载已保存的路由配置。请重试后再安装。",
+    "retryConfiguration": "重试",
+    "hostFitHint": "你可以继续，但此机器上的性能可能受限。",
+    "cloudFitTitle": "此应用需要更高的 Cloud 套餐",
+    "upgradePlan": "升级套餐",
+    "checkingCapacity": "正在检查容量…",
+    "checkCapacityAgain": "重新检查",
+    "cloudFitUnavailable": "无法检查容量。部署时将再次检查。",
+    "withoutDomainsTitle": "不配置域名，继续吗？",
+    "withoutDomainsBody": "这些 Web 端点只能通过其发布的端口访问。你可以稍后在项目中添加域名。",
+    "withoutDomainsCloudBody": "这些 Web 端点在 Cloud 上将没有公共 URL。此应用中的其他服务仍可访问它们。你可以稍后在项目中添加域名。",
+    "addDomains": "添加域名",
+    "continueWithoutDomains": "不配置域名，继续",
+    "generatedDomainsTitle": "使用免费域名？",
+    "generatedDomainsBody": "这些端点将获得免费的公共 URL。你也可以在安装前自行选择名称。",
+    "useGeneratedDomains": "使用免费域名",
+    "editDomains": "编辑域名",
+    "routePortCloudDesc": "仅限此 Cloud 工作区内部访问。添加域名即可获得公共 URL。",
     "exposeTitle": "域名与路由"
   },
   "settingSection": {
@@ -595,7 +615,7 @@
   },
   "resources": {
     "title": "机器性能",
-    "description": "此项目容器的 CPU 与内存上限。",
+    "description": "项目共享此服务器。仅在需要时设置 CPU 或内存限制。",
     "loading": "正在读取目标机器…",
     "unavailable": "机器性能不可用",
     "loadFailed": "无法加载机器性能",
@@ -605,9 +625,9 @@
     "appliesOnNextDeploy": "上限在容器重建时生效——请重新部署以应用更改。",
     "tiers": {
       "unlimited": {
-        "name": "无上限",
-        "description": "使用整台机器（默认）",
-        "spec": "机器容量"
+        "name": "全部容量",
+        "description": "使用服务器可用的 CPU 和内存（默认）",
+        "spec": "与其他项目共享"
       },
       "micro": {
         "name": "Micro",
@@ -649,6 +669,10 @@
       "updated": "机器性能已更新",
       "updateFailed": "更新机器性能失败",
       "invalidValues": "CPU 与内存必须为 0 或正数"
+    },
+    "customized": {
+      "name": "自定义",
+      "description": "选择预设或设置资源上限"
     }
   },
   "sleep": {
