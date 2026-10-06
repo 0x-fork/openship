@@ -628,7 +628,7 @@ describe("compose deploy — host channel unavailable", () => {
     expect(h.upsertServiceDeployment).toHaveBeenCalled();
   });
 
-  it("recovers a stale active container id from one live Docker inventory before port reconciliation", async () => {
+  it.each([false, true])("recovers a stale active container id before port reconciliation (stopped predecessor retained: %s)", async (retained) => {
     const base = startingRuntime();
     const getContainerInfo = vi.fn();
     const runtime = {
@@ -638,6 +638,17 @@ describe("compose deploy — host channel unavailable", () => {
         capability === "containerInfo" ||
         capability === "hostContainerQuery",
       listAllContainers: vi.fn(async () => [
+        ...(retained ? [{
+          id: "stale-api-container",
+          names: ["openship-app-api-before-release"],
+          image: "ghcr.io/acme/api:previous",
+          imageId: "sha256:previous",
+          state: "exited",
+          status: "Exited (0) 1 hour ago",
+          labels: { "openship.project": "p1", "openship.service": "api" },
+          ports: [],
+          mounts: [],
+        }] : []),
         {
           id: "live-api-container",
           names: ["openship-app-api"],
@@ -737,6 +748,7 @@ describe("compose deploy — host channel unavailable", () => {
     expect(occupancyPolicy(20_008)).toBe(true);
     expect(getContainerInfo).not.toHaveBeenCalled();
     expect(base.deployServiceWorkload).not.toHaveBeenCalled();
+    expect(base.destroy).not.toHaveBeenCalled();
   });
 
   it("inspects a stopped carried container when the Docker inventory omits its bindings", async () => {
@@ -875,8 +887,8 @@ describe("compose deploy — host channel unavailable", () => {
         capability === "containerInfo" ||
         capability === "hostContainerQuery",
       listAllContainers: vi.fn(async () => [
-        liveContainer("live-api-container-a", "openship-app-api-a"),
-        liveContainer("live-api-container-b", "openship-app-api-b"),
+        liveContainer("live-api-container-a", "openship-app-api"),
+        liveContainer("live-api-container-b", "openship-app-api-backup"),
       ]),
     } as unknown as MultiServiceRuntimeAdapter;
     h.services = [

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   canonicalServiceContainerName,
   describeLiveState,
+  isStoppedServicePredecessor,
   liveContainerStatus,
   liveMatchTiersForDeployment,
   resolveLiveServiceState,
@@ -51,6 +52,41 @@ describe("canonicalServiceContainerName", () => {
   });
   it("is null without a slug (never matches a bare name)", () => {
     expect(canonicalServiceContainerName("", "web")).toBeNull();
+  });
+});
+
+describe("stopped service predecessors", () => {
+  const identity = { projectId: "proj_1", slug: "openship", serviceName: "web" };
+  const labels = { "openship.project": identity.projectId, "openship.service": identity.serviceName };
+  const current = container({ id: "current", names: ["openship-openship-web"], labels });
+  const previous = container({ id: "previous", names: ["openship-openship-web-backup"], labels, state: "exited" });
+
+  it("recognizes a stopped renamed predecessor without hiding it from diagnostics", () => {
+    expect(isStoppedServicePredecessor(previous, current, identity)).toBe(true);
+    const matches = resolveLiveServiceState({
+      services: [{ id: "svc_web", name: "web" }],
+      live: [previous, current],
+      projectId: identity.projectId,
+      slug: identity.slug,
+    });
+    expect(matches.get("svc_web")).toMatchObject({
+      containerId: current.id,
+      duplicates: previous.names,
+    });
+  });
+
+  it.each(["running", "restarting", "paused", "created", "removing", "dead", ""])(
+    "keeps a %s duplicate as an activation conflict",
+    state => expect(isStoppedServicePredecessor({ ...previous, state }, current, identity)).toBe(false),
+  );
+
+  it("requires a live canonical replacement and matching ownership on both containers", () => {
+    expect(isStoppedServicePredecessor(previous, { ...current, state: "exited" }, identity)).toBe(false);
+    expect(isStoppedServicePredecessor(previous, { ...current, names: ["other-web"] }, identity)).toBe(false);
+    expect(isStoppedServicePredecessor({ ...previous, labels: {} }, current, identity)).toBe(false);
+    expect(isStoppedServicePredecessor(previous, { ...current, labels: {} }, identity)).toBe(false);
+    expect(isStoppedServicePredecessor(previous, current, { ...identity, projectId: "other-project" })).toBe(false);
+    expect(isStoppedServicePredecessor(current, current, identity)).toBe(false);
   });
 });
 

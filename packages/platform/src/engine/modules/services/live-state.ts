@@ -122,6 +122,29 @@ export function canonicalServiceContainerName(slug: string, serviceName: string)
   return `openship-${slug}-${serviceName}`;
 }
 
+/** A renamed, stopped predecessor may retain immutable service labels after an
+ * out-of-band replacement. It is not an activation conflict when the canonical
+ * container is live and BOTH containers prove the same project/service owner.
+ * Keep it in the inventory for diagnostics; this never authorizes deleting it.
+ * Paused, restarting, created and unknown states are deliberately not retired. */
+export function isStoppedServicePredecessor(
+  container: LiveContainerLike,
+  current: LiveContainerLike,
+  identity: { projectId: string; slug: string; serviceName: string },
+): boolean {
+  const canonical = canonicalServiceContainerName(identity.slug, identity.serviceName);
+  return canonical !== null &&
+    container.id !== current.id &&
+    container.state === "exited" &&
+    (current.state === "running" || current.state === "restarting") &&
+    current.names.includes(canonical) &&
+    !container.names.includes(canonical) &&
+    [container, current].every(candidate =>
+      candidate.labels["openship.project"] === identity.projectId &&
+      candidate.labels["openship.service"] === identity.serviceName,
+    );
+}
+
 /**
  * Map one container's live docker state onto the UI vocabulary.
  *

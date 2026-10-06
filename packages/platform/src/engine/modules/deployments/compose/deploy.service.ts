@@ -158,7 +158,7 @@ import {
   deploymentCancellationKeepsProvisioned,
   throwIfDeploymentCancelled,
 } from "../deployment-cancellation";
-import { liveMatchTiersForDeployment, resolveLiveServiceState } from "../../services/live-state";
+import { isStoppedServicePredecessor, liveMatchTiersForDeployment, resolveLiveServiceState } from "../../services/live-state";
 
 const CARRIED_STATE_PREFLIGHT_TIMEOUT_MS = 15_000;
 
@@ -1245,6 +1245,9 @@ async function deployComposeServicesUnlocked(
     }
 
     const liveById = new Map(liveContainers.map((container) => [container.id, container]));
+    const liveByName = new Map(liveContainers.map((container) => [
+      container.names[0] ?? container.id.slice(0, 12), container,
+    ]));
     const matches = resolveLiveServiceState({
       services: services.map((service) => ({ id: service.id, name: service.name })),
       live: liveContainers,
@@ -1270,9 +1273,23 @@ async function deployComposeServicesUnlocked(
         });
         continue;
       }
-      if ((match?.duplicates.length ?? 0) > 0) {
+      const serviceName = services.find((service) => service.id === row.serviceId)?.name;
+      const conflicts = (match?.duplicates ?? []).filter((name) => {
+        const duplicate = liveByName.get(name);
+        return !duplicate || !serviceName || !isStoppedServicePredecessor(duplicate, liveSummary, {
+          projectId: project.id, slug: project.slug, serviceName,
+        });
+      });
+      if (conflicts.length > 0) {
         throw new Error(
-          `Deployment preflight found more than one container matching active service "${row.serviceName ?? row.serviceId}" (${[liveSummary.names[0] ?? liveSummary.id.slice(0, 12), ...match!.duplicates].join(", ")}), so no service activation was started. Remove or reconcile the duplicate container before redeploying.`,
+          `Deployment preflight found more than one container matching active service "${row.serviceName ?? row.serviceId}" (${[liveSummary.names[0] ?? liveSummary.id.slice(0, 12), ...conflicts].join(", ")}), so no service activation was started. Remove or reconcile the duplicate container before redeploying.`,
+        );
+      }
+      if (match?.duplicates.length) {
+        logger.log(
+          `Using the current container for "${serviceName}"; stopped predecessors are preserved (${match.duplicates.join(", ")}).\n`,
+          "info",
+          { serviceName },
         );
       }
 
@@ -1294,8 +1311,6 @@ async function deployComposeServicesUnlocked(
         ...row,
         ...repairedFields,
       });
-      const serviceName =
-        row.serviceName ?? services.find((service) => service.id === row.serviceId)?.name;
       logger.log(
         `Recovered active service "${serviceName ?? row.serviceId}" by live Docker identity and repaired its stale container reference before cutover.\n`,
         "warn",
