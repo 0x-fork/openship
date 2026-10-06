@@ -17,6 +17,7 @@ vi.mock("@repo/db", () => {
     createdAt: new Date("2026-09-24T00:00:00Z"),
   });
   return { repos: {
+    settings: { findOrgOwnerCloudLink: vi.fn(async () => null) },
     server: {
       listByOrganization: vi.fn(async () => [row()]),
       getInOrganization: vi.fn(async () => row()),

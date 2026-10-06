@@ -273,10 +273,15 @@ const pending = await ship.billing.listCheckouts({ workspaceId: 'cws_...' });
 ```
 
 Cloud can omit `workspaceId` to list unfinished payments across the current
-organization. Connected self-hosted installations require the locally linked
-workspace ID. Listing reads saved offers and provider status; it does not replay
-a purchase. Each item includes its recovery `id`, server, saved price, state,
-`canResume` and `canCancel`.
+organization. The connected desktop and self-hosted dashboard can also use Cloud
+inventory IDs or list the account's payments without creating local execution links.
+Explicit local links retain their local server and workspace IDs. Locally scoped
+SDK and automation callers must use an authorized local link; their credentials do
+not grant access to the owner's Cloud inventory.
+
+Listing reads saved offers and provider status; it does not replay a purchase.
+Each item includes its recovery `id`, server, saved price, state, `canResume`
+and `canCancel`.
 
 After the customer chooses an action, call `resumeCheckout({ workspaceId, id })`
 or `cancelCheckout({ workspaceId, id })`. Both require the exact item and server.

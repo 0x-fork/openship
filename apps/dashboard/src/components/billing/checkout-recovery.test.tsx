@@ -6,6 +6,7 @@ import type { BillingPendingCheckout } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { ApiError } from "@/lib/api/client";
+import { CloudResourceContext } from "@/context/CloudResourceContext";
 import { BillingWorkspaceProvider } from "./BillingWorkspaceContext";
 import { CheckoutRecoveryDialog, PendingPaymentsButton } from "./CheckoutRecovery";
 
@@ -18,6 +19,7 @@ const h = vi.hoisted(() => ({
   started: vi.fn(),
   removed: vi.fn(),
   close: vi.fn(),
+  cloudKey: "cloud-account-a",
   user: "user-a",
   org: "org-a",
 }));
@@ -86,7 +88,9 @@ const render = (node: ReactNode = recovery()) =>
   act(async () =>
     root.render(
       <I18nProvider>
-        <BillingWorkspaceProvider>{node}</BillingWorkspaceProvider>
+        <CloudResourceContext.Provider value={h.cloudKey}>
+          <BillingWorkspaceProvider>{node}</BillingWorkspaceProvider>
+        </CloudResourceContext.Provider>
       </I18nProvider>,
     ),
   );
@@ -103,6 +107,7 @@ const click = (label: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  h.cloudKey = "cloud-account-a";
   h.user = "user-a";
   h.org = "org-a";
   h.get.mockImplementation(async () => ({ data: { items: [structuredClone(item)] } }));
@@ -271,7 +276,17 @@ describe("unfinished checkout recovery", () => {
     expect(h.post).not.toHaveBeenCalled();
   });
 
-  it("ignores payment results from an earlier customer and closes their reserved tab", async () => {
+  it("clears the previous Cloud payments when the linked account changes but the local session stays the same", async () => {
+    await render();
+    expect(dialog()?.textContent).toContain(item.name);
+    h.get.mockResolvedValue({ data: { items: [] } });
+    h.cloudKey = "cloud-account-b";
+    await render();
+    expect(dialog()?.textContent).not.toContain(item.name);
+    expect(h.get).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["local", "cloud"])("ignores earlier payment results after switching the %s account and closes its reserved tab", async (account) => {
     let finish!: (value: unknown) => void;
     h.post.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -280,8 +295,12 @@ describe("unfinished checkout recovery", () => {
     );
     await render();
     await click(copy.resume);
-    h.user = "user-b";
-    h.org = "org-b";
+    if (account === "local") {
+      h.user = "user-b";
+      h.org = "org-b";
+    } else {
+      h.cloudKey = "cloud-account-b";
+    }
     h.get.mockResolvedValueOnce({ data: { items: [] } });
     await render();
     await act(async () => finish({ data: ready }));

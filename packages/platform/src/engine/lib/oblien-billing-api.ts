@@ -111,7 +111,7 @@ export const oblienOfferSchema = z.object({
   reference: z.string().min(1).max(100).optional(),
   name: z.string().min(1).max(120),
   description: z.string().max(500).optional(),
-  unitAmount: amount.int().min(100).max(1_000_000),
+  unitAmount: amount.int().nonnegative().max(1_000_000),
   currency: z.literal("usd"),
   billingMode: computeBillingModeSchema.optional(),
   capacity: oblienCapacityPoolSchema.optional(),
@@ -127,6 +127,10 @@ export const oblienOfferSchema = z.object({
     .optional(),
   resourceLimits: oblienOfferResourceLimitsSchema.optional(),
 }).superRefine((value, ctx) => {
+  // A sponsored monthly offer charges the customer zero; Oblien still requires
+  // the reseller's wallet to fund its capacity before granting coverage.
+  if (value.unitAmount < 100 && !(value.unitAmount === 0 && value.billingMode === "monthly"))
+    ctx.addIssue({ code: "custom", path: ["unitAmount"], message: "Offers require at least 100 cents unless monthly capacity is fully sponsored" });
   if (value.billingMode === "monthly") {
     if (!value.capacity || value.credits !== 0 || value.policy !== undefined)
       ctx.addIssue({ code: "custom", message: "Monthly capacity requires a pool, zero credits and no credit policy" });
@@ -577,7 +581,8 @@ export class OblienBillingApi {
   async createCheckout(input: OblienCheckout) {
     // Oblien validates admin-issued codes against the authenticated reseller
     // and this saved namespace offer before creating the Stripe session.
-    const request = { ...oblienCheckoutInputSchema.parse(input), allowPromotionCodes: true };
+    const parsed = oblienCheckoutInputSchema.parse(input);
+    const request = { ...parsed, allowPromotionCodes: parsed.offer?.unitAmount !== 0 };
     const result = await this.validate(this.billing.checkout(request), checkoutSchema);
     this.validateCheckoutUrl(result.url);
     return result;

@@ -92,7 +92,7 @@ export const BillingPlansSchema = Type.Object({
     inheritedFrom: stringOrNull, support: Type.String(), contactSales: stringOrNull,
   })),
 });
-const changeOffer = Type.Object({ name: Type.String(), priceCents: Type.Integer({ minimum: 100 }), resourceLimits: Type.Optional(namespaceResourceLimits) });
+const changeOffer = Type.Object({ name: Type.String(), priceCents: Type.Integer({ minimum: 0 }), resourceLimits: Type.Optional(namespaceResourceLimits) });
 const changeTerms = {
   id: Type.String(), direction: Type.Union([Type.Literal("upgrade"), Type.Literal("downgrade")]),
   current: changeOffer, next: changeOffer, effectiveAt: Type.String(),

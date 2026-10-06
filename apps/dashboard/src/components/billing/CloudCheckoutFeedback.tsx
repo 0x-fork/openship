@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import type { CloudSupportInput } from "@repo/contracts";
+import type { CloudSupportCustomerInput } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { CapacitySummary } from "@/components/shared/CapacitySummary";
@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/Modal";
 import { usePlatform } from "@/context/PlatformContext";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
-import { submitCloudSupport } from "@/lib/api/cloud-support";
+import { createCloudSupportApi } from "@/lib/api/cloud-support";
+import { supportTicketHref } from "@/components/support/support-shared";
 import { useSession } from "@/lib/auth-client";
 import type { CheckoutFailure } from "@/lib/checkout-failure";
 import { CloudPlanIllustration } from "./CloudPlanIllustration";
@@ -24,10 +25,11 @@ export function CloudCheckoutFeedback({ failure, plans, onClose, onRetry }: {
   onClose: () => void;
   onRetry: (failure: CheckoutFailure) => void;
 }) {
+  const { data: session } = useSession();
   if (!failure) return null;
   return (
     <Modal isOpen onClose={onClose} showCloseButton={false} width="100%" maxWidth="480px" zIndex={11000}>
-      <FeedbackContent key={`${failure.workspaceId}:${failure.requestId}`} failure={failure}
+      <FeedbackContent key={`${session?.user.id}:${failure.workspaceId}:${failure.requestId}`} failure={failure}
         plan={plans?.find(plan => plan.id === failure.planTierId)} onClose={onClose} onRetry={onRetry} />
     </Modal>
   );
@@ -41,15 +43,16 @@ function FeedbackContent({ failure, plan, onClose, onRetry }: {
 }) {
   const { t } = useI18n();
   const copy = t.billing.checkoutUnavailable;
-  const { cloudApiUrl, selfHosted } = usePlatform();
+  const { selfHosted } = usePlatform();
   const { data: session } = useSession();
   const titleId = useId();
   const descriptionId = useId();
   const emailId = useId();
   const { dialog, onKeyDown } = useDialogFocus(onClose);
-  const [email, setEmail] = useState(session?.user.email ?? "");
+  const email = session?.user.email ?? "";
   const [sending, setSending] = useState(false);
   const [receivedEmail, setReceivedEmail] = useState<string | null>(null);
+  const [ticketId, setTicketId] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const busy = useRef(false);
   const mounted = useRef(true);
@@ -65,10 +68,9 @@ function FeedbackContent({ failure, plan, onClose, onRetry }: {
   const planName = failure.custom ? t.billing.custom.name : plan?.name;
   // Stable, non-sensitive context lets support intake deduplicate an uncertain response.
   // A catalog refresh or locale switch must not change a retried ticket's content.
-  const [request] = useState<Omit<CloudSupportInput, "email">>(() => ({
+  const [request] = useState<CloudSupportCustomerInput>(() => ({
     requestId: failure.requestId,
-    source: "support",
-    name: session?.user.name?.replace(/[\x00-\x1f\x7f]/g, " ").trim().slice(0, 120) || "Openship customer",
+    category: "billing",
     subject: failure.kind === "capacity" ? "Cloud capacity availability" : "Cloud checkout availability",
     message: [
       "Please email me with an update when I can complete this server purchase.",
@@ -82,14 +84,14 @@ function FeedbackContent({ failure, plan, onClose, onRetry }: {
 
   async function notify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy.current || receivedEmail) return;
+    if (busy.current || receivedEmail || !session?.user || selfHosted) return;
     busy.current = true;
     setSending(true);
     setError(false);
     const contact = email.trim().toLowerCase();
     try {
-      await submitCloudSupport({ ...request, email: contact }, cloudApiUrl);
-      if (mounted.current) setReceivedEmail(contact);
+      const receipt = await createCloudSupportApi(session.user.id).create(request);
+      if (mounted.current) { setReceivedEmail(contact); setTicketId(receipt.id); }
     } catch {
       if (mounted.current) setError(true);
     } finally {
@@ -134,11 +136,11 @@ function FeedbackContent({ failure, plan, onClose, onRetry }: {
             <div className="space-y-2">
               <label htmlFor={emailId} className="text-sm font-medium text-foreground">{copy.emailLabel}</label>
               <Input id={emailId} variant="filled" type="email" autoComplete="email" required maxLength={254}
-                value={email} onChange={event => setEmail(event.target.value)} disabled={sending} dir="ltr" />
+                value={email} readOnly disabled={sending} dir="ltr" />
               <p className="text-xs leading-5 text-muted-foreground">{copy.notificationHint}</p>
             </div>
             {error && <p role="alert" className="text-sm text-danger">{copy.requestFailed}</p>}
-            <Button type="submit" disabled={sending} className="w-full">
+            <Button type="submit" disabled={sending || !email} className="w-full">
               {sending && <Icon name="spinner" className="size-4 animate-spin" aria-hidden="true" />}
               {sending ? copy.notifying : copy.notify}
             </Button>
@@ -146,6 +148,9 @@ function FeedbackContent({ failure, plan, onClose, onRetry }: {
         </>
       )}
       {receivedEmail && <Button type="button" onClick={onClose} className="mt-5 w-full">{copy.done}</Button>}
+      {ticketId && <Button asChild variant="secondary" className="mt-2 w-full">
+        <a href={supportTicketHref(ticketId)} target="_blank" rel="noreferrer">{t.support.viewTicket}</a>
+      </Button>}
       <Button type="button" variant="ghost" onClick={() => onRetry(failure)} disabled={sending}
         className="mt-2 w-full text-muted-foreground">{copy.retry}</Button>
     </div>

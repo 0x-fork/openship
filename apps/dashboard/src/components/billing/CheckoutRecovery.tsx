@@ -12,6 +12,7 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { billingApi } from "@/lib/api/billing";
 import { getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { useSession } from "@/lib/auth-client";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { scopedBillingHref } from "@/lib/billing-links";
 import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
 import { ManagedServerActionFeedback } from "@/components/servers/managed/ManagedServerActionFeedback";
@@ -100,10 +101,11 @@ function RecoveryDialogContent({ onClose, ...props }: RecoveryProps & { onClose:
 /** Key every request and action to the current customer, not just the server. */
 export function PendingCheckoutsPanel(props: RecoveryProps & { titleId?: string }) {
   const { data: session, isPending } = useSession();
+  const cloudKey = useCloudResourceKey();
   const { organizationId } = useBillingScope();
   if (isPending || (organizationId && organizationId !== session?.session.activeOrganizationId))
     return null;
-  const owner = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const owner = `${cloudKey}:${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
   return <CheckoutList key={`${owner}:${props.workspaceId ?? "all"}`} {...props} />;
 }
 

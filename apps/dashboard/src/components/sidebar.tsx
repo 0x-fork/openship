@@ -93,7 +93,11 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   const displayEmail = user?.email || (isDesktop ? "Desktop" : "");
   const cloudBadge = cloudConnected ? cloudUser : null;
   const displayInitial = displayName?.[0] ?? displayEmail?.[0] ?? "?";
-  const isSaaS = !selfHosted || cloudConnected;
+  const isSaaS = (!selfHosted && !isDesktop) || cloudConnected;
+  const [navCounts, setNavCounts] = useState<ReturnType<typeof countProjectCollections> | null>(
+    null,
+  );
+  const supportAvailable = isSaaS || !!navCounts?.hasCloudProjects;
   const mailView = productView === "mail";
   const mailScope = useMailScope();
   const navSections = mailView
@@ -103,8 +107,9 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
         activeServerId: mailScope.activeServerId,
         activeCompleted: !!mailScope.activeServer?.completed,
         selfHosted,
+        supportAvailable,
       })
-    : getNavSections(isSaaS, selfHosted);
+    : getNavSections(isSaaS, selfHosted, supportAvailable);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -124,7 +129,6 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   );
   const collapsed = !mobileOpen && desktopCollapsed;
   const [loggingOut, setLoggingOut] = useState(false);
-  const [navCounts, setNavCounts] = useState<ReturnType<typeof countProjectCollections> | null>(null);
   const [navCountsRevision, setNavCountsRevision] = useState(getSidebarNavCountsRevision);
 
   useEffect(

@@ -38,6 +38,9 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   then stack on smaller containers. Catalog installs keep their destination and action together.
   Source deployments use the same destination summary above configuration and target-settings
   screen in Cloud and self-hosted mode; do not add a separate destination panel to the sidebar.
+- Single-app deployment progress uses 32px phase markers with 18–20px glyphs. Keep the
+  connectors centered and separated from each marker by the card-colored ring, with the
+  current phase and step count underneath.
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.
@@ -96,6 +99,16 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   imports. The page and modal share the whole preparation layout and controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
+  Cloud and Cloud-connected installations add Support as the final entry, under Help.
+  Keep it reachable for existing Cloud projects if the connection needs attention, using
+  the sidebar's loaded project inventory. The private support center uses a
+  searchable ticket list beside a conversation or new-ticket form, stacking on narrow
+  containers with a Back to tickets action. Use the shared theme surfaces and controls.
+  Tickets belong to the signed-in account, not its selected team. Keep the draft after a
+  failed send and reuse the request identity on retry; switching accounts clears private state.
+  Connected local installations use the person's own verified Cloud account and show its
+  email. A shared team connection never exposes its owner's private inbox to teammates;
+  offer a Cloud sign-in link when the current person has no personal link.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
   same project data and status handling. Apps uses a compact installed list with Home's
   app illustration and a link to the full catalog alongside it. The illustration's icons
@@ -120,7 +133,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   selects the server being inspected. Plans keeps the shared compact server picker beside
   that action. With one or two preset choices, show the saved subscription and capacity in
   the standard 340px right column when the container has room; stack it first on smaller
-  screens. Wider comparisons and Custom keep the compact summary below the tabs. Use the
+  screens. Keep a single priced offer at a maximum of 26rem, shrinking to the available
+  width on small screens. Complimentary-plan support guidance belongs inside the saved-plan
+  summary; dialogs without that summary retain their inline guidance. Wider comparisons and
+  Custom keep the compact summary below the tabs. Use the
   picker's displayed choices for this layout too; an inactive subscription uses a short
   inline notice. New purchases use the plan introduction
   as the page title and description. Keep Plans / Custom beside Back to billing in the
@@ -150,8 +166,10 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   only when the billing API enables them for the selected server; the purchase-view choice
   must never override paid terms or provider entitlement.
   Keep Pending payments accessible in the Billing header even for unpaid servers. Cloud
-  lists unfinished payments across the organization's servers; connected installations
-  use the selected server's verified link. Reuse the same compact recovery list in
+  lists unfinished payments across the organization's servers. Connected installations
+  use the same Cloud inventory, filtered to a selected server when requested, without
+  creating local execution links. Preserve local aliases for explicitly linked servers
+  and clear payment state when the connected Cloud account changes. Reuse the same compact recovery list in
   Payments and in the unfinished-checkout dialog. Show saved offer terms and the server
   name, with Resume and provider-supported cancellation. Never present a pending or
   unknown cancellation as complete. After confirmed cancellation, offer another plan
@@ -219,7 +237,8 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
   that server and its billing. Remember dismissal per customer, server and checkout.
 - Unavailable server capacity or checkout opens the shared compact checkout feedback dialog.
   Preserve the selected resources, server and retry identity. Offer an explicit email-update
-  request through the existing Cloud support intake; confirm it only after a saved receipt.
+  request through the signed-in Cloud support inbox; confirm it only after a saved receipt
+  and link to the resulting ticket. Use the session email for replies.
   Explain that the support team follows up, without promising an automatic inventory alert.
   Connected self-hosted installations offer direct email contact; Cloud intake accepts
   browser submissions only from its trusted dashboard origins.

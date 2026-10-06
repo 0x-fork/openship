@@ -388,6 +388,7 @@ export function ServerMigrationWizard({
     {
       value: targetId,
       autoSelectFirst: true,
+      forDeployment: true,
       onSelect: (selected) => {
         if (selected?.id === targetId) return;
         setTargetId(selected?.id ?? null);

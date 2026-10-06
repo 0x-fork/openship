@@ -21,6 +21,7 @@ import { disposeRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import type { TerminalExitReason } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { safeErrorMessage } from "@repo/core";
+import type { CloudTerminalTicket } from "./cloud/terminal-bridge";
 
 // ─── Tickets ────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ interface Ticket {
   serviceId: string;
   expiresAt: number;
   used: boolean;
+  cloud?: CloudTerminalTicket;
 }
 
 const tickets = new Map<string, Ticket>();
@@ -44,6 +46,7 @@ function newToken(): string {
 export function issueServiceTerminalTicket(
   ctx: RequestContext,
   serviceId: string,
+  cloud?: CloudTerminalTicket,
 ): { token: string; expiresIn: number } {
   cleanupExpiredTickets();
   const ttl = env.TERMINAL_TICKET_TTL_MS;
@@ -55,13 +58,14 @@ export function issueServiceTerminalTicket(
     serviceId,
     expiresAt: Date.now() + ttl,
     used: false,
+    ...(cloud && { cloud }),
   });
   return { token, expiresIn: Math.floor(ttl / 1000) };
 }
 
 export function consumeServiceTerminalTicket(
   token: string,
-): { userId: string; organizationId: string; serviceId: string } | null {
+): { userId: string; organizationId: string; serviceId: string; cloud?: CloudTerminalTicket } | null {
   if (!token) return null;
   const ticket = tickets.get(token);
   if (!ticket) return null;
@@ -72,6 +76,7 @@ export function consumeServiceTerminalTicket(
     userId: ticket.userId,
     organizationId: ticket.organizationId,
     serviceId: ticket.serviceId,
+    ...(ticket.cloud && { cloud: ticket.cloud }),
   };
 }
 

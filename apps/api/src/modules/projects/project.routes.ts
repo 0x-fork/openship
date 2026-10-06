@@ -5,7 +5,7 @@
  * middleware (check + audit emission). The boot scanner refuses to
  * start if any route lacks one.
  *
- * Cloud-as-source: per-`:id` project routes carry `cloudProjectProxy`
+ * Cloud-as-source: per-`:id` project routes use the shared Cloud resource gateway
  * (mounted AFTER the permission middleware). For a project that is canonical
  * on the SaaS (no local row), it forwards the request to the SaaS as the org
  * owner and returns that response; for a local project it falls through to the
@@ -47,7 +47,6 @@ import {
 import { bodyLimit } from "hono/body-limit";
 import { secureRouter } from "../../lib/secure-router";
 import { requireInstanceAdmin } from "../../middleware/instance-admin";
-import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
 import * as transfer from "./transfer.controller";
@@ -331,7 +330,6 @@ r.get(
     tag: "project:read",
     mcp: { description: "Get a project by id — config, source, routes, status." },
   },
-  cloudProjectProxy,
   ctrl.getById,
 );
 r.patch(
@@ -342,7 +340,6 @@ r.patch(
     auditHandledByOperation: true,
     mcp: { description: "Update a project's configuration (build config, source, options)." },
   },
-  cloudProjectProxy,
   ctrl.update,
 );
 r.delete(
@@ -356,7 +353,6 @@ r.delete(
     },
     query: RemoveProjectSchema,
   },
-  cloudProjectProxy,
   ctrl.remove,
 );
 r.get(
@@ -365,7 +361,6 @@ r.get(
     tag: "project:read",
     mcp: { description: "Get a project's detailed info (runtime, build, source)." },
   },
-  cloudProjectProxy,
   ctrl.getInfo,
 );
 r.get(
@@ -374,7 +369,6 @@ r.get(
     tag: "project:read",
     mcp: { description: "List a project's environments (production / previews)." },
   },
-  cloudProjectProxy,
   ctrl.listEnvironments,
 );
 r.post(
@@ -385,7 +379,6 @@ r.post(
     body: CreateProjectEnvironmentBody,
     mcp: { description: "Create a project environment (e.g. a preview)." },
   },
-  cloudProjectProxy,
   ctrl.createEnvironment,
 );
 r.get(
@@ -394,7 +387,6 @@ r.get(
     tag: "project:read",
     mcp: { description: "Preview what deleting this project would remove (read-only)." },
   },
-  cloudProjectProxy,
   ctrl.deletionPreview,
 );
 
@@ -407,7 +399,6 @@ r.post(
     body: SetOptionsBody,
     mcp: { description: "Set build/deploy options for a project." },
   },
-  cloudProjectProxy,
   ctrl.setOptions,
 );
 r.post(
@@ -419,7 +410,6 @@ r.post(
       description: "Live port-reachability check for the project's active deployment (advisory).",
     },
   },
-  cloudProjectProxy,
   ctrl.portCheck,
 );
 r.post(
@@ -432,7 +422,6 @@ r.post(
         "Live static-output check for the project's active deployment (advisory; static apps).",
     },
   },
-  cloudProjectProxy,
   ctrl.outputCheck,
 );
 r.post(
@@ -458,7 +447,6 @@ r.post(
     tag: "project:write",
     mcp: { description: "Enable a project (allow deploys / bring online)." },
   },
-  cloudProjectProxy,
   ctrl.enable,
 );
 r.post(
@@ -468,7 +456,6 @@ r.post(
     tag: "project:write",
     mcp: { description: "Disable a project (pause deploys / take offline)." },
   },
-  cloudProjectProxy,
   ctrl.disable,
 );
 
@@ -481,7 +468,6 @@ r.post(
     mcpExcluded:
       "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming.",
   },
-  cloudProjectProxy,
   ctrl.retryRoutingStream,
 );
 
@@ -495,7 +481,6 @@ r.post(
         "Repair project routes and verify pending domains and HTTPS without rebuilding; clears the routing warning only when all checks succeed.",
     },
   },
-  cloudProjectProxy,
   ctrl.retryRouting,
 );
 
@@ -546,7 +531,6 @@ r.get(
     mcp: { description: "List a project's environment variables (secret values masked)." },
     query: ProjectControlSchemas.listEnvVars.input,
   },
-  cloudProjectProxy,
   ctrl.listEnvVars,
 );
 // Project env edits go through the MERGE path (PATCH) only — the old destructive
@@ -564,7 +548,6 @@ r.patch(
       description: "Merge env var changes (upserts + deletes); untouched vars are preserved.",
     },
   },
-  cloudProjectProxy,
   ctrl.mergeEnvVars,
 );
 
@@ -576,7 +559,6 @@ r.get(
     mcpExcluded:
       "Git credential management is kept in the authenticated dashboard; MCP deploys through the configured credentials.",
   },
-  cloudProjectProxy,
   ctrl.getCloneToken,
 );
 r.patch(
@@ -588,7 +570,6 @@ r.patch(
     mcpExcluded:
       "Git credential management is kept in the authenticated dashboard; MCP deploys through the configured credentials.",
   },
-  cloudProjectProxy,
   ctrl.updateCloneToken,
 );
 
@@ -596,7 +577,6 @@ r.patch(
 r.get(
   "/:id/git",
   { tag: "project:read", mcp: { description: "Get the project's linked git repository info." } },
-  cloudProjectProxy,
   ctrl.getGitInfo,
 );
 r.get(
@@ -605,7 +585,6 @@ r.get(
     tag: "project:read",
     mcp: { description: "Compare the deployed commit against the remote HEAD." },
   },
-  cloudProjectProxy,
   ctrl.getCommitStatus,
 );
 
@@ -619,7 +598,6 @@ r.get(
         "What is waiting on a human for this project, and how to resolve each item. Covers a deploy blocked on a named cause (e.g. a port already in use), a deploy HELD right now on a decision (answer it with the build-respond tool — the exact action id and body are in the item's resolveWith, and `expiresAt` is when the deploy gives up), a partial-failure release awaiting keep/reject, unsynced routing, unverified domains, and failed/expired certificates. Each item carries `resolveWith`, an array of concrete {method, path, body} calls — use those rather than guessing. Call this after starting a deploy that seems stuck, and whenever a project reads as Action Required. This covers deploy/domain/routing items only — for container-runtime health (crash loops, unhealthy or down containers) read the project's incidents instead. Scoped to ONE project: to ask what is broken across the whole installation (these items for every project, plus runtime incidents, unreachable servers and edge/mail state, ranked by severity), read the issues feed instead.",
     },
   },
-  cloudProjectProxy,
   ctrl.getPendingActions,
 );
 r.post(
@@ -630,7 +608,6 @@ r.post(
     body: LinkRepoBody,
     mcp: { description: "Link a git repository to the project." },
   },
-  cloudProjectProxy,
   ctrl.linkRepo,
 );
 r.put(
@@ -644,7 +621,6 @@ r.put(
         "Atomically configure this single-app project to track and deploy a prebuilt container image from GitHub releases or a version URL.",
     },
   },
-  cloudProjectProxy,
   ctrl.setReleaseImageSource,
 );
 r.get(
@@ -654,7 +630,6 @@ r.get(
     mcp: { description: "List the linked repository's branches." },
     query: ProjectControlSchemas.listBranches.input,
   },
-  cloudProjectProxy,
   ctrl.listBranches,
 );
 r.post(
@@ -665,7 +640,6 @@ r.post(
     body: SetAutoDeployBody,
     mcp: { description: "Enable/disable auto-deploy on push." },
   },
-  cloudProjectProxy,
   ctrl.setAutoDeploy,
 );
 r.post(
@@ -679,7 +653,6 @@ r.post(
     },
     body: ProjectControlSchemas.setWebhookDomain.input,
   },
-  cloudProjectProxy,
   ctrl.setWebhookDomain,
 );
 r.post(
@@ -690,7 +663,6 @@ r.post(
     body: SetBranchBody,
     mcp: { description: "Set the project's deploy branch." },
   },
-  cloudProjectProxy,
   ctrl.setBranch,
 );
 
@@ -701,7 +673,6 @@ r.get(
     tag: "project:read",
     mcp: { description: "List a project's incoming webhooks (dynamic trigger URLs)." },
   },
-  cloudProjectProxy,
   incomingWebhooks.list,
 );
 r.post(
@@ -714,7 +685,6 @@ r.post(
       description: "Create an incoming webhook that fires a deploy or job when its URL is called.",
     },
   },
-  cloudProjectProxy,
   incomingWebhooks.create,
 );
 r.patch(
@@ -725,7 +695,6 @@ r.patch(
     body: UpdateIncomingWebhookBody,
     mcp: { description: "Update an incoming webhook (name/enabled/action/auth)." },
   },
-  cloudProjectProxy,
   incomingWebhooks.update,
 );
 r.post(
@@ -735,7 +704,6 @@ r.post(
     auditHandledByOperation: true,
     mcp: { description: "Rotate an incoming webhook's token / HMAC secret." },
   },
-  cloudProjectProxy,
   incomingWebhooks.rotate,
 );
 r.delete(
@@ -745,7 +713,6 @@ r.delete(
     auditHandledByOperation: true,
     mcp: { description: "Delete an incoming webhook." },
   },
-  cloudProjectProxy,
   incomingWebhooks.remove,
 );
 r.get(
@@ -755,7 +722,6 @@ r.get(
     mcp: { description: "List one incoming webhook's recent deliveries (paginated)." },
     query: WebhookPageInputSchema,
   },
-  cloudProjectProxy,
   incomingWebhooks.hookDeliveries,
 );
 r.get(
@@ -768,7 +734,6 @@ r.get(
     },
     query: WebhookPageInputSchema,
   },
-  cloudProjectProxy,
   incomingWebhooks.deliveries,
 );
 
@@ -782,7 +747,6 @@ r.post(
         "Invoke an enabled incoming webhook with the current and saved actor's permissions.",
     },
   },
-  cloudProjectProxy,
   incomingWebhooks.invoke,
 );
 
@@ -1079,7 +1043,6 @@ r.post(
 r.get(
   "/:id/resources",
   { tag: "project:read", mcp: { description: "Get the project's CPU/RAM/disk resource config." } },
-  cloudProjectProxy,
   ctrl.getResources,
 );
 r.get(
@@ -1091,7 +1054,6 @@ r.get(
         "Get the rollback retention window in force (explicit or disk-sized), the measured per-release size, and the deploy host's free disk.",
     },
   },
-  cloudProjectProxy,
   ctrl.getRollbackCapacity,
 );
 r.patch(
@@ -1102,7 +1064,6 @@ r.patch(
     body: UpdateResourcesBody,
     mcp: { description: "Update the project's CPU/RAM/disk, sleep mode, or port." },
   },
-  cloudProjectProxy,
   ctrl.updateResources,
 );
 r.post(
@@ -1112,7 +1073,6 @@ r.post(
     tag: "project:write",
     mcpExcluded: "Compatibility alias; use PATCH /api/projects/:id/resources.",
   },
-  cloudProjectProxy,
   ctrl.updateResources,
 );
 
@@ -1125,7 +1085,6 @@ r.post(
     body: SetSleepModeBody,
     mcp: { description: "Set the project's sleep mode (auto_sleep / always_on)." },
   },
-  cloudProjectProxy,
   ctrl.setSleepMode,
 );
 
@@ -1137,7 +1096,6 @@ r.get(
     mcp: { description: "List a project's deployments (history, statuses)." },
     query: ProjectControlSchemas.listDeployments.input,
   },
-  cloudProjectProxy,
   ctrl.listDeployments,
 );
 r.post(
@@ -1148,7 +1106,6 @@ r.post(
     mcpExcluded:
       "Browser deployment-session handoff. MCP starts deployments through /api/deployments/build/access.",
   },
-  cloudProjectProxy,
   ctrl.deploymentSession,
 );
 
@@ -1164,7 +1121,6 @@ r.post(
         "Attach a custom domain to this project, with optional www alias or external ingress. Inspect the returned routing status and pending actions; attaching a hostname does not prove DNS or HTTPS readiness.",
     },
   },
-  cloudProjectProxy,
   ctrl.connectDomain,
 );
 
@@ -1176,7 +1132,6 @@ r.get(
     mcp: { description: "Fetch the project's runtime logs (non-streaming)." },
     query: ProjectControlSchemas.runtimeLogs.input,
   },
-  cloudProjectProxy,
   ctrl.runtimeLogs,
 );
 r.get(
@@ -1186,7 +1141,6 @@ r.get(
     mcpExcluded:
       "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming.",
   },
-  cloudProjectProxy,
   ctrl.runtimeLogStream,
 );
 
@@ -1198,7 +1152,6 @@ r.get(
     mcp: { description: "Fetch recent HTTP request logs for the project." },
     query: RecentServerLogsInputSchema,
   },
-  cloudProjectProxy,
   ctrl.recentServerLogs,
 );
 r.get(
@@ -1208,7 +1161,6 @@ r.get(
     mcpExcluded:
       "Browser streaming credential. MCP reads the bounded server-logs endpoint with its own bearer.",
   },
-  cloudProjectProxy,
   ctrl.serverLogStreamToken,
 );
 r.get(
@@ -1218,7 +1170,6 @@ r.get(
     mcpExcluded:
       "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming.",
   },
-  cloudProjectProxy,
   ctrl.serverLogStream,
 );
 

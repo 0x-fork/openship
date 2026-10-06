@@ -29,6 +29,7 @@ import { randomUUID } from "node:crypto";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { trustedOrigins } from "@repo/platform/engine/config/env";
 import { upgradeWebSocket } from "../../lib/ws";
+import { prepareCloudTerminal, cloudTerminalHandlers } from "../../lib/cloud/terminal-bridge";
 import { repos } from "@repo/db";
 import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
@@ -258,6 +259,8 @@ export async function issueTicket(c: Context) {
     ? ((body as { serviceId: string }).serviceId)
     : "";
   if (!serviceId) return c.json({ error: "serviceId required" }, 400);
+  const cloud = await prepareCloudTerminal(ctx, "service", serviceId);
+  if (cloud) return c.json({ success: true, ...issueServiceTerminalTicket(ctx, serviceId, cloud) });
 
   // Surface 404 here so the dashboard can show a clear error without
   // burning an upgrade attempt. We deliberately do NOT precheck the
@@ -295,6 +298,7 @@ export const serviceTerminalWsHandler = upgradeWebSocket(async (c) => {
   const tokenProto = protocols.find((p) => p.startsWith(SUBPROTOCOL_PREFIX));
   const token = tokenProto ? tokenProto.slice(SUBPROTOCOL_PREFIX.length) : "";
   const ticket = token ? consumeServiceTerminalTicket(token) : null;
+  if (tokenProto && !ticket) return openInitFailure("ssh_auth", "Invalid or expired terminal ticket", 4401);
 
   const resumeProto = protocols.find((p) =>
     p.startsWith(RESUME_SUBPROTOCOL_PREFIX),
@@ -340,6 +344,8 @@ export const serviceTerminalWsHandler = upgradeWebSocket(async (c) => {
   if (ticketServiceId && ticketServiceId !== pathServiceId) {
     return openInitFailure("ssh_auth", "Ticket / path mismatch", 4401);
   }
+  if (ticket?.cloud) return cloudTerminalHandlers({ kind: "service", id: pathServiceId,
+    userId, organizationId: activeOrgId, cloud: ticket.cloud, resumeToken });
 
   // Resolve runtime + containerId. Org-scoped + admin-permission-gated
   // — refuses if the parent project doesn't belong to the caller's active

@@ -68,8 +68,17 @@ const MAIN_ITEMS: NavItem[] = [
   { key: "issues", href: "/monitoring", icon: "activity" },
 ];
 
+const HELP_SECTION: NavSection = {
+  section: "help",
+  items: [{ key: "support", href: "/support", icon: "help-circle" }],
+};
+
 /** Build nav sections dynamically */
-export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection[] {
+export function getNavSections(
+  isSaaS: boolean,
+  selfHosted: boolean,
+  supportAvailable = isSaaS,
+): NavSection[] {
   const settingsItems: NavItem[] = [
     { key: "backups", href: "/backups", icon: "database-backup" },
     { key: "settings", href: "/settings", icon: "settings" },
@@ -97,6 +106,7 @@ export function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection
   return [
     { section: "main", items: MAIN_ITEMS },
     ...(selfHosted ? [infrastructure, settings] : [settings, infrastructure]),
+    ...(supportAvailable ? [HELP_SECTION] : []),
   ].filter((s) => s.items.length > 0);
 }
 
@@ -174,6 +184,8 @@ export interface MailNavInput {
   activeCompleted: boolean;
   /** Adds infrastructure links in the self-hosted mail navigation. */
   selfHosted: boolean;
+  /** Cloud access or an existing Cloud project whose connection needs attention. */
+  supportAvailable?: boolean;
 }
 
 export function mailTabHref(serverId: string | null, tab: string): string {
@@ -284,6 +296,7 @@ export function getMailNavSections(i: MailNavInput): NavSection[] {
         { key: "settings", href: "/settings", icon: "settings" as const },
       ],
     },
+    ...(i.supportAvailable ? [HELP_SECTION] : []),
   ].filter((s) => s.items.length > 0);
 }
 

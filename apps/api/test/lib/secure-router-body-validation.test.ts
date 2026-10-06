@@ -26,12 +26,11 @@ vi.mock("../../src/middleware/auth", () => ({
 vi.mock("../../src/lib/request-context", () => ({
   getRequestContext: (c: { get: (k: string) => unknown }) => c.get("ctx"),
 }));
-vi.mock("../../src/lib/route-permission", () => ({
+vi.mock("../../src/lib/route-permission", async original => ({
+  ...await original<typeof import("../../src/lib/route-permission")>(),
   requirePermission: () => (_c: unknown, next: () => unknown) => next(),
   publicRoute: () => (_c: unknown, next: () => unknown) => next(),
   registerRoute: () => {},
-  isPublicSpec: (s: { reason?: unknown; resource?: unknown }) =>
-    typeof s?.reason === "string" && !s?.resource,
 }));
 vi.mock("../../src/middleware/local-only", () => ({
   localOnly: (_c: unknown, next: () => unknown) => next(),
@@ -49,10 +48,10 @@ function buildApp() {
     return n();
   });
   const r = secureRouter(new Hono(), { module: "t" });
-  r.post("/with-body", { resource: "project", action: "write", body: Body } as never, async (c) =>
+  r.post("/with-body", { tag: "project:write", body: Body }, async (c) =>
     c.json({ ok: true, got: await c.req.json() }),
   );
-  r.post("/no-body", { resource: "project", action: "write" } as never, (c) => c.json({ ok: true }));
+  r.post("/no-body", { tag: "project:write" }, (c) => c.json({ ok: true }));
   for (const path of ["/activity", "/activity/release"]) {
     r.post(path, { tag: "server:admin", body: ManagedServerActivityInputSchema }, async c =>
       c.json({ got: await c.req.json() }),

@@ -3,6 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pricingUi, resolvePlan } from "@repo/core";
+import { CLOUD_SUPPORT_ACCOUNT_HEADER } from "@repo/contracts";
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { baseDictionary } from "@/i18n";
@@ -50,7 +51,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", h.fetch);
-  h.fetch.mockImplementation(async () => Response.json(receipt, { status: 201 }));
+  h.post.mockResolvedValue(receipt);
   h.get.mockResolvedValue({ data: { plans: [plan], ui: pricingUi("en"), annual: { enabled: false, monthsFree: 0 } } });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -86,37 +87,39 @@ describe("checkout availability feedback", () => {
   });
 
   it("confirms only a saved support receipt and prevents duplicate submissions", async () => {
-    let complete!: (response: Response) => void;
-    h.fetch.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+    let complete!: (response: typeof receipt) => void;
+    h.post.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
     await render(); await submit(); await submit();
-    expect(h.fetch).toHaveBeenCalledOnce();
+    expect(h.post).toHaveBeenCalledOnce();
     expect(dialog()?.textContent).not.toContain(copy.receivedTitle);
-    const [url, options] = h.fetch.mock.calls[0]!;
-    expect(url).toBe("https://cloud.example.test/api/cloud/support");
-    expect(options).toMatchObject({ method: "POST", credentials: "omit", redirect: "error", headers: { "Content-Type": "application/json" } });
-    expect(options.headers).not.toHaveProperty("X-Organization-Id");
-    expect(JSON.parse(options.body)).toMatchObject({ requestId: failure.requestId, name: "Customer",
-      email: "customer@example.test", subject: "Cloud capacity availability", source: "support" });
-    expect(JSON.parse(options.body).message).toContain("Server reference: cws-selected");
-    await act(async () => complete(Response.json(receipt, { status: 201 })));
+    const [url, body] = h.post.mock.calls[0]!;
+    expect(url).toBe("cloud/support/mine");
+    expect(body).toMatchObject({ requestId: failure.requestId, category: "billing", subject: "Cloud capacity availability" });
+    expect(body).not.toHaveProperty("email");
+    expect(body).not.toHaveProperty("ownerUserId");
+    expect(h.post.mock.calls[0]![2].headers[CLOUD_SUPPORT_ACCOUNT_HEADER]).toBe("customer");
+    expect(body.message).toContain("Server reference: cws-selected");
+    expect(dialog()?.querySelector<HTMLInputElement>('input[type="email"]')?.readOnly).toBe(true);
+    await act(async () => complete(receipt));
     expect(dialog()?.textContent).toContain(copy.receivedTitle);
     expect(dialog()?.textContent).toContain("customer@example.test");
     expect(dialog()?.querySelector("form")).toBeNull();
-    expect(h.post).not.toHaveBeenCalled();
+    expect(dialog()?.querySelector(`a[href="/support?ticket=${receipt.id}"]`)).not.toBeNull();
   });
 
   it("reuses the support request after a lost response without claiming it was saved", async () => {
-    h.fetch.mockRejectedValueOnce(new TypeError("Connection lost"));
+    h.post.mockRejectedValueOnce(new TypeError("Connection lost"));
     await render(); await submit();
     expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe(copy.requestFailed);
     expect(dialog()?.textContent).not.toContain(copy.receivedTitle);
     await submit();
-    expect(h.fetch.mock.calls[1]![1].body).toBe(h.fetch.mock.calls[0]![1].body);
+    expect(h.post.mock.calls[1]![1]).toEqual(h.post.mock.calls[0]![1]);
     expect(dialog()?.textContent).toContain(copy.receivedTitle);
   });
 
   it.each([200, 503])("does not accept a missing receipt from an HTTP %s response", async status => {
-    h.fetch.mockResolvedValueOnce(Response.json({ error: "internal failure" }, { status }));
+    if (status === 503) h.post.mockRejectedValueOnce(new ApiError(status, "Unavailable", { error: "internal failure" }));
+    else h.post.mockResolvedValueOnce({ error: "internal failure" });
     await render(); await submit();
     expect(dialog()?.textContent).not.toContain(copy.receivedTitle);
     expect(dialog()?.textContent).not.toContain("internal failure");
@@ -128,18 +131,18 @@ describe("checkout availability feedback", () => {
     await render(<CloudCheckoutFeedback failure={{ ...failure, custom }} plans={[plan]} onClose={h.close} onRetry={h.retry} />);
     expect([...dialog()!.querySelectorAll("dd")].map(node => node.textContent)).toEqual(["6", "24 GB", "180 GB"]);
     await submit();
-    const body = JSON.parse(h.fetch.mock.calls[0]![1].body);
+    const body = h.post.mock.calls[0]![1];
     expect(body.message).toContain("Plan: custom");
     expect(body.message).toContain("6 vCPU, 24576 MB RAM, 180 GB storage");
     expect(body.message).not.toContain("private-quote");
   });
 
   it("ignores a support response from the previously selected server", async () => {
-    let complete!: (response: Response) => void;
-    h.fetch.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+    let complete!: (response: typeof receipt) => void;
+    h.post.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
     await render(); await submit();
     await render(<CloudCheckoutFeedback failure={{ ...failure, workspaceId: "cws-other" }} plans={[plan]} onClose={h.close} onRetry={h.retry} />);
-    await act(async () => complete(Response.json(receipt, { status: 201 })));
+    await act(async () => complete(receipt));
     expect(dialog()?.textContent).not.toContain(copy.receivedTitle);
     expect(dialog()?.querySelector("form")).not.toBeNull();
   });

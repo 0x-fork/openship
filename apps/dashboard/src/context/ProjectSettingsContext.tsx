@@ -1,4 +1,5 @@
 "use client";
+import { useCloudResourceKey } from "./CloudResourceContext";
 import type { IconName } from "@repo/ui/icons";
 import React, {
   createContext,
@@ -329,7 +330,14 @@ interface ProviderProps {
   initialProjectData?: BasicProjectData;
 }
 
-export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
+export const ProjectSettingsProvider: React.FC<ProviderProps> = (props) => {
+  const resourceKey = useCloudResourceKey();
+  const seedOwner = useRef(resourceKey);
+  return <ProjectSettingsState key={resourceKey} {...props}
+    initialProjectData={seedOwner.current === resourceKey ? props.initialProjectData : undefined} />;
+};
+
+const ProjectSettingsState: React.FC<ProviderProps> = ({
   children,
   id,
   slug,

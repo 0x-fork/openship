@@ -44,7 +44,7 @@ beforeEach(() => {
   });
   save();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("pinned Cloud identity", () => {
   it("verifies and seals the credential with its Cloud API, user and organization", async () => {
@@ -104,6 +104,29 @@ describe("pinned Cloud identity", () => {
     expect(await isCloudConnected("local-owner")).toBe(false);
     expect(await readCloudSession("local-owner")).toEqual(first);
     expect(h.clear).not.toHaveBeenCalled();
+  });
+
+  it("discards an inventory response after an account switch or disconnect", async () => {
+    h.fetch.mockImplementationOnce(async () => { save({ ...first, userId: "new-user" }); return json({ servers: ["old-server"] }); });
+    expect(await cloudFetch("local-owner", "/api/system/servers")).toBeNull();
+    h.fetch.mockImplementationOnce(async () => { h.sessions.clear(); return json({ servers: ["old-server"] }); });
+    expect(await cloudFetch("local-owner", "/api/system/servers")).toBeNull();
+  });
+
+  it("stops a live log stream after disconnect and releases the upstream reader", async () => {
+    vi.useFakeTimers();
+    const canceled = vi.fn();
+    h.fetch.mockResolvedValueOnce(new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("data: running\n\n")); },
+      cancel: canceled,
+    }), { headers: { "content-type": "text/event-stream" } }));
+    const response = await cloudFetch("local-owner", "/api/deployments/d1/stream");
+    const reader = response!.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe("data: running\n\n");
+    h.sessions.clear();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect((await reader.read()).done).toBe(true);
+    expect(canceled).toHaveBeenCalledOnce();
   });
 
   it("uses compare-and-swap when clearing the stored credential", async () => {

@@ -69,11 +69,11 @@ afterEach(async () => {
 });
 
 describe("billing navigation by server ownership", () => {
-  it("keeps pending payments reachable for an unpaid server after reopening Billing", async () => {
+  it.each([false, true])("keeps all pending payments reachable for an unpaid server (self-hosted: %s)", async selfHosted => {
     h.path = "/billing/plans";
     h.query = "workspaceId=cws-draft";
     h.list.mockResolvedValue({ servers: [draft] });
-    await render(page({ plansOnly: true, workspaceId: "cws-draft", requestedWorkspaceId: "cws-draft" }));
+    await render(page({ plansOnly: true, workspaceId: "cws-draft", requestedWorkspaceId: "cws-draft" }), selfHosted);
     const pending = [...host.querySelectorAll<HTMLButtonElement>("header button")].find(node => node.textContent?.includes(baseDictionary.billing.pendingPayments.title));
     expect(pending).toBeDefined();
     expect(h.checkouts).not.toHaveBeenCalled();
@@ -338,12 +338,25 @@ describe("billing navigation by server ownership", () => {
     expect(tabs()).toHaveLength(4);
   });
 
-  it("does not fetch managed destinations or change self-hosted server navigation", async () => {
+  it("loads the shared managed inventory in self-hosted mode without changing the current billing scope", async () => {
     await render(page(), true);
     expect(tabs()).toHaveLength(4);
     expect(picker()).toBeNull();
     expect(host.querySelector('a[href*="newServer=1"]')).toBeNull();
-    expect(h.list).not.toHaveBeenCalled();
+    expect(h.list).toHaveBeenCalledOnce();
     expect(h.router.replace).not.toHaveBeenCalled();
+  });
+
+  it("shows Cloud servers beside an installation's own server and recognizes a canonical checkout scope", async () => {
+    const own = { ...production, id: "own-server", name: "Own VPS", managed: null, connection: "ssh" as const };
+    const linked = { ...production, cloudReference: { serverId: "cloud-production", workspaceId: "cloud-workspace" } };
+    h.list.mockResolvedValue({ servers: [own, linked, { ...staging, source: "cloud" }] });
+    h.query = "workspaceId=cloud-workspace";
+    await render(page({ requestedWorkspaceId: "cloud-workspace", workspaceId: "cloud-workspace" }), true);
+    expect(serverButton("Production").getAttribute("aria-pressed")).toBe("true");
+    expect(serverButton("Staging").getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector("aside")?.textContent).not.toContain("Own VPS");
+    await act(async () => serverButton("Staging").click());
+    expect(h.router.push).toHaveBeenLastCalledWith("/billing/overview?workspaceId=cws-staging", { scroll: false });
   });
 });
