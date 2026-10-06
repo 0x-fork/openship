@@ -42,6 +42,26 @@ export const oblienCapacitySavingsSchema = z.object({
   networkIncluded: z.literal(false), refundsIncluded: z.literal(false),
 });
 
+// Transfer benefits can change without changing the saved compute tariff.
+// Keep the provider's counters and state; an absent limit never grants unlimited
+// transfer, and transfer availability never grants compute coverage.
+const oblienManagedTransferSchema = z.object({
+  service: z.literal("managed_proxy_transfer"), included: z.boolean(),
+  purchasedBytes: amount, consumedBytes: amount, reservedBytes: amount,
+  availableBytes: amount.nullable(),
+  unlimited: z.boolean().optional(),
+  status: z.enum(["active", "low", "grace", "blocked", "inactive"]).optional(),
+  includedBytes: amount.nullable().optional(),
+  includedAvailableBytes: amount.nullable().optional(),
+  purchasedAvailableBytes: amount.optional(),
+  periodConsumedBytes: amount.optional(),
+}).superRefine((value, ctx) => {
+  for (const field of ["availableBytes", "includedBytes", "includedAvailableBytes"] as const) {
+    if (value[field] === null && value.unlimited !== true)
+      ctx.addIssue({ code: "custom", path: [field], message: "Null transfer limits require explicit unlimited coverage" });
+  }
+});
+
 export const oblienNamespaceCapacitySchema = z.object({
   id: z.string().min(1), namespace: z.string().min(1), billingMode: computeBillingModeSchema,
   status: z.enum(["active", "expired", "revoked", "payment_required", "storage_payment_required", "pending"]),
@@ -57,10 +77,7 @@ export const oblienNamespaceCapacitySchema = z.object({
     monthlyAmount: cents, effectiveAt: date,
   }).nullable(),
   savings: oblienCapacitySavingsSchema.nullable(),
-  network: z.object({
-    service: z.literal("managed_proxy_transfer"), included: z.literal(false),
-    purchasedBytes: amount, consumedBytes: amount, reservedBytes: amount, availableBytes: amount,
-  }),
+  network: oblienManagedTransferSchema,
 });
 
 export type OblienCapacityCatalog = z.infer<typeof oblienCapacityCatalogSchema>;

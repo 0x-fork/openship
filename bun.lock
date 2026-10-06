@@ -15,7 +15,7 @@
     },
     "apps/api": {
       "name": "@repo/api",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "dependencies": {
         "@better-auth/drizzle-adapter": "^1.5.4",
         "@hono/node-server": "^1.19.15",
@@ -54,7 +54,7 @@
     },
     "apps/cli": {
       "name": "@repo/cli",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -126,7 +126,7 @@
     },
     "apps/desktop": {
       "name": "@repo/desktop",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "dependencies": {
         "@repo/core": "workspace:*",
         "@repo/onboarding": "workspace:*",
@@ -149,11 +149,11 @@
     },
     "apps/email": {
       "name": "@repo/email",
-      "version": "0.8.0",
+      "version": "0.8.1",
     },
     "apps/web": {
       "name": "@repo/web",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "dependencies": {
         "@repo/contracts": "workspace:*",
         "@repo/core": "workspace:*",
@@ -196,7 +196,7 @@
         "dockerode": "^4.0.9",
         "ignore": "^7.0.5",
         "ioredis": "^5.10.0",
-        "oblien": "2.8.1",
+        "oblien": "2.10.0",
         "ssh2": "^1.17.0",
         "tar-fs": "^2.1.4",
         "undici": "^7.29.1",
@@ -282,7 +282,7 @@
     },
     "packages/openship": {
       "name": "openship",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -305,7 +305,7 @@
     },
     "packages/platform": {
       "name": "@repo/platform",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "dependencies": {
         "@better-auth/core": "^1.5.4",
         "@better-auth/drizzle-adapter": "^1.5.4",
@@ -2478,7 +2478,7 @@
 
     "object-keys": ["object-keys@1.1.1", "", {}, "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA=="],
 
-    "oblien": ["oblien@2.8.1", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-QHVc/WFq7FU5u4C7sC2a7CcxgM6IAFG+PhN7rO/E5XeG8fLHaciikk5q0FyXzgegKvWyXfLCfi41VZILQVNqtA=="],
+    "oblien": ["oblien@2.10.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-ESdeDWuIJ+R0fJtTjHAhU1VRGOqjUtxqMZeL3sm2AgkI4/1nf1FjrqKvha2zsd9nfkbzpJuYwzOOOtQUdhv1hQ=="],
 
     "obug": ["obug@2.1.1", "", {}, "sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ=="],
 

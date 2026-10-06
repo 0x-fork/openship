@@ -1,9 +1,10 @@
 import { savedOffer as subscriptionOffer, savedMetadata as subscriptionMetadata } from "../../helpers/saved-cloud-offer";
 import capacityCatalog from "../../fixtures/oblien-capacity-catalog.json";
 import { monthlyCloudBilling } from "../../helpers/monthly-cloud-offer";
+import managedTransfer from "../../fixtures/oblien-managed-transfer.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
+import { OblienBillingApi, type OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
 const provider = vi.hoisted(() => ({
   cloudMode: true,
   enabled: true,
@@ -12,6 +13,7 @@ const provider = vi.hoisted(() => ({
   catalog: vi.fn(),
   monthlySupport: vi.fn(),
   entitlement: vi.fn(),
+  balance: vi.fn(),
   namespaces: vi.fn(),
   portal: vi.fn(),
   subscription: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
     getCheckout: provider.checkoutStatus,
     getCatalog: provider.catalog,
     getEntitlement: provider.entitlement,
+    getBalance: provider.balance,
     createCheckout: provider.checkout,
     createPortal: provider.portal,
     getSubscription: provider.subscription,
@@ -95,6 +98,7 @@ import { presentCloudPlans } from "@repo/platform/engine/modules/billing/billing
 import { assertBuildMinutesAvailable } from "@repo/platform/engine/lib/plan-guard";
 import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { assertManagedServerCanWork } from "@repo/platform/engine/lib/cloud-workspace-access";
 import type { BillingPendingCheckout, BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
 
 const app = new Hono().onError(handleApiError)
@@ -176,22 +180,33 @@ afterEach(async () => {
 });
 
 describe("billing through the same SDK and HTTP application operations", () => {
-  it("shows verified monthly coverage without credit warnings or top-ups in both transports", async () => {
+  it.each([false, true])("keeps monthly billing and workload access with unlimited transfer=%s in both transports", async unlimited => {
     const owner = await seedOwner(), other = await seedOwner();
     const selected = await billingWorkspace(owner);
     const monthly = monthlyCloudBilling(owner.orgId, selected.namespace!);
     monthly.entitlement.capacity!.retention.amountDue = 1.25;
+    monthly.entitlement.capacity!.network = { ...managedTransfer, service: "managed_proxy_transfer", status: "active", unlimited,
+      includedBytes: unlimited ? null : managedTransfer.includedBytes,
+      includedAvailableBytes: unlimited ? null : managedTransfer.includedAvailableBytes,
+      availableBytes: unlimited ? null : managedTransfer.availableBytes };
+    // Exercise the actual SDK/validator before the shared application operation;
+    // a mock entitlement alone missed the provider's newly included transfer.
+    const billing = new OblienBillingApi({ clientId: "test-id", clientSecret: "test-secret",
+      fetch: (async url => Response.json(new URL(String(url)).pathname === "/billing/balance"
+        ? monthly.balance : monthly.entitlement)) as typeof fetch });
     provider.subscriptions.set(selected.namespace!, monthly.subscription);
     provider.entitlement.mockImplementation(async namespace => namespace === selected.namespace
-      ? monthly.entitlement : { success: true, namespace, tierId: null, status: "credit_exhausted",
+      ? billing.getEntitlement(namespace) : { success: true, namespace, tierId: null, status: "credit_exhausted",
         periodStart: null, periodEnd: null, quota: { limit: 0, used: 0, balance: 0 } });
+    provider.balance.mockImplementation(namespace => billing.getBalance(namespace));
     const c = await clients(owner), unrelated = await clients(other);
     for (const client of [c.native, c.remote]) {
       expect(await client.getState({ workspaceId: selected.id })).toMatchObject({
         tier: "pro", status: "active", overQuota: false, creditAlert: null, monthlyCreditLimit: null,
         balance: { quotaLimit: null, quotaRemaining: null, quotaUsed: 0, unlimited: false },
         compute: { billingMode: "monthly", covered: true, currentPeriod: { end: "2026-11-01T00:00:00Z" },
-          retention: { amountDue: 1.25 }, network: { availableBytes: 0 } },
+          retention: { amountDue: 1.25 }, network: { included: true, unlimited, status: "active",
+            availableBytes: unlimited ? null : managedTransfer.availableBytes, periodConsumedBytes: managedTransfer.periodConsumedBytes } },
         topups: { available: false, status: "unavailable" },
         plan: { billingMode: "monthly", price: { monthly: 3900 }, monthlyCredits: null },
       });
@@ -202,6 +217,17 @@ describe("billing through the same SDK and HTTP application operations", () => {
       expect((await client.getState()).compute).toBeNull();
       await expect(client.getState({ workspaceId: selected.id })).rejects.toMatchObject({ statusCode: 404 });
     }
+    await expect(assertManagedServerCanWork(owner.orgId, selected.id)).resolves.toBeUndefined();
+    await expect(assertManagedServerCanWork(other.orgId, selected.id)).rejects.toMatchObject({ statusCode: 404 });
+    // Internet exhaustion does not cancel paid compute; expired compute still
+    // blocks work even if the contract's transfer benefit remains unlimited.
+    monthly.entitlement.capacity!.network.status = "blocked";
+    monthly.entitlement.capacity!.network.availableBytes = 0;
+    await expect(assertManagedServerCanWork(owner.orgId, selected.id)).resolves.toBeUndefined();
+    monthly.entitlement.computeCovered = monthly.entitlement.capacity!.computeCovered = false;
+    monthly.balance.computeCovered = false;
+    monthly.balance.blocking = true;
+    await expect(assertManagedServerCanWork(owner.orgId, selected.id)).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
     expect(provider.checkout).not.toHaveBeenCalled();
   });
 

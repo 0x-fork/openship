@@ -778,7 +778,7 @@
       "shared": "Capacité partagée entre apps et builds",
       "fullCapacity": "Toute la capacité disponible pour chaque service"
     },
-    "extras": "Le trafic du proxy géré est facultatif et acheté séparément. Les sauvegardes utilisent leur destination configurée. Après la fin de la couverture, le stockage conservé reste facturé jusqu’à sa suppression.",
+    "extras": "Les serveurs mensuels incluent du trafic Internet géré ; consultez votre quota dans Facturation. Les sauvegardes utilisent leur destination configurée. Après la fin de la couverture, le stockage conservé est facturé jusqu’à sa suppression.",
     "paidThrough": "Payé jusqu’au {date}",
     "recovery": "Vérifiez le renouvellement ou le paiement pour rétablir l’accès au calcul.",
     "storageDue": "Solde du stockage conservé : {amount}",
@@ -787,7 +787,7 @@
     "comparisonHint": "Comparaison d’utilisation uniquement ; ce n’est ni une économie en espèces ni un supplément.",
     "proxyTransfer": "Trafic du proxy géré",
     "transferRemaining": "{amount} GiB disponibles",
-    "proxyHint": "Seul le proxy Internet géré facultatif utilise ce quota. Les routes publiques des applications sont distinctes.",
+    "proxyHint": "Couvre les clonages Git, les téléchargements de paquets et les autres échanges Internet gérés. Les routes publiques des applications sont distinctes.",
     "transferRecovery": "Aucun trafic proxy disponible. Contactez le support pour en ajouter ; le calcul payé reste couvert.",
     "retention": "Après expiration du calcul, le stockage conservé coûte {amount}/GiB-mois jusqu’à sa suppression. Les disques sont conservés au moins {days} jours, sans suppression automatique.",
     "paygMetering": "La facturation à l’usage mesure le CPU actif, la RAM réservée en fonctionnement ou en pause et le stockage provisionné tant qu’il est conservé.",

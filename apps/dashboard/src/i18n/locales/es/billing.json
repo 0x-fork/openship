@@ -778,7 +778,7 @@
       "shared": "Capacidad compartida entre apps y compilaciones",
       "fullCapacity": "Toda la capacidad disponible para cualquier servicio"
     },
-    "extras": "El tráfico del proxy gestionado es opcional y se compra por separado. Las copias de seguridad usan su destino configurado. Al finalizar la cobertura, el almacenamiento retenido se factura hasta que se elimina.",
+    "extras": "Los servidores mensuales incluyen tráfico de Internet gestionado; consulta tu cuota en Facturación. Las copias de seguridad usan su destino configurado. Al terminar la cobertura, el almacenamiento retenido se factura hasta eliminarlo.",
     "paidThrough": "Pagado hasta {date}",
     "recovery": "Revisa la renovación o el pago para recuperar el acceso al cómputo.",
     "storageDue": "Saldo de almacenamiento retenido: {amount}",
@@ -787,7 +787,7 @@
     "comparisonHint": "Solo compara el uso; no representa un ahorro en efectivo ni un cargo adicional.",
     "proxyTransfer": "Tráfico del proxy gestionado",
     "transferRemaining": "{amount} GiB disponibles",
-    "proxyHint": "Solo el proxy de Internet gestionado opcional usa esta cuota. Las rutas públicas de las aplicaciones son independientes.",
+    "proxyHint": "Incluye clones de Git, descargas de paquetes y otro tráfico de Internet gestionado. Las rutas públicas de las apps son independientes.",
     "transferRecovery": "No hay tráfico de proxy disponible. Contacta con soporte para añadirlo; el cómputo pagado sigue cubierto.",
     "retention": "Tras vencer el cómputo, el almacenamiento retenido cuesta {amount}/GiB al mes hasta eliminarlo. Los discos se conservan al menos {days} días, sin borrado automático.",
     "paygMetering": "El pago por uso mide CPU activa, RAM reservada mientras se ejecuta o pausa y almacenamiento aprovisionado mientras se conserve.",

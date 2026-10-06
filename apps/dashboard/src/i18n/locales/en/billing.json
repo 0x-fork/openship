@@ -778,7 +778,7 @@
       "shared": "Shared capacity for apps and builds",
       "fullCapacity": "Full available capacity for any service"
     },
-    "extras": "Managed proxy transfer is optional and purchased separately. Backups use their configured destination. After coverage ends, retained storage is billed until deleted.",
+    "extras": "Monthly servers include managed internet transfer; see Billing for your allowance. Backups use their configured destination. After coverage ends, retained storage is billed until deleted.",
     "paidThrough": "Paid through {date}",
     "recovery": "Review your renewal or payment to restore compute access.",
     "storageDue": "Retained storage balance: {amount}",
@@ -787,7 +787,7 @@
     "comparisonHint": "Usage comparison only; this is not a cash saving or an extra charge.",
     "proxyTransfer": "Managed proxy transfer",
     "transferRemaining": "{amount} GiB available",
-    "proxyHint": "Only the optional managed internet proxy uses this allowance. Public app routes are separate.",
+    "proxyHint": "Covers Git clones, package downloads and other managed internet traffic. Public app routes are separate.",
     "transferRecovery": "No proxy transfer is available. Contact support to add transfer; paid compute remains covered.",
     "retention": "After compute expires, retained storage costs {amount}/GiB-month until deleted. Disks are retained for at least {days} days, with no automatic deletion.",
     "paygMetering": "PAYG measures active CPU, reserved RAM while running or paused, and provisioned storage while retained.",
