@@ -1729,8 +1729,9 @@ export class DockerRuntime implements RuntimeAdapter {
             streamedFailureHint,
             this.extractBuildFailureHint(entry.message, diagnosticContext),
           );
-          // Pass docker's real output straight through.
-          log.log(entry.message, parseLogLevel(entry.message));
+          // Keep raw terminal bytes: an executor chunk is not a complete line.
+          // Dropping rawData makes live/replayed logs insert a newline per chunk.
+          log.callback({ ...entry, level: parseLogLevel(entry.message) });
         },
         { signal: commandAbort.signal },
       );
