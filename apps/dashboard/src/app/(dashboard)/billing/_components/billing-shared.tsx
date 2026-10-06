@@ -1,7 +1,8 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
-import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
+import { BillingLink as Link, useBillingWorkspace } from "@/components/billing/BillingWorkspaceContext";
+import { PendingCheckoutsPanel } from "@/components/billing/CheckoutRecovery";
 import { PLANS } from "@repo/core";
 import type { BillingState } from "@/lib/api/billing";
 import { isNewCloudCustomer, needsCloudPlan } from "@/lib/billing-presentation";
@@ -203,26 +204,29 @@ export function BillingPaymentsPanel({
   hasHistory = true,
 }: PortalPanelProps) {
   const { t } = useI18n();
-  if (!hasHistory) return <BillingEmptyState kind="payment" />;
+  const workspaceId = useBillingWorkspace();
   const copy = t.billing.paymentPanel;
   return (
-    <section className="rounded-2xl bg-card p-5">
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
-          <UiIcon
-            name="credit-card"
-            className="size-5"
-            aria-hidden="true"
-          />
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-base font-medium text-foreground">{copy.title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
-        </div>
-      </div>
-      <div className="mt-5">
-        <OpenStripePortalButton enabled={portalAvailable} label={copy.openStripe} />
-      </div>
-    </section>
+    <div className="space-y-4">
+      <section className="rounded-2xl bg-card p-5">
+        <PendingCheckoutsPanel workspaceId={workspaceId} />
+      </section>
+      {hasHistory ? (
+        <section className="rounded-2xl bg-card p-5">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+              <UiIcon name="credit-card" className="size-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-medium text-foreground">{copy.title}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
+            </div>
+          </div>
+          <div className="mt-5">
+            <OpenStripePortalButton enabled={portalAvailable} label={copy.openStripe} />
+          </div>
+        </section>
+      ) : <BillingEmptyState kind="payment" />}
+    </div>
   );
 }

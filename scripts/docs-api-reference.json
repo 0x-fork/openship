@@ -1866,6 +1866,24 @@
       "description": "Verify a checkout and its credit delivery for this organization.",
       "route": "GET /api/billing/checkout"
     },
+    "billing.listCheckouts": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "List unfinished server payments with saved offer terms and verified recovery actions. Does not start a payment or expose hosted URLs.",
+      "route": "GET /api/billing/checkouts"
+    },
+    "billing.resumeCheckout": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Resume the exact saved checkout, or report that it was submitted or expired. Browser payment authorization is still required.",
+      "route": "POST /api/billing/checkout/resume"
+    },
+    "billing.cancelCheckout": {
+      "page": "billing",
+      "section": "Operations",
+      "description": "Request provider-confirmed cancellation of an unfinished capacity checkout. Unknown outcomes remain tracked and retryable.",
+      "route": "POST /api/billing/checkout/cancel"
+    },
     "billing.getResources": {
       "page": "billing",
       "section": "Operations",

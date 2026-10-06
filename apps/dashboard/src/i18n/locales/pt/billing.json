@@ -809,5 +809,42 @@
     "close": "Fechar",
     "done": "Concluído",
     "requestFailed": "Não foi possível salvar sua solicitação. Tente novamente ou envie um e-mail para support@openship.io."
+  },
+  "pendingPayments": {
+    "title": "Pagamentos pendentes",
+    "description": "Retome o pagamento ou cancele-o para escolher outro plano.",
+    "allServers": "Pagamentos não concluídos dos seus servidores gerenciados.",
+    "loading": "Verificando pagamentos…",
+    "count": "Pendentes: {count}",
+    "refresh": "Atualizar",
+    "loadError": "Não foi possível carregar os pagamentos pendentes. Tente novamente.",
+    "actionError": "Não foi possível confirmar esta ação. Atualize o status do pagamento antes de tentar novamente.",
+    "empty": "Nenhum pagamento não concluído.",
+    "canceled": "Pagamento cancelado ou expirado",
+    "monthly": "por mês",
+    "annual": "por ano",
+    "oneTime": "pagamento único",
+    "cancelUnavailable": "O cancelamento deste pagamento não está disponível agora. Atualize ou contate o suporte.",
+    "support": "Contatar o suporte",
+    "cancelHint": "O link de pagamento será fechado. Depois, você poderá escolher outro plano.",
+    "confirmCancel": "Confirmar cancelamento",
+    "keep": "Manter pagamento",
+    "opening": "Abrindo…",
+    "recover": "Recuperar pagamento",
+    "resume": "Retomar pagamento",
+    "retryCancel": "Tentar cancelar novamente",
+    "cancel": "Cancelar pagamento",
+    "viewStatus": "Ver status do pagamento",
+    "choosePlan": "Escolher um plano",
+    "deleteServer": "Excluir servidor não utilizado",
+    "openPayment": "Abrir pagamento",
+    "removing": "A exclusão do servidor foi solicitada. Acompanhe o progresso em Servidores.",
+    "states": {
+      "open": "Aguardando pagamento",
+      "unconfirmed": "Recupere o link de pagamento original",
+      "processing": "Pagamento enviado · confirmando o status",
+      "canceling": "Confirmando cancelamento…",
+      "unavailable": "O status do pagamento está temporariamente indisponível"
+    }
   }
 }

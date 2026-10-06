@@ -809,5 +809,42 @@
     "close": "Kapat",
     "done": "Tamam",
     "requestFailed": "İsteğiniz kaydedilemedi. Yeniden deneyin veya support@openship.io adresine e-posta gönderin."
+  },
+  "pendingPayments": {
+    "title": "Bekleyen ödemeler",
+    "description": "Ödemeye devam edin veya başka bir plan seçmek için iptal edin.",
+    "allServers": "Yönetilen sunucularınızın tamamlanmamış ödemeleri.",
+    "loading": "Ödemeler kontrol ediliyor…",
+    "count": "Bekleyen: {count}",
+    "refresh": "Yenile",
+    "loadError": "Bekleyen ödemeler yüklenemedi. Tekrar deneyin.",
+    "actionError": "Bu işlem doğrulanamadı. Tekrar denemeden önce ödeme durumunu yenileyin.",
+    "empty": "Tamamlanmamış ödeme yok.",
+    "canceled": "Ödeme iptal edildi veya süresi doldu",
+    "monthly": "aylık",
+    "annual": "yıllık",
+    "oneTime": "tek seferlik ödeme",
+    "cancelUnavailable": "Bu ödeme şu anda iptal edilemiyor. Yenileyin veya destekle iletişime geçin.",
+    "support": "Destekle iletişime geçin",
+    "cancelHint": "Ödeme bağlantısı kapatılacak. Ardından başka bir plan seçebilirsiniz.",
+    "confirmCancel": "İptali onayla",
+    "keep": "Ödemeyi koru",
+    "opening": "Açılıyor…",
+    "recover": "Ödemeyi kurtar",
+    "resume": "Ödemeye devam et",
+    "retryCancel": "İptali tekrar dene",
+    "cancel": "Ödemeyi iptal et",
+    "viewStatus": "Ödeme durumunu görüntüle",
+    "choosePlan": "Plan seç",
+    "deleteServer": "Kullanılmayan sunucuyu sil",
+    "openPayment": "Ödemeyi aç",
+    "removing": "Sunucu silme talebi alındı. İlerlemeyi Sunucular sayfasından takip edebilirsiniz.",
+    "states": {
+      "open": "Ödeme bekleniyor",
+      "unconfirmed": "İlk ödeme bağlantısını kurtarın",
+      "processing": "Ödeme gönderildi · durumu doğrulanıyor",
+      "canceling": "İptal doğrulanıyor…",
+      "unavailable": "Ödeme durumu geçici olarak kullanılamıyor"
+    }
   }
 }

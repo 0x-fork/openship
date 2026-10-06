@@ -4,10 +4,14 @@ import { ServerDetailSchema, type ManagedServerConnection } from "@repo/contract
 
 const h = vi.hoisted(() => ({
   identity: { apiUrl: "https://cloud.example.test", userId: "cloud-user", organizationId: "cloud-org", token: "session" },
-  fetch: vi.fn(), link: vi.fn(), workspace: vi.fn(), reserve: vi.fn(), attach: vi.fn(),
+  fetch: vi.fn(), link: vi.fn(), workspace: vi.fn(), reserve: vi.fn(), attach: vi.fn(), proxy: vi.fn(), audit: vi.fn(),
   setNamespace: vi.fn(), finishDeletion: vi.fn(), binding: null as null | { workspaceId: string },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
+vi.mock("@repo/platform/engine/modules/billing/billing-application.service", () => ({ listPlans: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/billing/billing-local.service", () => ({ proxyToCloudBilling: h.proxy }));
+vi.mock("@repo/platform/engine/lib/authorization", () => ({ authorization: { authorize: vi.fn() } }));
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: h.audit }, operationAuditContext: (ctx: unknown) => ctx }));
 vi.mock("@repo/platform/engine/lib/cloud/transport", async original => ({
   ...await original<typeof import("@repo/platform/engine/lib/cloud/transport")>(),
   resolveOrgCloudUserId: async () => "local-owner",
@@ -23,6 +27,7 @@ vi.mock("@repo/db", () => ({ repos: {
 } }));
 import { connectCloudServer, requireLinkedCloudServer, confirmLinkedServerDeletion } from "@repo/platform/engine/lib/cloud/server-link";
 import { remoteServerConnection } from "@repo/platform/engine/lib/cloud/server-connection";
+import { billingDependencies } from "@repo/platform/engine/modules/billing/billing.operations";
 
 const remote = { apiUrl: "https://cloud.example.test", userId: "cloud-user", organizationId: "cloud-org", serverId: "cloud-server", workspaceId: "cloud-workspace" };
 const summary = { id: remote.workspaceId, serverId: remote.serverId, name: "Managed", planTierId: "starter", subscriptionStatus: "active",
@@ -40,11 +45,47 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 beforeEach(() => {
   vi.resetAllMocks(); Object.assign(h.identity, { ...remote, token: "session" });
-  h.workspace.mockResolvedValue(row);
+  h.workspace.mockImplementation(async (id, org) => id === row.id && org === row.organizationId ? row : undefined);
   h.link.mockResolvedValue(row);
   h.binding = null;
   h.reserve.mockImplementation(async () => h.binding ?? {});
   h.fetch.mockImplementation(async (_org: string, path: string) => json(path.endsWith("/authorize") ? authorized : server));
+});
+
+describe("linked server checkout recovery", () => {
+  const ctx = { organizationId: row.organizationId } as never;
+  const id = "a".repeat(64);
+  const pending = { id, checkoutId: "cs_pending", server: summary, kind: "subscription", name: "Saved offer", amountCents: 1700,
+    currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true };
+  it("maps both the billing owner and execution server using the verified Cloud link", async () => {
+    h.proxy.mockResolvedValue({ status: 200, payload: { data: { items: [pending] } } });
+    expect(await billingDependencies.collection.listCheckouts(ctx, { workspaceId: row.id })).toMatchObject({
+      items: [{ id, server: { id: row.id, serverId: "local-server" } }],
+    });
+    expect(h.proxy).toHaveBeenCalledExactlyOnceWith(ctx, "/checkouts?workspaceId=cloud-workspace", "GET", undefined, remote);
+    expect(h.audit).not.toHaveBeenCalled();
+  });
+  it.each(["resumeCheckout", "cancelCheckout"] as const)("forwards %s for the linked owner without rewriting the saved checkout identity", async operation => {
+    h.proxy.mockResolvedValue({ status: 200, payload: { data: { status: "ready", checkoutId: "cs_pending", checkoutUrl: "https://checkout.stripe.com/private" } } });
+    await billingDependencies.collection[operation](ctx, { workspaceId: row.id, id });
+    expect(h.proxy).toHaveBeenCalledExactlyOnceWith(ctx, operation === "resumeCheckout" ? "/checkout/resume" : "/checkout/cancel", "POST",
+      JSON.stringify({ workspaceId: remote.workspaceId, id }), remote);
+    expect(JSON.stringify(h.audit.mock.calls)).not.toContain("https://checkout.stripe.com/private");
+  });
+  it.each(["id", "serverId"])("rejects an unrelated returned %s", async field => {
+    h.proxy.mockResolvedValue({ status: 200, payload: { data: { items: [{ ...pending, server: { ...summary, [field]: "other" } }] } } });
+    await expect(billingDependencies.collection.listCheckouts(ctx, { workspaceId: row.id }))
+      .rejects.toMatchObject({ code: "CLOUD_SERVER_IDENTITY_MISMATCH" });
+  });
+  it("requires a local linked server and refuses to use another Cloud connection", async () => {
+    await expect(billingDependencies.collection.listCheckouts(ctx, {})).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_REQUIRED" });
+    await expect(billingDependencies.collection.cancelCheckout(ctx, { workspaceId: remote.workspaceId, id }))
+      .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_NOT_FOUND" });
+    h.identity.organizationId = "another-org";
+    await expect(billingDependencies.collection.resumeCheckout(ctx, { workspaceId: row.id, id }))
+      .rejects.toMatchObject({ code: "CLOUD_SERVER_CONNECTION_CHANGED" });
+    expect(h.proxy).not.toHaveBeenCalled();
+  });
 });
 
 describe("verified managed server links", () => {

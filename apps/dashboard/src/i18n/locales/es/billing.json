@@ -809,5 +809,42 @@
     "close": "Cerrar",
     "done": "Listo",
     "requestFailed": "No pudimos guardar tu solicitud. Inténtalo de nuevo o escribe a support@openship.io."
+  },
+  "pendingPayments": {
+    "title": "Pagos pendientes",
+    "description": "Reanuda el pago o cancélalo para elegir otro plan.",
+    "allServers": "Pagos sin completar de tus servidores administrados.",
+    "loading": "Comprobando pagos…",
+    "count": "Pendientes: {count}",
+    "refresh": "Actualizar",
+    "loadError": "No pudimos cargar los pagos pendientes. Inténtalo de nuevo.",
+    "actionError": "No pudimos confirmar esta acción. Actualiza el estado del pago antes de volver a intentarlo.",
+    "empty": "No hay pagos sin completar.",
+    "canceled": "Pago cancelado o caducado",
+    "monthly": "al mes",
+    "annual": "al año",
+    "oneTime": "pago único",
+    "cancelUnavailable": "Este pago no se puede cancelar ahora. Actualiza el estado o contacta con soporte.",
+    "support": "Contactar con soporte",
+    "cancelHint": "El enlace de pago se cerrará. Después podrás elegir otro plan.",
+    "confirmCancel": "Confirmar cancelación",
+    "keep": "Conservar pago",
+    "opening": "Abriendo…",
+    "recover": "Recuperar pago",
+    "resume": "Reanudar pago",
+    "retryCancel": "Reintentar cancelación",
+    "cancel": "Cancelar pago",
+    "viewStatus": "Ver estado del pago",
+    "choosePlan": "Elegir un plan",
+    "deleteServer": "Eliminar servidor sin usar",
+    "openPayment": "Abrir pago",
+    "removing": "Se solicitó eliminar el servidor. Puedes seguir el progreso en Servidores.",
+    "states": {
+      "open": "Esperando el pago",
+      "unconfirmed": "Recupera el enlace de pago original",
+      "processing": "Pago enviado · confirmando su estado",
+      "canceling": "Confirmando cancelación…",
+      "unavailable": "El estado del pago no está disponible temporalmente"
+    }
   }
 }

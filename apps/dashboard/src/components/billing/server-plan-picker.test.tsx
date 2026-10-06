@@ -23,11 +23,11 @@ import type { BillingState } from "@/lib/api/billing";
 import { ApiError } from "@/lib/api/client";
 
 const h = vi.hoisted(() => ({
-  get: vi.fn(), post: vi.fn(), create: vi.fn(), available: vi.fn(), connect: vi.fn(), readServer: vi.fn(), selected: vi.fn(),
+  get: vi.fn(), post: vi.fn(), create: vi.fn(), available: vi.fn(), connect: vi.fn(), readServer: vi.fn(), selected: vi.fn(), remove: vi.fn(),
   user: "user-a", org: "org-a", connected: true,
 }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import("@/lib/api/client")>(), api: { get: h.get, post: h.post } }));
-vi.mock("@/lib/api/system", () => ({ systemApi: { createManagedServer: h.create, availableManagedServers: h.available, connectManagedServer: h.connect, getServerById: h.readServer } }));
+vi.mock("@/lib/api/system", () => ({ systemApi: { createManagedServer: h.create, availableManagedServers: h.available, connectManagedServer: h.connect, getServerById: h.readServer, removeManagedServer: h.remove } }));
 vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: { user: { id: h.user }, session: { activeOrganizationId: h.org } } }) }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: h.connected, startConnect: vi.fn() }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
@@ -511,6 +511,34 @@ describe("buying another managed server", () => {
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.post.mock.calls[1]).toEqual(h.post.mock.calls[0]);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it.each([false, true])("recovers pending payment instead of a raw error and clears canceled purchase identity (delete server: %s)", async remove => {
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [{
+      id: "a".repeat(64), checkoutId: "cs_pending", server, kind: "subscription", name: "Saved Starter",
+      amountCents: 2000, currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true,
+    }] } } : catalog);
+    h.post.mockRejectedValueOnce(new ApiError(409, "Blocked", { code: "CLOUD_WORKSPACE_CHECKOUT_PENDING", error: "Raw pending error" }));
+    h.post.mockImplementation(async path => path === "billing/checkout/cancel"
+      ? { data: { status: "expired", checkoutId: "cs_pending", checkoutUrl: null } }
+      : { data: { checkoutUrl: "https://checkout.example.test/new-server" } });
+    h.remove.mockResolvedValue({ ...server, state: "deleting" });
+    await render(<ManagedServerPurchase preserveProject />);
+    await click("Choose Starter");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(copy.pendingPayments.title);
+    expect(document.body.textContent).not.toContain("Raw pending error");
+    await click(copy.pendingPayments.cancel); await click(copy.pendingPayments.confirmCancel);
+    if (remove) {
+      await click(copy.pendingPayments.deleteServer); await click(copy.workspaces.confirmDelete);
+      h.create.mockResolvedValueOnce({ ...server, id: "cws-replacement", serverId: "server-replacement" });
+    }
+    await act(async () => document.querySelector<HTMLButtonElement>(`button[aria-label="${copy.checkoutUnavailable.close}"]`)!.click());
+    await click("Choose Starter");
+    const attempts = h.post.mock.calls.filter(([path]) => path === "billing/subscription").map(([, input]) => input);
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1].idempotencyKey).not.toBe(attempts[0].idempotencyKey);
+    expect(attempts[1].workspaceId).toBe(remove ? "cws-replacement" : server.id);
+    expect(h.create).toHaveBeenCalledTimes(remove ? 2 : 1);
   });
 
   it("discards an unavailable checkout when the customer changes organization", async () => {

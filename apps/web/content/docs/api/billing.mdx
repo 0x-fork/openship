@@ -266,6 +266,30 @@ console.log(subscription?.cancelAtPeriodEnd);
 await ship.billing.resumeSubscription();
 ```
 
+## Recover unfinished payments
+
+```ts
+const pending = await ship.billing.listCheckouts({ workspaceId: 'cws_...' });
+```
+
+Cloud can omit `workspaceId` to list unfinished payments across the current
+organization. Connected self-hosted installations require the locally linked
+workspace ID. Listing reads saved offers and provider status; it does not replay
+a purchase. Each item includes its recovery `id`, server, saved price, state,
+`canResume` and `canCancel`.
+
+After the customer chooses an action, call `resumeCheckout({ workspaceId, id })`
+or `cancelCheckout({ workspaceId, id })`. Both require the exact item and server.
+Resume reuses the original request and payment URL. A `ready` result includes
+`checkoutUrl`; redirect to it unchanged and keep it out of logs and analytics.
+
+Cancellation uses the matching provider capacity quote. `canceling` means the
+outcome is still pending: retry the same operation, without starting another
+checkout or deleting the server. `expired` confirms that the checkout is closed.
+`processing` means payment has been submitted and must be verified separately.
+Cancellation does not cancel an existing paid subscription. Payments without a
+supported cancellation action can be resumed, allowed to expire, or referred to support.
+
 ## Verify a checkout
 
 ```ts
@@ -280,9 +304,10 @@ contains `id`, `kind`, `status`, `paymentStatus`, `fulfilled`,
 or payment-provider identifiers.
 
 The success URL includes `session_id`. A return URL or a previously active
-subscription is not proof of the new payment. The dashboard confirms only a
-paid checkout whose fulfillment completed with a positive net credit grant;
-subscription purchases also require the expected tier and interval to be active.
+subscription is not proof of the new payment. The dashboard verifies payment
+and completed fulfillment. Credit purchases require a positive net credit grant;
+monthly subscriptions require the expected saved offer and paid capacity, and
+the welcome waits for the managed server to be ready.
 Unfinished delivery stays pending, while refunds, disputes and failures are
 shown explicitly. Webhook events and fresh provider reads remain authoritative.
 
@@ -373,6 +398,9 @@ closure and resource cleanup.
 | Read current billing state. | `billing.getState(input?)` | `GET /api/billing/state`<br />`billing:read` |
 | Read provider credit alerts across the organization's managed servers, with unavailable subscriptions identified separately. | `billing.getCreditAlerts()` | `GET /api/billing/credit-alerts`<br />`billing:read` |
 | Verify a checkout and its credit delivery for this organization. | `billing.getCheckout(input)` | `GET /api/billing/checkout`<br />`billing:read` |
+| List unfinished server payments with saved offer terms and verified recovery actions. Does not start a payment or expose hosted URLs. | `billing.listCheckouts(input?)` | `GET /api/billing/checkouts`<br />`billing:read` |
+| Resume the exact saved checkout, or report that it was submitted or expired. Browser payment authorization is still required. | `billing.resumeCheckout(input)` | `POST /api/billing/checkout/resume`<br />`billing:write` |
+| Request provider-confirmed cancellation of an unfinished capacity checkout. Unknown outcomes remain tracked and retryable. | `billing.cancelCheckout(input)` | `POST /api/billing/checkout/cancel`<br />`billing:admin` |
 | Read compute usage, edge traffic, and bandwidth limits. | `billing.getResources(input?)` | `GET /api/billing/resources`<br />`billing:read` |
 | Read subscription and renewal state. | `billing.getSubscription(input?)` | `GET /api/billing/subscription`<br />`billing:read` |
 | Quote a Custom server's monthly price and usage allowance without purchasing it. | `billing.quoteCustomPlan(input)` | `GET /api/billing/subscription/quote`<br />`billing:read` |

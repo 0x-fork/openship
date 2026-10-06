@@ -6,7 +6,8 @@ import { env } from "../../config/env";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import * as service from "./billing-application.service";
 import { proxyToCloudBilling } from "./billing-local.service";
-import { requireLinkedCloudServer } from "../../lib/cloud/server-link";
+import { requireLinkedCloudServer, localizeCloudSummary } from "../../lib/cloud/server-link";
+import type { CloudWorkspaceSummary } from "@repo/contracts";
 import { requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
 import { authorization } from "../../lib/authorization";
 import { repos } from "@repo/db";
@@ -18,6 +19,9 @@ const routes = {
   getSubscriptionChange: ["GET", "/subscription/change"],
   cancelSubscriptionChange: ["POST", "/subscription/change/cancel"],
   getCheckout: ["GET", "/checkout"],
+  listCheckouts: ["GET", "/checkouts"],
+  resumeCheckout: ["POST", "/checkout/resume"],
+  cancelCheckout: ["POST", "/checkout/cancel"],
   getCreditAlerts: ["GET", "/credit-alerts"],
   getState: ["GET", "/state"], getResources: ["GET", "/resources"], getSubscription: ["GET", "/subscription"],
   createSubscription: ["POST", "/subscription"], cancelSubscription: ["POST", "/cancel"],
@@ -34,6 +38,8 @@ async function invoke(name: keyof typeof BillingOperationSchemas, ctx: Execution
   } else {
     const linked = isRecord(input) && typeof input.workspaceId === "string"
       ? await requireLinkedCloudServer(ctx.organizationId, input.workspaceId) : null;
+    if (name === "listCheckouts" && !linked)
+      throw new OperationError("Choose a managed server to view its pending payments", 400, "CLOUD_WORKSPACE_REQUIRED");
     if (linked && (name === "previewSubscriptionChange" || name === "confirmSubscriptionChange")) {
       const server = await requireWorkspaceServer(ctx.organizationId, linked.id);
       await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
@@ -52,6 +58,12 @@ async function invoke(name: keyof typeof BillingOperationSchemas, ctx: Execution
         typeof body.code === "string" ? body.code : undefined, body);
     }
     data = isRecord(result.payload) ? result.payload.data : undefined;
+    if (linked && name === "listCheckouts" && isRecord(data) && Array.isArray(data.items)) {
+      data = { ...data, items: await Promise.all(data.items.map(async item => {
+        if (!isRecord(item)) throw new OperationError("Cloud returned an invalid checkout", 502, "INVALID_CLOUD_RESPONSE");
+        return { ...item, server: await localizeCloudSummary(linked, item.server as CloudWorkspaceSummary) };
+      })) };
+    }
     if (linked && isRecord(data) && isRecord(data.workspace)) {
       if (data.workspace.id !== linked.remote.workspaceId)
         throw new OperationError("Cloud billing returned a different server", 502, "CLOUD_SERVER_IDENTITY_MISMATCH");

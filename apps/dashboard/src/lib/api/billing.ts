@@ -4,6 +4,7 @@ import type { PlanTierId, CreditPackDefinition, CustomServerResources } from "@r
 import type { ApiPlan } from "@/components/billing/PricingCards";
 import type { BillingSubscription, BillingResources, BillingCheckoutStatus, BillingCreditAlerts, BillingCustomQuote, BillingState as BillingStateContract, BillingOperations, BillingPlanChange, BillingPlanChangeQuote } from "@repo/contracts";
 import { trackCloudEvent } from "../cloud-analytics";
+import type { BillingPendingCheckouts, BillingCheckoutActionInput, BillingCheckoutActionResult } from "@repo/contracts";
 export type { BillingResources, BillingCreditAlerts } from "@repo/contracts";
 
 /* ------------------------------------------------------------------ */
@@ -177,6 +178,12 @@ interface Envelope<T> {
 /* ------------------------------------------------------------------ */
 
 export const billingApi = {
+  listCheckouts: async (workspaceId?: string): Promise<BillingPendingCheckouts> =>
+    (await api.get<Envelope<BillingPendingCheckouts>>(endpoints.billing.checkouts, { params: { workspaceId } })).data,
+  resumeCheckout: async (input: BillingCheckoutActionInput): Promise<BillingCheckoutActionResult> =>
+    (await api.post<Envelope<BillingCheckoutActionResult>>(endpoints.billing.checkoutResume, input)).data,
+  cancelCheckout: async (input: BillingCheckoutActionInput): Promise<BillingCheckoutActionResult> =>
+    (await api.post<Envelope<BillingCheckoutActionResult>>(endpoints.billing.checkoutCancel, input)).data,
   previewSubscriptionChange: async (input: Parameters<BillingOperations["previewSubscriptionChange"]>[0]): Promise<BillingPlanChangeQuote> =>
     (await api.post<Envelope<BillingPlanChangeQuote>>(endpoints.billing.changePreview, input)).data,
   confirmSubscriptionChange: async (input: Parameters<BillingOperations["confirmSubscriptionChange"]>[0]): Promise<BillingPlanChange> =>

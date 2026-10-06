@@ -99,7 +99,7 @@ monthly server, buy credits or debit a wallet.
 | **Usage** | Recorded usage over the selected period. |
 | **Plans** | Compare upgrades, review other plans, or customize resources. |
 | **Top-ups** | Available only for eligible saved metered subscriptions. |
-| **Payments** | Invoices and payment methods through the selected server's Stripe portal. |
+| **Payments** | Unfinished checkouts, plus invoices and payment methods through the selected server's Stripe portal. |
 
 Choose the managed server to inspect its own billing. **Get server** starts a
 separate subscription; it does not replace the selected server's plan. New
@@ -124,6 +124,13 @@ or migrate to a smaller server.
 First subscriptions use hosted checkout. The return page checks the specific
 payment and provider fulfillment; a successful browser redirect does not grant
 coverage. Pending, refunded and failed payments remain distinct.
+
+If a checkout was left open, **Pending payments** in the Billing header lets you
+resume its original payment or cancel it when the provider supports cancellation.
+This remains available before a server has a paid plan. A pending cancellation
+keeps the purchase tracked until confirmed; a payment that completes meanwhile
+opens its verification status instead of another checkout. Confirmed cancellation
+or expiry lets you choose a new plan and remove an unused, unpaid server.
 
 ## Cancellation and retained storage
 

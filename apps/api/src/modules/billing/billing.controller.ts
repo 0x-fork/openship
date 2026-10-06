@@ -15,6 +15,18 @@ export async function listPlans(c: Context) {
 }
 export async function getState(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.getState(operationContext(c), billingScope(c))) }); }
 export async function getCreditAlerts(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.getCreditAlerts(operationContext(c))) }); }
+export async function listCheckouts(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.listCheckouts(operationContext(c), billingScope(c))) });
+}
+export async function resumeCheckout(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.resumeCheckout(operationContext(c), await c.req.json())) });
+}
+export async function cancelCheckout(c: Context) {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await operationData(c, getPlatformKernel().billing.cancelCheckout(operationContext(c), await c.req.json())) });
+}
 export async function getCheckout(c: Context) {
   return c.json({
     data: await operationData(

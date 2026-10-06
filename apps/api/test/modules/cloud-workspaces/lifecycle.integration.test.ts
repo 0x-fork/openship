@@ -805,6 +805,205 @@ describe("workspace payment and deletion races", () => {
         createTrackedWorkspaceCheckout((await repos.cloudWorkspace.findById(workspace.id))!, input),
       workspace.id,
     );
+  describe("pending checkout recovery", () => {
+    type Payment = { id: string; namespace: string; status: "open" | "complete" | "expired";
+      paymentStatus: "paid" | "unpaid"; fulfilled: boolean };
+    const payments = new Map<string, Payment>();
+    const accepted = new Map<string, string>();
+    const reservations = new Map<string, { quote: { id: string; namespace: string; paymentSource: "stripe" };
+      checkoutId: string; url: string }>();
+    const remote = (actor = owner) => new OpenshipClient({ baseUrl: "http://openship.test", token: actor.token,
+      organizationId: actor.orgId, fetch: ((url, init) => app.request(String(url), init)) as typeof fetch }).billing;
+    const selected = async () => (await remote().listCheckouts({ workspaceId: workspace.id })).items[0]!;
+    const action = async () => ({ workspaceId: workspace.id, id: (await selected()).id });
+    beforeEach(() => {
+      payments.clear(); accepted.clear(); reservations.clear();
+      subscriptions.delete(workspace.namespace!);
+      h.billing.createCheckout = vi.fn(async (input: ReturnType<typeof checkout>) => {
+        let id = accepted.get(input.idempotencyKey);
+        if (!id) {
+          id = `cs_${randomUUID().replaceAll("-", "")}`;
+          accepted.set(input.idempotencyKey, id);
+          payments.set(id, { id, namespace: input.namespace, status: "open", paymentStatus: "unpaid", fulfilled: false });
+          reservations.set(input.namespace, { checkoutId: id, url: `https://checkout.stripe.com/c/pay/${id}`,
+            quote: { id: `quote_${id}`, namespace: input.namespace, paymentSource: "stripe" } });
+        }
+        return { checkoutId: id, url: `https://checkout.stripe.com/c/pay/${id}` };
+      });
+      h.billing.getCheckout = vi.fn(async (namespace: string, id: string) => {
+        const payment = payments.get(id)!;
+        expect(payment.namespace).toBe(namespace);
+        return { checkout: { ...payment, kind: "subscription", fulfillmentStatus: "pending", namespaceCreditsGranted: 0 } };
+      });
+      h.billing.getPendingCapacityCheckout = vi.fn(async (namespace: string) => ({
+        success: true, namespace, pendingCheckout: reservations.get(namespace) ?? null,
+      }));
+      h.billing.cancelCapacityCheckout = vi.fn(async (namespace: string, input: { quoteId: string; idempotencyKey: string }) => {
+        const pending = reservations.get(namespace)!;
+        const saved = (await repos.cloudWorkspace.findByNamespace(namespace))!;
+        expect(saved.pendingCheckouts.find(item => item.checkoutId === pending.checkoutId)?.cancellation).toEqual(input);
+        expect(input.quoteId).toBe(pending.quote.id);
+        payments.get(pending.checkoutId)!.status = "expired";
+        reservations.delete(namespace);
+        return { success: true, namespace, pendingCheckout: null };
+      });
+    });
+    it("lists lost responses without replaying a payment, then recovers the exact saved offer and identity", async () => {
+      const original = checkout();
+      const create = h.billing.createCheckout.getMockImplementation()!;
+      h.billing.createCheckout.mockImplementationOnce(async (input: any) => { await create(input); throw new Error("lost response"); });
+      await expect(purchase(original)).rejects.toThrow("lost response");
+      const item = await selected();
+      expect(item).toMatchObject({ state: "unconfirmed", checkoutId: null, canResume: true, canCancel: false,
+        name: original.offer.name, amountCents: original.offer.unitAmount, interval: "monthly" });
+      expect(JSON.stringify(item)).not.toContain(original.idempotencyKey);
+      expect(item).not.toHaveProperty("request");
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      const result = await remote().resumeCheckout({ workspaceId: workspace.id, id: item.id });
+      expect(result).toMatchObject({ status: "ready", checkoutId: accepted.get(original.idempotencyKey) });
+      for (const [input] of h.billing.createCheckout.mock.calls) expect(input).toEqual(original);
+      expect(await selected()).toMatchObject({ id: item.id, state: "open", canCancel: true });
+    });
+    it("releases only the canceled purchase, allowing another plan and deletion through the shared server flow", async () => {
+      await purchase();
+      await expect(purchase()).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" });
+      expect((await request("DELETE", `/${workspace.id}`, { confirmDelete: true, idempotencyKey: randomUUID() })).body.code)
+        .toBe("CLOUD_WORKSPACE_CHECKOUT_PENDING");
+      expect(await remote().cancelCheckout(await action())).toMatchObject({ status: "expired", checkoutUrl: null });
+      expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toEqual([]);
+      await expect(purchase()).resolves.toHaveProperty("checkoutId");
+      await remote().cancelCheckout(await action());
+      expect((await request("DELETE", `/${workspace.id}`, { confirmDelete: true, idempotencyKey: randomUUID() })).status).toBe(202);
+      await drainBackgroundWork();
+      expect(await repos.cloudWorkspace.findById(workspace.id)).toBeUndefined();
+    });
+    it("lists all owned servers despite one unavailable payment and cancels only the selected server's checkout", async () => {
+      const first = await purchase();
+      const sibling = await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Staging" });
+      await ensureNamespace(owner.orgId, sibling.id);
+      const siblingOwner = (await repos.cloudWorkspace.findById(sibling.id))!;
+      const secondRequest = { ...checkout(), namespace: siblingOwner.namespace!,
+        metadata: subscriptionMetadata("hobby", owner.orgId, siblingOwner.namespace!) };
+      const second = await withCloudBillingLock(owner.orgId,
+        () => createTrackedWorkspaceCheckout(siblingOwner, secondRequest), sibling.id);
+      const read = h.billing.getCheckout.getMockImplementation()!;
+      h.billing.getCheckout.mockImplementation(async (namespace: string, id: string) => {
+        if (id === second.checkoutId) throw new Error("temporarily unavailable");
+        return read(namespace, id);
+      });
+      const { items } = await remote().listCheckouts();
+      expect(items).toHaveLength(2);
+      expect(items.find(item => item.server.id === workspace.id)).toMatchObject({ checkoutId: first.checkoutId, state: "open" });
+      expect(items.find(item => item.server.id === sibling.id)).toMatchObject({ checkoutId: second.checkoutId, state: "unavailable" });
+      const input = { workspaceId: workspace.id, id: items.find(item => item.server.id === workspace.id)!.id };
+      await expect(remote().cancelCheckout({ ...input, workspaceId: sibling.id }))
+        .rejects.toMatchObject({ code: "BILLING_CHECKOUT_NOT_PENDING" });
+      expect(await remote().cancelCheckout(input)).toMatchObject({ status: "expired" });
+      expect(payments.get(second.checkoutId)?.status).toBe("open");
+      expect((await repos.cloudWorkspace.findById(sibling.id))!.pendingCheckouts).toEqual([
+        { request: secondRequest, checkoutId: second.checkoutId },
+      ]);
+      expect((await remote().listCheckouts()).items.map(item => item.server.id)).toEqual([sibling.id]);
+      expect(h.billing.createCheckout).toHaveBeenCalledTimes(2);
+      expect(h.billing.cancelCapacityCheckout).toHaveBeenCalledTimes(1);
+    });
+    it("confirms a lost cancellation response from the original checkout's terminal state", async () => {
+      await purchase();
+      const cancel = h.billing.cancelCapacityCheckout.getMockImplementation()!;
+      h.billing.cancelCapacityCheckout.mockImplementationOnce(async (...args: any[]) => { await cancel(...args); throw new Error("lost response"); });
+      expect(await remote().cancelCheckout(await action())).toMatchObject({ status: "expired" });
+      expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toEqual([]);
+    });
+    it("persists an uncertain cancellation, blocks resume, and retries its original quote and key after reload", async () => {
+      await purchase();
+      const input = await action();
+      h.billing.cancelCapacityCheckout.mockRejectedValueOnce(new Error("timeout"));
+      await expect(remote().cancelCheckout(input)).rejects.toThrow();
+      expect(await selected()).toMatchObject({ state: "canceling", canResume: false, canCancel: true });
+      const saved = (await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts[0]!.cancellation;
+      await expect(remote().resumeCheckout(input)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" });
+      await expect(purchase()).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" });
+      // A later capacity response may omit the old quote; the persisted identity still recovers it.
+      h.billing.getPendingCapacityCheckout.mockResolvedValue({ pendingCheckout: null });
+      expect(await remote().cancelCheckout(input)).toMatchObject({ status: "expired" });
+      expect(h.billing.cancelCapacityCheckout.mock.calls.map(([, request]: any[]) => request)).toEqual([saved, saved]);
+    });
+    it("does not label incomplete fulfillment as success or allow deletion when payment wins cancellation", async () => {
+      const paid = await purchase();
+      h.billing.cancelCapacityCheckout.mockImplementationOnce(async () => {
+        Object.assign(payments.get(paid.checkoutId)!, { status: "complete", paymentStatus: "paid" });
+        throw new Error("Payment already submitted");
+      });
+      expect(await remote().cancelCheckout(await action())).toMatchObject({ status: "processing", checkoutUrl: null });
+      expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toHaveLength(1);
+      await expect(purchase()).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" });
+      expect((await request("DELETE", `/${workspace.id}`, { confirmDelete: true, idempotencyKey: randomUUID() })).body.code)
+        .toBe("CLOUD_WORKSPACE_CHECKOUT_PENDING");
+    });
+    it.each(["other-checkout", null])("never cancels an unrelated or missing capacity payment (%s)", async checkoutId => {
+      await purchase();
+      h.billing.getPendingCapacityCheckout.mockResolvedValue({ pendingCheckout: checkoutId ? {
+        checkoutId, quote: { id: "other-quote", paymentSource: "stripe" },
+      } : null });
+      expect(await selected()).toMatchObject({ canResume: true, canCancel: false });
+      await expect(remote().cancelCheckout(await action())).rejects.toMatchObject({ code: "BILLING_CHECKOUT_CANCEL_UNAVAILABLE" });
+      expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts[0]).not.toHaveProperty("cancellation");
+    });
+    it("keeps unknown provider state pending and does not replay, clear or cancel it", async () => {
+      await purchase();
+      h.billing.getCheckout.mockRejectedValue(new Error("unavailable"));
+      const item = await selected();
+      expect(item).toMatchObject({ state: "unavailable", canResume: false, canCancel: false });
+      await expect(remote().cancelCheckout({ workspaceId: workspace.id, id: item.id })).rejects.toThrow();
+      expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts).toHaveLength(1);
+    });
+    it("does not reopen expired or already-submitted payments", async () => {
+      const payment = await purchase();
+      const input = await action();
+      Object.assign(payments.get(payment.checkoutId)!, { status: "complete", paymentStatus: "unpaid" });
+      expect(await remote().resumeCheckout(input)).toMatchObject({ status: "processing", checkoutUrl: null });
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      payments.get(payment.checkoutId)!.status = "expired";
+      expect(await remote().resumeCheckout(input)).toMatchObject({ status: "expired", checkoutUrl: null });
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts).toEqual([]);
+    });
+    it("treats an explicitly expired lost response as terminal without retaining its retry key", async () => {
+      h.billing.createCheckout.mockRejectedValueOnce(new Error("lost response"));
+      await expect(purchase()).rejects.toThrow();
+      const input = await action();
+      h.billing.createCheckout.mockRejectedValue(new OperationError("Expired", 410, "OBLIEN_BILLING_ERROR", { checkoutExpired: true }));
+      expect(await remote().resumeCheckout(input)).toMatchObject({ status: "expired" });
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts).toEqual([]);
+    });
+    it("rejects a replay which returns a different checkout identity", async () => {
+      await purchase();
+      h.billing.getPendingCapacityCheckout.mockResolvedValue({ pendingCheckout: null });
+      h.billing.createCheckout.mockResolvedValueOnce({ checkoutId: "cs_unrelated", url: "https://checkout.stripe.com/other" });
+      await expect(remote().resumeCheckout(await action())).rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts[0]!.checkoutId).not.toBe("cs_unrelated");
+    });
+    it("requires authentication, owner scope, and a write-capable credential before recovery", async () => {
+      await purchase();
+      const input = await action();
+      const stranger = await seedOwner();
+      expect((await app.request("/api/billing/checkouts")).status).toBe(401);
+      expect(await remote(stranger).listCheckouts()).toEqual({ items: [] });
+      await expect(remote(stranger).listCheckouts({ workspaceId: workspace.id })).rejects.toMatchObject({ statusCode: 404 });
+      await expect(remote(stranger).resumeCheckout(input)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(remote(stranger).cancelCheckout(input)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(remote().cancelCheckout({ ...input, id: "f".repeat(64) })).rejects.toMatchObject({ code: "BILLING_CHECKOUT_NOT_PENDING" });
+      const readOnly = (await nativeShip(owner, { organizationId: owner.orgId, readOnly: true })).billing;
+      await expect(readOnly.resumeCheckout(input)).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
+      await expect(readOnly.cancelCheckout(input)).rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
+      expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
+      const response = await app.request("/api/billing/checkouts", { headers: owner.auth });
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(scanRoutes(app).errors).toEqual([]);
+    });
+  });
   it("recovers a lost checkout response using the exact request and blocks deletion while payment can settle", async () => {
     const input = checkout();
     h.billing.createCheckout.mockRejectedValueOnce(

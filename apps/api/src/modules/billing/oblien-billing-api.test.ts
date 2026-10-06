@@ -29,6 +29,37 @@ function setup(body: unknown, status = 200) {
   return { api, fetcher };
 }
 describe("Oblien billing SDK and transport contract", () => {
+  it("reads a pending capacity checkout without exposing the reseller wallet or prices", async () => {
+    const pendingCheckout = { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe", wholesaleAmount: 940 },
+      checkoutId: "cs_requested", url: "https://checkout.stripe.com/c/pay/test" };
+    const { api, fetcher } = setup({ success: true, namespace: "os-one", pendingCheckout, wallet: { balance: 12000 } });
+    expect(await api.getPendingCapacityCheckout("os-one")).toEqual({ success: true, namespace: "os-one",
+      pendingCheckout: { ...pendingCheckout, quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" } } });
+    expect(fetcher.mock.calls[0]![0]).toBe("https://api.oblien.com/billing/capacity?namespace=os-one");
+    await expect(api.getPendingCapacityCheckout("os-other")).rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
+  });
+  it("cancels a capacity payment with the saved provider quote and retry identity", async () => {
+    const { api, fetcher } = setup({ success: true, namespace: "os-one", pendingCheckout: null });
+    const input = { quoteId: "quote_pending", idempotencyKey: "cancel-once" };
+    await expect(api.cancelCapacityCheckout("os-one", input)).resolves.toMatchObject({ pendingCheckout: null });
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/capacity/change/cancel", expect.objectContaining({
+      method: "POST",
+    }));
+    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toEqual({ namespace: "os-one", ...input });
+  });
+  it.each([
+    { quote: { id: "quote_pending", namespace: "os-other", paymentSource: "stripe" }, checkoutId: "cs_requested", url: null },
+    { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" }, checkoutId: "cs_requested", url: "https://evil.example/pay" },
+    { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" }, checkoutId: "cs_requested", url: "https://api.oblien.com/not-a-payment#secret" },
+  ])("rejects foreign capacity scope and untrusted resume URLs", async pendingCheckout => {
+    await expect(setup({ success: true, namespace: "os-one", pendingCheckout }).api.getPendingCapacityCheckout("os-one")).rejects.toThrow();
+  });
+  it("rejects malformed capacity payment URLs without exposing the provider response", async () => {
+    const pendingCheckout = { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" },
+      checkoutId: "cs_requested", url: "malformed-payment-capability" };
+    await expect(setup({ success: true, namespace: "os-one", pendingCheckout }).api.getPendingCapacityCheckout("os-one"))
+      .rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE", message: "Cloud billing returned an invalid response" });
+  });
   it("scopes complimentary policy writes to the requested namespace and validates the response", async () => {
     const policy = { quotaLimit: 3000, overdraft: 60, suspendThreshold: 60, onOverdraftAction: "stop_workspaces" as const };
     const result = { success: true, namespace: "os-one", service: "workspace_vm", ...policy };
