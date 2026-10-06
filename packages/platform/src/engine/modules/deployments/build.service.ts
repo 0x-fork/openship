@@ -2180,14 +2180,11 @@ export async function cancelBuildSession(
   // claim it, so this read identifies the actual cleanup owner.
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(deploymentId);
 
-  // 1. Abort the running build process. Best-effort - if the build already
-  //    finished or never started this is a no-op.
-  const { runtime } = platform();
-  if (dep.status === "building" && buildSession) {
-    await runtime.cancelBuild(buildSession.id).catch(() => {});
-  }
+  // The worker forwards cancellation to its actual build adapter, including
+  // when this request lands on another process. The process-wide default
+  // runtime here may be Bare while the worker is building Docker on a server.
 
-  // 2. Exactly ONE owner tears runtime resources down. A claimed worker owns
+  // 1. Exactly ONE owner tears runtime resources down. A claimed worker owns
   //    its build artifacts and containers and performs cancellation cleanup as
   //    it unwinds; racing it here can delete a resource between its activate and
   //    bookkeeping steps. Only a queued/unstarted deployment has no worker, so
@@ -2214,7 +2211,7 @@ export async function cancelBuildSession(
     console.log(`[CANCEL] ${dep.id}: worker owns runtime cleanup while cancellation unwinds`);
   }
 
-  // 3. Surface service-level cancellation in the SSE stream so the UI stops
+  // 2. Surface service-level cancellation in the SSE stream so the UI stops
   //    showing per-service spinners.
   const snapshot = dep.meta as DeploymentConfigSnapshot | null;
   if (snapshot?.serviceDeploymentMode !== "single") {
@@ -2229,7 +2226,7 @@ export async function cancelBuildSession(
     }
   }
 
-  // 4. Persist the cancelled status + close the SSE stream.
+  // 3. Persist the cancelled status + close the SSE stream.
   // INVARIANT: cancel writes the DEPLOYMENT row only — NEVER the project row.
   // activeDeploymentId (the last successful release) is left untouched, so a
   // cancelled redeploy has zero effect on the project's live state.

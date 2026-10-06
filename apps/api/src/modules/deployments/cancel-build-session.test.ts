@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   cancelInFlight: vi.fn(),
   acknowledgeUnstarted: vi.fn(),
   cancelWorker: vi.fn(),
+  cancelDefaultRuntime: vi.fn(),
   quiescent: vi.fn(),
   collect: vi.fn(),
   cleanup: vi.fn(),
@@ -39,7 +40,9 @@ vi.mock("@repo/db", async (importOriginal) => ({
     service: { listByProject: async () => [] },
   },
 }));
-vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ runtime: {} }) }));
+vi.mock("@repo/platform/engine/lib/platform-config", () => ({
+  platform: () => ({ runtime: { cancelBuild: h.cancelDefaultRuntime } }),
+}));
 vi.mock("@repo/platform/engine/modules/deployments/build-pipeline", () => ({
   kickoffBuild: vi.fn(),
   resolveServicePipelineMode: vi.fn(),
@@ -73,6 +76,15 @@ beforeEach(() => {
 });
 
 describe("cancel request and worker ownership", () => {
+  it("signals the owning worker without trying to cancel on the request process's default runtime", async () => {
+    h.status = "building";
+    h.session.startedAt = new Date();
+    expect(await cancelBuildSession("dep-1")).toMatchObject({ pending: true, success: false });
+    expect(h.cancelWorker).toHaveBeenCalledWith("dep-1", { keepProvisioned: undefined });
+    expect(h.cancelDefaultRuntime).not.toHaveBeenCalled();
+    expect(h.cleanup).not.toHaveBeenCalled();
+  });
+
   it("recognizes a worker that started while the cancellation request was waiting", async () => {
     h.cancelInFlight.mockImplementation(async () => {
       h.session.startedAt = new Date();
