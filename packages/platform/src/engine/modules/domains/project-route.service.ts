@@ -42,6 +42,7 @@ import {
 } from "../../lib/route-apply.service";
 import { observedLoopbackPublishFromUrl } from "../deployments/observed-host-port-claims";
 import { env } from "../../config/env";
+import { boxOwningOrgId } from "../../lib/box-org";
 import { resolveProjectLiveDeployTarget } from "../projects/project-deploy-target";
 
 type ProjectRouteProject = Pick<Project, "id" | "slug">;
@@ -458,7 +459,10 @@ export async function reapplyProjectLiveRoutes(
   // touches the docker transport, while routing drives the box through the pooled
   // SSH executor.
   const resolved = await resolveDeploymentPlatform((deployment.meta ?? {}) as DeploymentMeta, {
-    organizationId: deployment.organizationId,
+    organizationId:
+      opts.isSelfApp && (deployment.meta as DeploymentMeta | null)?.deployTarget === "local"
+        ? ((await boxOwningOrgId()) ?? undefined)
+        : deployment.organizationId,
   });
   const { routing, runtime } = resolved.platform;
   const { effectiveTarget, serverId } = resolved;
