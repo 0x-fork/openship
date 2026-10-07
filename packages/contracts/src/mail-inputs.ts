@@ -105,7 +105,7 @@ export const MailRequestSchemas = {
     hostname: Type.String({ minLength: 1 }),
     target: Type.Union([
       Type.Object({ kind: Type.Literal("self"), serverId: ResourceIdSchema }),
-      Type.Object({ kind: Type.Literal("cloud") }),
+      Type.Object({ kind: Type.Literal("cloud"), serverId: Type.Optional(ResourceIdSchema) }),
     ]),
     replaceLegacy: Type.Optional(Type.Boolean({ default: false })),
   }),

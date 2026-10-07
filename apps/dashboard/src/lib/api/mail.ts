@@ -158,6 +158,8 @@ export interface MailCredentials {
  * exposed here.
  */
 export interface MailWebmailSummary {
+  serverId?: string | null;
+  workspaceId?: string | null;
   installed: boolean;
   hostname: string;
   url: string;
@@ -690,7 +692,7 @@ export const mailApi = {
      *
      * `target` discriminator:
      *   { kind: "self", serverId } - host on an openship-managed server
-     *   { kind: "cloud" }          - host on Opshcloud
+     *   { kind: "cloud", serverId } - host on the selected managed Cloud server
      *
      * A pre-catalog webmail (`MailWebmailSummary.legacy`) can't be redeployed:
      * without `replaceLegacy` the API answers 409 `LEGACY_WEBMAIL`, and with it the
@@ -702,7 +704,7 @@ export const mailApi = {
       hostname: string;
       target:
         | { kind: "self"; serverId: string }
-        | { kind: "cloud" };
+        | { kind: "cloud"; serverId?: string };
       replaceLegacy?: boolean;
     }) =>
       api.post<{ deploymentId: string; projectId: string }>(

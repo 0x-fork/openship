@@ -248,7 +248,14 @@ POST /api/mail/webmail/deploy-project
 `target` is one of:
 
 - `{ "kind": "self", "serverId": "srv_123" }` — self-hosted on one of your Openship servers.
-- `{ "kind": "cloud" }` — managed by Openship Cloud.
+- `{ "kind": "cloud", "serverId": "srv_managed" }` — on a selected managed Openship Cloud server.
+
+Both targets need a real server ID. Use `GET /api/system/servers/destinations` to list accessible servers.
+For a Cloud server that is not connected to this installation yet, use
+`POST /api/system/servers/managed/connect` and pass its returned **local** `serverId` here. The dashboard
+uses the same connection flow. A missing Cloud destination is refused before creating a webmail project.
+Redeploying an existing managed webmail preserves its server binding; moving it to another server requires
+the normal project migration flow.
 
 ```bash
 curl -X POST "$OPENSHIP_URL/api/mail/webmail/deploy-project" \
