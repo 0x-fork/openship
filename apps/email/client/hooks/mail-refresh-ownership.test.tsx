@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, jest, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, jest, mock, spyOn } from "bun:test";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import {
   QueryClient,
@@ -12,6 +12,7 @@ import { initTRPC } from "@trpc/server";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { z } from "zod";
+import * as authClient from "@/lib/auth-client";
 
 let messages: Array<{ id: string; hasUnread: boolean }>;
 let requests: number;
@@ -38,7 +39,6 @@ let trpc: ReturnType<typeof createTRPCOptionsProxy<typeof router>>;
 // Keep the real React, Query, Jotai, and tRPC query-key behavior. Only the
 // surrounding account/router UI and the external mailbox transport are replaced.
 mock.module("@/providers/query-provider", () => ({ useTRPC: () => trpc }));
-mock.module("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 mock.module("@/hooks/use-settings", () => ({ useSettings: () => ({ data: null }) }));
 mock.module("react-router", () => ({ useParams: () => ({ folder: "inbox" }) }));
 mock.module("nuqs", () => ({ useQueryState: () => [null, () => {}] }));
@@ -71,6 +71,9 @@ function setGlobal(key: string, value: unknown) {
 }
 
 beforeEach(() => {
+  // A module mock permanently removed signIn for tests loaded later. Replace
+  // only the session hook and restore it, keeping the real auth API available.
+  spyOn(authClient, "useSession").mockReturnValue({ data: null, isPending: false, refetch: async () => {} });
   browser = new Window({ url: "https://mail.openship.test/mail/inbox" });
   setGlobal("window", browser);
   setGlobal("document", browser.document);
@@ -107,6 +110,7 @@ afterEach(async () => {
     else Reflect.deleteProperty(globalThis, key);
   }
   globals.clear();
+  mock.restore();
 });
 
 function ThreadConsumer() {
