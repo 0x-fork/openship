@@ -46,8 +46,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { stdin as input } from "node:process";
 import { buildMailImageRef } from "@repo/core";
-import { getRemoteClient, ApiError } from "../lib/ship-client";
-import { getToken } from "../lib/config";
+import { getRemoteClient, ApiError, hasShipCredentials } from "../lib/ship-client";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { has } from "../lib/from-source";
 import { readSourceInstall } from "../lib/source-install";
@@ -67,7 +66,7 @@ function guard<A extends unknown[]>(
   fn: (...args: A) => Promise<void>,
 ): (...args: A) => Promise<void> {
   return async (...args: A) => {
-    if (!getToken()) {
+    if (!hasShipCredentials()) {
       err("Not logged in. Run `openship login` first.");
       process.exit(1);
     }

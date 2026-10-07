@@ -3631,6 +3631,10 @@
       "page": "system",
       "description": "Create the initial administrator during authorized bootstrap."
     },
+    "POST /api/system/cli-session": {
+      "page": "system",
+      "description": "Exchange the private installation credential for a temporary local CLI admin session; requires X-Internal-Token and refuses Cloud/browser callers."
+    },
     "POST /api/system/cloud-connect": {
       "page": "system",
       "description": "Begin the installation's Cloud account connection."

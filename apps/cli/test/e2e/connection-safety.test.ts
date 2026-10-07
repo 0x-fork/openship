@@ -256,7 +256,7 @@ describe("assembled CLI connection and input safety", { timeout: 30_000 }, () =>
     await f.link(); f.config.current = "second"; await f.save();
     const rejected = await f.run(["deploy", "--branch", "main"]);
     expect(rejected.code).toBe(1);
-    expect(rejected.err).toContain("different remote connection");
+    expect(rejected.err).toContain("different connection");
     expect(f.requests).toEqual([]);
     const explicit = await f.run(["deploy", "--project", "proj_other", "--branch", "main"]);
     expect(explicit.code, explicit.err).toBe(0);

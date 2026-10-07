@@ -3,7 +3,7 @@ import { err, isJsonMode, setJsonMode } from "./lib/output";
 import { initializeNativeClient } from "./lib/native-client";
 import { closeNativeClient, cliUserAgent, setCommandOrganization } from "./lib/ship-client";
 import { CommandExit } from "./lib/command-exit";
-import { selectCommandConnection, withCommandContext } from "./lib/config";
+import { enableLocalCommandAuthentication, closeCommandConnection, selectCommandConnection, withCommandContext } from "./lib/config";
 
 // Auth & session
 import { loginCommand } from "./commands/login";
@@ -63,6 +63,7 @@ import { cacheCommand } from "./commands/cache";
 
 // Interactive setup / control (bare `openship`)
 import { runWizard, runControl, isSetupInProgress } from "./commands/wizard";
+import { runWelcome } from "./commands/welcome";
 import { serviceStatus } from "./lib/service";
 import { readInstallMethod } from "./lib/compose";
 
@@ -89,8 +90,9 @@ program
   .exitOverride()
   .enablePositionalOptions()
   .option("--json", "Machine-readable JSON output (stdout data only)")
-  .addOption(new Option("--context <name>", "Use a saved connection for this command without changing the default").conflicts(["apiUrl", "nativeConfig"]))
-  .addOption(new Option("--api-url <url>", "Use a remote API for this command; authenticate with OPENSHIP_TOKEN").conflicts(["context", "nativeConfig"]))
+  .addOption(new Option("--context <name>", "Use a saved connection for this command without changing the default").conflicts(["apiUrl", "nativeConfig", "local"]))
+  .addOption(new Option("--api-url <url>", "Use a remote API for this command; authenticate with OPENSHIP_TOKEN").conflicts(["context", "nativeConfig", "local"]))
+  .addOption(new Option("--local", "Use this machine's installation with its private administrator credential").conflicts(["context", "apiUrl", "nativeConfig"]))
   .option("--organization <id>", "Use a fixed organization scope for SDK resource commands (remote only)")
   .option("--native-config <file>", "Run SDK commands using an explicitly trusted JavaScript configuration")
   .hook("preAction", async (thisCommand, actionCommand) => {
@@ -103,10 +105,17 @@ program
       throw new Error("Use --organization with remote SDK resource commands. Native organization selection belongs in --native-config.");
     const context = thisCommand.opts().context as string | undefined;
     const apiUrl = thisCommand.opts().apiUrl as string | undefined;
+    const local = thisCommand.opts().local as boolean | undefined;
     if ((context !== undefined || apiUrl !== undefined) && !remoteCommands.has(top) && top !== loginCommand)
       throw new Error("Use connection options with a remote resource command. Installation commands manage this machine.");
-    const connection = !file && remoteCommands.has(top) ? selectCommandConnection({ context, apiUrl }) : undefined;
+    if (local && (!remoteCommands.has(top) || top === logoutCommand))
+      throw new Error("Use --local with a resource command. Local setup and recovery commands already manage this machine.");
+    const connection = !file && remoteCommands.has(top) ? selectCommandConnection({ context, apiUrl, local }) : undefined;
     setCommandOrganization(organization ?? connection?.organizationId);
+    // Help/schema and connection management must remain usable offline. Health
+    // and dashboard opening need the local endpoint, but no admin session.
+    if (connection && !actionCommand.opts().schema && top !== logoutCommand && top !== openCommand && top !== statusCommand && top !== doctorCommand)
+      enableLocalCommandAuthentication();
     if (file) {
       if (!sdkCommands.has(top))
         throw new Error("Choose an SDK resource command with --native-config; installation and remote-login commands use a remote context.");
@@ -130,7 +139,8 @@ program
     // default) drops back into the full setup wizard instead of the control panel.
     const installed = serviceStatus().installed || readInstallMethod() === "compose";
     if (installed && !isSetupInProgress()) await runControl();
-    else await runWizard();
+    else if (isSetupInProgress()) await runWizard();
+    else await runWelcome(runWizard, () => program.outputHelp());
   });
 
 // Run the platform / auth / workspace
@@ -204,7 +214,10 @@ async function main() {
   const native = process.argv.some(arg => arg === "--native-config" || arg.startsWith("--native-config="));
   if (native) { process.on("SIGINT", interrupt); process.on("SIGTERM", terminate); }
   try {
-    await withCommandContext(() => program.parseAsync());
+    await withCommandContext(async () => {
+      try { await program.parseAsync(); }
+      finally { await closeCommandConnection(); }
+    });
   } catch (error) {
     if (interrupted) return;
     if (error instanceof CommandExit) process.exitCode = error.code;

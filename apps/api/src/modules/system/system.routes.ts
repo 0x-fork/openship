@@ -32,6 +32,7 @@ import {
   TRANSFER_CONTROL_BODY_BYTES,
 } from "./data-transfer/chunk-store";
 import * as systemHealth from "./system-health.controller";
+import { createLocalCliSession } from "./local-cli.controller";
 
 const r = secureRouter(new Hono(), {
   module: "system",
@@ -59,6 +60,7 @@ r.public("get", "/setup", { reason: "Electron desktop client setup read - protec
 r.public("get", "/health", { reason: "CLI `openship doctor` — internal-token gated deep health rollup (DB liveness/migrations + project/service counts); the public /api/health is only a liveness stub" }, internalAuth, systemHealth.systemHealth);
 r.public("post", "/bootstrap-admin", { reason: "CLI first-admin creation — internal-token gated, one-shot before any admin exists (openship setup)" }, internalAuth, setup.bootstrapAdmin);
 r.public("post", "/reset-admin-password", { reason: "CLI password recovery — internal-token gated; resets the local admin login for a locked-out operator (openship reset-admin-password)" }, internalAuth, setup.resetAdminPassword);
+r.public("post", "/cli-session", { reason: "CLI on the installation host — requires the private internal token, refuses Cloud and browser callers, and creates a temporary session for the existing instance administrator" }, internalAuth, createLocalCliSession);
 r.public(
   "post",
   "/invite-signup",

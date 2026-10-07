@@ -749,6 +749,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `PUT /api/settings` | Compatibility settings update; use the dedicated build-mode tool for this preference. |
 | `PATCH /api/settings/clone-credentials` | User-global Git clone credentials are configured in the authenticated dashboard; MCP deploys using those saved credentials. |
 | `POST /api/system/bootstrap-admin` | CLI first-admin creation — internal-token gated, one-shot before any admin exists (openship setup) |
+| `POST /api/system/cli-session` | CLI on the installation host — requires the private internal token, refuses Cloud and browser callers, and creates a temporary session for the existing instance administrator |
 | `POST /api/system/cloud-connect` | CLI setup — finalize Openship Cloud PKCE handshake for a free domain; internal-token gated |
 | `GET /api/system/cloud-status` | CLI setup — read Openship Cloud connection state; internal-token gated |
 | `GET /api/system/clusters` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |

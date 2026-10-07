@@ -17,6 +17,7 @@ import { HttpClient } from "@repo/sdk/client";
 
 import { OS_DIR } from "./paths";
 import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
+import { localConnectionEndpoints, openLocalCliSession } from "./local-connection";
 
 /** Cached discovery from GET /api/health/env (see caps.ts). */
 export interface ContextCaps {
@@ -107,6 +108,10 @@ interface CommandConnection {
   name?: string;
   connection?: CliContext;
   environmentToken?: boolean;
+  localAuth?: { required: boolean };
+  localToken?: () => Promise<string | undefined>;
+  localSession?: ReturnType<typeof openLocalCliSession>;
+  close?: () => Promise<void>;
 }
 const commandContext = new AsyncLocalStorage<CommandConnection>();
 
@@ -142,9 +147,10 @@ function sameApi(left: string | undefined, right: string | undefined): boolean {
 }
 
 /** Select one immutable connection for this invocation; never persist CI credentials. */
-export function selectCommandConnection(options: { context?: string; apiUrl?: string } = {}): CliContext {
+export function selectCommandConnection(options: { context?: string; apiUrl?: string; local?: boolean } = {}): CliContext {
   const invocation = commandContext.getStore();
   if (!invocation) throw new Error("Select a connection inside a CLI invocation.");
+  if (options.local) return selectLocalConnection(invocation, true);
   // An explicit named context selects its complete endpoint/credential pair.
   // Ambient CI credentials must not retarget it or leak into another context.
   const environment = options.context === undefined ? invocation.environment : {};
@@ -152,6 +158,12 @@ export function selectCommandConnection(options: { context?: string; apiUrl?: st
   if (!Object.hasOwn(invocation.config.contexts, name))
     throw new Error(`Unknown context "${name}". Run openship login --context ${name} first.`);
   const saved = invocation.config.contexts[name];
+  // Only an unconfigured connection may discover the installation implicitly.
+  // An explicit endpoint/context or any saved/ambient credential never gains
+  // the host administrator's authority when its own authentication is missing.
+  if (options.context === undefined && environment.context === undefined && options.apiUrl === undefined && environment.apiUrl === undefined &&
+      saved.apiUrl === undefined && saved.token === undefined && environment.token === undefined && saved.organizationId === undefined && environment.organizationId === undefined)
+    return selectLocalConnection(invocation, false);
   const apiUrl = options.apiUrl ?? environment.apiUrl ?? saved.apiUrl;
   const retargeted = !sameApi(apiUrl, saved.apiUrl);
   invocation.name = name;
@@ -164,6 +176,44 @@ export function selectCommandConnection(options: { context?: string; apiUrl?: st
     caps: retargeted ? undefined : saved.caps,
   });
   return invocation.connection;
+}
+
+function selectLocalConnection(invocation: CommandConnection, required: boolean): CliContext {
+  invocation.name = "local";
+  invocation.environmentToken = false;
+  invocation.localAuth = { required };
+  invocation.connection = Object.freeze(localConnectionEndpoints());
+  return invocation.connection;
+}
+
+/** Prepare lazy authentication: offline utilities never need a running API. */
+export function enableLocalCommandAuthentication(): void {
+  const invocation = commandContext.getStore();
+  if (!invocation?.localAuth || !invocation.connection?.apiUrl) return;
+  const { apiUrl } = invocation.connection;
+  const { required } = invocation.localAuth;
+  invocation.localToken = async () => {
+    // All SDK clients in this invocation share one exchange, even when their
+    // first requests overlap. A failed exchange is never retried implicitly.
+    invocation.localSession ??= openLocalCliSession(apiUrl, required).then(session => {
+      if (session) {
+        invocation.close = session.close;
+        invocation.connection = Object.freeze({ ...invocation.connection, token: session.token });
+      }
+      return session;
+    });
+    return (await invocation.localSession)?.token;
+  };
+}
+
+export async function closeCommandConnection(): Promise<void> {
+  const invocation = commandContext.getStore();
+  // A cancelled SDK request may stop awaiting its credential callback while the
+  // exchange finishes. Drain that bounded request before signing its session out.
+  await invocation?.localSession?.catch(() => null);
+  const close = invocation?.close;
+  if (invocation) invocation.close = undefined;
+  await close?.();
 }
 
 export function writeConfig(config: CliConfig): void {
@@ -266,7 +316,12 @@ export function listContexts(): ContextInfo[] {
 
 /* ---------- Backward-compatible active-context helpers ---------- */
 
-export function getToken(name?: string): string | null {
+export function getToken(name?: string): string | null;
+export function getToken(name: string | undefined, options: { deferred: true }): string | (() => Promise<string | undefined>) | null;
+export function getToken(name?: string, options?: { deferred: true }): string | (() => Promise<string | undefined>) | null {
+  const invocation = commandContext.getStore();
+  if (options?.deferred && invocation?.localToken && (name === undefined || name === invocation.name))
+    return invocation.localToken;
   return getContext(name).token ?? null;
 }
 

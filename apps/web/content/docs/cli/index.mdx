@@ -20,12 +20,12 @@ native mode are available in `openship` 0.8.0 and later. Newly added commands re
 
 ## Connect and deploy
 
-Start a [local installation](/docs/cli/run), or connect to an existing one:
+Run `openship` for a guided choice of Cloud, a remote self-hosted installation, or
+[installing on this machine](/docs/cli/run). To connect directly:
 
 ```bash
 openship login \
   --api-url https://ship.example.com \
-  --dashboard-url https://ship.example.com \
   --context production
 
 openship project list
@@ -35,6 +35,8 @@ openship deploy --watch
 
 `login` opens the token settings page and asks for a personal access token. `init` links the current
 directory to a project. `deploy --watch` submits a deployment and follows its progress.
+Use `openship login --cloud` for Openship Cloud. On the server that runs Openship, the installation
+owner can use `openship --local project list` with automatic local authentication.
 
 ## Choose a workflow
 

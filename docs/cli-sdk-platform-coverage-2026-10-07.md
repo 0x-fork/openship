@@ -25,6 +25,11 @@ This audit started from `origin/main` at `93cdaebd`. Work is isolated on
 - Login accepts private token files/stdin and masks interactive input. Logout accurately reports a
   still-active environment token. SSH registration accepts a private key from the caller's machine;
   controller-host key paths retain their separate meaning.
+- First run offers connecting to Cloud or a remote controller alongside local installation. The
+  installer keeps its existing setup/control menu. The installation owner can use resource commands
+  without a PAT: the CLI exchanges the protected bare/Compose internal credential over loopback for
+  a temporary normal session. `--local` explicitly selects that installation without altering saved
+  contexts. This does not enable zero-auth HTTP access or replace an explicit limited credential.
 - Project deletion refuses unattended prompts without confirmation. Server updates, installs,
   migration completion, shell execution and setup streams preserve failed outcomes. Reattachment
   observes the existing operation. Quotes, revisions, sequences, selected container IDs and cutover
@@ -36,7 +41,7 @@ This audit started from `origin/main` at `93cdaebd`. Work is isolated on
 ## Inventory and how to reproduce it
 
 `scripts/docs-surface.mjs` now inspects both `ScopedShip` and `OpenshipClient`. The API reference
-contains **563 named resource methods** and **703 distinct HTTP method/path pairs**. Root SDK
+contains **563 named resource methods** and **704 distinct HTTP method/path pairs**. Root SDK
 workflows such as `deploy`, `deployment().wait` and `scope` are documented separately.
 
 The built public CLI exposes **670 command paths**, including command groups. This is an inventory,
@@ -116,11 +121,16 @@ remain governed by native policy and the existing provider support.
 
 ## Verification
 
-- **19,160 workspace tests passed, 7 skipped** across all 10 test workspaces with
+- **Initial audit: 19,160 workspace tests passed, 7 skipped** across all 10 test workspaces with
   `bun run test --output-logs=errors-only -- --maxWorkers 3`. This includes **686 CLI** and
   **232 SDK** tests, actual CLI subprocesses, native workers, PGlite persistence,
   generated-code deployment, redeployment, tenant isolation, revoked access, teardown and cleanup.
-- **92 repository script tests passed**. Documentation checks compile 209 pages, validate 296 CLI
+- **Local administration follow-up: 712 CLI and 8,348 API tests passed** in the complete suites.
+  Real HTTP, Better Auth and PGlite tests verify the installation-owner exchange, ordinary session
+  authorization, workspace isolation, sign-out and expired-session cleanup. CLI subprocess tests
+  cover bare/Compose credentials, remote isolation, redirect refusal and offline recovery. Login
+  is deferred until an API operation needs it; utilities and confirmation checks stay offline.
+- **92 repository script tests passed**. Documentation checks compile 209 pages, validate 301 CLI
   examples and type-check 126 SDK examples against the built public package.
 - The first full run at default parallelism hit one 10-second monitoring setup timeout. The unchanged
   test passed both alone and in the full run with three workers, with its existing timeout. The

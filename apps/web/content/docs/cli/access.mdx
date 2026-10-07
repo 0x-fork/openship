@@ -10,19 +10,62 @@ dashboard URL, personal access token, and optional fixed organization. One conte
 Each command pins its connection settings for the entire invocation. Switching or updating a context
 in another terminal affects the next command, including while this command paginates, uploads or watches logs.
 
-## Log in
+## Choose where to connect
+
+The same CLI works on your laptop and on an Openship server:
+
+| Destination | Authentication | Start here |
+| --- | --- | --- |
+| Openship installed on this server | Automatic for the installation owner, using its protected local credential | `openship --local project list` |
+| A remote self-hosted installation | Sign in once with a personal access token | `openship login --api-url https://ship.example.com --context production` |
+| Openship Cloud | Sign in once with a Cloud personal access token | `openship login --cloud` |
+
+On a fresh machine, `openship` offers Cloud, an existing self-hosted installation, or installing
+Openship on this machine. Choosing a connection does not start a local server. `openship login`
+also offers a guided Cloud/self-hosted choice when no endpoint is saved.
+
+## On the installation server
+
+Run the CLI as the OS account that installed Openship. Ordinary resource commands discover the
+installed service when there is no remote connection configured. Use `--local` to choose it explicitly,
+including after signing into Cloud or another server:
+
+```bash
+openship --local project list
+openship --local server list
+openship --local service list --project proj_123
+```
+
+The CLI reads the existing private installation credential, discovers the actual API port, and obtains
+a temporary administrator session over loopback. It uses the normal API permissions and signs out
+when the command finishes. It does not save that session in your contexts or enable anonymous API access.
+An interrupted process's session expires within 24 hours; the next local authentication cleans expired sessions.
+
+Both CLI-managed bare and Docker Compose installations are supported. If you installed under another OS account
+or a custom `OPENSHIP_HOME`, run as that account or use the correct installation home with appropriate
+permissions. Merely installing the CLI or being another user on the same server does not grant access.
+Automatic local authentication requires a server release containing this feature. Older servers can
+still use the existing PAT login until upgraded.
+
+`--local` ignores saved and ambient remote credentials. An explicit remote endpoint/context or token
+never falls back to local administrator privileges. Local setup, start, stop, and password recovery
+continue to manage this machine independently of the active remote context.
+
+## Log in to Cloud or a remote server
 
 ```bash
 openship login \
   --api-url https://ship.example.com \
-  --dashboard-url https://ship.example.com \
   --context production
 ```
 
 The CLI opens the dashboard token page and prompts for a token without echoing it. For scripts, use
 `--token-file /path/to/token` or `--token-file -` to read stdin. Login validates the token before storing
 it and selects the context. Saved credentials are written atomically with owner-only permissions.
-The local default API is `http://localhost:4000`; the local dashboard default is `http://localhost:3001`.
+For most self-hosted installations, the public dashboard URL is also the API URL. Pass
+`--dashboard-url` when they use different origins. Login reuses a saved connection's endpoints;
+retargeting its API also updates the default dashboard address. The installed service's remembered
+ports take precedence over the local defaults of API port 4000 and dashboard port 3001.
 
 ## Switch contexts
 
@@ -30,6 +73,8 @@ The local default API is `http://localhost:4000`; the local dashboard default is
 openship context list
 openship context use production
 openship status
+openship --context cloud project list
+openship --local project list
 ```
 
 `context add` stores endpoints and a token without validating them. Use `login` when you want

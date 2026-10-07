@@ -13,6 +13,7 @@ Use `openship <command> --help` to check the version installed on your machine. 
 | `--json` | Machine-readable JSON output (stdout data only) |
 | `--context <name>` | Use a saved connection for this command without changing the default |
 | `--api-url <url>` | Use a remote API for this command; authenticate with OPENSHIP_TOKEN |
+| `--local` | Use this machine's installation with its private administrator credential |
 | `--organization <id>` | Use a fixed organization scope for SDK resource commands (remote only) |
 | `--native-config <file>` | Run SDK commands using an explicitly trusted JavaScript configuration |
 | `-h, --help` | display help for command |
@@ -23,7 +24,7 @@ Put global options before the command, for example `openship --json project list
 
 | Command | Purpose |
 | --- | --- |
-| [`openship login`](/docs/cli/reference/login) | Authenticate with a Personal Access Token (create one in dashboard Settings) |
+| [`openship login`](/docs/cli/reference/login) | Connect to Cloud or self-hosted Openship with a Personal Access Token |
 | [`openship logout`](/docs/cli/reference/logout) | Remove the stored Openship token |
 | [`openship context`](/docs/cli/reference/context) | Manage connection contexts (list/use/add/rm) |
 | [`openship token`](/docs/cli/reference/token) | Manage personal access tokens |
