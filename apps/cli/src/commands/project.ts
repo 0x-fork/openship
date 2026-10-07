@@ -7,17 +7,20 @@
  */
 import { Command } from "commander";
 import chalk from "chalk";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { getShipClient, ApiError } from "../lib/ship-client";
 import type { CreateProjectInput, TSetReleaseSourceBody } from "@repo/sdk";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
 import { parseOptionalEnvironmentScope } from "@repo/sdk/client";
-import { collect, parsePairs } from "../lib/command-input";
+import { collect, parsePairs, positiveInteger, readJsonInput } from "../lib/command-input";
+import { CreateProjectBody, parseInput } from "@repo/contracts";
+import { confirmOrExit } from "../lib/cmd-helpers";
+import { rethrowCommandExit } from "../lib/command-exit";
+import { projectClusterCommand, projectDatabaseCommand, projectVolumeCommand } from "./project-data";
 import {
   projectUpdateCommand, projectEnvironmentCommand, projectResourcesCommand,
   projectStorageCommand, projectConnectionsCommand, projectInspectionCommands,
+  projectOptionsCommand, projectCacheCommand, projectDeploymentsCommand, projectCloneCommand, projectLocalCommand, projectRoutingCommand,
 } from "./project-management";
 import {
   renderReleaseImage,
@@ -33,6 +36,7 @@ function action(fn: (...args: any[]) => Promise<void>) {
     try {
       await fn(...args);
     } catch (e) {
+      rethrowCommandExit(e);
       if (e instanceof ApiError) err(`  ${e.message}`);
       else err(`  ${e instanceof Error ? e.message : String(e)}`);
       process.exitCode = 1;
@@ -205,19 +209,23 @@ const releaseImageCmd = new Command("release-image")
 // POST /api/projects → { data } 201 (project.routes.ts:47, body = CreateProjectBody)
 const createCmd = new Command("create")
   .description("Create a project")
-  .requiredOption("--name <name>", "Project name")
+  .option("--name <name>", "Project name (required unless supplied in --config)")
+  .option("--config <file>", "Full project configuration as JSON, or - for stdin; flags override supplied fields")
+  .option("--schema", "Print the complete create input schema without making a request")
   .option("--slug <slug>", "Free-subdomain slug (slug.opsh.io)")
   .option("--git-owner <owner>", "GitHub owner/org")
   .option("--git-repo <repo>", "GitHub repository name")
   .option("--git-branch <branch>", "Git branch to deploy")
   .option("--framework <framework>", "Stack/framework id")
-  .option("--local-path <path>", "Local source path")
-  .option("--port <port>", "Container port", (v) => Number(v))
+  .option("--local-path <path>", "Source path on the controller host; use deploy --folder to upload from this machine")
+  .option("--port <port>", "Container port", positiveInteger)
   .option("--type <type>", "Project type: app | docker | services | monorepo")
   .option("--server <id>", "Registered server ID (see `openship server list`)")
   .action(
     action(async (opts) => {
-      const body: CreateProjectInput = { name: opts.name };
+      if (opts.schema) { printJson(CreateProjectBody); return; }
+      const body = opts.config ? parseInput(CreateProjectBody, readJsonInput(opts.config)) : { name: opts.name } as CreateProjectInput;
+      if (opts.name !== undefined) body.name = opts.name;
       if (opts.slug) body.slug = opts.slug;
       if (opts.gitOwner) body.gitOwner = opts.gitOwner;
       if (opts.gitRepo) body.gitRepo = opts.gitRepo;
@@ -227,6 +235,7 @@ const createCmd = new Command("create")
       if (opts.port) body.port = opts.port;
       if (opts.type) body.projectType = opts.type;
       if (opts.server) body.serverId = opts.server;
+      parseInput(CreateProjectBody, body);
 
       // The shared import scans Compose/monorepo metadata before creating rows.
       const client = getShipClient();
@@ -250,17 +259,7 @@ const deleteCmd = new Command("delete")
   .option("-y, --yes", "Skip the confirmation prompt")
   .action(
     action(async (id: string, opts) => {
-      if (!opts.yes) {
-        const rl = createInterface({ input, output });
-        const answer = await rl.question(
-          chalk.yellow(`  Delete project ${id}? This cannot be undone. `) + "(y/N) ",
-        );
-        rl.close();
-        if (answer.trim().toLowerCase() !== "y") {
-          info("  Aborted.");
-          return;
-        }
-      }
+      await confirmOrExit(opts.yes, `Delete project ${id}${opts.wipeVolumes ? " and its persistent volumes" : ""}?`);
       const result = await getShipClient().projects.remove(id, {
         ...(opts.force && { force: true }),
         ...(opts.forceOrphan && { forceOrphan: true }),
@@ -542,7 +541,7 @@ const transferCmd = new Command("transfer")
 const logsCmd = new Command("logs")
   .description("Show or stream runtime (container) logs")
   .argument("<id>", "Project ID")
-  .option("--tail <n>", "Number of recent lines", (v) => Number(v))
+  .option("--tail <n>", "Number of recent lines", positiveInteger)
   .option("-f, --follow", "Stream logs until interrupted")
   .action(
     action(async (id: string, opts) => {
@@ -579,7 +578,7 @@ const logsCmd = new Command("logs")
 const serverLogsCmd = new Command("server-logs")
   .description("Show or stream HTTP request logs (edge/OpenResty)")
   .argument("<id>", "Project ID")
-  .option("--limit <n>", "Number of recent entries (max 200)", (v) => Number(v))
+  .option("--limit <n>", "Number of recent entries (max 200)", positiveInteger)
   .option("--domain <domain>", "Restrict to a specific domain")
   .option("-f, --follow", "Stream request logs until interrupted")
   .action(
@@ -587,7 +586,7 @@ const serverLogsCmd = new Command("server-logs")
       const domain = opts.domain as string | undefined;
 
       if (!opts.follow) {
-        const limit = opts.limit ? Math.min(Math.max(Math.trunc(opts.limit) || 50, 1), 200) : undefined;
+        const limit = opts.limit;
         const { logs } = await getShipClient().projects.recentServerLogs(id, { domain, limit });
         printJson(logs);
         return;
@@ -642,5 +641,9 @@ projectCommand.addCommand(sleepModeCmd);
 projectCommand.addCommand(transferCmd);
 projectCommand.addCommand(logsCmd);
 projectCommand.addCommand(serverLogsCmd);
+projectCommand.addCommand(projectClusterCommand);
+projectCommand.addCommand(projectDatabaseCommand);
+projectCommand.addCommand(projectVolumeCommand);
+for (const command of [projectOptionsCommand, projectCacheCommand, projectDeploymentsCommand, projectCloneCommand, projectLocalCommand, projectRoutingCommand]) projectCommand.addCommand(command);
 for (const command of [projectUpdateCommand, projectEnvironmentCommand, projectResourcesCommand,
   projectStorageCommand, projectConnectionsCommand, ...projectInspectionCommands]) projectCommand.addCommand(command);

@@ -31,6 +31,15 @@ openship project|projects [options] [command]
 | [`transfer <id> <direction>`](/docs/cli/reference/project#openship-project-transfer) | Promote a project to Openship Cloud, or bring it back (self-hosted only) |
 | [`logs [options] <id>`](/docs/cli/reference/project#openship-project-logs) | Show or stream runtime (container) logs |
 | [`server-logs [options] <id>`](/docs/cli/reference/project#openship-project-server-logs) | Show or stream HTTP request logs (edge/OpenResty) |
+| [`cluster`](/docs/cli/reference/project#openship-project-cluster) | Configure cluster placement and scale a deployed workload |
+| [`database`](/docs/cli/reference/project/database#openship-project-database) | Manage project databases, replicas, backups and application connections |
+| [`volume`](/docs/cli/reference/project/volume#openship-project-volume) | Manage replicated project volumes and recoverable backups |
+| [`options [options] <id> [file]`](/docs/cli/reference/project#openship-project-options) | Change supported project options using the shared input schema |
+| [`clear-build-cache [options] <id>`](/docs/cli/reference/project#openship-project-clear-build-cache) | Clear the host build cache used by this project; other projects on that host share it |
+| [`deployments [options] <id>`](/docs/cli/reference/project#openship-project-deployments) | Read full project deployment records with pagination |
+| [`clone-token`](/docs/cli/reference/project#openship-project-clone-token) | Manage this project's explicit clone credential |
+| [`local`](/docs/cli/reference/project#openship-project-local) | Manage folders on the Openship instance; use deploy --folder for this machine's files |
+| [`routing`](/docs/cli/reference/project/routing#openship-project-routing) | Manage project routing rules and retry route synchronization |
 | [`update <id> <file>`](/docs/cli/reference/project#openship-project-update) | Patch a project's build and runtime configuration |
 | [`environment\|environments`](/docs/cli/reference/project#openship-project-environment) | Manage isolated project environments (each has its own project ID) |
 | [`resources`](/docs/cli/reference/project#openship-project-resources) | Inspect and configure project CPU, memory, disk and build limits |
@@ -40,6 +49,165 @@ openship project|projects [options] [command]
 | [`incidents <id>`](/docs/cli/reference/project#openship-project-incidents) | Show this project's monitoring incidents |
 | [`drift <id>`](/docs/cli/reference/project#openship-project-drift) | Compare source and deployment configuration |
 | [`rollback-capacity <id>`](/docs/cli/reference/project#openship-project-rollback-capacity) | Inspect retained rollback capacity |
+| [`info <id>`](/docs/cli/reference/project#openship-project-info) | Read project details and deployment configuration |
+| [`git-info <id>`](/docs/cli/reference/project#openship-project-git-info) | Read the configured repository and source state |
+| [`session <id>`](/docs/cli/reference/project#openship-project-session) | Find this project's active deployment session |
+| [`check-ports <id>`](/docs/cli/reference/project#openship-project-check-ports) | Probe configured service ports on the deployment destination |
+| [`check-output <id>`](/docs/cli/reference/project#openship-project-check-output) | Inspect deployed static output on its actual destination |
+| [`edge-config <id>`](/docs/cli/reference/project#openship-project-edge-config) | Read effective edge routing configuration |
+
+## openship project check-output
+
+Inspect deployed static output on its actual destination
+
+```text
+openship project check-output [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project check-ports
+
+Probe configured service ports on the deployment destination
+
+```text
+openship project check-ports [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project clear-build-cache
+
+Clear the host build cache used by this project; other projects on that host share it
+
+```text
+openship project clear-build-cache [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-y, --yes` | Confirm clearing the destination's shared build cache |
+
+## openship project clone-token
+
+Manage this project's explicit clone credential
+
+```text
+openship project clone-token [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <id>`](/docs/cli/reference/project#openship-project-clone-token-get) | Read credential presence without revealing its value |
+| [`set <id> <file>`](/docs/cli/reference/project#openship-project-clone-token-set) | Save a project-specific clone token |
+| [`clear <id>`](/docs/cli/reference/project#openship-project-clone-token-clear) | Remove this project's explicit clone token |
+
+## openship project clone-token clear
+
+Remove this project's explicit clone token
+
+```text
+openship project clone-token clear [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project clone-token get
+
+Read credential presence without revealing its value
+
+```text
+openship project clone-token get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project clone-token set
+
+Save a project-specific clone token
+
+```text
+openship project clone-token set [options] <id> <file>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+| `file` | Token file, or - for stdin |
+
+## openship project cluster
+
+Configure cluster placement and scale a deployed workload
+
+```text
+openship project cluster [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <project>`](/docs/cli/reference/project#openship-project-cluster-get) | Read placement, replicas and the revision required for changes |
+| [`set [options] <id> [file]`](/docs/cli/reference/project#openship-project-cluster-set) | Set or clear cluster placement with explicit stateless-workload acknowledgement |
+| [`scale [options] <project> <replicas>`](/docs/cli/reference/project#openship-project-cluster-scale) | Scale the reviewed deployment; returns the new deployment ID to follow |
+
+## openship project cluster get
+
+Read placement, replicas and the revision required for changes
+
+```text
+openship project cluster get [options] <project>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+
+## openship project cluster scale
+
+Scale the reviewed deployment; returns the new deployment ID to follow
+
+```text
+openship project cluster scale [options] <project> <replicas>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `project` | Project ID |
+| `replicas` | Desired replicas |
+
+| Option | Meaning |
+| --- | --- |
+| `--deployment <id>` | Active deployment ID from cluster get |
+| `--updated-at <timestamp>` | Exact updatedAt from cluster get |
+
+## openship project cluster set
+
+Set or clear cluster placement with explicit stateless-workload acknowledgement
+
+```text
+openship project cluster set [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
 
 ## openship project connect
 
@@ -68,13 +236,15 @@ openship project create [options]
 
 | Option | Meaning |
 | --- | --- |
-| `--name <name>` | Project name |
+| `--name <name>` | Project name (required unless supplied in --config) |
+| `--config <file>` | Full project configuration as JSON, or - for stdin; flags override supplied fields |
+| `--schema` | Print the complete create input schema without making a request |
 | `--slug <slug>` | Free-subdomain slug (slug.opsh.io) |
 | `--git-owner <owner>` | GitHub owner/org |
 | `--git-repo <repo>` | GitHub repository name |
 | `--git-branch <branch>` | Git branch to deploy |
 | `--framework <framework>` | Stack/framework id |
-| `--local-path <path>` | Local source path |
+| `--local-path <path>` | Source path on the controller host; use deploy --folder to upload from this machine |
 | `--port <port>` | Container port |
 | `--type <type>` | Project type: app \| docker \| services \| monorepo |
 | `--server <id>` | Registered server ID (see `openship server list`) |
@@ -98,6 +268,26 @@ openship project delete|rm [options] <id>
 | `--wipe-volumes` | Also destroy persistent volumes |
 | `-y, --yes` | Skip the confirmation prompt |
 
+## openship project deployments
+
+Read full project deployment records with pagination
+
+```text
+openship project deployments [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--page <number>` | Page number |
+| `--limit <number>` | Page size |
+| `--environment <name>` | Environment filter |
+| `--status <status>` | Deployment status |
+| `--search <text>` | Search deployments |
+
 ## openship project disable
 
 Stop a running project
@@ -116,6 +306,18 @@ Compare source and deployment configuration
 
 ```text
 openship project drift [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project edge-config
+
+Read effective edge routing configuration
+
+```text
+openship project edge-config [options] <id>
 ```
 
 | Argument | Meaning |
@@ -239,12 +441,36 @@ openship project get [options] <id>
 | --- | --- |
 | `id` | Project ID |
 
+## openship project git-info
+
+Read the configured repository and source state
+
+```text
+openship project git-info [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
 ## openship project incidents
 
 Show this project's monitoring incidents
 
 ```text
 openship project incidents [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
+
+## openship project info
+
+Read project details and deployment configuration
+
+```text
+openship project info [options] <id>
 ```
 
 | Argument | Meaning |
@@ -258,6 +484,56 @@ List projects in the active organization
 ```text
 openship project list|ls [options]
 ```
+
+## openship project local
+
+Manage folders on the Openship instance; use deploy --folder for this machine's files
+
+```text
+openship project local [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`list`](/docs/cli/reference/project#openship-project-local-list) | List projects linked to folders on the controller |
+| [`scan <path>`](/docs/cli/reference/project#openship-project-local-scan) | Inspect a folder accessible to the self-hosted controller |
+| [`import [options] [file]`](/docs/cli/reference/project#openship-project-local-import) | Register a folder on the controller as a project |
+
+## openship project local import
+
+Register a folder on the controller as a project
+
+```text
+openship project local import [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship project local list
+
+List projects linked to folders on the controller
+
+```text
+openship project local list [options]
+```
+
+## openship project local scan
+
+Inspect a folder accessible to the self-hosted controller
+
+```text
+openship project local scan [options] <path>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `path` | Absolute path on the controller |
 
 ## openship project logs
 
@@ -275,6 +551,23 @@ openship project logs [options] <id>
 | --- | --- |
 | `--tail <n>` | Number of recent lines |
 | `-f, --follow` | Stream logs until interrupted |
+
+## openship project options
+
+Change supported project options using the shared input schema
+
+```text
+openship project options [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
 
 ## openship project pending
 
@@ -387,6 +680,18 @@ openship project server-logs [options] <id>
 | `--limit <n>` | Number of recent entries (max 200) |
 | `--domain <domain>` | Restrict to a specific domain |
 | `-f, --follow` | Stream request logs until interrupted |
+
+## openship project session
+
+Find this project's active deployment session
+
+```text
+openship project session [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
 
 ## openship project sleep-mode
 

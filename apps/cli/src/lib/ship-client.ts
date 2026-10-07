@@ -22,7 +22,7 @@ export function getRemoteClient(context?: string): OpenshipClient {
   if (isNativeMode()) throw new ApiError("This command requires an HTTP connection. Use a remote context for this operation.", 400, { code: "REMOTE_CONNECTION_REQUIRED" });
   return new OpenshipClient({
     baseUrl: getApiUrl(context),
-    token: getToken(context) ?? undefined,
+    token: getToken(context, { deferred: true }) ?? undefined,
     organizationId: commandOrganization,
     userAgent: cliUserAgent,
   });
@@ -35,7 +35,7 @@ export function getShipClient(): CliShipClient {
   return session.client;
 }
 
-export const hasShipCredentials = () => isNativeMode() ? !!nativeSession() : !!getToken();
+export const hasShipCredentials = () => isNativeMode() ? !!nativeSession() : !!getToken(undefined, { deferred: true });
 
 /** A directory link must never silently select a different installation or tenant. */
 export function assertLinkedProjectConnection(link: ProjectLink | null): void {
@@ -51,6 +51,6 @@ export function assertLinkedProjectConnection(link: ProjectLink | null): void {
     link.organizationId !== commandOrganization ||
     (link.apiUrl && link.apiUrl !== getRemoteClient().http.apiUrl)
   )) {
-    throw new Error(`This project is linked to a different remote connection${link.context ? ` (context "${link.context}")` : ""}. Select that context with openship context use, link it again with openship init --force, or pass --project explicitly.`);
+    throw new Error(`This project is linked to a different connection${link.context ? ` (context "${link.context}")` : ""}. ${link.context === "local" ? "Use --local for the installation on this machine" : "Select that context with openship context use"}, link it again with openship init --force, or pass --project explicitly.`);
   }
 }

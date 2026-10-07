@@ -33,8 +33,8 @@ projects before retiring the source.
 
 **Carried:** servers/SSH connections · projects · services · domains & routes · environment variables ·
 deployment settings · backup destinations · git installations. **Secrets** (env values, SSH
-keys/passwords, clone tokens, backup credentials) are lifted into a passphrase-sealed AES-256-GCM bundle
-on export and re-encrypted under the *destination's* key on import.
+keys/passwords, clone tokens, backup credentials) are included as plaintext in current downloads when
+selected, then encrypted under the *destination's* key on import. Keep the file private.
 
 **Check after import:** projects that deploy from a **local folder** (no git — the “Deploy a local
 folder” flow) store the folder's path *on the source machine*. That path won't exist on the new machine,
@@ -52,13 +52,13 @@ on the new machine (see the last step).
 **CLI:**
 
 ```bash
-openship system data-transfer export --passphrase "a-strong-passphrase" --out openship-export.osx
+openship system data-transfer export --out openship-export.osx
 ```
 
-**Or the dashboard:** **Settings → Instance → Data Transfer → Export**, set a passphrase, download the file.
+**Or the dashboard:** **Settings → Instance → Data Transfer → Export**, review the selection and download.
 
-The passphrase encrypts the secrets inside the file. Anyone with the file but not the passphrase gets your
-projects/domains/config but **no** secret values. Keep the passphrase safe — it's required to import.
+The CLI writes a private file. Current exports include plaintext credentials; omit secrets in the selection
+if they are not needed. Legacy encrypted exports still require their original passphrase on import.
 
 </Step>
 
@@ -83,13 +83,13 @@ then:
 
 ```bash
 openship system data-transfer import --file /tmp/openship-export.osx \
-  --passphrase "a-strong-passphrase" --mode wipe
+  --mode wipe --yes
 ```
 
-**Or the dashboard:** **Settings → Instance → Data Transfer → Import**, choose the file, enter the
-passphrase, pick a mode.
+**Or the dashboard:** **Settings → Instance → Data Transfer → Import**, choose the file and pick a mode.
+A passphrase is requested only for legacy encrypted archives.
 
-- **`wipe`** (default) — replace the destination's data with the file. Use this for a fresh server. It
+- **`wipe`** — replace the destination's data with the file. Use this for a fresh server. It
   also replaces the login/session, so you'll re-authenticate as the imported owner afterward.
 - **`merge`** — insert only rows that don't already exist; the destination's own account/settings are
   kept. Use this to fold one install into another without clobbering it.

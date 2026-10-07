@@ -1,3 +1,4 @@
+import type { MailDeliveryHealth } from "@repo/contracts";
 import type { RelayProviderId } from "@repo/core";
 import { api, ApiError, getApiBaseUrl, getActiveOrganizationId, getApiErrorCode } from "./client";
 import { endpoints } from "./endpoints";
@@ -95,22 +96,7 @@ export interface MailDeferral {
  * `250 OK`, so a wrong SASL password looks identical to a healthy box until you
  * read the queue.
  */
-export interface MailDeliveryHealth {
-  status: MailDeliveryStatus;
-  mode: MailOutboundMode;
-  /** The smarthost as `host:port`, when relaying. */
-  relayHost?: string;
-  relayScope?: "all" | "selected";
-  /** Domains whose senders relay — only meaningful under `selected` scope. */
-  relayDomains?: string[];
-  /** Messages in the queue, from postqueue's own total (never a sampled count). */
-  queued: number;
-  /** The queue was larger than the window we read, so `deferrals` is a sample. */
-  sampled: boolean;
-  deferrals: MailDeferral[];
-  /** Why the status is `unknown` — the probe's own words. */
-  detail?: string;
-}
+export type { MailDeliveryHealth } from "@repo/contracts";
 
 export type MailPortReachabilityStatus =
   | "reachable"

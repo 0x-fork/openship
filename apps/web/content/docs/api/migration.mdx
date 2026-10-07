@@ -115,30 +115,30 @@ its Docker is accessible, then retry.
 
 {/* api-operations:start */}
 
-| Operation | REST API |
-| --- | --- |
-| List active server migration sessions. | `GET /api/migration/active`<br />`server:read` |
-| List the active organization's migration-only SSH connections. | `GET /api/migration/sources`<br />`server:read` |
-| Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations. | `POST /api/migration/sources`<br />`server:write` |
-| Test a public SSH source without saving it and return its host fingerprint. | `POST /api/migration/sources/test`<br />`server:write` |
-| Disconnect an idle migration source without deleting its external server or workloads. | `DELETE /api/migration/sources/:serverId`<br />`server:write` |
-| Create an Openship project from the selected discovered services. | `POST /api/migration/adopt`<br />`server:write` · Self-hosted |
-| Start a server migration from the reviewed plan. | `POST /api/migration/migrate`<br />`server:write` |
-| Delete an eligible migration record. | `DELETE /api/migration/migrations/:id`<br />`server:write` |
-| Read migration progress and state. | `GET /api/migration/migrations/:id`<br />`server:read` |
-| Request cancellation of a migration. | `POST /api/migration/migrations/:id/cancel`<br />`server:write` |
-| Clean up resources created on the migration target. | `POST /api/migration/migrations/:id/cleanup-target`<br />`server:write` |
-| Switch traffic to the prepared migration target. | `POST /api/migration/migrations/:id/cutover`<br />`server:write` |
-| Resume an interrupted migration. | `POST /api/migration/migrations/:id/resume`<br />`server:write` |
-| Answer a pending migration prompt, including edge takeover consent. | `POST /api/migration/migrations/:id/respond`<br />`server:write` |
-| Stream migration progress. | `GET /api/migration/migrations/:id/stream`<br />`server:read` |
-| Preview a migration plan. | `POST /api/migration/preview`<br />`server:write` |
-| Import a discovered project. | `POST /api/migration/project`<br />`server:write` |
-| Refresh an imported project from its source. | `POST /api/migration/reimport`<br />`server:write` · Self-hosted |
-| Read Compose configuration from a repository for import. | `POST /api/migration/repo-compose`<br />`server:read` |
-| Reveal explicitly requested environment values for an authorized import. | `POST /api/migration/reveal-env`<br />`server:write` |
-| List migration history. | `GET /api/migration/runs`<br />`server:read` |
-| Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. | `POST /api/migration/scan`<br />`server:write` |
-| Stream server-discovery progress. | `GET /api/migration/scan/stream`<br />`server:write` |
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List the active organization's migration-only SSH connections. | `migrations.listSources()`<br />Remote client | `GET /api/migration/sources`<br />`server:read` |
+| Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations. | `migrations.createSource(input)`<br />Remote client | `POST /api/migration/sources`<br />`server:write` |
+| Test a public SSH source without saving it and return its host fingerprint. | `migrations.testSource(input)`<br />Remote client | `POST /api/migration/sources/test`<br />`server:write` |
+| Inspect a server's Docker and return the adoptable stack — read-only, changes nothing. | `migrations.scan(input)`<br />Remote client | `POST /api/migration/scan`<br />`server:write` |
+| Reveal explicitly requested environment values for an authorized import. | `migrations.revealEnv(input)`<br />Remote client | `POST /api/migration/reveal-env`<br />`server:write` |
+| Read Compose configuration from a repository for import. | `migrations.repoCompose(input)`<br />Remote client | `POST /api/migration/repo-compose`<br />`server:read` |
+| Create an Openship project from the selected discovered services. | `migrations.adopt(input)`<br />Remote client | `POST /api/migration/adopt`<br />`server:write` · Self-hosted |
+| Refresh an imported project from its source. | `migrations.reimport(input)`<br />Remote client | `POST /api/migration/reimport`<br />`server:write` · Self-hosted |
+| Preview a migration plan. | `migrations.preview(input)`<br />Remote client | `POST /api/migration/preview`<br />`server:write` |
+| Start a server migration from the reviewed plan. | `migrations.start(input)`<br />Remote client | `POST /api/migration/migrate`<br />`server:write` |
+| Import a discovered project. | `migrations.moveProject(input)`<br />Remote client | `POST /api/migration/project`<br />`server:write` |
+| List active server migration sessions. | `migrations.active(input)`<br />Remote client | `GET /api/migration/active`<br />`server:read` |
+| List migration history. | `migrations.listRuns(input)`<br />Remote client | `GET /api/migration/runs`<br />`server:read` |
+| Disconnect an idle migration source without deleting its external server or workloads. | `migrations.removeSource(id)`<br />Remote client | `DELETE /api/migration/sources/:serverId`<br />`server:write` |
+| Read migration progress and state. | `migrations.get(id)`<br />Remote client | `GET /api/migration/migrations/:id`<br />`server:read` |
+| Switch traffic to the prepared migration target. | `migrations.cutover(id, input)`<br />Remote client | `POST /api/migration/migrations/:id/cutover`<br />`server:write` |
+| Request cancellation of a migration. | `migrations.cancel(id)`<br />Remote client | `POST /api/migration/migrations/:id/cancel`<br />`server:write` |
+| Answer a pending migration prompt, including edge takeover consent. | `migrations.respond(id, input)`<br />Remote client | `POST /api/migration/migrations/:id/respond`<br />`server:write` |
+| Resume an interrupted migration. | `migrations.resume(id, input)`<br />Remote client | `POST /api/migration/migrations/:id/resume`<br />`server:write` |
+| Clean up resources created on the migration target. | `migrations.cleanupTarget(id)`<br />Remote client | `POST /api/migration/migrations/:id/cleanup-target`<br />`server:write` |
+| Delete an eligible migration record. | `migrations.remove(id)`<br />Remote client | `DELETE /api/migration/migrations/:id`<br />`server:write` |
+| Stream migration progress. | `migrations.events(id, options?)`<br />Remote client | `GET /api/migration/migrations/:id/stream`<br />`server:read` |
+| Stream server-discovery progress. | `migrations.scanEvents(input, options?)`<br />Remote client | `GET /api/migration/scan/stream`<br />`server:write` |
 
 {/* api-operations:end */}

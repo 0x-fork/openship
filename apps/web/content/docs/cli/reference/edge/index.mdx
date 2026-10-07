@@ -116,7 +116,7 @@ openship edge logs [options]
 | --- | --- |
 | `-p, --project <id>` | Project ID |
 | `--limit <n>` | How many recent entries to fetch (max 200) (default: 50) |
-| `--follow` | Poll for new entries and print them as they arrive (default: false) |
+| `--follow` | Stream new entries through the SDK's authorized Cloud or self-hosted connection (default: false) |
 
 ## openship edge migrate
 
@@ -176,8 +176,8 @@ openship edge traffic [options]
 | --- | --- |
 | `-p, --project <id>` | Project ID |
 | `--domain <host>` | Scope to a single tracked domain |
-| `--from <ts>` | Window start (ISO 8601 or epoch minutes) |
-| `--to <ts>` | Window end (ISO 8601 or epoch minutes) |
+| `--from <ts>` | Window start (ISO 8601) |
+| `--to <ts>` | Window end (ISO 8601) |
 
 ## openship edge up
 

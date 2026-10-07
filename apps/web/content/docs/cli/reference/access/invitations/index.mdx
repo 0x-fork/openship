@@ -22,6 +22,7 @@ openship access invitations [options] [command]
 | [`reject <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-reject) | reject a workspace invitation |
 | [`cancel <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-cancel) | cancel a workspace invitation |
 | [`resend [options] <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-resend) | Resend an existing invitation |
+| [`materialize <id>`](/docs/cli/reference/access/invitations#openship-access-invitations-materialize) | Recover resource grants from an already-accepted invitation |
 
 ## openship access invitations accept
 
@@ -66,6 +67,18 @@ List pending invitations
 ```text
 openship access invitations list [options]
 ```
+
+## openship access invitations materialize
+
+Recover resource grants from an already-accepted invitation
+
+```text
+openship access invitations materialize [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Accepted invitation ID |
 
 ## openship access invitations reject
 

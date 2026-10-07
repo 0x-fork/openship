@@ -99,30 +99,51 @@ returns **503 `BUSY`**.
 
 ## Operations
 
+## SDK and CLI
+
+Remote `client.instance.previewExport`, `exportData` and `importData` use the existing instance-admin
+handlers. An organization-bound or scoped credential cannot export other workspaces by omitting its
+organization. The SDK does not retry an import whose response is lost.
+
+```ts
+const preview = await client.instance.previewExport();
+const archive = await client.instance.exportData();
+// Store privately: current exports include plaintext credentials.
+const result = await destination.instance.importData({ file: archive, mode: "merge" });
+```
+
+Import requires an explicit `mode` in the SDK. `selection` supports project IDs, conflict choices,
+server mappings and included resources. Database rows and secret envelopes are opaque to the client;
+the controller owns archive validation and restoration.
+
+Use `openship system data-transfer` for JSON exports/imports. Direct-transfer pairing and chunk upload
+remain the dashboard's recovery protocol. Legacy `instance` team-mode migration calls retain the API's
+capability restrictions; `migrations` is the separate workload move/copy API.
+
 {/* api-operations:start */}
 
-| Operation | REST API |
-| --- | --- |
-| Receive one chunk of an authorized direct transfer. | `PUT /api/system/data-transfer/direct/chunk/:sessionId/:index`<br />`Handler authentication` · Self-hosted |
-| Finalize a received direct transfer and stream progress. | `POST /api/system/data-transfer/direct/chunk/:sessionId/finalize/stream`<br />`Handler authentication` · Self-hosted |
-| Keep a direct chunk-transfer session alive. | `POST /api/system/data-transfer/direct/chunk/:sessionId/heartbeat`<br />`Handler authentication` · Self-hosted |
-| Open a direct chunk-transfer upload. | `POST /api/system/data-transfer/direct/chunk/init`<br />`Handler authentication` · Self-hosted |
-| Receive a direct instance transfer. | `POST /api/system/data-transfer/direct/receive`<br />`Handler authentication` · Self-hosted |
-| Send an instance to an authorized destination. | `POST /api/system/data-transfer/direct/send`<br />`settings:admin` · Self-hosted |
-| Send an instance and stream transfer progress. | `POST /api/system/data-transfer/direct/send/stream`<br />`settings:admin` · Self-hosted |
-| Create a direct-transfer session. | `POST /api/system/data-transfer/direct/session`<br />`settings:admin` · Self-hosted |
-| Export the instance or selected projects (instance administrator). | `POST /api/system/data-transfer/export`<br />`settings:admin` · Self-hosted |
-| Import an export file, ≤500 MB, with scope and conflict options (instance administrator). | `POST /api/system/data-transfer/import`<br />`settings:admin` · Self-hosted |
-| Open a chunked file-import session. | `POST /api/system/data-transfer/import/session`<br />`settings:admin` · Self-hosted |
-| Upload one file-import chunk. | `PUT /api/system/data-transfer/import/session/:sessionId/chunk/:index`<br />`settings:admin` · Self-hosted |
-| Apply a reviewed file import and stream progress. | `POST /api/system/data-transfer/import/session/:sessionId/finalize/stream`<br />`settings:admin` · Self-hosted |
-| Preview an uploaded file's selection, conflicts, and server mappings. | `POST /api/system/data-transfer/import/session/:sessionId/preview`<br />`settings:admin` · Self-hosted |
-| List exportable projects and instance row counts (instance administrator). | `GET /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
-| Preview a project selection and its dependencies (instance administrator). | `POST /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
-| Team-migration readiness check (read-only). | `POST /api/system/migration/preflight`<br />`settings:admin` · Self-hosted |
-| Migrate single-user → your own remote server. | `POST /api/system/migration/start`<br />`settings:admin` · Self-hosted |
-| Migrate → Openship Cloud. | `POST /api/system/migration/start-cloud`<br />`settings:admin` · Self-hosted |
-| Expose this instance via an edge tunnel. | `POST /api/system/migration/start-tunnel`<br />`settings:admin` · Self-hosted |
-| Reverse a migration back to single-user. | `POST /api/system/migration/switch-back`<br />`settings:admin` · Self-hosted |
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Team-migration readiness check (read-only). | `instance.preflightMigration(input)`<br />Remote client | `POST /api/system/migration/preflight`<br />`settings:admin` · Self-hosted |
+| Migrate single-user → your own remote server. | `instance.migrateToServer(input)`<br />Remote client | `POST /api/system/migration/start`<br />`settings:admin` · Self-hosted |
+| Migrate → Openship Cloud. | `instance.migrateToCloud(input?)`<br />Remote client | `POST /api/system/migration/start-cloud`<br />`settings:admin` · Self-hosted |
+| Expose this instance via an edge tunnel. | `instance.exposeTunnel(input)`<br />Remote client | `POST /api/system/migration/start-tunnel`<br />`settings:admin` · Self-hosted |
+| Reverse a migration back to single-user. | `instance.switchBack(input?)`<br />Remote client | `POST /api/system/migration/switch-back`<br />`settings:admin` · Self-hosted |
+| Preview a project selection and its dependencies (instance administrator). | `instance.previewExport(input?)`<br />Remote client | `POST /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
+| Export the instance or selected projects (instance administrator). | `instance.exportData(input?)`<br />Remote client | `POST /api/system/data-transfer/export`<br />`settings:admin` · Self-hosted |
+| Import an export file, ≤500 MB, with scope and conflict options (instance administrator). | `instance.importData(input)`<br />Remote client | `POST /api/system/data-transfer/import`<br />`settings:admin` · Self-hosted |
+| Receive one chunk of an authorized direct transfer. | HTTP only | `PUT /api/system/data-transfer/direct/chunk/:sessionId/:index`<br />`Handler authentication` · Self-hosted |
+| Finalize a received direct transfer and stream progress. | HTTP only | `POST /api/system/data-transfer/direct/chunk/:sessionId/finalize/stream`<br />`Handler authentication` · Self-hosted |
+| Keep a direct chunk-transfer session alive. | HTTP only | `POST /api/system/data-transfer/direct/chunk/:sessionId/heartbeat`<br />`Handler authentication` · Self-hosted |
+| Open a direct chunk-transfer upload. | HTTP only | `POST /api/system/data-transfer/direct/chunk/init`<br />`Handler authentication` · Self-hosted |
+| Receive a direct instance transfer. | HTTP only | `POST /api/system/data-transfer/direct/receive`<br />`Handler authentication` · Self-hosted |
+| Send an instance to an authorized destination. | HTTP only | `POST /api/system/data-transfer/direct/send`<br />`settings:admin` · Self-hosted |
+| Send an instance and stream transfer progress. | HTTP only | `POST /api/system/data-transfer/direct/send/stream`<br />`settings:admin` · Self-hosted |
+| Create a direct-transfer session. | HTTP only | `POST /api/system/data-transfer/direct/session`<br />`settings:admin` · Self-hosted |
+| Open a chunked file-import session. | HTTP only | `POST /api/system/data-transfer/import/session`<br />`settings:admin` · Self-hosted |
+| Upload one file-import chunk. | HTTP only | `PUT /api/system/data-transfer/import/session/:sessionId/chunk/:index`<br />`settings:admin` · Self-hosted |
+| Apply a reviewed file import and stream progress. | HTTP only | `POST /api/system/data-transfer/import/session/:sessionId/finalize/stream`<br />`settings:admin` · Self-hosted |
+| Preview an uploaded file's selection, conflicts, and server mappings. | HTTP only | `POST /api/system/data-transfer/import/session/:sessionId/preview`<br />`settings:admin` · Self-hosted |
+| List exportable projects and instance row counts (instance administrator). | HTTP only | `GET /api/system/data-transfer/preview`<br />`settings:admin` · Self-hosted |
 
 {/* api-operations:end */}

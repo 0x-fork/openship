@@ -64,3 +64,6 @@ invitations.command("resend").argument("<id>", "Invitation ID").option("--delive
   .action((id: string, opts) => printResult(() => getShipClient().permissions.resendInvitation(id,
     parseInput(PermissionResourceSchemas.resendInvitation.input, { delivery: opts.delivery }))));
 accessCommand.addCommand(invitations);
+invitations.command("materialize").argument("<id>", "Accepted invitation ID")
+  .description("Recover resource grants from an already-accepted invitation")
+  .action((id: string) => printResult(() => getShipClient().permissions.materializeInvitation(id)));
