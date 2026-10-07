@@ -106,7 +106,7 @@ Connect directly to the canonical Cloud instance and its Cloud organization ID t
 | --- | --- |
 | `projects`, `sources`, `deployments` | Lifecycle, environments/settings, source preparation, builds, runtime controls/logs, application replicas, PostgreSQL/Redis databases, shared volumes, backup/recovery, decisions/cancellation/rollback, events and deletion. |
 | `services`, `domains`, `dns` | Service/configuration/storage/connections and domain/routing/DNS/TLS operations. |
-| `servers`, `system`, `credentials` | Server management/install/container streams, private networks, compute clusters, managed runtime/shared-storage setup, profiles, stored credentials and server Git; remaining setup/self-app/edge/terminal coverage is still incomplete. |
+| `servers`, `system`, `credentials` | Server management/install/container streams, private networks, compute clusters, managed runtime/shared-storage setup, profiles, stored credentials and server Git. |
 | `apps` | Catalog discovery, installs, configuration and connections. |
 | `backupDestinations`, `backups`, `jobs` | Policies/runs/restores and streams, destination management, job lifecycle and execution. |
 | `analytics`, `issues`, `notifications` | Authorized metrics/issues, delivery channels/subscriptions/verification/history. |
@@ -116,6 +116,10 @@ Connect directly to the canonical Cloud instance and its Cloud organization ID t
 | `github` | Connection/source management, repository metadata/content/automation and narrowed clone tokens. |
 | `notices` | Public installation announcements; publishing requires the separate operator capability. |
 | `billing` | Plans, subscription and renewal state, checkout, cancellation/resumption, top-ups, a namespace-specific portal, usage and allowance detail through Oblien. |
+| Remote `mail` | Mail setup, domains, mailboxes, aliases, DNS, certificates, relays, backup policy, component control and webmail. |
+| Remote `migrations` | Source discovery, exact container selection, import/move/copy, durable status, prompts, cutover and partial recovery. |
+| Remote `terminal` | Server and service PTYs with one-use HTTP tickets, WebSocket data, resize and confirmed exit. |
+| Remote `instance` | Bootstrap status/setup, auth upgrade, legacy control-plane migration requests and instance/project archives. Instance-admin or loopback restrictions still apply. |
 | Workflows | `deploy({ source, ... })`, `deployment(id).wait(...)`. |
 
 The exported operation interfaces in `@repo/contracts` are the method-level source of truth. Capability checks depend on mode, configured providers, identity, and host policy.
@@ -126,7 +130,7 @@ All project methods are on `scope.projects` or `client.projects`. Environment li
 
 `createShip({ platform, identity })` synchronously attaches to a caller-owned `PlatformKernel`; it does not start or close that composition. Workspace API code supplies the existing kernel from `@repo/platform/engine/lib/platform`. Public embedders normally use the owned asynchronous factory shown above.
 
-Native CLI mode is implemented and the legacy HTTP/SSE/folder-deploy helpers are removed. Edge, mail, and parts of system management still need named SDK adoption. Full mail, data transfer, cloud tenant mapping, organization/account lifecycle, and remaining system/channel operations are still being migrated. Durable multi-worker dispatch/replay, billing replay/accounting review and constrained background jobs remain open.
+The CLI uses named SDK operations for resource management, mail, migration, edge administration and instance data transfer. The remote-only groups above wrap existing authenticated HTTP handlers; they do not create a second engine or become native operations. Browser account login, 2FA enrollment, private support conversations, payment approval, internal setup and signed provider callbacks keep their existing authentication protocols. Durable multi-worker dispatch/replay, billing replay/accounting review and constrained background jobs remain open. See the [CLI and SDK coverage audit](../../docs/cli-sdk-platform-coverage-2026-10-07.md) for the tested matrix and deliberate exclusions.
 
 Billing catalogs work locally. Account and payment operations require hosted billing configuration or the canonical remote cloud client. Fixed local scopes refuse unverified owner-account cloud forwarding. Oblien webhook signature verification remains outside the ordinary tenant SDK; the retired Stripe webhook returns 410. Portal/cancel/resume require billing admin permission and remain available when new purchases are disabled.
 
@@ -156,6 +160,6 @@ bun run --cwd packages/openship build
 bun run --cwd packages/openship test:package
 ```
 
-The owned-native tests use real Node workers, PGlite, and the retained deployment pipeline. The packed-artifact check installs outside the workspace and tests ESM/CommonJS, NodeNext declarations, passive imports, native generated deployment and persistence, remote submission, and CLI loading. Set `OPENSHIP_TEST_NODE` to another Node executable to run the same checks there. Live Docker/cloud/SSH scenarios remain distinct provider gates.
+The owned-native tests use real Node workers, PGlite, and the retained deployment pipeline. The packed-artifact check installs outside the workspace and tests ESM/CommonJS, NodeNext declarations, passive imports, native generated deployment and persistence, remote submission, packaged mail/migration/instance calls, actual WebSocket terminal I/O in ESM and CommonJS, and CLI context selection. Set `OPENSHIP_TEST_NODE` to another Node executable to run the same checks there. Live Docker/cloud/SSH scenarios remain distinct provider gates.
 
 The [migration audit](../../docs/ship-sdk-migration-audit.md) records the original-to-engine file mapping, reviewed behavior changes, compatibility checks, and remaining limits.

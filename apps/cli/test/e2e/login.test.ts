@@ -17,7 +17,7 @@ vi.mock("../../src/lib/config", () => ({
 vi.mock("../../src/lib/caps", () => ({ fetchCaps: async () => ({}) }));
 
 import { loginCommand } from "../../src/commands/login";
-import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
+import { CLOUD_API_URL, CLOUD_DASHBOARD_URL, LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
 import { setJsonMode } from "../../src/lib/output";
 
@@ -30,6 +30,19 @@ beforeEach(() => {
 afterEach(() => { fetchStub.restore(); setJsonMode(false); });
 
 describe("openship login endpoint preservation", () => {
+  it("connects directly to Cloud and saves its organization under the cloud context", async () => {
+    setJsonMode(true);
+    const result = await runCommand(loginCommand, ["--cloud", "--token", "opsh_pat_cloud_fixture", "--organization", "org-cloud"]);
+    expect(result.code, result.err).toBe(0);
+    expect(fetchStub.calls[0].url).toBe(`${CLOUD_API_URL}/api/tokens`);
+    expect(h.added.at(-1)).toEqual({ name: "cloud", opts: {
+      apiUrl: CLOUD_API_URL, dashboardUrl: CLOUD_DASHBOARD_URL,
+      token: "opsh_pat_cloud_fixture", organizationId: "org-cloud",
+    } });
+    expect(JSON.parse(result.out)).toMatchObject({ context: "cloud", organizationId: "org-cloud" });
+    expect(result.out + result.err).not.toContain("opsh_pat_cloud_fixture");
+  });
+
   it("returns secret-free JSON after non-interactive authentication", async () => {
     setJsonMode(true);
     const result = await runCommand(loginCommand, ["--token", "opsh_pat_json_secret", "--context", "ci"]);

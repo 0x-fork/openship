@@ -2,7 +2,7 @@ import { Command, Option } from "commander";
 import { readFileSync } from "node:fs";
 import type { CreateJobInput, UpdateJobInput } from "@repo/sdk";
 import { getShipClient } from "../lib/ship-client";
-import { fail } from "../lib/cmd-helpers";
+import { fail, printResult } from "../lib/cmd-helpers";
 import { isJsonMode, printJson, printTable, ok, err } from "../lib/output";
 
 function jobOptions(command: Command): Command {
@@ -155,3 +155,7 @@ jobCommand.command("logs <runId>")
       fail(e);
     }
   });
+jobCommand.command("events").description("List event types available as job triggers")
+  .action(() => printResult(() => getShipClient().jobs.triggerEvents()));
+jobCommand.command("backup-schedules").description("List scheduled backups with their next and last runs")
+  .action(() => printResult(() => getShipClient().jobs.backupSchedules()));

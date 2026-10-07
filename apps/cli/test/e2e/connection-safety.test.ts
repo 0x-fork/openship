@@ -98,9 +98,11 @@ async function fixture() {
     projectId: "proj_fixture", context: "first", apiUrl: config.contexts.first.apiUrl + "/api",
     defaults: { environment: "preview" }, ...patch,
   }));
-  const run = (args: string[]) => new Promise<{ code: number; out: string; err: string }>(done => {
+  const run = (args: string[], environment: NodeJS.ProcessEnv = {}) => new Promise<{ code: number; out: string; err: string }>(done => {
     execFile(process.execPath, ["--import", loader, "--import", inject, join(root, "src/index.ts"), "--json", ...args], {
-      cwd: project, env: { ...process.env, OPENSHIP_HOME: state, OPENSHIP_JSON: "1" },
+      cwd: project, env: { ...process.env, OPENSHIP_HOME: state, OPENSHIP_JSON: "1",
+        OPENSHIP_CONTEXT: undefined, OPENSHIP_API_URL: undefined, OPENSHIP_TOKEN: undefined,
+        OPENSHIP_ORGANIZATION_ID: undefined, ...environment },
       timeout: 15_000, maxBuffer: 2 * 1024 * 1024,
     }, (error, out, err) => done({ code: error ? typeof error.code === "number" ? error.code : 1 : 0, out, err }));
   });
@@ -109,6 +111,114 @@ async function fixture() {
 }
 
 describe("assembled CLI connection and input safety", { timeout: 30_000 }, () => {
+  it("removes only the stored token and reports an active environment token honestly", async () => {
+    const f = await fixture();
+    const result = await f.run(["logout"], { OPENSHIP_TOKEN: "opsh_pat_environment_fixture" });
+    expect(result.code, result.err).toBe(0);
+    expect(JSON.parse(result.out)).toEqual({ authenticated: true, context: "first", removed: true, credentialSource: "environment" });
+    const saved = JSON.parse(await readFile(join(f.directory, "state/config.json"), "utf8"));
+    expect(saved.contexts.first.token).toBeUndefined();
+    expect(saved.contexts.second.token).toBe(f.config.contexts.second.token);
+    expect(result.out + result.err).not.toContain("opsh_pat_environment_fixture");
+    expect(f.requests).toEqual([]);
+  });
+
+  it("refuses project deletion in automation without confirmation and sends no write", async () => {
+    const f = await fixture();
+    const result = await f.run(["project", "delete", "proj_fixture"]);
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("--yes");
+    expect(f.requests).toEqual([]);
+  });
+
+  it("reads a login token from a private file and does not print it", async () => {
+    const f = await fixture();
+    const file = join(f.directory, "token");
+    await writeFile(file, "opsh_pat_file_fixture\n", { mode: 0o600 });
+    const result = await f.run(["login", "--context", "first", "--token-file", file]);
+    expect(result.code, result.err).toBe(0);
+    expect(f.requests.find(req => req.url.pathname === "/api/tokens")?.authorization).toBe("Bearer opsh_pat_file_fixture");
+    expect(result.out + result.err).not.toContain("opsh_pat_file_fixture");
+    const saved = JSON.parse(await readFile(join(f.directory, "state/config.json"), "utf8"));
+    expect(saved.contexts.first.token).toBe("opsh_pat_file_fixture");
+  });
+
+  it("selects a context for one invocation without changing the saved default", async () => {
+    const f = await fixture();
+    const result = await f.run(["--context", "second", "project", "list"]);
+    expect(result.code, result.err).toBe(0);
+    expect(f.requests).toHaveLength(2);
+    expect(f.requests.every(req => req.target === "second" && req.authorization === "Bearer opsh_pat_second_fixture_only")).toBe(true);
+    expect(JSON.parse(await readFile(join(f.directory, "state/config.json"), "utf8")).current).toBe("first");
+  });
+
+  it("rejects an unknown invocation context before contacting any API", async () => {
+    const f = await fixture();
+    const result = await f.run(["--context", "missing", "project", "list"]);
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('Unknown context "missing"');
+    expect(f.requests).toEqual([]);
+  });
+
+  it("lets an explicit context override the entire ambient CI connection", async () => {
+    const f = await fixture();
+    const result = await f.run(["--context", "second", "project", "list"], {
+      OPENSHIP_API_URL: f.config.contexts.first.apiUrl,
+      OPENSHIP_TOKEN: "opsh_pat_ambient_fixture",
+      OPENSHIP_ORGANIZATION_ID: "org-ambient",
+    });
+    expect(result.code, result.err).toBe(0);
+    expect(f.requests).toHaveLength(2);
+    expect(f.requests.every(req => req.target === "second" && req.authorization === "Bearer opsh_pat_second_fixture_only" && req.organization === undefined)).toBe(true);
+  });
+
+  it("uses an ephemeral CI connection and tenant without storing the token", async () => {
+    const f = await fixture();
+    const result = await f.run(["project", "list"], {
+      OPENSHIP_API_URL: f.config.contexts.second.apiUrl,
+      OPENSHIP_TOKEN: "opsh_pat_ephemeral_fixture",
+      OPENSHIP_ORGANIZATION_ID: "org-ci",
+    });
+    expect(result.code, result.err).toBe(0);
+    const calls = f.requests.filter(req => req.url.pathname === "/api/projects");
+    expect(calls).toHaveLength(2);
+    expect(calls.every(req => req.target === "second" && req.authorization === "Bearer opsh_pat_ephemeral_fixture" && req.organization === "org-ci")).toBe(true);
+    const saved = await readFile(join(f.directory, "state/config.json"), "utf8");
+    expect(saved + result.out + result.err).not.toContain("opsh_pat_ephemeral_fixture");
+    expect(JSON.parse(saved)).toEqual(f.config);
+  });
+
+  it("never reuses a saved token when only the invocation API is retargeted", async () => {
+    const f = await fixture();
+    const result = await f.run(["project", "list"], { OPENSHIP_API_URL: f.config.contexts.second.apiUrl });
+    expect(result.code, result.err).toBe(0);
+    expect(f.requests).toHaveLength(2);
+    expect(f.requests.every(req => req.target === "second" && req.authorization === undefined)).toBe(true);
+  });
+
+  it("uses the saved organization and permits an explicit per-command override", async () => {
+    const f = await fixture();
+    f.config.contexts.second.organizationId = "org-saved";
+    await f.save();
+    expect((await f.run(["--context", "second", "project", "list"])).code).toBe(0);
+    expect(f.requests.filter(req => req.url.pathname === "/api/projects").every(req => req.organization === "org-saved")).toBe(true);
+    f.requests.length = 0;
+    expect((await f.run(["--context", "second", "--organization", "org-other", "project", "list"])).code).toBe(0);
+    expect(f.requests.filter(req => req.url.pathname === "/api/projects").every(req => req.organization === "org-other")).toBe(true);
+  });
+
+  it("drops saved authority when a context's API is changed without replacement credentials", async () => {
+    const f = await fixture();
+    f.config.contexts.first.organizationId = "org-old";
+    await f.save();
+    const result = await f.run(["context", "add", "first", "--api-url", f.config.contexts.second.apiUrl!]);
+    expect(result.code, result.err).toBe(0);
+    const saved = JSON.parse(await readFile(join(f.directory, "state/config.json"), "utf8"));
+    expect(saved.contexts.first.token).toBeUndefined();
+    expect(saved.contexts.first.organizationId).toBeUndefined();
+    expect(saved.current).toBe("first");
+  });
+
   it("keeps API and token together across pagination, then uses the new context on the next invocation", async () => {
     const f = await fixture();
     f.onRequest(async req => {
@@ -195,7 +305,7 @@ describe("assembled CLI connection and input safety", { timeout: 30_000 }, () =>
 
   it("rejects import typos without requests, and preserves merge/wipe confirmation semantics", async () => {
     const f = await fixture();
-    const file = join(f.directory, "export.json"); await writeFile(file, '{"dump":{"tables":{}}}');
+    const file = join(f.directory, "export.json"); await writeFile(file, JSON.stringify({ kind: "openship-instance-export", envelopeVersion: 4, createdAt: "2026-10-07", sourceDriver: "pglite", dump: { tables: {} }, secrets: null }));
     const args = ["system", "data-transfer", "import", "--file", file];
     expect((await f.run([...args, "--mode", "merg", "--yes"])).code).toBe(1);
     expect(f.requests).toEqual([]);

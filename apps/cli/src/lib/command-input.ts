@@ -26,7 +26,14 @@ export function parsePairs(pairs: string[]): Record<string, string> {
 }
 
 export function readJsonInput(file: string): unknown {
-  return JSON.parse(readFileSync(file, "utf8"));
+  return JSON.parse(readFileSync(file === "-" ? 0 : file, "utf8"));
+}
+
+/** Read secrets without putting them in process arguments or shell history. */
+export function readSecret(file: string): string {
+  const value = readFileSync(file === "-" ? 0 : file, "utf8").trim();
+  if (!value) throw new Error("The secret input is empty.");
+  return value;
 }
 
 export function parseDeploymentEnvironment(value: unknown) {

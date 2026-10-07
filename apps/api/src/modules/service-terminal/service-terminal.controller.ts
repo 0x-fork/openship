@@ -25,6 +25,11 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import type { Context } from "hono";
+import {
+  TERMINAL_SUBPROTOCOL_PREFIX as SUBPROTOCOL_PREFIX,
+  TERMINAL_RESUME_SUBPROTOCOL_PREFIX as RESUME_SUBPROTOCOL_PREFIX,
+  TERMINAL_COLS_MAX as COLS_MAX, TERMINAL_ROWS_MAX as ROWS_MAX,
+} from "@repo/contracts";
 import { randomUUID } from "node:crypto";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { trustedOrigins } from "@repo/platform/engine/config/env";
@@ -62,11 +67,9 @@ import {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const SUBPROTOCOL_PREFIX = "openship.terminal.v1+";
-const RESUME_SUBPROTOCOL_PREFIX = "openship.terminal.resume+";
 const HEARTBEAT_INTERVAL_MS = 25_000;
-const COLS_MIN = 1, COLS_MAX = 1000;
-const ROWS_MIN = 1, ROWS_MAX = 500;
+const COLS_MIN = 1;
+const ROWS_MIN = 1;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

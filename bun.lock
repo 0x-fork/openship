@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "@repo/workspace",
@@ -15,7 +16,7 @@
     },
     "apps/api": {
       "name": "@repo/api",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "dependencies": {
         "@better-auth/drizzle-adapter": "^1.5.4",
         "@hono/node-server": "^1.19.15",
@@ -54,7 +55,7 @@
     },
     "apps/cli": {
       "name": "@repo/cli",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -72,9 +73,11 @@
         "open": "^10.2.0",
         "ora": "^9.3.0",
         "ssh2": "^1.17.0",
+        "ws": "^8.21.3",
       },
       "devDependencies": {
         "@types/node": "^22.13.0",
+        "@types/ws": "^8.18.1",
         "tsup": "^8.5.1",
         "tsx": "^4.21.0",
         "typescript": "^5.9.3",
@@ -126,7 +129,7 @@
     },
     "apps/desktop": {
       "name": "@repo/desktop",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "dependencies": {
         "@repo/core": "workspace:*",
         "@repo/onboarding": "workspace:*",
@@ -149,11 +152,11 @@
     },
     "apps/email": {
       "name": "@repo/email",
-      "version": "0.8.1",
+      "version": "0.8.2",
     },
     "apps/web": {
       "name": "@repo/web",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "dependencies": {
         "@repo/contracts": "workspace:*",
         "@repo/core": "workspace:*",
@@ -282,7 +285,7 @@
     },
     "packages/openship": {
       "name": "openship",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -296,6 +299,7 @@
         "open": "^10.2.0",
         "ora": "^9.3.0",
         "ssh2": "^1.17.0",
+        "ws": "^8.21.3",
       },
       "devDependencies": {
         "@types/node": "^22.13.0",
@@ -305,7 +309,7 @@
     },
     "packages/platform": {
       "name": "@repo/platform",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "dependencies": {
         "@better-auth/core": "^1.5.4",
         "@better-auth/drizzle-adapter": "^1.5.4",
@@ -348,9 +352,11 @@
         "@repo/contracts": "workspace:*",
         "@repo/core": "workspace:*",
         "@repo/platform": "workspace:*",
+        "ws": "^8.21.3",
       },
       "devDependencies": {
         "@types/node": "^22.13.0",
+        "@types/ws": "^8.18.1",
         "tsup": "^8.5.1",
         "typescript": "^5.9.3",
         "vitest": "^4.0.18",

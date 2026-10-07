@@ -1,33 +1,38 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import chalk from "chalk";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stderr as output } from "node:process";
-import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
+import { stdin as input } from "node:process";
+import { password, isCancel } from "@clack/prompts";
+import { CLOUD_API_URL, CLOUD_DASHBOARD_URL, LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
 import { OpenshipClient, ApiError } from "@repo/sdk/client";
 import { addContext, DEFAULT_CONTEXT, getContext, setActiveContext, withCommandContext } from "../lib/config";
 import { fetchCaps } from "../lib/caps";
 import { err, info, isJsonMode, ok, printJson } from "../lib/output";
 import { exitCommand } from "../lib/command-exit";
+import { readSecret } from "../lib/command-input";
 
 export const loginCommand = new Command("login")
   .description("Authenticate with a Personal Access Token (create one in dashboard Settings)")
-  .option("--token <token>", "Personal Access Token (opsh_pat_...) for non-interactive login")
+  .addOption(new Option("--token <token>", "Personal Access Token (opsh_pat_...)").conflicts("tokenFile"))
+  .option("--token-file <file>", "Token file, or - for stdin (keeps credentials out of process arguments)")
+  .addOption(new Option("--cloud", "Connect directly to Openship Cloud").conflicts(["apiUrl", "dashboardUrl"]))
   .option("--api-url <url>", "API base URL (defaults to the saved context or local installation)")
   .option("--dashboard-url <url>", "Dashboard base URL (defaults to the saved context or local installation)")
-  .option("--context <name>", "Name of the context to store this login under", DEFAULT_CONTEXT)
-  .action(async (opts) => {
-    const contextName: string = opts.context || DEFAULT_CONTEXT;
+  .option("--context <name>", "Name to save (defaults to cloud with --cloud, otherwise default)")
+  .option("--organization <id>", "Save a fixed organization for this connection")
+  .action(async (_opts, command: Command) => {
+    const opts = command.optsWithGlobals();
+    const contextName: string = opts.context || (opts.cloud ? "cloud" : DEFAULT_CONTEXT);
     // Re-authenticate at the same endpoints unless the operator overrides them.
     const existing = getContext(contextName);
-    const apiUrl: string = opts.apiUrl || existing.apiUrl || LOCAL_API_URL;
-    const dashboardUrl: string = opts.dashboardUrl || existing.dashboardUrl || LOCAL_DASHBOARD_URL;
+    const apiUrl: string = opts.cloud ? CLOUD_API_URL : opts.apiUrl || existing.apiUrl || LOCAL_API_URL;
+    const dashboardUrl: string = opts.cloud ? CLOUD_DASHBOARD_URL : opts.dashboardUrl || existing.dashboardUrl || LOCAL_DASHBOARD_URL;
 
-    let token: string | undefined = opts.token;
+    let token: string | undefined = opts.tokenFile ? readSecret(opts.tokenFile) : opts.token;
 
     // Interactive: open the PAT settings page and read a pasted token.
     if (!token) {
       if (isJsonMode() || !input.isTTY) {
-        err("Pass --token <token> for non-interactive login.");
+        err("Pass --token-file <file> (or - for stdin), or --token for non-interactive login.");
         exitCommand(1);
       }
       const settingsUrl = `${dashboardUrl}/settings`;
@@ -46,9 +51,9 @@ export const loginCommand = new Command("login")
         chalk.dim("  If the browser didn't open, visit:\n") + chalk.cyan(`  ${settingsUrl}\n`),
       );
 
-      const rl = createInterface({ input, output });
-      token = await rl.question("  Paste your token: ");
-      rl.close();
+      const answer = await password({ message: "Paste your Personal Access Token" });
+      if (isCancel(answer)) exitCommand(0);
+      token = answer;
     }
 
     token = token?.trim();
@@ -80,14 +85,15 @@ export const loginCommand = new Command("login")
       }
     }
 
-    addContext(contextName, { apiUrl, dashboardUrl, token });
+    addContext(contextName, { apiUrl, dashboardUrl, token, ...(opts.organization ? { organizationId: opts.organization } : {}) });
     setActiveContext(contextName);
 
     // Best-effort capability discovery so later commands can gate offline.
     await withCommandContext(() => fetchCaps({ force: true, context: contextName })).catch(() => undefined);
 
     if (isJsonMode()) {
-      printJson({ authenticated: true, context: contextName, apiUrl, dashboardUrl, scoped });
+      printJson({ authenticated: true, context: contextName, apiUrl, dashboardUrl, scoped,
+        ...(opts.organization ? { organizationId: opts.organization } : {}) });
       return;
     }
     ok(`Logged in (context "${contextName}").`);

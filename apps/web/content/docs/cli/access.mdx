@@ -4,7 +4,8 @@ description: Authenticate, select an installation, manage tokens, and call HTTP 
 ---
 
 The CLI stores named **contexts** in `~/.openship/config.json`. Each context contains an API URL,
-dashboard URL, and personal access token. One context is active at a time.
+dashboard URL, personal access token, and optional fixed organization. One context is the saved default;
+`openship --context production <command>` selects another for one invocation.
 
 Each command pins its connection settings for the entire invocation. Switching or updating a context
 in another terminal affects the next command, including while this command paginates, uploads or watches logs.
@@ -18,8 +19,9 @@ openship login \
   --context production
 ```
 
-The CLI opens the dashboard token page and prompts for a token. For scripts, pass
-`--token "$OPENSHIP_TOKEN"`. Login validates the token before storing it and selects the context.
+The CLI opens the dashboard token page and prompts for a token without echoing it. For scripts, use
+`--token-file /path/to/token` or `--token-file -` to read stdin. Login validates the token before storing
+it and selects the context. Saved credentials are written atomically with owner-only permissions.
 The local default API is `http://localhost:4000`; the local dashboard default is `http://localhost:3001`.
 
 ## Switch contexts
@@ -32,6 +34,9 @@ openship status
 
 `context add` stores endpoints and a token without validating them. Use `login` when you want
 validation. `context rm` removes an inactive context. `logout` clears a token while keeping its endpoints.
+Changing a context's API clears its previous token, organization and capability cache. Authenticate
+again for the new endpoint. If `OPENSHIP_TOKEN` is set, logout reports that environment authentication
+is still active; unset the variable to stop using it.
 
 ```bash
 openship logout --context production
@@ -44,6 +49,7 @@ See the [context](/docs/cli/reference/context), [login](/docs/cli/reference/logi
 
 ```bash
 openship access workspaces
+openship login --cloud --organization org_123 --token-file /path/to/cloud-token
 openship --organization org_123 --json project list
 openship --organization org_123 init --project proj_123
 ```
@@ -51,6 +57,10 @@ openship --organization org_123 init --project proj_123
 `--organization` uses the SDK's fixed scope and requires a server that supports it. It never grants access
 the credential does not already have. Use the same organization option when deploying a link created
 with it. The native configuration selects its own organization.
+
+`OPENSHIP_API_URL`, `OPENSHIP_TOKEN`, `OPENSHIP_ORGANIZATION_ID`, and `OPENSHIP_CONTEXT` can select an
+ephemeral connection for CI. They are not saved. An explicit `--context` selects that context's complete
+connection and ignores ambient connection variables. See [automation](/docs/cli/automation).
 
 `access` also manages team workspaces, members, invitations and resource grants. See the
 [access reference](/docs/cli/reference/access). Changes use the platform's existing permission checks.

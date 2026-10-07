@@ -16,7 +16,10 @@ openship login [options]
 
 | Option | Meaning |
 | --- | --- |
-| `--token <token>` | Personal Access Token (opsh_pat_...) for non-interactive login |
+| `--token <token>` | Personal Access Token (opsh_pat_...) |
+| `--token-file <file>` | Token file, or - for stdin (keeps credentials out of process arguments) |
+| `--cloud` | Connect directly to Openship Cloud |
 | `--api-url <url>` | API base URL (defaults to the saved context or local installation) |
 | `--dashboard-url <url>` | Dashboard base URL (defaults to the saved context or local installation) |
-| `--context <name>` | Name of the context to store this login under (default: "default") |
+| `--context <name>` | Name to save (defaults to cloud with --cloud, otherwise default) |
+| `--organization <id>` | Save a fixed organization for this connection |

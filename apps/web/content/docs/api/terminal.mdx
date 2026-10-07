@@ -144,13 +144,41 @@ You've hit the per-user concurrent-terminal cap. Close an existing session (or l
 before opening another. Resumes don't count against the cap.
 </Callout>
 
+## SDK and CLI
+
+The remote SDK opens the existing ticket and WebSocket workflow:
+
+```ts
+import { OpenshipClient } from "openship";
+
+const client = new OpenshipClient({
+  baseUrl: "https://ship.example.com",
+  token: process.env.OPENSHIP_TOKEN,
+});
+const session = await client.terminal.openServer("srv_123", {
+  origin: "https://ship.example.com", // Trusted dashboard origin for Node callers.
+  onData: bytes => process.stdout.write(bytes),
+});
+session.resize(120, 40);
+session.write("pwd\nexit\n");
+// session.close() explicitly ends the remote shell.
+const exit = await session.closed;
+```
+
+The API token is sent only to the HTTP ticket endpoint. The WebSocket uses a one-use ticket in its
+subprotocol; credentials are never added to its URL. An explicit resume does not open a replacement
+shell if resumption fails. Browser callers use their browser's own Origin header.
+
+Use `openship server ssh <id>` or `openship server terminal <id>` interactively. The CLI uses the saved
+dashboard origin; override it with `--origin` when necessary. Use `server exec` for noninteractive scripts.
+
 ## Operations
 
 {/* api-operations:start */}
 
-| Operation | REST API |
-| --- | --- |
-| Mint a one-shot ticket for a WebSocket handshake against a server. | `POST /api/terminal/ticket`<br />`terminal:write` |
-| WebSocket upgrade that opens the remote PTY. | `GET /api/terminal/ws/:serverId`<br />`Handler authentication` |
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Mint a one-shot ticket for a WebSocket handshake against a server. | `terminal.openServer(id, options)`<br />Remote client | `POST /api/terminal/ticket`<br />`terminal:write` |
+| WebSocket upgrade that opens the remote PTY. | `terminal.openServer(id, options)` | `GET /api/terminal/ws/:serverId`<br />`Handler authentication` |
 
 {/* api-operations:end */}

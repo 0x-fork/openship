@@ -1,9 +1,9 @@
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import { err, isJsonMode, setJsonMode } from "./lib/output";
 import { initializeNativeClient } from "./lib/native-client";
 import { closeNativeClient, cliUserAgent, setCommandOrganization } from "./lib/ship-client";
 import { CommandExit } from "./lib/command-exit";
-import { withCommandContext } from "./lib/config";
+import { selectCommandConnection, withCommandContext } from "./lib/config";
 
 // Auth & session
 import { loginCommand } from "./commands/login";
@@ -38,6 +38,11 @@ import { notificationCommand } from "./commands/notification";
 import { webhookCommand } from "./commands/webhook";
 import { auditCommand } from "./commands/audit";
 import { accessCommand } from "./commands/access";
+import { billingCommand } from "./commands/billing";
+import { githubCommand } from "./commands/github";
+import { settingsCommand } from "./commands/settings";
+import { analyticsCommand } from "./commands/analytics";
+import { migrationCommand } from "./commands/migration";
 
 // Self-host infrastructure
 import { serverCommand } from "./commands/server";
@@ -73,14 +78,19 @@ const sdkCommands = new Set([
   deploymentCommand, logsCommand, initCommand, serverCommand, systemCommand,
   backupCommand, jobCommand, statusCommand, doctorCommand, monitoringCommand,
   credentialCommand, dnsCommand, notificationCommand, webhookCommand, auditCommand, accessCommand, tokenCommand,
+  billingCommand, githubCommand, settingsCommand, analyticsCommand,
 ]);
+const remoteCommands = new Set([...sdkCommands, apiCommand, edgeCommand, mailCommand, migrationCommand, openCommand, logoutCommand]);
 
 program
   .name("openship")
   .description("Openship CLI — install, run, and manage Openship from your terminal")
   .version(__CLI_VERSION__)
   .exitOverride()
+  .enablePositionalOptions()
   .option("--json", "Machine-readable JSON output (stdout data only)")
+  .addOption(new Option("--context <name>", "Use a saved connection for this command without changing the default").conflicts(["apiUrl", "nativeConfig"]))
+  .addOption(new Option("--api-url <url>", "Use a remote API for this command; authenticate with OPENSHIP_TOKEN").conflicts(["context", "nativeConfig"]))
   .option("--organization <id>", "Use a fixed organization scope for SDK resource commands (remote only)")
   .option("--native-config <file>", "Run SDK commands using an explicitly trusted JavaScript configuration")
   .hook("preAction", async (thisCommand, actionCommand) => {
@@ -89,9 +99,14 @@ program
     while (top.parent && top.parent !== thisCommand) top = top.parent;
     const file = thisCommand.opts().nativeConfig as string | undefined;
     const organization = thisCommand.opts().organization as string | undefined;
-    if (organization !== undefined && (file || !sdkCommands.has(top)))
+    if (organization !== undefined && (file || !remoteCommands.has(top)))
       throw new Error("Use --organization with remote SDK resource commands. Native organization selection belongs in --native-config.");
-    setCommandOrganization(organization);
+    const context = thisCommand.opts().context as string | undefined;
+    const apiUrl = thisCommand.opts().apiUrl as string | undefined;
+    if ((context !== undefined || apiUrl !== undefined) && !remoteCommands.has(top) && top !== loginCommand)
+      throw new Error("Use connection options with a remote resource command. Installation commands manage this machine.");
+    const connection = !file && remoteCommands.has(top) ? selectCommandConnection({ context, apiUrl }) : undefined;
+    setCommandOrganization(organization ?? connection?.organizationId);
     if (file) {
       if (!sdkCommands.has(top))
         throw new Error("Choose an SDK resource command with --native-config; installation and remote-login commands use a remote context.");
@@ -151,6 +166,11 @@ program.addCommand(notificationCommand);
 program.addCommand(webhookCommand);
 program.addCommand(auditCommand);
 program.addCommand(accessCommand);
+program.addCommand(billingCommand);
+program.addCommand(githubCommand);
+program.addCommand(settingsCommand);
+program.addCommand(analyticsCommand);
+program.addCommand(migrationCommand);
 
 // Self-host infrastructure (secondary)
 program.addCommand(serverCommand);

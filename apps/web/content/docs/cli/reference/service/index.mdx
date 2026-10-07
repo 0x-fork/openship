@@ -16,6 +16,8 @@ openship service|services [options] [command]
 
 | Subcommand | Purpose |
 | --- | --- |
+| [`terminal [options] <service>`](/docs/cli/reference/service#openship-service-terminal) | Open a shell in a running service on Cloud or a self-hosted server |
+| [`volumes [options] <service>`](/docs/cli/reference/service#openship-service-volumes) | Read measured service volume sizes |
 | [`list [options]`](/docs/cli/reference/service#openship-service-list) | List the services in a stack |
 | [`get [options] <service>`](/docs/cli/reference/service#openship-service-get) | Show one service's configuration |
 | [`update [options] <service> <file>`](/docs/cli/reference/service#openship-service-update) | Patch service configuration from a JSON file using the shared service contract |
@@ -263,6 +265,23 @@ openship service sync [options] <compose-file>
 | `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
 | `-y, --yes` | Skip the confirmation prompt |
 
+## openship service terminal
+
+Open a shell in a running service on Cloud or a self-hosted server
+
+```text
+openship service terminal [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or ID |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+| `--origin <url>` | Trusted dashboard origin (defaults to the saved context dashboard) |
+
 ## openship service update
 
 Patch service configuration from a JSON file using the shared service contract
@@ -275,6 +294,22 @@ openship service update [options] <service> <file>
 | --- | --- |
 | `service` | Service name or id |
 | `file` | JSON patch (image, command, ports, routing, build settings, enabled, etc.) |
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --project <id\|slug\|name>` | Stack (project) id, slug, or name |
+
+## openship service volumes
+
+Read measured service volume sizes
+
+```text
+openship service volumes [options] <service>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `service` | Service name or ID |
 
 | Option | Meaning |
 | --- | --- |
