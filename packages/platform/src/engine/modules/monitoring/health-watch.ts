@@ -82,6 +82,7 @@ import {
 } from "@repo/platform/engine/modules/monitoring/incident.service";
 import { HEALTH_WATCH_JOB, healthWatchActive, isManagedServerIdle } from "./health-watch-policy";
 import { desktopNetworkDisconnected } from "../../lib/desktop-network";
+import { isNetworkUnavailableError } from "../../lib/remote-state";
 
 /** Consecutive observations that must agree before a fault opens or escalates. */
 const AGREE_TICKS = 2;
@@ -215,7 +216,7 @@ export interface HealthWatchSummary {
   /** Incidents closed because the workload stopped being watched (see below). */
   stale: number;
   unreachable: number;
-  /** Remote server groups not checked because this desktop has no network. */
+  /** Remote groups not observed because the observer's network/route is unavailable. */
   offline: number;
   /**
    * Projects skipped because their deployment record names a target that cannot be
@@ -974,12 +975,15 @@ async function sweepServerGroup(ctx: GroupContext): Promise<void> {
       return;
     }
 
+    const networkUnavailable = isNetworkUnavailableError(err);
     if (ctx.currentOnly) {
       if (handle.listed && reason !== GROUP_DEADLINE_REASON) {
         summary.errors++;
         console.error(
           `[health-watch] ${serverId ?? "local docker"}: current scan failed after the daemon answered: ${reason}`,
         );
+      } else if (networkUnavailable) {
+        summary.offline++;
       } else {
         ctx.unreachableServers.add(watchGroupKey(serverId, organizationId));
         summary.unreachable = ctx.unreachableServers.size;
@@ -1009,8 +1013,11 @@ async function sweepServerGroup(ctx: GroupContext): Promise<void> {
 
     // One incident for the box; every project in this group keeps whatever incidents
     // it had, and none of them are retired (they're absent from `swept`).
-    ctx.unreachableServers.add(watchGroupKey(serverId, organizationId));
-    summary.unreachable = ctx.unreachableServers.size;
+    if (networkUnavailable) summary.offline++;
+    else {
+      ctx.unreachableServers.add(watchGroupKey(serverId, organizationId));
+      summary.unreachable = ctx.unreachableServers.size;
+    }
     const target = await incidentServerId(serverId, organizationId);
     if (!target) {
       // No server row to hang the incident on (a control-plane docker socket that

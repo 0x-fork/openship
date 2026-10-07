@@ -198,6 +198,7 @@ export const MailSetupStatusSchema = Type.Object({
   ptrAcknowledged: Type.Optional(Type.Boolean()),
   credentials: Type.Optional(MailCredentialsSchema),
   webmail: Type.Optional(MailWebmailSummarySchema),
+  observationError: Type.Optional(text),
   engine: Type.Optional(
     Type.Object({
       flavor: Type.Union([Type.Literal("container"), Type.Literal("host"), Type.Literal("none")]),

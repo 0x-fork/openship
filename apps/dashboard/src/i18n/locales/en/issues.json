@@ -50,7 +50,7 @@
     "mail_down": "Mail engine down",
     "update_available": "Update available",
     "component_behind": "Component update available",
-    "monitoring_offline": "Desktop offline",
+    "monitoring_offline": "Connection unavailable",
     "mail_certificate": "Mail certificate"
   },
   "since": "Started {when}",
@@ -85,7 +85,9 @@
     "updatesTitle": "Updates available",
     "updatesSubtitle": "New releases ready to apply",
     "more": "{n} more",
-    "hide": "Hide until something changes"
+    "hide": "Hide until something changes",
+    "connectionTitle": "Connection interrupted",
+    "connectionSubtitle": "Some health checks are unavailable."
   },
   "loadFailed": "Couldn't load monitoring",
   "toast": {
@@ -99,9 +101,15 @@
   },
   "connectivity": {
     "offlineTitle": "This device is offline",
-    "offlineHint": "Monitoring may be out of date. Reconnect to refresh and recheck the servers.",
+    "offlineHint": "Displayed status may be out of date. Reconnect to refresh it.",
     "retryStatus": "Retry status",
     "recheck": "Recheck",
-    "unknownHealth": "Container health is unknown until Openship can reach this server."
+    "unknownHealth": "Container health is unknown until Openship can reach this server.",
+    "monitoringHint": "Openship cannot reach the affected servers. Their current health is unknown.",
+    "details": "Technical details",
+    "mailTitle": "Mail status unavailable",
+    "mailHint": "Openship could not verify this mail server. It may still be running. Check the connection and retry.",
+    "apiTitle": "Connection to Openship interrupted",
+    "apiHint": "Displayed status may be out of date. Check your connection; your apps may still be running."
   }
 }

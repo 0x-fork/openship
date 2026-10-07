@@ -50,7 +50,7 @@
     "mail_down": "E-posta motoru durdu",
     "update_available": "Güncelleme mevcut",
     "component_behind": "Bileşen güncellemesi mevcut",
-    "monitoring_offline": "Masaüstü çevrimdışı",
+    "monitoring_offline": "Bağlantı kullanılamıyor",
     "mail_certificate": "Posta sertifikası"
   },
   "since": "{when} başladı",
@@ -85,7 +85,9 @@
     "updatesTitle": "Güncellemeler mevcut",
     "updatesSubtitle": "Uygulanmaya hazır yeni sürümler var",
     "more": "{n} tane daha",
-    "hide": "Bir şey değişene kadar gizle"
+    "hide": "Bir şey değişene kadar gizle",
+    "connectionTitle": "Bağlantı kesildi",
+    "connectionSubtitle": "Bazı sağlık kontrolleri kullanılamıyor."
   },
   "loadFailed": "Sorunlar yüklenemedi",
   "toast": {
@@ -99,9 +101,15 @@
   },
   "connectivity": {
     "offlineTitle": "Bu cihaz çevrimdışı",
-    "offlineHint": "İzleme bilgileri güncel olmayabilir. Sunucuları yenilemek ve yeniden kontrol etmek için tekrar bağlanın.",
+    "offlineHint": "Görüntülenen durum güncel olmayabilir. Yenilemek için tekrar bağlanın.",
     "retryStatus": "Durumu yeniden al",
     "recheck": "Yeniden kontrol et",
-    "unknownHealth": "Openship bu sunucuya ulaşana kadar konteynerlerin durumu bilinmiyor."
+    "unknownHealth": "Openship bu sunucuya ulaşana kadar konteynerlerin durumu bilinmiyor.",
+    "monitoringHint": "Openship etkilenen sunuculara erişemiyor. Güncel sağlık durumları bilinmiyor.",
+    "details": "Teknik ayrıntılar",
+    "mailTitle": "Posta durumu alınamıyor",
+    "mailHint": "Openship bu posta sunucusunu kontrol edemedi. Sunucu hâlâ çalışıyor olabilir. Bağlantıyı kontrol edip yeniden deneyin.",
+    "apiTitle": "Openship bağlantısı kesildi",
+    "apiHint": "Görüntülenen durum güncel olmayabilir. Bağlantınızı kontrol edin; uygulamalarınız hâlâ çalışıyor olabilir."
   }
 }

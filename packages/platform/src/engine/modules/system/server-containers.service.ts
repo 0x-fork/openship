@@ -163,7 +163,7 @@ async function detectEdge(executor: CommandExecutor): Promise<ContainerProbe> {
  * so `absent` (drop the row). With a record it's `present`; a provisioned-but-not-
  * running engine is reported `down` (not `behind`): reconcileServerMail is
  * swap-only and won't act on a stopped engine, so nudging an update would mislead.
- * Presence is decided by the DB (trustworthy), so mail never returns `unknown`.
+ * The DB proves that mail was provisioned; a failed live probe remains unknown.
  *
  * Which ENGINE it has comes from the one topology probe (`detectMailEngine`), not
  * from a container lookup — a legacy host-native install has no container, and
@@ -181,9 +181,10 @@ async function detectMail(
   executor: CommandExecutor,
   server: Server,
 ): Promise<ContainerProbe> {
-  const record = await repos.mailServer.get(server.id).catch(() => undefined);
+  const record = await repos.mailServer.get(server.id);
   if (!record) return { kind: "absent" };
   const probe = await detectMailEngine(executor).catch(() => null);
+  if (!probe) return { kind: "unknown" };
   const pinnedLabel = pinnedMailImage();
   const base = {
     component: "mail" as const,
@@ -206,7 +207,7 @@ async function detectMail(
     };
   }
 
-  if (!probe || probe.flavor === "none") {
+  if (probe.flavor === "none") {
     // No engine of either shape. That's only a CONCLUSION if Docker actually
     // answered: with an unreachable daemon "no container" is a failed probe, and
     // writing it would flip a healthy mail box to "Stopped · container missing".

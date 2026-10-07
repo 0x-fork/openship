@@ -389,13 +389,15 @@ export interface MailServerState {
  */
 export async function readState(
   exec: CommandExecutor,
+  options: { strict?: boolean } = {},
 ): Promise<MailServerState | null> {
-  const trimmed = await readOpenshipFile(exec, MAIL_STATE_FILE);
+  const trimmed = await readOpenshipFile(exec, MAIL_STATE_FILE, options);
   if (!trimmed) return null;
 
   try {
     const parsed = JSON.parse(trimmed) as MailServerState;
     if (parsed.version !== STATE_VERSION) {
+      if (options.strict) throw new Error("The mail setup state has an unsupported version");
       console.warn(
         `mail-state: ${STATE_FILE_PATH} has version ${parsed.version}, expected ${STATE_VERSION} - ignoring`,
       );
@@ -403,6 +405,7 @@ export async function readState(
     }
     return parsed;
   } catch (err) {
+    if (options.strict) throw new Error("The saved mail setup state could not be read", { cause: err });
     console.warn(
       `mail-state: failed to parse ${STATE_FILE_PATH}: ${safeErrorMessage(err)}`,
     );

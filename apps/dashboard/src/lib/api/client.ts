@@ -32,15 +32,19 @@ export function getApiBaseUrl(): string {
 /**
  * Optional callback invoked whenever a request fails at the network level
  * (server unreachable, connection refused, or request timeout).
- * Wire this up once from a React component that has access to the toast context.
- *
- * Example:
- *   setNetworkErrorHandler((msg) => showToast(msg, "error", "Connection Error"));
+ * The root connection notice subscribes once; page-specific errors remain with
+ * the request's caller. This hook never retries a failed operation.
  */
 let _networkErrorHandler: ((message: string) => void) | null = null;
+let _networkRecoveryHandler: (() => void) | null = null;
 
 export function setNetworkErrorHandler(fn: ((message: string) => void) | null) {
   _networkErrorHandler = fn;
+}
+
+/** An HTTP response proves API reachability, including an ordinary 4xx/5xx. */
+export function setNetworkRecoveryHandler(fn: (() => void) | null) {
+  _networkRecoveryHandler = fn;
 }
 
 /* ------------------------------------------------------------------ */
@@ -317,6 +321,7 @@ async function doFetch<T>(
       signal: controller.signal,
       body: rawBody ? (body as BodyInit) : body !== undefined ? JSON.stringify(body) : undefined,
     });
+    _networkRecoveryHandler?.();
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -343,7 +348,7 @@ async function doFetch<T>(
     // Through the exported predicates, so the banner and `getApiErrorMessage`
     // classify the same throw the same way.
     if (isNetworkError(err)) {
-      _networkErrorHandler?.("Cannot reach the server. Make sure the API is running.");
+      _networkErrorHandler?.("Cannot reach Openship. Check the connection and server availability.");
     } else if (isAbortError(err)) {
       _networkErrorHandler?.(REQUEST_TIMEOUT_MESSAGE);
     }

@@ -241,6 +241,8 @@ export interface MailSetupStatus {
    * as broken.
    */
   engine?: MailEngineState;
+  /** The live engine check was inconclusive; never offer a repair from this state. */
+  observationError?: string;
   steps: MailStepStatus[];
   /** Server-buffered log lines, rehydrated on page reload. */
   logs?: MailSessionLogLine[];
