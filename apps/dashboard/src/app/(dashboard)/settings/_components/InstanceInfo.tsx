@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { usePlatform } from "@/context/PlatformContext";
 import { useAuth } from "@/context/AuthContext";
 import { SettingsSection } from "./SettingsSection";
-import { UpgradeAuthModal } from "./UpgradeAuthModal";
+import { UpgradeAuthModal } from "@/components/instance/UpgradeAuthModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 export function InstanceInfo() {

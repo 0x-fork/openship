@@ -183,6 +183,13 @@ async function seedRow(client: PGlite, table: string, id: string): Promise<void>
     names.push(`"id"`);
     values.push(`'${id}'`);
   }
+  // Managed servers made ssh_host nullable, but a non-local server still needs
+  // an SSH address or a workspace binding. Keep the seed valid when the moving
+  // upgrade window starts after that constraint was introduced.
+  if (table === "servers" && !names.includes(`"ssh_host"`)) {
+    names.push(`"ssh_host"`);
+    values.push(`'192.0.2.1'`);
+  }
 
   await client.exec(
     `insert into "${table}" (${names.join(", ")}) values (${values.join(", ")});`,

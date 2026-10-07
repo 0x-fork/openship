@@ -1,151 +1,118 @@
 ---
-title: Move your setup to another install
-description: Take your whole Openship control plane — servers, projects, services, domains, env vars and secrets — from one install to another. The classic case is a local desktop → an always-on self-hosted server.
+title: Move your Openship instance
+description: Move control between Desktop and a server while keeping your projects, credentials and deployment ownership.
 ---
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+Moving an instance changes **where Openship manages your infrastructure**. Your apps and
+volumes keep running on their existing servers. All workspaces, users, server connections,
+projects, credentials, deployment history and backup settings travel together.
 
-You started on the **desktop app** on your laptop, and now you want Openship itself to run on an
-**always-on Linux server** so deploys keep working when your laptop is closed. You don't want to
-recreate every project, server connection, domain and secret by hand.
+Use **Settings → Instance → Instance location**. Moving requires an instance administrator;
+being the owner of an organization alone does not grant access to other organizations' data.
+Openship Cloud's shared SaaS control plane cannot be moved this way.
 
-Openship has a first-class **data transfer** for exactly this: export your entire instance to a single
-encrypted file on the old machine, import it on the new one. It carries the whole control plane —
-server/SSH connections, projects (including local-folder source settings), services, domains and
-routes, environment variables, deployment history and backup destinations — and your **secrets travel
-re-encrypted under a passphrase you choose**, never in the clear.
+## Desktop to a server
 
-<Callout title="Desktop → server works">
-The desktop app stores its data in an embedded database (PGlite) and a server uses Postgres. The export
-records which it came from and the import adapts, so a **desktop → server** move imports cleanly — you do
-not convert anything by hand.
-</Callout>
+1. Choose **Move to a server**. On a fresh Desktop, set your account email and password first.
+2. Select a connected server with the normal server picker. A managed Openship Cloud server
+   is also a destination, using its existing subscription and execution connection.
+3. Choose **Use through Desktop** to install only the API, or **Desktop + browser** to install
+   the API and dashboard. Both need a reachable HTTPS address for webhooks and remote clients.
+4. Choose a custom or free address. A custom domain must point to the destination server;
+   a free address uses that server's Cloud routing connection.
+5. Review and confirm. Openship deploys its normal API service with persistent database storage,
+   verifies the receiving API and version, then transfers the instance.
 
-<Callout title="Use Data Transfer for an instance move" type="warn">
-The **Settings → Team → Migrate → Own server** shortcut is unavailable in this
-version. Its preflight reports the missing deployment step and cannot start a
-restore on an unprepared target. Install and start the destination first, then
-use the export/import steps below. Verify the imported installation and its
-projects before retiring the source.
-</Callout>
+The interface remains on your Desktop and connects to the new API. Work continues on the
+server when Desktop closes. Team invitations, jobs and webhooks use the active server.
 
-## What travels (and what to check after)
+Both ends must run the **same compatible Openship release**. The destination must be able to
+pull its API/dashboard images. An older image is rejected before the source is paused.
 
-**Carried:** servers/SSH connections · projects · services · domains & routes · environment variables ·
-deployment settings · backup destinations · git installations. **Secrets** (env values, SSH
-keys/passwords, clone tokens, backup credentials) are lifted into a passphrase-sealed AES-256-GCM bundle
-on export and re-encrypted under the *destination's* key on import.
+## Use an existing instance
 
-**Check after import:** projects that deploy from a **local folder** (no git — the “Deploy a local
-folder” flow) store the folder's path *on the source machine*. That path won't exist on the new machine,
-so Openship flags those projects on import. Re-point them, or just re-deploy each from a folder that lives
-on the new machine (see the last step).
+These are different actions:
 
-## Move it
+- **Connect to an instance** uses a remote instance without copying its data. Paste its API
+  address, invitation link or a one-time connection code. Your separate local instance pauses;
+  **Return to local instance** resumes it.
+- **Move your instance → Existing instance** replaces the destination's data. Open
+  **Receive a move** there and paste its code into the source. A recovery snapshot is saved
+  before replacement.
 
-<Steps>
+For an API-only installation, use `https://ops.example.com`. An installation with a dashboard
+advertises `https://ops.example.com/api/proxy`. Use the address in its connection or move code.
+Codes expire after ten minutes and must only be shared with the intended instance/device.
 
-<Step>
+Email/password and two-factor sign-in work inside Desktop. For a passkey or social sign-in,
+sign in on the remote dashboard and choose **Settings → Instance → Pair a Desktop**. A paired
+Desktop receives that user's permissions, not an instance administrator role. API-only
+invitation pages explain how to open the invitation in Desktop.
 
-### Export on the old machine
+## Move back to Desktop
 
-**CLI:**
+On a connected Desktop, choose **Move back to Desktop**. Openship transfers the **latest remote
+data**, including work created since you moved. It does not reactivate an old local snapshot.
+The source server retires before Desktop starts managing jobs and deployments.
 
-```bash
-openship system data-transfer export --passphrase "a-strong-passphrase" --out openship-export.osx
-```
+You can also choose **Move to Desktop** on the server, create a move code, and paste it into
+Desktop's **Receive a move** screen. Desktop initiates the connection, so it does not need an
+inbound public port.
 
-**Or the dashboard:** **Settings → Instance → Data Transfer → Export**, set a passphrase, download the file.
+After returning, jobs depend on this computer being online. Update externally registered
+webhook/callback addresses if the public address changes; a loopback Desktop cannot receive
+public webhooks. The former API service and its storage remain until you remove them.
+Choose **Move to previous server** to send your latest data back there using the same
+handoff. It reuses the API installation; it does not create another server or subscription.
 
-The passphrase encrypts the secrets inside the file. Anyone with the file but not the passphrase gets your
-projects/domains/config but **no** secret values. Keep the passphrase safe — it's required to import.
+## Local connections and credentials
 
-</Step>
+Before moving, Openship checks for connections that cannot work from the destination:
 
-<Step>
+- A source-local or loopback host needs a saved SSH connection to that **same host**. Openship
+  verifies its host identity and preserves server ids, container ids, routes and volumes.
+- SSH-agent credentials need a saved private key or password. File-backed private keys are
+  carried using the existing credential export process.
+- Local source folders need a Git repository. Local-folder backup destinations need a
+  reachable SFTP destination. Existing deployments with no server binding must be assigned
+  to a connected server first.
 
-### Copy the file to the new server
+Credentials are encrypted in transit and resealed with the destination's encryption key.
+SMTP, GitHub and Google integration configuration travels with the instance. Database URLs,
+host paths, instance encryption keys and Cloud reseller authority do not replace the receiver's
+own configuration. Browser sessions are invalidated; Desktop gets a new device session.
+Passkeys remain tied to their original hostname, and external OAuth applications may need
+updated callback URLs when that hostname changes.
 
-Any transport works — `scp`, `rsync`, a USB drive. The file is self-contained.
+## Interrupted moves
 
-```bash
-scp openship-export.osx you@your-server:/tmp/
-```
+Openship pauses new control-plane changes and waits for running operations before taking the
+snapshot. Your already-running app containers are not stopped. Requests arriving during the
+handoff receive a retryable response; externally delivered webhooks may need redelivery.
 
-</Step>
+Use **Resume move** after a network interruption or API restart. The saved journal prevents a
+retry from importing over a newly active instance. Once the source has retired, it stays
+inactive even if the activation reply was lost; there is no automatic fallback to stale data.
 
-<Step>
+Before activation, **Cancel move** restores the receiver's saved recovery archive. Cancellation
+needs the source's confirmation, so an unreachable peer may need to come back online first.
+Recovery snapshots and the handoff capability are retained for thirty days. Resolve an
+interrupted move within that window; older recovery requires operator assistance.
 
-### Import on the new server
+## Updating a hosted API
 
-Install and start Openship on the server first (see [Installation](/docs/getting-started/installation)),
-then:
+The active API project is protected from stopping or deleting itself. For an instance
+installed by this flow, move control to Desktop, update the former API project's service
+images through the normal deployment flow, and then choose **Move to previous server**.
+CLI-installed instances continue to use `openship update` on their host.
 
-```bash
-openship system data-transfer import --file /tmp/openship-export.osx \
-  --passphrase "a-strong-passphrase" --mode wipe
-```
+## Backup and recovery files
 
-**Or the dashboard:** **Settings → Instance → Data Transfer → Import**, choose the file, enter the
-passphrase, pick a mode.
+**Settings → Instance → Backup & recovery** retains export/import for offline recovery and
+selective project transfer. Current JSON exports include credentials in plaintext: protect the
+file. Older encrypted archives still require their original password. A file import does not
+retire another controller, so it is not a substitute for the live handoff above.
 
-- **`wipe`** (default) — replace the destination's data with the file. Use this for a fresh server. It
-  also replaces the login/session, so you'll re-authenticate as the imported owner afterward.
-- **`merge`** — insert only rows that don't already exist; the destination's own account/settings are
-  kept. Use this to fold one install into another without clobbering it.
-
-</Step>
-
-<Step>
-
-### Re-point local-folder projects
-
-If the import warned about **local-folder projects**, their source path pointed at the old machine. For
-each one, put the source on the new server and re-deploy it from there — no git required:
-
-```bash
-cd /path/to/your/app/on/this/server
-openship deploy
-```
-
-Run from a non-git folder, `openship deploy` packages the folder on the spot, uploads it to this install,
-detects the stack, and deploys — the headless equivalent of the desktop “Deploy a local folder” flow. That
-re-binds the project to a path that exists here.
-
-</Step>
-
-</Steps>
-
-## Source release maintenance commands
-
-A source release uses a flat `api/`, `dashboard/`, and `packages/` layout. Its
-headless import entry is `api/scripts/import-instance.ts`; the database dump and
-restore entries are under `packages/db/scripts/`. These commands and the release
-supervisor use the assets from their installed PGlite package. They do not reuse
-`OPENSHIP_PGLITE_ASSETS_DIR` from a compiled CLI installation.
-
-For a running destination, use the Data Transfer API or dashboard above. A
-headless import must use the destination's database configuration and encryption
-key, with any process owning that embedded database stopped first. It is a data
-import command; it does not install, start, route, or cut over the destination.
-
-## Deploy only what changed (don't restart your databases)
-
-Once you're running on the server, a multi-service (Compose) project can deploy a **subset** of services
-so a backend-only change doesn't recreate your MySQL/Redis/Qdrant containers:
-
-```bash
-openship deploy --service-ids web,api
-```
-
-Services you don't name carry forward on their existing containers, untouched. Omit `--service-ids` on the
-first deploy to bring the whole stack up. For stateful services this is the difference between a quick app
-update and needless database downtime.
-
-<Callout title="Related">
-- [Deploy a local folder](/docs/guides/deploy-local-folder) — the no-git deploy this guide re-points to.
-- [Server-to-server migration](/docs/guides/server-to-server-migration) — moving a *running app + its
-  volumes* between servers (different from moving the control plane).
-- [Database migrations](/docs/guides/database-migrations) — backing up and migrating a stateful volume
-  safely around a deploy.
-</Callout>
+See [Settings](/docs/dashboard/settings) for archive options and
+[server-to-server migration](/docs/guides/server-to-server-migration) to move an application's
+runtime and volumes instead of its control plane.

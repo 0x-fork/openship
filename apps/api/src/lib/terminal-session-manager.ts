@@ -28,6 +28,7 @@ import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import type { CloudTerminalTicket } from "./cloud/terminal-bridge";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
 // ─── Tickets ────────────────────────────────────────────────────────────────
 
@@ -379,9 +380,9 @@ export function unregisterSession(sessionId: string): boolean {
 
   // A connection is owned by the whole terminal session, including park/resume.
   // The provider-specific release is idempotent and runs only at final teardown.
-  void Promise.resolve().then(() => session.release?.()).catch((error) => {
+  void trackBackgroundWork(Promise.resolve().then(() => session.release?.()).catch((error) => {
     console.warn("[terminal] failed to release server connection", error instanceof Error ? error.message : "unknown error");
-  });
+  }));
 
   clearTimeout(session.idleTimer);
   clearTimeout(session.hardCapTimer);
@@ -401,4 +402,10 @@ export function unregisterSession(sessionId: string): boolean {
 
 export function getSession(sessionId: string): ActiveSession | undefined {
   return sessions.get(sessionId);
+}
+
+/** End parked as well as attached shells before exporting a controller. */
+export function closeControllerTerminals(): void {
+  tickets.clear();
+  for (const session of [...sessions.values()]) fireTimeout(session, "server_error");
 }

@@ -30,6 +30,7 @@ type NodeService = ReturnType<typeof utilityProcess.fork> | ChildProcess;
 let apiProc: NodeService | null = null;
 let dashboardProc: NodeService | null = null;
 let started = false;
+let serviceEpoch = 0;
 // Liveness for the API. A utilityProcess (the normal path) exposes no
 // `exitCode`, so we track exit ourselves — startApi sets this on the process's
 // exit event, and teardown reads it instead of a per-type property.
@@ -176,7 +177,9 @@ async function startDashboard(
   dashboardDir: string,
   dashPort: number,
   apiOrigin: string,
+  isCurrent: () => boolean,
 ): Promise<NodeService | null> {
+  if (!isCurrent()) return null;
   const url = `http://127.0.0.1:${dashPort}/`;
   const serverJs = join(dashboardDir, "server.js");
   const env: NodeJS.ProcessEnv = {
@@ -191,13 +194,14 @@ async function startDashboard(
 
   // 1. Preferred — utilityProcess (no Dock tile, owned by the app).
   const up = utilityProcess.fork(serverJs, [], { cwd: dashboardDir, stdio: "pipe", env });
+  dashboardProc = up;
   let upDead = false;
   up.on("exit", (code) => {
     upDead = true;
     console.log(`[openship] dashboard(utility) exited (code=${code})`);
   });
   pipeLogs("dashboard", up);
-  if (await waitForPort(url, () => upDead, 45)) return up;
+  if (await waitForPort(url, () => upDead || !isCurrent(), 45)) return up;
 
   // 2. Fallback — ELECTRON_RUN_AS_NODE spawn (works, but tiles the Dock).
   try {
@@ -205,19 +209,22 @@ async function startDashboard(
   } catch {
     // already gone
   }
+  if (!isCurrent()) return null;
   console.log("[openship] dashboard utilityProcess did not start — falling back to node spawn");
   const sp = spawn(process.execPath, [serverJs], {
     cwd: dashboardDir,
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  dashboardProc = sp;
   let spDead = false;
   sp.on("exit", (code, signal) => {
     spDead = true;
     console.log(`[openship] dashboard exited (code=${code ?? "null"} signal=${signal ?? "none"})`);
   });
   pipeLogs("dashboard", sp);
-  if (await waitForPort(url, () => spDead, 60)) return sp;
+  if (await waitForPort(url, () => spDead || !isCurrent(), 60)) return sp;
+  killService(sp);
   return null;
 }
 
@@ -237,22 +244,28 @@ async function startApi(
   cwd: string,
   env: NodeJS.ProcessEnv,
   healthUrl: string,
+  isCurrent: () => boolean,
 ): Promise<NodeService | null> {
+  if (!isCurrent()) return null;
   apiExited = false;
   // 1. Preferred — utilityProcess (Electron's Node, no Dock tile). The API runs
   //    migrations on boot, so give it a generous readiness window.
   const up = utilityProcess.fork(apiEntry, [], { cwd, stdio: "pipe", env });
+  // Own a booting process immediately. Quit/update must be able to await its
+  // exit even while its migrations have not yet opened the health listener.
+  apiProc = up;
   let upDead = false;
   up.on("exit", (code) => {
     upDead = true;
-    apiExited = true;
+    if (apiProc === up) apiExited = true;
     console.log(`[openship] api(utility) exited (code=${code})`);
   });
   pipeLogs("api", up);
-  if (await waitForPort(healthUrl, () => upDead)) return up;
+  if (await waitForPort(healthUrl, () => upDead || !isCurrent())) return up;
 
   // 2. Fallback — ELECTRON_RUN_AS_NODE spawn (works, but tiles the Dock).
   killService(up);
+  if (!isCurrent()) return null;
   console.log("[openship] api utilityProcess did not start — falling back to node spawn");
   apiExited = false;
   const sp = spawn(process.execPath, [apiEntry], {
@@ -260,14 +273,16 @@ async function startApi(
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  apiProc = sp;
   let spDead = false;
   sp.on("exit", (code, signal) => {
     spDead = true;
-    apiExited = true;
+    if (apiProc === sp) apiExited = true;
     console.log(`[openship] api exited (code=${code ?? "null"} signal=${signal ?? "none"})`);
   });
   pipeLogs("api", sp);
-  if (await waitForPort(healthUrl, () => spDead)) return sp;
+  if (await waitForPort(healthUrl, () => spDead || !isCurrent())) return sp;
+  killService(sp);
   return null;
 }
 
@@ -278,6 +293,8 @@ async function startApi(
 export async function startLocalServices(internalToken: string): Promise<void> {
   if (started) return;
   started = true;
+  const epoch = ++serviceEpoch;
+  const isCurrent = () => serviceEpoch === epoch;
 
   const { apiEntry, migrationsDir, pgliteDir, geoipDb, engineDir, dashboardDir, nodeModulesDir, cloudflaredPath } =
     resourcePaths();
@@ -404,14 +421,45 @@ export async function startLocalServices(internalToken: string): Promise<void> {
     // API + dashboard start in parallel. Each handles its own readiness +
     // utilityProcess→spawn fallback and resolves the live process (or null).
     const [apiRes, dashProc] = await Promise.all([
-      startApi(apiEntry, userData, apiEnv, `http://127.0.0.1:${apiPort}/api/health`),
-      startDashboard(dashboardDir, dashPort, apiOrigin),
+      startApi(apiEntry, userData, apiEnv, `http://127.0.0.1:${apiPort}/api/health`, isCurrent),
+      startDashboard(dashboardDir, dashPort, apiOrigin, isCurrent),
     ]);
+    if (!isCurrent()) {
+      if (apiRes) killService(apiRes);
+      if (dashProc) killService(dashProc);
+      return;
+    }
     apiProc = apiRes;
     dashboardProc = dashProc;
     const apiReady = Boolean(apiRes);
 
     if (apiReady && dashProc) {
+      // Exit 75 is an intentional configuration reload after a verified
+      // instance import. Wait for the old process to EXIT (and release PGlite),
+      // then restart only its API on the same origin. Quitting/updating the
+      // Desktop invalidates this supervisor before any asynchronous restart.
+      const supervise = (child: NodeService) => {
+        const onExit = (code: number | null) => {
+          if (code !== 75 || serviceEpoch !== epoch || apiProc !== child) return;
+          apiProc = null;
+          void startApi(apiEntry, userData, apiEnv, `${apiOrigin}/api/health`, isCurrent)
+            .then((next) => {
+              if (serviceEpoch !== epoch) {
+                if (next) killService(next);
+                return;
+              }
+              apiProc = next;
+              if (next) supervise(next);
+              else
+                console.error(
+                  "[openship] API reload failed; reopen Desktop to resume the saved instance move.",
+                );
+            })
+            .catch((error) => console.error("[openship] API reload failed", error));
+        };
+        (child as unknown as NodeJS.EventEmitter).once("exit", onExit);
+      };
+      supervise(apiRes!);
       localApiUrl = apiOrigin;
       localDashboardUrl = dashOrigin;
       saveStoredPorts(apiPort, dashPort); // reuse next launch → session persists
@@ -420,7 +468,8 @@ export async function startLocalServices(internalToken: string): Promise<void> {
     }
 
     // A child failed to come up (port race / crash). Tear down and retry.
-    stopLocalServices();
+    // Startup retry has no registered reload supervisor yet.
+    stopLocalServices(false);
     if (attempt === MAX_ATTEMPTS) {
       throw new Error(
         `Local services failed to start after ${MAX_ATTEMPTS} attempts ` +
@@ -431,7 +480,11 @@ export async function startLocalServices(internalToken: string): Promise<void> {
 }
 
 /** Kill both children. Safe to call anytime / repeatedly. */
-export function stopLocalServices(): void {
+export function stopLocalServices(invalidate = true): void {
+  if (invalidate) {
+    serviceEpoch++;
+    started = false;
+  }
   // API: SIGTERM then a SIGKILL fallback. The SIGKILL escalation only applies to
   // the ChildProcess fallback — a utilityProcess exposes just kill(), and
   // Electron hard-kills it on app quit anyway.
@@ -475,6 +528,8 @@ export function stopLocalServices(): void {
  * interrupted) and the lock self-heals from a dead pid on the next boot.
  */
 export async function stopLocalServicesAndWait(graceMs = 8000): Promise<void> {
+  serviceEpoch++;
+  started = false;
   const p = apiProc;
 
   // Dashboard shares no data dir — kill it eagerly, nothing to wait on.

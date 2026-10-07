@@ -32,6 +32,13 @@ Reuse [Input](../apps/dashboard/src/components/ui/input.tsx),
 
 ## Layout and density
 
+Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
+the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
+shared server selector and option cards for API-only versus API + dashboard. Show progress
+and recovery in the same card; do not add another direct-transfer or Team migration wizard.
+A reconnecting Desktop retains its trusted local UI and names the remote instance at sign-in.
+
+
 - Use [PageContainer](../apps/dashboard/src/components/ui/PageContainer.tsx) for its existing
   1600px page limit and responsive padding. Avoid a second page-width cap inside it.
 - Project and deployment configuration pages use a 340px action sidebar when there is room,

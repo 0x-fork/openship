@@ -28,6 +28,7 @@
  */
 
 import type { Context } from "hono";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 import { openServerShell } from "@repo/platform/engine/lib/server-execution";
 import { prepareCloudTerminal, cloudTerminalHandlers } from "../../lib/cloud/terminal-bridge";
 import { createProvisionLock } from "@repo/platform/engine/lib/provision-lock";
@@ -627,13 +628,17 @@ function writeStdin(state: ConnState, buf: Buffer): void {
  * still close the DB row. Stale handlers from a previous WS (e.g. after a
  * resume) are rejected by the `state.closed && !alreadyUnregistered` guard.
  */
-export async function teardown(
+export function teardown(
   state: ConnState,
   reason: TerminalExitReason,
   exitCode: number | null,
   alreadyUnregistered = false,
   forceClose = true,
 ) {
+  return trackBackgroundWork(teardownConnection(state, reason, exitCode, alreadyUnregistered, forceClose));
+}
+
+async function teardownConnection(state: ConnState, reason: TerminalExitReason, exitCode: number | null, alreadyUnregistered: boolean, forceClose: boolean) {
   // Full teardown already completed for this connection.
   if (state.ended) return;
 

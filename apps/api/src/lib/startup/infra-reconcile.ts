@@ -32,6 +32,7 @@ import { repos } from "@repo/db";
 import { registerStartupHook } from "@repo/platform/engine/lib/startup/index";
 import { readApiVersion } from "@repo/platform/engine/lib/release-resolver";
 import { scanInstanceContainers } from "@repo/platform/engine/modules/system/server-containers.service";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
 export function registerInfraReconcile(): void {
   registerStartupHook({
@@ -61,13 +62,13 @@ export function registerInfraReconcile(): void {
           `${settings?.lastSeenVersion ? ` (was ${settings.lastSeenVersion})` : " (first boot)"}` +
           ` — scanning remote edge/mail containers`,
       );
-      void scanInstanceContainers()
+      trackBackgroundWork(scanInstanceContainers()
         .then((r) =>
           console.log(
             `[infra-reconcile] scanned ${r.servers} server(s): ${r.behind} behind, ${r.updated} updated`,
           ),
         )
-        .catch((err) => console.warn(`[infra-reconcile] scan failed: ${safeErrorMessage(err)}`));
+        .catch((err) => console.warn(`[infra-reconcile] scan failed: ${safeErrorMessage(err)}`)));
     },
   });
 }

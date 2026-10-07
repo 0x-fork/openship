@@ -50,10 +50,11 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
-  const { authMode, cloudAuthUrl, selfHosted, authProviders } = useAuthContext();
+  const { authMode, cloudAuthUrl, selfHosted, authProviders, remoteInstance } = useAuthContext();
 
   const isDesktop = typeof window !== "undefined" && !!window.desktop?.isDesktop;
-  const handleBack = isDesktop ? () => { void window.desktop?.reset?.(); } : undefined;
+  const handleBack = remoteInstance ? () => { window.location.href = "/settings?tab=instance"; }
+    : isDesktop ? () => { void window.desktop?.reset?.(); } : undefined;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -66,8 +67,8 @@ function LoginPageInner() {
   const postLoginUrl = getPostAuthRedirect(searchParams);
 
   useEffect(() => {
-    setPasskeySupported(passkeysSupported());
-  }, []);
+    setPasskeySupported(!remoteInstance && passkeysSupported());
+  }, [remoteInstance]);
 
   function completeSignIn(data: unknown) {
     if (needsTwoFactor(data)) {
@@ -281,7 +282,7 @@ function LoginPageInner() {
           {t.auth.login.title}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t.auth.login.subtitle}
+          {remoteInstance ? `Sign in to ${new URL(remoteInstance).host}` : t.auth.login.subtitle}
         </p>
       </div>
 
@@ -365,6 +366,12 @@ function LoginPageInner() {
           divider) when the list is empty, which is the default self-hosted
           instance, so this is safe to mount unconditionally. */}
       <OAuthButtons providers={authProviders} callbackURL={postLoginUrl ?? "/"} showDivider={!passkeySupported} />
+      {remoteInstance && (
+        <p className="mt-5 text-sm text-muted-foreground">
+          Using a passkey or social sign-in? Sign in on the remote site, then use
+          Settings → Instance → Pair a Desktop to connect this device.
+        </p>
+      )}
 
       {/* Public sign-up is a SaaS-only front door. On a self-hosted instance the
           only account is the CLI-created admin; everyone else joins via an

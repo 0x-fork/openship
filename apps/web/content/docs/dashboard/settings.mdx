@@ -151,7 +151,15 @@ you add an email + password login without losing any projects or history.
 **Update & security notifications**. Openship only ever *pulls* this data from the public GitHub releases —
 nothing can push updates to your install. More in [Updating Openship](/docs/guides/updating).
 
-### Export / Import data
+### Instance location
+
+Move between Desktop and a connected or managed server from one card. Choose API-only or
+API + dashboard, or connect Desktop to an existing remote instance without copying its data.
+The move preserves workspaces and credentials, verifies the receiver before cutover, and
+keeps the source inactive afterward. **Move back to Desktop** transfers the latest remote
+state. [Read the instance move guide](/docs/guides/migrate-control-plane).
+
+### Backup & recovery
 
 *(Self-hosted and desktop, instance administrators only.)* **Export instance or projects** downloads a
 portable JSON file. Choose the entire instance, or select projects and individual environments in bulk.
@@ -190,8 +198,8 @@ files stay on their server. Keep using that server, or move the runtime data wit
 restore. Reconnect local source folders and update Git/webhook callback URLs when the control-plane
 address changes. The import result keeps these follow-up notes available.
 
-Direct transfer continues to move an entire instance. Use an export file for project selections so you
-can review conflicts and server mappings on the destination before applying them.
+Use **Instance location** for a live move of the whole control plane. Use an export file for
+project selections so you can review conflicts and server mappings before applying them.
 
 <Callout title="Import can wipe this instance" type="warn">
 An instance archive offers merge or full replacement. Replacement erases
