@@ -1338,7 +1338,7 @@ const DI = "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons";
 export const STACK_ICONS: Partial<Record<StackId, string>> = {
   // JS/TS - Frontend & Fullstack
   nextjs:      `${DI}/nextjs/nextjs-original.svg`,
-  farmjs:      "https://raw.githubusercontent.com/farming-labs/farm.js/main/.github/assets/farmjs-lockup.svg",
+  farmjs:      "https://www.farming-labs.dev/brand/avatar-dark.svg",
   nuxt:        `${DI}/nuxtjs/nuxtjs-original.svg`,
   sveltekit:   `${DI}/svelte/svelte-original.svg`,
   remix:       `${DI}/react/react-original.svg`,
