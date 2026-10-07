@@ -12,6 +12,7 @@
       "description": "Stack/framework slug. Overrides auto-detection.",
       "enum": [
         "nextjs",
+        "farmjs",
         "nuxt",
         "sveltekit",
         "remix",
@@ -342,6 +343,7 @@
               "framework": {
                 "enum": [
                   "nextjs",
+                  "farmjs",
                   "nuxt",
                   "sveltekit",
                   "remix",
