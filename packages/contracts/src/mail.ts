@@ -179,6 +179,8 @@ export const MailCredentialsSchema = Type.Object(
   { additionalProperties: false },
 );
 export const MailWebmailSummarySchema = Type.Object({
+  serverId: Type.Optional(nullableText),
+  workspaceId: Type.Optional(nullableText),
   installed: Type.Boolean(),
   hostname: text,
   url: text,

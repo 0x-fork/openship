@@ -52,7 +52,11 @@ import {
   type AppSettingChange,
 } from "../../apps/app-settings.service";
 import { getTemplateForOrg } from "../../apps/catalog-source";
-import { requestBuildAccess } from "../../deployments/build.service";
+import { requestBuildAccess, resolveSnapshotTarget } from "../../deployments/build.service";
+import { env } from "../../../config/index";
+import { requireLinkedCloudServer } from "../../../lib/cloud/server-link";
+import { workspaceForServer } from "../../../lib/cloud-workspace-scope";
+import { authorization } from "../../../lib/authorization";
 import { listProjectRouteRows } from "../../domains/project-route.service";
 import { updateService } from "../../services/service.service";
 import { mutateState, readState, type MailServerState } from "../mail-state";
@@ -149,7 +153,7 @@ export function managedMailWebmailSettings(
 
 export type WebmailDeployTarget =
   | { kind: "self"; serverId: string }
-  | { kind: "cloud" };
+  | { kind: "cloud"; serverId?: string };
 
 export interface StartWebmailDeployInput {
   mailServerId: string;
@@ -211,6 +215,8 @@ export interface WebmailSummary {
   routingUnknown: boolean;
   /** Webmail is an ordinary project; this is where it's managed. */
   projectId: string | null;
+  serverId?: string | null;
+  workspaceId?: string | null;
   /**
    * This webmail predates the catalog app and can only be REPLACED, not redeployed.
    * Surfaced so the UI can offer the upgrade on an install that still works — a
@@ -284,6 +290,9 @@ async function runWebmailInstall(
   let projectId: string;
 
   if (plan.reuse) {
+    // The normal deployment resolver owns placement. Validate it before editing
+    // a working webmail's routes or credentials, not after those writes land.
+    await resolveSnapshotTarget(plan.reuse, { deployTarget: plan.deployTarget, serverId: plan.serverId });
     projectId = plan.reuse.id;
     if (!plan.routeAfterLink) await reapplyRouting(ctx, template, plan.reuse, plan.routes);
   } else {
@@ -411,6 +420,28 @@ async function reapplyRouting(
 
 // ─── Mail-server-backed install ──────────────────────────────────────────────
 
+/** Use the same selected server identity as every catalog app, including Cloud. */
+async function webmailDeploymentTarget(
+  ctx: RequestContext,
+  input: { deployTarget: "server" | "cloud"; serverId?: string },
+): Promise<{ deployTarget: "server" | "cloud"; serverId: string }> {
+  if (!input.serverId) {
+    throw new AppError("Select a server for webmail before deploying.", 409, "DEPLOYMENT_SERVER_REQUIRED");
+  }
+  const { server, workspace } = await workspaceForServer(ctx.organizationId, input.serverId);
+  await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
+  if (input.deployTarget === "cloud" && !workspace) {
+    throw new AppError("Select a managed Cloud server for webmail.", 400, "CLOUD_WORKSPACE_TARGET_UNAVAILABLE");
+  }
+  if (workspace?.deletionInProgress) {
+    throw new AppError("Cloud workspace is unavailable for this project", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
+  }
+  if (workspace && !env.CLOUD_MODE) {
+    await requireLinkedCloudServer(ctx.organizationId, workspace.id);
+  }
+  return { deployTarget: server.workspaceId ? "cloud" : "server", serverId: server.id };
+}
+
 /**
  * Install (or redeploy) the webmail that serves one of OUR mail servers.
  *
@@ -432,10 +463,10 @@ export async function startWebmailDeploy(
   // server, or the chosen target, belongs to the caller's org.
   const mailServer = await repos.server.get(input.mailServerId).catch(() => null);
   assertResourceInOrg(mailServer, "mail_server", ctx.organizationId, input.mailServerId);
-  if (input.target.kind === "self") {
-    const targetServer = await repos.server.get(input.target.serverId).catch(() => null);
-    assertResourceInOrg(targetServer, "server", ctx.organizationId, input.target.serverId);
-  }
+  const target = await webmailDeploymentTarget(ctx, {
+    deployTarget: input.target.kind === "cloud" ? "cloud" : "server",
+    serverId: input.target.serverId,
+  });
 
   const record = await repos.mailServer.get(input.mailServerId);
   const installDomain = record?.domain?.trim().toLowerCase();
@@ -459,8 +490,8 @@ export async function startWebmailDeploy(
   // route, which the old code registered silently. Refuse with the two ways out.
   if (
     isOwnMailSubdomain &&
-    input.target.kind === "self" &&
-    input.target.serverId !== input.mailServerId
+    target.deployTarget === "server" &&
+    target.serverId !== input.mailServerId
   ) {
     throw new AppError(
       `${mailHost} has to resolve to the mail server itself — that DNS record carries IMAP, SMTP and this host's certificate, so it can't point at another server. Deploy the webmail on the mail server, or give it a hostname of its own such as webmail.${installDomain}.`,
@@ -472,7 +503,7 @@ export async function startWebmailDeploy(
   // hostname (it gets its default *.opsh.io URL) and the mail VPS proxies
   // `mail.<install>` → that URL once the deploy succeeds. No DNS work for the
   // operator, who couldn't do it anyway.
-  const useProxyVariant = input.target.kind === "cloud" && isOwnMailSubdomain;
+  const useProxyVariant = target.deployTarget === "cloud" && isOwnMailSubdomain;
 
   const linked = await resolveLinkedWebmailProject(
     ctx.organizationId,
@@ -514,8 +545,7 @@ export async function startWebmailDeploy(
       input.hostname,
       useProxyVariant,
     ),
-    deployTarget: input.target.kind === "cloud" ? "cloud" : "server",
-    serverId: input.target.kind === "self" ? input.target.serverId : undefined,
+    ...target,
     // The legacy row is gone by now, so this is a fresh install, not a redeploy.
     reuse: legacy ? undefined : (linked ?? undefined),
     // `mail.<install>` is routable only by the mail server's LINKED webmail, and the
@@ -537,13 +567,7 @@ export async function startExternalWebmailDeploy(
   ctx: RequestContext,
   input: StartExternalWebmailDeployInput,
 ): Promise<WebmailDeployResult> {
-  if (input.target.deployTarget === "server") {
-    if (!input.target.serverId) {
-      throw new AppError("serverId is required when deploying to a server.", 400);
-    }
-    const targetServer = await repos.server.get(input.target.serverId).catch(() => null);
-    assertResourceInOrg(targetServer, "server", ctx.organizationId, input.target.serverId);
-  }
+  const target = await webmailDeploymentTarget(ctx, input.target);
 
   const template = await requireWebmailTemplate(ctx.organizationId);
   const endpoint = webmailEndpoint(template);
@@ -564,8 +588,7 @@ export async function startExternalWebmailDeploy(
       smtpHost: input.backend.smtpHost,
       smtpPort: String(input.backend.smtpPort),
     }),
-    deployTarget: input.target.deployTarget,
-    serverId: input.target.serverId,
+    ...target,
   });
 }
 
@@ -658,6 +681,8 @@ export async function resolveWebmailSummary(
     // have one chosen for it.
     routingUnknown: rows === null,
     projectId: project.id,
+    serverId: project.serverId ?? null,
+    workspaceId: project.workspaceId ?? null,
     legacy: isLegacyWebmailProject(project),
   };
 }

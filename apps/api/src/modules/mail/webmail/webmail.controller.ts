@@ -56,7 +56,7 @@ export async function getTargetsHandler(c: Context) {
   }
   // org-scoped: only return targets within the caller's org (the route
   // tag proves membership but not that mailServerId is theirs).
-  const options = await listWebmailTargets(mailServerId, ctx.organizationId);
+  const options = await listWebmailTargets(mailServerId, ctx);
   return c.json({ options });
 }
 
@@ -69,7 +69,7 @@ export async function getTargetsHandler(c: Context) {
  *     hostname: string,
  *     target:
  *       | { kind: "self", serverId: string }   // self-hosted on an openship server
- *       | { kind: "cloud" }                    // managed by Opshcloud
+ *       | { kind: "cloud", serverId: string }  // selected managed Cloud server
  *     replaceLegacy?: boolean                  // consent to replace a pre-catalog webmail
  *   }
  *
@@ -97,15 +97,15 @@ export async function startDeployAsProjectHandler(c: Context) {
   if (!hostname || !HOSTNAME_RE.test(hostname))
     return c.json({ error: "Invalid domain" }, 400);
 
-  let target: { kind: "self"; serverId: string } | { kind: "cloud" };
+  let target: { kind: "self"; serverId: string } | { kind: "cloud"; serverId?: string };
   if (targetBody?.kind === "cloud") {
-    target = { kind: "cloud" };
+    target = { kind: "cloud", serverId: targetBody.serverId };
   } else if (targetBody?.kind === "self" && targetBody.serverId) {
     target = { kind: "self", serverId: targetBody.serverId };
   } else {
     return c.json(
       {
-        error: 'target is required: { kind: "self", serverId } or { kind: "cloud" }',
+        error: 'target is required: { kind: "self", serverId } or { kind: "cloud", serverId }',
       },
       400,
     );

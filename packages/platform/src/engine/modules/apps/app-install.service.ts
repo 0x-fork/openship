@@ -52,7 +52,7 @@ import {
 } from "../../lib/plan-guard";
 import { getTrustedHostCapacity } from "../../lib/host-capacity";
 import { createProject } from "../projects/project-crud.service";
-import { resolveCloudProjectServer } from "../../lib/cloud-workspace-scope";
+import { resolveCloudProjectServer, workspaceForServer } from "../../lib/cloud-workspace-scope";
 import { createService, updateService, setServiceEnvVars } from "../services/service.service";
 
 /**
@@ -388,12 +388,14 @@ export async function installApp(
   assertInstallRoutes(template, input.routes);
 
   let workspaceId: string | undefined;
-  if (env.CLOUD_MODE) {
-    const { workspace, server } = await resolveCloudProjectServer(ctx.organizationId, input.serverId);
-    if (workspace) {
-      workspaceId = workspace.id;
-      input = { ...input, serverId: server!.id };
-    }
+  // Linked Cloud servers retain their workspace on self-hosted control planes
+  // too. Draft adoption must use the same owner as project creation.
+  const placement = env.CLOUD_MODE
+    ? await resolveCloudProjectServer(ctx.organizationId, input.serverId)
+    : input.serverId ? await workspaceForServer(ctx.organizationId, input.serverId) : null;
+  if (placement?.workspace) {
+    workspaceId = placement.workspace.id;
+    input = { ...input, serverId: placement.server!.id };
   }
 
   // Plan gate, before anything is written. Every catalog app becomes a
