@@ -3017,7 +3017,7 @@ describe("vercel.json path headers and URL shape", () => {
       expect(c).toContain(`add_header ${key} $${names[i]} always;`);
     }
     // The path lands in a regex, so an unescaped `.` would over-match.
-    expect(c).toContain('~^/a-b/ "dash";');
+    expect(c).toContain('~^/a-b/(?:\\?|$) "dash";');
   });
 
   test("escapes a dot in a path-scoped header's path", async () => {

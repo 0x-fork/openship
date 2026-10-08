@@ -1526,3 +1526,43 @@ describe("Ruby runtime version detection", () => {
     })).toMatchObject({ stack: "docker", buildImage: "ubuntu:22.04" });
   });
 });
+
+
+describe("repository Node engine compatibility", () => {
+  it("detects a plain Node server with its declared engine without project overrides", () => {
+    const result = detectStack(files("package.json", "server.mjs", "public/"), {
+      scripts: { start: "node server.mjs" },
+      engines: { node: ">=24" },
+    });
+    expect(result.stack).toBe("node");
+    expect(result.startCommand).toContain("start");
+    expect(result.buildImage).toBe("node:24");
+  });
+});
+
+describe("explicit deployment command precedence", () => {
+  it("preserves native configuration over imported Vercel commands", () => {
+    const result = detectStack(
+      files("package.json", "openship.json", "vercel.json"),
+      {
+        scripts: { start: "node server.mjs", build: "echo default" },
+      },
+      {
+        "openship.json": JSON.stringify({ buildCommand: "echo native" }),
+        "vercel.json": JSON.stringify({ buildCommand: "echo imported" }),
+      },
+    );
+    expect(result.buildCommand).toBe("echo native");
+  });
+  it("honors explicitly disabled Vercel build and install steps", () => {
+    const result = detectStack(
+      files("package.json", "vercel.json"),
+      {
+        scripts: { start: "node server.mjs", build: "echo must-not-run" },
+      },
+      { "vercel.json": JSON.stringify({ installCommand: "", buildCommand: "" }) },
+    );
+    expect(result.installCommand).toBe(":");
+    expect(result.buildCommand).toBe(":");
+  });
+});
