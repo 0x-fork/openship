@@ -27,6 +27,7 @@ import {
   categoryServesFiles,
   getProjectType,
   getBuildImage,
+  nodeImageForEngine,
   parseRubyVersion,
   LANGUAGE_MANIFEST_FILES,
   collectDependencies,
@@ -573,7 +574,10 @@ export function detectStack(
   // classification so it cannot be discarded by a framework override.
   return {
     ...resolved,
-    buildImage: getBuildImage(resolved.stack, resolved.packageManager, detectRubyVersion(fc)),
+    buildImage: nodeImageForEngine(
+      getBuildImage(resolved.stack, resolved.packageManager, detectRubyVersion(fc)),
+      (packageJson?.engines as { node?: unknown } | undefined)?.node,
+    ),
   };
 }
 
@@ -604,12 +608,15 @@ export function applyMetadataOverrides(
 ): StackResult {
   let out = result;
 
-  for (const meta of metadataList) {
+  for (const meta of [...metadataList].reverse()) {
     // A nonLocal file's build/install/output/framework all pertain to a
     // different directory - ignore them here (rewrites are handled elsewhere).
     if (meta.nonLocal) continue;
 
     const takeOver = (current: string, next: string | undefined): string => {
+      // Vercel explicitly uses an empty command to disable that step. A shell
+      // no-op preserves the intent through legacy nonempty-command validation.
+      if (meta.source === "vercel" && next === "") return ":";
       if (!isSet(next)) return current;
       if (meta.fillOnly && isSet(current)) return current;
       return next;

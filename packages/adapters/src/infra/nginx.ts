@@ -533,7 +533,7 @@ function headerEntries(
     rule.headers.map((header) => ({
       rule,
       header,
-      variable: rule.path === "/" ? null : `${prefix}_${n++}`,
+      variable: rule.path === "/" && !rule.exact ? null : `${prefix}_${n++}`,
     })),
   );
 }
@@ -562,7 +562,7 @@ function renderHeaderMaps(route: RouteConfig, slug: string): string {
     assertValidHeader(e.header.key, e.header.value);
     return `map $request_uri $${e.variable} {
     default "";
-    ~^${escapeLiteralPath(e.rule.path)} "${e.header.value.replace(/"/g, '\\"')}";
+    ~^${escapeLiteralPath(e.rule.path)}${e.rule.exact ? "(?:\\?|$)" : ""} "${e.header.value.replace(/"/g, '\\"')}";
 }`;
   });
   return `${blocks.join("\n")}\n`;

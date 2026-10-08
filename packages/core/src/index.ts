@@ -101,3 +101,5 @@ export * from "./cluster-workload";
 export * from "./cluster-database";
 
 export { withKeyedMutex, tryWithKeyedMutex } from "./keyed-mutex";
+
+export { nodeImageForEngine } from "./node-runtime-version";
