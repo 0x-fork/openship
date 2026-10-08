@@ -76,6 +76,8 @@ export type PromptUserFn = (prompt: PromptPayload) => Promise<string>;
 // ─── Deploy environment abstraction ─────────────────────────────────────────
 
 export interface DeployEnvironment {
+  /** Exported static hosting is the workload: publication must succeed before retiring the old release. */
+  requireSuccessfulRoutes?: boolean;
   /**
    * Optional pre-deploy validation - fail fast before committing resources.
    *
@@ -453,6 +455,9 @@ export async function runDeployPipeline(
       routeTargetsByPort,
       routeOptions,
     );
+    if (env.requireSuccessfulRoutes && routeWarnings.length) {
+      throw new Error(`Static publication failed: ${routeWarnings.join("; ")}`);
+    }
     throwIfCancelled(signal);
 
     // ── Overlap only: now the new one is healthy + routed, stop OLD LAST ─

@@ -850,6 +850,7 @@ export function useDeploymentConfig() {
           // SAVED rules, so re-opening "Edit build config" and saving cannot silently replace
           // an operator's redirects/headers with whatever the repo's vercel.json happens to
           // say. A brand-new deploy honours the fresh scan, which is the seeding case.
+          cloudStaticHosting: project?.cloudStaticHosting ?? "pages",
           routingConfig: projectId
             ? (project?.routingConfig ?? response.routing ?? undefined)
             : (response.routing ?? undefined),

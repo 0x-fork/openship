@@ -991,5 +991,14 @@
     "buildArguments": "Build-Argumente werden in der Compose-Datei oder der Quellkonfiguration festgelegt und erfordern einen erneuten Build.",
     "projectLink": "Gemeinsame Projektumgebung bearbeiten",
     "loadFailed": "Die Namen der Projektvariablen konnten nicht zum Prüfen von Überschreibungen geladen werden."
+  },
+  "cloudStaticHosting": {
+    "title": "Statisches Hosting",
+    "description": "Wähle, wo die erstellten Dateien ausgeliefert werden.",
+    "pages": "Cloud Pages (Standard)",
+    "pagesDescription": "Dateien über die Cloud-Edge ausliefern, ohne laufenden App-Container.",
+    "server": "Verwalteter Server",
+    "serverDescription": "Dateien aus einem nginx-Container auf deinem verwalteten Server ausliefern.",
+    "nextDeploy": "Gespeicherte Hosting-Änderungen gelten ab dem nächsten Deployment."
   }
 }

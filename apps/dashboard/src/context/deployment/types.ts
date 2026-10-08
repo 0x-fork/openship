@@ -458,6 +458,7 @@ export interface DeploymentConfig {
   monorepoWorkspace?: MonorepoWorkspaceConfig;
   /** Routing config parsed from the repo's vercel.json; carried from prepare to
    *  project create so the backend persists + compiles it. Opaque passthrough. */
+  cloudStaticHosting?: "pages" | "server";
   routingConfig?: RoutingConfig | null;
   /**
    * Deploy-time readiness gate, set in the wizard's collapsed Health section and

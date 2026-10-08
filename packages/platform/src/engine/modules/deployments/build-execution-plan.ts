@@ -59,6 +59,7 @@ export function resolveBuildRuntimeModes(input: {
    * runtime to pull and run it. Bare mode cannot consume that artifact. */
   hasPrebuiltImage?: boolean;
   runtimeMode?: RuntimeModeValue;
+  cloudStaticHosting?: "pages" | "server";
 }): BuildRuntimeModes {
   if (input.effectiveTarget === "cluster") return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
   if (input.hasPrebuiltImage) {
@@ -66,6 +67,15 @@ export function resolveBuildRuntimeModes(input: {
   }
   if (input.willRunServices || (input.workload === "worker" && input.runtimeMode !== "bare")) {
     return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
+  }
+  if (
+    input.workload === "static" &&
+    input.effectiveTarget === "cloud" &&
+    input.cloudStaticHosting
+  ) {
+    return input.cloudStaticHosting === "pages"
+      ? { buildRuntimeMode: "docker", serveRuntimeMode: "bare" }
+      : { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
   }
   if (
     input.workload === "static" &&
@@ -87,8 +97,9 @@ export function resolveBuildRuntimeModes(input: {
 export function resolveDeployRouting(input: {
   workload: WorkloadType;
   runtimeName: string;
-  /** Managed Docker serves static builds in their generated image; bare publishes files. */
+  /** Managed Cloud defaults are frozen in cloudStaticHosting; absent means legacy behavior. */
   managedServer?: boolean;
+  cloudStaticHosting?: "pages" | "server";
   rootDirectory?: string;
   outputDirectory: string;
 }): DeployRouting {
@@ -100,7 +111,11 @@ export function resolveDeployRouting(input: {
   if (input.workload === "worker") {
     return { buildMode: "normal", deployMode: "worker", staticServeOutputDir: "" };
   }
-  if (input.managedServer && input.runtimeName === "docker") {
+  if (
+    input.managedServer &&
+    input.runtimeName === "docker" &&
+    input.cloudStaticHosting !== "pages"
+  ) {
     return { buildMode: "normal", deployMode: "server", staticServeOutputDir: "" };
   }
   // Static, self-hosted → served as files by the edge. Docker-built → doc-root
@@ -159,4 +174,20 @@ export function reusedReleaseRouting(
 ): DeployRouting {
   if (routing.deployMode !== "static-file-serve" || frozen === undefined) return routing;
   return { ...routing, staticServeOutputDir: frozen };
+}
+
+
+/** The serving workload, independent of a saved build/runtime preference. */
+export function needsRunningApplication(input: {
+  workload: WorkloadType;
+  runtimeMode?: RuntimeModeValue;
+  cloudStaticHosting?: "pages" | "server";
+  willRunServices?: boolean;
+  hasPrebuiltImage?: boolean;
+}): boolean {
+  if (input.willRunServices || input.hasPrebuiltImage || input.workload !== "static") return true;
+  return (
+    input.cloudStaticHosting === "server" ||
+    (input.cloudStaticHosting !== "pages" && input.runtimeMode !== "bare")
+  );
 }

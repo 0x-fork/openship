@@ -470,6 +470,50 @@ describe("containers on one Oblien Docker workspace", () => {
     await expect(runtime.prepareComposeSource({ projectId: "project-a", localPath: "/etc" } as never)).rejects.toThrow("control-plane");
     expect(runtime.executor.writeFile).not.toHaveBeenCalled();
   });
+  it("extracts a Pages build on the workspace without a serving container", async () => {
+    const build = vi
+      .spyOn(DockerRuntime.prototype, "build")
+      .mockResolvedValue({
+        sessionId: "build-pages",
+        status: "deploying",
+        imageRef: "builder-image",
+      });
+    const remove = vi.spyOn(runtime, "removeImage").mockResolvedValue();
+    const original = vi.mocked(runtime.executor.exec).getMockImplementation()!;
+    vi.mocked(runtime.executor.exec).mockImplementation(async (command) =>
+      command.startsWith("docker create ")
+        ? "extract-only"
+        : command.startsWith("ls -A ")
+          ? "index.html"
+          : original(command),
+    );
+    const out = runtime.staticBuildPath("build-pages");
+    const result = await runtime.buildStaticToHost(
+      {
+        projectId: "project-a",
+        sessionId: "build-pages",
+        repoUrl: "",
+        framework: "static",
+        outputDirectory: ".",
+        rootDirectory: "",
+        inlineSourceFiles: [{ path: "index.html", content: "<h1>exported</h1>" }],
+      } as never,
+      out,
+      new BuildLogger(),
+    );
+    expect(result).toMatchObject({ status: "deploying", imageRef: out });
+    expect(build).toHaveBeenCalledWith(
+      expect.objectContaining({ staticExtractOnly: true, cloneOnServer: true }),
+      expect.anything(),
+    );
+    expect(runtime.executor.exec).toHaveBeenCalledWith("docker rm 'extract-only'");
+    expect(remove).toHaveBeenCalledWith("builder-image");
+    expect(captures).toEqual([]);
+    expect(out).toBe(
+      runtime.routingScope().staticReleaseRoot!.replace(/\/releases$/, "/.builds/build-pages"),
+    );
+    expect(() => runtime.staticBuildPath("../sibling")).toThrow("Invalid build session");
+  });
   it("stages inline source remotely and invokes the shared Docker builder with the cloud executor", async () => {
     const sharedBuild = vi.spyOn(DockerRuntime.prototype, "buildImages").mockResolvedValue([]);
     const transfer = vi.spyOn(runtime.executor, "transferIn").mockRejectedValue(new Error("must not read API-host files"));

@@ -985,5 +985,14 @@
     "buildArguments": "构建参数在 Compose 文件或源代码配置中设置，更改后需要重新构建。",
     "projectLink": "编辑共享项目环境",
     "loadFailed": "无法加载项目变量名称以检查覆盖关系。"
+  },
+  "cloudStaticHosting": {
+    "title": "静态托管",
+    "description": "选择构建文件的提供位置。",
+    "pages": "Cloud Pages（默认）",
+    "pagesDescription": "将文件发布到 Cloud 边缘，无需持续运行应用容器。",
+    "server": "托管服务器",
+    "serverDescription": "通过托管服务器上的 nginx 容器提供文件。",
+    "nextDeploy": "保存的托管更改将在下次部署时生效。"
   }
 }

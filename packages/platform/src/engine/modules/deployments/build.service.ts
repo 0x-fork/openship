@@ -64,6 +64,7 @@ import { assertGitHubRepoAccess } from "../github/github-access";
 import { resolveSmartRoute } from "./smart-route";
 import { snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts, strictRefreshImages } from "./pinned-artifacts";
 import { deploymentWorkload, projectToClass, snapshotToClass } from "./deployment-class";
+import { needsRunningApplication } from "./build-execution-plan";
 import {
   resolveProjectInfo,
   resolveProjectSourceEnv,
@@ -288,6 +289,8 @@ export interface DeploymentConfigSnapshot {
   serverId?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode?: "bare" | "docker";
+  /** Absent in legacy snapshots: preserve their existing container hosting. */
+  cloudStaticHosting?: "pages" | "server";
   managedWorkspaceId?: string;
   managedServer?: { projectId: string; workspaceId: string; ownerWorkspaceId: string };
   /**
@@ -487,6 +490,7 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     // tab). So a redeploy/webhook deploy respects the saved choice instead of
     // re-defaulting. The wizard's per-deploy override still wins when passed.
     runtimeMode: toRuntimeMode(project.runtimeMode),
+    cloudStaticHosting: project.cloudStaticHosting ?? "pages",
   };
 }
 
@@ -1400,7 +1404,13 @@ async function createQueuedDeploymentUnlocked(opts: {
             knownHostnames: (await repos.domain.listByProject(project.id)).map(domain => domain.hostname),
           });
       }
-      const runsApplication = mode.useServicePipeline || meta.runtimeMode !== "bare" || snapshotToClass(meta).workload !== "static";
+      const runsApplication = needsRunningApplication({
+        workload: snapshotToClass(meta).workload,
+        runtimeMode: meta.runtimeMode,
+        cloudStaticHosting: meta.cloudStaticHosting,
+        willRunServices: mode.useServicePipeline,
+        hasPrebuiltImage: Boolean(meta.releaseImageRef),
+      });
       meta = {
         ...meta,
         cloudApplicationSlot: !mode.useServicePipeline && runsApplication,
@@ -2057,7 +2067,17 @@ export async function requestBuildAccess(
   // allocates another VM. Bare applications share the host's resources directly.
   if (
     snapshot.deployTarget === "cloud" &&
-    (snapshot.runtimeMode !== "bare" || useServicePipeline || snapshot.framework === "docker" || snapshot.releaseImageRef) &&
+    !(
+      snapshot.cloudStaticHosting === "pages" &&
+      snapshotToClass(snapshot).workload === "static" &&
+      !useServicePipeline &&
+      !snapshot.releaseImageRef
+    ) &&
+    ((snapshot.cloudStaticHosting === "server" && snapshotToClass(snapshot).workload === "static") ||
+      snapshot.runtimeMode !== "bare" ||
+      useServicePipeline ||
+      snapshot.framework === "docker" ||
+      snapshot.releaseImageRef) &&
     cloudResourceTier
   ) {
     try {

@@ -33,6 +33,7 @@ vi.mock("@repo/db", async (importOriginal) => {
 // rather than re-written per test.
 vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   usesManagedRouting,
+  resolveDeploymentStaticRoot: () => undefined,
   disposePlatform: () => {},
   resolveDeploymentPlatform: async (...args: unknown[]) => {
     const flat = (await resolveDeploymentRuntime(...args)) as Record<string, unknown>;
@@ -131,6 +132,49 @@ describe("Cloud Docker route tables", () => {
       if (!published) throw new Error("service port is not published");
       return { workspace: "shared-vm", port: published };
     });
+  });
+  it("repairs an existing single static container route without rebuilding", async () => {
+    const registerRoute = vi.fn().mockResolvedValue(undefined);
+    const savedDomain = {
+      id: "static-domain",
+      projectId: "stack",
+      hostname: "static.opsh.io",
+      targetPath: "/",
+      targetPort: null,
+      domainType: "free",
+      verified: true,
+      isPrimary: true,
+    };
+    domainRepo.listByProject.mockResolvedValue([savedDomain]);
+    domainRepo.findByHostname.mockResolvedValue(savedDomain);
+    target.mockResolvedValue({ workspace: "shared-vm", port: 30000 });
+    await applyCloudRouting({
+      project: { ...base, workloadType: "static", hasServer: false, port: 3000 } as never,
+      deployment: {
+        id: "release",
+        containerId: "static-container",
+        meta: {
+          runtimeMode: "docker",
+          workload: "static",
+          port: 3000,
+          serviceDeploymentMode: "single",
+        },
+      } as never,
+      defs: [],
+      liveRows: [],
+      routing: Object.assign(Object.create(CloudInfraProvider.prototype), {
+        certificateManagement: "provider",
+        registerRoute,
+        resolveRoutingTarget: target,
+      }),
+    });
+    expect(target).toHaveBeenCalledWith("static-container", 3000);
+    expect(registerRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: "static.opsh.io",
+        targetUrl: "http://127.0.0.1:30000",
+      }),
+    );
   });
   it("routes each free endpoint through its live host port on the same VM", async () => {
     await apply();

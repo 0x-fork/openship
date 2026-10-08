@@ -16,6 +16,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { settingsApi, type DefaultDeployTarget } from "@/lib/api/settings";
 import { useToast } from "@/context/ToastContext";
 import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode, CloudResourceTier } from "@/context/deployment/types";
+import { CloudStaticHosting } from "@/components/project-settings/CloudStaticHosting";
 import ServerRuntimePicker, { type ServerRuntimeSelection } from "./ServerRuntimePicker";
 import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -36,6 +37,7 @@ interface CompactSummaryProps {
    *  tier chip for a "Static" chip — there's no machine to size when
    *  the workload is just files served from the edge. */
   hasServer?: boolean;
+  cloudStaticHosting?: "pages" | "server";
   /** Runtime isolation shown in the configuration summary and settings preview. */
   runtimeMode?: RuntimeMode;
   /** True when the project deploys as a multi-service stack (compose). A stack
@@ -57,6 +59,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   showBuildStrategy = true,
   cloudResourceTier,
   hasServer = true,
+  cloudStaticHosting,
   runtimeMode,
   isServices = false,
   rollbackWindow,
@@ -123,7 +126,9 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   ) : !hasServer ? (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
       <UiIcon name="globe" className="size-4" />
-      {t.deploy.summary.runtimeStatic}
+      {deployTarget === "cloud" && cloudStaticHosting
+        ? t.projectSettings.cloudStaticHosting[cloudStaticHosting]
+        : t.deploy.summary.runtimeStatic}
     </span>
   ) : deployTarget === "cloud" && runtimeMode !== "bare" ? (
     cloudResourceTier ? (
@@ -170,7 +175,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   );
 
   if (variant === "preview") {
-    const containerLimits = deployTarget === "cloud" && (isServices || runtimeMode !== "bare");
+    const containerLimits = deployTarget === "cloud" && (isServices || runtimeMode !== "bare" || (!hasServer && cloudStaticHosting === "server"));
     const runtimeLabel = !hasServer && !isServices
       ? t.deploy.summary.static
       : isServices || runtimeMode !== "bare"
@@ -409,11 +414,23 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
 
   const showSettings = showFullPicker && (serverSelection.ready || !!config.serverId) &&
     (config.deployTarget === "server" || config.deployTarget === "cloud");
+  const cloudStatic =
+    config.deployTarget === "cloud" &&
+    workloadOf(config.options) === "static" &&
+    config.projectType !== "docker" &&
+    !isServiceDeployment;
   const showRuntimeIsolation =
+    !cloudStatic &&
     (config.deployTarget === "cloud" || workloadOf(config.options) !== "static") &&
-    config.projectType !== "docker" && !isServiceDeployment;
-  const showResourceLimits = config.deployTarget === "cloud" &&
-    (config.runtimeMode !== "bare" || isServiceDeployment || config.projectType === "docker");
+    config.projectType !== "docker" &&
+    !isServiceDeployment;
+  const showResourceLimits =
+    (!cloudStatic || config.cloudStaticHosting === "server") &&
+    config.deployTarget === "cloud" &&
+    ((cloudStatic && config.cloudStaticHosting === "server") ||
+      config.runtimeMode !== "bare" ||
+      isServiceDeployment ||
+      config.projectType === "docker");
   const resourceValues = resolveTierResources(config.cloudResourceTier ?? "unlimited", config.cloudResourceCustom);
 
   // Saved connection defaults stay with the destination controls.
@@ -474,6 +491,14 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
 
           {showSettings && (
             <>
+              {cloudStatic && (
+                <section className="rounded-2xl bg-card p-5">
+                  <CloudStaticHosting
+                    value={config.cloudStaticHosting ?? "pages"}
+                    onChange={(cloudStaticHosting) => updateConfig({ cloudStaticHosting })}
+                  />
+                </section>
+              )}
               {showRuntimeIsolation && (
                 <section className="rounded-2xl bg-card p-5" aria-label={t.deploy.runtime.heading}>
                   <ServerRuntimePicker selection={runtimeSelection} />
@@ -548,6 +573,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
             serverName={summaryServerName}
             showBuildStrategy={showBuildStrategy}
             cloudResourceTier={config.cloudResourceTier}
+            cloudStaticHosting={config.cloudStaticHosting ?? "pages"}
             hasServer={workloadOf(config.options) !== "static"}
             runtimeMode={config.runtimeMode}
             isServices={isServiceDeployment}

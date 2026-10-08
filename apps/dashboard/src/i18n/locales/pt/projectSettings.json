@@ -985,5 +985,14 @@
     "buildArguments": "Os argumentos de compilação são definidos no arquivo Compose ou na configuração do código-fonte e exigem uma nova compilação.",
     "projectLink": "Editar ambiente compartilhado do projeto",
     "loadFailed": "Não foi possível carregar os nomes das variáveis do projeto para verificar substituições."
+  },
+  "cloudStaticHosting": {
+    "title": "Hospedagem estática",
+    "description": "Escolha onde os arquivos compilados serão servidos.",
+    "pages": "Cloud Pages (padrão)",
+    "pagesDescription": "Publique arquivos na borda da Cloud sem um contêiner de aplicação em execução.",
+    "server": "Servidor gerenciado",
+    "serverDescription": "Sirva arquivos de um contêiner nginx no seu servidor gerenciado.",
+    "nextDeploy": "As alterações salvas serão aplicadas na próxima implantação."
   }
 }

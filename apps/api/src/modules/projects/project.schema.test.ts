@@ -101,3 +101,12 @@ describe("EnsureProjectBody — compose build args (#689)", () => {
     ).toBe(true);
   });
 });
+
+it("accepts only supported Cloud static hosting choices on create, ensure, and update", () => {
+  for (const schema of [CreateProjectBody, EnsureProjectBody, UpdateProjectBody]) {
+    for (const cloudStaticHosting of ["pages", "server"]) {
+      expect(Value.Check(schema, { name: "static-site", cloudStaticHosting })).toBe(true);
+    }
+    expect(Value.Check(schema, { name: "static-site", cloudStaticHosting: "invalid" })).toBe(false);
+  }
+});
