@@ -323,6 +323,14 @@ unknown, and reserve repair/setup prompts for confirmed states. The root layout 
 connection notice. Monitoring groups explicit network failures across affected servers and keeps
 raw diagnostics in a closed Technical details disclosure.
 
+Service terminals distinguish a pending status read from a confirmed stopped service. Keep the
+terminal mounted when a status check becomes unavailable; offer a manual terminal connection
+while status is unverified, using the same authenticated PTY transport. Use the shared terminal
+shell and connection notice for checking, unavailable and stopped states, with a status retry
+and a relevant next action. Connection attempts can be cancelled. After a session has connected,
+show reconnect feedback above its retained output instead of covering or replacing it.
+When a shell opens, refresh the canonical service status; do not mark it running optimistically.
+
 Catalog category filters match the Library's tabs: compact `text-sm` labels with `px-4 py-2`,
 `rounded-lg`, and a filled `bg-foreground text-background` selected state. Inactive choices use
 muted text and a subtle hover fill, with no decorative border around each option. Preserve
