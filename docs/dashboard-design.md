@@ -36,8 +36,28 @@ Instance relocation has one entry in **Settings → Instance → Instance locati
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
 and recovery in the same card; do not add another direct-transfer or Team migration wizard.
+Choose the destination before asking a fresh Desktop user to create an account. Keep that
+account form inside the same dialog, retain the server and address, and return to explicit
+move confirmation after account setup. Team and push-to-deploy prerequisites link directly
+to this flow; a link opens setup only. Use the API's reachability state, so an already-public
+instance can enable those features without moving. Show pairing on hosted or connected
+instances, and explain that its one-time code connects the person's own Desktop as that user.
 A reconnecting Desktop retains its trusted local UI and names the remote instance at sign-in.
-
+The connection dialog starts with one **Instance URL** input, followed by the instance's
+existing sign-in or invitation screen. Accept its public dashboard or API-only address;
+do not ask users to find a proxy path. Keep one-time account pairing behind a separate
+**Use a connection code** action. Connecting never creates a team membership or moves data.
+Team invitations offer **Email** and **Copy link**, using the same invitation and role/grant
+controls. Email uses the instance's configured delivery capability; link delivery needs no
+mail service. Show the link immediately after creation and keep copy/revoke in the pending
+list. Shared links use the active instance's public address, including from Desktop.
+Recipients sign in or create their own invited account, then enter the accepted organization.
+The location card leads with the current computer or server and one contextual action:
+move from Desktop, connect a Desktop to an active server, or receive an instance on a retired
+server. Put secondary connection and transfer tools in the shared More options menu. Use
+plain action labels that distinguish connecting a device from moving instance data. Keep
+the summary and actions in one compact row when they fit, stacking them on narrow containers;
+do not repeat the location as a separate control-mode badge or a row of competing buttons.
 
 - Use [PageContainer](../apps/dashboard/src/components/ui/PageContainer.tsx) for its existing
   1600px page limit and responsive padding. Avoid a second page-width cap inside it.

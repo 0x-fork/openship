@@ -1,34 +1,15 @@
 "use client";
 
-import { Icon as UiIcon } from "@repo/ui/icons";
-
-/**
- * Zero-auth → local-auth upgrade modal.
- *
- * The synthetic "Local User" provisioned for a zero-auth desktop install
- * keeps its userId across this upgrade — every FK (projects, deployments,
- * member rows, audit) stays valid. The backend rewrites the user row
- * (name/email/emailVerified), inserts a Better Auth credential account
- * with the hashed password, and flips instanceSettings.authMode to
- * "local" in one transaction. On success the response sets a fresh
- * session cookie so the browser stays signed in.
- *
- * The "Use your mail server" toggle is offered only when a provisioned
- * mail server exists; ticking it asks the backend to warm the platform
- * mailbox (ensureOpenshipPlatformMailbox) so outbound mail uses our
- * own SMTP identity by default after the upgrade.
- */
-
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { Icon } from "@repo/ui/icons";
 import { api, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { Modal } from "@/components/ui/Modal";
-
-interface MailServerSummary {
-  serverId: string;
-  installedAt: string | null;
-}
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 interface Props {
   open: boolean;
@@ -37,8 +18,73 @@ interface Props {
 }
 
 export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
+  if (!open) return null;
+  return <UpgradeAuthDialog onClose={onClose} onSuccess={onSuccess} />;
+}
+
+function UpgradeAuthDialog({ onClose, onSuccess }: Omit<Props, "open">) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const close = () => {
+    if (!busy) onClose();
+  };
+  const { dialog, onKeyDown } = useDialogFocus(close);
+  return (
+    <Modal isOpen onClose={close} closable={!busy} showCloseButton={false} maxWidth="28rem">
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.settings.upgradeAuth.title}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="space-y-5 p-6 outline-none"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50">
+              <Icon name="lock" className="size-5" />
+            </span>
+            <div>
+              <h3 className="text-base font-semibold">{t.settings.upgradeAuth.title}</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t.settings.upgradeAuth.description}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={close}
+            disabled={busy}
+            aria-label={t.settings.upgradeAuth.close}
+          >
+            <Icon name="close" />
+          </Button>
+        </div>
+        <UpgradeAuthForm onCancel={onClose} onSuccess={onSuccess} onBusyChange={setBusy} />
+      </div>
+    </Modal>
+  );
+}
+
+/** Shared account setup. The API preserves the local user's id and credentials,
+ * enables password auth atomically, and returns a signed-in session. */
+export function UpgradeAuthForm({
+  onCancel,
+  onSuccess,
+  onBusyChange,
+  cancelLabel,
+}: {
+  onCancel: () => void;
+  onSuccess: () => void;
+  onBusyChange: (busy: boolean) => void;
+  cancelLabel?: string;
+}) {
   const { showToast } = useToast();
   const { t } = useI18n();
+  const copy = t.settings.upgradeAuth;
+  const id = useId();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,35 +94,36 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    // Probe for an installed mail server so we can show the toggle
-    // conditionally. Best-effort: if the endpoint errors we just hide
-    // the toggle.
-    void (async () => {
-      try {
-        const res = await api.get<{ data: MailServerSummary[] } | MailServerSummary[]>(
-          "mail/servers",
+    let active = true;
+    // Only offer the existing platform mailbox when its mail server is installed.
+    type MailServer = { installedAt: string | null };
+    void api
+      .get<{ data: MailServer[] } | MailServer[]>("mail/servers")
+      .then((res) => {
+        if (!active) return;
+        const installed = (Array.isArray(res) ? res : (res?.data ?? [])).some(
+          (m) => m.installedAt != null,
         );
-        const list = Array.isArray(res) ? res : (res?.data ?? []);
-        const installed = list.some((m) => m.installedAt != null);
         setHasMailServer(installed);
         setUseOwnMailServer(installed);
-      } catch {
-        setHasMailServer(false);
-      }
-    })();
-  }, [open]);
+      })
+      .catch(() => {
+        if (active) setHasMailServer(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
-  if (!open) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (submitting) return;
     if (password.length < 8) {
-      showToast(t.settings.upgradeAuth.toast.passwordTooShort, "error", t.settings.common.toast.authUpgrade);
+      showToast(copy.toast.passwordTooShort, "error", t.settings.common.toast.authUpgrade);
       return;
     }
     setSubmitting(true);
+    onBusyChange(true);
     try {
       await api.post("system/upgrade-to-auth", {
         name: name.trim(),
@@ -84,145 +131,114 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
         password,
         useOwnMailServer: hasMailServer ? useOwnMailServer : false,
       });
-      showToast(t.settings.upgradeAuth.toast.accountCreated, "success", t.settings.common.toast.authUpgrade);
+      showToast(copy.toast.accountCreated, "success", t.settings.common.toast.authUpgrade);
       onSuccess();
-    } catch (err) {
-      showToast(getApiErrorMessage(err, t.settings.upgradeAuth.toast.failedUpgrade), "error", t.settings.common.toast.authUpgrade);
+    } catch (error) {
+      showToast(
+        getApiErrorMessage(error, copy.toast.failedUpgrade),
+        "error",
+        t.settings.common.toast.authUpgrade,
+      );
     } finally {
       setSubmitting(false);
+      onBusyChange(false);
     }
   };
 
   return (
-    // Shared Modal (portals to document.body) rather than an inline overlay —
-    // inline, this rendered inside the settings page's stacking/filter context
-    // and came out washed with the page showing through it.
-    <Modal
-      isOpen
-      onClose={onClose}
-      closable={!submitting}
-      showCloseButton={false}
-      maxWidth="28rem"
-    >
-      <div className="space-y-5 p-6">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="size-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-              <UiIcon name="lock" className="size-5 text-primary" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-foreground">{t.settings.upgradeAuth.title}</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t.settings.upgradeAuth.description}
-              </p>
-            </div>
-          </div>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-1.5">
+        <label htmlFor={`${id}-name`} className="block text-sm font-medium">
+          {copy.name}
+        </label>
+        <Input
+          id={`${id}-name`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          autoComplete="name"
+          disabled={submitting}
+          variant="filled"
+          placeholder={copy.namePlaceholder}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor={`${id}-email`} className="block text-sm font-medium">
+          {copy.email}
+        </label>
+        <Input
+          id={`${id}-email`}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoComplete="email"
+          disabled={submitting}
+          variant="filled"
+          placeholder={copy.emailPlaceholder}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor={`${id}-password`} className="block text-sm font-medium">
+          {copy.password}
+        </label>
+        <div className="relative">
+          <Input
+            id={`${id}-password`}
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+            disabled={submitting}
+            variant="filled"
+            className="pe-10"
+            placeholder={copy.passwordPlaceholder}
+          />
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => setShowPassword((v) => !v)}
             disabled={submitting}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0 disabled:opacity-50"
-            title={t.settings.upgradeAuth.close}
+            aria-label={showPassword ? t.auth.hidePassword : t.auth.showPassword}
+            aria-pressed={showPassword}
+            className="absolute end-3 top-1/2 -translate-y-1/2 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
-            <UiIcon name="close" className="size-4" />
+            <Icon name={showPassword ? "eye-off" : "eye"} className="size-4" />
           </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground block">{t.settings.upgradeAuth.name}</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              autoComplete="name"
-              disabled={submitting}
-              className="w-full px-3 py-2 bg-muted/30 border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-              placeholder={t.settings.upgradeAuth.namePlaceholder}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground block">{t.settings.upgradeAuth.email}</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              disabled={submitting}
-              className="w-full px-3 py-2 bg-muted/30 border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-              placeholder={t.settings.upgradeAuth.emailPlaceholder}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground block">{t.settings.upgradeAuth.password}</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
-                autoComplete="new-password"
-                disabled={submitting}
-                className="w-full px-3 py-2 pe-10 bg-muted/30 border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                placeholder={t.settings.upgradeAuth.passwordPlaceholder}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                tabIndex={-1}
-                className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showPassword ? <UiIcon name="eye-off" className="size-4" /> : <UiIcon name="eye" className="size-4" />}
-              </button>
-            </div>
-          </div>
-
-          {hasMailServer && (
-            <label className="flex items-start gap-3 rounded-xl border border-border/50 bg-muted/[0.04] p-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useOwnMailServer}
-                onChange={(e) => setUseOwnMailServer(e.target.checked)}
-                disabled={submitting}
-                className="mt-0.5"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                  <UiIcon name="server" className="size-3.5 text-muted-foreground" />
-                  {t.settings.upgradeAuth.useMailServer}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                  {t.settings.upgradeAuth.useMailServerDesc}
-                </p>
-              </div>
-            </label>
-          )}
-
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              {t.settings.common.cancel}
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || !name.trim() || !email.trim() || password.length < 8}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-            >
-              {submitting && <UiIcon name="spinner" className="size-4 animate-spin" />}
-              {t.settings.upgradeAuth.createAccount}
-            </button>
-          </div>
-        </form>
       </div>
-    </Modal>
+      {hasMailServer && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-muted/30 p-3">
+          <Checkbox
+            checked={useOwnMailServer}
+            onCheckedChange={setUseOwnMailServer}
+            disabled={submitting}
+            className="mt-0.5"
+          />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <Icon name="server" className="size-3.5 text-muted-foreground" />
+              {copy.useMailServer}
+            </span>
+            <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+              {copy.useMailServerDesc}
+            </span>
+          </span>
+        </label>
+      )}
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
+          {cancelLabel ?? t.settings.common.cancel}
+        </Button>
+        <Button
+          type="submit"
+          disabled={submitting || !name.trim() || !email.trim() || password.length < 8}
+        >
+          {submitting && <Icon name="spinner" className="animate-spin" />}
+          {copy.createAccount}
+        </Button>
+      </div>
+    </form>
   );
 }

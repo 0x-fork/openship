@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
 import AcceptInvitePage from "./page";
+import { getActiveOrganizationId, setActiveOrganizationId } from "@/lib/api/client";
 
 const h = vi.hoisted(() => ({
   id: "invite1", session: { user: { email: "member@example.test" } } as { user: { email: string } } | null,
@@ -42,6 +43,7 @@ beforeEach(() => {
   h.post.mockReset().mockResolvedValue({});
   h.accept.mockReset().mockResolvedValue(accepted);
   h.push.mockReset();
+  setActiveOrganizationId("previous-org");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -134,4 +136,19 @@ it("submits one acceptance for repeated clicks before React rerenders", async ()
   await act(async () => { button.click(); button.click(); });
   expect(h.accept).toHaveBeenCalledTimes(1);
   await act(async () => pending.resolve(accepted));
+});
+
+it("selects the accepted organization without a second grant-materialization request", async () => {
+  await render(); await accept();
+  expect(getActiveOrganizationId()).toBe("org1");
+  expect(h.post).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTime(1500));
+  expect(h.push).toHaveBeenCalledWith("/");
+});
+
+it("keeps the current organization after a failed claim", async () => {
+  h.accept.mockResolvedValueOnce({ error: { message: "Invitation expired" } });
+  await render(); await accept();
+  expect(getActiveOrganizationId()).toBe("previous-org");
+  expect(h.push).not.toHaveBeenCalled();
 });

@@ -130,7 +130,7 @@ export function getCloudDesktopHandoffUrl(options: {
 }
 
 export function buildAuthPageHref(
-  route: "/login" | "/register" | "/authorize" | "/two-factor",
+  route: "/login" | "/register" | "/authorize" | "/two-factor" | "/verify-email",
   searchParams: SearchParamsLike,
 ) {
   const params = new URLSearchParams();
@@ -148,6 +148,12 @@ export function buildAuthPageHref(
 
   const query = params.toString();
   return query ? `${route}?${query}` : route;
+}
+
+/** Carry the same validated auth continuation through email verification. */
+export function emailVerificationHref(email: string, searchParams: SearchParamsLike): string {
+  const href = buildAuthPageHref("/verify-email", searchParams);
+  return `${href}${href.includes("?") ? "&" : "?"}email=${encodeURIComponent(email)}`;
 }
 
 export function getPostAuthRedirect(searchParams: SearchParamsLike) {

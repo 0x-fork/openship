@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import WebSocket from "ws";
-import { instanceOrigin } from "@repo/core";
+import { instanceOrigin, INVITATION_DELIVERY_HEADER } from "@repo/core";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { zeroAuthAllowed } from "../../../middleware/zero-auth-guard";
 import { upgradeWebSocket } from "../../../lib/ws";
@@ -31,6 +31,7 @@ export async function relayInstanceRequest(c: Context, state: ControllerState): 
   for (const name of [
     "accept",
     "content-type",
+    INVITATION_DELIVERY_HEADER,
     "x-organization-id",
     "last-event-id",
     "range",

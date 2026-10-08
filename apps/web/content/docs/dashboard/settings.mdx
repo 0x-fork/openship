@@ -104,9 +104,15 @@ Who can reach this organization's projects, deployments, and servers. See
 
 - **Active members** — everyone with access, their role, and a **Remove member** action.
 - **Pending invitations** — invites you've sent that haven't been accepted yet.
-- **Invite member** — email a join link. Pick a role: **Member** (read + write to everything), **Admin**
+- **Invite member** — send through the instance's configured email service or create a link to copy.
+  Pick a role: **Member** (read + write to everything), **Admin**
   (Member plus manage members and billing), or **Restricted** (no default access — you choose exactly which
   resources to unlock). Restricted invites open a resource picker.
+
+Both delivery choices use the same email-bound invitation. The link is shown after creation
+and stays available in Pending invitations, where it can also be revoked. From a connected
+Desktop, copied links point to the remote instance. Recipients use their own accounts and
+enter the invited organization after accepting.
 
 If you're on a personal workspace, this tab also offers **Create team** to spin up a separate, isolated
 team organization.
@@ -158,6 +164,11 @@ API + dashboard, or connect Desktop to an existing remote instance without copyi
 The move preserves workspaces and credentials, verifies the receiver before cutover, and
 keeps the source inactive afterward. **Move back to Desktop** transfers the latest remote
 state. [Read the instance move guide](/docs/guides/migrate-control-plane).
+
+The card shows the current location and its main action. The **More instance options** menu
+contains existing-instance connections, move codes and returning to a previous server.
+An active server offers **Connect a Desktop** directly; a retired server offers
+**Move an instance here**.
 
 ### Backup & recovery
 

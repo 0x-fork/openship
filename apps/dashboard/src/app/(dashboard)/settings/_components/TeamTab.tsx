@@ -36,11 +36,10 @@ import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { serversNewlyGranted, hasNewServerGrant, confirmServerAccess } from "@/components/permissions/confirm-server-access";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
-import { TeamWorkspaceCard } from "./TeamWorkspaceCard";
 import { TeamReachabilityCard, type TeamReachability } from "./TeamReachabilityCard";
 import { WorkspaceManageModal } from "./WorkspaceManageModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { invitationClaimPath } from "@/lib/invitation-flow";
+import { invitationShareUrl } from "@/lib/invitation-flow";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
 
@@ -264,7 +263,7 @@ export function TeamTab() {
 
   const handleCopyInvite = async (invitationId: string) => {
     try {
-      const url = `${window.location.origin}${invitationClaimPath(invitationId)}`;
+      const url = invitationShareUrl(selfHosted ? reachability?.url ?? null : window.location.origin, invitationId);
       await navigator.clipboard.writeText(url);
       showToast(
         t.settings.common.copied,
@@ -399,16 +398,14 @@ export function TeamTab() {
   // workspace — see auth.ts beforeCreateInvitation), so the only real block is
   // a self-hosted single-user instance: no shared location, no multi-user auth,
   // so a teammate couldn't reach it. There we hide the button and show the
-  // "shared location" hint (TeamWorkspaceCard) instead of a dead action.
+  // reachability setup instead of a dead action.
   // Smart gate: invites are allowed once the instance is actually REACHABLE
   // (a real public URL — env `--public-url` or the Openship app's verified
   // domain), not gated on the migration-wizard flag. So adding a domain to the
   // Openship app turns invites on directly.
   const canInvite = isAdminOrOwner && (!selfHosted || !!reachability?.configured);
 
-  // Not reachable yet (self-hosted, no public URL) → show inline guidance
-  // (add a domain to Openship / install it) + the migrate-elsewhere option,
-  // instead of a dead-ended invite button.
+  // One notice offers the shared move flow or finishes this instance's domain.
   const showWorkspaceMigration = selfHosted && !reachability?.configured;
 
   // Delete/leave apply to a TEAM workspace only — never the personal workspace
@@ -504,6 +501,7 @@ export function TeamTab() {
           selfHosted={selfHosted}
           initialMailSource={invitationMailSource}
           cloudConnected={cloudConnected}
+          instanceUrl={selfHosted ? reachability?.url ?? null : window.location.origin}
           onConnectCloud={connectCloud}
           onInvited={() => void refresh()}
           onClose={() => setInviteOpen(false)}
@@ -645,14 +643,9 @@ export function TeamTab() {
         </>
       )}
 
-      {/* Not reachable yet: inline guidance (add a domain to Openship / install
-          it) is the primary path; the migrate-elsewhere card is the alternative.
-          Last in the tab so the members UI leads. */}
+      {/* Reachability uses one notice and the shared Instance location flow. */}
       {showWorkspaceMigration && (
-        <>
-          <TeamReachabilityCard reachability={reachability} />
-          <TeamWorkspaceCard canMigrate={!!isOwner} />
-        </>
+        <TeamReachabilityCard reachability={reachability} canMigrate={!!isOwner} />
       )}
 
       {/* Owner-only manage modal: rename, pause all projects, or delete the

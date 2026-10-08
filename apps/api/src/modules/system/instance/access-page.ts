@@ -128,9 +128,10 @@ for (const path of ["/", "/login", "/accept-invite/:id"]) {
               <small>Openship</small>
               <h1>${id ? "Join your team in Desktop" : "Your instance is online"}</h1>
               <p>
-                This instance uses Openship Desktop. Open
-                <strong>Settings → Instance → Connect to an instance</strong>, paste this address,
-                then sign in${id ? " to accept your invitation" : ""}.
+                This instance uses Openship Desktop. In
+                <strong>Settings → Instance</strong>, open More instance options and choose
+                <strong>Connect to an existing instance</strong>. Paste this URL,
+                then sign in${id ? " or create your invited account to join the team" : ""}.
               </p>
               <label for="address">${id ? "Invitation address" : "Instance address"}</label
               ><input id="address" type="text" readonly value="${address}" /><a

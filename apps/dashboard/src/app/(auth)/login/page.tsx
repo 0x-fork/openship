@@ -27,6 +27,7 @@ import {
 } from "@/lib/zero-auth";
 import {
   buildAuthPageHref,
+  emailVerificationHref,
   buildDesktopAuthorizeUrl,
   getPostAuthRedirect,
   preparePkceFlow,
@@ -112,7 +113,7 @@ function LoginPageInner() {
         // Route to the verify page (resend + status) instead of a dead-end toast.
         const err = result.error;
         if (err.code === "EMAIL_NOT_VERIFIED" || err.message?.toLowerCase().includes("verify")) {
-          router.push(`/verify-email?email=${encodeURIComponent(email)}`);
+          router.push(emailVerificationHref(email, searchParams));
           return; // navigating away — keep the spinner until this page unmounts
         }
         // Stayed on the login page → stop the spinner so they can retry.
@@ -369,7 +370,7 @@ function LoginPageInner() {
       {remoteInstance && (
         <p className="mt-5 text-sm text-muted-foreground">
           Using a passkey or social sign-in? Sign in on the remote site, then use
-          Settings → Instance → Pair a Desktop to connect this device.
+          Settings → Instance → {t.settings.instance.location.pairDesktop} to connect this device.
         </p>
       )}
 

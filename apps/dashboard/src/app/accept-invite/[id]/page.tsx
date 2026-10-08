@@ -9,7 +9,7 @@ import { authClient, useSession } from "@/lib/auth-client";
 import { needsTwoFactor } from "@/lib/account-security";
 import { buildAuthPageHref } from "@/lib/cloud-auth";
 import { api } from "@/lib/api";
-import { getApiErrorMessage } from "@/lib/api/client";
+import { getApiErrorMessage, setActiveOrganizationId } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import {
   invitationEmailMatches,
@@ -148,18 +148,9 @@ export default function AcceptInvitePage() {
         return;
       }
 
-      // Materialize any pending grants attached to this invitation. The
-      // membership itself remains successful if this best-effort enrichment
-      // fails; an admin can still add grants from the member row.
-      try {
-        await api.post(
-          `permissions/invitations/${encodeURIComponent(inviteId)}/materialize`,
-        );
-      } catch (err) {
-        console.warn("[accept-invite] materialize failed (continuing):", err);
-      }
-
-      if (claimRef.current !== claim) return;
+      // Acceptance commits membership and resource grants together, and selects
+      // the remote session's organization. Keep the API header in the same scope.
+      setActiveOrganizationId(res.data.invitation.organizationId);
       claim.phase = "accepted";
       setState({
         kind: "accepted",

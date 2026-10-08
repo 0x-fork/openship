@@ -60,7 +60,7 @@ function RegisterPageInner() {
         email,
         password,
       });
-      const next = signUpNext(result, { email, postLoginUrl });
+      const next = signUpNext(result, { email, postLoginUrl, authParams: searchParams });
       if (next.kind === "error") {
         toast("error", next.message ?? t.auth.errors.createFailed);
       } else if (next.kind === "verify") {

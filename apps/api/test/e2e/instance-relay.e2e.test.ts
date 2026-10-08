@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import WebSocket, { WebSocketServer } from "ws";
+import { INVITATION_DELIVERY_HEADER, INVITATION_DELIVERY_LINK_ONLY } from "@repo/core";
 import { expect, it } from "vitest";
 import { freePort, startApi, stopApi, jsonRequest } from "./fixtures/instance-api";
 
@@ -77,11 +78,13 @@ it("relays streams and terminal frames to one authenticated peer without leaking
           authorization: "Bearer local-user-token",
           cookie: "local_secret=private",
           "x-organization-id": "selected-org",
+          [INVITATION_DELIVERY_HEADER]: INVITATION_DELIVERY_LINK_ONLY,
         },
       },
     );
     expect(echo.headers.cookie).toBe("openship.session_token=remote-device-session");
     expect(echo.headers["x-organization-id"]).toBe("selected-org");
+    expect(echo.headers[INVITATION_DELIVERY_HEADER]).toBe(INVITATION_DELIVERY_LINK_ONLY);
     expect(echo.headers["x-internal-token"]).toBeUndefined();
     expect(echo.headers.authorization).toBeUndefined();
     const stream = await fetch(`${desktop.baseUrl}/api/events`, {

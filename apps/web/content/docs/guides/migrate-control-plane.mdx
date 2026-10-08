@@ -13,18 +13,25 @@ Openship Cloud's shared SaaS control plane cannot be moved this way.
 
 ## Desktop to a server
 
-1. Choose **Move to a server**. On a fresh Desktop, set your account email and password first.
+1. Choose **Move to a server**.
 2. Select a connected server with the normal server picker. A managed Openship Cloud server
    is also a destination, using its existing subscription and execution connection.
 3. Choose **Use through Desktop** to install only the API, or **Desktop + browser** to install
    the API and dashboard. Both need a reachable HTTPS address for webhooks and remote clients.
 4. Choose a custom or free address. A custom domain must point to the destination server;
    a free address uses that server's Cloud routing connection.
-5. Review and confirm. Openship deploys its normal API service with persistent database storage,
+5. On a fresh Desktop, choose **Continue** to set your account email and password. Your selected
+   server, access mode and address stay in the same dialog. Account creation does not start the move.
+6. Review and confirm. Openship deploys its normal API service with persistent database storage,
    verifies the receiving API and version, then transfers the instance.
 
 The interface remains on your Desktop and connects to the new API. Work continues on the
 server when Desktop closes. Team invitations, jobs and webhooks use the active server.
+
+Team settings and a disabled push-to-deploy switch offer **Move to a server** when the
+instance needs a reachable address. These shortcuts open the same destination setup.
+An instance that already has a public address does not need to move; if its Openship app
+only needs a domain, Team settings links directly to that domain setup.
 
 Both ends must run the **same compatible Openship release**. The destination must be able to
 pull its API/dashboard images. An older image is rejected before the source is paused.
@@ -33,21 +40,31 @@ pull its API/dashboard images. An older image is rejected before the source is p
 
 These are different actions:
 
-- **Connect to an instance** uses a remote instance without copying its data. Paste its API
-  address, invitation link or a one-time connection code. Your separate local instance pauses;
+- **More instance options → Connect to an existing instance** uses a remote instance without copying its data. Enter its
+  public URL or a team invitation link, then sign in with your account. A separate **Use a connection code**
+  option accepts a code from your own signed-in account. Your separate local instance pauses;
   **Return to local instance** resumes it.
 - **Move your instance → Existing instance** replaces the destination's data. Open
-  **Receive a move** there and paste its code into the source. A recovery snapshot is saved
+  **More instance options → Move an instance here** there and paste its code into the source. A recovery snapshot is saved
   before replacement.
 
-For an API-only installation, use `https://ops.example.com`. An installation with a dashboard
-advertises `https://ops.example.com/api/proxy`. Use the address in its connection or move code.
+For either an API-only installation or one with a dashboard, enter `https://ops.example.com`.
+Desktop locates the API on that same host. Existing `/api/proxy` addresses still work.
 Codes expire after ten minutes and must only be shared with the intended instance/device.
 
 Email/password and two-factor sign-in work inside Desktop. For a passkey or social sign-in,
-sign in on the remote dashboard and choose **Settings → Instance → Pair a Desktop**. A paired
+sign in on the remote dashboard and choose **Settings → Instance → Connect a Desktop**. A paired
 Desktop receives that user's permissions, not an instance administrator role. API-only
 invitation pages explain how to open the invitation in Desktop.
+**Connect a Desktop** is available on hosted or connected instances. The code is for your
+own device; invite another person through **Team** so they use their own account and permissions.
+
+In **Settings → Team**, choose the recipient's email, role and resource access, then **Email**
+or **Copy link**. Email uses the instance's configured mail service. Copy link also works
+without a mail service, and always points to the remote instance when used from Desktop.
+The recipient signs in or creates an invited account, accepts the invitation and enters that
+organization. Other memberships remain available in the organization switcher. Links retain
+their expiry, recipient binding and revocation controls in **Pending invitations**.
 
 ## Move back to Desktop
 
@@ -55,14 +72,14 @@ On a connected Desktop, choose **Move back to Desktop**. Openship transfers the 
 data**, including work created since you moved. It does not reactivate an old local snapshot.
 The source server retires before Desktop starts managing jobs and deployments.
 
-You can also choose **Move to Desktop** on the server, create a move code, and paste it into
-Desktop's **Receive a move** screen. Desktop initiates the connection, so it does not need an
+You can also choose **More instance options → Move to Desktop** on the server, create a move code,
+and paste it into Desktop's **More instance options → Move an instance here** screen. Desktop initiates the connection, so it does not need an
 inbound public port.
 
 After returning, jobs depend on this computer being online. Update externally registered
 webhook/callback addresses if the public address changes; a loopback Desktop cannot receive
 public webhooks. The former API service and its storage remain until you remove them.
-Choose **Move to previous server** to send your latest data back there using the same
+Choose **More instance options → Move to previous server** to send your latest data back there using the same
 handoff. It reuses the API installation; it does not create another server or subscription.
 
 ## Local connections and credentials

@@ -18,6 +18,7 @@ import { resumeControllerSockets, closeControllerSockets } from "../../../lib/ws
 import { remoteSessionHeaders } from "./relay-session";
 import { connectionSchema, deviceConnection } from "./device-session";
 import { closeInstanceRelays } from "./desktop-relay";
+import { discoverInstance } from "./instance-discovery";
 
 const token = () => randomBytes(32).toString("base64url");
 const key = (value: string) => `instance-pair:${createHash("sha256").update(value).digest("hex")}`;
@@ -122,26 +123,8 @@ export async function connectInstance(value: string): Promise<void> {
 export async function connectInstanceAddress(value: string): Promise<void> {
   if (env.DEPLOY_MODE !== "desktop")
     throw new AppError("Open Openship Desktop to connect to another instance.", 409);
-  const origin = instanceOrigin(value);
-  const response = await fetch(`${origin}/api/system/instance/identity`, {
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok)
-    throw new AppError(
-      "This address is not an available Openship instance. Check its API address and version.",
-      409,
-    );
-  const identity = z
-    .object({
-      protocol: z.literal(1),
-      installationId: z.string().uuid(),
-      origin: z.string().transform(instanceOrigin),
-    })
-    .parse(await response.json());
-  if (identity.origin !== origin)
-    throw new AppError("Use the API address configured on the remote instance.", 409);
-  await attachConnection({ origin, installationId: identity.installationId, cookies: {} });
+  const { origin, installationId } = await discoverInstance(value);
+  await attachConnection({ origin, installationId, cookies: {} });
 }
 
 async function attachConnection(connection: InstanceConnection): Promise<void> {

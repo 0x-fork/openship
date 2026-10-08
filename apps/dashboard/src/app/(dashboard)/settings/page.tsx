@@ -202,7 +202,16 @@ function SettingsPageInner() {
 
           {activeTab === "instance" && (
             <>
-              {selfHosted && <InstanceLocation />}
+              {selfHosted && (
+                <InstanceLocation
+                  moveRequested={searchParams.get("move") === "1"}
+                  onMoveOpened={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("move");
+                    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+                  }}
+                />
+              )}
               <InstanceInfo />
               {/* Instance-wide default product mode (Openship Mail vs the full
                   platform). Owner-gated inside; self-hosted only. */}
