@@ -36,3 +36,24 @@ describe("shared static releases on managed ingress", () => {
     expect(h.pages.deploy).toHaveBeenLastCalledWith("site", { workspace_id: h.workspaceId, path: `${h.paths.routes}/site` });
   });
 });
+
+it("switches a live proxy hostname to exported files and back without claiming another hostname", async () => {
+  const domain = "site.opsh.io";
+  await h.infra.registerRoute({ domain, targetUrl: "http://127.0.0.1:3000", tls: true });
+  const page = h.records.get("site");
+  await h.infra.registerRoute({
+    domain,
+    staticRoot: `${h.scope.staticReleaseRoot}/release-a`,
+    tls: true,
+  });
+  expect(h.records.get("site")).toBe(page);
+  expect(h.pages.deploy).toHaveBeenCalledWith("site", {
+    workspace_id: h.workspaceId,
+    path: `${h.paths.routes}/site`,
+  });
+  expect(JSON.stringify(h.routes.set.mock.lastCall)).toContain('"static"');
+  expect(JSON.stringify(h.routes.set.mock.lastCall)).not.toContain('"proxy"');
+  await h.infra.registerRoute({ domain, targetUrl: "http://127.0.0.1:3000", tls: true });
+  expect(JSON.stringify(h.routes.set.mock.lastCall)).toContain('"proxy"');
+  expect(h.pages.create).toHaveBeenCalledTimes(1);
+});

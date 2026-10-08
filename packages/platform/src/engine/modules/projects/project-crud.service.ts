@@ -734,6 +734,7 @@ function buildProductionProjectInput(
     buildKind: isReleaseImage ? "prebuilt" : (data.buildKind ?? null),
     workspacePrepareCommand:
       data.projectType === "monorepo" ? (data.monorepoWorkspace?.prepareCommand ?? null) : null,
+    cloudStaticHosting: data.cloudStaticHosting ?? "pages",
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
       data.rollbackWindow != null ? normalizeRollbackWindow(data.rollbackWindow) : null,
@@ -1532,6 +1533,7 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     if (data.projectType === "monorepo" && data.monorepoWorkspace !== undefined) {
       update.workspacePrepareCommand = data.monorepoWorkspace.prepareCommand ?? null;
     }
+    if (data.cloudStaticHosting !== undefined) update.cloudStaticHosting = data.cloudStaticHosting;
     if (data.routingConfig !== undefined) update.routingConfig = data.routingConfig;
     if (data.slug !== undefined && data.slug !== project.slug) {
       const existingProject = await repos.project.findBySlugInOrg(organizationId, data.slug);

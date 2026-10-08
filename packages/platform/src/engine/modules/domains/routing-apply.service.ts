@@ -15,7 +15,7 @@
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { resolveWorkload, safeErrorMessage } from "@repo/core";
 import {
   CloudInfraProvider,
   edgeProxyFor,
@@ -435,6 +435,10 @@ export async function applyCloudRouting(opts: {
   if (singleApp) {
     const deployment = opts.deployment!;
     const staticRoot = resolveDeploymentStaticRoot(deployment, project);
+    const snapshot = deployment.meta as DeploymentMeta & {
+      workload?: string;
+      port?: number;
+    };
     const domains = buildProjectRouteDomains({
       project,
       projectDomains: domainRows,
@@ -442,6 +446,12 @@ export async function applyCloudRouting(opts: {
       certificateManagement: routing.certificateManagement,
       usesManagedRouting: true,
       isStatic: !!staticRoot,
+      staticContainerPort:
+        !staticRoot &&
+        (snapshot?.runtimeMode ?? "docker") === "docker" &&
+        resolveWorkload(snapshot?.workload ?? project.workloadType, project.hasServer) === "static"
+          ? (snapshot?.port ?? project.port ?? undefined)
+          : undefined,
     });
     const routingFields = compileProjectRoutingFields(project.routingConfig);
     for (const route of domains) {

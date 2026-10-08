@@ -344,6 +344,7 @@ const DeployRepository: React.FC = () => {
                                 buildStrategy={config.buildStrategy}
                                 showBuildStrategy={isSingleAppFlow}
                                 cloudResourceTier={config.cloudResourceTier}
+                                cloudStaticHosting={config.cloudStaticHosting ?? "pages"}
                                 hasServer={workloadOf(config.options) !== "static"}
                                 runtimeMode={config.runtimeMode}
                                 isServices={usesServiceDeployment(config)}

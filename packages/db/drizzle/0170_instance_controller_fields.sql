@@ -1,4 +1,4 @@
--- Early development installs applied 0168 before these nullable fields were added.
+-- Early development installs created these tables before the nullable fields were added.
 -- Add them without replaying the table creation or changing controller authority.
 ALTER TABLE "instance_controller" ADD COLUMN IF NOT EXISTS "environment" text;
 --> statement-breakpoint

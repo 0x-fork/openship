@@ -311,6 +311,7 @@ export const projectsApi = {
       prepareCommand?: string;
     };
     /** Routing config parsed from the repo's vercel.json (opaque passthrough). */
+    cloudStaticHosting?: "pages" | "server";
     routingConfig?: RoutingConfig | null;
     /**
      * Deploy-time readiness gate. Omitted/null = OFF (the default) — the deploy

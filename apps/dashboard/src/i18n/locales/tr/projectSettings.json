@@ -1163,5 +1163,14 @@
     "buildArguments": "Derleme argümanları Compose dosyasında veya kaynak yapılandırmasında tanımlanır ve yeniden derleme gerektirir.",
     "projectLink": "Ortak proje ortamını düzenle",
     "loadFailed": "Geçersiz kılmaları denetlemek için proje değişkenlerinin adları yüklenemedi."
+  },
+  "cloudStaticHosting": {
+    "title": "Statik barındırma",
+    "description": "Derlenen dosyaların nereden sunulacağını seçin.",
+    "pages": "Cloud Pages (varsayılan)",
+    "pagesDescription": "Çalışan bir uygulama konteyneri olmadan dosyaları Cloud uç ağında yayınlayın.",
+    "server": "Yönetilen sunucu",
+    "serverDescription": "Dosyaları yönetilen sunucunuzdaki bir nginx konteynerinden sunun.",
+    "nextDeploy": "Kaydedilen barındırma değişiklikleri bir sonraki dağıtımda uygulanır."
   }
 }

@@ -987,5 +987,14 @@
     "buildArguments": "ビルド引数は Compose ファイルまたはソース設定で指定し、変更を反映するには再ビルドが必要です。",
     "projectLink": "共有プロジェクト環境を編集",
     "loadFailed": "上書きを確認するためのプロジェクト変数名を読み込めませんでした。"
+  },
+  "cloudStaticHosting": {
+    "title": "静的ホスティング",
+    "description": "ビルドしたファイルの配信先を選択します。",
+    "pages": "Cloud Pages（デフォルト）",
+    "pagesDescription": "アプリコンテナを常時稼働させず、Cloud エッジにファイルを公開します。",
+    "server": "マネージドサーバー",
+    "serverDescription": "マネージドサーバー上の nginx コンテナからファイルを配信します。",
+    "nextDeploy": "保存した設定は次回のデプロイから適用されます。"
   }
 }

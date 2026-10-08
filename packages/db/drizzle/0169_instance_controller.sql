@@ -1,4 +1,6 @@
-CREATE TABLE "instance_controller" (
+-- Local development installs may already have these tables from the earlier
+-- journal. Preserve their authority and credentials when applying the merged chain.
+CREATE TABLE IF NOT EXISTS "instance_controller" (
   "id" text PRIMARY KEY DEFAULT 'local' NOT NULL,
   "installation_id" text NOT NULL UNIQUE,
   "role" text DEFAULT 'active' NOT NULL,
@@ -13,7 +15,7 @@ CREATE TABLE "instance_controller" (
   CONSTRAINT "instance_controller_role" CHECK ("role" IN ('active','quiescing','frozen','receiving','prepared','retired','connected'))
 );
 --> statement-breakpoint
-CREATE TABLE "instance_handoff" (
+CREATE TABLE IF NOT EXISTS "instance_handoff" (
   "id" text PRIMARY KEY NOT NULL,
   "direction" text NOT NULL,
   "owner_user_id" text NOT NULL,

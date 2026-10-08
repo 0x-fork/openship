@@ -25,6 +25,7 @@ import { ProjectRollbackSettings } from "@/components/rollback/ProjectRollbackSe
 import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { AppConfiguration } from "./AppConfiguration";
 import { BuildSettings } from "./BuildSettings";
+import { CloudStaticHosting } from "@/components/project-settings/CloudStaticHosting";
 
 interface Props {
   onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void;
@@ -544,6 +545,27 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           </SectionCard>
         )}
 
+        {projectData?.deployTarget === "cloud" &&
+          projectData.releaseSource?.artifactKind !== "image" &&
+          (projectData.serviceCount ?? 0) === 0 &&
+          workloadOf({
+            workloadType: projectData.workloadType ?? projectData.options?.workloadType,
+            hasServer: projectData.options?.hasServer,
+          }) === "static" && (
+            <SectionCard
+              title={t.projectSettings.cloudStaticHosting.title}
+              description={t.projectSettings.cloudStaticHosting.nextDeploy}
+              icon="cloud"
+              iconTone="primary"
+              collapsible
+            >
+              <CloudStaticHostingSetting
+                projectId={projectData.id}
+                initial={projectData.cloudStaticHosting ?? "pages"}
+              />
+            </SectionCard>
+          )}
+
         {/* Routing (edge → app upstream) — self-hosted only; cloud handles its
             own ingress. Advanced opt-in; loopback-port is the safe default. */}
         {projectData?.deployTarget !== "cloud" && (
@@ -1019,4 +1041,36 @@ function TransferOptions({
       </div>
     </div>
   );
+}
+
+function CloudStaticHostingSetting({
+  projectId,
+  initial,
+}: {
+  projectId: string;
+  initial: "pages" | "server";
+}) {
+  const [value, setValue] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const { showToast } = useToast();
+  const { t } = useI18n();
+  const { updateProjectData } = useProjectSettings();
+  useEffect(() => setValue(initial), [initial]);
+  const save = async (next: "pages" | "server") => {
+    if (saving || next === value) return;
+    setSaving(true);
+    try {
+      const result = await projectsApi.update(projectId, { cloudStaticHosting: next });
+      if ((result as { success?: boolean }).success === false)
+        throw new Error("Could not save hosting settings");
+      setValue(next);
+      updateProjectData({ cloudStaticHosting: next });
+      showToast(t.projectSettings.cloudStaticHosting.nextDeploy, "success");
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <CloudStaticHosting value={value} disabled={saving} onChange={save} />;
 }

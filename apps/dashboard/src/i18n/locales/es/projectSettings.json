@@ -987,5 +987,14 @@
     "buildArguments": "Los argumentos de compilación se configuran en el archivo Compose o en la configuración del código fuente y requieren recompilar.",
     "projectLink": "Editar entorno compartido del proyecto",
     "loadFailed": "No se pudieron cargar los nombres de las variables del proyecto para comprobar las sustituciones."
+  },
+  "cloudStaticHosting": {
+    "title": "Alojamiento estático",
+    "description": "Elige dónde se sirven los archivos compilados.",
+    "pages": "Cloud Pages (predeterminado)",
+    "pagesDescription": "Publica archivos en el edge de Cloud sin un contenedor de aplicación en ejecución.",
+    "server": "Servidor administrado",
+    "serverDescription": "Sirve archivos desde un contenedor nginx en tu servidor administrado.",
+    "nextDeploy": "Los cambios guardados se aplican en el próximo despliegue."
   }
 }

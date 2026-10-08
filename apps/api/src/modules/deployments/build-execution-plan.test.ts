@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import { BareRuntime, LocalExecutor, resolveStaticOutputPath } from "@repo/adapters";
 
 import {
+  needsRunningApplication,
   resolveBuildRuntimeModes,
   resolveDeployRouting,
   reusedReleaseRouting,
@@ -342,4 +343,94 @@ describe("reusedReleaseRouting (a release that already exists)", () => {
     // uncorrected object is exactly how this would silently stop working.
     expect(src).toMatch(/deployRouting: servedRouting,/);
   });
+});
+
+describe("Cloud static hosting selection", () => {
+  it.each(["pages", "server"] as const)(
+    "freezes %s serving independently of the build runtime",
+    (cloudStaticHosting) => {
+      const modes = resolveBuildRuntimeModes({
+        workload: "static",
+        serverId: "managed",
+        baseTarget: "cloud",
+        effectiveTarget: "cloud",
+        willRunServices: false,
+        runtimeMode: "bare",
+        cloudStaticHosting,
+      });
+      expect(modes).toEqual({
+        buildRuntimeMode: "docker",
+        serveRuntimeMode: cloudStaticHosting === "pages" ? "bare" : "docker",
+      });
+      const routing = resolveDeployRouting({
+        workload: "static",
+        runtimeName: "docker",
+        managedServer: true,
+        cloudStaticHosting,
+        outputDirectory: "dist",
+      });
+      expect(routing).toEqual(
+        cloudStaticHosting === "pages"
+          ? {
+              buildMode: "static-sandbox",
+              deployMode: "static-file-serve",
+              staticServeOutputDir: "",
+            }
+          : { buildMode: "normal", deployMode: "server", staticServeOutputDir: "" },
+      );
+    },
+  );
+  it("keeps legacy Docker releases on containers and ignores Cloud hosting for server apps", () => {
+    expect(
+      resolveDeployRouting({
+        workload: "static",
+        runtimeName: "docker",
+        managedServer: true,
+        outputDirectory: "dist",
+      }).deployMode,
+    ).toBe("server");
+    expect(
+      resolveDeployRouting({
+        workload: "web",
+        runtimeName: "docker",
+        managedServer: true,
+        cloudStaticHosting: "pages",
+        outputDirectory: "dist",
+      }).deployMode,
+    ).toBe("server");
+    expect(
+      resolveBuildRuntimeModes({
+        workload: "static",
+        serverId: "managed",
+        baseTarget: "cloud",
+        effectiveTarget: "cloud",
+        willRunServices: false,
+        hasPrebuiltImage: true,
+        cloudStaticHosting: "pages",
+      }).serveRuntimeMode,
+    ).toBe("docker");
+  });
+});
+
+
+it("counts server-hosted static containers even with a saved Direct runtime, but not Pages builds", () => {
+  for (const runtimeMode of ["bare", "docker"] as const) {
+    expect(
+      needsRunningApplication({ workload: "static", runtimeMode, cloudStaticHosting: "server" }),
+    ).toBe(true);
+    expect(
+      needsRunningApplication({ workload: "static", runtimeMode, cloudStaticHosting: "pages" }),
+    ).toBe(false);
+    expect(
+      needsRunningApplication({ workload: "web", runtimeMode, cloudStaticHosting: "pages" }),
+    ).toBe(true);
+    expect(
+      needsRunningApplication({
+        workload: "static",
+        runtimeMode,
+        cloudStaticHosting: "pages",
+        hasPrebuiltImage: true,
+      }),
+    ).toBe(true);
+  }
 });
