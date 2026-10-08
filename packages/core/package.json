@@ -30,6 +30,7 @@
     }
   },
   "scripts": {
+    "generate:bootstrap": "bun scripts/generate-package-manager-bootstrap.ts",
     "build": "tsup src/index.ts src/scale/index.ts --format esm --dts --clean",
     "dev": "tsup src/index.ts src/scale/index.ts --format esm --dts --watch",
     "lint": "tsc --noEmit",
