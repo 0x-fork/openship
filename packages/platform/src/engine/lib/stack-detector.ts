@@ -28,6 +28,7 @@ import {
   getProjectType,
   getBuildImage,
   nodeImageForEngine,
+  bunBuildImage,
   parseRubyVersion,
   LANGUAGE_MANIFEST_FILES,
   collectDependencies,
@@ -107,20 +108,17 @@ export function detectPackageManager(
     if (lower.endsWith(".csproj") || lower.endsWith(".fsproj") || lower.endsWith(".sln")) return "dotnet";
   }
 
-  // ── JS/TS lock files (most reliable) ──
+  // Explicit repository tool selection wins over stale lockfiles.
+  const declared = packageJson?.packageManager?.split("@")[0] ??
+    (packageJson as { devEngines?: { packageManager?: { name?: string } } } | undefined)
+      ?.devEngines?.packageManager?.name;
+  if (declared && ["npm", "pnpm", "yarn", "bun"].includes(declared)) return declared;
+
+  // Lockfiles provide the fallback when no manager is declared.
   if (fileSet.has("pnpm-lock.yaml")) return "pnpm";
   if (fileSet.has("bun.lockb") || fileSet.has("bun.lock")) return "bun";
   if (fileSet.has("package-lock.json")) return "npm";
   if (fileSet.has("yarn.lock")) return "yarn";
-
-  // packageManager field in package.json
-  if (packageJson?.packageManager) {
-    const pm = packageJson.packageManager;
-    if (pm.startsWith("pnpm")) return "pnpm";
-    if (pm.startsWith("yarn")) return "yarn";
-    if (pm.startsWith("bun")) return "bun";
-    if (pm.startsWith("npm")) return "npm";
-  }
 
   // Scripts hints
   if (packageJson?.scripts) {
@@ -572,12 +570,17 @@ export function detectStack(
   const resolved = applyMetadataOverrides(result, parseDeploymentMetadata(fc));
   // Metadata can reclassify the framework. Resolve the pin after the final
   // classification so it cannot be discarded by a framework override.
+  const defaultBuildImage = getBuildImage(
+    resolved.stack, resolved.packageManager, detectRubyVersion(fc),
+  );
   return {
     ...resolved,
-    buildImage: nodeImageForEngine(
-      getBuildImage(resolved.stack, resolved.packageManager, detectRubyVersion(fc)),
-      (packageJson?.engines as { node?: unknown } | undefined)?.node,
-    ),
+    buildImage: defaultBuildImage.startsWith("oven/bun:")
+      ? bunBuildImage(packageJson)
+      : nodeImageForEngine(
+          defaultBuildImage,
+          (packageJson?.engines as { node?: unknown } | undefined)?.node,
+        ),
   };
 }
 

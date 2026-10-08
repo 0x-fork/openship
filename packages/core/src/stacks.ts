@@ -17,7 +17,8 @@
  */
 
 import { shellQuote } from "./shell-split";
-import { pnpmEnsureCommand } from "./pnpm-bootstrap";
+import { managedPackageManagerEnsureCommand } from "./package-manager-bootstrap";
+import { PACKAGE_MANAGER_DEFAULTS } from "./package-manager-version";
 import { normalizeImageRef } from "./backup-image-detect";
 import { validateImageReference } from "./project-source";
 
@@ -1120,36 +1121,22 @@ export function getBuildImage(
 ): string {
   const stack = STACKS[stackId] as StackDefinition;
   if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
-    return "oven/bun:latest";
+    return `oven/bun:${PACKAGE_MANAGER_DEFAULTS.bun}`;
   }
   const image = stack.buildImage ?? LANGUAGES[stack.language].buildImage;
   return applyRuntimeVersion(image, stack.language, runtimeVersion);
 }
 
-/**
- * Command that ensures the detected JS package manager is on PATH before the
- * install step runs. npm/pnpm/yarn all ship through Node's `corepack` — enabling
- * it installs the pnpm/yarn shims and lets each project's
- * `package.json#packageManager` field select the exact version. Falls back to a
- * global npm install when corepack is unavailable (old Node / no perms), and is
- * fully swallowed for yarn. pnpm uses a deterministic lockfile-aware bootstrap
- * and stops on an invalid pin rather than silently installing another version.
- *
- * `bun` gets a presence check instead: corepack doesn't manage it. Inside a
- * container this is a no-op — getBuildImage already resolves bun-eligible stacks
- * to oven/bun, so `command -v bun` short-circuits before the npm fallback (which
- * matters: that image ships no npm). It earns its keep on a BARE target, where we
- * install onto whatever the box already has (see runtime/bare.ts).
- *
- * Returns "" for `npm` (already present) and every non-node PM (in-image).
- */
+/** Shared JavaScript toolchain bootstrap: select from repository configuration,
+ * install through the manager's adapter, then verify the actual version. Other
+ * language ecosystems retain their existing install contracts. */
 export function packageManagerEnsureCommand(packageManager?: string): string {
-  if (packageManager === "pnpm") return pnpmEnsureCommand();
-  if (packageManager === "bun") {
-    return `(command -v bun >/dev/null 2>&1 || npm i -g bun) >/dev/null 2>&1 || true`;
-  }
-  if (packageManager !== "pnpm" && packageManager !== "yarn") return "";
-  return `(corepack enable ${packageManager} || corepack enable || npm i -g ${packageManager}) >/dev/null 2>&1 || true`;
+  if (
+    packageManager === "npm" || packageManager === "pnpm" ||
+    packageManager === "yarn" || packageManager === "bun"
+  )
+    return managedPackageManagerEnsureCommand(packageManager);
+  return "";
 }
 
 /** Package managers that install dependency binaries into `node_modules/.bin`. */
@@ -1205,7 +1192,12 @@ export function getRuntimeImage(
 ): string {
   const stack = STACKS[stackId] as StackDefinition;
   if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
-    return "oven/bun:latest";
+    if (
+      buildImage && !validateImageReference(buildImage) &&
+      /^(?:(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\/)?oven\/bun(?::|@|$)/.test(buildImage)
+    )
+      return buildImage;
+    return `oven/bun:${PACKAGE_MANAGER_DEFAULTS.bun}`;
   }
   if (stack.language === "ruby" && buildImage &&
       !validateImageReference(buildImage) && /^ruby(?::|$)/.test(normalizeImageRef(buildImage))) {

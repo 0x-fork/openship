@@ -9,17 +9,32 @@ const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 function run(
   files: Record<string, string>,
-  options: { nested?: boolean; failCorepack?: boolean } = {},
+  options: {
+    nested?: boolean;
+    failCorepack?: boolean;
+    manager?: string;
+    reportedVersion?: string;
+  } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "openship-pnpm-bootstrap-"));
   roots.push(root);
   mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "bin"));
   for (const [name, content] of Object.entries(files)) writeFileSync(join(root, name), content);
-  for (const cmd of ["corepack", "npm"])
+  for (const cmd of ["corepack", "npm", "pnpm", "yarn", "bun"])
     writeFileSync(
       join(root, "bin", cmd),
-      `#!/bin/sh\nprintf '%s\\n' "${cmd} $*" >> "$BOOTSTRAP_LOG"\n${cmd === "corepack" && options.failCorepack ? "exit 1" : "exit 0"}\n`,
+      `#!/bin/sh
+printf '%s\\n' "${cmd} $*" >> "$BOOTSTRAP_LOG"
+if [ "$1" = "--version" ]; then
+  if [ -n "$REPORTED_VERSION" ]; then echo "$REPORTED_VERSION"; elif [ -f "$BOOTSTRAP_STATE" ]; then cat "$BOOTSTRAP_STATE"; else echo 0.0.0; fi
+  exit 0
+fi
+${cmd === "corepack" && options.failCorepack ? "exit 1" : ""}
+if [ "${cmd}" = corepack ] && [ "$1" = prepare ]; then printf '%s' "$2" | sed 's/^.*@//;s/+sha.*//' > "$BOOTSTRAP_STATE"; fi
+if [ "${cmd}" = npm ] && [ "$1" = install ]; then printf '%s' "$3" | sed 's/^.*@//;s/+sha.*//' > "$BOOTSTRAP_STATE"; fi
+exit 0
+`,
       { mode: 0o755 },
     );
   const cwd = options.nested ? join(root, "nested") : root;
@@ -27,13 +42,15 @@ function run(
     mkdirSync(cwd);
     writeFileSync(join(cwd, "package.json"), "{}");
   }
-  const result = spawnSync("sh", ["-c", packageManagerEnsureCommand("pnpm")], {
+  const result = spawnSync("sh", ["-c", packageManagerEnsureCommand(options.manager ?? "pnpm")], {
     cwd,
     encoding: "utf8",
     env: {
       ...process.env,
       PATH: `${join(root, "bin")}:${process.env.PATH}`,
       BOOTSTRAP_LOG: join(root, "calls"),
+      BOOTSTRAP_STATE: join(root, "version"),
+      REPORTED_VERSION: options.reportedVersion ?? "",
     },
   });
   let calls = "";
@@ -111,5 +128,78 @@ describe("managed pnpm bootstrap", () => {
     );
     expect(result.status).not.toBe(0);
     expect(result.calls).not.toContain("npm install");
+  });
+});
+
+describe("shared package-manager contract", () => {
+  it("retains npm integrity pins through Corepack", () => {
+    const pin = `npm@9.9.4+sha512.${"a".repeat(128)}`;
+    const result = run(
+      { "package.json": JSON.stringify({ packageManager: pin }) },
+      { manager: "npm" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toContain(`corepack prepare ${pin} --activate`);
+  });
+
+  it.each(["npm", "pnpm", "yarn", "bun"])("installs and verifies the exact %s pin", (manager) => {
+    const version = manager === "bun" ? "1.2.10" : manager === "yarn" ? "4.9.2" : "9.9.4";
+    const result = run(
+      { "package.json": JSON.stringify({ packageManager: `${manager}@${version}` }) },
+      { manager },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`Verified package manager: ${manager}@${version}`);
+  });
+  it.each(["npm", "pnpm", "yarn", "bun"])(
+    "refuses a successful install that leaves the wrong %s version",
+    (manager) => {
+      const result = run({}, { manager, reportedVersion: "0.0.0" });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("Package-manager verification failed");
+    },
+  );
+  it("uses the modern Yarn CLI distribution when Corepack is absent", () => {
+    const result = run(
+      { "package.json": '{"packageManager":"yarn@4.9.2"}' },
+      { manager: "yarn", failCorepack: true },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toContain("npm install --global @yarnpkg/cli-dist@4.9.2");
+  });
+  it("selects modern Yarn from its lockfile metadata", () => {
+    const result = run({ "yarn.lock": "__metadata:\n  version: 8\n" }, { manager: "yarn" });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toContain("prepare yarn@4.9.2");
+  });
+  it("respects Yarn ignorePath without executing the ignored file", () => {
+    const result = run(
+      {
+        "package.json": '{"packageManager":"yarn@4.9.2"}',
+        ".yarnrc.yml": "ignorePath: true\nyarnPath: ./missing.cjs\n",
+      },
+      { manager: "yarn" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+  });
+  it("honors a repository-local yarnPath", () => {
+    const result = run(
+      { ".yarnrc.yml": "yarnPath: ./yarn.cjs\n", "yarn.cjs": 'console.log("4.9.2")' },
+      { manager: "yarn" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toContain("prepare yarn@4.9.2");
+  });
+  it("does not hide a disagreement between yarnPath and packageManager", () => {
+    const result = run(
+      {
+        "package.json": '{"packageManager":"yarn@3.8.7"}',
+        ".yarnrc.yml": "yarnPath: ./yarn.cjs\n",
+        "yarn.cjs": 'console.log("4.9.2")',
+      },
+      { manager: "yarn" },
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("disagree");
   });
 });
