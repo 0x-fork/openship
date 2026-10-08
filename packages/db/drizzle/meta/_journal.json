@@ -1177,6 +1177,13 @@
       "when": 1791294467332,
       "tag": "0167_cloud_support_customers",
       "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1791473791431,
+      "tag": "0168_cloud_static_hosting",
+      "breakpoints": true
     }
   ]
 }

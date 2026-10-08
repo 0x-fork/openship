@@ -458,6 +458,8 @@ export const CreateProjectBody = Type.Object({
       Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
     ]),
   ),
+  /** Static delivery on managed Cloud; ignored on other deployment targets. */
+  cloudStaticHosting: Type.Optional(Type.Union([Type.Literal("pages"), Type.Literal("server")])),
   /** Routing config from the repo's vercel.json (see RoutingConfigSchema). */
   routingConfig: Type.Optional(Type.Union([Type.Null(), RoutingConfigSchema])),
   /**

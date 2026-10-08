@@ -27,6 +27,7 @@ import type {
 } from "@repo/adapters";
 import {
   BareRuntime,
+  CloudDockerRuntime,
   BuildLogger,
   DockerRuntime,
   STATIC_RELEASE_BASE,
@@ -763,6 +764,7 @@ async function executeBuildAndDeploy(
       willRunServices,
       hasPrebuiltImage: Boolean(snapshot.releaseImageRef),
       runtimeMode: snapshot.runtimeMode,
+      cloudStaticHosting: snapshot.cloudStaticHosting,
     });
     if (runtimeModes.buildRuntimeMode === "docker" && snapshot.deployTarget !== "cluster") {
       logger.log(
@@ -810,9 +812,16 @@ async function executeBuildAndDeploy(
       workload,
       runtimeName: runtime.name,
       managedServer: resolved.effectiveTarget === "cloud",
+      cloudStaticHosting: snapshot.releaseImageRef ? "server" : snapshot.cloudStaticHosting,
       rootDirectory: snapshot.rootDirectory,
       outputDirectory: snapshot.outputDirectory,
     });
+
+    if (runtime instanceof CloudDockerRuntime && deployRouting.deployMode === "static-file-serve") {
+      // Failure/cancellation cleanup owns file artifacts, not Docker handles.
+      ctx.runtime = runtime.staticServeRuntime();
+      transports.add(ctx.runtime);
+    }
 
     const usesManagedRouting = resolved.usesManagedRouting;
     const targetExecutor: CommandExecutor | null = resolved.platform.executor;
@@ -1246,7 +1255,9 @@ async function executeBuildAndDeploy(
           // buildMode is derived from runtime.name === "docker", so the cast is sound.
           return await (runtime as DockerRuntime).buildStaticToHost(
             buildConfig,
-            `${STATIC_RELEASE_BASE}/.builds/${buildSessionId}`,
+            runtime instanceof CloudDockerRuntime
+              ? runtime.staticBuildPath(buildSessionId)
+              : `${STATIC_RELEASE_BASE}/.builds/${buildSessionId}`,
             logger,
           );
         }
@@ -1561,6 +1572,8 @@ function buildDeployEnvironment(
 
   return {
     canOverlap: serve.canOverlap,
+    requireSuccessfulRoutes:
+      effectiveTarget === "cloud" && phase.deployRouting.deployMode === "static-file-serve",
     // Post-activate readiness gate — OPT-IN, and omitted entirely when the
     // project didn't ask for one, so runDeployPipeline skips the step rather than
     // calling a check that does nothing. That absence IS the default: a deploy
@@ -1899,12 +1912,17 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // port/route/readiness seams stubbed out below.
   const isWorker = phase.deployRouting.deployMode === "worker";
   const staticServeRuntime = isStaticFileServe
-    ? phase.effectiveTarget === "cloud" && runtime instanceof BareRuntime ? runtime : new BareRuntime({
-        workDir: process.env.OPENSHIP_NATIVE === "true" && phase.effectiveTarget === "local"
-          ? `${process.env.OPENSHIP_DATA_DIR}/workloads/static`
-          : STATIC_RELEASE_BASE,
-        executor: phase.staticExecutor ?? undefined,
-      })
+    ? runtime instanceof CloudDockerRuntime
+      ? runtime.staticServeRuntime()
+      : phase.effectiveTarget === "cloud" && runtime instanceof BareRuntime
+        ? runtime
+        : new BareRuntime({
+            workDir:
+              process.env.OPENSHIP_NATIVE === "true" && phase.effectiveTarget === "local"
+                ? `${process.env.OPENSHIP_DATA_DIR}/workloads/static`
+                : STATIC_RELEASE_BASE,
+            executor: phase.staticExecutor ?? undefined,
+          })
     : null;
   if (staticServeRuntime) phase.transports.add(staticServeRuntime);
   // Where the static doc-root lives: "" when a Docker sandbox build already
@@ -1937,7 +1955,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // edge/routing orchestration stays there (not duplicated per strategy).
   const baseServe: ServeStrategy = isStaticFileServe
     ? {
-        canOverlap: false,
+        canOverlap: phase.effectiveTarget === "cloud",
         ensureRuntimeReady: async () => {},
         ensurePorts: async () => {},
         activate: (cfg) =>
@@ -2229,12 +2247,18 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     usesManagedRouting,
     isStatic: isStaticFileServe,
     staticContainerPort:
+      !isStaticFileServe &&
       phase.effectiveTarget === "cloud" &&
       runtime.name === "docker" &&
       snapshotToClass(snapshot).workload === "static"
         ? deployConfig.port
         : undefined,
   });
+  if (isStaticFileServe && phase.effectiveTarget === "cloud" && plannedDomains.length === 0) {
+    throw new Error(
+      "Cloud Pages requires a public endpoint. Configure a free or custom domain before deploying.",
+    );
+  }
   // Domains to prune after a successful deploy: project-level rows that
   // no longer back a current public endpoint AND aren't among the routes
   // we just planned. The size>0 guard is a safety valve — if endpoint

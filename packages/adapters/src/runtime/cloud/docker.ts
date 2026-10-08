@@ -3,6 +3,7 @@ import { posix } from "node:path";
 import type { Oblien } from "oblien";
 import { AppError, SYSTEM, safeErrorMessage, isHostPathSource } from "@repo/core";
 import { DockerRuntime } from "../docker";
+import { BareRuntime } from "../bare";
 import { CloudServerConnection } from "./server-connection";
 import { CloudProcessSupervisor } from "./process-supervisor";
 import { managedProjectRoutingScope, type ManagedContainerRouteTargets } from "./routing-scope";
@@ -379,10 +380,48 @@ export class CloudDockerRuntime extends DockerRuntime {
       logger,
     );
   }
+  /** Static output stays on the project-owned workspace tree until Pages exports it. */
+  staticBuildPath(sessionId: string): string {
+    if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) throw new Error("Invalid build session ID");
+    return `${cloudDockerProjectPaths(this.projectId).bare}/.builds/${sessionId}`;
+  }
+
+  override async buildStaticToHost(config: BuildConfig, hostOutDir: string, logger?: BuildLogger) {
+    this.assertProject(config.projectId);
+    if (hostOutDir !== this.staticBuildPath(config.sessionId))
+      throw new Error("Static build output must belong to this project's build session");
+    const result = await super.buildStaticToHost(config, hostOutDir, logger);
+    if (result.status !== "deploying") {
+      const files = this.staticServeRuntime();
+      try {
+        await files.destroy(hostOutDir);
+      } catch (error) {
+        logger?.log(`Static build cleanup deferred: ${safeErrorMessage(error)}\n`, "warn");
+      } finally {
+        await files.dispose();
+      }
+    }
+    return result;
+  }
+
+  staticServeRuntime(): BareRuntime {
+    return new BareRuntime({
+      projectId: this.projectId,
+      workDir: cloudDockerProjectPaths(this.projectId).bare,
+      executor: this.executor,
+      allowHostBuild: false,
+    });
+  }
+
   private remoteBuild(config: BuildConfig): BuildConfig {
     // Repository commands must not run on the SaaS control plane. Inline/folder
     // sources are transferred; Git sources clone directly inside the workspace.
-    return { ...config, cloneOnServer: true, localPath: undefined, staticExtractOnly: false };
+    return {
+      ...config,
+      cloneOnServer: true,
+      localPath: undefined,
+      staticExtractOnly: Boolean(config.isStatic && config.staticExtractOnly),
+    };
   }
   protected override withDeploymentLock<T>(work: () => Promise<T>): Promise<T> {
     return this.options.provisionLock.run(work);

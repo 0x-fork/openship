@@ -339,6 +339,15 @@ function releaseSnapshot(
 }
 
 describe("buildConfigSnapshot", () => {
+  it("defaults new static snapshots to Pages and freezes an explicit managed-server choice", () => {
+    const project = baseProject({ workloadType: "static", hasServer: false });
+    const pages = buildConfigSnapshot(project);
+    expect(pages.cloudStaticHosting).toBe("pages");
+    const server = buildConfigSnapshot({ ...project, cloudStaticHosting: "server" });
+    expect(server.cloudStaticHosting).toBe("server");
+    project.cloudStaticHosting = "server";
+    expect(pages.cloudStaticHosting).toBe("pages");
+  });
   it.each(["web", "worker"])("keeps the full Ruby builder image for a %s runtime", (workloadType) => {
     const snapshot = buildConfigSnapshot(baseProject({
       framework: "rails", packageManager: "bundler", buildImage: "ruby:3.4.1-alpine",

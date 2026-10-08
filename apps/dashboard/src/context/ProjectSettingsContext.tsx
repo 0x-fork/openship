@@ -100,6 +100,7 @@ interface BasicProjectData {
    */
   activeMigration?: ActiveMigration | null;
   deployTarget?: "cloud" | "server" | "local" | "cluster";
+  cloudStaticHosting?: "pages" | "server";
   clusterId?: string | null;
   clusterConfig?: import("@repo/core").ClusterWorkloadConfig | null;
   workspaceId?: string | null;

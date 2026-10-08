@@ -860,6 +860,7 @@ export function useDeploymentBuild(
           : undefined,
         // Persist the repo's vercel.json routing so the backend compiles it to
         // OpenResty at deploy (single-domain rewrites, redirects, headers).
+        cloudStaticHosting: config.cloudStaticHosting ?? "pages",
         routingConfig: config.routingConfig ?? undefined,
         // Deploy-time readiness gate. Omitted when the Health section was left
         // alone, which is the default — the backend then runs no post-start probe.

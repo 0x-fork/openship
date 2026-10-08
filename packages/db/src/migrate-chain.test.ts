@@ -184,6 +184,13 @@ async function seedRow(client: PGlite, table: string, id: string): Promise<void>
     values.push(`'${id}'`);
   }
 
+  // A recent-prefix fixture can now include managed-server connection checks.
+  // Model a connected SSH server even when ssh_host has become nullable.
+  if (table === "servers" && !names.includes('"ssh_host"')) {
+    names.push('"ssh_host"');
+    values.push("'192.0.2.10'");
+  }
+
   await client.exec(
     `insert into "${table}" (${names.join(", ")}) values (${values.join(", ")});`,
   );
@@ -295,6 +302,7 @@ describe("migration chain applies to an existing, populated database", () => {
         expect(row).toEqual({
           ...previous,
           cloud_promotion: null,
+          cloud_static_hosting: "pages",
           server_id: previous.workspace_id
             ? managed.find((server) => server.workspace_id === previous.workspace_id)!.id
             : previous.server_id,

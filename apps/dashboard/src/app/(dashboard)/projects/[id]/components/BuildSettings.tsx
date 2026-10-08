@@ -162,13 +162,16 @@ export const BuildSettings = () => {
   // (sandboxed like a web app), so classify via the resolved workload — only a
   // static site has "no runtime" (#538).
   const workload = workloadOf(buildData);
-  const runtimeModeLabel = workload === "static"
-    ? t.projectSettings.build.runtime.modeStatic
-    : projectData?.runtimeMode === "docker"
-      ? t.projectSettings.build.runtime.modeSandboxed
-      : projectData?.runtimeMode === "bare"
-        ? t.projectSettings.build.runtime.modeDirect
-        : t.projectSettings.build.runtime.modeDefault;
+  const runtimeModeLabel =
+    workload === "static"
+      ? projectData?.deployTarget === "cloud"
+        ? t.projectSettings.cloudStaticHosting[projectData.cloudStaticHosting ?? "pages"]
+        : t.projectSettings.build.runtime.modeStatic
+      : projectData?.runtimeMode === "docker"
+        ? t.projectSettings.build.runtime.modeSandboxed
+        : projectData?.runtimeMode === "bare"
+          ? t.projectSettings.build.runtime.modeDirect
+          : t.projectSettings.build.runtime.modeDefault;
 
   return (
     <div className="space-y-5">

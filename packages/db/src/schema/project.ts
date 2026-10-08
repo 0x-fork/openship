@@ -301,6 +301,11 @@ export const project = pgTable(
      * deploy time (the prior wizard-only behavior).
      */
     runtimeMode: text("runtime_mode"),
+    /** Cloud static delivery; frozen per deployment so rollback keeps its hosting mode. */
+    cloudStaticHosting: text("cloud_static_hosting")
+      .$type<"pages" | "server">()
+      .notNull()
+      .default("pages"),
     /**
      * Deployment-class axes (see @repo/core deployment-class.ts). These
      * deconflate the legacy `hasServer`/`hasBuild` booleans, which each mixed

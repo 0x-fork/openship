@@ -1195,5 +1195,14 @@
     "buildArguments": "Build arguments are configured in the Compose file or source configuration and require a rebuild.",
     "projectLink": "Edit shared project environment",
     "loadFailed": "Could not load project variable names to check overrides."
+  },
+  "cloudStaticHosting": {
+    "title": "Static hosting",
+    "description": "Choose where the built files are served.",
+    "pages": "Cloud Pages (default)",
+    "pagesDescription": "Publish files to the Cloud edge. No running app container.",
+    "server": "Managed server",
+    "serverDescription": "Serve files from an nginx container on your managed server.",
+    "nextDeploy": "Saved hosting changes apply on the next deployment."
   }
 }
