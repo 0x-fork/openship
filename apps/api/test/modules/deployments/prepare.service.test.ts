@@ -15,6 +15,40 @@ describe("resolveProjectInfo", () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
+  it.each(["public", "web-assets"])(
+    "keeps a Node server instead of promoting its %s assets",
+    async (assets) => {
+      const tempDir = await mkdtemp(join(tmpdir(), "openship-server-assets-"));
+      tempDirs.push(tempDir);
+      await writeFile(
+        join(tempDir, "package.json"),
+        JSON.stringify({
+          scripts: { start: "node server.mjs" },
+          engines: { node: ">=24" },
+        }),
+      );
+      await writeFile(join(tempDir, "server.mjs"), "import { createServer } from 'node:http';\n");
+      await mkdir(join(tempDir, assets));
+      await writeFile(join(tempDir, assets, "index.html"), "<!doctype html><main>Application</main>");
+
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info).toMatchObject({
+        stack: "node",
+        rootDirectory: "./",
+        startCommand: "npm run start",
+      });
+      expect(info.monorepoApps).toBeUndefined();
+
+      // An explicit root selection remains authoritative for a separate static deploy.
+      const selected = await resolveProjectInfo({
+        source: "local",
+        path: tempDir,
+        rootDirectory: assets,
+      });
+      expect(selected).toMatchObject({ stack: "static", rootDirectory: assets, startCommand: "" });
+    },
+  );
+
   it("keeps a Vite app's local-dev Compose separate unless explicitly selected (#959)", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-app-with-compose-"));
     tempDirs.push(tempDir);
