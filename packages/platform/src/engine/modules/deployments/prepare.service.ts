@@ -34,6 +34,7 @@ import {
 } from "../../lib/project-root-detector";
 import {
   parseDeploymentMetadata,
+  vercelCompatibilityWarnings,
   parseOpenshipConfig,
   METADATA_FILES,
   type ProjectType,
@@ -1029,12 +1030,22 @@ export async function resolveFromReader(
     },
   );
   if (openship.diagnostics) info.configDiagnostics = openship.diagnostics;
+  const vercelRaw = Object.entries(configSnapshot.fileContents ?? {}).find(
+    ([name]) => name.toLowerCase() === "vercel.json",
+  )?.[1];
+  if (vercelRaw) {
+    const warnings = vercelCompatibilityWarnings(vercelRaw);
+    if (warnings.length) {
+      info.configDiagnostics ??= { errors: [], warnings: [] };
+      info.configDiagnostics.warnings.push(...warnings);
+    }
+  }
   const overlaid = applyOpenshipOverlay(info, openship.config);
   // Log both syntax diagnostics and overrides rejected by workspace discovery.
   // Scans expose the same diagnostics to SDK, CLI and dashboard callers.
   if (overlaid.configDiagnostics) {
     console.warn(
-      `[openship.json] ${repoMeta.full_name}: ` +
+      `[deployment config] ${repoMeta.full_name}: ` +
         [...overlaid.configDiagnostics.errors, ...overlaid.configDiagnostics.warnings].join(" · "),
     );
   }

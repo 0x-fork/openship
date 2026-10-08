@@ -10,6 +10,48 @@ import {
 } from "@repo/platform/engine/lib/project-root-detector";
 
 describe("selectPreferredProjectRoot", () => {
+  it.each([
+    {
+      label: "tooling-only package",
+      packageJson: { scripts: { lint: "eslint ." } },
+      source: "discovered" as const,
+    },
+    {
+      label: "explicit static deployment",
+      packageJson: { scripts: { start: "node server.mjs" } },
+      source: "vercel" as const,
+    },
+    {
+      label: "declared static workspace",
+      packageJson: { scripts: { start: "node server.mjs" } },
+      source: "workspace" as const,
+    },
+  ])("still selects static assets for a $label", ({ packageJson, source }) => {
+    const selected = selectPreferredProjectRoot(
+      {
+        rootDirectory: "",
+        files: [{ name: "package.json" }],
+        packageJson,
+      },
+      [{ rootDirectory: "site", source, files: [{ name: "index.html" }] }],
+    );
+    expect(selected.rootDirectory).toBe("site");
+    expect(selected.stack.stack).toBe("static");
+  });
+
+  it("keeps a framework backend when it discovers static assets", () => {
+    const selected = selectPreferredProjectRoot(
+      {
+        rootDirectory: "",
+        files: [{ name: "requirements.txt" }, { name: "app.py" }],
+        fileContents: { "requirements.txt": "flask==3.1.0\n" },
+      },
+      [{ rootDirectory: "site", source: "discovered", files: [{ name: "index.html" }] }],
+    );
+    expect(selected.rootDirectory).toBe("");
+    expect(selected.stack.stack).toBe("flask");
+  });
+
   it("prefers a vercel-configured frontend directory over a root backend package", () => {
     const vercelConfig = JSON.stringify({
       installCommand: "npm install && cd frontend && npm install",
