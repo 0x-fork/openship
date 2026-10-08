@@ -2813,6 +2813,476 @@
       "section": "Managed servers",
       "description": "Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity.",
       "route": "PATCH /api/system/servers/:id/network-settings"
+    },
+    "mail.getSteps": {
+      "page": "mail",
+      "description": "List all setup steps and the total count.",
+      "route": "GET /api/mail/steps"
+    },
+    "mail.getStatus": {
+      "page": "mail",
+      "description": "Current setup progress for a server (rendered from its on-server state file).",
+      "route": "GET /api/mail/status"
+    },
+    "mail.listServers": {
+      "page": "mail",
+      "description": "List every server Openship has provisioned (or is provisioning) mail on.",
+      "route": "GET /api/mail/servers"
+    },
+    "mail.scan": {
+      "page": "mail",
+      "description": "Probe a server for an existing iRedMail install + its on-server state (read-only).",
+      "route": "POST /api/mail/scan"
+    },
+    "mail.adopt": {
+      "page": "mail",
+      "description": "Re-adopt a scanned server whose orchestrator state was lost.",
+      "route": "POST /api/mail/adopt"
+    },
+    "mail.cancelSetup": {
+      "page": "mail",
+      "description": "Cancel the running setup.",
+      "route": "POST /api/mail/setup/cancel"
+    },
+    "mail.acknowledgeDns": {
+      "page": "mail",
+      "description": "Mark DNS (DKIM) records as configured, releasing the DNS gate.",
+      "route": "POST /api/mail/setup/dns-ack"
+    },
+    "mail.acknowledgePtr": {
+      "page": "mail",
+      "description": "Mark reverse-DNS (PTR) as configured, releasing the PTR gate.",
+      "route": "POST /api/mail/setup/ptr-ack"
+    },
+    "mail.resetSetup": {
+      "page": "mail",
+      "description": "Wipe the on-server state file (does not touch iRedMail).",
+      "route": "POST /api/mail/setup/reset"
+    },
+    "mail.setPostmasterPassword": {
+      "page": "mail",
+      "description": "Rotate the postmaster account password.",
+      "route": "POST /api/mail/credentials/postmaster"
+    },
+    "mail.getWebmailTargets": {
+      "page": "mail",
+      "description": "List deploy-target options (self-hosted servers / cloud).",
+      "route": "GET /api/mail/webmail/targets"
+    },
+    "mail.deployWebmail": {
+      "page": "mail",
+      "description": "Create a webmail project + deployment and start the build.",
+      "route": "POST /api/mail/webmail/deploy-project"
+    },
+    "mail.deployExternalWebmail": {
+      "page": "mail",
+      "description": "Deploy webmail for an external mail server.",
+      "route": "POST /api/mail/webmail/deploy-external"
+    },
+    "mail.forget": {
+      "page": "mail",
+      "description": "Stop managing a server (drops the DB row only; leaves the stack + state file intact).",
+      "route": "DELETE /api/mail/servers/:serverId"
+    },
+    "mail.getHealth": {
+      "page": "mail",
+      "description": "Mail daemons, outbound delivery, and cached public-port reachability (TCP 25/465/587/993).",
+      "route": "GET /api/mail/health/:serverId"
+    },
+    "mail.getCertificate": {
+      "page": "mail",
+      "description": "Read the mail certificate, SMTP/IMAP TLS checks and automatic renewal settings.",
+      "route": "GET /api/mail/admin/:serverId/certificate"
+    },
+    "mail.checkCertificate": {
+      "page": "mail",
+      "description": "Recheck the certificate on disk and served by SMTP/IMAP without issuing a certificate or sending email.",
+      "route": "POST /api/mail/admin/:serverId/certificate/check"
+    },
+    "mail.renewCertificate": {
+      "page": "mail",
+      "description": "Renew a due mail certificate through Openship Edge and reload Postfix/Dovecot, reusing a still-valid certificate and repairing its service configuration.",
+      "route": "POST /api/mail/admin/:serverId/certificate/renew"
+    },
+    "mail.updateCertificate": {
+      "page": "mail",
+      "description": "Set `autoRenew` to enable or disable automatic mail certificate renewal. Monitoring continues when renewal is disabled.",
+      "route": "PATCH /api/mail/admin/:serverId/certificate"
+    },
+    "mail.listDomains": {
+      "page": "mail",
+      "description": "List mail domains on the server.",
+      "route": "GET /api/mail/admin/:serverId/domains"
+    },
+    "mail.createDomain": {
+      "page": "mail",
+      "description": "Add a mail domain.",
+      "route": "POST /api/mail/admin/:serverId/domains"
+    },
+    "mail.pendingDomainDns": {
+      "page": "mail",
+      "description": "List additional domains whose DNS is still pending.",
+      "route": "GET /api/mail/admin/:serverId/domains-dns/pending"
+    },
+    "mail.listMailboxes": {
+      "page": "mail",
+      "description": "List mailboxes in a domain.",
+      "route": "GET /api/mail/admin/:serverId/mailboxes"
+    },
+    "mail.createMailbox": {
+      "page": "mail",
+      "description": "Create a mailbox.",
+      "route": "POST /api/mail/admin/:serverId/mailboxes"
+    },
+    "mail.rotatePlatformMailbox": {
+      "page": "mail",
+      "description": "Rotate the platform mailbox credential.",
+      "route": "POST /api/mail/admin/:serverId/platform-mailbox/rotate"
+    },
+    "mail.listAliases": {
+      "page": "mail",
+      "description": "List mail aliases on a server.",
+      "route": "GET /api/mail/admin/:serverId/aliases"
+    },
+    "mail.createAlias": {
+      "page": "mail",
+      "description": "Create a mail alias.",
+      "route": "POST /api/mail/admin/:serverId/aliases"
+    },
+    "mail.getStats": {
+      "page": "mail",
+      "description": "Aggregate counts (domains, mailboxes, storage).",
+      "route": "GET /api/mail/admin/:serverId/stats"
+    },
+    "mail.getBackupPolicy": {
+      "page": "mail",
+      "description": "The mail server's backup policy (or `null`).",
+      "route": "GET /api/mail/admin/:serverId/backup-policy"
+    },
+    "mail.saveBackupPolicy": {
+      "page": "mail",
+      "description": "Create or update the backup policy.",
+      "route": "POST /api/mail/admin/:serverId/backup-policy"
+    },
+    "mail.listBackupRuns": {
+      "page": "mail",
+      "description": "Recent backup runs for the mail server.",
+      "route": "GET /api/mail/admin/:serverId/backup-runs"
+    },
+    "mail.scanDns": {
+      "page": "mail",
+      "description": "Live DNS health scan (MX/SPF/DKIM/DMARC/PTR).",
+      "route": "GET /api/mail/admin/:serverId/dns-scan"
+    },
+    "mail.getRelay": {
+      "page": "mail",
+      "description": "Read outbound relay configuration.",
+      "route": "GET /api/mail/admin/:serverId/relay"
+    },
+    "mail.configureRelay": {
+      "page": "mail",
+      "description": "Configure an outbound relay.",
+      "route": "POST /api/mail/admin/:serverId/relay"
+    },
+    "mail.removeRelay": {
+      "page": "mail",
+      "description": "Remove outbound relay configuration.",
+      "route": "DELETE /api/mail/admin/:serverId/relay"
+    },
+    "mail.sendTestEmail": {
+      "page": "mail",
+      "description": "Send a test email from the server.",
+      "route": "POST /api/mail/admin/:serverId/test-email"
+    },
+    "mail.restartComponents": {
+      "page": "mail",
+      "description": "Restart every mail component.",
+      "route": "POST /api/mail/admin/:serverId/components/restart-all"
+    },
+    "mail.listInboundRules": {
+      "page": "mail",
+      "description": "List inbound mail rules.",
+      "route": "GET /api/mail/admin/:serverId/inbound-rules"
+    },
+    "mail.createInboundRule": {
+      "page": "mail",
+      "description": "Create an inbound mail rule.",
+      "route": "POST /api/mail/admin/:serverId/inbound-rules"
+    },
+    "mail.testInboundRules": {
+      "page": "mail",
+      "description": "Evaluate a message against inbound mail rules.",
+      "route": "POST /api/mail/admin/:serverId/inbound-rules/test"
+    },
+    "mail.getDomain": {
+      "page": "mail",
+      "description": "Get one domain's config.",
+      "route": "GET /api/mail/admin/:serverId/domains/:domain"
+    },
+    "mail.updateDomain": {
+      "page": "mail",
+      "description": "Update a domain (quotas, limits, active flag).",
+      "route": "PATCH /api/mail/admin/:serverId/domains/:domain"
+    },
+    "mail.removeDomain": {
+      "page": "mail",
+      "description": "Delete a domain (add `?cascade=true` to remove its mailboxes too).",
+      "route": "DELETE /api/mail/admin/:serverId/domains/:domain"
+    },
+    "mail.domainDependents": {
+      "page": "mail",
+      "description": "Count mailboxes/aliases that depend on a domain.",
+      "route": "GET /api/mail/admin/:serverId/domains/:domain/dependents"
+    },
+    "mail.getDomainDns": {
+      "page": "mail",
+      "description": "DNS records + publish state for an additional domain.",
+      "route": "GET /api/mail/admin/:serverId/domains/:domain/dns"
+    },
+    "mail.acknowledgeDomainDns": {
+      "page": "mail",
+      "description": "Confirm a domain's DNS records are published.",
+      "route": "POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge"
+    },
+    "mail.planDomainDns": {
+      "page": "mail",
+      "description": "Preview the mail domain's DNS records.",
+      "route": "GET /api/mail/admin/:serverId/domains/:domain/dns/plan"
+    },
+    "mail.applyDomainDns": {
+      "page": "mail",
+      "description": "Apply the mail domain's DNS plan through a configured provider.",
+      "route": "POST /api/mail/admin/:serverId/domains/:domain/dns/apply"
+    },
+    "mail.getMailbox": {
+      "page": "mail",
+      "description": "Get one mailbox.",
+      "route": "GET /api/mail/admin/:serverId/mailboxes/:email"
+    },
+    "mail.updateMailbox": {
+      "page": "mail",
+      "description": "Update a mailbox (name, password, quota, active).",
+      "route": "PATCH /api/mail/admin/:serverId/mailboxes/:email"
+    },
+    "mail.removeMailbox": {
+      "page": "mail",
+      "description": "Delete a mailbox (add `?hard=true` to purge its maildir; default is a soft delete).",
+      "route": "DELETE /api/mail/admin/:serverId/mailboxes/:email"
+    },
+    "mail.updateAlias": {
+      "page": "mail",
+      "description": "Update a mail alias.",
+      "route": "PATCH /api/mail/admin/:serverId/aliases/:id"
+    },
+    "mail.removeAlias": {
+      "page": "mail",
+      "description": "Remove a mail alias.",
+      "route": "DELETE /api/mail/admin/:serverId/aliases/:id"
+    },
+    "mail.updateInboundRule": {
+      "page": "mail",
+      "description": "Update an inbound mail rule.",
+      "route": "PATCH /api/mail/admin/:serverId/inbound-rules/:ruleId"
+    },
+    "mail.removeInboundRule": {
+      "page": "mail",
+      "description": "Remove an inbound mail rule.",
+      "route": "DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId"
+    },
+    "mail.componentLogs": {
+      "page": "mail",
+      "description": "Tail a component's logs.",
+      "route": "GET /api/mail/admin/:serverId/components/:key/logs"
+    },
+    "mail.componentAction": {
+      "page": "mail",
+      "description": "Run an action (`start`/`stop`/`restart`/…) on one component.",
+      "route": "POST /api/mail/admin/:serverId/components/:key/:action"
+    },
+    "migrations.listSources": {
+      "page": "migration",
+      "description": "List the active organization's migration-only SSH connections.",
+      "route": "GET /api/migration/sources"
+    },
+    "migrations.createSource": {
+      "page": "migration",
+      "description": "Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations.",
+      "route": "POST /api/migration/sources"
+    },
+    "migrations.testSource": {
+      "page": "migration",
+      "description": "Test a public SSH source without saving it and return its host fingerprint.",
+      "route": "POST /api/migration/sources/test"
+    },
+    "migrations.scan": {
+      "page": "migration",
+      "description": "Inspect a server's Docker and return the adoptable stack — read-only, changes nothing.",
+      "route": "POST /api/migration/scan"
+    },
+    "migrations.revealEnv": {
+      "page": "migration",
+      "description": "Reveal explicitly requested environment values for an authorized import.",
+      "route": "POST /api/migration/reveal-env"
+    },
+    "migrations.repoCompose": {
+      "page": "migration",
+      "description": "Read Compose configuration from a repository for import.",
+      "route": "POST /api/migration/repo-compose"
+    },
+    "migrations.adopt": {
+      "page": "migration",
+      "description": "Create an Openship project from the selected discovered services.",
+      "route": "POST /api/migration/adopt"
+    },
+    "migrations.reimport": {
+      "page": "migration",
+      "description": "Refresh an imported project from its source.",
+      "route": "POST /api/migration/reimport"
+    },
+    "migrations.preview": {
+      "page": "migration",
+      "description": "Preview a migration plan.",
+      "route": "POST /api/migration/preview"
+    },
+    "migrations.start": {
+      "page": "migration",
+      "description": "Start a server migration from the reviewed plan.",
+      "route": "POST /api/migration/migrate"
+    },
+    "migrations.moveProject": {
+      "page": "migration",
+      "description": "Import a discovered project.",
+      "route": "POST /api/migration/project"
+    },
+    "migrations.active": {
+      "page": "migration",
+      "description": "List active server migration sessions.",
+      "route": "GET /api/migration/active"
+    },
+    "migrations.listRuns": {
+      "page": "migration",
+      "description": "List migration history.",
+      "route": "GET /api/migration/runs"
+    },
+    "migrations.removeSource": {
+      "page": "migration",
+      "description": "Disconnect an idle migration source without deleting its external server or workloads.",
+      "route": "DELETE /api/migration/sources/:serverId"
+    },
+    "migrations.get": {
+      "page": "migration",
+      "description": "Read migration progress and state.",
+      "route": "GET /api/migration/migrations/:id"
+    },
+    "migrations.cutover": {
+      "page": "migration",
+      "description": "Switch traffic to the prepared migration target.",
+      "route": "POST /api/migration/migrations/:id/cutover"
+    },
+    "migrations.cancel": {
+      "page": "migration",
+      "description": "Request cancellation of a migration.",
+      "route": "POST /api/migration/migrations/:id/cancel"
+    },
+    "migrations.respond": {
+      "page": "migration",
+      "description": "Answer a pending migration prompt, including edge takeover consent.",
+      "route": "POST /api/migration/migrations/:id/respond"
+    },
+    "migrations.resume": {
+      "page": "migration",
+      "description": "Resume an interrupted migration.",
+      "route": "POST /api/migration/migrations/:id/resume"
+    },
+    "migrations.cleanupTarget": {
+      "page": "migration",
+      "description": "Clean up resources created on the migration target.",
+      "route": "POST /api/migration/migrations/:id/cleanup-target"
+    },
+    "migrations.remove": {
+      "page": "migration",
+      "description": "Delete an eligible migration record.",
+      "route": "DELETE /api/migration/migrations/:id"
+    },
+    "instance.onboardingStatus": {
+      "page": "system",
+      "description": "First-run check — is any server configured yet?",
+      "route": "GET /api/system/onboarding"
+    },
+    "instance.configureOnboarding": {
+      "page": "system",
+      "description": "First-run setup; persists settings and creates the first server. Returns 403 once configured.",
+      "route": "POST /api/system/onboarding"
+    },
+    "instance.upgradeToAuth": {
+      "page": "system",
+      "description": "Promote a zero-auth instance to email/password login.",
+      "route": "POST /api/system/upgrade-to-auth"
+    },
+    "instance.preflightMigration": {
+      "page": "data-transfer",
+      "description": "Team-migration readiness check (read-only).",
+      "route": "POST /api/system/migration/preflight"
+    },
+    "instance.migrateToServer": {
+      "page": "data-transfer",
+      "description": "Earlier server migration (501 unavailable; use Instance location).",
+      "route": "POST /api/system/migration/start"
+    },
+    "instance.migrateToCloud": {
+      "page": "data-transfer",
+      "description": "Migrate → Openship Cloud.",
+      "route": "POST /api/system/migration/start-cloud"
+    },
+    "instance.exposeTunnel": {
+      "page": "data-transfer",
+      "description": "Expose this instance via an edge tunnel.",
+      "route": "POST /api/system/migration/start-tunnel"
+    },
+    "instance.switchBack": {
+      "page": "data-transfer",
+      "description": "Reverse a migration back to single-user.",
+      "route": "POST /api/system/migration/switch-back"
+    },
+    "instance.previewExport": {
+      "page": "data-transfer",
+      "description": "Preview a project selection and its dependencies (instance administrator).",
+      "route": "POST /api/system/data-transfer/preview"
+    },
+    "instance.exportData": {
+      "page": "data-transfer",
+      "description": "Export the instance or selected projects (instance administrator).",
+      "route": "POST /api/system/data-transfer/export"
+    },
+    "instance.importData": {
+      "page": "data-transfer",
+      "description": "Import an export file, ≤500 MB, with scope and conflict options (instance administrator).",
+      "route": "POST /api/system/data-transfer/import"
+    },
+    "mail.setup": {
+      "page": "mail",
+      "description": "Start or resume the install wizard — returns an SSE stream.",
+      "route": "POST /api/mail/setup"
+    },
+    "migrations.events": {
+      "page": "migration",
+      "description": "Stream migration progress.",
+      "route": "GET /api/migration/migrations/:id/stream"
+    },
+    "migrations.scanEvents": {
+      "page": "migration",
+      "description": "Stream server-discovery progress.",
+      "route": "GET /api/migration/scan/stream"
+    },
+    "terminal.openServer": {
+      "page": "terminal",
+      "description": "Mint a one-shot ticket for a WebSocket handshake against a server.",
+      "route": "POST /api/terminal/ticket"
+    },
+    "terminal.openService": {
+      "page": "service-terminal",
+      "description": "Mint a one-shot, short-lived WebSocket auth ticket for a service.",
+      "route": "POST /api/services/terminal/ticket"
     }
   },
   "http": {
@@ -3109,238 +3579,6 @@
       "page": "images",
       "description": "List available build/service images, optionally filtered by `?search=` and `?category=`."
     },
-    "GET /api/mail/admin/:serverId/aliases": {
-      "page": "mail",
-      "description": "List mail aliases on a server."
-    },
-    "POST /api/mail/admin/:serverId/aliases": {
-      "page": "mail",
-      "description": "Create a mail alias."
-    },
-    "DELETE /api/mail/admin/:serverId/aliases/:id": {
-      "page": "mail",
-      "description": "Remove a mail alias."
-    },
-    "PATCH /api/mail/admin/:serverId/aliases/:id": {
-      "page": "mail",
-      "description": "Update a mail alias."
-    },
-    "GET /api/mail/admin/:serverId/backup-policy": {
-      "page": "mail",
-      "description": "The mail server's backup policy (or `null`)."
-    },
-    "POST /api/mail/admin/:serverId/backup-policy": {
-      "page": "mail",
-      "description": "Create or update the backup policy."
-    },
-    "GET /api/mail/admin/:serverId/backup-runs": {
-      "page": "mail",
-      "description": "Recent backup runs for the mail server."
-    },
-    "GET /api/mail/admin/:serverId/certificate": {
-      "page": "mail",
-      "description": "Read the mail certificate, SMTP/IMAP TLS checks and automatic renewal settings."
-    },
-    "PATCH /api/mail/admin/:serverId/certificate": {
-      "page": "mail",
-      "description": "Set `autoRenew` to enable or disable automatic mail certificate renewal. Monitoring continues when renewal is disabled."
-    },
-    "POST /api/mail/admin/:serverId/certificate/check": {
-      "page": "mail",
-      "description": "Recheck the certificate on disk and served by SMTP/IMAP without issuing a certificate or sending email."
-    },
-    "POST /api/mail/admin/:serverId/certificate/renew": {
-      "page": "mail",
-      "description": "Renew a due mail certificate through Openship Edge and reload Postfix/Dovecot, reusing a still-valid certificate and repairing its service configuration."
-    },
-    "POST /api/mail/admin/:serverId/components/:key/:action": {
-      "page": "mail",
-      "description": "Run an action (`start`/`stop`/`restart`/…) on one component."
-    },
-    "GET /api/mail/admin/:serverId/components/:key/logs": {
-      "page": "mail",
-      "description": "Tail a component's logs."
-    },
-    "POST /api/mail/admin/:serverId/components/restart-all": {
-      "page": "mail",
-      "description": "Restart every mail component."
-    },
-    "GET /api/mail/admin/:serverId/dns-scan": {
-      "page": "mail",
-      "description": "Live DNS health scan (MX/SPF/DKIM/DMARC/PTR)."
-    },
-    "GET /api/mail/admin/:serverId/domains": {
-      "page": "mail",
-      "description": "List mail domains on the server."
-    },
-    "POST /api/mail/admin/:serverId/domains": {
-      "page": "mail",
-      "description": "Add a mail domain."
-    },
-    "GET /api/mail/admin/:serverId/domains-dns/pending": {
-      "page": "mail",
-      "description": "List additional domains whose DNS is still pending."
-    },
-    "DELETE /api/mail/admin/:serverId/domains/:domain": {
-      "page": "mail",
-      "description": "Delete a domain (add `?cascade=true` to remove its mailboxes too)."
-    },
-    "GET /api/mail/admin/:serverId/domains/:domain": {
-      "page": "mail",
-      "description": "Get one domain's config."
-    },
-    "PATCH /api/mail/admin/:serverId/domains/:domain": {
-      "page": "mail",
-      "description": "Update a domain (quotas, limits, active flag)."
-    },
-    "GET /api/mail/admin/:serverId/domains/:domain/dependents": {
-      "page": "mail",
-      "description": "Count mailboxes/aliases that depend on a domain."
-    },
-    "GET /api/mail/admin/:serverId/domains/:domain/dns": {
-      "page": "mail",
-      "description": "DNS records + publish state for an additional domain."
-    },
-    "POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge": {
-      "page": "mail",
-      "description": "Confirm a domain's DNS records are published."
-    },
-    "POST /api/mail/admin/:serverId/domains/:domain/dns/apply": {
-      "page": "mail",
-      "description": "Apply the mail domain's DNS plan through a configured provider."
-    },
-    "GET /api/mail/admin/:serverId/domains/:domain/dns/plan": {
-      "page": "mail",
-      "description": "Preview the mail domain's DNS records."
-    },
-    "GET /api/mail/admin/:serverId/inbound-rules": {
-      "page": "mail",
-      "description": "List inbound mail rules."
-    },
-    "POST /api/mail/admin/:serverId/inbound-rules": {
-      "page": "mail",
-      "description": "Create an inbound mail rule."
-    },
-    "DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId": {
-      "page": "mail",
-      "description": "Remove an inbound mail rule."
-    },
-    "PATCH /api/mail/admin/:serverId/inbound-rules/:ruleId": {
-      "page": "mail",
-      "description": "Update an inbound mail rule."
-    },
-    "POST /api/mail/admin/:serverId/inbound-rules/test": {
-      "page": "mail",
-      "description": "Evaluate a message against inbound mail rules."
-    },
-    "GET /api/mail/admin/:serverId/mailboxes": {
-      "page": "mail",
-      "description": "List mailboxes in a domain."
-    },
-    "POST /api/mail/admin/:serverId/mailboxes": {
-      "page": "mail",
-      "description": "Create a mailbox."
-    },
-    "DELETE /api/mail/admin/:serverId/mailboxes/:email": {
-      "page": "mail",
-      "description": "Delete a mailbox (add `?hard=true` to purge its maildir; default is a soft delete)."
-    },
-    "GET /api/mail/admin/:serverId/mailboxes/:email": {
-      "page": "mail",
-      "description": "Get one mailbox."
-    },
-    "PATCH /api/mail/admin/:serverId/mailboxes/:email": {
-      "page": "mail",
-      "description": "Update a mailbox (name, password, quota, active)."
-    },
-    "POST /api/mail/admin/:serverId/platform-mailbox/rotate": {
-      "page": "mail",
-      "description": "Rotate the platform mailbox credential."
-    },
-    "DELETE /api/mail/admin/:serverId/relay": {
-      "page": "mail",
-      "description": "Remove outbound relay configuration."
-    },
-    "GET /api/mail/admin/:serverId/relay": {
-      "page": "mail",
-      "description": "Read outbound relay configuration."
-    },
-    "POST /api/mail/admin/:serverId/relay": {
-      "page": "mail",
-      "description": "Configure an outbound relay."
-    },
-    "GET /api/mail/admin/:serverId/stats": {
-      "page": "mail",
-      "description": "Aggregate counts (domains, mailboxes, storage)."
-    },
-    "POST /api/mail/admin/:serverId/test-email": {
-      "page": "mail",
-      "description": "Send a test email from the server."
-    },
-    "POST /api/mail/adopt": {
-      "page": "mail",
-      "description": "Re-adopt a scanned server whose orchestrator state was lost."
-    },
-    "POST /api/mail/credentials/postmaster": {
-      "page": "mail",
-      "description": "Rotate the postmaster account password."
-    },
-    "GET /api/mail/health/:serverId": {
-      "page": "mail",
-      "description": "Mail daemons, outbound delivery, and cached public-port reachability (TCP 25/465/587/993)."
-    },
-    "POST /api/mail/scan": {
-      "page": "mail",
-      "description": "Probe a server for an existing iRedMail install + its on-server state (read-only)."
-    },
-    "GET /api/mail/servers": {
-      "page": "mail",
-      "description": "List every server Openship has provisioned (or is provisioning) mail on."
-    },
-    "DELETE /api/mail/servers/:serverId": {
-      "page": "mail",
-      "description": "Stop managing a server (drops the DB row only; leaves the stack + state file intact)."
-    },
-    "POST /api/mail/setup": {
-      "page": "mail",
-      "description": "Start or resume the install wizard — returns an SSE stream."
-    },
-    "POST /api/mail/setup/cancel": {
-      "page": "mail",
-      "description": "Cancel the running setup."
-    },
-    "POST /api/mail/setup/dns-ack": {
-      "page": "mail",
-      "description": "Mark DNS (DKIM) records as configured, releasing the DNS gate."
-    },
-    "POST /api/mail/setup/ptr-ack": {
-      "page": "mail",
-      "description": "Mark reverse-DNS (PTR) as configured, releasing the PTR gate."
-    },
-    "POST /api/mail/setup/reset": {
-      "page": "mail",
-      "description": "Wipe the on-server state file (does not touch iRedMail)."
-    },
-    "GET /api/mail/status": {
-      "page": "mail",
-      "description": "Current setup progress for a server (rendered from its on-server state file)."
-    },
-    "GET /api/mail/steps": {
-      "page": "mail",
-      "description": "List all setup steps and the total count."
-    },
-    "POST /api/mail/webmail/deploy-external": {
-      "page": "mail",
-      "description": "Deploy webmail for an external mail server."
-    },
-    "POST /api/mail/webmail/deploy-project": {
-      "page": "mail",
-      "description": "Create a webmail project + deployment and start the build."
-    },
-    "GET /api/mail/webmail/targets": {
-      "page": "mail",
-      "description": "List deploy-target options (self-hosted servers / cloud)."
-    },
     "GET /api/mcp": {
       "page": "mcp",
       "description": "Returns `405` — this server never pushes messages, so there is no SSE stream to open."
@@ -3348,98 +3586,6 @@
     "POST /api/mcp": {
       "page": "mcp",
       "description": "Stateless Streamable-HTTP JSON-RPC 2.0 endpoint. Authenticates the bearer itself, then handles `initialize`, `ping`, `tools/list`, and `tools/call`."
-    },
-    "GET /api/migration/active": {
-      "page": "migration",
-      "description": "List active server migration sessions."
-    },
-    "GET /api/migration/sources": {
-      "page": "migration",
-      "description": "List the active organization's migration-only SSH connections."
-    },
-    "POST /api/migration/sources": {
-      "page": "migration",
-      "description": "Verify and save a public SSH source with encrypted credentials and a pinned host key. Does not enable external Cloud deployment destinations."
-    },
-    "POST /api/migration/sources/test": {
-      "page": "migration",
-      "description": "Test a public SSH source without saving it and return its host fingerprint."
-    },
-    "DELETE /api/migration/sources/:serverId": {
-      "page": "migration",
-      "description": "Disconnect an idle migration source without deleting its external server or workloads."
-    },
-    "POST /api/migration/adopt": {
-      "page": "migration",
-      "description": "Create an Openship project from the selected discovered services."
-    },
-    "POST /api/migration/migrate": {
-      "page": "migration",
-      "description": "Start a server migration from the reviewed plan."
-    },
-    "DELETE /api/migration/migrations/:id": {
-      "page": "migration",
-      "description": "Delete an eligible migration record."
-    },
-    "GET /api/migration/migrations/:id": {
-      "page": "migration",
-      "description": "Read migration progress and state."
-    },
-    "POST /api/migration/migrations/:id/cancel": {
-      "page": "migration",
-      "description": "Request cancellation of a migration."
-    },
-    "POST /api/migration/migrations/:id/cleanup-target": {
-      "page": "migration",
-      "description": "Clean up resources created on the migration target."
-    },
-    "POST /api/migration/migrations/:id/cutover": {
-      "page": "migration",
-      "description": "Switch traffic to the prepared migration target."
-    },
-    "POST /api/migration/migrations/:id/resume": {
-      "page": "migration",
-      "description": "Resume an interrupted migration."
-    },
-    "POST /api/migration/migrations/:id/respond": {
-      "page": "migration",
-      "description": "Answer a pending migration prompt, including edge takeover consent."
-    },
-    "GET /api/migration/migrations/:id/stream": {
-      "page": "migration",
-      "description": "Stream migration progress."
-    },
-    "POST /api/migration/preview": {
-      "page": "migration",
-      "description": "Preview a migration plan."
-    },
-    "POST /api/migration/project": {
-      "page": "migration",
-      "description": "Import a discovered project."
-    },
-    "POST /api/migration/reimport": {
-      "page": "migration",
-      "description": "Refresh an imported project from its source."
-    },
-    "POST /api/migration/repo-compose": {
-      "page": "migration",
-      "description": "Read Compose configuration from a repository for import."
-    },
-    "POST /api/migration/reveal-env": {
-      "page": "migration",
-      "description": "Reveal explicitly requested environment values for an authorized import."
-    },
-    "GET /api/migration/runs": {
-      "page": "migration",
-      "description": "List migration history."
-    },
-    "POST /api/migration/scan": {
-      "page": "migration",
-      "description": "Inspect a server's Docker and return the adoptable stack — read-only, changes nothing."
-    },
-    "GET /api/migration/scan/stream": {
-      "page": "migration",
-      "description": "Stream server-discovery progress."
     },
     "POST /api/notices": {
       "page": "notices",
@@ -3481,17 +3627,18 @@
       "page": "sources",
       "description": "Upload the gzipped source archive (Cloud and self-hosted, 300 MB limit)."
     },
-    "POST /api/services/terminal/ticket": {
-      "page": "service-terminal",
-      "description": "Mint a one-shot, short-lived WebSocket auth ticket for a service."
-    },
     "GET /api/services/terminal/ws/:serviceId": {
       "page": "service-terminal",
-      "description": "WebSocket upgrade — auth happens inside the handshake (ticket subprotocol or session cookie)."
+      "description": "WebSocket upgrade — auth happens inside the handshake (ticket subprotocol or session cookie).",
+      "sdk": "terminal.openService(id, options)"
     },
     "POST /api/system/bootstrap-admin": {
       "page": "system",
       "description": "Create the initial administrator during authorized bootstrap."
+    },
+    "POST /api/system/cli-session": {
+      "page": "system",
+      "description": "Exchange the private installation credential for a temporary local CLI admin session; requires X-Internal-Token and refuses Cloud/browser callers."
     },
     "POST /api/system/cloud-connect": {
       "page": "system",
@@ -3533,14 +3680,6 @@
       "page": "data-transfer",
       "description": "Create a direct-transfer session."
     },
-    "POST /api/system/data-transfer/export": {
-      "page": "data-transfer",
-      "description": "Export the instance or selected projects (instance administrator)."
-    },
-    "POST /api/system/data-transfer/import": {
-      "page": "data-transfer",
-      "description": "Import an export file, ≤500 MB, with scope and conflict options (instance administrator)."
-    },
     "POST /api/system/data-transfer/import/session": {
       "page": "data-transfer",
       "description": "Open a chunked file-import session."
@@ -3561,10 +3700,6 @@
       "page": "data-transfer",
       "description": "List exportable projects and instance row counts (instance administrator)."
     },
-    "POST /api/system/data-transfer/preview": {
-      "page": "data-transfer",
-      "description": "Preview a project selection and its dependencies (instance administrator)."
-    },
     "POST /api/system/edge/import-sites": {
       "page": "edge",
       "description": "Import discovered edge sites."
@@ -3576,34 +3711,6 @@
     "POST /api/system/invite-signup": {
       "page": "system",
       "description": "Create an account from an eligible self-hosted invitation."
-    },
-    "POST /api/system/migration/preflight": {
-      "page": "data-transfer",
-      "description": "Team-migration readiness check (read-only)."
-    },
-    "POST /api/system/migration/start": {
-      "page": "data-transfer",
-      "description": "Migrate single-user → your own remote server."
-    },
-    "POST /api/system/migration/start-cloud": {
-      "page": "data-transfer",
-      "description": "Migrate → Openship Cloud."
-    },
-    "POST /api/system/migration/start-tunnel": {
-      "page": "data-transfer",
-      "description": "Expose this instance via an edge tunnel."
-    },
-    "POST /api/system/migration/switch-back": {
-      "page": "data-transfer",
-      "description": "Reverse a migration back to single-user."
-    },
-    "GET /api/system/onboarding": {
-      "page": "system",
-      "description": "First-run check — is any server configured yet?"
-    },
-    "POST /api/system/onboarding": {
-      "page": "system",
-      "description": "First-run setup; persists settings and creates the first server. Returns 403 once configured."
     },
     "POST /api/system/onboarding/test-connection": {
       "page": "system",
@@ -3633,17 +3740,10 @@
       "page": "system",
       "description": "Push instance config from the desktop app."
     },
-    "POST /api/system/upgrade-to-auth": {
-      "page": "system",
-      "description": "Promote a zero-auth instance to email/password login."
-    },
-    "POST /api/terminal/ticket": {
-      "page": "terminal",
-      "description": "Mint a one-shot ticket for a WebSocket handshake against a server."
-    },
     "GET /api/terminal/ws/:serverId": {
       "page": "terminal",
-      "description": "WebSocket upgrade that opens the remote PTY."
+      "description": "WebSocket upgrade that opens the remote PTY.",
+      "sdk": "terminal.openServer(id, options)"
     },
     "POST /api/webhooks/:provider": {
       "page": "webhooks",

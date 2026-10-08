@@ -300,12 +300,6 @@ export function IssuesView() {
 
       <MonitoringNavigation value={tab} onChange={setTab} selfHosted={selfHosted} />
 
-      {!online && (
-        <div role="status" className="mb-5 rounded-xl bg-warning-bg px-4 py-3 text-sm text-warning">
-          <p className="font-medium">{c.connectivity.offlineTitle}</p>
-          <p className="mt-1">{c.connectivity.offlineHint}</p>
-        </div>
-      )}
       {online && (monitoringScan.error || feedError) && (
         <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-warning-bg px-4 py-3 text-sm text-warning">
           <p>{monitoringScan.error || feedError}</p>
@@ -390,7 +384,7 @@ export function IssuesView() {
             </div>
           </div>
         </div>
-      ) : feedError && issues.length === 0 ? null : issues.length === 0 && (!showFleet || infra.empty) ? (
+      ) : (!online || feedError) && issues.length === 0 ? null : issues.length === 0 && (!showFleet || infra.empty) ? (
         // Nothing at all for this tab: the empty state stands alone, full width and
         // centred, with no filters or summary rail to frame an absence.
         <EmptyIssues filtered={false} resolved={tab === "resolved"} />

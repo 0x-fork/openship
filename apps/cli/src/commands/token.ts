@@ -16,6 +16,9 @@ import { getShipClient } from "../lib/ship-client";
 import { printJson, printTable, isJsonMode, ok, info } from "../lib/output";
 import { spin, fail } from "../lib/cmd-helpers";
 import { positiveInteger } from "../lib/command-input";
+import { TokenCollectionSchemas } from "@repo/contracts";
+import { confirmOrExit, printResult } from "../lib/cmd-helpers";
+import { jsonCommand } from "../lib/json-command";
 
 import type { TCreateTokenBody } from "@repo/sdk";
 type Grant = NonNullable<TCreateTokenBody["grants"]>[number];
@@ -135,3 +138,18 @@ export const tokenCommand = new Command("token")
   .addCommand(listCmd)
   .addCommand(createCmd)
   .addCommand(revokeCmd);
+
+const mcp = new Command("mcp").description("Inspect and revoke MCP clients authorized by your account");
+mcp.command("list").description("List authorized MCP clients and their resource scopes")
+  .action(() => printResult(() => getShipClient().tokens.listMcpClients()));
+mcp.command("get").argument("<id>", "MCP client ID").description("Inspect this client's permissions")
+  .action((id: string) => printResult(() => getShipClient().tokens.getMcpClient(id)));
+jsonCommand(mcp.command("authorize").description("Authorize an MCP client with explicit resource grants or full access"),
+  TokenCollectionSchemas.authorizeMcpClient.input, input => getShipClient().tokens.authorizeMcpClient(input), "Authorize this MCP client with the specified access?");
+mcp.command("disconnect").argument("<id>", "MCP client ID").option("-y, --yes", "Confirm revocation")
+  .description("Revoke an MCP client's authorization")
+  .action((id: string, opts) => printResult(async () => {
+    await confirmOrExit(opts.yes, `Disconnect MCP client ${id}?`);
+    return getShipClient().tokens.disconnectMcpClient(id);
+  }));
+tokenCommand.addCommand(mcp);

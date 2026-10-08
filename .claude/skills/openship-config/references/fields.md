@@ -19,7 +19,7 @@ value. Validated by `openship config validate` (same parser the deploy uses).
 | `buildImage` | string | Build Docker image (e.g. `node:22`). |
 | `productionPaths` | string[] | Paths shipped as the production artifact. |
 
-**`framework` values:** `nextjs` `nuxt` `sveltekit` `remix` `astro` `vite` `angular` `gatsby`
+**`framework` values:** `nextjs` `farmjs` `nuxt` `sveltekit` `remix` `astro` `vite` `angular` `gatsby`
 `cra` `vue` `react` `express` `fastify` `hono` `nestjs` `koa` `adonis` `elysia` `go` `gin`
 `fiber` `echo` `rust` `actix` `axum` `rocket` `python` `django` `flask` `fastapi` `rails`
 `sinatra` `laravel` `symfony` `springboot` `quarkus` `kotlin` `dotnet` `blazor` `phoenix`

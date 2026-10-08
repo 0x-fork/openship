@@ -1,0 +1,195 @@
+import { afterAll, afterEach, beforeAll, describe, expect, it, mock, spyOn } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { createInterface } from "node:readline";
+import { ImapFlow, type ImapFlowOptions } from "imapflow";
+import { probeImap, withImap } from "../src/lib/imap";
+import { classifyImapFailure } from "../src/lib/imap-errors";
+
+let dir: string;
+let cert: Buffer;
+beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), "openship-test-imap-"));
+  writeFileSync(
+    join(dir, "openssl.cnf"),
+    "[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=cert\n[dn]\nCN=localhost\n[cert]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:TRUE\n",
+  );
+  const result = spawnSync("openssl", [
+    "req",
+    "-x509",
+    "-newkey",
+    "rsa:2048",
+    "-nodes",
+    "-days",
+    "1",
+    "-config",
+    join(dir, "openssl.cnf"),
+    "-keyout",
+    join(dir, "key.pem"),
+    "-out",
+    join(dir, "cert.pem"),
+  ]);
+  if (result.status !== 0) throw new Error(`Test certificate generation failed: ${result.stderr}`);
+  cert = readFileSync(join(dir, "cert.pem"));
+});
+afterAll(() => {
+  if (dir) rmSync(dir, { recursive: true, force: true });
+});
+afterEach(() => mock.restore());
+
+type Reply = "success" | "AUTHENTICATIONFAILED" | "UNAVAILABLE" | "disconnect";
+async function localImap(mode: "tls" | "starttls" | "plaintext", reply: Reply = "success") {
+  // Node supplies the fixture server so Bun's server-side STARTTLS emulation
+  // cannot hide a problem in the production Bun IMAP client.
+  const child = spawn(
+    "node",
+    [join(import.meta.dir, "fixtures/imap-server.mjs"), mode, reply, dir],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  const credentials: string[] = [];
+  const commands: string[] = [];
+  const sockets = { size: 0 };
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  const lines = createInterface({ input: child.stdout });
+  const port = await new Promise<number>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error(`IMAP fixture exited: ${stderr}`)));
+    lines.on("line", (line) => {
+      const event = JSON.parse(line);
+      if (event.port) resolve(event.port);
+      if (event.credential) credentials.push(event.credential);
+      if (event.command) commands.push(event.command);
+      if (event.connection) sockets.size += event.connection;
+    });
+  });
+  return {
+    port,
+    credentials,
+    commands,
+    sockets,
+    async close() {
+      child.stdin.end("stop\n");
+      const deadline = setTimeout(() => child.kill(), 1000);
+      try {
+        await exited;
+      } finally {
+        clearTimeout(deadline);
+        lines.close();
+      }
+    },
+  };
+}
+
+// Redirect only the socket destination to a loopback fixture. The production
+// client still selects IMAPS/STARTTLS from the configured port and validates TLS.
+// Trust the test certificate explicitly; never disable certificate validation.
+function routeTo(port: number, trust = true) {
+  const connect = ImapFlow.prototype.connect;
+  spyOn(ImapFlow.prototype, "connect").mockImplementation(function (this: ImapFlow) {
+    const client = this as ImapFlow & {
+      host: string;
+      port: number;
+      servername: string;
+      options: ImapFlowOptions;
+    };
+    client.host = "127.0.0.1";
+    client.port = port;
+    client.servername = "localhost";
+    client.options.tls = { ...(trust ? { ca: cert } : {}), servername: "localhost" };
+    return connect.call(this);
+  });
+}
+const auth = (port = 993) => ({
+  host: "mail.example.test",
+  port,
+  user: "user@example.test",
+  pass: "test-only-password",
+});
+
+describe("webmail over real local IMAP sockets", () => {
+  it.each(["tls", "starttls"] as const)(
+    "authenticates and opens the inbox using %s",
+    async (mode) => {
+      const server = await localImap(mode);
+      try {
+        routeTo(server.port);
+        const exists = await withImap(
+          auth(mode === "tls" ? 993 : 143),
+          async (client) => (await client.mailboxOpen("INBOX")).exists,
+        );
+        expect(exists).toBe(1);
+        expect(server.credentials).toEqual(["\0user@example.test\0test-only-password"]);
+        expect(server.commands).toContain("LOGOUT");
+        if (mode === "starttls")
+          expect(server.commands.indexOf("STARTTLS")).toBeLessThan(
+            server.commands.indexOf("AUTHENTICATE"),
+          );
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  it.each(["AUTHENTICATIONFAILED", "UNAVAILABLE", "disconnect"] as const)(
+    "distinguishes %s over the wire",
+    async (reply) => {
+      const server = await localImap("tls", reply);
+      try {
+        routeTo(server.port);
+        if (reply === "AUTHENTICATIONFAILED") expect(await probeImap(auth())).toBe(false);
+        else {
+          const error = await probeImap(auth()).then(
+            () => null,
+            (error) => error,
+          );
+          expect(error).toBeInstanceOf(Error);
+          expect(classifyImapFailure(error)).toBe(
+            reply === "UNAVAILABLE" ? "unavailable" : "connection",
+          );
+        }
+        const deadline = Date.now() + 1000;
+        while (server.sockets.size && Date.now() < deadline) await Bun.sleep(5);
+        expect(server.sockets.size).toBe(0);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  it("refuses an untrusted certificate before sending credentials", async () => {
+    const server = await localImap("tls");
+    try {
+      routeTo(server.port, false);
+      const error = await probeImap(auth()).then(
+        () => null,
+        (error) => error,
+      );
+      expect(classifyImapFailure(error)).toBe("tls");
+      expect(server.credentials).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("refuses a plaintext-only backend before sending credentials", async () => {
+    const server = await localImap("plaintext");
+    try {
+      routeTo(server.port);
+      const error = await probeImap(auth(143)).then(
+        () => null,
+        (error) => error,
+      );
+      expect(classifyImapFailure(error)).toBe("tls");
+      expect(server.credentials).toEqual([]);
+      expect(server.commands).not.toContain("AUTHENTICATE");
+    } finally {
+      await server.close();
+    }
+  });
+});

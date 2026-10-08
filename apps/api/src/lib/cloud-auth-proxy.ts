@@ -79,7 +79,7 @@ async function mirrorCloudUser(cloudUser: CloudUser): Promise<string> {
  * `session.create.before` hook because the caller has already done
  * the equivalent work (user provisioning, org resolution).
  *
- * Two `purpose` values exist:
+ * Three `purpose` values exist:
  *   - `"local-cookie"` — the row backing the browser cookie session
  *     created by desktop / cloud-callback / upgrade-to-auth flows.
  *     `id` is a UUID, no prefix. `activeOrganizationId` defaults to
@@ -89,6 +89,9 @@ async function mirrorCloudUser(cloudUser: CloudUser): Promise<string> {
  *     `sess_link_` so audit / forensics can tell linked-instance
  *     sessions apart from browser sessions. Caller MUST pass
  *     `activeOrganizationId` (the linked org context).
+ *   - `"local-cli"` — temporary session for a command authenticated with the
+ *     installation's private operator credential. No cookie is issued; the CLI
+ *     signs out after the command. A short explicit TTL bounds abandoned runs.
  *
  * Distinguishing the two purposes by id-prefix means
  * `POST /api/cloud/disconnect` deletes ONLY the linked row by its
@@ -96,7 +99,7 @@ async function mirrorCloudUser(cloudUser: CloudUser): Promise<string> {
  * the same `session` table.
  */
 export async function mintSession(opts: {
-  purpose: "local-cookie" | "linked-instance";
+  purpose: "local-cookie" | "linked-instance" | "local-cli";
   userId: string;
   activeOrganizationId?: string;
   ipAddress?: string | null;
@@ -106,6 +109,8 @@ export async function mintSession(opts: {
   const id =
     opts.purpose === "linked-instance"
       ? `sess_link_${randomBytes(12).toString("hex")}`
+      : opts.purpose === "local-cli"
+        ? `sess_cli_${randomBytes(12).toString("hex")}`
       : randomUUID();
   const token = randomBytes(32).toString("hex");
   const now = new Date();

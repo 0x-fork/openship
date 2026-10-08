@@ -72,6 +72,9 @@ assert.equal(process.getActiveResourcesInfo().includes('Timeout'), false);
 console.log('CJS_OK');
 `);
   if (!run(node, ["probe.cjs"]).includes("CJS_OK")) throw new Error("CommonJS package probe failed");
+  cpSync(join(import.meta.dirname, "test/remote-platform.mjs"), join(scratch, "remote-platform.mjs"));
+  if (!run(node, ["remote-platform.mjs"]).includes("PACKAGED_REMOTE_PLATFORM_OK"))
+    throw new Error("Packaged SDK/CLI remote platform workflows failed");
   writeFileSync(join(scratch, "native-probe.mjs"), `
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
@@ -163,6 +166,11 @@ try {
   const example = `import { OpenshipClient, OpenshipOperatorClient, type DeploymentHandle, type ProjectOperations, type EnvironmentVariable, type BillingOperations, type NoticeOperations, type OperatorNoticeOperations } from 'openship';
 import { createShip, type IdentityAdapter } from 'openship/native';
 const client = new OpenshipClient({ baseUrl: 'https://ship.example.test' });
+const mail: import('openship').MailOperations = client.mail;
+const migrations: import('openship').MigrationOperations = client.migrations;
+const instance: import('openship').InstanceOperations = client.instance;
+const terminal: import('openship').TerminalOperations = client.terminal;
+void mail; void migrations; void instance; void terminal;
 const handle: DeploymentHandle = client.deployment('deployment');
 const identity: IdentityAdapter<string> = { resolve: async () => null };
 const operatorNotices: OperatorNoticeOperations = new OpenshipOperatorClient({ baseUrl: 'https://ship.example.test', internalToken: 'operator' }).notices;

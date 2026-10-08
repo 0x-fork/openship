@@ -21,9 +21,11 @@
  */
 
 import { posix } from "node:path";
+import { safeErrorMessage } from "@repo/core";
 
 import type { CommandExecutor, LogEntry } from "../types";
 import { sq } from "./local-shell";
+import { isRuntimeNotFoundError } from "./errors";
 import type { SystemLog, SystemLogCallback } from "./types";
 
 function log(message: string, level: SystemLog["level"] = "info"): SystemLog {
@@ -91,15 +93,28 @@ export async function dockerAvailable(executor: CommandExecutor): Promise<boolea
 export async function containerState(
   executor: CommandExecutor,
   container: string,
+  options: { strict?: boolean } = {},
 ): Promise<{ running: boolean; image: string | null } | null> {
-  const out = await executor
-    .exec(`docker inspect -f '{{.State.Running}}\t{{.Config.Image}}' ${sq(container)} 2>/dev/null`)
-    .catch(() => "");
+  let out: string;
+  try {
+    out = await executor.exec(
+      `docker inspect -f '{{.State.Running}}\t{{.Config.Image}}' ${sq(container)} ${options.strict ? "2>&1" : "2>/dev/null"}`,
+    );
+  } catch (error) {
+    if (!options.strict) return null;
+    // A missing container or Docker executable rules out this topology. A
+    // failed transport/daemon/permission check establishes no container state.
+    if (isRuntimeNotFoundError(error) || /no such object:|docker: (?:command )?not found/i.test(safeErrorMessage(error))) return null;
+    throw error;
+  }
   const line = out
     .split("\n")
     .map((l) => l.trim())
-    .find(Boolean);
-  if (!line) return null;
+    .find((value) => options.strict ? /^(?:true|false)\t/.test(value) : Boolean(value));
+  if (!line) {
+    if (options.strict) throw new Error("Docker did not return a valid container state");
+    return null;
+  }
   const [running, image] = line.split("\t");
   return { running: running?.trim() === "true", image: image?.trim() || null };
 }

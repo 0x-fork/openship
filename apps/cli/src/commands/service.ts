@@ -9,6 +9,7 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  */
 
 import { Command, Option } from "commander";
+import { openTerminal } from "../lib/terminal";
 import chalk from "chalk";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -22,7 +23,7 @@ import { UpdateServiceBody, parseInput } from "@repo/contracts";
 import { getShipClient, ApiError, hasShipCredentials } from "../lib/ship-client";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
 import { collect, parsePairs, readJsonInput } from "../lib/command-input";
-import { fail, confirmOrExit, reportResult } from "../lib/cmd-helpers";
+import { fail, confirmOrExit, reportResult, reportExecResult } from "../lib/cmd-helpers";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -618,13 +619,7 @@ const execCmd = stackCommand("exec")
         cwd: opts.cwd,
         timeoutMs: Number(opts.timeout),
       });
-      if (isJsonMode()) printJson(result);
-      else {
-        process.stdout.write(result.output);
-        if (result.truncated) info("  Output truncated.");
-        if (result.timedOut) err("  Command timed out.");
-      }
-      process.exitCode = result.timedOut ? 124 : result.exitCode;
+      reportExecResult(result);
     } catch (error) {
       rethrowCommandExit(error);
       fail(error);
@@ -636,6 +631,27 @@ const execCmd = stackCommand("exec")
 export const serviceCommand = new Command("service")
   .alias("services")
   .description("Manage the services in a compose stack (a multi-service project)");
+
+serviceCommand.addCommand(stackCommand("terminal").argument("<service>", "Service name or ID")
+  .description("Open a shell in a running service on Cloud or a self-hosted server")
+  .option("--origin <url>", "Trusted dashboard origin (defaults to the saved context dashboard)")
+  .action(async (service: string, opts) => {
+    try {
+      const projectId = await resolveProject(opts.project);
+      const svc = await resolveService(projectId, service);
+      await openTerminal({ kind: "service", id: svc.id }, opts);
+    } catch (error) { fail(error); }
+  }));
+
+serviceCommand.addCommand(stackCommand("volumes").argument("<service>", "Service name or ID")
+  .description("Read measured service volume sizes")
+  .action(async (service: string, opts) => {
+    try {
+      const projectId = await resolveProject(opts.project);
+      const svc = await resolveService(projectId, service);
+      printJson(await getShipClient().services.volumeSizes(projectId, svc.id));
+    } catch (error) { fail(error); }
+  }));
 
 serviceCommand.addCommand(listCmd);
 serviceCommand.addCommand(getCmd);

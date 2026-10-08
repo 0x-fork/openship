@@ -97,6 +97,8 @@ export async function internalFetch(
     try {
       res = await fetch(url, {
         ...init,
+        // Internal credentials must never follow a redirect off this API.
+        redirect: "error",
         headers: {
           ...(init.headers as Record<string, string> | undefined),
           "X-Internal-Token": candidate,

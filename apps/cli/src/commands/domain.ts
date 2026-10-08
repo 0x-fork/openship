@@ -6,10 +6,14 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  */
 
 import { Command, Option } from "commander";
+import { UploadCertBody, parseInput } from "@repo/contracts";
+import { readFileSync } from "node:fs";
 import { getShipClient } from "../lib/ship-client";
 import { spin, fail, confirmOrExit, printResult } from "../lib/cmd-helpers";
 import type { Domain, DomainRecords, DomainSsl } from "@repo/sdk/client";
 import { printJson, printTable, isJsonMode, ok, err, info } from "../lib/output";
+import { positiveInteger, timeoutMilliseconds } from "../lib/command-input";
+import { printEvents } from "../lib/event-output";
 
 // ─── Shapes (subset of @repo/db Domain we render) ────────────────────────────
 
@@ -97,10 +101,18 @@ const previewCmd = new Command("preview")
 const verifyCmd = new Command("verify")
   .description("Run DNS verification for a domain")
   .argument("<id>", "Domain ID")
-  .action(async (id: string) => {
+  .option("--force", "Recheck an already-verified hostname")
+  .option("--follow", "Stream DNS and certificate progress")
+  .option("--timeout <ms>", "Stop following after this deadline", timeoutMilliseconds)
+  .action(async (id: string, opts) => {
     const sp = spin("Checking DNS records…");
     try {
-      const body = await getShipClient().domains.verify(id);
+      if (opts.follow) {
+        sp?.stop();
+        await printEvents(getShipClient().domains.verifyStream(id, { force: opts.force }, { signal: opts.timeout ? AbortSignal.timeout(opts.timeout) : undefined }));
+        return;
+      }
+      const body = await getShipClient().domains.verify(id, { force: opts.force });
       if (isJsonMode()) {
         sp?.stop();
         printJson(body);
@@ -272,4 +284,19 @@ domainCommand.command("remove").alias("rm").argument("<id>", "Domain ID")
   .action((id: string, opts) => printResult(async () => {
     await confirmOrExit(opts.yes, `Remove domain ${id}?`);
     return getShipClient().domains.remove(id);
+  }));
+domainCommand.command("upload-cert").argument("<id>", "Domain ID")
+  .requiredOption("--cert <file>", "PEM certificate chain file")
+  .requiredOption("--key <file>", "PEM private key file")
+  .description("Install a manual certificate through the shared hostname and key validation")
+  .action((id: string, opts) => printResult(() => getShipClient().domains.uploadCert(id, parseInput(UploadCertBody, {
+    certPem: readFileSync(opts.cert, "utf8"), keyPem: readFileSync(opts.key, "utf8"),
+  }))));
+domainCommand.command("verify-pending").description("Retry eligible pending domains within the selected organization")
+  .option("--limit <number>", "Maximum domains to inspect", positiveInteger)
+  .option("--min-age <minutes>", "Minimum pending age in minutes", positiveInteger)
+  .action(opts => printResult(async () => {
+    const result = await getShipClient().domains.verifyPending({ limit: opts.limit, minAgeMinutes: opts.minAge });
+    if (result.failed) process.exitCode = 1;
+    return result;
   }));

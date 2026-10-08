@@ -1,3 +1,4 @@
+import type { MailDeliveryHealth } from "@repo/contracts";
 import type { RelayProviderId } from "@repo/core";
 import { api, ApiError, getApiBaseUrl, getActiveOrganizationId, getApiErrorCode } from "./client";
 import { endpoints } from "./endpoints";
@@ -95,22 +96,7 @@ export interface MailDeferral {
  * `250 OK`, so a wrong SASL password looks identical to a healthy box until you
  * read the queue.
  */
-export interface MailDeliveryHealth {
-  status: MailDeliveryStatus;
-  mode: MailOutboundMode;
-  /** The smarthost as `host:port`, when relaying. */
-  relayHost?: string;
-  relayScope?: "all" | "selected";
-  /** Domains whose senders relay — only meaningful under `selected` scope. */
-  relayDomains?: string[];
-  /** Messages in the queue, from postqueue's own total (never a sampled count). */
-  queued: number;
-  /** The queue was larger than the window we read, so `deferrals` is a sample. */
-  sampled: boolean;
-  deferrals: MailDeferral[];
-  /** Why the status is `unknown` — the probe's own words. */
-  detail?: string;
-}
+export type { MailDeliveryHealth } from "@repo/contracts";
 
 export type MailPortReachabilityStatus =
   | "reachable"
@@ -172,6 +158,8 @@ export interface MailCredentials {
  * exposed here.
  */
 export interface MailWebmailSummary {
+  serverId?: string | null;
+  workspaceId?: string | null;
   installed: boolean;
   hostname: string;
   url: string;
@@ -255,6 +243,8 @@ export interface MailSetupStatus {
    * as broken.
    */
   engine?: MailEngineState;
+  /** The live engine check was inconclusive; never offer a repair from this state. */
+  observationError?: string;
   steps: MailStepStatus[];
   /** Server-buffered log lines, rehydrated on page reload. */
   logs?: MailSessionLogLine[];
@@ -704,7 +694,7 @@ export const mailApi = {
      *
      * `target` discriminator:
      *   { kind: "self", serverId } - host on an openship-managed server
-     *   { kind: "cloud" }          - host on Opshcloud
+     *   { kind: "cloud", serverId } - host on the selected managed Cloud server
      *
      * A pre-catalog webmail (`MailWebmailSummary.legacy`) can't be redeployed:
      * without `replaceLegacy` the API answers 409 `LEGACY_WEBMAIL`, and with it the
@@ -716,7 +706,7 @@ export const mailApi = {
       hostname: string;
       target:
         | { kind: "self"; serverId: string }
-        | { kind: "cloud" };
+        | { kind: "cloud"; serverId?: string };
       replaceLegacy?: boolean;
     }) =>
       api.post<{ deploymentId: string; projectId: string }>(

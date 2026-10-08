@@ -19,7 +19,7 @@ openship domain [options] [command]
 | [`list [options]`](/docs/cli/reference/domain#openship-domain-list) | List a project's custom domains |
 | [`add [options] <hostname>`](/docs/cli/reference/domain#openship-domain-add) | Add a custom domain to a project |
 | [`preview <hostname>`](/docs/cli/reference/domain#openship-domain-preview) | Preview the DNS records a hostname would need (no changes saved) |
-| [`verify <id>`](/docs/cli/reference/domain#openship-domain-verify) | Run DNS verification for a domain |
+| [`verify [options] <id>`](/docs/cli/reference/domain#openship-domain-verify) | Run DNS verification for a domain |
 | [`primary <id>`](/docs/cli/reference/domain#openship-domain-primary) | Make a domain the project's primary hostname |
 | [`records <id>`](/docs/cli/reference/domain#openship-domain-records) | Show the DNS records for an existing domain |
 | [`renew <id>`](/docs/cli/reference/domain#openship-domain-renew) | Renew the SSL certificate for a domain |
@@ -28,6 +28,8 @@ openship domain [options] [command]
 | [`dns`](/docs/cli/reference/domain/dns#openship-domain-dns) | Plan and apply provider-managed DNS records |
 | [`get <id>`](/docs/cli/reference/domain#openship-domain-get) | Show a domain and its routing configuration |
 | [`remove\|rm [options] <id>`](/docs/cli/reference/domain#openship-domain-remove) | Remove a domain and its managed route |
+| [`upload-cert [options] <id>`](/docs/cli/reference/domain#openship-domain-upload-cert) | Install a manual certificate through the shared hostname and key validation |
+| [`verify-pending [options]`](/docs/cli/reference/domain#openship-domain-verify-pending) | Retry eligible pending domains within the selected organization |
 
 ## openship domain add
 
@@ -142,6 +144,23 @@ Renew SSL for every near-expiry domain in your organization
 openship domain renew-all [options]
 ```
 
+## openship domain upload-cert
+
+Install a manual certificate through the shared hostname and key validation
+
+```text
+openship domain upload-cert [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Domain ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--cert <file>` | PEM certificate chain file |
+| `--key <file>` | PEM private key file |
+
 ## openship domain verify
 
 Run DNS verification for a domain
@@ -153,6 +172,25 @@ openship domain verify [options] <id>
 | Argument | Meaning |
 | --- | --- |
 | `id` | Domain ID |
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Recheck an already-verified hostname |
+| `--follow` | Stream DNS and certificate progress |
+| `--timeout <ms>` | Stop following after this deadline |
+
+## openship domain verify-pending
+
+Retry eligible pending domains within the selected organization
+
+```text
+openship domain verify-pending [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--limit <number>` | Maximum domains to inspect |
+| `--min-age <minutes>` | Minimum pending age in minutes |
 
 ## openship domain verify-ssl
 

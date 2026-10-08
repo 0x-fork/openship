@@ -3,6 +3,9 @@
   "pages": [
     "index",
     "connections",
-    "git"
+    "database",
+    "git",
+    "routing",
+    "volume"
   ]
 }

@@ -1,0 +1,9 @@
+{
+  "title": "billing",
+  "pages": [
+    "index",
+    "change",
+    "checkout",
+    "subscription"
+  ]
+}

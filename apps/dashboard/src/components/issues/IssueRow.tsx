@@ -4,7 +4,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import Link from "next/link";
 
-import { issueUpdateInProgress, type SystemIssue } from "@/lib/api/issues";
+import { isMonitoringConnectionIssue, issueUpdateInProgress, type SystemIssue } from "@/lib/api/issues";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import {
@@ -68,6 +68,17 @@ export function IssueRow({
   const fix = issue.resolveWith[0];
   const updating = issue.kind === "update_available" && (busy || issueUpdateInProgress(issue));
   const resolving = busy || updating;
+  const connectionIssue = !issue.resolvedAt && isMonitoringConnectionIssue(issue);
+  const affectedServers = Array.isArray(issue.details?.affectedServers)
+    ? issue.details.affectedServers.filter((server): server is { name: string; reason?: string } =>
+      !!server && typeof server === "object" && typeof server.name === "string")
+    : [];
+  const message = connectionIssue
+    ? issue.kind === "monitoring_offline" ? c.connectivity.monitoringHint : c.connectivity.unknownHealth
+    : issue.message;
+  const connectionDetail = issue.kind === "monitoring_offline"
+    ? affectedServers.map((server) => `${server.name}: ${server.reason ?? ""}`).join("\n")
+    : issue.message;
 
   // `expiresAt` counts DOWN (a held deploy aborts if unanswered), so `timeAgo` —
   // which reads a past instant — would render it as "just now". Minutes remaining,
@@ -113,7 +124,7 @@ export function IssueRow({
             command={SELF_UPDATE_COMMAND}
             className={cn("shrink-0", !compact && "h-8 max-w-full")}
           />
-        ) : issue.kind === "server_unreachable" && !issue.resolvedAt && onRecheck ? (
+        ) : connectionIssue && onRecheck ? (
           <button type="button" onClick={onRecheck} disabled={rechecking} title={c.rescan} className={cn(actionClass, "disabled:opacity-60")}>
             <UiIcon name={rechecking ? "spinner" : "refresh"} className={cn("size-3", rechecking && "animate-spin")} />
             {rechecking ? c.rescanning : c.connectivity.recheck}
@@ -159,20 +170,26 @@ export function IssueRow({
         )
       }
     >
-      {issue.message && (
+      {message && (
         <p
           className={`line-clamp-2 ${compact ? "text-[12px] leading-snug" : "text-[13px] leading-relaxed"} ${
             issue.severity === "advisory" ? "text-muted-foreground" : TEXT_TONE[tone]
           }`}
-          title={issue.message}
+          title={message}
         >
-          {issue.message}
+          {message}
+        </p>
+      )}
+      {connectionIssue && affectedServers.length > 0 && (
+        <p className={cn("truncate", metaClass)} title={affectedServers.map((server) => server.name).join(", ")}>
+          {affectedServers.map((server) => server.name).join(", ")}
         </p>
       )}
       {meta && <p className={cn("truncate", metaClass)}>{meta}</p>}
-      {issue.kind === "server_unreachable" && !issue.resolvedAt && (
-        <p className={metaClass}>{c.connectivity.unknownHealth}</p>
-      )}
+      {connectionIssue && connectionDetail && <details className={metaClass}>
+        <summary className="cursor-pointer">{c.connectivity.details}</summary>
+        <p className="mt-1 break-words whitespace-pre-wrap">{connectionDetail}</p>
+      </details>}
       {selfUpdate && <p className={metaClass}>{c.selfUpdateNote}</p>}
     </AlertRow>
   );

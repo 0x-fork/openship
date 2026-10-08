@@ -29,6 +29,11 @@
 
 import type { Context } from "hono";
 import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
+import {
+  TERMINAL_SUBPROTOCOL_PREFIX as SUBPROTOCOL_PREFIX,
+  TERMINAL_RESUME_SUBPROTOCOL_PREFIX as RESUME_SUBPROTOCOL_PREFIX,
+  TERMINAL_COLS_MAX as COLS_MAX, TERMINAL_ROWS_MAX as ROWS_MAX,
+} from "@repo/contracts";
 import { openServerShell } from "@repo/platform/engine/lib/server-execution";
 import { prepareCloudTerminal, cloudTerminalHandlers } from "../../lib/cloud/terminal-bridge";
 import { createProvisionLock } from "@repo/platform/engine/lib/provision-lock";
@@ -63,11 +68,10 @@ import {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const SUBPROTOCOL_PREFIX = "openship.terminal.v1+";
 const HEARTBEAT_INTERVAL_MS = 25_000;
 // Sane bounds applied client-side AND server-side - never trust the wire.
-const COLS_MIN = 1, COLS_MAX = 1000;
-const ROWS_MIN = 1, ROWS_MAX = 500;
+const COLS_MIN = 1;
+const ROWS_MIN = 1;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -107,7 +111,6 @@ type ErrorCode =
   | "resume_failed"
   | "server_error";
 
-const RESUME_SUBPROTOCOL_PREFIX = "openship.terminal.resume+";
 
 // ─── Ticket endpoint (POST /api/terminal/ticket) ────────────────────────────
 

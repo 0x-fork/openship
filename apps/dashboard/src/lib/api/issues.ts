@@ -1,6 +1,11 @@
 import { api, getActiveOrganizationId } from "./client";
 import { endpoints } from "./endpoints";
 
+/** Connection failures describe unavailable observations, not confirmed outages. */
+export function isMonitoringConnectionIssue(issue: Pick<SystemIssue, "kind">): boolean {
+  return issue.kind === "monitoring_offline" || issue.kind === "server_unreachable";
+}
+
 /**
  * The org-wide issue feed — the client half of `apps/api/src/modules/issues`.
  *

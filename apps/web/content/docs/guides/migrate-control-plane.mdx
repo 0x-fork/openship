@@ -130,6 +130,18 @@ selective project transfer. Current JSON exports include credentials in plaintex
 file. Older encrypted archives still require their original password. A file import does not
 retire another controller, so it is not a substitute for the live handoff above.
 
+The CLI uses the same archive endpoints:
+
+```bash
+openship system data-transfer export --out openship-export.osx
+openship system data-transfer import --file openship-export.osx --mode merge --yes
+```
+
+The export is written with private file permissions. `merge` retains destination records on
+conflict; `wipe` replaces the destination's data and requires signing in as the imported owner.
+Use these options for reviewed recovery or selective transfer. The earlier
+`openship system migration start` command remains disabled; it does not run the handoff above.
+
 See [Settings](/docs/dashboard/settings) for archive options and
 [server-to-server migration](/docs/guides/server-to-server-migration) to move an application's
 runtime and volumes instead of its control plane.

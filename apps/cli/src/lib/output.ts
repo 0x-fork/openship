@@ -21,6 +21,11 @@ export function printJson(obj: unknown): void {
   process.stdout.write(JSON.stringify(obj, null, 2) + "\n");
 }
 
+/** One record per line for streaming commands. */
+export function printJsonLine(obj: unknown): void {
+  process.stdout.write(JSON.stringify(obj) + "\n");
+}
+
 /**
  * Render rows as an aligned text table on stdout. In JSON mode, emits the rows
  * as JSON instead. Columns default to the union of keys across all rows.

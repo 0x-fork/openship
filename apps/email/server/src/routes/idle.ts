@@ -14,10 +14,10 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { getCookie } from 'hono/cookie';
-import { ImapFlow } from 'imapflow';
 import { env } from '../env';
 import { getSession } from '../lib/session';
 import { bridgeImapIdle } from '../lib/imap-idle';
+import { createImapClient } from '../lib/imap';
 
 export const idleRoute = new Hono();
 
@@ -30,12 +30,12 @@ idleRoute.get('/idle', async (c) => {
   const folder = c.req.query('folder') || 'INBOX';
 
   return streamSSE(c, async (stream) => {
-    const client = new ImapFlow({
+    const client = createImapClient({
       host: session.imapHost,
       port: session.imapPort,
-      secure: session.imapPort === 993,
-      auth: { user: session.email, pass: session.password },
-      logger: false,
+      user: session.email,
+      pass: session.password,
+    }, {
       disableAutoIdle: true,
       maxIdleTime: 25 * 60 * 1000,
     });

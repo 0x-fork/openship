@@ -24,9 +24,10 @@ function renderContexts(): void {
     name: c.name,
     apiUrl: c.apiUrl,
     dashboardUrl: c.dashboardUrl,
+    organization: c.organizationId ?? "",
     auth: c.hasToken ? "token" : "-",
   }));
-  printTable(rows, ["current", "name", "apiUrl", "dashboardUrl", "auth"]);
+  printTable(rows, ["current", "name", "apiUrl", "dashboardUrl", "organization", "auth"]);
 }
 
 const listCmd = new Command("list")
@@ -53,12 +54,14 @@ const addCmd = new Command("add")
   .option("--api-url <url>", "API base URL")
   .option("--dashboard-url <url>", "Dashboard base URL")
   .option("--token <token>", "Personal Access Token to store")
+  .option("--organization <id>", "Pin this context to a Cloud or self-hosted organization")
   .option("--use", "Switch to this context after adding")
   .action((name: string, opts) => {
     addContext(name, {
       apiUrl: opts.apiUrl,
       dashboardUrl: opts.dashboardUrl,
       token: opts.token,
+      organizationId: opts.organization,
     });
     if (opts.use) setActiveContext(name);
     reportResult({ context: name, saved: true, active: listContexts().find(context => context.name === name)?.current ?? false }, `Saved context "${name}"${opts.use ? " (now active)" : ""}.`);

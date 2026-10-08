@@ -150,24 +150,40 @@ export interface SignInInput {
 }
 
 async function signInEmail(input: SignInInput): Promise<{ error: { message: string } | null }> {
-  const res = await fetch(`${BASE}/auth/sign-in`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
+  const connectionError = { error: { message: 'Cannot reach webmail. Check your connection and try again.' } };
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/sign-in`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    return connectionError;
+  }
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({ error: 'Sign in failed' }))) as {
-      error?: string;
-    };
-    return { error: { message: body.error ?? 'Sign in failed' } };
+    const body = await res.json().catch(() => null) as { error?: unknown } | null;
+    const fallback = res.status >= 500
+      ? 'Webmail is temporarily unavailable. Try again shortly.'
+      : 'Sign in failed. Please try again.';
+    return { error: { message: typeof body?.error === 'string' && body.error ? body.error : fallback } };
   }
   // Don't purge IDB here. The server now supports multi-account: the
   // existing user(s) keep their session, and the freshly-signed-in user
   // gets their own IDB slot (the persist key is namespaced by session
   // id via the companion cookie). The caller is responsible for the
   // hard navigate that re-mounts root.tsx with the new connection id.
-  cache = await fetchSession();
+  let signedInSession: Session | null;
+  try {
+    signedInSession = await fetchSession();
+  } catch {
+    return connectionError;
+  }
+  if (!signedInSession || signedInSession.user.email.toLowerCase() !== input.email.toLowerCase()) {
+    return { error: { message: 'Could not confirm your sign-in. Please try again.' } };
+  }
+  cache = signedInSession;
   notify();
   return { error: null };
 }

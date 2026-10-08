@@ -24,6 +24,16 @@ openship job|jobs [options] [command]
 | [`run [options] <key>`](/docs/cli/reference/job#openship-job-run) | Run a job now; custom jobs return a run ID |
 | [`runs [options] <key>`](/docs/cli/reference/job#openship-job-runs) | List a job's run history |
 | [`logs [options] <runId>`](/docs/cli/reference/job#openship-job-logs) | Show stored run output, or the full run in JSON mode |
+| [`events`](/docs/cli/reference/job#openship-job-events) | List event types available as job triggers |
+| [`backup-schedules`](/docs/cli/reference/job#openship-job-backup-schedules) | List scheduled backups with their next and last runs |
+
+## openship job backup-schedules
+
+List scheduled backups with their next and last runs
+
+```text
+openship job backup-schedules [options]
+```
 
 ## openship job create
 
@@ -54,6 +64,14 @@ openship job delete|rm [options] <key>
 | Option | Meaning |
 | --- | --- |
 | `-y, --yes` | Confirm deletion |
+
+## openship job events
+
+List event types available as job triggers
+
+```text
+openship job events [options]
+```
 
 ## openship job get
 

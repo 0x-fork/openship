@@ -283,7 +283,7 @@ The current API has **444 unique tools**. Permission tags below describe the rou
 | `post_mail_admin_by_serverId_test_email`<br />`POST /api/mail/admin/:serverId/test-email` | Send a mail-delivery test to body.to, optionally from body.fromDomain. This sends a real email; use the recipient requested by the user. | `mail_server:write`<br />Self-hosted |
 | `post_mail_adopt`<br />`POST /api/mail/adopt` | Register an existing Openship mail installation found by scan. Restores control-plane ownership without reinstalling the stack. | `mail_server:write`<br />Self-hosted |
 | `post_mail_scan`<br />`POST /api/mail/scan` | Inspect an existing mail installation on body.serverId without reinstalling it. Returns adoptable state; use adopt to register an existing stack. | `mail_server:write`<br />Self-hosted |
-| `post_mail_webmail_deploy_project`<br />`POST /api/mail/webmail/deploy-project` | Deploy webmail for an existing mail server to a permitted target. Returns projectId and deploymentId for normal deployment monitoring. replaceLegacy=true explicitly replaces an older unmanaged webmail installation. | `mail_server:write`<br />Self-hosted |
+| `post_mail_webmail_deploy_project`<br />`POST /api/mail/webmail/deploy-project` | Deploy webmail for an existing mail server to a permitted target. Both self and cloud targets need target.serverId; use the local ID of a connected managed server for Cloud. Returns projectId and deploymentId for normal deployment monitoring. replaceLegacy=true explicitly replaces an older unmanaged webmail installation. | `mail_server:write`<br />Self-hosted |
 
 ### migration
 
@@ -752,6 +752,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `PUT /api/settings` | Compatibility settings update; use the dedicated build-mode tool for this preference. |
 | `PATCH /api/settings/clone-credentials` | User-global Git clone credentials are configured in the authenticated dashboard; MCP deploys using those saved credentials. |
 | `POST /api/system/bootstrap-admin` | CLI first-admin creation — internal-token gated, one-shot before any admin exists (openship setup) |
+| `POST /api/system/cli-session` | CLI on the installation host — requires the private internal token, refuses Cloud and browser callers, and creates a temporary session for the existing instance administrator |
 | `POST /api/system/cloud-connect` | CLI setup — finalize Openship Cloud PKCE handshake for a free domain; internal-token gated |
 | `GET /api/system/cloud-status` | CLI setup — read Openship Cloud connection state; internal-token gated |
 | `GET /api/system/clusters` | Compatibility private-network API. Use /api/system/networks; compute clusters live at /api/system/compute-clusters. |
@@ -817,11 +818,11 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/system/instance/resume` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
 | `POST /api/system/instance/return` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
 | `POST /api/system/invite-signup` | Self-host invited signup — authorized by the unguessable invitation id (token) in the emailed link, NOT a session; creates the account for the invitation's own email. |
-| `POST /api/system/migration/preflight` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/start` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/start-cloud` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/start-tunnel` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/switch-back` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/preflight` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start-cloud` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start-tunnel` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/switch-back` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
 | `GET /api/system/monitor/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/system/networks/operations/:operationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/system/networks/preparations/:preparationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |

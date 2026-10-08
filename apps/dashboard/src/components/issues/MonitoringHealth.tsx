@@ -404,7 +404,7 @@ function hasPartialCoverage(scan: CurrentHealthScanResult): boolean {
 function coverageText(scan: CurrentHealthScanResult): string {
   const parts: string[] = [];
   const { unreachable, unresolved, skipped, errors, indeterminate, offline = 0 } = scan.summary;
-  if (offline) parts.push("This desktop is offline; remote server health is unknown");
+  if (offline) parts.push("A network connection is unavailable; affected server health is unknown");
   if (unreachable) parts.push(`${unreachable} ${unreachable === 1 ? "host was" : "hosts were"} unreachable`);
   if (unresolved) parts.push(`${unresolved} ${unresolved === 1 ? "project has" : "projects have"} an unresolved target`);
   if (indeterminate) parts.push(`${indeterminate} ${indeterminate === 1 ? "workload is" : "workloads are"} unknown`);
