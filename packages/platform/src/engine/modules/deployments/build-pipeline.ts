@@ -2228,6 +2228,12 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     certificateManagement: ssl.certificateManagement,
     usesManagedRouting,
     isStatic: isStaticFileServe,
+    staticContainerPort:
+      phase.effectiveTarget === "cloud" &&
+      runtime.name === "docker" &&
+      snapshotToClass(snapshot).workload === "static"
+        ? deployConfig.port
+        : undefined,
   });
   // Domains to prune after a successful deploy: project-level rows that
   // no longer back a current public endpoint AND aren't among the routes

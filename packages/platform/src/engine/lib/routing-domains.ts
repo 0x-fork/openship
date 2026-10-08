@@ -169,6 +169,7 @@ export function hostTerminatesTlsLocally(
 export function resolveRouteDestination(
   input: { targetPath?: string | null; targetPort?: number | null },
   isStatic?: boolean,
+  staticContainerPort?: number,
 ): { targetPort?: number; targetPath?: string } | undefined {
   // THE DEPLOYMENT'S SHAPE DECIDES, not the stored hint.
   //
@@ -200,6 +201,21 @@ export function resolveRouteDestination(
   // this hostname is not a destination — it is stale state, and ignoring it here
   // is what lets the reconcile clear it.
   if (input.targetPort != null) return { targetPort: input.targetPort };
+  // Managed Docker serves static output through nginx, not a host file root.
+  // Only an explicitly configured root endpoint may become that container's port.
+  if (staticContainerPort !== undefined && input.targetPath) {
+    if (input.targetPath !== "/")
+      throw new Error(
+        "Container-served static sites require a root (/) endpoint; use routing rules for subpaths",
+      );
+    if (
+      !Number.isInteger(staticContainerPort) ||
+      staticContainerPort < 1 ||
+      staticContainerPort > 65535
+    )
+      throw new Error("The static container has no valid serving port");
+    return { targetPort: staticContainerPort };
+  }
   return undefined;
 }
 
@@ -229,8 +245,18 @@ export function buildProjectRouteDomains(opts: {
    * files were built and the deploy reported ready.
    */
   isStatic?: boolean;
+  /** Serving port for a static workload hosted in a container, not a file root. */
+  staticContainerPort?: number;
 }): PlannedRouteDomain[] {
-  const { projectDomains, managedSlug, publicEndpoints, runtimeName, usesManagedRouting, isStatic } = opts;
+  const {
+    projectDomains,
+    managedSlug,
+    publicEndpoints,
+    runtimeName,
+    usesManagedRouting,
+    isStatic,
+    staticContainerPort,
+  } = opts;
   const baseDomain = getRoutingBaseDomain();
   const seen = new Set<string>();
   const planned: PlannedRouteDomain[] = [];
@@ -322,6 +348,7 @@ export function buildProjectRouteDomains(opts: {
       const destination = resolveRouteDestination(
         { targetPath: endpoint.targetPath, targetPort: endpoint.port },
         isStatic,
+        staticContainerPort,
       );
 
       if (!destination) {
@@ -384,6 +411,7 @@ export function buildProjectRouteDomains(opts: {
       destination: resolveRouteDestination(
         { targetPath: domain.targetPath, targetPort: domain.targetPort },
         isStatic,
+        staticContainerPort,
       ),
       isPrimary: domain.isPrimary,
       verified: domain.verified,

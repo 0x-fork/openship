@@ -165,6 +165,50 @@ const customSvc = {
 } as any;
 
 describe("buildProjectRouteDomains", () => {
+  it.each([true, false])(
+    "routes container-served static roots during deploy and retry (endpoints=%s)",
+    (withEndpoints) => {
+      const planned = buildProjectRouteDomains({
+        project: { slug: "static-site" } as any,
+        projectDomains: [
+          {
+            hostname: "static-site.opsh.io",
+            targetPath: "/",
+            targetPort: null,
+            domainType: "free",
+            verified: true,
+            isPrimary: true,
+          } as any,
+        ],
+        managedSlug: "static-site",
+        ...(withEndpoints
+          ? {
+              publicEndpoints: [
+                { domain: "static-site", domainType: "free" as const, targetPath: "/" },
+              ],
+            }
+          : {}),
+        runtimeName: "docker",
+        certificateManagement: "provider",
+        usesManagedRouting: true,
+        isStatic: false,
+        staticContainerPort: 3000,
+      });
+      expect(planned).toHaveLength(1);
+      expect(planned[0]).toMatchObject({ hostname: "static-site.opsh.io", targetPort: 3000 });
+      expect(planned[0].targetPath).toBeUndefined();
+    },
+  );
+
+  it("does not turn stale paths on ordinary web apps into public ports", () => {
+    expect(resolveRouteDestination({ targetPath: "/", targetPort: null }, false)).toBeUndefined();
+    expect(resolveRouteDestination({ targetPath: "/docs" }, true, 3000)).toEqual({
+      targetPath: "/docs",
+    });
+    expect(() => resolveRouteDestination({ targetPath: "/docs" }, false, 3000)).toThrow("root (/)");
+    expect(resolveRouteDestination({}, false, 3000)).toBeUndefined();
+  });
+
   it("uses public endpoints as the only app routing source when they are provided", () => {
     const planned = buildProjectRouteDomains({
       project: { slug: "my-app" } as any,
