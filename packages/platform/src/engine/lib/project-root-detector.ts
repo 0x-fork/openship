@@ -497,6 +497,16 @@ function canPromoteNestedApp(root: ProjectRootSnapshot): boolean {
   );
 }
 
+function hasRootServer(root: ProjectRootSnapshot): boolean {
+  if (root.stack.category !== "backend" || !isSetCmd(root.stack.startCommand)) return false;
+  // Generic Node detection supplies a fallback command even for tooling-only
+  // package.json files. Require a declared start script before protecting it.
+  if (root.stack.stack !== "node") return true;
+  const pkg = resolvePackageJson(root.packageJson, root.fileContents);
+  const scripts = pkg?.scripts as Record<string, string> | undefined;
+  return isSetCmd(scripts?.start);
+}
+
 function isNestedProjectCandidate(candidate: ProjectRootSnapshot): boolean {
   if (!candidate.rootDirectory || candidate.stack.stack === "unknown") {
     return false;
@@ -660,6 +670,17 @@ function selectPreferredCandidate(
   for (const candidateInput of candidateInputs) {
     const candidate = buildProjectRootSnapshot(candidateInput);
     if (!options.isEligible(candidate)) {
+      continue;
+    }
+
+    // A backend's asset directory is not a replacement application. Preserve
+    // explicit deployment/workspace hints and independently configured apps.
+    if (
+      hasRootServer(root) &&
+      candidate.stack.category === "static" &&
+      candidate.source === "discovered" &&
+      !isIndependentlyDeployable(candidate)
+    ) {
       continue;
     }
 
