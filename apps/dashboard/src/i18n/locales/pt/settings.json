@@ -549,7 +549,11 @@
       "connecting": "Conectando…",
       "useCode": "Usar um código de conexão",
       "useAddress": "Usar a URL de uma instância",
-      "invalidAddress": "Digite uma URL HTTPS de instância ou convite, sem credenciais nem parâmetros adicionais."
+      "invalidAddress": "Digite uma URL HTTPS de instância ou convite, sem credenciais nem parâmetros adicionais.",
+      "invitationTitle": "Abrir este convite",
+      "invitationDescription": "Conecte-se a {instance} e confira o espaço de trabalho e a função antes de entrar.",
+      "reviewInvitation": "Conferir convite",
+      "invitationHint": "Sua instância local fica pausada durante a conexão. Nenhum dado é movido."
     }
   },
   "upgradeAuth": {

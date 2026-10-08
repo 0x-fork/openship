@@ -13,12 +13,20 @@ import { parseInstanceAddress } from "@/lib/instance-address";
 
 /** A Desktop connection uses the remote instance's normal authentication.
  * Keep it separate from the data-transfer dialog and its replacement consent. */
-export function InstanceConnectDialog({ onClose }: { onClose: () => void }) {
+export function InstanceConnectDialog({
+  onClose,
+  initialAddress = "",
+  onConnected,
+}: {
+  onClose: () => void;
+  initialAddress?: string;
+  onConnected?: () => void | Promise<void>;
+}) {
   const { t } = useI18n();
   const copy = t.settings.instance.connection;
   const fieldId = useId();
   const [method, setMethod] = useState<"address" | "code">("address");
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(initialAddress);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -28,6 +36,13 @@ export function InstanceConnectDialog({ onClose }: { onClose: () => void }) {
   };
   const { dialog, onKeyDown } = useDialogFocus(close);
   const byAddress = method === "address";
+  let invitationOrigin: string | null = null;
+  if (byAddress) {
+    try {
+      const target = parseInstanceAddress(address);
+      if (target?.nextPath.startsWith("/accept-invite/")) invitationOrigin = target.origin;
+    } catch { /* The form shows an invalid address only after submission. */ }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -49,11 +64,13 @@ export function InstanceConnectDialog({ onClose }: { onClose: () => void }) {
     try {
       if (next) {
         await instanceApi.connectAddress(next.origin);
+        await onConnected?.();
         // A full navigation discards the previous instance's in-memory caches.
         // The parser permits only login or the local invitation claim screen.
         window.location.assign(next.nextPath);
       } else {
         await instanceApi.connect(code.trim());
+        await onConnected?.();
         window.location.assign("/");
       }
     } catch (err) {
@@ -98,10 +115,12 @@ export function InstanceConnectDialog({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
         <h2 id={`${fieldId}-title`} className="mt-4 text-lg font-semibold">
-          {byAddress ? copy.title : copy.codeTitle}
+          {invitationOrigin ? copy.invitationTitle : byAddress ? copy.title : copy.codeTitle}
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-          {byAddress
+          {invitationOrigin
+            ? interpolate(copy.invitationDescription, { instance: invitationOrigin })
+            : byAddress
             ? copy.description
             : interpolate(copy.codeDescription, {
                 action: t.settings.instance.location.pairDesktop,
@@ -157,7 +176,7 @@ export function InstanceConnectDialog({ onClose }: { onClose: () => void }) {
               />
             )}
             <p id={`${fieldId}-hint`} className="text-xs leading-relaxed text-muted-foreground">
-              {byAddress ? copy.addressHint : copy.codeHint}
+              {invitationOrigin ? copy.invitationHint : byAddress ? copy.addressHint : copy.codeHint}
             </p>
           </div>
           {error && (
@@ -174,9 +193,9 @@ export function InstanceConnectDialog({ onClose }: { onClose: () => void }) {
               name={busy ? "spinner" : "arrow-right"}
               className={busy ? "animate-spin" : "rtl:rotate-180"}
             />
-            {busy ? copy.connecting : byAddress ? copy.continue : copy.connectCode}
+            {busy ? copy.connecting : invitationOrigin ? copy.reviewInvitation : byAddress ? copy.continue : copy.connectCode}
           </Button>
-          <Button
+          {!invitationOrigin && <Button
             className="h-auto w-full whitespace-normal py-2 text-xs text-muted-foreground"
             type="button"
             variant="ghost"
@@ -187,7 +206,7 @@ export function InstanceConnectDialog({ onClose }: { onClose: () => void }) {
             }}
           >
             {byAddress ? copy.useCode : copy.useAddress}
-          </Button>
+          </Button>}
         </form>
       </div>
     </Modal>

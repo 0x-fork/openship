@@ -83,6 +83,7 @@ export * from "./host-channel";
 export * from "./network";
 export * from "./sse-terminal";
 export * from "./data-transfer";
+export * from "./instance-address";
 export * from "./analytics-domain";
 export * from "./deployment-events";
 export * from "./operation-limits";

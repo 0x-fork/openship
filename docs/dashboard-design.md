@@ -52,6 +52,14 @@ controls. Email uses the instance's configured delivery capability; link deliver
 mail service. Show the link immediately after creation and keep copy/revoke in the pending
 list. Shared links use the active instance's public address, including from Desktop.
 Recipients sign in or create their own invited account, then enter the accepted organization.
+Self-hosted invitation pages offer **Open in Desktop** and a copyable invitation URL. The
+app opens its existing connection dialog with that address; it never switches instances or
+accepts membership on link launch. Show the instance before connecting, then the inviter,
+workspace and offered role on the normal invitation screen. Opening a second invitation on
+the same instance preserves the current sign-in. Keep a manual URL fallback visible if the
+OS handler or clipboard is unavailable, and offer account switching for a mismatched email.
+Desktop queues a later link while a confirmation is open. Its trusted local UI remains loaded;
+an external instance never receives Electron's native bridge.
 The location card leads with the current computer or server and one contextual action:
 move from Desktop, connect a Desktop to an active server, or receive an instance on a retired
 server. Put secondary connection and transfer tools in the shared More options menu. Use

@@ -549,7 +549,11 @@
       "connecting": "Verbindung wird hergestellt…",
       "useCode": "Stattdessen Verbindungscode verwenden",
       "useAddress": "Instanz-URL verwenden",
-      "invalidAddress": "Gib eine HTTPS-Instanz-URL oder einen Einladungslink ohne Zugangsdaten oder zusätzliche Parameter ein."
+      "invalidAddress": "Gib eine HTTPS-Instanz-URL oder einen Einladungslink ohne Zugangsdaten oder zusätzliche Parameter ein.",
+      "invitationTitle": "Diese Einladung öffnen",
+      "invitationDescription": "Verbinde dich mit {instance} und prüfe vor dem Beitritt Arbeitsbereich und Rolle.",
+      "reviewInvitation": "Einladung prüfen",
+      "invitationHint": "Deine lokale Instanz pausiert während der Verbindung. Es werden keine Daten verschoben."
     }
   },
   "upgradeAuth": {

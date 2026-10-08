@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { INVITATION_DELIVERY_HEADER, INVITATION_DELIVERY_LINK_ONLY } from "@repo/core";
+import { INVITATION_DELIVERY_HEADER, INVITATION_DELIVERY_LINK_ONLY, parseDesktopInstanceLink } from "@repo/core";
 import { freePort, startApi, stopApi, jsonRequest, type RunningApi } from "./fixtures/instance-api";
 
 /** Isolated real API processes and disposable databases; no Docker, SSH,
@@ -56,6 +56,9 @@ it("joins a remote team through Desktop with the recipient's own account and per
     });
     const owner = await jsonRequest<Session>(desktop.baseUrl, "/api/auth/get-session");
     expect(owner.user.email).toBe("owner@example.test");
+    // Opening another invitation on the same instance must not log the user out.
+    await post(desktop, "/api/system/instance/connect-address", { origin: remote.baseUrl, confirmed: true });
+    expect((await jsonRequest<Session>(desktop.baseUrl, "/api/auth/get-session")).user.id).toBe(owner.user.id);
     const team = await post<{ data: { id: string } }>(desktop, "/api/permissions/create-team-org", {
       name: "Remote team",
     });
@@ -71,6 +74,14 @@ it("joins a remote team through Desktop with the recipient's own account and per
       { [INVITATION_DELIVERY_HEADER]: INVITATION_DELIVERY_LINK_ONLY },
     );
     expect(invite.data.email).toBe("member@example.test");
+    const landing = await fetch(`${remote.baseUrl}/accept-invite/${invite.data.id}`);
+    expect(landing.headers.get("referrer-policy")).toBe("no-referrer");
+    const html = await landing.text();
+    const desktopLink = html.match(/href="(openship:[^"]+)"/)?.[1];
+    expect(desktopLink).toBeDefined();
+    expect(parseDesktopInstanceLink(desktopLink!)).toBe(`${remote.baseUrl}/accept-invite/${invite.data.id}`);
+    expect(html).toContain("Connect to an existing instance");
+    expect(html).not.toContain("member@example.test");
     const wrongAccount = await fetch(`${desktop.baseUrl}/api/auth/organization/accept-invitation`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -90,6 +101,7 @@ it("joins a remote team through Desktop with the recipient's own account and per
     expect(preview.data).toMatchObject({
       accountCreation: "invited",
       organization: { name: "Remote team" },
+      inviter: { name: "Instance owner" },
       invitation: { email: "member@example.test" },
     });
     await post(desktop, "/api/system/invite-signup", {

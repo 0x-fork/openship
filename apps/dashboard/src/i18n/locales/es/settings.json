@@ -549,7 +549,11 @@
       "connecting": "Conectando…",
       "useCode": "Usar un código de conexión",
       "useAddress": "Usar la URL de una instancia",
-      "invalidAddress": "Introduce una URL HTTPS de instancia o invitación, sin credenciales ni parámetros adicionales."
+      "invalidAddress": "Introduce una URL HTTPS de instancia o invitación, sin credenciales ni parámetros adicionales.",
+      "invitationTitle": "Abrir esta invitación",
+      "invitationDescription": "Conéctate a {instance} y revisa el espacio de trabajo y el rol antes de unirte.",
+      "reviewInvitation": "Revisar invitación",
+      "invitationHint": "Tu instancia local se pausa mientras estás conectado. No se mueve ningún dato."
     }
   },
   "upgradeAuth": {

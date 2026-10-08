@@ -24,6 +24,7 @@ export interface InvitationPreviewResponse {
       id: string;
       name: string;
     };
+    inviter?: { name: string | null };
     accountCreation: InvitationAccountCreation;
   };
 }

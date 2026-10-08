@@ -86,6 +86,7 @@ export async function invitationPreview(c: Context) {
         expiresAt: claim.expiresAt.toISOString(),
       },
       organization: claim.organization,
+      inviter: { name: claim.inviterName },
       accountCreation,
     },
   });

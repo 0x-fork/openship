@@ -124,10 +124,13 @@ export async function connectInstanceAddress(value: string): Promise<void> {
   if (env.DEPLOY_MODE !== "desktop")
     throw new AppError("Open Openship Desktop to connect to another instance.", 409);
   const { origin, installationId } = await discoverInstance(value);
-  await attachConnection({ origin, installationId, cookies: {} });
+  await attachConnection({ origin, installationId, cookies: {} }, true);
 }
 
-async function attachConnection(connection: InstanceConnection): Promise<void> {
+async function attachConnection(
+  connection: InstanceConnection,
+  keepExistingSession = false,
+): Promise<void> {
   await withAdvisoryLock("instance-handoff", async () => {
     const state = await controllerState();
     if (!["active", "connected", "retired"].includes(state.role))
@@ -147,6 +150,16 @@ async function attachConnection(connection: InstanceConnection): Promise<void> {
         "Reconnect to the instance this Desktop moved to before choosing another instance.",
         409,
       );
+    const current = controllerConnection(state);
+    // Another invitation on the same instance should reuse the person's
+    // authenticated session. Never carry cookies to a different origin or
+    // installation, even when the other half of its identity matches.
+    if (
+      keepExistingSession &&
+      ["connected", "retired"].includes(state.role) &&
+      current?.origin === connection.origin &&
+      current.installationId === connection.installationId
+    ) return;
     // A migrated source must never regain authority over its stale database by
     // pressing Disconnect. An unrelated paused local instance may be resumed.
     await setControllerRole(

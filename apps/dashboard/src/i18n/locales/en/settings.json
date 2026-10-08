@@ -721,7 +721,11 @@
       "connecting": "Connecting…",
       "useCode": "Use a connection code instead",
       "useAddress": "Use an instance URL",
-      "invalidAddress": "Enter an HTTPS instance URL or invitation link, without credentials or extra parameters."
+      "invalidAddress": "Enter an HTTPS instance URL or invitation link, without credentials or extra parameters.",
+      "invitationTitle": "Open this invitation",
+      "invitationDescription": "Connect to {instance}, then review the workspace and role before joining.",
+      "reviewInvitation": "Review invitation",
+      "invitationHint": "Your local instance pauses while connected. Nothing is moved."
     }
   },
   "upgradeAuth": {

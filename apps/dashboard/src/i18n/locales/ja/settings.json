@@ -549,7 +549,11 @@
       "connecting": "接続中…",
       "useCode": "代わりに接続コードを使用",
       "useAddress": "インスタンスURLを使用",
-      "invalidAddress": "認証情報や追加パラメーターを含まない、HTTPSのインスタンスURLまたは招待リンクを入力してください。"
+      "invalidAddress": "認証情報や追加パラメーターを含まない、HTTPSのインスタンスURLまたは招待リンクを入力してください。",
+      "invitationTitle": "この招待を開く",
+      "invitationDescription": "{instance} に接続し、参加する前にワークスペースとロールを確認します。",
+      "reviewInvitation": "招待を確認",
+      "invitationHint": "接続中はローカルインスタンスが一時停止します。データは移動しません。"
     }
   },
   "upgradeAuth": {

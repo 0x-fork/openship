@@ -624,7 +624,11 @@
       "connecting": "Bağlanıyor…",
       "useCode": "Bunun yerine bağlantı kodu kullan",
       "useAddress": "Örnek URL’si kullan",
-      "invalidAddress": "Kimlik bilgisi veya ek parametre içermeyen bir HTTPS örnek URL’si ya da davet bağlantısı gir."
+      "invalidAddress": "Kimlik bilgisi veya ek parametre içermeyen bir HTTPS örnek URL’si ya da davet bağlantısı gir.",
+      "invitationTitle": "Bu daveti aç",
+      "invitationDescription": "{instance} bağlantısını kurun, ardından katılmadan önce çalışma alanını ve rolü inceleyin.",
+      "reviewInvitation": "Daveti incele",
+      "invitationHint": "Bağlantı sırasında yerel örneğiniz duraklatılır. Hiçbir veri taşınmaz."
     }
   },
   "upgradeAuth": {

@@ -549,7 +549,11 @@
       "connecting": "正在连接…",
       "useCode": "改用连接码",
       "useAddress": "使用实例 URL",
-      "invalidAddress": "请输入 HTTPS 实例地址或邀请链接，不要包含凭据或额外参数。"
+      "invalidAddress": "请输入 HTTPS 实例地址或邀请链接，不要包含凭据或额外参数。",
+      "invitationTitle": "打开此邀请",
+      "invitationDescription": "连接到 {instance}，然后在加入前查看工作区和角色。",
+      "reviewInvitation": "查看邀请",
+      "invitationHint": "连接期间，本地实例将暂停。不会移动任何数据。"
     }
   },
   "upgradeAuth": {

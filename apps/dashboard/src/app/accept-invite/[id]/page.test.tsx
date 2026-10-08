@@ -8,14 +8,15 @@ import { getActiveOrganizationId, setActiveOrganizationId } from "@/lib/api/clie
 
 const h = vi.hoisted(() => ({
   id: "invite1", session: { user: { email: "member@example.test" } } as { user: { email: string } } | null,
-  get: vi.fn(), post: vi.fn(), accept: vi.fn(), push: vi.fn(),
+  get: vi.fn(), post: vi.fn(), accept: vi.fn(), push: vi.fn(), signOut: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: h.id }), useRouter: () => ({ push: h.push }) }));
 vi.mock("@/lib/api", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("@/lib/auth-client", () => ({
-  authClient: { organization: { acceptInvitation: h.accept, rejectInvitation: vi.fn() } },
+  authClient: { signOut: h.signOut, organization: { acceptInvitation: h.accept, rejectInvitation: vi.fn() } },
   useSession: () => ({ data: h.session, isPending: false }),
 }));
+vi.mock("@/hooks/useDeploymentInfo", () => ({ useDeploymentInfo: () => null }));
 vi.mock("@/components/i18n-provider", () => ({
   useI18n: () => ({ t: baseDictionary }),
   interpolate: (text: string, values: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? key),
@@ -24,6 +25,7 @@ const m = baseDictionary.misc.acceptInvite;
 const preview = () => ({ data: {
   invitation: { email: "member@example.test", role: "member", status: "pending" },
   organization: { id: "org1", name: "Team" }, accountCreation: "invited",
+  inviter: { name: "Alex" },
 } });
 const accepted = { data: { invitation: { organizationId: "org1" } } };
 function deferred<T>() {
@@ -43,6 +45,7 @@ beforeEach(() => {
   h.post.mockReset().mockResolvedValue({});
   h.accept.mockReset().mockResolvedValue(accepted);
   h.push.mockReset();
+  h.signOut.mockReset().mockResolvedValue({});
   setActiveOrganizationId("previous-org");
   container = document.createElement("div");
   document.body.append(container);
@@ -151,4 +154,25 @@ it("keeps the current organization after a failed claim", async () => {
   await render(); await accept();
   expect(getActiveOrganizationId()).toBe("previous-org");
   expect(h.push).not.toHaveBeenCalled();
+});
+
+it("shows the inviter, workspace and role before accepting", async () => {
+  await render();
+  expect(container.textContent).toContain("Alex");
+  expect(container.textContent).toContain("Team");
+  expect(container.textContent).toContain("member");
+  expect(h.accept).not.toHaveBeenCalled();
+});
+
+it("keeps the invitation when switching from the wrong signed-in account", async () => {
+  h.session = { user: { email: "someone-else@example.test" } };
+  const navigate = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  try {
+    await render();
+    expect(h.accept).not.toHaveBeenCalled();
+    const button = [...container.querySelectorAll("button")].find(item => item.textContent === m.switchAccount)!;
+    await act(async () => button.click());
+    expect(h.signOut).toHaveBeenCalledOnce();
+    expect(navigate).toHaveBeenCalledWith("/login?returnTo=%2Faccept-invite%2Finvite1");
+  } finally { navigate.mockRestore(); }
 });

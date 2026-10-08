@@ -573,7 +573,11 @@
       "connecting": "Connexion…",
       "useCode": "Utiliser plutôt un code de connexion",
       "useAddress": "Utiliser l’URL d’une instance",
-      "invalidAddress": "Saisissez une URL HTTPS d’instance ou d’invitation, sans identifiants ni paramètres supplémentaires."
+      "invalidAddress": "Saisissez une URL HTTPS d’instance ou d’invitation, sans identifiants ni paramètres supplémentaires.",
+      "invitationTitle": "Ouvrir cette invitation",
+      "invitationDescription": "Connectez-vous à {instance}, puis vérifiez l’espace de travail et le rôle avant de rejoindre.",
+      "reviewInvitation": "Vérifier l’invitation",
+      "invitationHint": "Votre instance locale est en pause pendant la connexion. Aucune donnée n’est déplacée."
     }
   },
   "upgradeAuth": {

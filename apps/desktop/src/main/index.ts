@@ -22,6 +22,7 @@ import { hostname } from "node:os";
 import {
   CLOUD_API_URL as DEFAULT_CLOUD_API_URL,
   CLOUD_DASHBOARD_URL as DEFAULT_CLOUD_DASHBOARD_URL,
+  DESKTOP_INSTANCE_SCHEME,
 } from "@repo/core";
 import {
   type SystemSettings,
@@ -46,10 +47,12 @@ import { buildAppMenu } from "./menu";
 import { buildLoadingScreen, type LoadingStage } from "./loading-screen";
 import {
   classifyFrameNavigation,
+  isAllowedFrameUrl,
   isRendererConfigKey,
   isSafeExternalUrl,
   type RendererConfigKey,
 } from "./security";
+import { InstanceLinkInbox, registerInstanceLinks } from "./instance-links";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -220,6 +223,32 @@ async function waitForApi(apiUrl: string, maxAttempts = 30, intervalMs = 1000): 
 // ─── Window management ───────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow | null = null;
+let servicesReady = false;
+const instanceLinks = new InstanceLinkInbox();
+
+function focusMainWindow() {
+  if (!mainWindow && servicesReady) {
+    createWindow();
+    routeInitialView();
+  }
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function notifyInstanceLink() {
+  // The renderer only receives a notification. It reads the validated address
+  // through the main-frame-only channel below and asks before connecting.
+  mainWindow?.webContents.send("instance:link");
+}
+
+const ownsInstance = registerInstanceLinks(app, (value) => {
+  if (instanceLinks.receive(value)) {
+    focusMainWindow();
+    notifyInstanceLink();
+  }
+}, focusMainWindow, process.argv);
 
 /** The update found by the launch check, pending user action in the update window. */
 let pendingUpdate: UpdateInfo | null = null;
@@ -451,6 +480,10 @@ function loadDashboard() {
 // ─── App lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  if (!ownsInstance) return;
+  // Packaged macOS also declares the scheme in Info.plist. Do not register a
+  // development executable over the user's installed Desktop application.
+  if (app.isPackaged) app.setAsDefaultProtocolClient(DESKTOP_INSTANCE_SCHEME);
   createWindow(); // shows the loading splash immediately
 
   // Native menu: Reload / Developer Tools / Help. Registered on every platform —
@@ -474,6 +507,7 @@ app.whenReady().then(async () => {
       return;
     }
   }
+  servicesReady = true;
   routeInitialView();
 
   // Background: ask GitHub if there's a newer release; if so, act per the user's
@@ -533,6 +567,23 @@ app.on("window-all-closed", () => {
 // Tear down the bundled services when the app actually quits.
 app.on("before-quit", () => {
   stopLocalServices();
+});
+
+// ─── IPC: Desktop invitations ─────────────────────────────────────────────────
+
+function isInstanceLinkReader(event: Electron.IpcMainInvokeEvent): boolean {
+  return !!mainWindow && event.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame &&
+    isAllowedFrameUrl(event.senderFrame.url, [getLocalDashboardUrl()]);
+}
+
+ipcMain.handle("instance:pending-link", (event) =>
+  isInstanceLinkReader(event) ? instanceLinks.pending() : null,
+);
+ipcMain.handle("instance:acknowledge-link", (event, id: unknown) => {
+  if (!isInstanceLinkReader(event) || !instanceLinks.acknowledge(id)) return false;
+  notifyInstanceLink();
+  return true;
 });
 
 // ─── IPC: Updates ─────────────────────────────────────────────────────────────

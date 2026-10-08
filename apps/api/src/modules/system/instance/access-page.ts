@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { html } from "hono/html";
+import { desktopInstanceLink } from "@repo/core";
 import { secureRouter } from "../../../lib/secure-router";
 import { requestApiPublicUrl } from "@repo/platform/engine/lib/public-url";
 
@@ -20,6 +21,8 @@ for (const path of ["/", "/login", "/accept-invite/:id"]) {
     if (id && !/^[A-Za-z0-9_-]{1,200}$/.test(id)) return c.notFound();
     const origin = requestApiPublicUrl(c.req.raw);
     const address = id ? `${origin}/accept-invite/${encodeURIComponent(id)}` : origin;
+    let desktopLink: string | null = null;
+    try { desktopLink = desktopInstanceLink(address); } catch { /* Keep manual instructions for an unconfigured HTTPS URL. */ }
     c.header(
       "Content-Security-Policy",
       "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
@@ -96,6 +99,11 @@ for (const path of ["/", "/login", "/accept-invite/:id"]) {
                 text-decoration: none;
                 font-weight: 600;
               }
+              a.download {
+                background: transparent;
+                color: inherit;
+                padding: 0;
+              }
               input:focus-visible,
               a:focus-visible {
                 outline: 2px solid #999;
@@ -128,13 +136,17 @@ for (const path of ["/", "/login", "/accept-invite/:id"]) {
               <small>Openship</small>
               <h1>${id ? "Join your team in Desktop" : "Your instance is online"}</h1>
               <p>
-                This instance uses Openship Desktop. In
+                Open this instance in Desktop, then sign in${id ? " or create your invited account. Review the workspace and role before joining" : " with your account"}.
+              </p>
+              ${desktopLink ? html`<a href="${desktopLink}" rel="noreferrer">Open in Openship Desktop</a>` : ""}
+              <p>
+                Desktop didn't open? Copy the address below. In
                 <strong>Settings → Instance</strong>, open More instance options and choose
-                <strong>Connect to an existing instance</strong>. Paste this URL,
-                then sign in${id ? " or create your invited account to join the team" : ""}.
+                <strong>Connect to an existing instance</strong>, then paste it.
               </p>
               <label for="address">${id ? "Invitation address" : "Instance address"}</label
               ><input id="address" type="text" readonly value="${address}" /><a
+                class="download"
                 href="https://openship.io/download"
                 rel="noreferrer"
                 >Get Openship Desktop</a
