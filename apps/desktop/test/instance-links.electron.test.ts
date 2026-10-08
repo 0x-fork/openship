@@ -31,6 +31,9 @@ it("delivers cold and second-process invitations in real Electron without starti
     // This fixture opens no renderer, uses fresh userData and never registers
     // the OS scheme or starts the production API, workers or dashboard.
     const args = [
+      // Keep a switch before the entry on every OS: Electron retains switches
+      // in process.argv, so the second launch must not assume argv[1] is a file.
+      "--disable-gpu",
       ...(process.platform === "linux" ? ["--no-sandbox"] : []),
       entry,
       `--fixture-dir=${directory}`,

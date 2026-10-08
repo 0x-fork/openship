@@ -41,7 +41,8 @@ if (owner) {
         desktopInstanceLink("https://mac.example.test/accept-invite/inv_mac"),
       );
       assert.ok(prevented);
-      const entry = process.argv[1]!;
+      // The fixture is bundled as CommonJS; argv[1] may be an Electron switch.
+      const entry = __filename;
       const child = spawn(
         process.execPath,
         [
