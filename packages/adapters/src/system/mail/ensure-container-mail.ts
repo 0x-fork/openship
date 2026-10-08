@@ -895,7 +895,7 @@ export async function detectMailContainer(
   executor: CommandExecutor,
   container = MAIL_CONTAINER,
 ): Promise<{ running: boolean; image: string | null; exists: boolean }> {
-  const state = await containerState(executor, container);
+  const state = await containerState(executor, container, { strict: true });
   if (!state) return { running: false, image: null, exists: false };
   return { running: state.running, image: state.image, exists: true };
 }

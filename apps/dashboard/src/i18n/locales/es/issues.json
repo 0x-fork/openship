@@ -50,7 +50,7 @@
     "mail_down": "El motor de correo está detenido",
     "update_available": "Actualización disponible",
     "component_behind": "Actualización de componente disponible",
-    "monitoring_offline": "Escritorio sin conexión",
+    "monitoring_offline": "Conexión no disponible",
     "mail_certificate": "Certificado de correo"
   },
   "since": "Desde {when}",
@@ -85,7 +85,9 @@
     "updatesTitle": "Actualizaciones disponibles",
     "updatesSubtitle": "Nuevas versiones listas para aplicar",
     "more": "{n} más",
-    "hide": "Ocultar hasta que algo cambie"
+    "hide": "Ocultar hasta que algo cambie",
+    "connectionTitle": "Conexión interrumpida",
+    "connectionSubtitle": "Algunas comprobaciones de estado no están disponibles."
   },
   "loadFailed": "No se pudieron cargar los problemas",
   "toast": {
@@ -99,9 +101,15 @@
   },
   "connectivity": {
     "offlineTitle": "Este dispositivo está sin conexión",
-    "offlineHint": "La información de supervisión puede estar desactualizada. Vuelve a conectarte para actualizarla y comprobar los servidores.",
+    "offlineHint": "El estado mostrado puede estar desactualizado. Vuelve a conectarte para actualizarlo.",
     "retryStatus": "Reintentar estado",
     "recheck": "Comprobar de nuevo",
-    "unknownHealth": "El estado de los contenedores es desconocido hasta que Openship pueda acceder a este servidor."
+    "unknownHealth": "El estado de los contenedores es desconocido hasta que Openship pueda acceder a este servidor.",
+    "monitoringHint": "Openship no puede acceder a los servidores afectados. Se desconoce su estado actual.",
+    "details": "Detalles técnicos",
+    "mailTitle": "Estado del correo no disponible",
+    "mailHint": "Openship no pudo comprobar este servidor de correo. Puede que siga funcionando. Comprueba la conexión y vuelve a intentarlo.",
+    "apiTitle": "Conexión con Openship interrumpida",
+    "apiHint": "El estado mostrado puede estar desactualizado. Comprueba la conexión; tus aplicaciones pueden seguir funcionando."
   }
 }

@@ -123,6 +123,22 @@ A quick map so you don't have to guess:
 - **The deployment itself failed** (it never went live) → open that deployment from the **Deployments** tab and
   read its build log — that's a separate stream from the runtime logs above.
 
+## When monitoring cannot connect
+
+**Connection unavailable** means Openship could not observe the affected servers. Their current
+workload health is **unknown**. For example, `ENETUNREACH` means the machine running Openship has
+no usable network route to the target; it does not establish that the target's apps stopped.
+Monitoring combines these explicit network failures into one notice with the affected server names.
+Open **Technical details** for the original diagnostic.
+
+A timeout or refused connection to one server stays a separate **Server unreachable** notice.
+Previously confirmed workload failures remain visible through either kind of connection loss.
+After restoring connectivity, press **Recheck**, or let the next enabled monitoring check run.
+A successful observation clears the connection notice. Checking status does not restart services.
+
+If your browser loses its connection to Openship, a shared connection notice warns that displayed
+status may be out of date. This is separate from the connection between Openship and your servers.
+
 ## CLI
 
 Everything above is available from the CLI too. First grab your project's ID with `openship project list`, then:

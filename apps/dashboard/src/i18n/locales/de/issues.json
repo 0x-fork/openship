@@ -50,7 +50,7 @@
     "mail_down": "Mail-Engine ist gestoppt",
     "update_available": "Update verfügbar",
     "component_behind": "Komponenten-Update verfügbar",
-    "monitoring_offline": "Desktop ohne Verbindung",
+    "monitoring_offline": "Verbindung nicht verfügbar",
     "mail_certificate": "Mail-Zertifikat"
   },
   "since": "Beginn {when}",
@@ -85,7 +85,9 @@
     "updatesTitle": "Updates verfügbar",
     "updatesSubtitle": "Neue Versionen bereit zur Installation",
     "more": "{n} weitere",
-    "hide": "Ausblenden, bis sich etwas ändert"
+    "hide": "Ausblenden, bis sich etwas ändert",
+    "connectionTitle": "Verbindung unterbrochen",
+    "connectionSubtitle": "Einige Zustandsprüfungen sind nicht verfügbar."
   },
   "loadFailed": "Probleme konnten nicht geladen werden",
   "toast": {
@@ -99,9 +101,15 @@
   },
   "connectivity": {
     "offlineTitle": "Dieses Gerät ist offline",
-    "offlineHint": "Die Überwachung ist möglicherweise veraltet. Verbinde dich erneut, um die Server zu aktualisieren und zu prüfen.",
+    "offlineHint": "Der angezeigte Status ist möglicherweise veraltet. Stelle die Verbindung wieder her, um ihn zu aktualisieren.",
     "retryStatus": "Status erneut laden",
     "recheck": "Erneut prüfen",
-    "unknownHealth": "Der Zustand der Container ist unbekannt, bis Openship diesen Server erreicht."
+    "unknownHealth": "Der Zustand der Container ist unbekannt, bis Openship diesen Server erreicht.",
+    "monitoringHint": "Openship kann die betroffenen Server nicht erreichen. Ihr aktueller Zustand ist unbekannt.",
+    "details": "Technische Details",
+    "mailTitle": "Mailstatus nicht verfügbar",
+    "mailHint": "Openship konnte diesen Mailserver nicht prüfen. Er läuft möglicherweise weiterhin. Prüfe die Verbindung und versuche es erneut.",
+    "apiTitle": "Verbindung zu Openship unterbrochen",
+    "apiHint": "Der angezeigte Status ist möglicherweise veraltet. Prüfe deine Verbindung; deine Apps laufen möglicherweise weiterhin."
   }
 }

@@ -275,6 +275,13 @@ Use **Domains & routing** for sections covering domains, published ports, and in
 **Domains** when the section only manages hostnames. Put shared UI copy in the locale dictionaries.
 Keep hints concise and explain choices where they help the user decide.
 
+Connection failures describe unavailable observations. Use the shared
+[ConnectionNotice](../apps/dashboard/src/components/shared/ConnectionNotice.tsx) with concise warning
+copy and a read-only status retry where available. Keep last-known details, label current health
+unknown, and reserve repair/setup prompts for confirmed states. The root layout owns the browser/API
+connection notice. Monitoring groups explicit network failures across affected servers and keeps
+raw diagnostics in a closed Technical details disclosure.
+
 Catalog category filters match the Library's tabs: compact `text-sm` labels with `px-4 py-2`,
 `rounded-lg`, and a filled `bg-foreground text-background` selected state. Inactive choices use
 muted text and a subtle hover fill, with no decorative border around each option. Preserve

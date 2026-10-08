@@ -54,6 +54,7 @@ import {
 } from "@repo/platform/engine/modules/system/server-containers.service";
 import { listOrganizationUpdates } from "@repo/platform/engine/modules/updates/updates.service";
 import { desktopNetworkDisconnected } from "../../lib/desktop-network";
+import { isNetworkUnavailableError } from "../../lib/remote-state";
 import { nativeJobsEnabled } from "../../native/execution-policy";
 
 // ─── Shape ──────────────────────────────────────────────────────────────────
@@ -473,23 +474,45 @@ export async function listOrganizationIssues(
 
   const issues: SystemIssue[] = [];
 
-  if (infra && desktopNetworkDisconnected()) {
+  const visibleIncidents: ServiceIncident[] = [];
+  for (const row of incidents) if (await visibleIncident(row)) visibleIncidents.push(row);
+  // The transport's explicit network failure is a gap in observation across
+  // these targets, not evidence of one outage per server. Reuse the persisted
+  // incidents so this survives reloads and clears only after successful reads.
+  // Authorization precedes aggregation: even the count must not reveal a server.
+  const networkIncidents = visibleIncidents.filter(
+    (row) => row.kind === "server_unreachable" && isNetworkUnavailableError(row.reason),
+  );
+  const observerOffline = infra && desktopNetworkDisconnected();
+  if (observerOffline || networkIncidents.length > 0) {
     issues.push({
       id: "platform:monitoring-offline",
       kind: "monitoring_offline",
       severity: "action_required",
       scope: "platform",
       source: "component",
-      title: "This desktop is offline",
-      message: "The machine running Openship has no active network connection. Remote server health cannot be checked. Reconnect, then recheck monitoring.",
-      target: { scope: "platform", id: "desktop", name: "Openship", href: "/monitoring" },
+      title: "Openship",
+      message: "Openship cannot establish a network connection to the affected servers. Their current service health is unknown. Restore the connection, then recheck monitoring.",
+      details: {
+        connectionIssue: true,
+        observerOffline,
+        affectedServers: networkIncidents.map((row) => ({
+          id: row.serverId,
+          name: names.server.get(row.serverId ?? "") ?? row.serviceName,
+          reason: row.reason,
+        })),
+      },
+      target: { scope: "platform", id: "observer", name: "Openship", href: "/monitoring" },
       resolveWith: [],
     });
   }
 
   // Worst-first at the source level too, so the merge order matches the tiers and
   // ties inside a tier stay stable across polls.
-  for (const row of incidents) if (await visibleIncident(row)) issues.push(incidentIssue(row, names));
+  for (const row of visibleIncidents) {
+    if (networkIncidents.includes(row)) continue;
+    issues.push(incidentIssue(row, names));
+  }
 
   // A box we cannot reach tells us NOTHING about the containers on it — the cached
   // edge/mail rows are just the last thing we saw. Reporting "edge down" next to

@@ -46,7 +46,7 @@ import { permission } from "../../lib/permission";
 // the mail stack gives SSH-level reach into the box, so a cross-org
 // serverId here is the same severity as the terminal hole.
 import { isServerInOrg } from "@repo/platform/engine/lib/resource-access";
-import type { CommandExecutor } from "@repo/adapters";
+import { detectMailEngine, type CommandExecutor } from "@repo/adapters";
 import { pinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
 import { pinnedMailImage } from "@repo/platform/engine/lib/mail-image";
 import { deliverManagedImage } from "@repo/platform/engine/lib/deliver-managed-image";
@@ -66,7 +66,7 @@ import {
 import { checkMailDelivery } from "./mail-delivery.service";
 import { checkMailHealth, mailIsServing, MAIL_COMPONENTS } from "@repo/platform/engine/modules/mail/mail-health.service";
 import { checkMailPortReachability } from "@repo/platform/engine/modules/mail/mail-port-reachability.service";
-import { resolveMailEngine, resolveMailFlavor } from "@repo/platform/engine/modules/mail/mail-engine";
+import { resolveMailFlavor } from "@repo/platform/engine/modules/mail/mail-engine";
 import { updatePostmasterPassword } from "./mail-credentials.service";
 import { reserveMailSetup } from "./mail-setup-lease";
 import { preflightMailSetup } from "./mail-setup-preflight";
@@ -265,8 +265,8 @@ export async function getSteps(c: Context) {
  * GET /mail/status?serverId=… - render the on-server state file as a status.
  *
  * If `serverId` is missing, returns the "no install" shell so the welcome
- * form still works. If the server is unreachable or the state file is
- * missing, returns "no install" - same shell.
+ * form still works. A confirmed missing state file returns the same shell;
+ * an unavailable read returns 503 because the installation is unknown.
  */
 export async function getStatus(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
@@ -303,15 +303,20 @@ export async function getStatus(c: Context) {
 
   try {
     // One connection answers both questions: what HAS been installed (the state
-    // file) and what is actually there RIGHT NOW (the engine topology). The probe
-    // is memoized per executor and only runs on a box that has a state file, so
-    // this is two execs on a connection we were opening anyway — and it's what
+    // file) and what is actually there RIGHT NOW (the engine topology). Live
+    // status uses the shared detector directly: a cached topology's running bit
+    // cannot establish current health. It only runs for an existing state file.
+    // Both reads share the connection we were opening anyway — and it's what
     // lets the admin panel say "the engine is stopped, here's the fix" instead of
     // letting every tab discover it as a 409 of its own.
     const probed = await sshManager.withExecutor(serverId, async (executor) => {
-      const found = await readState(executor);
-      const engine = found ? await resolveMailEngine(executor).catch(() => null) : null;
-      return { state: found, engine };
+      const found = await readState(executor, { strict: true });
+      let observationError: string | undefined;
+      const engine = found ? await detectMailEngine(executor).catch(() => {
+        observationError = "Openship could not check the mail engine. Its current health is unknown.";
+        return null;
+      }) : null;
+      return { state: found, engine, observationError };
     });
     let state = probed.state;
     // Older state files (pre-IP-detection) don't carry A/AAAA records.
@@ -328,11 +333,13 @@ export async function getStatus(c: Context) {
       ...(probed.engine
         ? { engine: { flavor: probed.engine.flavor, running: probed.engine.running } }
         : {}),
+      ...(probed.observationError ? { observationError: probed.observationError } : {}),
     });
   } catch {
-    // SSH unreachable - treat as no-state. The dashboard handles this
-    // gracefully and shows the empty form.
-    return c.json(statusFromState(null, serverId, webmail));
+    return c.json({
+      code: "MAIL_STATUS_UNAVAILABLE",
+      message: "Openship could not read this mail server's status. Its health is unknown. Check the connection and retry.",
+    }, 503);
   }
 }
 

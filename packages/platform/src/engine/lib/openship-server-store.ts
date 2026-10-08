@@ -133,15 +133,28 @@ export async function ensureOpenshipDir(exec: CommandExecutor): Promise<void> {
  * readable manifest into a missing one on any host we can't measure, which is a
  * regression dressed as a safety check. The distinction is kept in the log —
  * see `unreadable`.
+ * Observation callers use `strict` to preserve failed reads as errors, so a
+ * connection or permission failure cannot be interpreted as a missing install.
  */
-export async function readOpenshipFile(exec: CommandExecutor, name: string): Promise<string> {
+export async function readOpenshipFile(exec: CommandExecutor, name: string, options: { strict?: boolean } = {}): Promise<string> {
   const path = `${OPENSHIP_DIR}/${name}`;
   try {
     const p = await storeExecutor(exec, "Reading Openship server state");
     const blocked = cannotAttemptRead(p);
-    if (blocked) return unreadable(name, blocked, "");
-    return (await p.executor.exec(`cat ${sq(path)} 2>/dev/null || echo ""`)).trim();
+    if (blocked) {
+      if (options.strict) throw blocked;
+      return unreadable(name, blocked, "");
+    }
+    return (await p.executor.exec(
+      options.strict ? `cat ${sq(path)}` : `cat ${sq(path)} 2>/dev/null || echo ""`,
+    )).trim();
   } catch (err) {
+    if (options.strict) {
+      // Only cat's own ENOENT establishes that this file is absent. A lost SSH
+      // connection or refused elevation must remain a failed observation.
+      if (err instanceof Error && /cat: [^\n]*: No such file or directory/.test(err.message)) return "";
+      throw err;
+    }
     return unreadable(name, err, "");
   }
 }

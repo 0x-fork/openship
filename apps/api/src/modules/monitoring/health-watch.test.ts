@@ -1342,6 +1342,56 @@ describe("intentional stop", () => {
 // ─── Gate 3: an unreachable box ──────────────────────────────────────────────
 
 describe("unreachable server", () => {
+  it.each(["selfhosted", "desktop"] as const)("keeps an explicit network failure distinct from failed services in %s mode", async (target) => {
+    h.platformTarget = target;
+    for (const serverId of ["network-a", "network-b", "network-c"]) seedApp({ serverId });
+    await tick();
+    h.listThrows = "(HTTP code 502) unexpected - Cannot reach Docker over SSH: connect ENETUNREACH 192.0.2.1:22 - Local (0.0.0.0:63263)";
+    expect(await tick()).toMatchObject({ offline: 3, unreachable: 0, opened: 3, resolved: 0 });
+    const { listWorkloadHealthSnapshots } = await import("@repo/platform/engine/modules/monitoring/health-watch");
+    expect(listWorkloadHealthSnapshots("org1").every((row) => row.state === "unknown")).toBe(true);
+    expect(h.incidents.every((row) => row.kind === "server_unreachable")).toBe(true);
+    await tick();
+    expect(h.emit).not.toHaveBeenCalled();
+
+    h.listThrows = null;
+    expect(await tick()).toMatchObject({ offline: 0, resolved: 3 });
+    expect(listWorkloadHealthSnapshots("org1").every((row) => row.state === "healthy")).toBe(true);
+    expect(h.emit).not.toHaveBeenCalled();
+  });
+
+  it("alerts once if a host still refuses connections after a network gap", async () => {
+    seedApp({ serverId: "network-then-host" });
+    h.listThrows = "connect ENETUNREACH 192.0.2.1:22";
+    await tick();
+    h.listThrows = "connect ECONNREFUSED 192.0.2.1:22";
+    await tick();
+    await tick();
+    expect(emitted("server.unreachable")).toHaveLength(1);
+    h.listThrows = null;
+    await tick();
+    expect(emitted("server.reachable")).toHaveLength(1);
+  });
+
+  it("keeps confirmed workload failures open through a network interruption", async () => {
+    const { projectId, containerId } = seedApp({ serverId: "confirmed-then-network" });
+    setState(containerId, "exited", { exitCode: 1 });
+    await confirm();
+    h.emit.mockClear();
+    h.listThrows = "connect ENETDOWN 192.0.2.1:22";
+    expect(await tick()).toMatchObject({ offline: 1, resolved: 0, stale: 0 });
+    expect(openFor(projectId)).toHaveLength(1);
+    expect(h.emit).not.toHaveBeenCalled();
+  });
+
+  it("reports a current-only network failure without creating incidents", async () => {
+    seedApp({ serverId: "network-current" });
+    h.listThrows = "connect ENETUNREACH 192.0.2.1:22";
+    expect((await checkCurrent()).summary).toMatchObject({ offline: 1, unreachable: 0 });
+    expect(h.incidents).toEqual([]);
+    expect(h.emit).not.toHaveBeenCalled();
+  });
+
   it("keeps remote health unknown while the desktop is offline without opening server incidents", async () => {
     h.platformTarget = "desktop";
     const first = seedApp({ serverId: "remote-a" });

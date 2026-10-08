@@ -50,7 +50,7 @@
     "mail_down": "メールエンジンが停止しています",
     "update_available": "更新があります",
     "component_behind": "コンポーネントの更新があります",
-    "monitoring_offline": "デスクトップがオフライン",
+    "monitoring_offline": "接続できません",
     "mail_certificate": "メール証明書"
   },
   "since": "{when}に開始",
@@ -85,7 +85,9 @@
     "updatesTitle": "更新があります",
     "updatesSubtitle": "適用できる新しいリリースがあります",
     "more": "他{n}件",
-    "hide": "変化があるまで非表示"
+    "hide": "変化があるまで非表示",
+    "connectionTitle": "接続が中断されました",
+    "connectionSubtitle": "一部のヘルスチェックを実行できません。"
   },
   "loadFailed": "問題を読み込めませんでした",
   "toast": {
@@ -99,9 +101,15 @@
   },
   "connectivity": {
     "offlineTitle": "このデバイスはオフラインです",
-    "offlineHint": "監視情報が古くなっている可能性があります。再接続して情報を更新し、サーバーを再確認してください。",
+    "offlineHint": "表示されている状態は古い可能性があります。再接続して更新してください。",
     "retryStatus": "状態を再取得",
     "recheck": "再確認",
-    "unknownHealth": "Openshipがこのサーバーに接続するまで、コンテナの状態は不明です。"
+    "unknownHealth": "Openshipがこのサーバーに接続するまで、コンテナの状態は不明です。",
+    "monitoringHint": "Openship は対象のサーバーに接続できません。現在の稼働状態は不明です。",
+    "details": "技術的な詳細",
+    "mailTitle": "メールの状態を取得できません",
+    "mailHint": "Openship はこのメールサーバーの状態を確認できませんでした。サーバーは稼働している可能性があります。接続を確認して再試行してください。",
+    "apiTitle": "Openship への接続が中断されました",
+    "apiHint": "表示されている状態は古い可能性があります。接続を確認してください。アプリは稼働している可能性があります。"
   }
 }

@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
+import { NetworkErrorHandler } from "@/components/network-error-handler";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import type { IssueFeed } from "@/lib/api/issues";
 import { IssuesView } from "./IssuesView";
@@ -103,6 +104,7 @@ async function render() {
   await act(async () =>
     root.render(
       <I18nProvider>
+        <NetworkErrorHandler />
         <IssuesView />
       </I18nProvider>,
     ),

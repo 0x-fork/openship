@@ -198,6 +198,46 @@ describe("severity is defined once, across all sources", () => {
 });
 
 describe("one row per cause", () => {
+  const networkIncident = (serverId: string) => incident({
+    id: `network-${serverId}`, projectId: null, serverId, serviceKey: `server:${serverId}`,
+    serviceName: serverId, kind: "server_unreachable",
+    reason: `Cannot reach Docker over SSH (connect ENETUNREACH 192.0.2.1:22 - Local (0.0.0.0:63263))`,
+  });
+
+  it("combines three explicit network failures and stale mail health into one connection notice", async () => {
+    incidentListByOrg.mockResolvedValue(["srv-1", "srv-2", "srv-3"].map(networkIncident));
+    loadOrgContainerIssues.mockResolvedValue({ servers: [component({ component: "mail" })] });
+    const result = await listOrganizationIssues(ctx);
+    expect(result.counts).toEqual({ outage: 0, actionRequired: 1, advisory: 0, total: 1 });
+    expect(result.issues).toMatchObject([{ kind: "monitoring_offline", scope: "platform", resolveWith: [] }]);
+    expect(result.issues[0].details?.affectedServers).toHaveLength(3);
+    expect(result.issues[0].infraFix).toBeUndefined();
+    expect(result.issues[0].message).toContain("health is unknown");
+    disconnected.mockReturnValue(true);
+    expect((await listOrganizationIssues(ctx)).counts.total).toBe(1);
+  });
+
+  it("keeps independently confirmed workload and host-specific failures visible", async () => {
+    incidentListByOrg.mockResolvedValue([
+      networkIncident("srv-1"),
+      incident({ id: "app-down" }),
+      incident({ id: "other-server", projectId: null, serverId: "srv-other", kind: "server_unreachable", reason: "connect ECONNREFUSED 192.0.2.2:22" }),
+    ]);
+    const result = await listOrganizationIssues(ctx);
+    expect(result.issues.map((issue) => issue.kind)).toEqual(["workload_down", "monitoring_offline", "server_unreachable"]);
+    expect(result.counts).toMatchObject({ outage: 1, actionRequired: 2, total: 3 });
+  });
+
+  it("does not include inaccessible targets in the grouped notice or count", async () => {
+    incidentListByOrg.mockResolvedValue([networkIncident("srv-1"), networkIncident("secret-server")]);
+    checkPermissionOnResource.mockImplementation(async (_context, input) => input.resourceId !== "secret-server");
+    const result = await listOrganizationIssues({ ...ctx, role: "restricted" } as RequestContext);
+    expect(result.issues[0].details?.affectedServers).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain("secret-server");
+    checkPermissionOnResource.mockImplementation(async (_context, input) => input.resourceId === "*");
+    expect((await listOrganizationIssues({ ...ctx, role: "restricted" } as RequestContext)).issues).toEqual([]);
+  });
+
   it("shows an observation gap for an offline desktop and removes it when connectivity returns", async () => {
     disconnected.mockReturnValue(true);
     const offline = await listOrganizationIssues(ctx);

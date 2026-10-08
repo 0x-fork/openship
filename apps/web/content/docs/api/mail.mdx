@@ -278,6 +278,13 @@ again. If the old install can't be removed, nothing is installed and the existin
 
 ## Errors
 
+<Callout title="503 — MAIL_STATUS_UNAVAILABLE" type="warn">
+`GET /api/mail/status` could not read the server's saved setup state. Preserve any last-known
+details and retry the read; this response does not mean mail is stopped or uninstalled.
+If the saved state was read but the live engine check failed, the response instead keeps that
+state, omits `engine`, and includes `observationError`. Treat engine health as unknown.
+</Callout>
+
 <Callout title="404 — Not available" type="error">
 You're calling a cloud instance. The Mail API is self-hosted only; run it on an instance where `CLOUD_MODE`
 is off.

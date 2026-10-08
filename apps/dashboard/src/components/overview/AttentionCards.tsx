@@ -4,7 +4,7 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import Link from "next/link";
 
-import type { SystemIssue } from "@/lib/api/issues";
+import { isMonitoringConnectionIssue, type SystemIssue } from "@/lib/api/issues";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { IssueRow } from "@/components/issues/IssueRow";
 import AlertPanel, { type AlertTone } from "./AlertPanel";
@@ -142,14 +142,15 @@ export function IssuesCard(props: CardProps) {
   const tone: AlertTone = props.issues.some((i) => i.severity === "outage")
     ? "danger"
     : "warning";
+  const connectionOnly = props.issues.length > 0 && props.issues.every(isMonitoringConnectionIssue);
 
   return (
     <AttentionCard
       {...props}
       tone={tone}
-      icon={"warning"}
-      title={c.attentionTitle}
-      subtitle={c.attentionSubtitle}
+      icon={connectionOnly ? "plug" : "warning"}
+      title={connectionOnly ? c.connectionTitle : c.attentionTitle}
+      subtitle={connectionOnly ? c.connectionSubtitle : c.attentionSubtitle}
       max={MAX_ISSUE_ROWS}
     />
   );

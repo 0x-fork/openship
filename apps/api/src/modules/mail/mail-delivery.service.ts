@@ -123,18 +123,23 @@ export async function checkMailDelivery(exec: CommandExecutor): Promise<MailDeli
     .catch(() => undefined);
   const base = describePath(relay);
 
-  const probe = await resolveMailEngine(exec).catch(() => null);
-  if (probe?.flavor === "none") {
+  let probe;
+  try {
+    probe = await resolveMailEngine(exec);
+  } catch (error) {
+    return { ...base, ...unread, detail: firstLine(safeErrorMessage(error)) };
+  }
+  if (probe.flavor === "none") {
     return { ...base, ...unread, detail: "No mail engine on this server." };
   }
   // A stopped CONTAINER can't be exec'd into at all, so say that rather than
   // surfacing docker's "is not running" as if the queue itself were unreadable.
   // Not applied to the legacy host flavor: `postqueue` reads the spool directly
   // there, so a stopped Postfix still gives a truthful — and more useful — answer.
-  if (probe?.flavor === "container" && !probe.running) {
+  if (probe.flavor === "container" && !probe.running) {
     return { ...base, ...unread, detail: "The mail engine isn't running." };
   }
-  const flavor = probe?.flavor ?? "container";
+  const flavor = probe.flavor;
 
   let raw: string;
   try {
