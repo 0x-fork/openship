@@ -64,6 +64,7 @@ import { assertGitHubRepoAccess } from "../github/github-access";
 import { resolveSmartRoute } from "./smart-route";
 import { snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts, strictRefreshImages } from "./pinned-artifacts";
 import { deploymentWorkload, projectToClass, snapshotToClass } from "./deployment-class";
+import { needsRunningApplication } from "./build-execution-plan";
 import {
   resolveProjectInfo,
   resolveProjectSourceEnv,
@@ -1403,11 +1404,13 @@ async function createQueuedDeploymentUnlocked(opts: {
             knownHostnames: (await repos.domain.listByProject(project.id)).map(domain => domain.hostname),
           });
       }
-      const runsApplication =
-        mode.useServicePipeline ||
-        Boolean(meta.releaseImageRef) ||
-        snapshotToClass(meta).workload !== "static" ||
-        (meta.cloudStaticHosting !== "pages" && meta.runtimeMode !== "bare");
+      const runsApplication = needsRunningApplication({
+        workload: snapshotToClass(meta).workload,
+        runtimeMode: meta.runtimeMode,
+        cloudStaticHosting: meta.cloudStaticHosting,
+        willRunServices: mode.useServicePipeline,
+        hasPrebuiltImage: Boolean(meta.releaseImageRef),
+      });
       meta = {
         ...meta,
         cloudApplicationSlot: !mode.useServicePipeline && runsApplication,
@@ -2070,7 +2073,8 @@ export async function requestBuildAccess(
       !useServicePipeline &&
       !snapshot.releaseImageRef
     ) &&
-    (snapshot.runtimeMode !== "bare" ||
+    ((snapshot.cloudStaticHosting === "server" && snapshotToClass(snapshot).workload === "static") ||
+      snapshot.runtimeMode !== "bare" ||
       useServicePipeline ||
       snapshot.framework === "docker" ||
       snapshot.releaseImageRef) &&

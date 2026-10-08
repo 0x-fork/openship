@@ -175,7 +175,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   );
 
   if (variant === "preview") {
-    const containerLimits = deployTarget === "cloud" && (isServices || runtimeMode !== "bare");
+    const containerLimits = deployTarget === "cloud" && (isServices || runtimeMode !== "bare" || (!hasServer && cloudStaticHosting === "server"));
     const runtimeLabel = !hasServer && !isServices
       ? t.deploy.summary.static
       : isServices || runtimeMode !== "bare"
@@ -427,7 +427,10 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
   const showResourceLimits =
     (!cloudStatic || config.cloudStaticHosting === "server") &&
     config.deployTarget === "cloud" &&
-    (config.runtimeMode !== "bare" || isServiceDeployment || config.projectType === "docker");
+    ((cloudStatic && config.cloudStaticHosting === "server") ||
+      config.runtimeMode !== "bare" ||
+      isServiceDeployment ||
+      config.projectType === "docker");
   const resourceValues = resolveTierResources(config.cloudResourceTier ?? "unlimited", config.cloudResourceCustom);
 
   // Saved connection defaults stay with the destination controls.

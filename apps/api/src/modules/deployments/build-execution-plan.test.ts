@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import { BareRuntime, LocalExecutor, resolveStaticOutputPath } from "@repo/adapters";
 
 import {
+  needsRunningApplication,
   resolveBuildRuntimeModes,
   resolveDeployRouting,
   reusedReleaseRouting,
@@ -409,4 +410,27 @@ describe("Cloud static hosting selection", () => {
       }).serveRuntimeMode,
     ).toBe("docker");
   });
+});
+
+
+it("counts server-hosted static containers even with a saved Direct runtime, but not Pages builds", () => {
+  for (const runtimeMode of ["bare", "docker"] as const) {
+    expect(
+      needsRunningApplication({ workload: "static", runtimeMode, cloudStaticHosting: "server" }),
+    ).toBe(true);
+    expect(
+      needsRunningApplication({ workload: "static", runtimeMode, cloudStaticHosting: "pages" }),
+    ).toBe(false);
+    expect(
+      needsRunningApplication({ workload: "web", runtimeMode, cloudStaticHosting: "pages" }),
+    ).toBe(true);
+    expect(
+      needsRunningApplication({
+        workload: "static",
+        runtimeMode,
+        cloudStaticHosting: "pages",
+        hasPrebuiltImage: true,
+      }),
+    ).toBe(true);
+  }
 });

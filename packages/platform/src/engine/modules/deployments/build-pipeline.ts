@@ -62,6 +62,7 @@ import {
 import { isRealContainerRef } from "../../lib/container-ref";
 import { ensureRoutingReady } from "../../lib/edge-reconcile";
 import {
+  needsRunningApplication,
   resolveBuildRuntimeModes,
   resolveDeployRouting,
   reusedReleaseRouting,
@@ -733,7 +734,13 @@ async function executeBuildAndDeploy(
     await assertCloudDeploymentLimits(dep.organizationId, {
       projectId: project.id,
       resources: snapshot.resources, buildResources: snapshot.buildResources,
-      runsApplication: snapshotToClass(snapshot).workload !== "static",
+      runsApplication: needsRunningApplication({
+        workload: snapshotToClass(snapshot).workload,
+        runtimeMode: snapshot.runtimeMode,
+        cloudStaticHosting: snapshot.cloudStaticHosting,
+        willRunServices,
+        hasPrebuiltImage: Boolean(snapshot.releaseImageRef),
+      }),
       services: willRunServices ? serviceMode.servicePreflightServices : undefined,
       retainedImages: strictRefreshImages(snapshot),
     });

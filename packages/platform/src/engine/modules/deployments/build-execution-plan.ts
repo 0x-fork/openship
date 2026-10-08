@@ -175,3 +175,19 @@ export function reusedReleaseRouting(
   if (routing.deployMode !== "static-file-serve" || frozen === undefined) return routing;
   return { ...routing, staticServeOutputDir: frozen };
 }
+
+
+/** The serving workload, independent of a saved build/runtime preference. */
+export function needsRunningApplication(input: {
+  workload: WorkloadType;
+  runtimeMode?: RuntimeModeValue;
+  cloudStaticHosting?: "pages" | "server";
+  willRunServices?: boolean;
+  hasPrebuiltImage?: boolean;
+}): boolean {
+  if (input.willRunServices || input.hasPrebuiltImage || input.workload !== "static") return true;
+  return (
+    input.cloudStaticHosting === "server" ||
+    (input.cloudStaticHosting !== "pages" && input.runtimeMode !== "bare")
+  );
+}
