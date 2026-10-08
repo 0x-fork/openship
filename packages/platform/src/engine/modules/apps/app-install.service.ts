@@ -574,6 +574,7 @@ export async function installApp(
             svc.ports,
             input.routes,
             existingRow.ports as string[] | null,
+            workspaceId ? "cloud" : "server",
           ),
         });
       }
@@ -598,7 +599,13 @@ export async function installApp(
     await createService(ctx, project.id, {
       name: svc.name,
       image: svc.image,
-      ports: installServicePorts(svc.name, svc.ports, input.routes),
+      ports: installServicePorts(
+        svc.name,
+        svc.ports,
+        input.routes,
+        svc.ports,
+        workspaceId ? "cloud" : "server",
+      ),
       dependsOn: svc.dependsOn ? [...svc.dependsOn] : [],
       environment: plainEnv,
       volumes: svc.volumes ? [...svc.volumes] : [],

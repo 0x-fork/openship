@@ -948,12 +948,21 @@ describe("detectStack - output directory and build image", () => {
     expect(result.port).toBe(3000);
   });
 
+  it("honors an explicit manager over stale lockfiles and carries Bun's version", () => {
+    const result = detectStack(files("package.json", "next.config.js", "pnpm-lock.yaml"), {
+      packageManager: "bun@1.2.10",
+      dependencies: { next: "^15.0.0" },
+    });
+    expect(result.packageManager).toBe("bun");
+    expect(result.buildImage).toBe("oven/bun:1.2.10");
+  });
+
   it("bun build image swaps to oven/bun for JS/TS stacks", () => {
     const result = detectStack(files("package.json", "next.config.js", "bun.lockb"), {
       dependencies: { next: "^15.0.0" },
     });
     expect(result.packageManager).toBe("bun");
-    expect(result.buildImage).toBe("oven/bun:latest");
+    expect(result.buildImage).toBe("oven/bun:1.3.14");
   });
 
   it("bun does NOT override build image for non-JS stacks", () => {
