@@ -705,12 +705,21 @@ export async function retryRouting(c: Context) {
 export async function retryRoutingStream(c: Context) {
   const context = operationContext(c);
   const id = param(c, "id");
+  const sessionId = c.req.method === "GET" ? c.req.query("sessionId") : undefined;
+  if (c.req.method === "GET" && !sessionId)
+    throw new AppError(
+      "Choose the routing log to reconnect to.",
+      400,
+      "ROUTING_RETRY_SESSION_REQUIRED",
+    );
   return streamSSE(c, async (stream) => {
     const abort = new AbortController();
     stream.onAbort(() => abort.abort());
     try {
       for await (const event of getPlatformKernel().projects.retryRoutingStream(context, id, {
         signal: abort.signal,
+        sessionId,
+        idempotencyKey: c.req.method === "POST" ? c.req.query("idempotencyKey") : undefined,
       })) {
         await stream.writeSSE(event);
       }

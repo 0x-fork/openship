@@ -274,7 +274,7 @@ try {
         : kind === "projects.streamRuntimeLogs"
           ? kernel.projects.streamRuntimeLogs(context as ExecutionContext, input[0] as string, input[1] as { tail?: number }, { signal: abort.signal })
         : kind === "projects.retryRoutingStream"
-          ? kernel.projects.retryRoutingStream(context as ExecutionContext, input[0] as string, { signal: abort.signal })
+          ? kernel.projects.retryRoutingStream(context as ExecutionContext, input[0] as string, { ...(input[1] as { sessionId?: string; idempotencyKey?: string }), signal: abort.signal })
         : kind === "services.streamLogs"
           ? kernel.services.streamLogs(context as ExecutionContext, input[0] as string, input[1] as string, input[2] as { tail?: number }, { signal: abort.signal })
           : kind === "domains.verifyStream"

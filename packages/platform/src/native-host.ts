@@ -243,7 +243,7 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
     streamClusterDatabaseEvents: (ctx, id, options = {}) => streamEvents("projects.streamClusterDatabaseEvents", ctx, [id], options.signal),
     streamClusterVolumeEvents: (ctx, id, options = {}) => streamEvents("projects.streamClusterVolumeEvents", ctx, [id], options.signal),
     retryRoutingStream: (ctx, id, options = {}) =>
-      streamEvents("projects.retryRoutingStream", ctx, [id], options.signal),
+      streamEvents("projects.retryRoutingStream", ctx, [id, { sessionId: options.sessionId, idempotencyKey: options.idempotencyKey }], options.signal),
     async openServerLogStream(ctx, id, input = {}, options = {}) {
       return openStreamValues<Uint8Array>("projects.serverLogs", ctx, [id, input], options.signal);
     },

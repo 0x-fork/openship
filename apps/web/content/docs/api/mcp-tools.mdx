@@ -739,6 +739,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/projects/:id/resources` | Compatibility alias; use PATCH /api/projects/:id/resources. |
 | `POST /api/projects/:id/routing/ensure-edge/respond` | Response to the browser’s ensure-edge SSE session. Use routing/retry and the project pending-actions tool for routing repair; interactive edge setup and proxy takeover remain in the dashboard. |
 | `POST /api/projects/:id/routing/ensure-edge/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/projects/:id/routing/retry/stream` | Read-only SSE replay of an existing routing repair session. |
 | `POST /api/projects/:id/routing/retry/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/projects/:id/server-logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/projects/:id/server-logs/stream-token` | Browser streaming credential. MCP reads the bounded server-logs endpoint with its own bearer. |

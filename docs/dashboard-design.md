@@ -302,6 +302,12 @@ Use **Domains & routing** for sections covering domains, published ports, and in
 **Domains** when the section only manages hostnames. Put shared UI copy in the locale dictionaries.
 Keep hints concise and explain choices where they help the user decide.
 
+Routing retries keep their logs inline and reconnect to the same server operation after a
+refresh. Refresh domain status and the routing warning from the canonical project response;
+do not clear one optimistically. A domain card has one primary repair action, including when
+its diagnosis is expanded. Hostnames owned by another service display that service's verified
+certificate state without offering project-owned certificate actions.
+
 Catalog category filters match the Library's tabs: compact `text-sm` labels with `px-4 py-2`,
 `rounded-lg`, and a filled `bg-foreground text-background` selected state. Inactive choices use
 muted text and a subtle hover fill, with no decorative border around each option. Preserve

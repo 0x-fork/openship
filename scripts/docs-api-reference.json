@@ -3464,6 +3464,11 @@
       "page": "projects",
       "description": "Read edge readiness for the project."
     },
+    "GET /api/projects/:id/routing/retry/stream": {
+      "page": "projects",
+      "description": "Replay and follow an existing routing repair using its sessionId; never starts a repair.",
+      "sdk": "projects.retryRoutingStream(id, { sessionId })"
+    },
     "POST /api/projects/:id/routing/ensure-edge/respond": {
       "page": "projects",
       "description": "Answer an edge setup prompt for the project."
