@@ -17,6 +17,7 @@
  */
 
 import { shellQuote } from "./shell-split";
+import { pnpmEnsureCommand } from "./pnpm-bootstrap";
 import { normalizeImageRef } from "./backup-image-detect";
 import { validateImageReference } from "./project-source";
 
@@ -1131,7 +1132,8 @@ export function getBuildImage(
  * it installs the pnpm/yarn shims and lets each project's
  * `package.json#packageManager` field select the exact version. Falls back to a
  * global npm install when corepack is unavailable (old Node / no perms), and is
- * fully swallowed so it never fails the build.
+ * fully swallowed for yarn. pnpm uses a deterministic lockfile-aware bootstrap
+ * and stops on an invalid pin rather than silently installing another version.
  *
  * `bun` gets a presence check instead: corepack doesn't manage it. Inside a
  * container this is a no-op — getBuildImage already resolves bun-eligible stacks
@@ -1142,6 +1144,7 @@ export function getBuildImage(
  * Returns "" for `npm` (already present) and every non-node PM (in-image).
  */
 export function packageManagerEnsureCommand(packageManager?: string): string {
+  if (packageManager === "pnpm") return pnpmEnsureCommand();
   if (packageManager === "bun") {
     return `(command -v bun >/dev/null 2>&1 || npm i -g bun) >/dev/null 2>&1 || true`;
   }

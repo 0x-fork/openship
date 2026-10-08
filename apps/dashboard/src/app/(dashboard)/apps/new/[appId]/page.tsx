@@ -1007,6 +1007,7 @@ export default function AppInstallPage() {
           template?.services?.find((service) => service.name === svc.name)?.ports,
           choices,
           svc.ports as string[] | null,
+          cloudDestination ? "cloud" : "server",
         ),
       });
     }

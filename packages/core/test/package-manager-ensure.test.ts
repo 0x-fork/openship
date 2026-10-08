@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { packageManagerEnsureCommand } from "../src/stacks";
 
 describe("packageManagerEnsureCommand", () => {
-  it("emits a corepack-enable prelude for pnpm and yarn (the PMs missing from base images)", () => {
-    for (const pm of ["pnpm", "yarn"] as const) {
+  it("emits a corepack-enable prelude for yarn", () => {
+    for (const pm of ["yarn"] as const) {
       const cmd = packageManagerEnsureCommand(pm);
       expect(cmd).toContain(`corepack enable ${pm}`);
       // Fallback chain: corepack-for-pm → corepack → global npm install.
