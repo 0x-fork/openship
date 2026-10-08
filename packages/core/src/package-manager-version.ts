@@ -7,9 +7,16 @@ export const PACKAGE_MANAGER_DEFAULTS = {
 } as const;
 export type ManagedPackageManager = keyof typeof PACKAGE_MANAGER_DEFAULTS;
 
-/** Self-contained so the identical parser can run inside generated build recipes. */
-export function declaredPackageManagerPin(pkg: any, manager: string): string | undefined {
-  const declared = pkg?.packageManager;
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Shared declaration parser for detection and the bundled build bootstrap. */
+export function declaredPackageManagerPin(pkg: unknown, manager: string): string | undefined {
+  const manifest = record(pkg);
+  const declared = manifest?.packageManager;
   if (declared !== undefined) {
     if (
       typeof declared !== "string" ||
@@ -24,8 +31,9 @@ export function declaredPackageManagerPin(pkg: any, manager: string): string | u
     }
     return declared;
   }
-  const engine = pkg?.devEngines?.packageManager;
-  if (engine !== undefined) {
+  const engineDeclaration = record(manifest?.devEngines)?.packageManager;
+  const engine = record(engineDeclaration);
+  if (engineDeclaration !== undefined) {
     if (
       engine?.name !== manager ||
       typeof engine?.version !== "string" ||

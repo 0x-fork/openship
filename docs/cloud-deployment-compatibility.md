@@ -51,3 +51,18 @@ Unpinned npm uses 9.9.4; Bun uses 1.3.14; Yarn Classic uses 1.22.22. Yarn lockfi
 Corepack installs pnpm/Yarn when available. Its fallback uses the same selected version through npm, with `@yarnpkg/cli-dist` for modern Yarn. npm and Bun reuse an exact installed version or install the requested one. A Bun-only environment obtains the exact official platform binary without running dependency scripts, verifies it, and atomically replaces the tool executable. Bun's generated build image uses the declared version, and runtime selection preserves official Bun image pins, variants and digests.
 
 Corepack-qualified integrity pins are retained for npm/pnpm/Yarn and never discarded during fallback. Integrity-qualified Bun declarations are explicitly unsupported by this bootstrap; use a custom verified toolchain instead. Custom Dockerfiles own their toolchain. Python, Ruby, Go and other language package managers are unchanged; this contract does not claim cross-ecosystem compatibility.
+
+### Maintaining the package-manager bootstrap
+
+The managed bootstrap is authored as typed modules in `packages/core/src/package-manager/`.
+Discovery collects repository settings, resolution selects an exact version, manager-specific
+installers prepare it, and verification checks the executable used by the build. The declaration
+parser is shared with stack detection.
+
+After changing these modules or the shared version parser/defaults, run
+`bun run --cwd packages/core generate:bootstrap` with the repository-pinned Bun and commit the
+updated `package-manager-bootstrap.generated.ts`. The core test suite checks that the bundled
+script matches its sources and exercises that script through the generated shell command.
+The checked-in bundle keeps deployment command generation synchronous and usable in the API,
+dashboard, desktop, and SDK without a compiler or source files on the build host. Generated code
+is an output artifact; edit the typed modules instead.
