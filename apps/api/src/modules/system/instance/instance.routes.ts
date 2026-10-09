@@ -18,7 +18,7 @@ import {
   controllerConnection,
   controllerEnvironmentReady,
 } from "./controller-state";
-import { assertHandoffAccount, assertPortableInstance } from "./portability";
+import { assertHandoffAccount, assertPortableInstance, needsHostMapping } from "./portability";
 import { handoffRunning, resumeHandoff, cancelHandoff } from "./handoff-client";
 import {
   createPairingCode,
@@ -28,6 +28,7 @@ import {
   disconnectInstance,
   returnToDesktop,
   moveToPreviousInstance,
+  connectedSourceHosts,
 } from "./instance-connection";
 import {
   beginProvisioning,
@@ -97,6 +98,9 @@ r.public(
 );
 
 r.public("get", "/", { reason: recoveryReason }, recoveryAccess, async (c) => {
+  c.header("Cache-Control", "no-store");
+  if (c.req.query("source") === "connected")
+    return c.json({ localHosts: await connectedSourceHosts() });
   const state = await controllerState();
   const row = state.handoffId ? await peer.journal(state.handoffId) : null;
   const connection = controllerConnection(state);
@@ -109,7 +113,13 @@ r.public("get", "/", { reason: recoveryReason }, recoveryAccess, async (c) => {
         .where(eq(schema.user.id, userId))
     : [];
   const hosts = await db
-    .select({ id: schema.servers.id, name: schema.servers.name, isLocal: schema.servers.isLocal })
+    .select({
+      id: schema.servers.id,
+      name: schema.servers.name,
+      isLocal: schema.servers.isLocal,
+      sshHost: schema.servers.sshHost,
+      sshJumpHost: schema.servers.sshJumpHost,
+    })
     .from(schema.servers);
   return c.json({
     protocol: 1,
@@ -123,7 +133,7 @@ r.public("get", "/", { reason: recoveryReason }, recoveryAccess, async (c) => {
       ? { origin: connection.origin, installationId: connection.installationId }
       : null,
     previousInstance: previousConnection ? { origin: previousConnection.origin } : null,
-    localHosts: hosts.filter((host) => host.isLocal),
+    localHosts: hosts.filter(needsHostMapping).map(({ id, name }) => ({ id, name })),
     handoff: row
       ? {
           id: row.id,

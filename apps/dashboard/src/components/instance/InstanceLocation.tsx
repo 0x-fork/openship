@@ -412,6 +412,8 @@ export function InstanceMoveDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [remoteHosts, setRemoteHosts] = useState<InstanceStatus["localHosts"] | null>(null);
+  const [sourceAttempt, setSourceAttempt] = useState(0);
   const [setupAccount, setSetupAccount] = useState(false);
   const [accountCreated, setAccountCreated] = useState(false);
   const needsAccount = action === "move" && accountRequired && !accountCreated;
@@ -422,9 +424,28 @@ export function InstanceMoveDialog({
   useEffect(() => {
     dialog.current?.focus();
   }, [setupAccount, dialog]);
+  useEffect(() => {
+    if (action !== "return") return;
+    let current = true;
+    setRemoteHosts(null);
+    setSource(null);
+    setError("");
+    void instanceApi.connectedSource().then(
+      ({ localHosts: hosts }) => {
+        if (current) setRemoteHosts(hosts);
+      },
+      (err) => {
+        if (current) setError(getApiErrorMessage(err));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [action, sourceAttempt]);
+  const sourceHosts = action === "return" ? (remoteHosts ?? []) : localHosts;
   const mapping: InstanceHostMapping | undefined =
-    source && localHosts[0]
-      ? { sourceServerId: localHosts[0].id, connectionServerId: source.id }
+    source && sourceHosts[0]
+      ? { sourceServerId: sourceHosts[0].id, connectionServerId: source.id }
       : undefined;
   const title = setupAccount
     ? copy.secureAccount
@@ -466,7 +487,7 @@ export function InstanceMoveDialog({
         return;
       }
       if (action === "previous") await instanceApi.moveToPrevious(mapping);
-      else if (action === "return") await instanceApi.returnToDesktop();
+      else if (action === "return") await instanceApi.returnToDesktop(mapping);
       else if (action === "receive") {
         if (!code.trim()) {
           setGenerated((await instanceApi.offer("target")).code);
@@ -493,6 +514,7 @@ export function InstanceMoveDialog({
   const needsConfirmation = action !== "pair";
   const disabled =
     busy ||
+    (action === "return" && (remoteHosts === null || (sourceHosts.length > 0 && !source))) ||
     (needsConfirmation && !needsAccount && !confirmed) ||
     (action === "move" && (destination === "server" ? !server || !hostname.trim() : !code.trim()));
   return (
@@ -633,10 +655,18 @@ export function InstanceMoveDialog({
                 </div>
               </>
             )}
-            {(action === "move" || action === "send" || action === "previous") &&
-              localHosts.length > 0 && (
+            {action === "return" && remoteHosts === null && !error && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {copy.loading}
+              </p>
+            )}
+            {(action === "move" ||
+              action === "send" ||
+              action === "previous" ||
+              action === "return") &&
+              sourceHosts.length > 0 && (
                 <div className="space-y-2 rounded-xl bg-muted/30 p-4">
-                  <p className="text-sm font-medium">Keep access to {localHosts[0].name}</p>
+                  <p className="text-sm font-medium">Keep access to {sourceHosts[0].name}</p>
                   <p className="text-xs text-muted-foreground">
                     Choose its SSH connection so the new controller can still manage apps on this
                     host.
@@ -645,7 +675,7 @@ export function InstanceMoveDialog({
                     value={source?.id ?? null}
                     onSelect={setSource}
                     requiredCapability="ssh"
-                    excludeIds={localHosts.map((host) => host.id)}
+                    excludeIds={sourceHosts.map((host) => host.id)}
                     label="Source host connection"
                   />
                 </div>
@@ -705,19 +735,25 @@ export function InstanceMoveDialog({
             <Button variant="ghost" onClick={close} disabled={busy}>
               {generated ? "Done" : "Cancel"}
             </Button>
-            {!generated && (
-              <Button disabled={disabled} onClick={() => void submit()}>
-                {busy && <Icon name="spinner" className="animate-spin" />}
-                {needsAccount
-                  ? copy.continueSetup
-                  : action === "pair"
-                    ? "Create connection code"
-                    : action === "return"
+            {action === "return" && remoteHosts === null && error ? (
+              <Button onClick={() => setSourceAttempt((attempt) => attempt + 1)}>
+                {t.chrome.apiDown.retry}
+              </Button>
+            ) : (
+              !generated && (
+                <Button disabled={disabled} onClick={() => void submit()}>
+                  {busy && <Icon name="spinner" className="animate-spin" />}
+                  {needsAccount
+                    ? copy.continueSetup
+                    : action === "pair"
+                      ? "Create connection code"
+                      : action === "return"
                         ? "Move to Desktop"
                         : action === "receive" && !code.trim()
                           ? "Create receive code"
                           : "Move instance"}
-              </Button>
+                </Button>
+              )
             )}
           </div>
         )}

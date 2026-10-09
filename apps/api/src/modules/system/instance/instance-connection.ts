@@ -159,7 +159,8 @@ async function attachConnection(
       ["connected", "retired"].includes(state.role) &&
       current?.origin === connection.origin &&
       current.installationId === connection.installationId
-    ) return;
+    )
+      return;
     // A migrated source must never regain authority over its stale database by
     // pressing Disconnect. An unrelated paused local instance may be resumed.
     await setControllerRole(
@@ -187,13 +188,7 @@ export async function disconnectInstance(): Promise<void> {
   await startController();
 }
 
-/** Pull the latest remote state. No inbound connection to a Desktop behind NAT
- * is needed, and its old local snapshot is never used as the active database. */
-export async function returnToDesktop(
-  ownerUserId: string,
-  origin: string,
-  mapping?: HostMapping,
-): Promise<string> {
+async function connectedDesktop(): Promise<InstanceConnection> {
   const state = await controllerState(),
     connection = controllerConnection(state);
   if (
@@ -202,6 +197,49 @@ export async function returnToDesktop(
     !connection
   )
     throw new AppError("This Desktop is not connected to a remote instance.", 409);
+  return connection;
+}
+
+/** Read the source's portability requirements as the connected user. Local
+ * Desktop records cannot describe apps running on a previously hosted instance. */
+export async function connectedSourceHosts(): Promise<Array<{ id: string; name: string }>> {
+  const connection = await connectedDesktop();
+  const response = await fetch(`${connection.origin}/api/system/instance`, {
+    headers: remoteSessionHeaders(connection),
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => {
+    throw new AppError("Could not reach the connected instance. Check its connection and retry.", 502);
+  });
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new AppError(
+      error.error ?? "The remote administrator must authorize this move.",
+      response.status,
+    );
+  }
+  const source = z
+    .object({
+      installationId: z.string().uuid(),
+      role: z.string(),
+      localHosts: z.array(z.object({ id: z.string(), name: z.string() })),
+    })
+    .parse(await response.json());
+  if (source.installationId !== connection.installationId)
+    throw new AppError("The active remote instance changed. Reconnect before moving.", 409);
+  if (source.role !== "active")
+    throw new AppError("Finish the remote instance's current move first.", 409);
+  return source.localHosts;
+}
+
+/** Pull the latest remote state. No inbound connection to a Desktop behind NAT
+ * is needed, and its old local snapshot is never used as the active database. */
+export async function returnToDesktop(
+  ownerUserId: string,
+  origin: string,
+  mapping?: HostMapping,
+): Promise<string> {
+  const connection = await connectedDesktop();
   const headers = remoteSessionHeaders(connection);
   headers.set("content-type", "application/json");
   const response = await fetch(`${connection.origin}/api/system/instance/offer`, {

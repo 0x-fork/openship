@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
   provision: vi.fn(),
   move: vi.fn(),
   pair: vi.fn(),
+  connectedSource: vi.fn(),
+  returnToDesktop: vi.fn(),
   get: vi.fn(),
   post: vi.fn(),
   toast: vi.fn(),
@@ -25,13 +27,21 @@ const h = vi.hoisted(() => ({
   selfHosted: true,
   strategy: "none" as string,
   servers: [
-    { id: "first", name: "First server", sshHost: "192.0.2.10", sshUser: "root", sshPort: 22 },
+    {
+      id: "first",
+      name: "First server",
+      sshHost: "192.0.2.10",
+      sshUser: "root",
+      sshPort: 22,
+      capabilities: { ssh: true },
+    },
     {
       id: "selected",
       name: "Selected server",
       sshHost: "192.0.2.11",
       sshUser: "root",
       sshPort: 22,
+      capabilities: { ssh: true },
     },
   ],
 }));
@@ -42,6 +52,8 @@ vi.mock("@/lib/api/instance", () => ({
     provision: h.provision,
     move: h.move,
     pair: h.pair,
+    connectedSource: h.connectedSource,
+    returnToDesktop: h.returnToDesktop,
   },
 }));
 vi.mock("@/lib/api", () => ({
@@ -123,6 +135,8 @@ beforeEach(() => {
   h.provision.mockResolvedValue({});
   h.move.mockResolvedValue({});
   h.pair.mockResolvedValue({ code: "one-time-fixture" });
+  h.connectedSource.mockResolvedValue({ localHosts: [] });
+  h.returnToDesktop.mockResolvedValue({});
   h.selfHosted = true;
   h.strategy = "none";
   host = document.createElement("div");
@@ -198,9 +212,80 @@ function expectNoMove() {
   expect(h.preflight).not.toHaveBeenCalled();
   expect(h.provision).not.toHaveBeenCalled();
   expect(h.move).not.toHaveBeenCalled();
+  expect(h.returnToDesktop).not.toHaveBeenCalled();
 }
 
 describe("instance move setup", () => {
+  const connected: InstanceStatus = {
+    ...fresh,
+    accountReady: true,
+    role: "connected",
+    connection: { origin: "https://ops.example.test", installationId: "remote" },
+    localHosts: [{ id: "desktop-host", name: "Separate local instance" }],
+  };
+  async function openReturn() {
+    h.status.mockResolvedValue(connected);
+    await render(<InstanceLocation initial={connected} />);
+    await click(button(copy.returnToDesktop));
+  }
+  it("uses the hosted instance's source connection when returning to Desktop", async () => {
+    h.connectedSource.mockResolvedValue({ localHosts: [{ id: "hosted", name: "Hosted apps" }] });
+    await openReturn();
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Keep access to Hosted apps",
+    );
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain(
+      "Separate local instance",
+    );
+    await click(visible<HTMLElement>('[role="checkbox"]')[0]!);
+    expect(button("Move to Desktop").disabled).toBe(true);
+    await click(
+      document.querySelector<HTMLElement>(
+        '[aria-haspopup="listbox"][aria-label="Source host connection"]',
+      )!,
+    );
+    await click(
+      visible<HTMLElement>('[role="option"]').find((node) =>
+        node.textContent?.includes("Selected server"),
+      )!,
+    );
+    expect(h.returnToDesktop).not.toHaveBeenCalled();
+    await click(button("Move to Desktop"));
+    expect(h.returnToDesktop).toHaveBeenCalledExactlyOnceWith({
+      sourceServerId: "hosted",
+      connectionServerId: "selected",
+    });
+  });
+  it("waits for the remote source check and keeps confirmation separate", async () => {
+    let resolve!: (value: { localHosts: [] }) => void;
+    h.connectedSource.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    await openReturn();
+    await click(visible<HTMLElement>('[role="checkbox"]')[0]!);
+    expect(button("Move to Desktop").disabled).toBe(true);
+    expectNoMove();
+    await act(async () => resolve({ localHosts: [] }));
+    expect(document.querySelector('[aria-label="Source host connection"]')).toBeNull();
+    expect(h.returnToDesktop).not.toHaveBeenCalled();
+    await click(button("Move to Desktop"));
+    expect(h.returnToDesktop).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+  it("lets a failed source check retry without starting or replacing an instance", async () => {
+    h.connectedSource.mockRejectedValueOnce(new Error("The source server is unavailable"));
+    await openReturn();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "source server is unavailable",
+    );
+    expectNoMove();
+    await click(button(baseDictionary.chrome.apiDown.retry));
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(button("Move to Desktop").disabled).toBe(true);
+    expect(h.connectedSource).toHaveBeenCalledTimes(2);
+    expectNoMove();
+  });
   it("selects the real server first, creates an account, and still requires explicit move confirmation", async () => {
     await openFreshMove();
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Selected server");

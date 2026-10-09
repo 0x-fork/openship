@@ -11,6 +11,12 @@ export interface HostMapping {
   connectionServerId: string;
 }
 
+export function needsHostMapping(
+  server: Pick<typeof schema.servers.$inferSelect, "isLocal" | "sshHost" | "sshJumpHost">,
+): boolean {
+  return server.isLocal || isLoopbackHost(server.sshHost) || isLoopbackHost(server.sshJumpHost);
+}
+
 export async function assertHandoffAccount(userId: string): Promise<void> {
   const [owner] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
   if (!owner || owner.role !== "admin")
@@ -27,6 +33,11 @@ export async function assertHandoffAccount(userId: string): Promise<void> {
  * ids, ports, service ownership, volumes and retained releases remain untouched. */
 export async function assertPortableInstance(mapping?: HostMapping): Promise<void> {
   const servers = await db.select().from(schema.servers);
+  if (
+    mapping &&
+    !servers.some((server) => server.id === mapping.sourceServerId && needsHostMapping(server))
+  )
+    throw new AppError("The source host connection changed. Check it and retry.", 409);
   const projects = await db.select().from(schema.project);
   const blockers: string[] = [];
   for (const server of servers) {
@@ -35,8 +46,7 @@ export async function assertPortableInstance(mapping?: HostMapping): Promise<voi
         `“${server.name}” uses this computer’s SSH agent. Save a private key or password in its connection settings before moving.`,
       );
     }
-    if (!server.isLocal && !isLoopbackHost(server.sshHost) && !isLoopbackHost(server.sshJumpHost))
-      continue;
+    if (!needsHostMapping(server)) continue;
     const replacement =
       mapping?.sourceServerId === server.id
         ? servers.find((item) => item.id === mapping.connectionServerId)

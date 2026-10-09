@@ -66,6 +66,10 @@ server. Put secondary connection and transfer tools in the shared More options m
 plain action labels that distinguish connecting a device from moving instance data. Keep
 the summary and actions in one compact row when they fit, stacking them on narrow containers;
 do not repeat the location as a separate control-mode badge or a row of competing buttons.
+When moving back to Desktop, load portability requirements from the authenticated remote
+instance. Reuse the source-host server picker and confirmation; the Desktop's old local
+records must not decide which remote host needs an SSH connection. Keep a failed source
+check retryable before starting the move.
 
 - Use [PageContainer](../apps/dashboard/src/components/ui/PageContainer.tsx) for its existing
   1600px page limit and responsive padding. Avoid a second page-width cap inside it.

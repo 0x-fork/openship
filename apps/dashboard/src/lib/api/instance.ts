@@ -31,6 +31,7 @@ export type InstanceHostMapping = { sourceServerId: string; connectionServerId: 
 const path = endpoints.instance.status;
 export const instanceApi = {
   status: () => api.get<InstanceStatus>(path),
+  connectedSource: () => api.get<Pick<InstanceStatus, "localHosts">>(`${path}?source=connected`),
   connectedSession: () => api.get<{ user?: { id: string } } | null>("/api/auth/get-session"),
   preflight: (mapping?: InstanceHostMapping) => api.post(`${path}/preflight`, { mapping }),
   offer: (direction: "source" | "target", mapping?: InstanceHostMapping) =>
@@ -50,7 +51,8 @@ export const instanceApi = {
   connectAddress: (origin: string) =>
     api.post(`${path}/connect-address`, { origin, confirmed: true }),
   disconnect: () => api.post(`${path}/disconnect`),
-  returnToDesktop: () => api.post(`${path}/return`, { confirmReplace: true }),
+  returnToDesktop: (mapping?: InstanceHostMapping) =>
+    api.post(`${path}/return`, { confirmReplace: true, mapping }),
   moveToPrevious: (mapping?: InstanceHostMapping) =>
     api.post(`${path}/move-previous`, { confirmReplace: true, mapping }),
 };

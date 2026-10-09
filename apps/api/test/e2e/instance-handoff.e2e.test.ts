@@ -270,6 +270,15 @@ it.each([
         .map((value) => value.split(";", 1)[0])
         .join("; ");
       expect(cookie).not.toBe("");
+      await expect(
+        jsonRequest(server.baseUrl, "/api/system/instance/preflight", {
+          method: "POST",
+          headers: { cookie, origin: dashboard?.baseUrl ?? server.baseUrl },
+          body: JSON.stringify({
+            mapping: { sourceServerId: "missing", connectionServerId: "unrelated" },
+          }),
+        }),
+      ).rejects.toThrow("source host connection changed");
       const offered = await jsonRequest<{ code: string }>(
         server.baseUrl,
         "/api/system/instance/offer",
@@ -556,6 +565,9 @@ it("accepts an API-only invitation through Desktop without granting the teammate
   await expect(
     post(teammate, "/api/system/instance/return", { confirmReplace: true }),
   ).rejects.toThrow("instance administrator");
+  await expect(
+    jsonRequest(teammate.baseUrl, "/api/system/instance?source=connected"),
+  ).rejects.toThrow("403");
   expect((await state(teammate)).role).toBe("connected");
   expect((await fetch(`${source.baseUrl}/api/projects`)).status).toBe(200);
 }, 120_000);
@@ -581,6 +593,9 @@ it("authenticates by address through the remote API and keeps its cookies off th
     origin: remote.baseUrl,
     confirmed: true,
   });
+  await expect(
+    jsonRequest(source.baseUrl, "/api/system/instance?source=connected"),
+  ).rejects.toThrow("401");
   expect((await fetch(`${source.baseUrl}/api/projects/${project.id}`)).status).toBe(401);
   const signIn = await fetch(`${source.baseUrl}/api/auth/sign-in/email`, {
     method: "POST",
@@ -601,6 +616,9 @@ it("authenticates by address through the remote API and keeps its cookies off th
     "/api/auth/get-session",
   );
   expect(session.user.email).toBe("target@example.test");
+  expect(await jsonRequest(source.baseUrl, "/api/system/instance?source=connected")).toEqual({
+    localHosts: [],
+  });
   const enrollment = await post<{ totpURI: string; backupCodes: string[] }>(
     source,
     "/api/auth/two-factor/enable",
@@ -654,4 +672,7 @@ it("authenticates by address through the remote API and keeps its cookies off th
   ).toBe(project.id);
   await post(source, "/api/system/instance/disconnect");
   expect((await state(source)).role).toBe("active");
+  await expect(
+    jsonRequest(source.baseUrl, "/api/system/instance?source=connected"),
+  ).rejects.toThrow("409");
 }, 120_000);
