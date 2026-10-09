@@ -262,6 +262,12 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
   }
   try {
     const { closeDb } = await import("@repo/db");
+    // The Cloud diagnostics destination uses this connection too. Flush while
+    // it is open, then send any final shutdown failures to local stderr only.
+    await drainErrorResponses();
+    await errorReporter.flush(fastReload ? 100 : 1500);
+    const { writableErrorSink } = await import("@repo/core/diagnostics/node");
+    errorReporter.setSink(writableErrorSink(process.stderr));
     await closeDb();
   } catch (err) {
     errorDiagnostics.warn("api/server", "[shutdown] db close failed:", err);

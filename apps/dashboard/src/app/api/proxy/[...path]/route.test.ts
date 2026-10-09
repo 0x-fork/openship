@@ -10,6 +10,7 @@ const events: ErrorEvent[] = [];
 beforeEach(async () => {
   await errorReporter.flush();
   events.length = 0;
+  errorReporter.setEnabled(true);
   errorReporter.setSink(batch => { events.push(...batch); });
   vi.stubEnv("NEXT_PUBLIC_API_PROXY", "true");
   vi.stubEnv("INTERNAL_API_URL", "http://api:4000");
@@ -19,6 +20,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await errorReporter.flush();
+  errorReporter.setEnabled(false);
   errorReporter.setSink(consoleErrorSink);
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();

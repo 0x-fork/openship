@@ -36,6 +36,7 @@ describe("serializeWrites", () => {
   it("reports a failed terminal result after HTTP 200 without changing frames or their order", async () => {
     const events: ErrorEvent[] = [];
     await errorReporter.flush();
+    errorReporter.setEnabled(true);
     errorReporter.setSink(batch => { events.push(...batch); });
     const { stream, written } = makeStream([5, 0]);
     const drain = withErrorContext({ requestId: "request-stream", organizationId: "org-stream" }, () => serializeWrites(stream), true);

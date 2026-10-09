@@ -7,6 +7,7 @@ const events: ErrorEvent[] = [];
 beforeEach(async () => {
   await errorReporter.flush();
   events.length = 0;
+  errorReporter.setEnabled(true);
   errorReporter.setSink((batch) => {
     events.push(...batch);
   });

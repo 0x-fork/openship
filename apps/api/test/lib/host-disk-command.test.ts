@@ -54,6 +54,7 @@ describe("host-disk probe", () => {
   it("reports an unreachable host while still returning unknown disk capacity", async () => {
     const events: ErrorEvent[] = [];
     await errorReporter.flush();
+    errorReporter.setEnabled(true);
     errorReporter.setSink(batch => { events.push(...batch); });
     const { getHostDisk, UNKNOWN_DISK } = await import("@repo/platform/engine/lib/host-disk");
     await expect(getHostDisk("server-a", "org-a")).resolves.toEqual(UNKNOWN_DISK);

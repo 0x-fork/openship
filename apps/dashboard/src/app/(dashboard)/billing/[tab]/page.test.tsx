@@ -64,6 +64,7 @@ describe("billing page failure recovery", () => {
   beforeEach(async () => {
     await errorReporter.flush();
     diagnostics.length = 0;
+    errorReporter.setEnabled(true);
     errorReporter.setSink(events => { diagnostics.push(...events); });
     vi.clearAllMocks();
     mocks.getDeploymentInfo.mockResolvedValue({ selfHosted: false });
@@ -71,7 +72,11 @@ describe("billing page failure recovery", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
-  afterEach(async () => { await errorReporter.flush(); vi.restoreAllMocks(); });
+  afterEach(async () => {
+    await errorReporter.flush();
+    errorReporter.setEnabled(false);
+    vi.restoreAllMocks();
+  });
 
   it.each([
     [500, undefined, "billing-unreachable"],

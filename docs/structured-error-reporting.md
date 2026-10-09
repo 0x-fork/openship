@@ -2,20 +2,68 @@
 
 Openship-owned failures go through `ErrorReporter` in
 [`packages/core/src/diagnostics`](../packages/core/src/diagnostics). The same implementation is used
-by Cloud, self-hosted API instances, Desktop, the native worker, CLI and dashboard. Reporting observes
+across the API, platform and dashboard, with automatic collection enabled only for Cloud SaaS.
+Self-hosted instances, Desktop, the native worker and CLI leave collection disabled. Reporting observes
 operations; it does not retry deployments, choose a destination, change authorization or replace their
 existing return values and user messages.
 
-The default server destination is newline-delimited JSON on stderr. There is no diagnostics database,
-Redis dependency, vendor SDK or automatic transmission to Openship Cloud from a self-hosted instance.
-The dashboard sends its browser failures to the API serving that dashboard. The public marketing site
-uses the reporter for server failures and local browser diagnostics; it does not send visitor errors
-to an authenticated customer's instance.
+The shared singleton starts disabled. The SaaS API enables it from `CLOUD_MODE` after database and
+instance configuration bootstrap, then installs its database destination. The SaaS dashboard enables
+browser collection only when the API serving it positively reports Cloud mode. Unknown mode fails
+closed. Signing into Cloud, changing organizations, or connecting Desktop to a remote instance does
+not enable collection on a local installation. There is no diagnostics vendor SDK or extra Redis queue.
+
+Disabled `reportError()` and `reportCaughtError()` calls do not inspect the error, enqueue events or
+invoke a configured destination. Explicit `diagnostics.warn()` / `diagnostics.error()` calls and fatal
+process errors still produce redacted local output, so operational failures remain diagnosable. The
+website and standalone dashboard server do not install an upload destination.
 
 This is operational diagnostics, separate from the existing security audit log, deployment output and
 Cloud product analytics. Customer applications' own stdout, stderr and exceptions remain their service
 logs. OpenResty, Docker, SSH, database engines and the separately deployed webmail application retain
 their own internal logs; errors that reach an Openship control-plane adapter are observed here.
+
+## Cloud database destination
+
+[`apps/api/src/lib/cloud-error-destination.ts`](../apps/api/src/lib/cloud-error-destination.ts) owns
+both table creation and the single batched insert. SaaS startup creates `cloud_error_event` in the
+existing API database with `CREATE TABLE IF NOT EXISTS`; this is deliberately not a shared ORM schema
+migration. Non-Cloud installations do not create the table or mount the browser intake. No new
+environment variable or separate database is required.
+
+| Column | Content |
+| --- | --- |
+| `event_id` | Server-generated observation ID and primary key. Replayed batches use `ON CONFLICT DO NOTHING`. |
+| `occurred_at` | The reporter's timestamp. |
+| `received_at` | Database receipt time; used for retention. |
+| `event` | The full sanitized JSON event, including classification, error/cause and allowed context. |
+
+Indexes support receipt-time, request-reference and organization lookups. There are no user or project
+foreign keys: pre-authentication and system failures need no existing resource. There is no log-reading
+HTTP endpoint. Access is through the Cloud database's existing operator permissions, for example:
+
+```sql
+SELECT occurred_at, event
+FROM cloud_error_event
+WHERE event #>> '{context,requestId}' = 'request-reference'
+ORDER BY received_at DESC;
+```
+
+The destination reuses the existing bounded reporter queue and writes one parameterized insert per
+batch. Setup and inserts use transaction-local lock/statement deadlines of 250/500 ms. PostgreSQL
+replicas serialize table setup with a transaction advisory lock. Cancellation is checked again after
+waiting for a connection; an abandoned batch is rolled back. Invalid Unicode from truncated text is
+normalized for PostgreSQL JSON storage without rereading the original error.
+
+Successful batches also retain the existing local JSON output. Setup failure leaves the API running
+with local output; insert failures use the reporter's bounded local fallback, without recursively
+logging the database query or retrying the request. After the existing exporter failure threshold,
+local fallback remains in use until the destination is reinstalled or the process restarts.
+
+Retention targets 30 days by receipt time. Pruning runs with incoming batches, at most once per hour
+when caught up, and deletes at most 1,000 expired rows per batch. A backlog is drained by subsequent
+batches. Idle or unavailable destinations can retain expired rows longer; this is bounded maintenance,
+not an exact deletion deadline. It touches only this Cloud diagnostics table.
 
 ## Event contract
 
@@ -46,6 +94,10 @@ warnings, with common expected filesystem/abort outcomes informational.
 
 ## Boundaries and correlation
 
+These are the shared observation hooks; automatic capture runs only where the owning Cloud process
+or browser has enabled the reporter. Local return values, response references and operational logs
+remain available with collection disabled.
+
 | Boundary | Coverage and behavior |
 | --- | --- |
 | HTTP | The first Hono middleware generates `X-Request-ID` before auth, validation, rate limits or routing. Thrown errors and explicit 4xx/5xx responses are observed, including unmatched routes. Early guards retain the intended registered route. |
@@ -57,8 +109,8 @@ warnings, with common expected filesystem/abort outcomes informational.
 | SSE and WebSocket | Observers retain the original request context after the HTTP response opens. Streamed failed results, promised SSE data, write failures and WebSocket hook errors are covered without changing frame order. |
 | Dashboard | Fetch/auth failures, handled error messages, toasts, React error boundaries and global browser exceptions/rejections use the reporter. API errors keep the server's response reference. |
 | Dashboard proxy | Failed upstream connections get a response reference. Requests forward a generated parent reference and preserve the upstream API's own reference when supplied. |
-| Desktop | IPC handlers retain their result/rejection contract and omit arguments. Main-process fatal errors and unexpected renderer exits are observed. |
-| Native worker and CLI | Operation context, network errors and shutdown failures use the reporter. CLI human messages and JSON stdout retain their existing output contract. Native `diagnostics: "silent"` still honors the caller's choice. |
+| Desktop | Capture and upload are disabled, including while connected to Cloud. IPC results and rejections are unchanged; fatal and intentional operational logs remain local. |
+| Native worker and CLI | Capture and upload are disabled by default. CLI human messages, JSON stdout and intentional local logs retain their output contract. Native `diagnostics: "silent"` still honors the caller's choice. |
 | Onboarding | Rejected settings pushes and terminal readiness failures are observed without recording passwords or tunnel tokens. A successful readiness poll does not report its earlier expected connection refusals. |
 | Public support | The website support adapter records returned and thrown failures, returns a request reference, and forwards it to the Cloud API. It never logs the support form or receipt. |
 
@@ -74,7 +126,8 @@ launcher would break the mechanism that repairs unsupported installations.
 
 ## Bounded delivery
 
-`capture()` sanitizes a bounded snapshot and enqueues it. It never awaits a network request, database,
+When enabled, `capture()` sanitizes a bounded snapshot and enqueues it. Disabling capture clears the
+queue, cancels an active exporter and prevents queued events from being replayed on re-enable. It never awaits a network request, database,
 file write or logging destination. Normal requests must not call `flush()`.
 
 | Bound | Default |
@@ -101,7 +154,8 @@ timeout, so a collector should deduplicate by `eventId`. `stats()` exposes queue
 primary delivery count, dropped events and delivery failures. No success log is generated for each
 ordinary request.
 
-API shutdown drains the bounded response readers and reporter. CLI and native-worker orderly shutdown
+API shutdown drains the bounded response readers and reporter before closing the database, then
+uses local output for the remaining teardown. CLI and native-worker orderly shutdown
 also have bounded flushes. Fatal Node exceptions use the same redaction in a direct local emergency
 write and exit nonzero; they do not wait for an exporter or continue a potentially corrupt process.
 Explicit Node exits also make a bounded last-chance local write of queued and uncertain in-flight events,
@@ -133,15 +187,15 @@ errors or summaries from raw configuration, process output, form contents or pro
 a stable error code and pass the original Error so the safe serializer can retain its stack/cause.
 As with any JavaScript inspection, hostile Proxy traps are not a sandbox boundary.
 
-The browser intake is public so failures before sign-in are observable. It accepts at most eight events
+The Cloud-only browser intake is public so failures before sign-in are observable. It accepts at most eight events
 per request, a 64 KiB body and 20 batches per minute per IP; failures of its rate-limit backend reject
 intake rather than bypassing the limit. No tenant, user, severity or server timestamp can be asserted.
 The server marks accepted events `untrusted`, sanitizes them again, and returns only `204`. There is no
 log-reading API. Browser reports must not be used as proof of payment, authorization or security events.
 
-During a Desktop remote-instance switch, UI reports remain on the local endpoint. They cannot be queued
-under one account and then forwarded under another. The remote API's authoritative failures remain in
-its own diagnostics, linked through parent request references where applicable.
+During a Desktop remote-instance switch, browser collection remains disabled and the diagnostic
+endpoint returns 404 locally without forwarding to the remote instance. The remote Cloud API can still
+record its own authoritative request failures, linked through parent request references where applicable.
 
 ## Extending destinations and adding boundaries
 
@@ -151,8 +205,10 @@ Import browser-safe code from `@repo/core/diagnostics`. Only server entry points
 ```ts
 import { errorReporter, reportError, type ErrorSink } from "@repo/core/diagnostics";
 
-// Call at the process entry point, after installNodeErrorReporting().
+// The Cloud-owned entry point enables collection; replacing the sink never opts in.
+// installCloudErrorDestination() already does this for the SaaS API.
 function configureErrors(exporter: ErrorSink) {
+  if (!errorReporter.isEnabled()) return;
   errorReporter.setSink(exporter);
 }
 
@@ -211,7 +267,10 @@ that a remote collector received an event.
 Regression coverage includes concurrent tenant contexts, preservation of results and rejections,
 authentication/authorization responses, response IDs, streamed terminal failures, fatal Node/Bun child
 processes, redaction and hostile accessors, stalled exporters, overflow, stderr backpressure, API boot,
-public intake validation/size/rate limits, and a real Desktop-to-instance relay with local diagnostics.
+Cloud intake validation/size/rate limits, database creation/idempotency/retention/cancellation/fallback,
+and a real Desktop-to-instance relay that cannot forward diagnostic uploads. Cloud/non-Cloud boot tests
+verify storage is created only in Cloud, events persist across shutdown, and self-hosted/Desktop have
+no intake. Browser tests cover Cloud-connected local instances and fail-closed mode detection.
 A production dashboard build was also exercised in Chromium against a real temporary API: uncaught
 browser exceptions and rejected promises arrived with request references and redacted text.
 Existing deployment, rollback, migration, authentication, billing, CLI and Desktop tests continue to

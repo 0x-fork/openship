@@ -19,12 +19,14 @@ const events: ErrorEvent[] = [];
 beforeEach(async () => {
   await errorReporter.flush();
   events.length = 0;
+  errorReporter.setEnabled(true);
   errorReporter.setSink((batch) => {
     events.push(...batch);
   });
 });
 afterEach(async () => {
   await errorReporter.flush();
+  errorReporter.setEnabled(false);
 });
 
 function createApp() {
@@ -39,6 +41,23 @@ async function collected() {
 }
 
 describe("global request error observation", () => {
+  it("keeps response references without reading or capturing local error bodies", async () => {
+    errorReporter.setEnabled(false);
+    const clone = vi.spyOn(Response.prototype, "clone");
+    try {
+      const app = createApp();
+      app.get("/private", (c) => c.json({ error: "Private local message" }, 403));
+      const response = await app.request("/private");
+      expect(response.status).toBe(403);
+      expect(response.headers.get("X-Request-ID")).toBeTruthy();
+      expect(await response.json()).toEqual({ error: "Private local message" });
+      expect(await collected()).toHaveLength(0);
+      expect(clone).not.toHaveBeenCalled();
+    } finally {
+      clone.mockRestore();
+    }
+  });
+
   it("names the intended route when an early authorization guard stops dispatch", async () => {
     const app = createApp();
     app.use("/api/*", (c) => c.json({ error: "Forbidden" }, 403));

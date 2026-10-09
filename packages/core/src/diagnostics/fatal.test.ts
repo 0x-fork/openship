@@ -7,12 +7,13 @@ const require = createRequire(import.meta.url);
 const entry = new URL("./node.ts", import.meta.url).href;
 
 describe.each(["node", "bun"])("fatal diagnostics under %s", (runtime) => {
-  it("retains a redacted error immediately before an explicit CLI exit", () => {
+  it("retains a queued, opted-in event immediately before an explicit process exit", () => {
     const reporter = new URL("./index.ts", import.meta.url).href;
     const source = `
       import { installNodeErrorReporting } from ${JSON.stringify(entry)};
-      import { reportError } from ${JSON.stringify(reporter)};
+      import { reportError, errorReporter } from ${JSON.stringify(reporter)};
       installNodeErrorReporting('cli');
+      errorReporter.setEnabled(true);
       reportError(new Error('password=protected-exit-913'), { operation: 'install.refused' });
       process.exit(2);
     `;
