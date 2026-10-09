@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { managedNodeEnvironment } from "./node-listener";
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
@@ -345,7 +346,9 @@ export class CloudDockerRuntime extends DockerRuntime {
         this.sourcePath = source;
         this.sourceBase = base;
       } catch (error) {
-        await this.executor.rm(source).catch(() => {});
+        await this.executor.rm(source).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/cloud/docker");
+        });
         throw error;
       }
     })().catch((error) => {
@@ -397,6 +400,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       try {
         await files.destroy(hostOutDir);
       } catch (error) {
+        observeCaughtError(error, "adapters/runtime/cloud/docker");
         logger?.log(`Static build cleanup deferred: ${safeErrorMessage(error)}\n`, "warn");
       } finally {
         await files.dispose();
@@ -856,7 +860,9 @@ export class CloudDockerRuntime extends DockerRuntime {
   }
   override async dispose() {
     await super.dispose();
-    if (this.sourcePath) await this.executor.rm(this.sourcePath).catch(() => {});
+    if (this.sourcePath) await this.executor.rm(this.sourcePath).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/cloud/docker");
+    });
     await this.connection.dispose();
   }
 }

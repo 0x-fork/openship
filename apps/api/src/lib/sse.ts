@@ -26,6 +26,14 @@
  * handler's queued frames are flushed before the stream is allowed to close.
  */
 
+import {
+  reportError,
+  reportCaughtError as observeCaughtError,
+} from "@repo/core/diagnostics";
+import {
+  currentErrorContext,
+  withErrorContext,
+} from "@repo/core/diagnostics/node";
 import type { Context } from "hono";
 import type { SSEStreamingApi } from "hono/streaming";
 import { streamSSE as _streamSSE } from "hono/streaming";
@@ -52,14 +60,70 @@ export function closeControllerStreams(): void {
  */
 export function serializeWrites(stream: SSEStreamingApi): () => Promise<void> {
   const write = stream.writeSSE.bind(stream);
+  const context = currentErrorContext();
   let tail: Promise<unknown> = Promise.resolve();
   stream.writeSSE = (message) => {
-    const result = tail.then(() => write(message));
+    const result = tail.then(async () => {
+      // Hono supports promised data; await it once in the existing serialized
+      // write, so delayed terminal results receive the same observation.
+      const data = await message.data;
+      if (
+        [
+          "error",
+          "failed",
+          "failure",
+          "complete",
+          "done",
+          "end",
+          "result",
+        ].includes(message.event ?? "")
+      ) {
+        let body: {
+          error?: unknown;
+          message?: unknown;
+          success?: unknown;
+          status?: unknown;
+          code?: unknown;
+        } | null = null;
+        try {
+          if (data.length <= 4096) body = JSON.parse(data);
+        } catch {
+          /* Non-JSON error frames still have their event name. */
+        }
+        if (
+          ["error", "failed", "failure"].includes(message.event ?? "") ||
+          body?.success === false ||
+          body?.status === "failed"
+        ) {
+          reportError(
+            typeof body?.error === "string"
+              ? body.error
+              : typeof body?.message === "string"
+                ? body.message
+                : "Streamed operation failed",
+            {
+              ...context,
+              kind: "operation",
+              component: "sse-result",
+              handled: true,
+              ...(typeof body?.code === "string" ? { code: body.code } : {}),
+            },
+          );
+        }
+      }
+      return write({ ...message, data });
+    });
     // The tail must never reject, or one failed write would poison every
     // later one (a disconnected client would silently drop the rest).
     tail = result.then(
       () => {},
-      () => {},
+      (diagnosticFailure) => {
+        reportError(diagnosticFailure, {
+          ...context,
+          component: "sse-write",
+          handled: true,
+        });
+      },
     );
     return result;
   };
@@ -97,7 +161,10 @@ export const SSE_PRIMER = ": ok\n\n";
 
 /** `drain()` bounded by a deadline — a client that has gone away never accepts
  *  the queued frames, and waiting on it would hold the response open. */
-async function drainWithDeadline(drain: () => Promise<void>, ms: number): Promise<void> {
+async function drainWithDeadline(
+  drain: () => Promise<void>,
+  ms: number,
+): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
@@ -115,6 +182,7 @@ export function streamSSE(
   c: Context,
   cb: (stream: SSEStreamingApi) => Promise<void>,
 ) {
+  const context = currentErrorContext();
   // Disable reverse-proxy response buffering. nginx/OpenResty buffer proxied
   // responses by default, which holds SSE events back until the buffer fills —
   // the stream lags or appears stuck once deployed behind OpenResty, even
@@ -129,18 +197,31 @@ export function streamSSE(
     controllerStreams.add(sseStream);
     const drain = serializeWrites(sseStream);
 
-    void sseStream.write(SSE_PRIMER).catch(() => {});
+    void sseStream.write(SSE_PRIMER).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/lib/sse");
+    });
 
     const heartbeat = setInterval(() => {
       void sseStream
         .writeSSE({ event: "ping", data: "{}" })
-        .catch(() => {});
+        .catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "api/lib/sse");
+        });
     }, SYSTEM.SSE.HEARTBEAT_INTERVAL_MS);
 
     sseStream.onAbort(() => clearInterval(heartbeat));
 
     try {
-      await trackBackgroundWork(cb(sseStream));
+      await withErrorContext(context, () => trackBackgroundWork(cb(sseStream)));
+    } catch (error) {
+      if (!sseStream.aborted)
+        reportError(error, {
+          ...context,
+          kind: "operation",
+          component: "sse",
+          handled: true,
+        });
+      throw error;
     } finally {
       controllerStreams.delete(sseStream);
       // Stop the ping BEFORE draining, so the timer can't keep extending the

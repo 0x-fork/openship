@@ -31,6 +31,7 @@
  * domain, backup_policy) does the dependent-row sweep in one statement.
  */
 
+import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos, type Project } from "@repo/db";
 import { AppError, safeErrorMessage } from "@repo/core";
 import {
@@ -265,6 +266,7 @@ async function teardownProjectLocked(
     try {
       existing = await repos.project.findById(projectId);
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
       push({ step: "claim_lock", status: "failed", error: safeErrorMessage(err) });
       return finalize(steps, false);
     }
@@ -300,6 +302,7 @@ async function teardownProjectLocked(
     try {
       project = await repos.project.findById(projectId);
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
       push({ step: "load_project", status: "failed", error: safeErrorMessage(err) });
     }
 
@@ -346,7 +349,8 @@ async function teardownProjectLocked(
         });
         return finalize(steps, false);
       }
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-teardown");
       push({
         step: "load_project",
         status: "failed",
@@ -438,7 +442,9 @@ async function teardownProjectLocked(
       // Best-effort: drop this project from each server's .openship manifest so a
       // later recover-from-server scan doesn't re-list it. Desktop-only inside;
       // never gates the delete (reconcile's running-container check is the guard).
-      await removeProjectFromServerManifests(project).catch(() => {});
+      await removeProjectFromServerManifests(project).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-teardown");
+      });
 
       // ── ATOMICITY GATE: never drop the DB row while the SOURCE is dirty. ──
       // If runtime cleanup (containers / images / volumes / cloud workspace /
@@ -483,6 +489,7 @@ async function teardownProjectLocked(
           });
         }
       } catch (err) {
+        observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
         // Dropping the project without a durable retry record would turn a
         // reachable-later vhost/workload into an untracked permanent orphan.
         // Keep the row and deletion lock semantics intact so the whole operation
@@ -520,7 +527,9 @@ async function teardownProjectLocked(
   } finally {
     // Lock released on every non-deleting exit so a retry is always possible.
     if (!rowDeleted) {
-      await repos.project.clearDeletionInProgress(projectId).catch(() => {});
+      await repos.project.clearDeletionInProgress(projectId).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-teardown");
+      });
     }
   }
 }
@@ -646,6 +655,7 @@ async function stepCancelInFlight(
       // stronger promise that server resources are kept.
       await cancelBuildSession(depId, { keepProvisioned: true });
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
       cancellationNotes.push(`deployment ${depId}: ${safeErrorMessage(err)}`);
     }
   }
@@ -668,6 +678,7 @@ async function stepCancelInFlight(
         );
       }
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
       cancellationNotes.push(`backup_run ${runId}: ${safeErrorMessage(err)}`);
     }
   }
@@ -692,6 +703,7 @@ async function stepCancelInFlight(
         );
       }
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
       cancellationNotes.push(`backup_restore ${restoreId}: ${safeErrorMessage(err)}`);
     }
   }
@@ -712,6 +724,7 @@ async function stepCancelInFlight(
           cancellationNotes.push(`migration ${migrationId}: ${outcome.error}`);
         }
       } catch (err) {
+        observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
         cancellationNotes.push(`migration ${migrationId}: ${safeErrorMessage(err)}`);
       }
     }
@@ -769,6 +782,7 @@ async function stepDeleteWebhook(
     await deleteGitHubWebhook(ctx, project.gitOwner, project.gitRepo, project.webhookId);
     push({ step: "github_webhook", status: "ok", details: `hook ${project.webhookId}` });
   } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
     // GitHub returns 404 when the hook is already gone — treat as a
     // skip, not a failure. Anything else (auth, network) bubbles up.
     const msg = safeErrorMessage(err);
@@ -843,6 +857,7 @@ async function stepRuntimeCleanup(
   try {
     manifest = await collectProjectManifest(project, { wipeVolumes });
   } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
     push({
       step: "runtime_cleanup",
       status: "failed",
@@ -1040,6 +1055,7 @@ async function stepRuntimeCleanup(
   try {
     volumeCheckpointIds = await checkpointVolumeCleanup(project, destroyable);
   } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
     disposeManifestRuntimes(manifest);
     push({
       step: "runtime_cleanup",
@@ -1061,7 +1077,7 @@ async function stepRuntimeCleanup(
     `${result.succeeded}/${result.total} ok` + (wipeVolumes ? " (volumes wiped)" : "") + orphanNote;
 
   if (realFailures.length === 0) {
-    await Promise.allSettled(volumeCheckpointIds.map((id) => repos.orphanedResource.delete(id)));
+    await observedAllSettled(volumeCheckpointIds.map((id) => repos.orphanedResource.delete(id)), "platform/engine/modules/projects/project-teardown");
     push({ step: "runtime_cleanup", status: "ok", details });
     return { orphans, forceOrphanEligible: false };
   }
@@ -1125,7 +1141,7 @@ async function checkpointVolumeCleanup(
     }
     return checkpointIds;
   } catch (err) {
-    await Promise.allSettled(createdIds.map((id) => repos.orphanedResource.delete(id)));
+    await observedAllSettled(createdIds.map((id) => repos.orphanedResource.delete(id)), "platform/engine/modules/projects/project-teardown");
     throw err;
   }
 }
@@ -1137,7 +1153,7 @@ async function resolvePrimaryTarget(
 ): Promise<{ serverId: string | null; runtimeMode: string | null }> {
   const res = await repos.deployment
     .listByProject(projectId, { perPage: 1 })
-    .catch(() => ({ rows: [] as Array<{ meta?: unknown }> }));
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-teardown"); return ({ rows: [] as Array<{ meta?: unknown }> }); });
   const meta = (res.rows[0]?.meta ?? {}) as { serverId?: string; runtimeMode?: string };
   return { serverId: meta.serverId ?? null, runtimeMode: meta.runtimeMode ?? null };
 }
@@ -1178,7 +1194,8 @@ async function persistOrphans(
       existingKeys.add(orphanCandidateKey(c));
       out.push({ ref: c.ref, label: c.label, serverId: c.serverId });
     } catch (err) {
-      await Promise.allSettled(createdIds.map((id) => repos.orphanedResource.delete(id)));
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
+      await observedAllSettled(createdIds.map((id) => repos.orphanedResource.delete(id)), "platform/engine/modules/projects/project-teardown");
       throw new Error(`Failed to record deferred cleanup for ${c.label}: ${safeErrorMessage(err)}`);
     }
   }
@@ -1206,6 +1223,7 @@ async function stepWebmailTeardown(
         : { step: "webmail", status: "skipped", details: "nothing webmail-specific" },
     );
   } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
     push({ step: "webmail", status: "failed", error: safeErrorMessage(err) });
   }
 }
@@ -1225,14 +1243,17 @@ async function stepDeleteRow(
     // for other orgs (theoretical) would CASCADE-drop, but the app row
     // is org-scoped so leaving it soft-deleted keeps audit history
     // intact for the org.
-    const remaining = await repos.project.listByGroup(groupId).catch(() => []);
+    const remaining = await repos.project.listByGroup(groupId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-teardown"); return []; });
     if (remaining.length === 0) {
-      await repos.projectGroup.softDelete(groupId).catch(() => {});
+      await repos.projectGroup.softDelete(groupId).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-teardown");
+      });
     }
 
     push({ step: "delete_db_row", status: "ok" });
     return true;
   } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
     push({ step: "delete_db_row", status: "failed", error: safeErrorMessage(err) });
     return false;
   }

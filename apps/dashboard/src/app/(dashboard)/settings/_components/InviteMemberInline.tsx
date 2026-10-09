@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
@@ -77,7 +78,8 @@ export function InviteMemberInline({
       .then((settings) => {
         if (active) setEmailDeliverable(settings.deliverable);
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InviteMemberInline");
         if (active) setEmailDeliverable(false);
       });
     return () => {
@@ -200,7 +202,7 @@ export function InviteMemberInline({
                   setCopied(true);
                   setError("");
                 })
-                .catch(() => setError(t.settings.team.toast.copyInviteFailed));
+                .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/InviteMemberInline"); return setError(t.settings.team.toast.copyInviteFailed); });
             }}
           >
             <Icon name={copied ? "check" : "copy"} className="size-4" />

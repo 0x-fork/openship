@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { db, eq, schema, withAdvisoryLock, type DatabaseTransaction } from "@repo/db";
@@ -104,7 +105,8 @@ export function decodeHandoffCode(value: string): InstanceHandoffCode {
     return handoffCodeSchema.parse(
       JSON.parse(Buffer.from(value.trim(), "base64url").toString("utf8")),
     );
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/instance/handoff-peer");
     throw fail("This connection code is invalid. Create a new code on the other instance.");
   }
 }
@@ -447,7 +449,8 @@ export async function putTargetChunk(id: string, index: number, bytes: Uint8Arra
     // its transfer id and ordinal, so reordered/cross-transfer chunks fail.
     try {
       decryptBytesWithKey(chunkKey(row, index), bytes);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/system/instance/handoff-peer");
       throw new AppError(
         "This snapshot chunk failed verification. Resume the move to resend it.",
         400,

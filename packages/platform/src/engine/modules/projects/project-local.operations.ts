@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { stat } from "node:fs/promises";
 import { AppError, NotFoundError } from "@repo/core";
 import type { ProjectDependencies } from "../../../projects";
@@ -16,7 +17,7 @@ function requireLocalProjects() {
 
 async function localDirectory(path: string): Promise<string> {
   requireLocalProjects();
-  const info = await stat(path).catch(() => null);
+  const info = await stat(path).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-local.operations"); return null; });
   if (!info) throw new NotFoundError("Directory");
   if (!info.isDirectory()) throw new AppError("Path is not a directory", 400, "INVALID_SOURCE_PATH");
   if (process.env.OPENSHIP_NATIVE !== "true") return path;

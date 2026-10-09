@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useId, useState } from "react";
 import { Icon } from "@repo/ui/icons";
 import { api, getApiErrorMessage } from "@/lib/api";
@@ -107,7 +108,8 @@ export function UpgradeAuthForm({
         setHasMailServer(installed);
         setUseOwnMailServer(installed);
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/instance/UpgradeAuthModal");
         if (active) setHasMailServer(false);
       });
     return () => {

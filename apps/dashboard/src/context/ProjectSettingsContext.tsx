@@ -1,4 +1,6 @@
 "use client";
+
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { useCloudResourceKey } from "./CloudResourceContext";
 import type { IconName } from "@repo/ui/icons";
 import React, {
@@ -517,7 +519,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
     if (updateRequestRef.current?.key === updateKey) return updateRequestRef.current.promise;
     const promise = projectsApi.getCommitStatus(id)
       .then(({ data }) => data)
-      .catch(() => null) // Best-effort hint: a failed check is not evidence of an update.
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/context/ProjectSettingsContext"); return null; }) // Best-effort hint: a failed check is not evidence of an update.
       .then((data) => {
         if (!updateMountedRef.current || currentUpdateKeyRef.current !== updateKey ||
           updateRequestRef.current?.promise !== promise) return;
@@ -682,7 +684,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
         }));
       }
     } catch (error) {
-      console.error("Failed to fetch environment variables:", error);
+      errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch environment variables:", error);
       setEnvironmentData((prev) => ({
         ...prev,
         isLoading: false,
@@ -781,7 +783,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
         }));
       }
     } catch (error) {
-      console.error("Failed to fetch git data:", error);
+      errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch git data:", error);
       setGitData((prev) => ({
         ...prev,
         isLoading: false,
@@ -884,7 +886,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
         }
         return services;
       } catch (error) {
-        console.error("Failed to fetch project services:", error);
+        errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch project services:", error);
         fail();
         return [];
       } finally {
@@ -929,7 +931,7 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
         commit: setEnvironments,
         invalidate: invalidateProjectCachesFor,
         onRefreshError: (error) =>
-          console.warn("Failed to reconcile project environments after create", error),
+          errorDiagnostics.warn("dashboard/context/ProjectSettingsContext", "Failed to reconcile project environments after create", error),
       });
 
       return created;

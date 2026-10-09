@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHmac } from "node:crypto";
 import { z } from "zod";
 import { db, eq, repos, schema, withAdvisoryLock } from "@repo/db";
@@ -276,7 +277,7 @@ export function provisionInstance(
       );
     const result = z
       .object({ code: peer.handoffCodeSchema, version: z.literal(plan.version) })
-      .safeParse(await response.json().catch(() => null));
+      .safeParse(await response.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/instance/provision-instance"); return null; }));
     if (!result.success)
       throw new AppError(
         `The receiving API must run Openship ${plan.version}. Check its image and public address, then resume this move.`,
@@ -291,6 +292,7 @@ export function provisionInstance(
     await resumeHandoff(id, localOrigin);
   })
     .catch(async (error) => {
+      observeCaughtError(error, "api/modules/system/instance/provision-instance");
       await db
         .update(schema.instanceHandoff)
         .set({

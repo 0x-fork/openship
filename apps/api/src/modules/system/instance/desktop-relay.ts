@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import WebSocket from "ws";
 import { instanceOrigin, INVITATION_DELIVERY_HEADER } from "@repo/core";
@@ -81,7 +82,7 @@ export async function relayInstanceRequest(c: Context, state: ControllerState): 
       for (const data of outgoing) remote.send(data);
       outgoing.length = 0;
     });
-    remote.on("error", () => local?.close(1011, "Remote instance is unavailable"));
+    remote.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "api/modules/system/instance/desktop-relay"); return local?.close(1011, "Remote instance is unavailable"); });
     remote.on("close", (code) =>
       local?.close([1000, 1001, 1008, 1009, 1011].includes(code) ? code : 1011),
     );
@@ -144,6 +145,8 @@ export async function relayInstanceRequest(c: Context, state: ControllerState): 
       init.body = c.req.raw.body;
       init.duplex = "half";
     }
+    const requestId = c.get("diagnosticRequestId");
+    if (requestId) headers.set("X-Request-ID", requestId);
     const response = await fetch(target, init);
     clearTimeout(timeout);
     await saveRemoteCookies(state, response.headers);
@@ -179,6 +182,7 @@ export async function relayInstanceRequest(c: Context, state: ControllerState): 
             stream.close();
           } else stream.enqueue(chunk.value);
         } catch (error) {
+          observeCaughtError(error, "api/modules/system/instance/desktop-relay");
           finish();
           stream.error(error);
         }
@@ -186,11 +190,14 @@ export async function relayInstanceRequest(c: Context, state: ControllerState): 
       async cancel() {
         relay.abort();
         finish();
-        await reader.cancel().catch(() => {});
+        await reader.cancel().catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "api/modules/system/instance/desktop-relay");
+        });
       },
     });
     return new Response(body, { status: response.status, headers: outgoing });
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/modules/system/instance/desktop-relay");
     finish();
     return c.json(
       {

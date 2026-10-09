@@ -1,3 +1,4 @@
+import { errorReporter, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { serve } from "@hono/node-server";
 import {
   setBackupCredentialSecret,
@@ -7,6 +8,7 @@ import {
 } from "@repo/adapters";
 import { isDevWatchReload } from "@repo/db";
 import { app } from "./app";
+import { drainErrorResponses } from "./middleware/error-observation";
 import {
   cloudRuntimeTarget,
   cloudRuntimeTargetId,
@@ -88,17 +90,19 @@ const server = serve({ fetch: app.fetch, port, ...(hostname ? { hostname } : {})
 void (async () => {
   if (env.DEPLOY_MODE === "desktop") return;
   if ((await getAuthMode()) !== "none") return;
-  console.error("");
-  console.error("!!! ZERO-AUTH ENABLED — anyone reaching this instance can act as admin.");
-  console.error("!!! Loopback-only guard is in authMiddleware.");
-  console.error("");
+  errorDiagnostics.error("api/server", "");
+  errorDiagnostics.error("api/server", "!!! ZERO-AUTH ENABLED — anyone reaching this instance can act as admin.");
+  errorDiagnostics.error("api/server", "!!! Loopback-only guard is in authMiddleware.");
+  errorDiagnostics.error("api/server", "");
 })();
 
 // Same shape, for the container→host SSH channel (#490) — silent unless the channel
 // is actually broken. At boot and not only at install: `openship up` probes it now,
 // but a box provisioned before that existed never saw the check, and a firewall can
 // change under a running install.
-if (await controllerIsActive()) void reportHostChannelAtBoot().catch(() => {});
+if (await controllerIsActive()) void reportHostChannelAtBoot().catch((diagnosticFailure) => {
+  observeCaughtError(diagnosticFailure, "api/server");
+});
 
 // Attach the tunnel agent lifecycle if this instance has been migrated
 // via Path C (teamMode === "tunneled"). Local-API-only by design —
@@ -152,7 +156,7 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
   console.log(`\n${signal} received — shutting down gracefully...`);
 
   const deadline = setTimeout(() => {
-    console.warn("Shutdown deadline exceeded — exiting forcibly");
+    errorDiagnostics.warn("api/server", "Shutdown deadline exceeded — exiting forcibly");
     process.exit(1);
   }, 30_000);
   deadline.unref();
@@ -164,7 +168,7 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
   try {
     tunneling.stop();
   } catch (err) {
-    console.warn("[shutdown] tunnel close failed:", err);
+    errorDiagnostics.warn("api/server", "[shutdown] tunnel close failed:", err);
   }
 
   // A dev `--watch` reload is a RACE, not a graceful stop: the successor process
@@ -189,7 +193,7 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
         await import("@repo/platform/engine/modules/system/network-setup-lifecycle");
       await stopNetworkSetups();
     } catch (err) {
-      console.warn("[shutdown] network setup interruption failed:", err);
+      errorDiagnostics.warn("api/server", "[shutdown] network setup interruption failed:", err);
     }
   }
 
@@ -203,7 +207,7 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
       const { stopAllTunnels } = await import("@repo/platform/engine/lib/ssh-tunnel-manager");
       await stopAllTunnels();
     } catch (err) {
-      console.warn("[shutdown] port-forward close failed:", err);
+      errorDiagnostics.warn("api/server", "[shutdown] port-forward close failed:", err);
     }
 
     // Health-watch Docker event streams. Each holds a `retain()` on a pooled SSH
@@ -217,7 +221,7 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
         await import("@repo/platform/engine/modules/monitoring/container-events");
       await stopAllContainerEventWatchers({ closing: true });
     } catch (err) {
-      console.warn("[shutdown] container event watcher close failed:", err);
+      errorDiagnostics.warn("api/server", "[shutdown] container event watcher close failed:", err);
     }
   }
 
@@ -226,12 +230,12 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
     // reload abandons in-flight jobs rather than the database.
     await shutdownJobRunner(fastReload ? 500 : 20_000);
   } catch (err) {
-    console.warn("[shutdown] job runner close failed:", err);
+    errorDiagnostics.warn("api/server", "[shutdown] job runner close failed:", err);
   }
 
   await new Promise<void>((resolve) => {
     server.close((err) => {
-      if (err) console.warn("[shutdown] server close failed:", err);
+      if (err) errorDiagnostics.warn("api/server", "[shutdown] server close failed:", err);
       resolve();
     });
   });
@@ -243,7 +247,7 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
       await cloudAnalytics.drain();
       await cloudAnalytics.flush();
     } catch {
-      console.warn("[cloud-analytics] Pending deliveries will resume after restart.");
+      errorDiagnostics.warn("api/server", "[cloud-analytics] Pending deliveries will resume after restart.");
     }
   }
   // Close the DB after the HTTP server and jobs (both use it) have drained.
@@ -254,13 +258,13 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
       await import("@repo/platform/engine/modules/github/github.local-auth");
     await closeDeviceFlows();
   } catch (err) {
-    console.warn("[shutdown] GitHub device authorization close failed:", err);
+    errorDiagnostics.warn("api/server", "[shutdown] GitHub device authorization close failed:", err);
   }
   try {
     const { closeDb } = await import("@repo/db");
     await closeDb();
   } catch (err) {
-    console.warn("[shutdown] db close failed:", err);
+    errorDiagnostics.warn("api/server", "[shutdown] db close failed:", err);
   }
 
   // Last: dispose the pooled SSH connections now that jobs and in-flight HTTP
@@ -272,11 +276,13 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
     const { sshManager } = await import("@repo/platform/engine/lib/ssh-manager");
     await sshManager.destroy();
   } catch (err) {
-    console.warn("[shutdown] ssh pool close failed:", err);
+    errorDiagnostics.warn("api/server", "[shutdown] ssh pool close failed:", err);
   }
 
   clearTimeout(deadline);
   console.log("Shutdown complete.");
+  await drainErrorResponses();
+  await errorReporter.flush(fastReload ? 100 : 1500);
   process.exit(exitCode);
 }
 

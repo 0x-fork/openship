@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
@@ -145,15 +146,15 @@ export function TeamTab() {
         // a row exists for every org, so this always resolves.
         api.get<{ data: { isTeam: boolean; memberCount: number; organizationId?: string } }>(
           "permissions/org-meta",
-        ).catch(() => ({ data: { isTeam: false, memberCount: 0 } })),
+        ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab"); return ({ data: { isTeam: false, memberCount: 0 } }); }),
         api
           .get<{
             invitationMailSource?: InvitationMailSource;
             teamReachability?: TeamReachability;
           }>("system/settings")
-          .catch(() => ({ invitationMailSource: "platform" as InvitationMailSource })),
+          .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab"); return ({ invitationMailSource: "platform" as InvitationMailSource }); }),
         // Active org name for the manage-workspace modal (rename default + confirm).
-        orgClient.getFullOrganization().catch(() => ({ data: null })),
+        orgClient.getFullOrganization().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab"); return ({ data: null }); }),
       ]);
       setMembers(mRes.data?.members ?? []);
       setInvitations(iRes.data ?? []);
@@ -172,7 +173,7 @@ export function TeamTab() {
     } catch (err) {
       // Network/abort errors are handled by the global NetworkErrorHandler;
       // only surface real API errors here so we don't double-toast.
-      console.error("Failed to load members", err);
+      errorDiagnostics.error("dashboard/app/(dashboard)/settings/_components/TeamTab", "Failed to load members", err);
       if (err instanceof ApiError || !isNetworkError(err)) {
         showToast(getApiErrorMessage(err, t.settings.team.toast.loadFailed), "error", t.settings.common.toast.team);
       }
@@ -209,7 +210,8 @@ export function TeamTab() {
           }
         ).organization.setActive;
         await setActive({ organizationId: newOrgId });
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab");
         /* fall through — page reload picks up the new org */
       }
       // Force a reload so every context (sidebar, header) picks up the
@@ -270,7 +272,8 @@ export function TeamTab() {
         "success",
         t.settings.common.toast.invitations,
       );
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab");
       showToast(
         t.settings.team.toast.copyInviteFailed,
         "error",
@@ -285,7 +288,8 @@ export function TeamTab() {
     const personalOrgId = session?.user?.id ? `org_${session.user.id}` : null;
     try {
       if (personalOrgId) await orgClient.setActive({ organizationId: personalOrgId });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab");
       /* the reload resolves whatever org remains */
     }
     if (typeof window !== "undefined") window.location.reload();

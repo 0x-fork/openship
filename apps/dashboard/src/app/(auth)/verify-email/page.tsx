@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { Suspense, useEffect, useState } from "react";
@@ -63,6 +64,7 @@ function VerifyEmailContent() {
           setStatus("verified");
         }
       } catch (err) {
+        observeCaughtError(err, "dashboard/app/(auth)/verify-email/page");
         if (cancelled) return;
         setStatus("error");
         setErrorMessage(
@@ -112,6 +114,7 @@ function VerifyEmailContent() {
         setCode("");
       }
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/verify-email/page");
       setErrorMessage(
         isNetworkError(err) ? t.auth.errors.serverUnreachable : t.auth.errors.verificationFailed,
       );
@@ -142,6 +145,7 @@ function VerifyEmailContent() {
         toast("success", t.auth.errors.verificationSent);
       }
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/verify-email/page");
       const msg = isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.resendFailed;

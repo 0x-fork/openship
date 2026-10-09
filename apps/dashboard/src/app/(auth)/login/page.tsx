@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -127,6 +128,7 @@ function LoginPageInner() {
       // avoids the dead "idle button, no navigation yet" gap.
       completeSignIn(result.data);
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/login/page");
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
@@ -145,6 +147,7 @@ function LoginPageInner() {
       }
       completeSignIn(result.data);
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/login/page");
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.security.passkeyFailed);

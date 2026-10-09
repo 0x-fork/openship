@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   AppError,
   handoffInstance,
@@ -27,7 +28,7 @@ export async function peerRequest<T>(
     },
   );
   if (!response.ok) {
-    const error = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
+    const error = (await response.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/instance/handoff-client"); return ({}); })) as { error?: string; code?: string };
     throw new AppError(
       error.error ?? `The other instance returned HTTP ${response.status}.`,
       502,
@@ -133,6 +134,7 @@ export function resumeHandoff(id: string, localOrigin: string): Promise<void> {
     await handoffInstance(source, target);
   })()
     .catch(async (error) => {
+      observeCaughtError(error, "api/modules/system/instance/handoff-client");
       // This records the failure, never unlocks either controller. Reconnection
       // and process restart resume the same journal and snapshot.
       await db

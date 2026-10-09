@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -199,7 +200,8 @@ export default function ServersPage() {
       const created = await systemApi.createServerEntry({ sshHost: "127.0.0.1", sshPort: 22 });
       await fetchServers();
       if (created?.id) router.push(`/servers/${created.id}`);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
       toast("error", t.servers.list.addThisMachineError);
     }
   }, [fetchServers, router, toast, t]);
@@ -220,7 +222,8 @@ export default function ServersPage() {
           setReach((prev) => ({ ...prev, [s.id]: r.reachable ? "online" : "offline" }));
           if (!r.reachable && r.hint) setReachHint((prev) => ({ ...prev, [s.id]: r.hint! }));
         })
-        .catch(() => {
+        .catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
           if (!cancelled) setReach((prev) => ({ ...prev, [s.id]: "offline" }));
         });
     });
@@ -238,7 +241,8 @@ export default function ServersPage() {
         try {
           const rows = await systemApi.listTunnels(s.id);
           return [s.id, rows.filter((tn) => tn.running).length] as const;
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
           return [s.id, 0] as const;
         }
       }),
@@ -317,7 +321,8 @@ export default function ServersPage() {
             interpolate(skipped === 1 ? ic.skippedOne : ic.skippedMany, { n: String(skipped) }),
           );
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/page");
         toast("error", ic.applyFailed);
       }
     },

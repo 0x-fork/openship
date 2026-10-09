@@ -1,4 +1,6 @@
 "use client";
+
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,9 @@ export function InstanceRecovery({ initial }: { initial: InstanceStatus }) {
         .then((session) => {
           if (!stopped && session?.user) window.location.reload();
         })
-        .catch(() => {});
+        .catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "dashboard/components/instance/InstanceRecovery");
+        });
     }, 3_000);
     return () => {
       stopped = true;

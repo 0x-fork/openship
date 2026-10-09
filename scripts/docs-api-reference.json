@@ -3286,6 +3286,10 @@
     }
   },
   "http": {
+    "POST /api/diagnostics/client-errors": {
+      "page": "diagnostics",
+      "description": "Submit bounded, untrusted dashboard error reports. Public, rate-limited intake with no read access."
+    },
     "POST /api/cloud/servers/:id/authorize": {
       "page": "cloud",
       "section": "Managed server connections",

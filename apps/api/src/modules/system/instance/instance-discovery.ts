@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { z } from "zod";
 import { AppError, instanceOrigin } from "@repo/core";
 
@@ -22,7 +23,8 @@ export async function discoverInstance(value: string) {
         redirect: "error",
         signal,
       });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/system/instance/instance-discovery");
       break;
     }
     if (!response.ok) {
@@ -32,7 +34,7 @@ export async function discoverInstance(value: string) {
       if ([404, 405].includes(response.status)) continue;
       break;
     }
-    const identity = identitySchema.safeParse(await response.json().catch(() => null));
+    const identity = identitySchema.safeParse(await response.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/instance/instance-discovery"); return null; }));
     if (!identity.success) continue;
     if (identity.data.origin !== candidate)
       throw new AppError("Use the address configured on the remote instance.", 409);

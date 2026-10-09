@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useState } from "react";
 import { desktopInstanceLink, invitationClaimPath } from "@repo/core";
 import { Icon } from "@repo/ui/icons";
@@ -50,7 +51,7 @@ export function InvitationDesktopLink({ invitationId }: { invitationId: string }
           onClick={() => {
             void copyText(link.address)
               .then(() => setCopied(true))
-              .catch(() => setShowFallback(true));
+              .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/components/instance/InvitationDesktopLink"); return setShowFallback(true); });
           }}
         >
           <Icon name={copied ? "check" : "copy"} className="size-4" />

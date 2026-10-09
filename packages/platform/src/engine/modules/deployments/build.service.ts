@@ -14,6 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { assertNotControlPlane } from "@repo/platform/engine/lib/resource-access";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import {
@@ -600,7 +601,8 @@ async function resolveLatestCommitInfo(ctx: RequestContext, project: Project, br
           latestMessage: head.message ?? null,
         },
       });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service");
       // Cache persistence is best-effort; a deploy must not fail after GitHub
       // already returned a usable commit merely because this write failed.
     }
@@ -633,7 +635,7 @@ async function canonicalizeCommitRef(
   if (!trimmed || isFullCommitSha(trimmed)) return trimmed;
   if (!project.gitOwner || !project.gitRepo) return trimmed;
   const found = await getCommitByRef(ctx, project.gitOwner, project.gitRepo, trimmed).catch(
-    () => null,
+    (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; },
   );
   return found?.sha ?? trimmed;
 }
@@ -961,7 +963,7 @@ async function resolveLifecycleSourceEnv(
     if (localPath) {
       throw new AppError(`Could not read project environment: ${safeErrorMessage(err)}`, 400);
     }
-    console.warn(`[source-env] refresh skipped for ${project.id}:`, err);
+    errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[source-env] refresh skipped for ${project.id}:`, err);
     return undefined;
   }
 }
@@ -1008,7 +1010,7 @@ export async function resolveRollbackContext(
   if (!commitShaBefore) {
     const lastGood = await repos.deployment
       .getLatestSuccessfulForBranch(project.id, branch)
-      .catch(() => null);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; });
     commitShaBefore = lastGood?.commitSha ?? undefined;
   }
 
@@ -1036,7 +1038,7 @@ export async function resolveSnapshotTarget(
   override?: { deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" },
 ): Promise<{ deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker"; clusterId?: string; clusterRuntimeId?: string; clusterProjectId?: string; clusterConfig?: import("@repo/core").ClusterWorkloadConfig }> {
   const activeMeta = project.activeDeploymentId
-    ? ((await findActiveDeployment(project).catch(() => null))
+    ? ((await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; }))
         ?.meta as DeploymentConfigSnapshot | null)
     : null;
 
@@ -1375,7 +1377,7 @@ async function createQueuedDeploymentUnlocked(opts: {
     // site. This is the same predicate the pipeline itself branches on, so the
     // gate and the executor can't disagree about what will run.
     usesServicePipeline: async () => {
-      const project = await repos.project.findById(opts.projectId).catch(() => null);
+      const project = await repos.project.findById(opts.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; });
       return project ? shouldUseProjectServicePipeline(project, meta.composeServices) : false;
     },
   }, meta.managedWorkspaceId ?? null);
@@ -1482,7 +1484,9 @@ async function createQueuedDeploymentUnlocked(opts: {
     });
   } catch (err) {
     // Atomicity: clean up orphaned deployment
-    await repos.deployment.deleteDeployment(dep.id).catch(() => {});
+    await repos.deployment.deleteDeployment(dep.id).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service");
+    });
     throw err;
   }
 
@@ -1494,7 +1498,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   await repos.deployment
     .supersedeReconciling(opts.projectId, dep.id)
     .catch((err) =>
-      console.warn(`[build] supersede reconciling for ${opts.projectId} failed:`, err),
+      errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[build] supersede reconciling for ${opts.projectId} failed:`, err),
     );
 
   // Creating a new deployment IS the decision on any prior partial-failure
@@ -1506,7 +1510,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   await repos.deployment
     .supersedePendingDecisions(opts.projectId, dep.id)
     .catch((err) =>
-      console.warn(`[build] supersede pending decisions for ${opts.projectId} failed:`, err),
+      errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[build] supersede pending decisions for ${opts.projectId} failed:`, err),
     );
 
   const { cloudAnalytics } = await import("../cloud-analytics");
@@ -1673,6 +1677,7 @@ export async function requestBuildAccess(
       sourceInfo = refreshed;
       refreshedUploadServices = refreshed.services;
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/deployments/build.service");
       throw new AppError(
         `Could not refresh the uploaded Compose source: ${safeErrorMessage(err)}`,
         400,
@@ -1729,6 +1734,7 @@ export async function requestBuildAccess(
           project.rootDirectory ?? "",
         );
       } catch (err) {
+        observeCaughtError(err, "platform/engine/modules/deployments/build.service");
         throw new AppError(
           `Could not read uploaded project environment: ${safeErrorMessage(err)}`,
           400,
@@ -1999,8 +2005,8 @@ export async function requestBuildAccess(
         // running container (see syncFromCompose's docblock).
         .syncFromCompose(project.id, composeOnly, { removeMissing: false })
         .catch((err) =>
-          console.warn(
-            `[requestBuildAccess] failed to persist compose services: ${safeErrorMessage(err)}`,
+          errorDiagnostics.warn("platform/engine/modules/deployments/build.service",
+            `[requestBuildAccess] failed to persist compose services: ${safeErrorMessage(err)}`, err,
           ),
         );
     }
@@ -2035,8 +2041,8 @@ export async function requestBuildAccess(
     await repos.project
       .update(project.id, { runtimeMode })
       .catch((err) =>
-        console.warn(
-          `[requestBuildAccess] failed to persist runtimeMode: ${safeErrorMessage(err)}`,
+        errorDiagnostics.warn("platform/engine/modules/deployments/build.service",
+          `[requestBuildAccess] failed to persist runtimeMode: ${safeErrorMessage(err)}`, err,
         ),
       );
   }
@@ -2086,6 +2092,7 @@ export async function requestBuildAccess(
         ? cloudResourceCustom ?? {}
         : resolveTierResources(cloudResourceTier));
     } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/deployments/build.service");
       throw new ValidationError(error instanceof Error ? error.message : "Invalid resource limits");
     }
     await assertPlanAllowsResourceTier(ctx.organizationId, snapshot.resources,
@@ -2240,13 +2247,13 @@ export async function cancelBuildSession(
     // replaced yet, so an unprotected manifest tears down the running app.
     const manifest = await collectDeploymentManifest(dep, project, {
       protectRetained: true,
-    }).catch((): CleanupManifest => ({ projectId: dep.projectId, resources: [] }));
+    }).catch((diagnosticFailure): CleanupManifest => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return ({ projectId: dep.projectId, resources: [] }); });
     if (manifest.resources.length > 0) {
       await executeCleanup(manifest).catch((err) => {
         // Per-item failures are already isolated inside executeCleanup, so we
         // only land here on an unexpected crash. Log and continue - cancel
         // still has to mark the deployment cancelled, leak or no leak.
-        console.error(`[CANCEL] Cleanup crashed for ${dep.id}:`, err);
+        errorDiagnostics.error("platform/engine/modules/deployments/build.service", `[CANCEL] Cleanup crashed for ${dep.id}:`, err);
       });
     }
   } else {
@@ -2257,7 +2264,7 @@ export async function cancelBuildSession(
   //    showing per-service spinners.
   const snapshot = dep.meta as DeploymentConfigSnapshot | null;
   if (snapshot?.serviceDeploymentMode !== "single") {
-    const services = await repos.service.listByProject(dep.projectId).catch(() => []);
+    const services = await repos.service.listByProject(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return []; });
     for (const svc of services) {
       sessionManager.broadcastServiceStatus(dep.id, {
         serviceName: svc.name,
@@ -2297,7 +2304,7 @@ export async function cancelBuildSession(
       quiescent = await recoverManagedDeploymentExecution({ ...dep, status: "cancelled" }, project);
     } catch (error) {
       recoveryWarning = safeErrorMessage(error);
-      console.warn(`[CANCEL] ${dep.id}: recovery pending: ${recoveryWarning}`);
+      errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[CANCEL] ${dep.id}: recovery pending: ${recoveryWarning}`, error);
     }
   }
   if (!quiescent) {
@@ -2457,7 +2464,7 @@ export async function redeployBuildSession(
   if (meta.serviceDeploymentMode !== "single" && (env.CLOUD_MODE || meta.deployTarget === "cloud")) {
     await ensureDraftAppResourceDefaults(project);
   }
-  const currentComposeRows = await listProjectComposeServices(project.id).catch(() => []);
+  const currentComposeRows = await listProjectComposeServices(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return []; });
   const currentComposeServices = projectServicesToDeployableServices(
     currentComposeRows.filter((s) => s.enabled),
   );
@@ -2684,7 +2691,7 @@ export async function triggerDeployment(
       : snapshotNeedsProjectSource(
           { hasBuild: project.hasBuild ?? undefined },
           projectServicesToDeployableServices(
-            (await listProjectComposeServices(project.id).catch(() => [])).filter((s) => s.enabled),
+            (await listProjectComposeServices(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return []; })).filter((s) => s.enabled),
           ),
         );
     if (sourceless) {
@@ -2717,9 +2724,9 @@ export async function triggerDeployment(
   if (data.trigger === "webhook" && !data.forceAll && requestedCommitSha) {
     const inFlight = await repos.deployment
       .findInProgressByCommit(project.id, requestedCommitSha)
-      .catch(() => undefined);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return undefined; });
     const active = project.activeDeploymentId
-      ? await findActiveDeployment(project).catch(() => null)
+      ? await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; })
       : null;
     const existing =
       inFlight ??
@@ -2778,6 +2785,7 @@ export async function triggerDeployment(
     try {
       assertExactServiceTargets(await repos.service.listByProject(project.id), data.serviceIds);
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/deployments/build.service");
       throw new AppError(safeErrorMessage(err), 400);
     }
   }
@@ -2851,7 +2859,7 @@ export async function triggerDeployment(
   let refreshActive: Awaited<ReturnType<typeof repos.deployment.findById>> | null = null;
   if (data.refresh) {
     refreshActive = project.activeDeploymentId
-      ? await findActiveDeployment(project).catch(() => null)
+      ? await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; })
       : null;
     if (!refreshActive) {
       throw new AppError("Nothing to refresh yet — deploy the project first.", 409);
@@ -2960,7 +2968,7 @@ export async function triggerDeployment(
   //    is ALSO a refresh service → excluded from the build → empty buildable →
   //    the build phase (and its clone) is skipped entirely. ──
   if (data.refresh) {
-    const enabledIds = (await repos.service.listByProject(project.id).catch(() => []))
+    const enabledIds = (await repos.service.listByProject(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return []; }))
       .filter((s) => s.enabled)
       .map((s) => s.id);
     // Target precedence: explicit serviceIds (per-service refresh from the UI)
