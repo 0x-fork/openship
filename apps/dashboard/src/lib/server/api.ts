@@ -27,7 +27,7 @@ const DEFAULT_TIMEOUT = 10_000;
  * Parse a raw Set-Cookie header into the shape Next.js `cookies().set()`
  * accepts. Supports the attributes the API actually uses: Path, Domain,
  * Expires, Max-Age, HttpOnly, Secure, SameSite. Unknown attributes are
- * ignored. Returns null when the header is unparseable (no `=`).
+ * ignored. Returns null when the name/value cannot be parsed.
  */
 type ParsedSetCookie = {
   name: string;
@@ -47,9 +47,16 @@ function parseSetCookie(raw: string): ParsedSetCookie | null {
   const first = parts.shift();
   if (!first) return null;
   const eq = first.indexOf("=");
-  if (eq < 0) return null;
+  if (eq <= 0) return null;
   const name = first.slice(0, eq);
-  const value = first.slice(eq + 1);
+  // Next's cookie setter encodes values; decode the API's wire value exactly
+  // once so refreshed session signatures are not percent-encoded twice.
+  let value: string;
+  try {
+    value = decodeURIComponent(first.slice(eq + 1));
+  } catch {
+    return null;
+  }
   const options: ParsedSetCookie["options"] = {};
   for (const attr of parts) {
     const lower = attr.toLowerCase();
@@ -165,7 +172,9 @@ async function request<T = unknown>(
   const cookieStore = await cookies();
   const cookieHeader = cookieStore
     .getAll()
-    .map((c) => `${c.name}=${c.value}`)
+    // Next has decoded these values. Serialize them back onto the wire,
+    // including Latin-1, delimiters and percent signs, without changing meaning.
+    .map((c) => `${c.name}=${encodeURIComponent(c.value)}`)
     .join("; ");
 
   /* --- Headers ---------------------------------------------------- */
@@ -212,8 +221,8 @@ async function request<T = unknown>(
     // redirect loop between the dashboard middleware (cookie check)
     // and (auth)/layout (session check).
     //
-    // We propagate every Set-Cookie from the API verbatim - same name,
-    // value, and attributes. The API is trusted (we control both
+    // Preserve cookie values and supported attributes, converting the wire
+    // value to the decoded form Next expects. The API is trusted (we control both
     // sides), so we don't filter by name. Errors during the cookies()
     // call (which can happen if invoked outside a request context like
     // a generateStaticParams build) are swallowed - those code paths
