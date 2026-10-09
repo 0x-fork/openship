@@ -63,7 +63,7 @@ export function createProjectLocalDependencies(create: (ctx: ExecutionContext, i
         body.hasServer ??
         (info.workloadType
           ? info.workloadType === "web"
-          : info.projectType === "services" || Boolean(info.startCommand)),
+          : info.projectType === "services" || info.projectType === "docker" || Boolean(info.startCommand)),
       projectType: body.projectType ?? info.projectType,
       publicEndpoints: body.publicEndpoints ?? info.publicEndpoints,
       routingConfig: body.routingConfig ?? info.routing,
