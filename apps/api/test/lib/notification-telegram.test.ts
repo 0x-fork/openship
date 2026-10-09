@@ -48,6 +48,7 @@ describe("telegram delivery", () => {
   it("keeps the channel's opaque token out of diagnostic events as well as the returned error", async () => {
     await errorReporter.flush();
     const events: ErrorEvent[] = [];
+    errorReporter.setEnabled(true);
     errorReporter.setSink((batch) => { events.push(...batch); });
     safeFetch.mockRejectedValueOnce(new Error(`Transport failed for ${TOKEN}`));
     try {
@@ -59,6 +60,7 @@ describe("telegram delivery", () => {
       expect(events[0]!.error.message).toContain("Transport failed");
       expect(JSON.stringify(events)).not.toContain(TOKEN);
     } finally {
+      errorReporter.setEnabled(false);
       errorReporter.setSink(consoleErrorSink);
     }
   });

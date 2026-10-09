@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { diagnostics, errorReporter } from "@repo/core/diagnostics";
+import { diagnostics, errorReporter, reportCaughtError } from "@repo/core/diagnostics";
 import {
   afterEach,
   beforeAll,
@@ -21,6 +21,7 @@ vi.mock("./api/urls", () => ({
 beforeAll(() => installClientErrorReporting());
 beforeEach(async () => {
   await errorReporter.flush();
+  Object.assign(window, { __OPENSHIP_ERROR_REPORTING__: true });
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
@@ -29,11 +30,40 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await errorReporter.flush();
+  Reflect.deleteProperty(window, "__OPENSHIP_ERROR_REPORTING__");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("browser error delivery", () => {
+  it.each([false, undefined])(
+    "sends nothing when Cloud mode is %s, including caught/global errors",
+    async (enabled) => {
+      Object.assign(window, { __OPENSHIP_ERROR_REPORTING__: enabled });
+      const local = vi.spyOn(console, "error").mockImplementation(() => {});
+      reportClientError(new Error("local browser failure"));
+      reportCaughtError(new Error("local recovered failure"), "dashboard/local");
+      window.dispatchEvent(new ErrorEvent("error", { error: new Error("local uncaught failure") }));
+      diagnostics.warn("dashboard/local", "Intentional local warning");
+      window.dispatchEvent(new Event("online"));
+      window.dispatchEvent(new Event("pagehide"));
+      await errorReporter.flush();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(local).toHaveBeenCalledTimes(1);
+      expect(errorReporter.stats().queued).toBe(0);
+    },
+  );
+
+  it("discards queued Cloud events when reporting becomes disabled", async () => {
+    reportClientError(new Error("queued before changing mode"));
+    Object.assign(window, { __OPENSHIP_ERROR_REPORTING__: false });
+    await errorReporter.flush();
+    Object.assign(window, { __OPENSHIP_ERROR_REPORTING__: true });
+    window.dispatchEvent(new Event("online"));
+    await errorReporter.flush();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("batches sanitized client failures to the current instance without third-party telemetry", async () => {
     const error = Object.assign(new Error("password=browser-private-913"), {
       request: { cookie: "private-cookie-913" },

@@ -5,4 +5,6 @@ const { loadInstanceEnvironment } = await import("./lib/instance-environment");
 
 // Integration credentials must be loaded before auth/providers are constructed.
 await loadInstanceEnvironment();
+const { installCloudErrorDestination } = await import("./lib/cloud-error-destination");
+await installCloudErrorDestination();
 await import("./server");

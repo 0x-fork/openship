@@ -45,7 +45,6 @@ import { domainRoutes } from "./modules/domains/domain.routes";
 import { dnsRoutes } from "./modules/dns/dns.routes";
 import { credentialRoutes } from "./modules/credentials/credential.routes";
 import { issuesRoutes } from "./modules/issues/issues.routes";
-import { diagnosticsRoutes } from "./modules/diagnostics/diagnostics.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
 import { serviceRoutes } from "./modules/services/service.routes";
@@ -197,7 +196,6 @@ app.use("/api/auth/mcp/authorize", forceMcpConsent);
 
 /* ---------- Shared routes (self-hosted + cloud + desktop) ---------- */
 app.route("/api/health", healthRoutes);
-app.route("/api/diagnostics", diagnosticsRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/projects", projectRoutes);
 app.route("/api/apps", appRoutes);
@@ -330,6 +328,8 @@ setupWebSocket(app);
 
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
+  const { diagnosticsRoutes } = await import("./modules/diagnostics/diagnostics.routes");
+  app.route("/api/diagnostics", diagnosticsRoutes);
   const { cloudSupportRoutes } = await import("./modules/cloud-support/cloud-support.routes");
   app.route("/api/cloud/support", cloudSupportRoutes);
   const { cloudAnalyticsRoutes } = await import("./modules/cloud-analytics/cloud-analytics.routes");

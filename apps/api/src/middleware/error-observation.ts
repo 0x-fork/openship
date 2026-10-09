@@ -1,5 +1,6 @@
 import {
   diagnosticId,
+  errorReporter,
   reportError,
   type ErrorContext,
 } from "@repo/core/diagnostics";
@@ -92,7 +93,7 @@ export const observeRequestErrors: MiddlewareHandler = async (c, next) => {
         try {
           // A raw/relayed response may have replaced the headers prepared earlier.
           c.header("X-Request-ID", requestId);
-          if (c.res.status >= 400) {
+          if (errorReporter.isEnabled() && c.res.status >= 400) {
             const context: ErrorContext = {
               ...requestErrorContext(c),
               durationMs: Math.round(performance.now() - start),

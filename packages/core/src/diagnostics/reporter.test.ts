@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ErrorReporter,
+  errorReporter,
+  reportCaughtError,
   type ErrorEvent,
   type ErrorSink,
   diagnosticError,
@@ -28,6 +30,102 @@ function recorder(options: ConstructorParameters<typeof ErrorReporter>[0] = {}) 
 }
 
 describe("structured error reporting", () => {
+  it("does not collect caught errors by default, even after installing a destination", async () => {
+    const sink = vi.fn();
+    const touched = vi.fn();
+    const error = new Proxy({}, { getOwnPropertyDescriptor: touched });
+    errorReporter.setSink(sink);
+    expect(errorReporter.isEnabled()).toBe(false);
+    reportCaughtError(error, "self-hosted/probe");
+    expect(errorReporter.capture(error)).toBe("");
+    await errorReporter.flush();
+    expect(touched).not.toHaveBeenCalled();
+    expect(sink).not.toHaveBeenCalled();
+    expect(errorReporter.stats().queued).toBe(0);
+  });
+
+  it("keeps intentional errors local when collection is disabled", async () => {
+    const local = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { reporter, events } = recorder({ enabled: false });
+    try {
+      reporter.log("error", "desktop", "Connection failed", new Error("password=private-913"));
+      await reporter.flush();
+      expect(events).toHaveLength(0);
+      expect(local).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(local.mock.calls[0]![0]).context.component).toBe("desktop");
+      expect(local.mock.calls[0]![0]).not.toContain("private-913");
+    } finally {
+      local.mockRestore();
+    }
+  });
+
+  it("discards pending events and their identities when disabled", async () => {
+    const { reporter, events } = recorder();
+    const error = new Error("same object");
+    const oldId = reporter.capture(error);
+    reporter.setEnabled(false);
+    reporter.capture(new Error("private local failure"));
+    await reporter.flush();
+    expect(events).toHaveLength(0);
+    reporter.setEnabled(true);
+    const newId = reporter.capture(error);
+    await reporter.flush();
+    expect(newId).not.toBe(oldId);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.eventId).toBe(newId);
+  });
+
+  it("cancels in-flight delivery without replaying it after re-enabling", async () => {
+    const fallback = vi.fn();
+    const aborted = vi.fn();
+    const sink = vi.fn<ErrorSink>().mockImplementationOnce(
+      (_events, signal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted();
+              reject(signal.reason);
+            },
+            { once: true },
+          );
+        }),
+    );
+    const { reporter } = recorder({ sink, fallback });
+    reporter.capture("old event");
+    const flushing = reporter.flush();
+    await Promise.resolve();
+    reporter.setEnabled(false);
+    reporter.setEnabled(true);
+    await flushing;
+    expect(aborted).toHaveBeenCalledOnce();
+    expect(fallback).not.toHaveBeenCalled();
+    expect(reporter.stats()).toMatchObject({ delivered: 0, deliveryFailures: 0 });
+    reporter.capture("new event");
+    await reporter.flush();
+    expect(sink).toHaveBeenCalledTimes(2);
+    expect(sink.mock.calls[1]![0][0]!.error.message).toBe("new event");
+    expect(reporter.stats().delivered).toBe(1);
+  });
+
+  it("fails closed for unavailable configuration and checks it again before delivery", async () => {
+    let enabled = false;
+    const { reporter, events } = recorder({ enabled: () => enabled });
+    reporter.capture("before configuration");
+    enabled = true;
+    reporter.capture("queued while enabled");
+    enabled = false;
+    await reporter.flush();
+    enabled = true;
+    await reporter.flush();
+    expect(events).toHaveLength(0);
+    reporter.setEnabled(() => {
+      throw new Error("config unavailable");
+    });
+    expect(() => reporter.capture(new Error("private"))).not.toThrow();
+    expect(reporter.isEnabled()).toBe(false);
+  });
+
   it.each([
     "https://api.telegram.org/bot123456789:AAprivate913xyz00000000000000000/sendMessage",
     "https://discord.com/api/webhooks/123456789/private-webhook-913",

@@ -131,6 +131,7 @@ export const consoleErrorSink: ErrorSink = (events) => {
 };
 
 export interface ErrorReporterOptions {
+  enabled?: boolean | (() => boolean);
   sink?: ErrorSink;
   /** Last-resort local synchronous writer. Async exporters belong in sink. */
   fallback?: ErrorSink;
@@ -205,6 +206,9 @@ function overflowEvent(dropped: number): ErrorEvent {
  * sanitized snapshots; arbitrary Error/request objects never leave this class.
  */
 export class ErrorReporter {
+  private enabledCheck: boolean | (() => boolean);
+  private captureVersion = 0;
+  private activeController?: AbortController;
   private sink: ErrorSink;
   private sinkVersion = 0;
   private fallback: ErrorSink;
@@ -214,10 +218,7 @@ export class ErrorReporter {
   private timer?: ReturnType<typeof setTimeout>;
   private running: Promise<void> | null = null;
   private activeEvents: readonly ErrorEvent[] = [];
-  private readonly identities = new WeakMap<
-    object,
-    { id: string; observations: Map<string, string> }
-  >();
+  private identities = new WeakMap<object, { id: string; observations: Map<string, string> }>();
   private failures = 0;
   private lost = 0;
   private totalDropped = 0;
@@ -230,6 +231,7 @@ export class ErrorReporter {
   private readonly timeout: number;
 
   constructor(options: ErrorReporterOptions = {}) {
+    this.enabledCheck = options.enabled ?? true;
     this.sink = options.sink ?? consoleErrorSink;
     this.fallback = options.fallback ?? consoleErrorSink;
     this.context = options.context ?? (() => ({}));
@@ -250,7 +252,36 @@ export class ErrorReporter {
     this.context = context;
   }
 
+  /** Capture is opt-in at the owning process/UI boundary, never from account connection state. */
+  setEnabled(enabled: boolean | (() => boolean)): void {
+    this.enabledCheck = enabled;
+    if (!this.isEnabled()) this.discard();
+  }
+
+  isEnabled(): boolean {
+    try {
+      return (
+        (typeof this.enabledCheck === "function" ? this.enabledCheck() : this.enabledCheck) === true
+      );
+    } catch {
+      return false; // A missing/broken configuration must fail closed.
+    }
+  }
+
+  private discard(): void {
+    this.captureVersion++;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
+    this.queue = [];
+    this.bytes = 0;
+    this.lost = 0;
+    this.activeEvents = [];
+    this.activeController?.abort();
+    this.identities = new WeakMap();
+  }
+
   capture(value: unknown, supplied: ErrorContext = {}): string {
+    if (!this.isEnabled()) return "";
     const eventId = diagnosticId();
     try {
       // Check the cheap bound before inspecting a potentially expensive error.
@@ -309,6 +340,10 @@ export class ErrorReporter {
 
   /** Last-chance local write during process exit, when promises cannot finish. */
   flushLocal(write: (event: ErrorEvent) => void): void {
+    if (!this.isEnabled()) {
+      this.discard();
+      return;
+    }
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = undefined;
@@ -369,13 +404,23 @@ export class ErrorReporter {
           if (typeof method === "string") metadata.method = method;
         }
       }
-      return this.capture(error ?? (text || "Operation failed"), {
+      const context: ErrorContext = {
         ...metadata,
         component,
         severity,
         handled: true,
         ...(error && text ? { summary: text } : {}),
-      });
+      };
+      const value = error ?? (text || "Operation failed");
+      if (!this.isEnabled()) {
+        // Preserve intentional local warnings/errors. Recovered catches and
+        // automatic captures stay off; a configured remote sink is never used.
+        this.emergency(value, context, (event) =>
+          consoleErrorSink([event], new AbortController().signal),
+        );
+        return "";
+      }
+      return this.capture(value, context);
     } catch {
       this.drop();
       return diagnosticId();
@@ -431,6 +476,10 @@ export class ErrorReporter {
   }
 
   private start(): void {
+    if (!this.isEnabled()) {
+      this.discard();
+      return;
+    }
     if (this.running) return;
     if (this.timer) {
       clearTimeout(this.timer);
@@ -458,12 +507,17 @@ export class ErrorReporter {
 
   private async deliver(events: ErrorEvent[]): Promise<void> {
     const controller = new AbortController();
+    this.activeController = controller;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const sink = this.sink;
     const version = this.sinkVersion;
+    const captureVersion = this.captureVersion;
     try {
       await Promise.race([
-        Promise.resolve().then(() => sink(events, controller.signal)),
+        Promise.resolve().then(() => {
+          if (!this.isEnabled() || controller.signal.aborted) return;
+          return sink(events, controller.signal);
+        }),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => {
             controller.abort();
@@ -472,9 +526,12 @@ export class ErrorReporter {
           (timer as { unref?: () => void }).unref?.();
         }),
       ]);
+      if (!this.isEnabled() || controller.signal.aborted || captureVersion !== this.captureVersion)
+        return;
       if (version === this.sinkVersion) this.failures = 0;
       this.totalDelivered += events.length;
     } catch {
+      if (!this.isEnabled() || captureVersion !== this.captureVersion) return;
       this.totalDeliveryFailures++;
       if (version === this.sinkVersion) this.failures++;
       // A destination that ignores AbortSignal can remain pending forever.
@@ -502,6 +559,7 @@ export class ErrorReporter {
       this.writeFallback([...events, failure]);
     } finally {
       if (timer) clearTimeout(timer);
+      if (this.activeController === controller) this.activeController = undefined;
     }
   }
 
@@ -522,11 +580,14 @@ export class ErrorReporter {
   }
 }
 
-export const errorReporter = new ErrorReporter();
+// Product entry points explicitly enable collection only for Cloud SaaS.
+// Importing the shared SDK, Desktop or a self-hosted module cannot enable it.
+export const errorReporter = new ErrorReporter({ enabled: false });
 export const reportError = (error: unknown, context?: ErrorContext): string =>
   errorReporter.capture(error, context);
 /** A caught recovery is observable without changing its return/throw behavior. */
 export function reportCaughtError(error: unknown, component: string): void {
+  if (!errorReporter.isEnabled()) return;
   // Redirects and rendering bailouts are framework control flow, not failures.
   const digest = diagnosticProperty(error, "digest");
   if (

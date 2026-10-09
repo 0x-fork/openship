@@ -16,7 +16,7 @@ export function reportClientError(
   error: unknown,
   context: ErrorContext = {},
 ): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !errorReporter.isEnabled()) return;
   const requestId = diagnosticProperty(error, "requestId");
   if (typeof requestId === "string" && /^[a-f0-9-]{36}$/i.test(requestId))
     return;
@@ -35,10 +35,12 @@ export function reportClientError(
 }
 
 const sendClientErrors: ErrorSink = async (events, signal) => {
+  if (!errorReporter.isEnabled()) return;
   const endpoint = `${getRestApiBaseUrl().replace(/\/$/, "")}/diagnostics/client-errors`;
   // Use raw fetch, never the API wrapper whose failure is itself observed.
   // Only this instance receives diagnostics; no analytics vendor is configured.
   for (let start = 0; start < events.length; start += 4) {
+    if (!errorReporter.isEnabled() || signal.aborted) return;
     const payload = events.slice(start, start + 4).map((event) => ({
       name: event.error.name.slice(0, 80),
       message: event.error.message.slice(0, 2049),
@@ -72,6 +74,11 @@ const sendClientErrors: ErrorSink = async (events, signal) => {
 export function installClientErrorReporting(): void {
   if (installed || typeof window === "undefined") return;
   installed = true;
+  errorReporter.setEnabled(
+    () =>
+      (window as Window & { __OPENSHIP_ERROR_REPORTING__?: boolean })
+        .__OPENSHIP_ERROR_REPORTING__ === true,
+  );
   errorReporter.setContextProvider(() => ({
     source: "dashboard",
     kind: "client",

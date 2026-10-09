@@ -51,6 +51,7 @@ export async function startApi(input: {
   secret: string;
   authMode?: "none" | "local";
   apiOnly?: boolean;
+  cloudMode?: boolean;
   environment?: Record<string, string>;
   entry?: string;
   runtime?: "bun" | "node";
@@ -91,7 +92,7 @@ export async function startApi(input: {
       OPENSHIP_API_ROOT: resolve(REPO_ROOT, "apps/api"),
       OPENSHIP_DATA_DIR: resolve(input.dbDir, "instance-data"),
       OPENSHIP_HOST_CONTROL: "false",
-      CLOUD_MODE: "false",
+      CLOUD_MODE: String(input.cloudMode ?? false),
       DATABASE_URL: "",
       POSTGRES_HOST: "",
       POSTGRES_PASSWORD: "",

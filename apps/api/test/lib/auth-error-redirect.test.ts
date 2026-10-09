@@ -9,6 +9,7 @@ describe("Better Auth browser error redirect", () => {
     const context = await auth.$context;
     await errorReporter.flush();
     const events: ErrorEvent[] = [];
+    errorReporter.setEnabled(true);
     errorReporter.setSink((batch) => {
       events.push(...batch);
     });
@@ -32,6 +33,7 @@ describe("Better Auth browser error redirect", () => {
       expect(events[0]!.error.stack).toBeTruthy();
       expect(JSON.stringify(events)).not.toMatch(/auth-private|password-private/);
     } finally {
+      errorReporter.setEnabled(false);
       errorReporter.setSink(consoleErrorSink);
     }
   });

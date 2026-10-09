@@ -109,7 +109,7 @@ it.each([true, false])(
     expect(paths.has("/api/system/servers/:id/resize")).toBe(true);
     expect(paths.has("/api/system/onboarding")).toBe(!cloud);
     expect(paths.has("/api/migration/sources")).toBe(true);
-    expect(paths.has("/api/diagnostics/client-errors")).toBe(true);
+    expect(paths.has("/api/diagnostics/client-errors")).toBe(cloud);
     expect(paths.has("/api/migration/migrate")).toBe(true);
     const { getMcpTools, resetMcpToolCache } = await import("../../src/modules/mcp/mcp-tools");
     resetMcpToolCache();
