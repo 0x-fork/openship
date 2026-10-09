@@ -84,10 +84,19 @@ async function pair(environment?: Record<string, string>) {
   return { source, target };
 }
 
-/** Real HTTP proxy simulates a lost acknowledgement AFTER the peer committed. */
-async function failingPeer(target: RunningApi, failAction: "prepare" | "activate") {
+/** Real HTTP transport for a dashboard's API mount, or a lost acknowledgement
+ * AFTER the peer committed. The handoff and authentication handlers stay real. */
+async function apiProxy(
+  target: RunningApi,
+  { failAction, mount = "" }: { failAction?: "prepare" | "activate"; mount?: string } = {},
+) {
   let dropped = false;
   const proxy = createServer(async (req, res) => {
+    if (!req.url?.startsWith(`${mount}/`)) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     const body = Buffer.concat(chunks);
@@ -95,14 +104,14 @@ async function failingPeer(target: RunningApi, failAction: "prepare" | "activate
     for (const [key, value] of Object.entries(req.headers))
       if (typeof value === "string" && !["connection", "content-length"].includes(key))
         headers.set(key, value);
-    const upstream = await fetch(`${target.baseUrl}${req.url}`, {
+    const upstream = await fetch(`${target.baseUrl}${req.url.slice(mount.length)}`, {
       method: req.method,
       headers,
       ...(body.length ? { body } : {}),
       redirect: "manual",
     });
     let content = Buffer.from(await upstream.arrayBuffer());
-    if (!dropped && req.url?.endsWith(`/${failAction}`) && upstream.ok) {
+    if (failAction && !dropped && req.url.endsWith(`/${failAction}`) && upstream.ok) {
       dropped = true;
       res.writeHead(503, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "Simulated lost acknowledgement" }));
@@ -113,7 +122,7 @@ async function failingPeer(target: RunningApi, failAction: "prepare" | "activate
       content = Buffer.from(
         JSON.stringify({
           ...receipt,
-          origin: `http://127.0.0.1:${(proxy.address() as { port: number }).port}`,
+          origin: `http://127.0.0.1:${(proxy.address() as { port: number }).port}${mount}`,
         }),
       );
     }
@@ -209,6 +218,111 @@ it("moves a real instance, keeps its identities/secrets and leaves the source as
   ).toBe(newer.id);
 }, 180_000);
 
+it.each([
+  { installation: "with a dashboard", apiOnly: false },
+  { installation: "API-only", apiOnly: true },
+])(
+  "moves an existing $installation server to a fresh Desktop through an outbound pull",
+  async ({ apiOnly }) => {
+    const { source, target: desktop } = await pair();
+    let server: RunningApi | undefined;
+    let restarted: RunningApi | undefined;
+    try {
+      const project = await createProject(source, "Already hosted project");
+      const replaced = await createProject(desktop, "Previous Desktop project");
+      await jsonRequest(source.baseUrl, `/api/projects/${project.id}/env`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          environment: "production",
+          upserts: [{ key: "PRESERVED_SECRET", value: "hosted-instance-secret-✓", isSecret: true }],
+          deletes: [],
+        }),
+      });
+      const original = await archive(source);
+      await stopApi(source);
+      // Normal hosted authentication, with no previous Desktop connection or
+      // return journal. The UI's source-code flow must work independently.
+      const dashboard = apiOnly ? undefined : await apiProxy(source, { mount: "/api/proxy" });
+      const hostedConfig = {
+        dbDir: source.dbDir,
+        port: source.port,
+        secret: source.secret,
+        authMode: "local" as const,
+        apiOnly,
+        publicUrl: dashboard?.baseUrl,
+      };
+      server = await startApi(hostedConfig);
+      apis.push(server);
+      const signIn = await fetch(`${server.baseUrl}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: dashboard?.baseUrl ?? server.baseUrl,
+        },
+        body: JSON.stringify({
+          email: "source@example.test",
+          password: "test-password-instance-only-938!",
+        }),
+      });
+      expect(signIn.status, await signIn.clone().text()).toBe(200);
+      const cookie = signIn.headers
+        .getSetCookie()
+        .map((value) => value.split(";", 1)[0])
+        .join("; ");
+      expect(cookie).not.toBe("");
+      const offered = await jsonRequest<{ code: string }>(
+        server.baseUrl,
+        "/api/system/instance/offer",
+        {
+          method: "POST",
+          headers: { cookie, origin: dashboard?.baseUrl ?? server.baseUrl },
+          body: JSON.stringify({ direction: "source" }),
+        },
+      );
+      await post(desktop, "/api/system/instance/move", {
+        code: offered.code,
+        confirmReplace: true,
+      });
+      expect((await waitMove(desktop)).role).toBe("active");
+      expect(
+        await jsonRequest(server.baseUrl, "/api/system/instance", { headers: { cookie } }),
+      ).toMatchObject({
+        role: "retired",
+        desktop: false,
+        handoff: { status: "complete" },
+      });
+      const moved = await archive(desktop);
+      expect(moved.dump.tables.project).toEqual(original.dump.tables.project);
+      expect(moved.dump.tables.user).toEqual(original.dump.tables.user);
+      expect(JSON.stringify(moved.secrets)).toContain("hosted-instance-secret-✓");
+      expect((await fetch(`${desktop.baseUrl}/api/projects/${replaced.id}`)).status).toBe(404);
+      // The former server remains fenced across restart; it cannot resume
+      // managing a stale copy or forward requests to a private Desktop address.
+      await stopApi(server);
+      restarted = await startApi(hostedConfig);
+      apis.push(restarted);
+      expect(restarted.logs()).not.toContain("[boot] backup runner:");
+      const denied = await fetch(`${restarted.baseUrl}/api/projects`, { headers: { cookie } });
+      expect(denied.status).toBe(503);
+      expect(await denied.json()).toMatchObject({
+        code: "INSTANCE_CONTROLLER_INACTIVE",
+        role: "retired",
+      });
+      const newer = await createProject(desktop, "Created after moving to Desktop");
+      expect(
+        (await jsonRequest<{ data: { id: string } }>(desktop.baseUrl, `/api/projects/${newer.id}`))
+          .data.id,
+      ).toBe(newer.id);
+    } finally {
+      await stopApi(source);
+      await stopApi(desktop);
+      if (server) await stopApi(server);
+      if (restarted) await stopApi(restarted);
+    }
+  },
+  180_000,
+);
+
 it("restores integration credentials before auth initialization in the packaged Node API", async () => {
   const { source, target } = await pair({
     GOOGLE_CLIENT_ID: "handoff-test-client",
@@ -274,7 +388,7 @@ it("restores integration credentials before auth initialization in the packaged 
 
 it("resumes after a lost activation acknowledgement without reimporting or starting the old controller", async () => {
   const { source, target } = await pair();
-  const proxy = await failingPeer(target, "activate");
+  const proxy = await apiProxy(target, { failAction: "activate" });
   const offer = await post<{ code: string }>(proxy, "/api/system/instance/offer", {
     direction: "target",
   });
@@ -314,7 +428,7 @@ it("cancels a prepared but unactivated receiver and restores its recovery archiv
   const { source, target } = await pair();
   const old = await createProject(target, "Receiver original");
   const incoming = await createProject(source, "Incoming project");
-  const proxy = await failingPeer(target, "prepare");
+  const proxy = await apiProxy(target, { failAction: "prepare" });
   const offer = await post<{ code: string }>(proxy, "/api/system/instance/offer", {
     direction: "target",
   });

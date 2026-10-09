@@ -393,7 +393,7 @@
 			"closedTitle": "Sitzung beendet",
 			"closedHint": "Öffne eine neue Sitzung, um fortzufahren.",
 			"exitCode": "Exit-Code {code}",
-			"exitSignal": "Signal {signal}",
+			"exitSignal": "Beendet mit Signal {signal}",
 			"pausedTitle": "Verbindung pausiert",
 			"pausedHint": "Verbinde dich erneut, wenn du eine Shell öffnen möchtest.",
 			"errorTitle": "Terminal nicht verfügbar",

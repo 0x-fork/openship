@@ -52,6 +52,11 @@ For either an API-only installation or one with a dashboard, enter `https://ops.
 Desktop locates the API on that same host. Existing `/api/proxy` addresses still work.
 Codes expire after ten minutes and must only be shared with the intended instance/device.
 
+Connecting Desktop does not remove a server's dashboard. **Use through Desktop** installs an
+API-only destination when moving to a connected server; there is currently no in-place switch
+that converts an existing API + dashboard installation to API-only. An existing API-only
+installation can be connected to or receive a move using the same flow above.
+
 Email/password and two-factor sign-in work inside Desktop. For a passkey or social sign-in,
 sign in on the remote dashboard and choose **Settings → Instance → Connect a Desktop**. A paired
 Desktop receives that user's permissions, not an instance administrator role. API-only
@@ -78,6 +83,9 @@ The source server retires before Desktop starts managing jobs and deployments.
 You can also choose **More instance options → Move to Desktop** on the server, create a move code,
 and paste it into Desktop's **More instance options → Move an instance here** screen. Desktop initiates the connection, so it does not need an
 inbound public port.
+This also works for an instance that started on a server and has never been connected to
+Desktop, with or without a dashboard. The receiving Desktop's prior data is replaced only
+after saving its recovery snapshot.
 
 After returning, jobs depend on this computer being online. Update externally registered
 webhook/callback addresses if the public address changes; a loopback Desktop cannot receive

@@ -55,6 +55,7 @@ export async function startApi(input: {
   entry?: string;
   runtime?: "bun" | "node";
   dashboardOrigin?: string;
+  publicUrl?: string;
 }): Promise<RunningApi> {
   let output = "";
   await mkdir(input.dbDir, { recursive: true });
@@ -75,13 +76,17 @@ export async function startApi(input: {
       DEPLOY_MODE: input.authMode === "local" ? "docker" : "desktop",
       OPENSHIP_TARGET: "local",
       OPENSHIP_LOCAL_DASHBOARD_URL: input.dashboardOrigin ?? `http://127.0.0.1:${input.port}`,
-      OPENSHIP_EXTRA_TRUSTED_ORIGINS: [input.dashboardOrigin, `http://127.0.0.1:${input.port}`]
+      OPENSHIP_EXTRA_TRUSTED_ORIGINS: [
+        input.dashboardOrigin,
+        input.publicUrl,
+        `http://127.0.0.1:${input.port}`,
+      ]
         .filter(Boolean)
         .join(","),
       OPENSHIP_AUTH_MODE: input.authMode ?? "none",
       OPENSHIP_API_ONLY: String(input.apiOnly ?? false),
       ...(input.authMode === "local"
-        ? { OPENSHIP_PUBLIC_URL: `http://127.0.0.1:${input.port}` }
+        ? { OPENSHIP_PUBLIC_URL: input.publicUrl ?? `http://127.0.0.1:${input.port}` }
         : {}),
       OPENSHIP_API_ROOT: resolve(REPO_ROOT, "apps/api"),
       OPENSHIP_DATA_DIR: resolve(input.dbDir, "instance-data"),

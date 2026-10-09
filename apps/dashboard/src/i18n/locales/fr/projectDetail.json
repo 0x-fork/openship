@@ -400,7 +400,7 @@
 			"closedTitle": "Session terminée",
 			"closedHint": "Ouvrez une nouvelle session pour continuer.",
 			"exitCode": "Code de sortie {code}",
-			"exitSignal": "Signal {signal}",
+			"exitSignal": "Signal reçu : {signal}",
 			"pausedTitle": "Connexion en pause",
 			"pausedHint": "Reconnectez-vous lorsque vous souhaitez ouvrir un shell.",
 			"errorTitle": "Terminal indisponible",
