@@ -189,6 +189,7 @@ import {
   withTimeout,
   SYSTEM,
   type ComposeAdvanced,
+  type ComposeGpu,
   type ComposeHealthcheck,
 } from "@repo/core";
 import {
@@ -807,6 +808,50 @@ export function toStopConfig(advanced?: ComposeAdvanced): {
     out.StopTimeout = graceNs <= 0 ? 0 : Math.max(1, Math.round(graceNs / 1_000_000_000));
   }
   return out;
+}
+
+/**
+ * Map a compose GPU request (carried on `advanced.gpus`) to Docker's `HostConfig.DeviceRequests`.
+ *
+ * This is the whole reason a container can see a card: Docker has no "GPU" setting, only a device
+ * request on the CREATE call (what `docker run --gpus` builds), and the image's CUDA libraries do
+ * nothing without it. The env var `NVIDIA_VISIBLE_DEVICES` is not a substitute: under the default
+ * `runc` runtime it is ignored (measured on a Tesla T4 host — `nvidia-smi` not found).
+ *
+ * Shape rules, from the Docker Engine API:
+ *  - `Count: -1` is "all GPUs"; `DeviceIDs` selects specific ones and MUST NOT be sent with a
+ *    non-zero `Count` (the daemon rejects both together), so ids win and `Count` is left out.
+ *  - `Capabilities` is a list of AND-lists. `[["gpu"]]` is what `--gpus all` sends. The capability
+ *    `gpu` is always included: without it the nvidia driver matches nothing.
+ *  - Only the `nvidia` driver is honored. Another vendor's name would fail the create with a driver
+ *    error that says nothing about OpenShip, so it is skipped here and left to the caller to report.
+ *
+ * Returns `undefined` for "no GPU" so the spread adds no key and Docker's defaults stay untouched
+ * (the same conditional-spread contract as {@link toStopConfig}).
+ */
+export function toDeviceRequests(
+  gpus?: ComposeGpu | null,
+): Dockerode.ContainerCreateOptions["HostConfig"] extends infer H
+  ? H extends { DeviceRequests?: infer R }
+    ? R | undefined
+    : never
+  : never {
+  if (!gpus) return undefined;
+  const driver = (gpus.driver ?? "nvidia").trim().toLowerCase();
+  if (driver !== "nvidia") return undefined;
+
+  const caps = new Set((gpus.capabilities ?? []).map((c) => c.trim()).filter(Boolean));
+  caps.add("gpu");
+  const ids = (gpus.deviceIds ?? []).map((d) => d.trim()).filter(Boolean);
+  return [
+    {
+      Driver: "nvidia",
+      ...(ids.length > 0
+        ? { DeviceIDs: ids }
+        : { Count: gpus.count === undefined || gpus.count === "all" ? -1 : gpus.count }),
+      Capabilities: [[...caps]],
+    },
+  ] as never;
 }
 
 /**
@@ -5685,6 +5730,7 @@ export class DockerRuntime implements RuntimeAdapter {
     const restartPolicy = resolveRestartPolicy(config.restart);
     const healthcheck = toDockerHealthcheck(config.advanced?.healthcheck);
     const stopConfig = toStopConfig(config.advanced);
+    const deviceRequests = toDeviceRequests(config.advanced?.gpus);
 
     // Acquire an external image BEFORE touching the running container. This is
     // especially important for incoming-webhook redeploys of mutable tags: a
@@ -5799,6 +5845,10 @@ export class DockerRuntime implements RuntimeAdapter {
         RestartPolicy: restartPolicy,
         LogConfig: DEFAULT_CONTAINER_LOG_CONFIG,
         ...dockerResourceLimits(config.resources),
+        // GPU (compose `deploy.resources.reservations.devices` / `gpus` / `runtime: nvidia`).
+        // Conditional spread: no GPU asked = no key sent, so a host without the nvidia
+        // toolkit is never handed a request it would reject.
+        ...(deviceRequests ? { DeviceRequests: deviceRequests } : {}),
         ...(ownsProjectEndpoint ? { PortBindings: portBindings } : {}),
         Binds: binds,
         // The project network is the default; a compose `network_mode` replaces it.

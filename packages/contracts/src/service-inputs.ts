@@ -140,6 +140,30 @@ const AdvancedSchema = Type.Object(
         Type.Null(),
       ]),
     ),
+    /** GPU request (compose `deploy.resources.reservations.devices` / `gpus` /
+     *  `runtime: nvidia`). Compose-owned like `entrypoint`: here so a client that
+     *  reads a service and PATCHes the whole `advanced` blob back does not 400
+     *  against this strict object. `null` clears it. */
+    gpus: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            driver: Type.Optional(Type.String({ maxLength: 64 })),
+            count: Type.Optional(
+              Type.Union([Type.Literal("all"), Type.Integer({ minimum: 1, maximum: 64 })]),
+            ),
+            deviceIds: Type.Optional(
+              Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 64 }),
+            ),
+            capabilities: Type.Optional(
+              Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { maxItems: 16 }),
+            ),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Null(),
+      ]),
+    ),
     /** Custom east-west DNS alias resolving ALONGSIDE the service name on the
      *  project network. Free-form here (normalized + collision-checked by
      *  validateServiceAlias); `null`/`""` clears it. */

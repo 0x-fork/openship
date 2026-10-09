@@ -143,6 +143,27 @@ export type ComposeHealthcheck = {
 };
 
 /**
+ * GPU request authored in a compose file (`deploy.resources.reservations.devices` with a `gpu`
+ * capability, or the short form `gpus: all`). Docker has no "GPU" field of its own: what it takes is
+ * `HostConfig.DeviceRequests`, and that is what the Docker runtime builds from this (see
+ * `toDeviceRequests` in the adapters). Compose spells the count as an integer or the word `all`.
+ *
+ * Only NVIDIA is modeled: it is the only vendor with a Docker device driver we can verify here.
+ * Another `driver` is stored verbatim so a round-trip does not lose it, but the runtime only honors
+ * `nvidia`.
+ */
+export interface ComposeGpu {
+  /** Device driver. Compose default for GPUs is `nvidia`; stored verbatim. */
+  driver?: string;
+  /** `"all"` or a positive integer. Mutually exclusive with `deviceIds` in compose. */
+  count?: "all" | number;
+  /** Specific GPU ids/UUIDs (compose `device_ids`). */
+  deviceIds?: string[];
+  /** Compose `capabilities`, e.g. `["gpu"]`, `["gpu","compute","utility"]`. */
+  capabilities?: string[];
+}
+
+/**
  * Extended compose fields that don't warrant their own first-class columns.
  * Stored as ONE JSONB blob (`service.advanced`) and nested inside the drift
  * `ComposeServiceSpec` so 3-way reconciliation covers it like any other
@@ -323,6 +344,13 @@ export type ComposeAdvanced = {
    * UNLIMITED_RESOURCES in ./resources).
    */
   resources?: { cpuCores?: number; memoryMb?: number };
+  /**
+   * GPU this service asks for (compose `deploy.resources.reservations.devices` / `gpus`). Absent = no GPU.
+   * Compose-owned: dropping it from the file must release the GPU, so it is swept in
+   * COMPOSE_OWNED_ADVANCED_KEYS. A target without a GPU gets a PREFLIGHT WARNING, not a refusal (the
+   * operator may have a GPU the probe cannot see; Docker itself still rejects the create if not).
+   */
+  gpus?: ComposeGpu;
   /**
    * Compose `network_mode` — the network namespace this service SHARES instead of
    * getting its own. `"none"`, `"service:<name>"` (a sibling in this stack), or
