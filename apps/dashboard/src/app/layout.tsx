@@ -14,6 +14,7 @@ import { getDeploymentInfoOrNull } from "@/lib/server/session";
 import { NetworkErrorHandler } from "@/components/network-error-handler";
 import { ModalProvider } from "@/context/ModalContext";
 import { DesktopChrome } from "@/components/desktop-chrome";
+import { DesktopInstanceLinks } from "@/components/instance/DesktopInstanceLinks";
 import {
   baseDictionary,
   defaultLocale,
@@ -156,6 +157,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <ToastProvider>
                   <ModalProvider>
                     <DesktopChrome />
+                    <DesktopInstanceLinks />
                     <NetworkErrorHandler />
                     {children}
                   </ModalProvider>

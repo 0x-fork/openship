@@ -84,6 +84,7 @@ export * from "./host-channel";
 export * from "./network";
 export * from "./sse-terminal";
 export * from "./data-transfer";
+export * from "./instance-address";
 export * from "./analytics-domain";
 export * from "./deployment-events";
 export * from "./operation-limits";
@@ -102,5 +103,6 @@ export * from "./cluster-workload";
 export * from "./cluster-database";
 
 export { withKeyedMutex, tryWithKeyedMutex } from "./keyed-mutex";
-
+export * from "./instance-handoff";
+export * from "./instance-environment";
 export { nodeImageForEngine } from "./node-runtime-version";

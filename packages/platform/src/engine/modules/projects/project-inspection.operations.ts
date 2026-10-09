@@ -13,7 +13,10 @@ import { maskDeploymentEnv } from "../../lib/secret-env";
 import { listProjectRouteRows, resolveProjectRouteState } from "../domains/project-route.service";
 import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { pickCanonicalDomainRow, resolveProjectAccess } from "../../lib/public-endpoints";
+import { readProjectRoutingClaims } from "../../lib/domain-claims";
+import { serviceCustomHostnames } from "../../lib/routing-domains";
 import { withDomainDiagnostics } from "../domains/domain-diagnostics";
+import { getProjectRoutingRetry } from "./project-routing-retry.operations";
 
 export function createProjectInspectionOperations(
   recordAudit: ProjectDependencies["recordAudit"],
@@ -91,6 +94,11 @@ export function createProjectInspectionOperations(
       // here would re-introduce the duplication the fan-out unification removed.
       // Fetch domains for this project
       const rawDomains = await listProjectRouteRows(id);
+      const ownedHostnames = new Set(rawDomains.map((domain) => domain.hostname.toLowerCase()));
+      const configuredHostnames = serviceRows
+        .flatMap(serviceCustomHostnames)
+        .filter((hostname) => !ownedHostnames.has(hostname));
+      const routingClaims = await readProjectRoutingClaims(id, configuredHostnames);
       const routeState = await resolveProjectRouteState(project, { projectDomains: rawDomains });
       const publicEndpoints = routeState.publicEndpoints;
       const domains = (await withDomainDiagnostics(project, rawDomains, serviceRows)).map((d) => ({
@@ -135,6 +143,8 @@ export function createProjectInspectionOperations(
           access,
           options,
           domains,
+          routingClaims,
+          routingRetry: getProjectRoutingRetry(organizationId, id),
           serviceCount,
           hasMultipleServices: serviceCount > 1,
           projectType,

@@ -24,6 +24,7 @@
  */
 
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 import type { Context } from "hono";
 import {
   TERMINAL_SUBPROTOCOL_PREFIX as SUBPROTOCOL_PREFIX,
@@ -688,12 +689,24 @@ function buildHandlers(ctx: HandshakeCtx) {
   };
 }
 
-export async function teardown(
+export function teardown(
   state: ConnState,
   reason: TerminalExitReason,
   exitCode: number | null,
   alreadyUnregistered = false,
   forceClose = true,
+) {
+  return trackBackgroundWork(
+    teardownConnection(state, reason, exitCode, alreadyUnregistered, forceClose),
+  );
+}
+
+async function teardownConnection(
+  state: ConnState,
+  reason: TerminalExitReason,
+  exitCode: number | null,
+  alreadyUnregistered: boolean,
+  forceClose: boolean,
 ) {
   // Full teardown already completed for this connection.
   if (state.ended) return;

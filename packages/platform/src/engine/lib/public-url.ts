@@ -197,7 +197,7 @@ export function resolveDashboardPublicUrl(): string {
  */
 export function resolveApiPublicUrl(): string {
   const pub = publicUrl();
-  return pub ? `${pub}${SAME_ORIGIN_PROXY_PREFIX}` : runtimeTarget.api;
+  return pub ? `${pub}${process.env.OPENSHIP_API_ONLY === "true" ? "" : SAME_ORIGIN_PROXY_PREFIX}` : runtimeTarget.api;
 }
 
 /**
@@ -209,7 +209,7 @@ export function resolveApiPublicUrl(): string {
  */
 export function requestApiPublicUrl(req: Request): string {
   const pub = publicUrl();
-  return pub ? `${pub}${SAME_ORIGIN_PROXY_PREFIX}` : requestPublicOrigin(req);
+  return pub ? resolveApiPublicUrl() : requestPublicOrigin(req);
 }
 
 /**

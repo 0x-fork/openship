@@ -659,9 +659,8 @@ export async function listInvitations(ctx: ExecutionContext) {
  *   grants?: { resourceType, resourceId, permissions[] }[]
  * }
  *
- * One-call invite. Wraps Better Auth's inviteMember + persists
- * pending grants. On accept, the accept-invite page calls
- * /invitations/:id/materialize which upserts resource_grant rows.
+ * Creates the invitation and its pending grants through the shared service.
+ * Acceptance commits membership and resource grants in one transaction.
  *
  * For role !== "restricted", any provided grants are stored but won't
  * affect access (the permission resolver short-circuits non-restricted

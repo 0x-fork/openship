@@ -30,6 +30,12 @@ import type { Context } from "hono";
 import type { SSEStreamingApi } from "hono/streaming";
 import { streamSSE as _streamSSE } from "hono/streaming";
 import { SYSTEM } from "@repo/core";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
+
+const controllerStreams = new Set<SSEStreamingApi>();
+export function closeControllerStreams(): void {
+  for (const stream of controllerStreams) stream.abort();
+}
 
 /**
  * Replace `stream.writeSSE` with a version that queues behind every earlier
@@ -120,6 +126,7 @@ export function streamSSE(
   c.header("X-Accel-Buffering", "no");
 
   return _streamSSE(c, async (sseStream) => {
+    controllerStreams.add(sseStream);
     const drain = serializeWrites(sseStream);
 
     void sseStream.write(SSE_PRIMER).catch(() => {});
@@ -133,8 +140,9 @@ export function streamSSE(
     sseStream.onAbort(() => clearInterval(heartbeat));
 
     try {
-      await cb(sseStream);
+      await trackBackgroundWork(cb(sseStream));
     } finally {
+      controllerStreams.delete(sseStream);
       // Stop the ping BEFORE draining, so the timer can't keep extending the
       // queue we're waiting on, then let the handler's queued frames — the
       // terminal `complete`/`end` among them — reach the client. Returning

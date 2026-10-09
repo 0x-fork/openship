@@ -22,6 +22,7 @@ import type { TerminalExitReason } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { safeErrorMessage } from "@repo/core";
 import type { CloudTerminalTicket } from "./cloud/terminal-bridge";
+import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
 // ─── Tickets ────────────────────────────────────────────────────────────────
 
@@ -286,9 +287,11 @@ export function unregisterServiceSession(sessionId: string): boolean {
   // The one place every ending path converges (user close, remote exit, idle and
   // hard-cap timeouts all land here), so the shell's transport is released once.
   if (session.release) {
-    void session.release().catch(error => {
-      console.warn("[service-terminal] recovery pending:", safeErrorMessage(error));
-    });
+    void trackBackgroundWork(
+      Promise.resolve().then(() => session.release?.()).catch(error => {
+        console.warn("[service-terminal] recovery pending:", safeErrorMessage(error));
+      }),
+    );
   } else disposeRuntime(session.runtime);
   session.runtime = null;
   session.scrollback = [];
@@ -307,4 +310,10 @@ export function getServiceSession(
   sessionId: string,
 ): ActiveServiceSession | undefined {
   return sessions.get(sessionId);
+}
+
+/** End parked as well as attached container shells before exporting a controller. */
+export function closeControllerServiceTerminals(): void {
+  tickets.clear();
+  for (const session of [...sessions.values()]) fireTimeout(session, "server_error");
 }

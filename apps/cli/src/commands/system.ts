@@ -301,7 +301,7 @@ migrationCommand
 
 migrationCommand
   .command("start")
-  .description("Migrate this instance onto your own server")
+  .description("Earlier migration endpoint; use Settings → Instance → Instance location to move")
   .requiredOption("--server-id <id>", "Target server id")
   .option("--hostname <host>", "Custom domain pointing at the server")
   .option("--slug <slug>", "Free <slug>.opsh.io subdomain")

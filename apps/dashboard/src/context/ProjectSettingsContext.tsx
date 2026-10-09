@@ -12,6 +12,7 @@ import React, {
   useMemo,
 } from "react";
 import type { ReleaseSource, WorkloadType } from "@repo/core";
+import type { ProjectRoutingClaim, ProjectRoutingRetry } from "@repo/contracts";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
@@ -76,6 +77,8 @@ interface BasicProjectData {
   framework: string;
   options?: ProjectOptions;
   domains?: ProjectDomain[];
+  routingClaims?: ProjectRoutingClaim[];
+  routingRetry?: ProjectRoutingRetry | null;
   access?: ProjectAccess;
   buildImage?: string;
   hasMultipleServices?: boolean;

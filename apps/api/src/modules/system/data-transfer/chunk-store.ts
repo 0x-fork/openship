@@ -291,6 +291,9 @@ export async function stageChunk(input: {
   index: number;
   bytes: Uint8Array;
   sha256: string;
+  /** A controller handoff owns a durable recovery journal beyond the ordinary
+   * browser upload lease. This is internal policy, never a request parameter. */
+  leaseUntil?: Date;
 }): Promise<void> {
   if (
     input.session.status !== "uploading" ||
@@ -327,7 +330,9 @@ export async function stageChunk(input: {
           );
     const writable = await tx
       .update(schema.dataTransferSession)
-      .set({ expiresAt: nextLease(input.session, now.getTime()), updatedAt: now })
+      .set({ expiresAt: input.leaseUntil
+        ? new Date(Math.min(input.leaseUntil.getTime(), input.session.maxExpiresAt.getTime()))
+        : nextLease(input.session, now.getTime()), updatedAt: now })
       .where(
         and(
           eq(schema.dataTransferSession.id, input.session.id),

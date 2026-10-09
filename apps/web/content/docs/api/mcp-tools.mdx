@@ -579,12 +579,14 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 
 | HTTP route | Why it is not an MCP tool |
 | --- | --- |
+| `GET /` | Browser landing pages for API-only instances. |
 | `GET /.well-known/oauth-authorization-server` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /.well-known/oauth-authorization-server/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /.well-known/oauth-authorization-server/api/proxy/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /.well-known/oauth-protected-resource` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /.well-known/oauth-protected-resource/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /.well-known/oauth-protected-resource/api/proxy/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /accept-invite/:id` | Browser landing pages for API-only instances. |
 | `GET /api/analytics/usage/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `POST /api/auth/*` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
@@ -737,6 +739,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/projects/:id/resources` | Compatibility alias; use PATCH /api/projects/:id/resources. |
 | `POST /api/projects/:id/routing/ensure-edge/respond` | Response to the browser’s ensure-edge SSE session. Use routing/retry and the project pending-actions tool for routing repair; interactive edge setup and proxy takeover remain in the dashboard. |
 | `POST /api/projects/:id/routing/ensure-edge/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/projects/:id/routing/retry/stream` | Read-only SSE replay of an existing routing repair session. |
 | `POST /api/projects/:id/routing/retry/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/projects/:id/server-logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/projects/:id/server-logs/stream-token` | Browser streaming credential. MCP reads the bounded server-logs endpoint with its own bearer. |
@@ -795,12 +798,31 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/system/health` | CLI `openship doctor` — internal-token gated deep health rollup (DB liveness/migrations + project/service counts); the public /api/health is only a liveness stub |
 | `GET /api/system/install/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/system/install/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/system/instance` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/bootstrap` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/cancel` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/connect` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/connect-address` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/disconnect` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `GET /api/system/instance/identity` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/move` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/move-previous` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/offer` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/pair` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/pair/claim` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/peer/:id/:action` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `GET /api/system/instance/peer/:id/chunks/:index` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `PUT /api/system/instance/peer/:id/chunks/:index` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/preflight` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/provision` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/resume` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
+| `POST /api/system/instance/return` | Instance relocation requires an administrator's reviewed handoff in Settings → Instance. |
 | `POST /api/system/invite-signup` | Self-host invited signup — authorized by the unguessable invitation id (token) in the emailed link, NOT a session; creates the account for the invitation's own email. |
-| `POST /api/system/migration/preflight` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/start` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/start-cloud` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/start-tunnel` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
-| `POST /api/system/migration/switch-back` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Team mode; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/preflight` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start-cloud` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/start-tunnel` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
+| `POST /api/system/migration/switch-back` | Instance control-plane/team-mode migration uses a browser session and changes the instance identity. Use Settings → Instance → Instance location; application migration has dedicated /api/migration MCP tools. |
 | `GET /api/system/monitor/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/system/networks/operations/:operationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/system/networks/preparations/:preparationId/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
@@ -839,3 +861,4 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/webhooks/incoming/:id` | Incoming webhook - per-hook token/HMAC/none credential verified in handler |
 | `GET /auth/callback/close` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /auth/callback/install` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
+| `GET /login` | Browser landing pages for API-only instances. |

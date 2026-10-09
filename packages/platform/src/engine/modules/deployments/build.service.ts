@@ -14,6 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
+import { assertNotControlPlane } from "@repo/platform/engine/lib/resource-access";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import {
   repos,
@@ -2331,11 +2332,7 @@ export async function redeployBuildSession(
   // short-circuits without catching it — guard explicitly here too, matching
   // triggerDeployment. Otherwise "Apply update" no-ops on the adopt deployment
   // and fakes success while the running control plane is untouched.
-  if (project.appTemplateId === "openship") {
-    throw new ForbiddenError(
-      "The Openship control plane updates itself — run `openship update` on the host, not a redeploy.",
-    );
-  }
+  assertNotControlPlane(project);
   // GitHub access gate (default-deny): a member can redeploy a
   // GitHub-backed project only when granted this repo.
   await assertGitHubRepoAccess(ctx, {
@@ -2664,11 +2661,7 @@ export async function triggerDeployment(
   // The Openship control plane IS the running host service, not a redeployable
   // workload — it updates itself via the CLI. It's a release-provider project, so
   // the git/localPath 403 below would NOT catch it; guard it explicitly.
-  if (project.appTemplateId === "openship") {
-    throw new ForbiddenError(
-      "The Openship control plane updates itself — run `openship update` on the host, not a redeploy.",
-    );
-  }
+  assertNotControlPlane(project);
   // Org-membership verified at the route boundary. No userId equality
   // check here — that would block team members.
 

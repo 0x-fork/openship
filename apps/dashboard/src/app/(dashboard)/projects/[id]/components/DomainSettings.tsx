@@ -16,6 +16,7 @@ import type { Dictionary } from "@/i18n";
 import type { DomainDiagnostics } from "@repo/contracts";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
 import DnsChallengePanel from "@/components/domains/DnsChallengePanel";
@@ -120,7 +121,7 @@ interface DomainSummaryItem {
 }
 
 interface DomainDiagnosis extends Omit<DomainDiagnostics, "reason" | "retryAction"> {
-  reason: DomainDiagnostics["reason"] | "route_missing";
+  reason: DomainDiagnostics["reason"] | "route_missing" | "managed_owner";
   retryAction: DomainDiagnostics["retryAction"] | "retry_routing";
   message: string | null;
   attempts: number;
@@ -244,6 +245,18 @@ function resolveDomainDiagnosis(domain: any, project: any): DomainDiagnosis | un
     attempts: typeof domain?.verifyAttempts === "number" ? domain.verifyAttempts : 0,
     lastCheckedAt: typeof domain?.lastCheckedAt === "string" ? domain.lastCheckedAt : null,
   };
+  if (domain?.managedByOwner) {
+    const expired = domain.sslExpiresAt && new Date(domain.sslExpiresAt).getTime() <= Date.now();
+    if (domain.verified && !expired && ["active", "external"].includes(domain.sslStatus)) return undefined;
+    return {
+      ...metadata,
+      state: expired || ["error", "expired"].includes(domain.sslStatus) || domain.status === "failed" ? "failed" : "waiting",
+      reason: "managed_owner",
+      retryAction: null,
+      nextRetryAt: null,
+      automaticRetry: "not_applicable",
+    };
+  }
   if (!domain) {
     const waiting = !project.activeDeploymentId || project.awaitingDecision;
     return {
@@ -287,6 +300,8 @@ function resolveDomainDiagnosis(domain: any, project: any): DomainDiagnosis | un
 
 function resolveDomainSsl(hostname: string, domain: any, baseDomain: string, t: Dictionary): { label: string; tone: DomainTone } {
   const s = t.projectSettings.domains.ssl;
+  if (domain?.managedByOwner && domain.sslStatus == null)
+    return { label: s.unknown, tone: "neutral" };
   if (hostname.endsWith(`.${baseDomain}`)) {
     return { label: s.includedByHost, tone: "success" };
   }
@@ -352,6 +367,13 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   // capability (copy from the shared registry).
   const freeNeedsCloud = () => requireCloud("managed-project-domain", { domain: baseDomain });
   const openEdgeModal = useEdgeModal();
+  const resourceKey = useCloudResourceKey();
+  const routingLogStorageKey = `openship:routing-log:dismissed:${resourceKey}:${id}`;
+  const seenRoutingSession = useRef<string | null>(null);
+  const routingSessionId = useRef<string | null>(null);
+  const rememberRoutingSession = useCallback((sessionId: string) => {
+    routingSessionId.current = sessionId;
+  }, []);
   const [routingOperation, setRoutingOperation] = useState<{
     id: number;
     opts: SystemPrepareOptions;
@@ -396,25 +418,35 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     return "project-routing-retry";
   }, []);
   const closeRoutingLog = useCallback(() => {
+    if (routingSessionId.current) {
+      try { sessionStorage.setItem(routingLogStorageKey, routingSessionId.current); } catch { /* optional preference */ }
+    }
     routingOperationRef.current = null;
     setRoutingOperation(null);
-  }, []);
-  useEffect(closeRoutingLog, [id, closeRoutingLog]);
+  }, [routingLogStorageKey]);
+  useEffect(() => {
+    seenRoutingSession.current = null;
+    routingSessionId.current = null;
+    routingOperationRef.current = null;
+    setRoutingOperation(null);
+  }, [id, resourceKey]);
   useEffect(() => {
     if (routingOperation)
       routingLogRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
   }, [routingOperation]);
   const openRoutingRetry = useRoutingRetryModal(presentRoutingRetry);
   const openVerifyModal = useVerifyModal(presentRoutingRetry);
-  const retryRouting = () =>
-    openRoutingRetry(String(id), {
-      onDone: () =>
-        setProjectData((current) =>
-          current.id === id && current.activeDeploymentId === projectData.activeDeploymentId
-            ? { ...current, routingUnsynced: false, routingWarning: undefined }
-            : current,
-        ),
-    });
+  const retryRouting = () => openRoutingRetry(String(id), { onSession: rememberRoutingSession });
+  useEffect(() => {
+    const sessionId = projectData.routingRetry?.sessionId;
+    if (projectData.id !== id || !sessionId || seenRoutingSession.current === sessionId) return;
+    seenRoutingSession.current = sessionId;
+    if (routingOperationRef.current) return;
+    try { if (sessionStorage.getItem(routingLogStorageKey) === sessionId) return; } catch { /* optional preference */ }
+    // Reopening the page reads the retained session, even if it finished while
+    // the page was loading. GET can never start another route/certificate write.
+    openRoutingRetry(String(id), { attachSessionId: sessionId, onSession: rememberRoutingSession });
+  }, [id, resourceKey, projectData.id, projectData.routingRetry?.sessionId, routingLogStorageKey, openRoutingRetry, rememberRoutingSession]);
 
   const automaticChecksPending = domainsData.domains.some(
     (domain) => domain.diagnostics?.nextRetryAt,
@@ -1708,6 +1740,9 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     );
   })();
 
+  const routingClaimsByHostname = new Map(
+    (projectData.routingClaims ?? []).map((claim) => [claim.hostname.toLowerCase(), { ...claim, managedByOwner: true }]),
+  );
   // Every configured endpoint gets its own card, including additional domains
   // on the same port and paused services that still need management.
   const serviceRouteCards: Array<{ service: Service; summary: DomainSummaryItem }> = (() => {
@@ -1717,6 +1752,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         const candidate = domainRowsByHostname.get(hostname.toLowerCase());
         const domain =
           candidate?.serviceId && candidate.serviceId !== service.id ? null : candidate;
+        const statusSource = domain ?? routingClaimsByHostname.get(hostname.toLowerCase());
         return [
           {
             service,
@@ -1738,8 +1774,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
               isPrimary: domain?.isPrimary ?? false,
               needsVerify: !!domain && domain.verified === false,
               externalIngress: domain?.externalIngress === true,
-              ...describeDomainStatus(domain, projectData, t, service.enabled && service.exposed),
-              ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
+              ...describeDomainStatus(statusSource, projectData, t, service.enabled && service.exposed),
+              ssl: resolveDomainSsl(hostname, statusSource, baseDomain, t),
             },
           },
         ];
@@ -3073,6 +3109,9 @@ function DomainOverviewCard({
   const { t, locale } = useI18n();
   const d = t.projectSettings.domains;
   const canVerify = domain.needsVerify && !!domain.domainId && !!onVerify;
+  const canRetryRouting = !domain.domainId && !!onRetryRouting;
+  const showDiagnosisAction = !!onRetryDiagnosis && !canRetryRouting
+    && !(canVerify && domain.diagnosis?.retryAction === "verify");
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
   const [records, setRecords] = useState<DnsRecord[] | null>(null);
@@ -3249,7 +3288,7 @@ function DomainOverviewCard({
                 })}
               </p>
             ) : null}
-            {onRetryDiagnosis ? (
+            {showDiagnosisAction ? (
               <button
                 type="button"
                 onClick={onRetryDiagnosis}
@@ -3298,7 +3337,7 @@ function DomainOverviewCard({
           </div>
         ) : null}
 
-        {!domain.domainId && onRetryRouting ? (
+        {canRetryRouting ? (
           <button
             type="button"
             onClick={onRetryRouting}

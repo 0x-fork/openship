@@ -27,6 +27,7 @@ import { getApiBaseUrl, domainsApi, projectsApi, systemApi } from "@/lib/api";
 import { canReportStreamEnd, reportLostStream } from "./prepare-stream-outcome";
 import { invalidateProjectCaches } from "./useProjectEndpoints";
 import { useI18n } from "@/components/i18n-provider";
+import { randomUUID } from "@/lib/random-uuid";
 
 interface StreamPrompt {
   promptId: string;
@@ -81,6 +82,8 @@ export interface SystemPrepareOptions {
   labels?: { working?: string; done?: string; failed?: string; close?: string };
   /** Fired when the viewer starts an attempt, including an explicit Retry. */
   onStart?: () => void;
+  /** The server-owned operation ID, for reconnecting to the same log. */
+  onSession?: (sessionId: string) => void;
   /** Fired once on successful completion. */
   onDone?: () => void;
   /** Refresh saved state after success, partial failure, or a disconnected viewer. */
@@ -259,8 +262,12 @@ export function PrepareStreamContent({
             } catch {
               continue;
             }
-            if (json.type === "session" && json.sessionId) sessionIdRef.current = json.sessionId;
-            else if (json.type === "steps") setSteps(json.steps ?? []);
+            if (json.type === "session" && json.sessionId) {
+              sessionIdRef.current = json.sessionId;
+              if (opts.attachUrl && opts.retryMode === "reattach")
+                attachSessionIdRef.current = json.sessionId;
+              opts.onSession?.(json.sessionId);
+            } else if (json.type === "steps") setSteps(json.steps ?? []);
             else if (json.type === "log")
               setLogs((p) => [...p, { message: json.message ?? "", level: json.level ?? "info" }]);
             else if (json.type === "prompt") setPrompt(json as StreamPrompt);
@@ -627,9 +634,16 @@ export function useRoutingRetryModal(present?: SystemPreparePresenter) {
   const prepare = useSystemPrepareModal(present);
   const { t } = useI18n();
   return useCallback(
-    (projectId: string, opts?: Pick<SystemPrepareOptions, "onDone">): string =>
+    (
+      projectId: string,
+      opts?: Pick<SystemPrepareOptions, "onDone" | "onSession"> & { attachSessionId?: string },
+    ): string =>
       prepare({
-        streamUrl: `projects/${encodeURIComponent(projectId)}/routing/retry/stream`,
+        streamUrl: `projects/${encodeURIComponent(projectId)}/routing/retry/stream?idempotencyKey=${randomUUID()}`,
+        attachUrl: (sessionId) =>
+          `projects/${encodeURIComponent(projectId)}/routing/retry/stream?sessionId=${encodeURIComponent(sessionId)}`,
+        initialAttachSessionId: opts?.attachSessionId,
+        retryMode: "reattach",
         title: t.projects.routingRetry.retry,
         labels: {
           working: t.projects.routingRetry.retrying,
@@ -637,6 +651,7 @@ export function useRoutingRetryModal(present?: SystemPreparePresenter) {
           failed: t.projects.routingRetry.failed,
         },
         onDone: opts?.onDone,
+        onSession: opts?.onSession,
         onSettled: () => invalidateProjectCaches(projectId),
         // A dropped stream has no terminal result. Refresh the cards, but do not
         // infer success from an old warning flag while the repair may still run.

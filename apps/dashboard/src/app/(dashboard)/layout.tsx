@@ -8,6 +8,8 @@ import { MigratedLauncher } from "@/components/migrated-launcher";
 import { MigrationInProgress } from "@/components/migration-in-progress";
 import { DashboardProviders } from "./providers";
 import { serverApi, ServerApiError } from "@/lib/server/api";
+import { InstanceRecovery } from "@/components/instance/InstanceRecovery";
+import type { InstanceStatus } from "@/lib/api/instance";
 
 /**
  * Better Auth's organization plugin returns `{ data: Org[] }` from
@@ -89,7 +91,11 @@ async function resolveOrgChooserGate(
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) {
+    const controller = await serverApi.get<InstanceStatus>("system/instance", { cache: "no-store" }).catch(() => null);
+    if (controller && controller.role !== "active") return <InstanceRecovery initial={controller} />;
+    redirect("/login");
+  }
 
   // Org chooser gate. If the session has no explicit activeOrganizationId
   // and the user belongs to 2+ orgs, send them to /select-organization;
@@ -106,7 +112,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // lock releases would trap the operator on the in-progress launcher.
   // Other callers can keep using the cache.
   const deploymentInfo = await getDeploymentInfoOrNull({ skipCache: true });
-  if (!deploymentInfo) return <ApiUnavailable />;
+  if (!deploymentInfo) {
+    const controller = await serverApi.get<InstanceStatus>("system/instance", { cache: "no-store" }).catch(() => null);
+    return controller && controller.role !== "active" ? <InstanceRecovery initial={controller} /> : <ApiUnavailable />;
+  }
 
   // Mid-flight migration gate. The DB is being cut over — rendering
   // the normal UI would risk a 503'd write, and rendering the
