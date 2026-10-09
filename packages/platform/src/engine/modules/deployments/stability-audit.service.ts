@@ -96,10 +96,20 @@ export async function verifyDeployedContainers(
   runtime: RuntimeAdapter,
   targets: StabilityTarget[],
   logger: BuildLogger,
-  opts?: { windowMs?: number; pollMs?: number },
+  opts?: {
+    windowMs?: number;
+    pollMs?: number;
+    /** Cloud must observe the whole stack, not infer stability from its creation time. */
+    creditElapsed?: boolean;
+    onUnverified?: (detail: string) => void;
+  },
 ): Promise<StabilityFinding[]> {
   const sampler = runtime.sampleStability?.bind(runtime);
-  if (!sampler || !runtime.supports("stabilityProbe") || targets.length === 0) return [];
+  if (targets.length === 0) return [];
+  if (!sampler || !runtime.supports("stabilityProbe")) {
+    opts?.onUnverified?.("Startup verification is unavailable for this runtime.");
+    return [];
+  }
 
   const windowMs = opts?.windowMs ?? SYSTEM.DEPLOYMENTS.STABILIZE_WINDOW_MS;
   const pollMs = opts?.pollMs ?? SYSTEM.DEPLOYMENTS.STABILIZE_POLL_MS;
@@ -118,19 +128,21 @@ export async function verifyDeployedContainers(
             windowMs,
             pollMs,
             crashRestarts: SYSTEM.DEPLOYMENTS.STABILIZE_CRASH_RESTARTS,
-            alreadyRunningMs: target.startedAtMs ? Math.max(0, Date.now() - target.startedAtMs) : 0,
+            alreadyRunningMs:
+              opts?.creditElapsed !== false && target.startedAtMs
+                ? Math.max(0, Date.now() - target.startedAtMs)
+                : 0,
           },
         );
       } catch (err) {
         // Couldn't read the runtime (dropped SSH channel, daemon hiccup). That
         // is a gap in OUR knowledge, not a failed workload — say so and leave
         // the service's status exactly as the deploy set it.
-        logger.log(
-          `Couldn't verify "${target.serviceName}" stayed up (${safeErrorMessage(err)}) — ` +
-            `leaving its deploy result unchanged.\n`,
-          "warn",
-          { serviceName: target.serviceName },
-        );
+        const detail = `Couldn't verify "${target.serviceName}" stayed up (${safeErrorMessage(err)})`;
+        logger.log(`${detail} — leaving its deploy result unchanged.\n`, "warn", {
+          serviceName: target.serviceName,
+        });
+        opts?.onUnverified?.(detail);
         return null;
       }
 

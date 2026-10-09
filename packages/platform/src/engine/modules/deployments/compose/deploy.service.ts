@@ -3315,6 +3315,7 @@ async function deployComposeServicesUnlocked(
             svc.id,
             resolveReadinessGate(
               (svc.advanced as ComposeAdvanced | null)?.readiness ?? project.readiness,
+              { managedCloud: cloudHosted },
             ),
           );
         }
@@ -3616,12 +3617,10 @@ async function deployComposeServicesUnlocked(
   // service inline as it was created would fail the deploy for a stack that
   // converges seconds later. Watching them together, after the stack is whole,
   // separates "bouncing hard" from "waited, then settled".
-  // Gated on the opt-in readiness gate, PER SERVICE: a service's own
-  // `advanced.readiness` wins, else the project's. resolveReadinessGate is the one
-  // place that policy lives, so this and the single-app path can't drift. Default
-  // is OFF — the stack reports what docker reported, while each service's own
-  // Docker HEALTHCHECK (`advanced.healthcheck`) keeps running regardless, since
-  // the daemon owns that one and it never gates a deploy.
+  // Cloud startup verification is automatic for every started container.
+  // Optional service readiness overrides project readiness, but cannot turn a
+  // confirmed Cloud crash into a successful service. Check the complete stack
+  // together so services have a chance to settle after their peers start.
   const watched = stabilityTargets.filter(
     (t) => t.serviceId && readinessByServiceId.get(t.serviceId)?.stabilization.enabled,
   );
@@ -3661,7 +3660,11 @@ async function deployComposeServicesUnlocked(
     const windowMs = Math.max(
       ...watched.map((t) => readinessByServiceId.get(t.serviceId!)!.stabilization.windowMs),
     );
-    const findings = await verifyDeployedContainers(runtime, watched, logger, { windowMs });
+    const findings = await verifyDeployedContainers(runtime, watched, logger, {
+      windowMs,
+      creditElapsed: !cloudHosted,
+      onUnverified: (detail) => stabilityWarnings.push(detail),
+    });
     for (const finding of findings) {
       if (finding.verdict.ok && finding.verdict.warning) {
         stabilityWarnings.push(`${finding.target.serviceName}: ${finding.verdict.warning}`);
@@ -3674,7 +3677,7 @@ async function deployComposeServicesUnlocked(
       (f) =>
         !f.verdict.ok &&
         f.target.serviceId &&
-        readinessByServiceId.get(f.target.serviceId)?.onFailure === "fail",
+        readinessByServiceId.get(f.target.serviceId)?.stabilization.onFailure === "fail",
     );
     for (const finding of findings.filter((f) => !f.verdict.ok && !vetoing.includes(f))) {
       // "warn": say what didn't hold, but leave the service's deploy result alone
