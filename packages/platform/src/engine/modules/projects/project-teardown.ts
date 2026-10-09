@@ -851,6 +851,10 @@ async function stepRuntimeCleanup(
     return { orphans, forceOrphanEligible: false };
   }
 
+  // The recovery action offered to clients must use the same policy as its
+  // execution guard. Managed resources stay tracked until cleanup succeeds.
+  const forceOrphanEligible =
+    !project.workspaceId && !manifest.runtimes?.some((runtime) => runtime.name === "kubernetes");
   const needsProjectCleanup =
     manifest.projectCleanup && manifest.runtimes?.some((runtime) => !!runtime.cleanupProject);
   if (
@@ -869,7 +873,7 @@ async function stepRuntimeCleanup(
   // else goes through the normal destroy path.
   const unreachable = manifest.resources.filter((r) => r.type === "unreachable");
   const destroyable = manifest.resources.filter((r) => r.type !== "unreachable");
-  if (forceOrphan && (project.workspaceId || manifest.runtimes?.some((runtime) => runtime.name === "kubernetes"))) {
+  if (forceOrphan && !forceOrphanEligible) {
     disposeManifestRuntimes(manifest);
     push({
       step: "runtime_cleanup",
@@ -1074,7 +1078,7 @@ async function stepRuntimeCleanup(
   });
   return {
     orphans,
-    forceOrphanEligible: !manifest.runtimes?.some((runtime) => runtime.name === "kubernetes"),
+    forceOrphanEligible,
   };
 }
 
