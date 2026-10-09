@@ -14,6 +14,7 @@ export const clientErrorBatch = z
           .object({
             name: z.string().max(80),
             message: z.string().max(2049),
+            component: z.string().min(1).max(160).optional(),
             stack: z.string().max(4097).optional(),
             code: z
               .string()
@@ -59,7 +60,7 @@ router.public(
         {
           source: "dashboard",
           kind: "client",
-          component: "dashboard",
+          component: event.component ?? "dashboard",
           untrusted: true,
           route: event.page,
           parentRequestId: event.requestId,

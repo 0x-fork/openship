@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { errorReporter } from "@repo/core/diagnostics";
+import { diagnostics, errorReporter } from "@repo/core/diagnostics";
 import {
   afterEach,
   beforeAll,
@@ -68,6 +68,22 @@ describe("browser error delivery", () => {
     );
     await errorReporter.flush();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps the source module separate from the automatically captured page", async () => {
+    diagnostics.warn(
+      "dashboard/hooks/useBuildConnection",
+      "Build connection failed",
+      new Error("Stream closed"),
+    );
+    await errorReporter.flush();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const request = vi.mocked(fetch).mock.calls[0]![1]!;
+    expect(JSON.parse(request.body as string).events[0]).toMatchObject({
+      component: "dashboard/hooks/useBuildConnection",
+      page: window.location.pathname,
+      message: "Stream closed",
+    });
   });
 
   it("records global runtime errors without changing browser error handling", async () => {

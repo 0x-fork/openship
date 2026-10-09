@@ -27,6 +27,11 @@ Context is an allowlist: request/parent/trace identifiers, source, operation/com
 registered route, status, duration, authorized user/organization/resource identifiers, deployment/job/run
 identifiers and safe provider failure metadata. It never serializes an execution context or request.
 
+`component` identifies the code module that observed the failure; it is separate from the request's
+route. The request boundary supplies HTTP context automatically, and the browser supplies its current
+page path. Browser delivery preserves the bounded module label as untrusted metadata; it cannot assert
+an authenticated identity or replace the API's own request identifier.
+
 `eventId` identifies one observation. The same Error object keeps its `errorId` across boundaries;
 repeated observations at the same boundary/request are suppressed. Reused provider Error objects can
 span requests, so use request/operation identifiers when counting incidents. Identifiers are log fields,

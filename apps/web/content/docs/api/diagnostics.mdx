@@ -25,6 +25,7 @@ The body is an object with an `events` array of one to eight entries:
 | --- | --- | --- |
 | `name` | 80 characters | Error name; required. |
 | `message` | 2,049 characters | Redacted message; required. |
+| `component` | 1–160 characters | Optional source module label, such as `dashboard/hooks/useBuildConnection`; untrusted. |
 | `stack` | 4,097 characters | Optional redacted stack. |
 | `code` | 100 characters | Optional letters, digits, underscores, periods and hyphens. |
 | `page` | 512 characters | Optional page path. Queries and invitation tokens are removed. |

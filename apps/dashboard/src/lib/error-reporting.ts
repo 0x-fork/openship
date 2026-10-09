@@ -42,6 +42,9 @@ const sendClientErrors: ErrorSink = async (events, signal) => {
     const payload = events.slice(start, start + 4).map((event) => ({
       name: event.error.name.slice(0, 80),
       message: event.error.message.slice(0, 2049),
+      ...(event.context.component
+        ? { component: event.context.component.slice(0, 160) }
+        : {}),
       ...(event.error.stack ? { stack: event.error.stack.slice(0, 4097) } : {}),
       ...(event.error.code ? { code: event.error.code } : {}),
       ...(event.context.route

@@ -77,6 +77,7 @@ describe("real API diagnostics without provider or host access", () => {
             {
               name: "Error",
               message: "password=private-client-913",
+              component: "dashboard/hooks/useBuildConnection",
               page: "/accept-invite/private-invitation-913?token=private-query-913",
               eventId: "client-event-1",
             },
@@ -94,6 +95,7 @@ describe("real API diagnostics without provider or host access", () => {
       severity: "warn",
       context: {
         source: "dashboard",
+        component: "dashboard/hooks/useBuildConnection",
         untrusted: true,
         clientEventId: "client-event-1",
       },
@@ -136,6 +138,19 @@ describe("real API diagnostics without provider or host access", () => {
     expect(
       (await reported(malformed.headers.get("X-Request-ID"))).category,
     ).toBe("validation");
+    for (const component of ["", "a".repeat(161)]) {
+      const invalidComponent = await fetch(
+        `${api.baseUrl}/api/diagnostics/client-errors`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            events: [{ name: "Error", message: "invalid module", component }],
+          }),
+        },
+      );
+      expect(invalidComponent.status).toBe(400);
+    }
     expect((await fetch(`${api.baseUrl}/api/health`)).status).toBe(200);
   });
 
