@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  resolveFromReader,
   resolveProjectInfo,
   resolveProjectSourceEnv,
 } from "@repo/platform/engine/modules/deployments/prepare.service";
@@ -13,6 +14,32 @@ describe("resolveProjectInfo", () => {
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  it("reads the listed Dockerfile path on case-sensitive sources", async () => {
+    const reads: string[] = [];
+    const info = await resolveFromReader(
+      {
+        listDirectory: async () => [{ name: "Dockerfile", type: "file" }],
+        readJson: async () => undefined,
+        listTree: async () => [],
+        readText: async (path) => {
+          reads.push(path);
+          return path === "Dockerfile" ? "FROM node:22-alpine\nEXPOSE 8080\n" : undefined;
+        },
+      },
+      {
+        name: "web",
+        full_name: "example/web",
+        owner: "example",
+        private: false,
+        default_branch: "main",
+      },
+      "main",
+    );
+    expect(info).toMatchObject({ stack: "docker", port: 8080, startCommand: "" });
+    expect(reads).toContain("Dockerfile");
+    expect(reads).not.toContain("dockerfile");
   });
 
   it.each(["./", "apps/web"])(
