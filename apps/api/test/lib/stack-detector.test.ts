@@ -25,6 +25,49 @@ function files(...names: string[]): RepoFile[] {
   });
 }
 
+describe("repository-owned runtime defaults", () => {
+  it.each([
+    {
+      manifest: "next.config.js",
+      content: "export default {}",
+      packageJson: {
+        dependencies: { next: "^16" },
+        scripts: { start: "next start", build: "next build" },
+      },
+    },
+    {
+      manifest: "manage.py",
+      content: "from django.core.management import execute_from_command_line",
+      packageJson: { scripts: { start: "vite", build: "vite build" } },
+    },
+    {
+      manifest: "go.mod",
+      content: "module example.com/api",
+      packageJson: undefined,
+    },
+  ])(
+    "uses the Dockerfile for $manifest",
+    ({ manifest, content, packageJson }) => {
+      const result = detectStack(
+        files("Dockerfile", manifest, "package.json", "bun.lock"),
+        packageJson,
+        {
+          [manifest]: content,
+          Dockerfile: 'FROM scratch\nEXPOSE 8080\nENTRYPOINT ["/app"]',
+        },
+      );
+      expect(result).toMatchObject({
+        stack: "docker",
+        projectType: "docker",
+        installCommand: "",
+        buildCommand: "",
+        startCommand: "",
+        port: 8080,
+      });
+    },
+  );
+});
+
 // ─── Stack identification - table-driven across every supported framework ────
 
 interface StackCase {
@@ -905,14 +948,14 @@ describe("detectStack - port detection", () => {
     expect(result.port).toBe(9000);
   });
 
-  it("script port wins over Dockerfile EXPOSE", () => {
+  it("Dockerfile EXPOSE wins over scripts that the image does not run", () => {
     const result = detectStack(files("package.json", "Dockerfile"), {
       dependencies: { express: "^5.0.0" },
       scripts: { start: "node server.js --port 7000" },
     }, {
       Dockerfile: "EXPOSE 9000",
     });
-    expect(result.port).toBe(7000);
+    expect(result.port).toBe(9000);
   });
 
   it("framework default for Astro is 4321", () => {

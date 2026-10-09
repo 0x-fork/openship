@@ -500,6 +500,17 @@ export function detectStack(
     }
   }
 
+  // The Docker builder uses a repository Dockerfile when present. Classify it
+  // before deriving language commands, otherwise an inferred package-manager
+  // command overrides an image whose runtime may not contain that tool.
+  // Keep Compose's existing selection and apply explicit metadata below.
+  if (
+    matched !== "docker-compose" &&
+    files.some((file) => file.type === "file" && file.name === "Dockerfile")
+  ) {
+    matched = "docker";
+  }
+
   const pm = detectPackageManager(files, packageJson as Record<string, unknown> & {
     packageManager?: string;
     scripts?: Record<string, string>;
@@ -562,7 +573,12 @@ export function detectStack(
     buildImage: getBuildImage(matched, pm),
     outputDirectory: OUTPUT_DIRECTORIES[matched] ?? "dist",
     productionPaths,
-    port: detectPortFromLanguages({ packageJson, fileContents: fc }) ?? stackDef.defaultPort,
+    port:
+      detectPortFromLanguages(
+        matched === "docker"
+          ? { fileContents: { dockerfile: fc.dockerfile ?? "" } }
+          : { packageJson, fileContents: fc },
+      ) ?? stackDef.defaultPort,
   };
 
   // Fold metadata (vercel.json / render.yaml / …) over heuristic detection so a
@@ -823,6 +839,8 @@ export function getBuildCommand(
   packageJson?: Record<string, unknown>,
   files?: RepoFile[],
 ): string {
+  // Docker owns these steps; package scripts are not runtime overrides.
+  if (stack === "docker" || stack === "docker-compose") return "";
   const scripts = (packageJson?.scripts ?? {}) as Record<string, string>;
   const runner = scriptRunner(pm);
 
@@ -862,6 +880,8 @@ export function getBuildCommand(
 
 /** Start command - prefers project scripts, then falls back to registry defaults */
 export function getStartCommand(pm: string, stack: StackId, packageJson?: Record<string, unknown>): string {
+  // Docker owns these steps; package scripts are not runtime overrides.
+  if (stack === "docker" || stack === "docker-compose") return "";
   const scripts = (packageJson?.scripts ?? {}) as Record<string, string>;
   const runner = scriptRunner(pm);
 

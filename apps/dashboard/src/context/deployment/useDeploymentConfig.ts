@@ -127,7 +127,7 @@ function buildMonorepoApps(
 
   return response.monorepoApps.map((app): MonorepoAppConfig => {
     const detectedFramework = (app.stack || "unknown") as FrameworkId;
-    const hasServer = !!app.startCommand;
+    const hasServer = app.stack === "docker" || !!app.startCommand;
     const hasBuild = !!app.buildCommand;
     const portString = app.port ? String(app.port) : "";
 
@@ -301,7 +301,7 @@ function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfi
     ? declaredWorkload === "web"
     : response.productionMode
       ? response.productionMode !== "static"
-      : !!response.startCommand;
+      : response.projectType === "docker" || !!response.startCommand;
   // A worker keeps its explicit type; web/static are equally described by
   // hasServer, so derive (null) rather than pin a redundant value.
   const workloadType: WorkloadType | undefined =
