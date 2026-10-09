@@ -66,3 +66,20 @@ script matches its sources and exercises that script through the generated shell
 The checked-in bundle keeps deployment command generation synchronous and usable in the API,
 dashboard, desktop, and SDK without a compiler or source files on the build host. Generated code
 is an output artifact; edit the typed modules instead.
+
+### Managed Cloud startup verification
+
+Cloud container deployments automatically run a short startup stabilization check before being
+reported ready. Single applications, private services, and workers use the same container-state
+checks as Compose stacks. A confirmed crash loop, failed exit, or unhealthy container fails the
+affected deployment/service and includes available exit details and recent logs. Compose services
+are checked together after their peers start; successful one-shot jobs are accepted.
+
+The default observation window is 15 seconds, with early success when Docker reports healthy.
+A longer configured stabilization window is honored. Custom TCP/HTTP readiness remains opt-in,
+and its `onFailure` policy does not turn a confirmed Cloud startup crash into a warning. Static
+Cloud Pages has no running container and skips this check. Non-Cloud targets retain opt-in checks.
+If the runtime cannot be inspected, the deployment carries a verification warning rather than
+claiming that the application crashed. This startup check does not guarantee ongoing health or
+validate business operations such as database-backed requests; use a custom readiness endpoint
+when those must gate a deployment.

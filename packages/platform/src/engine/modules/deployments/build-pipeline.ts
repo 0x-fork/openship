@@ -1555,8 +1555,7 @@ function buildDeployEnvironment(
     serve: ServeStrategy;
     previousRuntime: DeployPhaseInputs["runtime"];
     plannedDomains: ReturnType<typeof buildProjectRouteDomains>;
-    /** The project's opted-in readiness gate. `active: false` (the default) ⇒ no
-     *  gate is wired at all and the pipeline skips the step. */
+    /** Effective startup and optional readiness policy for this target. */
     readinessGate: ResolvedReadinessGate;
     /** Sink for a failure the gate decided to WARN about rather than veto. The
      *  caller folds these into the deploy's action-required warning. */
@@ -1581,34 +1580,9 @@ function buildDeployEnvironment(
     canOverlap: serve.canOverlap,
     requireSuccessfulRoutes:
       effectiveTarget === "cloud" && phase.deployRouting.deployMode === "static-file-serve",
-    // Post-activate readiness gate — OPT-IN, and omitted entirely when the
-    // project didn't ask for one, so runDeployPipeline skips the step rather than
-    // calling a check that does nothing. That absence IS the default: a deploy
-    // reports ready as soon as the workload is up and routed. Listening state is
-    // still reported, by the advisory in-container `auditPorts` probe that runs
-    // after the deploy is live and cannot fail it.
-    //
-    // When a project does opt in, up to two layers run:
-    //
-    //  1. Stabilization — watch the container we just started and fail if it
-    //     bounces or exits. Asked of the RUNTIME (docker inspect), so it works
-    //     for remote/SSH targets too, independent of the probe below.
-    //  2. Readiness probe (TCP/HTTP) — dials the workload's port. Restricted to
-    //     a "local" target unless the serve strategy declares
-    //     `readinessWorksRemotely` for this target. For a running-process
-    //     workload, it then dials through the deploy target's own executor.
-    //
-    // `onFailure` decides what a failure means. "warn" (the default even when
-    // opted in) keeps the deploy ready and records an action-required warning;
-    // only "fail" throws, which vetoes the deploy before traffic is repointed and
-    // reverts to the previous deployment.
-    // Ordering + the warn-vs-fail decision live in runReadinessGate (readiness-gate.ts),
-    // shared with the compose pipeline so the two can't drift. This is just the
-    // adapter that supplies the two effects.
-    //
-    // `healthCheck` is the PIPELINE's name for this hook (DeployEnvironment, in
-    // @repo/adapters) and predates the project-level `readiness` field — the
-    // pipeline gates on any readiness verdict, whatever the caller calls it.
+    // Cloud container startup is checked before cutover; optional TCP/HTTP
+    // probes retain their own policy. A conclusive startup failure uses the
+    // pipeline's existing failed-deploy/revert path.
     healthCheck: !readinessGate.active
       ? undefined
       : (containerId, cfg) =>
@@ -1624,7 +1598,7 @@ function buildDeployEnvironment(
                       runtime,
                       [{ serviceName: project.name || project.slug || "app", containerId }],
                       logger,
-                      { windowMs },
+                      { windowMs, onUnverified: onReadinessWarning },
                     )
                   ).filter((finding) => !finding.verdict.ok);
                   return unstable ? unstable.detail : null;
@@ -1947,11 +1921,11 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   const usesHostLoopback = phase.effectiveTarget !== "cloud" || runtime.name === "bare"
     ? usesHostLoopbackUpstream(routeStrategy, runtime) : false;
 
-  // The project's OPT-IN readiness gate. Inactive unless the project configured
-  // one, and inactive is the default — so by default nothing waits on the app
-  // after start and nothing can veto a deploy whose workload came up. Listening
-  // state still gets reported by the advisory `auditPorts` probe further down.
-  const readinessGate = resolveReadinessGate(project.readiness);
+  // Pages/file serving has no process to watch. Managed Cloud containers do,
+  // including workers and private apps that have no public HTTP endpoint.
+  const readinessGate = resolveReadinessGate(project.readiness, {
+    managedCloud: phase.effectiveTarget === "cloud" && !isStaticFileServe,
+  });
   // Failures the gate chose to WARN about (onFailure: "warn"), folded into the
   // deploy's action-required warning alongside routing issues.
   const readinessWarnings: string[] = [];
