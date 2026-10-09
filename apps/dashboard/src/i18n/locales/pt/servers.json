@@ -1204,5 +1204,24 @@
       "title": "Controle indisponível",
       "description": "Este controle ainda não está disponível na versão da API Cloud conectada. O Openship Cloud precisa ser atualizado antes do uso."
     }
+  },
+  "gpu": {
+    "title": "GPU",
+    "subtitle": "Se os contêineres deste servidor podem usar uma placa gráfica.",
+    "notDetected": "Nenhuma GPU detectada",
+    "notProbed": "Não foi possível verificar este servidor agora",
+    "countOne": "1 placa GPU",
+    "countMany": "{count} placas GPU",
+    "runtimeOnly": "Runtime NVIDIA encontrado, número de placas desconhecido",
+    "modeLabel": "Marcar este servidor",
+    "modeAuto": "Detectar automaticamente",
+    "modeYes": "Tem GPU",
+    "modeNo": "Sem GPU (manter serviços GPU fora)",
+    "modeHint": "A detecção lê o daemon do Docker. Se estiver errada para este servidor, marque-o manualmente; sua marcação prevalece sobre a detecção.",
+    "mismatchYes": "Marcado como \"Tem GPU\", mas nenhuma foi detectada. Os serviços GPU serão enviados para cá mesmo assim.",
+    "mismatchNo": "Marcado como \"Sem GPU\", mas uma GPU foi detectada. Haverá um aviso para serviços GPU neste servidor.",
+    "saved": "Configuração de GPU salva",
+    "saveFailed": "Não foi possível salvar a configuração de GPU",
+    "badge": "GPU"
   }
 }

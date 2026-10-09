@@ -141,6 +141,7 @@ const DeployRepository: React.FC = () => {
             ? t.billing.workspaces.uploadDestinationHint
             : config.projectId && config.workspaceId ? t.billing.workspaces.savedDestinationHint : undefined,
         forDeployment: true,
+        needsGpu: (config.services ?? []).some(service => !!service.advanced?.gpus),
         autoSelectFirst: savedTargetState === "none",
         useSavedDefault: savedTargetState === "none",
         onSelect: (server) => updateConfig({
