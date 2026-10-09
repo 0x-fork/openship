@@ -14,6 +14,7 @@
  *     completion before releasing that server.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
 import { env } from "@repo/platform/engine/config/env";
 import type { RuntimeAdapter, ShellSession } from "@repo/adapters";
@@ -219,7 +220,8 @@ export function attachServiceWs(
   for (const chunk of session.scrollback) {
     try {
       onData(chunk);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/lib/service-terminal-session-manager");
       /* WS gone mid-replay */
     }
   }
@@ -246,7 +248,8 @@ export function dispatchServiceStdout(sessionId: string, chunk: Buffer): void {
   if (!handler) return;
   try {
     handler(chunk);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/service-terminal-session-manager");
     /* peer gone */
   }
 }
@@ -259,7 +262,8 @@ function fireTimeout(
   unregisterServiceSession(session.sessionId);
   try {
     session.onTimeout(session.sessionId, reason);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/service-terminal-session-manager");
     /* timeout hook is best-effort */
   }
 }
@@ -289,7 +293,7 @@ export function unregisterServiceSession(sessionId: string): boolean {
   if (session.release) {
     void trackBackgroundWork(
       Promise.resolve().then(() => session.release?.()).catch(error => {
-        console.warn("[service-terminal] recovery pending:", safeErrorMessage(error));
+        errorDiagnostics.warn("api/lib/service-terminal-session-manager", "[service-terminal] recovery pending:", safeErrorMessage(error), error);
       }),
     );
   } else disposeRuntime(session.runtime);

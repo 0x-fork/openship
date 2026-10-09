@@ -5,6 +5,7 @@
  * No database writes, no deployment logic.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import * as githubService from "../github/github.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
@@ -765,7 +766,7 @@ async function selectProjectSnapshot(
   reader: ProjectReader,
   rootSnapshot: ProjectRootSnapshotInput,
 ): Promise<SelectedProjectSnapshot> {
-  const treeEntries = await reader.listTree().catch(() => [] as RepoTreeEntry[]);
+  const treeEntries = await reader.listTree().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/prepare.service"); return [] as RepoTreeEntry[]; });
   const hints = discoverProjectRootHints(
     treeEntries,
     rootSnapshot.fileContents,
@@ -1044,7 +1045,7 @@ export async function resolveFromReader(
   // Log both syntax diagnostics and overrides rejected by workspace discovery.
   // Scans expose the same diagnostics to SDK, CLI and dashboard callers.
   if (overlaid.configDiagnostics) {
-    console.warn(
+    errorDiagnostics.warn("platform/engine/modules/deployments/prepare.service",
       `[deployment config] ${repoMeta.full_name}: ` +
         [...overlaid.configDiagnostics.errors, ...overlaid.configDiagnostics.warnings].join(" · "),
     );
@@ -1139,6 +1140,7 @@ function toProjectInfo(
       // of the file quietly deploying as something else (#533).
       if (parsed.unsupported.length > 0) unsupportedCompose = parsed.unsupported;
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/deployments/prepare.service");
       // Surface the broken file — an unusable file (invalid YAML), which is all
       // the parser throws for now. Swallowing it returns a services project with
       // ZERO services — the wizard then shows nothing to deploy and no reason

@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { isArtifactRef } from "../../lib/container-ref";
 /**
  * Project runtime service - logs, enable/disable (start/stop).
@@ -81,7 +82,7 @@ export async function streamRuntimeLogs(
   // runtime is disposed in the stream's cleanup instead — same shape as
   // streamServiceRuntimeLogs. Disposing here would kill the live stream.
   const { runtime, serverId } = await resolveDeploymentRuntimeForRead(dep);
-  const containerId = await livePrimaryContainerId(runtime, dep).catch(() => null);
+  const containerId = await livePrimaryContainerId(runtime, dep).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service"); return null; });
   if (!containerId) {
     disposeRuntime(runtime);
     throw new NotFoundError("No running container for project", projectId);
@@ -297,7 +298,9 @@ async function disableLiveProject(p: ProjectRow) {
     // (and the health watch went quiet on it) while every container kept
     // serving, and `enableProject` refuses to clear the flag until a start
     // succeeds — so an unreachable box made the state permanent.
-    await repos.project.update(projectId, { disabledAt: previous }).catch(() => {});
+    await repos.project.update(projectId, { disabledAt: previous }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service");
+    });
     throw err;
   }
   return { success: true, message: "Project disabled" };
@@ -422,11 +425,11 @@ async function retryLiveProjectRouting(
       onLog: options.onLog,
       onWarning,
       managedEdgeSyncedByCaller: true,
-    }).catch((error) => onWarning(safeErrorMessage(error)));
+    }).catch((error) => { observeCaughtError(error, "platform/engine/modules/projects/project-runtime.service"); return onWarning(safeErrorMessage(error)); });
     await applyProjectRouting(projectId, {
       onLog: options.onLog,
       onWarning,
-    }).catch((error) => onWarning(safeErrorMessage(error)));
+    }).catch((error) => { observeCaughtError(error, "platform/engine/modules/projects/project-runtime.service"); return onWarning(safeErrorMessage(error)); });
     if (warnings.length) {
       const warning = warnings.join("\n");
       await markRoutingWarning(dep, warning);
@@ -449,11 +452,15 @@ async function retryLiveProjectRouting(
     const fresh = p.activeDeploymentId
       ? await findActiveDeployment(p)
       : null;
-    await markRoutingWarning(fresh, edgeRecoveryWarning).catch(() => {});
+    await markRoutingWarning(fresh, edgeRecoveryWarning).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service");
+    });
     return { ok: false, warning: edgeRecoveryWarning };
   }
 
-  await restoreCustomPortsFromEdge(p, serverId).catch(() => {});
+  await restoreCustomPortsFromEdge(p, serverId).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service");
+  });
 
   // Live re-apply is best-effort, but its failure must NOT clear the warning.
   let applyOk = true;
@@ -476,13 +483,14 @@ async function retryLiveProjectRouting(
     managedEdgeSyncedByCaller: true,
     onWarning,
   }).catch((error) => {
+    observeCaughtError(error, "platform/engine/modules/projects/project-runtime.service");
     applyOk = false;
     routeWarnings.push(safeErrorMessage(error));
   });
   await applyProjectRouting(projectId, {
     onWarning,
     ...(options.onLog ? { onLog: options.onLog } : {}),
-  }).catch((error) => onWarning(safeErrorMessage(error)));
+  }).catch((error) => { observeCaughtError(error, "platform/engine/modules/projects/project-runtime.service"); return onWarning(safeErrorMessage(error)); });
 
   // Reconcile managed hosts, retaining the warning until route and domain checks
   // also succeed. This re-reads the deployment's repaired server binding.
@@ -500,7 +508,9 @@ async function retryLiveProjectRouting(
     const fresh = p.activeDeploymentId
       ? await findActiveDeployment(p)
       : null;
-    await markRoutingWarning(fresh, warning).catch(() => {});
+    await markRoutingWarning(fresh, warning).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service");
+    });
     return { ok: false, warning };
   }
 
@@ -515,7 +525,9 @@ async function retryLiveProjectRouting(
     const fresh = p.activeDeploymentId
       ? await findActiveDeployment(p)
       : null;
-    await markRoutingWarning(fresh, edgeWarning).catch(() => {});
+    await markRoutingWarning(fresh, edgeWarning).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service");
+    });
     return { ok: false, warning: edgeWarning };
   }
   return finish();
@@ -532,7 +544,7 @@ async function recoverProjectEdge(
   onLog?: (message: string) => void,
 ): Promise<string | null> {
   if (!dep) return null;
-  const domains = await repos.domain.listByProject(project.id).catch(() => []);
+  const domains = await repos.domain.listByProject(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service"); return []; });
   // A legacy service may have route settings but no domain row yet. The route
   // repair below creates that row, so an empty list cannot skip edge recovery.
   if (domains.length === 0) {
@@ -560,6 +572,7 @@ async function recoverProjectEdge(
         : `Couldn't restore the edge before retrying routing: ${status.message}`;
     });
   } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-runtime.service");
     return `Couldn't restore the edge before retrying routing: ${safeErrorMessage(err)}`;
   }
 }
@@ -585,12 +598,13 @@ async function edgeServingWarning(
   serverId: string | undefined,
 ): Promise<string | null> {
   if (!serverId) return null;
-  const domains = await repos.domain.listByProject(project.id).catch(() => []);
+  const domains = await repos.domain.listByProject(project.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service"); return []; });
   if (domains.length === 0) return null;
   try {
     const status = await sshManager.withExecutor(serverId, (executor) => checkEdge(executor));
     return status.healthy ? null : `Routes are written but not being served: ${status.message}`;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service");
     return null;
   }
 }
@@ -653,7 +667,7 @@ async function restoreCustomPortsFromEdge(
     const proxy = await edgeProxy(executor);
     if (!proxy) return;
     for (const row of candidates) {
-      const site = await proxy.siteFor(row.hostname).catch(() => null);
+      const site = await proxy.siteFor(row.hostname).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-runtime.service"); return null; });
       const port = site ? liveUpstreamPort(site) : null;
       if (port != null) await repos.domain.update(row.id, { targetPort: port });
     }

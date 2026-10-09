@@ -27,6 +27,7 @@
  *           code, signal } | { type: "error", code, message } | { type: "pong" }
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 import {
@@ -117,7 +118,7 @@ type ErrorCode =
 export async function issueTicket(c: Context) {
   const ctx = getRequestContext(c);
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller"); return ({}); });
   const serverId = typeof body?.serverId === "string" ? body.serverId : "";
   if (!serverId) return c.json({ error: "serverId required" }, 400);
   const cloud = await prepareCloudTerminal(ctx, "server", serverId);
@@ -215,9 +216,10 @@ export const terminalWsHandler = upgradeWebSocket(async (c) => {
         const sessOrgId =
           (session.session as { activeOrganizationId?: string | null } | null)
             ?.activeOrganizationId ?? null;
-        activeOrgId = await resolveActiveOrganizationId(userId, sessOrgId).catch(() => null);
+        activeOrgId = await resolveActiveOrganizationId(userId, sessOrgId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller"); return null; });
       }
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller");
       // fall through to reject below
     }
   }
@@ -438,7 +440,8 @@ function buildHandlers(ctx: HandshakeCtx) {
           return;
         }
         auditId = row.id;
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller");
         sendControl(ws, { type: "error", code: "server_error", message: "Could not reserve a terminal session. Retry to reconnect." });
         safeWsClose(ws, 1011, "server_error");
         return;
@@ -450,7 +453,10 @@ function buildHandlers(ctx: HandshakeCtx) {
       try {
         ({ shell, release } = await openServerShell(ctx.organizationId, ctx.serverId, { cols: 80, rows: 24, term: "xterm-256color" }));
       } catch (err: any) {
-        await repos.terminalSession.close(auditId, { exitReason: "server_error" }).catch(() => {});
+        observeCaughtError(err, "api/modules/terminal/terminal.controller");
+        await repos.terminalSession.close(auditId, { exitReason: "server_error" }).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller");
+        });
         const code: ErrorCode = ctx.managed ? "server_error" : classifySshError(err);
         sendControl(ws, { type: "error", code, message: err?.message || "Server connection failed" });
         safeWsClose(ws, 1011, code);
@@ -697,7 +703,8 @@ async function teardownConnection(state: ConnState, reason: TerminalExitReason, 
         exitCode,
         exitReason: reason,
       });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller");
       // Admission expires rows past the hard cap on Cloud; self-hosted
       // startup also sweeps rows abandoned by a previous process.
     }

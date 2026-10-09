@@ -7,6 +7,7 @@
  * cannot replace the upload that is currently feeding it.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash, randomUUID } from "node:crypto";
 import {
   and,
@@ -497,7 +498,7 @@ export async function withSessionClaimLease<T>(
     if (renewalRunning) return;
     renewalRunning = true;
     void renewSessionClaim(session)
-      .catch(() => undefined)
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/chunk-store"); return undefined; })
       .finally(() => {
         renewalRunning = false;
       });

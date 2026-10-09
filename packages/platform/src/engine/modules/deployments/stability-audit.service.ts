@@ -16,6 +16,7 @@
  * conclusive reading fails a service.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import { SYSTEM, safeErrorMessage } from "@repo/core";
 import {
@@ -76,7 +77,8 @@ export async function readLogTail(
       .map((entry) => shorten(entry.message))
       .filter((message) => message.length > 0)
       .slice(-lines);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/stability-audit.service");
     return [];
   }
 }
@@ -135,6 +137,7 @@ export async function verifyDeployedContainers(
           },
         );
       } catch (err) {
+        observeCaughtError(err, "platform/engine/modules/deployments/stability-audit.service");
         // Couldn't read the runtime (dropped SSH channel, daemon hiccup). That
         // is a gap in OUR knowledge, not a failed workload — say so and leave
         // the service's status exactly as the deploy set it.
@@ -211,7 +214,7 @@ export async function recordUnstableServices(opts: {
   const demoted = new Map<string, StabilityFinding>();
   if (unstable.length === 0) return demoted;
 
-  const rows = await repos.serviceDeployment.listByDeployment(deploymentId).catch(() => []);
+  const rows = await repos.serviceDeployment.listByDeployment(deploymentId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/stability-audit.service"); return []; });
   for (const finding of unstable) {
     const serviceId = finding.target.serviceId!;
     demoted.set(serviceId, finding);
@@ -226,10 +229,10 @@ export async function recordUnstableServices(opts: {
           finishedAt: new Date(),
         })
         .catch((err) =>
-          logger.log(
+          { observeCaughtError(err, "platform/engine/modules/deployments/stability-audit.service"); return logger.log(
             `Warning: couldn't record the failed stabilization for "${finding.target.serviceName}": ${safeErrorMessage(err)}\n`,
             "warn",
-          ),
+          ); },
         );
     }
     sessionManager.broadcastServiceStatus(deploymentId, {

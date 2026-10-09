@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   APP_TEMPLATES,
   isValidAppTemplate,
@@ -59,7 +60,8 @@ export type ResolvedAppTemplate = AppTemplate & {
 function engineVersion(): string | undefined {
   try {
     return readApiVersion();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/apps/catalog-source");
     return undefined;
   }
 }
@@ -68,7 +70,7 @@ function engineVersion(): string | undefined {
  *  the trusted set too, so a hand-edited bad bundled entry is caught at runtime. */
 const bundledValid: readonly AppTemplate[] = APP_TEMPLATES.filter((app) => {
   if (isValidAppTemplate(app)) return true;
-  console.warn(`[catalog] bundled app "${(app as { id?: string }).id ?? "?"}" failed shape validation — skipping`);
+  errorDiagnostics.warn("platform/engine/modules/apps/catalog-source", `[catalog] bundled app "${(app as { id?: string }).id ?? "?"}" failed shape validation — skipping`);
   return false;
 });
 const bundledById = new Map(bundledValid.map((b) => [b.id, b]));
@@ -162,7 +164,7 @@ async function fetchRemote(): Promise<{ entries: AppTemplate[]; tooNew: Resolved
     const body = (await res.json()) as { apps?: unknown; version?: unknown };
     if (!Array.isArray(body?.apps)) return null;
     if (typeof body.version === "number" && body.version > MAX_CATALOG_VERSION) {
-      console.warn(`[catalog] overlay catalog version ${body.version} is newer than known (${MAX_CATALOG_VERSION}); ingesting per-entry anyway`);
+      errorDiagnostics.warn("platform/engine/modules/apps/catalog-source", `[catalog] overlay catalog version ${body.version} is newer than known (${MAX_CATALOG_VERSION}); ingesting per-entry anyway`);
     }
     // Ingest is SHAPE + schemaVersion only (no engine gate — that's the resolver's
     // job, so a too-new-engine app can fall back / guide instead of vanishing).
@@ -176,14 +178,15 @@ async function fetchRemote(): Promise<{ entries: AppTemplate[]; tooNew: Resolved
       } else if (decision.reason === "schema-too-new") {
         const p = placeholderFromRaw(app);
         if (p) tooNew.push(p);
-        else console.warn(`[catalog] dropping overlay app — schema too new + unreadable identity`);
+        else errorDiagnostics.warn("platform/engine/modules/apps/catalog-source", `[catalog] dropping overlay app — schema too new + unreadable identity`);
       } else {
         const id = (app as { id?: string })?.id ?? "?";
-        console.warn(`[catalog] dropping overlay app "${id}" — invalid shape${decision.detail ? `: ${decision.detail}` : ""}`);
+        errorDiagnostics.warn("platform/engine/modules/apps/catalog-source", `[catalog] dropping overlay app "${id}" — invalid shape${decision.detail ? `: ${decision.detail}` : ""}`);
       }
     }
     return entries.length > 0 || tooNew.length > 0 ? { entries, tooNew } : null;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/apps/catalog-source");
     return null;
   }
 }
@@ -196,7 +199,8 @@ function refresh(): void {
       if (remote) cache = resolveCatalog(remote.entries, remote.tooNew);
       cachedAt = Date.now();
     })
-    .catch(() => {
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/apps/catalog-source");
       /* keep last-good */
     })
     .finally(() => {

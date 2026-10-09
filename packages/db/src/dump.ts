@@ -24,6 +24,7 @@
  * NOT a backup tool. Use the existing backup module for that.
  */
 
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { sql, eq, inArray, count, getTableColumns } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { db, getDriver, type DatabaseTransaction } from "./client";
@@ -1619,7 +1620,7 @@ export async function restoreSubgraphInTransaction(
     if (droppedCols.size > 0) {
       // Version skew, not a fault — the receiver's schema predates these
       // columns. Log once per table so it's diagnosable without failing.
-      console.warn(
+      errorDiagnostics.warn("db/dump",
         `[restore] ${spec.sqlName}: dropped ${droppedCols.size} unknown column(s) not in this build's schema: ${[...droppedCols].join(", ")}`,
       );
     }

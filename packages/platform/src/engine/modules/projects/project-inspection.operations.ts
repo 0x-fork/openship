@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { ProjectControlSchemas } from "@repo/contracts";
 import type { ResourceServices } from "../../../resource-operations";
 import type { ProjectDependencies } from "../../../projects";
@@ -42,7 +43,7 @@ export function createProjectInspectionOperations(
       // ACTIVE one, which by construction is never a blocked deploy — so without this
       // the detail page's status pill couldn't show a blocker that the project list
       // (which already fetches `latest`) does show. One query on a detail read.
-      const latestDeployment = await repos.deployment.findLatestByProject(id).catch(() => null);
+      const latestDeployment = await repos.deployment.findLatestByProject(id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-inspection.operations"); return null; });
       const hasServer = project.hasServer ?? project.productionMode === "host";
       // The resolved runtime workload (web | worker | static). A worker and a web app
       // both run a long-lived process (start command + volumes), but only a web app

@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
@@ -249,7 +250,8 @@ export const ServiceTerminal = forwardRef<
           if (!sel) return;
           try {
             void navigator.clipboard?.writeText?.(sel);
-          } catch {
+          } catch (diagnosticFailure) {
+            observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
             /* no perms */
           }
         }, 150);
@@ -262,7 +264,8 @@ export const ServiceTerminal = forwardRef<
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         try {
           fitAddon.fit();
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
           /* container not yet sized */
         }
         if (resizeTimer) clearTimeout(resizeTimer);
@@ -284,7 +287,8 @@ export const ServiceTerminal = forwardRef<
         if (selectionTimer) clearTimeout(selectionTimer);
         try {
           terminal.dispose();
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
           /* already disposed */
         }
         if (xtermRef.current === terminal) {
@@ -318,7 +322,8 @@ export const ServiceTerminal = forwardRef<
       if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
       try {
         fitAddon.fit();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
         /* not sized yet */
       }
       if (xterm.cols && xterm.rows) {
@@ -326,7 +331,8 @@ export const ServiceTerminal = forwardRef<
       }
       try {
         xterm.focus();
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/terminal/ServiceTerminal");
         /* not focusable */
       }
     }, 30);

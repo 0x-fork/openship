@@ -14,7 +14,10 @@
  *         └─ API (remote server, reached via HTTP)
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics, reportError } from "@repo/core/diagnostics";
+import { installNodeErrorReporting } from "@repo/core/diagnostics/node";
 import { app, BrowserWindow, shell, ipcMain, net, dialog, globalShortcut, screen, nativeTheme } from "electron";
+import { observeIpcHandler } from "./ipc-errors";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
@@ -139,6 +142,7 @@ class ConfigStore {
   }
 }
 
+installNodeErrorReporting("desktop");
 const store = new ConfigStore();
 
 // ─── Internal token (ephemeral, per-session) ─────────────────────────────────
@@ -186,7 +190,7 @@ async function pushInstanceSettings(
     });
   } catch (err) {
     // Log but don't block - settings can be pushed again later
-    console.error("[openship] Failed to push instance settings:", err);
+    errorDiagnostics.error("desktop/main/index", "[openship] Failed to push instance settings:", err);
   }
 }
 
@@ -212,7 +216,8 @@ async function waitForApi(apiUrl: string, maxAttempts = 30, intervalMs = 1000): 
         signal: AbortSignal.timeout(2000),
       });
       if (res.ok) return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "desktop/main/index");
       // Not ready yet - keep polling
     }
     await new Promise((r) => setTimeout(r, intervalMs));
@@ -335,6 +340,11 @@ function createWindow() {
     });
   };
   mainWindow.webContents.on("did-navigate", emitNav);
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    if (details.reason !== "clean-exit") reportError("Desktop renderer stopped unexpectedly", {
+      source: "desktop", kind: "process", component: "renderer", code: "RENDERER_PROCESS_GONE", handled: true,
+    });
+  });
   mainWindow.webContents.on("did-navigate-in-page", emitNav);
 
   // Show the window once content is painted (avoids white flash)
@@ -376,7 +386,7 @@ function createWindow() {
     if (verdict === "allow") return;
     e.preventDefault();
     if (verdict === "external") shell.openExternal(url);
-    else console.warn(`[security] blocked main-frame navigation to ${url}`);
+    else errorDiagnostics.warn("desktop/main/index", `[security] blocked main-frame navigation to ${url}`);
   };
   mainWindow.webContents.on("will-navigate", containNavigation);
   mainWindow.webContents.on("will-redirect", containNavigation);
@@ -424,7 +434,9 @@ function showLoading() {
       // Services can start before the first document is ready to receive updates.
       if (mainWindow === window) setLoadingStage(currentLoadingStage);
     })
-    .catch(() => {}); // Dashboard navigation may already have replaced the splash.
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "desktop/main/index");
+    }); // Dashboard navigation may already have replaced the splash.
 }
 
 /** Actual startup milestones; a progress update must never block launch. */
@@ -433,7 +445,9 @@ function setLoadingStage(stage: LoadingStage) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   void mainWindow.webContents
     .executeJavaScript(`window.__osStage && window.__osStage(${JSON.stringify(stage)})`)
-    .catch(() => {});
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "desktop/main/index");
+    });
 }
 
 /**
@@ -472,7 +486,7 @@ function loadDashboard() {
       store.set("onboardingComplete", false);
       loadOnboarding();
     } else {
-      console.error("[openship] Dashboard failed to load:", err);
+      errorDiagnostics.error("desktop/main/index", "[openship] Dashboard failed to load:", err);
     }
   });
 }
@@ -499,6 +513,7 @@ app.whenReady().then(async () => {
       setLoadingStage("services");
       await startLocalServices(internalToken);
     } catch (err) {
+      observeCaughtError(err, "desktop/main/index");
       dialog.showErrorBox(
         "Openship failed to start",
         err instanceof Error ? err.message : String(err),
@@ -565,6 +580,10 @@ app.on("window-all-closed", () => {
 });
 
 // Tear down the bundled services when the app actually quits.
+const handleIpc: typeof ipcMain.handle = (channel, listener) => {
+  ipcMain.handle(channel, observeIpcHandler(channel, listener));
+};
+
 app.on("before-quit", () => {
   stopLocalServices();
 });
@@ -577,10 +596,10 @@ function isInstanceLinkReader(event: Electron.IpcMainInvokeEvent): boolean {
     isAllowedFrameUrl(event.senderFrame.url, [getLocalDashboardUrl()]);
 }
 
-ipcMain.handle("instance:pending-link", (event) =>
+handleIpc("instance:pending-link", (event) =>
   isInstanceLinkReader(event) ? instanceLinks.pending() : null,
 );
-ipcMain.handle("instance:acknowledge-link", (event, id: unknown) => {
+handleIpc("instance:acknowledge-link", (event, id: unknown) => {
   if (!isInstanceLinkReader(event) || !instanceLinks.acknowledge(id)) return false;
   notifyInstanceLink();
   return true;
@@ -599,7 +618,7 @@ async function ensurePendingUpdate(): Promise<void> {
   pendingUpdate = result.available ? result : null;
 }
 
-ipcMain.handle("update:dismiss", () => {
+handleIpc("update:dismiss", () => {
   closeUpdateWindow();
   return true;
 });
@@ -607,7 +626,7 @@ ipcMain.handle("update:dismiss", () => {
 // Re-check GitHub on demand and stage the result — drives the dashboard's
 // "Check now" so a check happens without a restart. Returns the check result so
 // the renderer can reflect it.
-ipcMain.handle("update:check", async (_event, force?: boolean) => {
+handleIpc("update:check", async (_event, force?: boolean) => {
   const result = await checkForUpdate({ force: force === true });
   // A successful check can invalidate an old offer. A failed network read
   // says nothing about the installer we already staged.
@@ -617,7 +636,7 @@ ipcMain.handle("update:check", async (_event, force?: boolean) => {
 
 // Open the native update window on demand (the dashboard's "Update now"). Stages
 // the pending update first, so it works even when the boot check found nothing.
-ipcMain.handle("update:open", async () => {
+handleIpc("update:open", async () => {
   await ensurePendingUpdate();
   if (!pendingUpdate) return false;
   openUpdateWindow(mainWindow, pendingUpdate);
@@ -664,6 +683,7 @@ async function performUpdate(): Promise<boolean> {
     installUpdate(file); // quits + relaunches on the new version (or opens installer)
     return true;
   } catch (err) {
+    observeCaughtError(err, "desktop/main/index");
     mainWindow?.setProgressBar(-1);
     mainWindow?.webContents.send(
       "update:error",
@@ -673,7 +693,7 @@ async function performUpdate(): Promise<boolean> {
   }
 }
 
-ipcMain.handle("update:start", () => runUpdate());
+handleIpc("update:start", () => runUpdate());
 
 // ─── IPC: Window controls ───────────────────────────────────────────────────
 //
@@ -681,26 +701,26 @@ ipcMain.handle("update:start", () => runUpdate());
 // buttons — macOS keeps its native traffic lights — but all four are registered
 // on every platform so the renderer never branches on process.platform.
 
-ipcMain.handle("window:minimize", () => {
+handleIpc("window:minimize", () => {
   mainWindow?.minimize();
   return true;
 });
 
-ipcMain.handle("window:toggle-maximize", () => {
+handleIpc("window:toggle-maximize", () => {
   if (!mainWindow) return false;
   if (mainWindow.isMaximized()) mainWindow.unmaximize();
   else mainWindow.maximize();
   return mainWindow.isMaximized();
 });
 
-ipcMain.handle("window:close", () => {
+handleIpc("window:close", () => {
   // close(), not destroy() — the existing "close" handler persists window bounds
   // and decides hide-vs-quit per platform.
   mainWindow?.close();
   return true;
 });
 
-ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+handleIpc("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
 
 // ─── IPC: In-app navigation (titlebar back / forward / reload) ──────────────
 //
@@ -720,24 +740,24 @@ function navState(): { canGoBack: boolean; canGoForward: boolean } {
   return { canGoBack: h?.canGoBack() ?? false, canGoForward: h?.canGoForward() ?? false };
 }
 
-ipcMain.handle("window:nav-back", () => {
+handleIpc("window:nav-back", () => {
   const h = navHistory();
   if (h?.canGoBack()) h.goBack();
   return navState();
 });
 
-ipcMain.handle("window:nav-forward", () => {
+handleIpc("window:nav-forward", () => {
   const h = navHistory();
   if (h?.canGoForward()) h.goForward();
   return navState();
 });
 
-ipcMain.handle("window:reload", () => {
+handleIpc("window:reload", () => {
   mainWindow?.webContents.reload();
   return true;
 });
 
-ipcMain.handle("window:nav-state", () => navState());
+handleIpc("window:nav-state", () => navState());
 
 /**
  * Toggle DevTools from the titlebar's ⋯ menu.
@@ -748,7 +768,7 @@ ipcMain.handle("window:nav-state", () => navState());
  * Developer Tools stays), but it lives in the system menu bar — having it in the
  * window too costs nothing and keeps the two platforms behaving the same.
  */
-ipcMain.handle("window:toggle-devtools", () => {
+handleIpc("window:toggle-devtools", () => {
   const wc = mainWindow?.webContents;
   if (!wc) return false;
   if (wc.isDevToolsOpened()) wc.closeDevTools();
@@ -762,17 +782,17 @@ ipcMain.handle("window:toggle-devtools", () => {
 // `system` (SSH host/user/password/passphrase) and `tunnel` tokens, so a generic
 // key passthrough would let any script in the loaded content read local
 // credentials off the bridge. There is deliberately no `getAll`.
-ipcMain.handle("config:get", (_event, key: unknown) => {
+handleIpc("config:get", (_event, key: unknown) => {
   if (!isRendererConfigKey(key)) {
-    console.warn(`[security] blocked config:get for non-exposed key ${String(key)}`);
+    errorDiagnostics.warn("desktop/main/index", `[security] blocked config:get for non-exposed key ${String(key)}`);
     return undefined;
   }
   return store.get(key);
 });
 
-ipcMain.handle("config:set", (_event, key: unknown, value: unknown) => {
+handleIpc("config:set", (_event, key: unknown, value: unknown) => {
   if (!isRendererConfigKey(key)) {
-    console.warn(`[security] blocked config:set for non-exposed key ${String(key)}`);
+    errorDiagnostics.warn("desktop/main/index", `[security] blocked config:set for non-exposed key ${String(key)}`);
     return false;
   }
   store.set(key, value as AppConfig[RendererConfigKey]);
@@ -781,15 +801,15 @@ ipcMain.handle("config:set", (_event, key: unknown, value: unknown) => {
 
 // ─── IPC: App metadata ──────────────────────────────────────────────────────
 
-ipcMain.handle("app:version", () => {
+handleIpc("app:version", () => {
   return app.getVersion();
 });
 
-ipcMain.handle("app:cloud-urls", () => {
+handleIpc("app:cloud-urls", () => {
   return { api: CLOUD_API_URL, dashboard: CLOUD_DASHBOARD_URL };
 });
 
-ipcMain.handle("app:local-urls", () => {
+handleIpc("app:local-urls", () => {
   return { api: getLocalApiUrl(), dashboard: getLocalDashboardUrl() };
 });
 
@@ -800,7 +820,7 @@ ipcMain.handle("app:local-urls", () => {
 
 // ─── IPC: Onboarding ────────────────────────────────────────────────────────
 
-ipcMain.handle(
+handleIpc(
   "onboarding:complete",
   async (
     _event,
@@ -852,7 +872,7 @@ ipcMain.handle(
  * 5. Return immediately so the renderer can show polling UX
  * 6. Renderer polls via cloud-auth-poll until session is obtained
  */
-ipcMain.handle("onboarding:cloud-auth", async () => {
+handleIpc("onboarding:cloud-auth", async () => {
   if (!mainWindow) return { ok: false, error: "No window" };
 
   // Wait for API to be available
@@ -885,7 +905,8 @@ ipcMain.handle("onboarding:cloud-auth", async () => {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     return { ok: false, error: "nonce_registration_failed" };
   }
 
@@ -906,7 +927,7 @@ ipcMain.handle("onboarding:cloud-auth", async () => {
  * When the API reports "resolved", we navigate to the claim URL
  * which sets the cookie via HTTP Set-Cookie and redirects to the dashboard.
  */
-ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
+handleIpc("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
   if (!mainWindow) return { status: "expired" };
 
   try {
@@ -944,7 +965,8 @@ ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
     }
 
     return { status: data.status };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     // Network error during poll - report as error so UI can show feedback
     return { status: "error" };
   }
@@ -963,7 +985,7 @@ ipcMain.handle("onboarding:cloud-auth-poll", async (_event, nonce: string) => {
  * The cloud-callback endpoint stores the cloud session token server-side.
  * After polling resolves, the renderer just refreshes cloudApi.status().
  */
-ipcMain.handle("cloud:connect", async () => {
+handleIpc("cloud:connect", async () => {
   if (!mainWindow) return { ok: false, error: "No window" };
 
   const apiReady = await waitForApi(getLocalApiUrl());
@@ -989,7 +1011,8 @@ ipcMain.handle("cloud:connect", async () => {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error("nonce registration failed");
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     return { ok: false, error: "nonce_registration_failed" };
   }
 
@@ -1008,7 +1031,7 @@ ipcMain.handle("cloud:connect", async () => {
  * The cloud-callback has already stored the session token server-side.
  * The renderer should call cloudApi.status() to pick up the new state.
  */
-ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
+handleIpc("cloud:connect-poll", async (_event, nonce: string) => {
   if (!mainWindow) return { status: "expired" };
 
   try {
@@ -1032,7 +1055,8 @@ ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
     }
 
     return { status: data.status };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/index");
     return { status: "error" };
   }
 });
@@ -1040,15 +1064,15 @@ ipcMain.handle("cloud:connect-poll", async (_event, nonce: string) => {
 // http/https only. `shell.openExternal` hands the string to the OS dispatcher,
 // so an unvalidated scheme could launch a local handler or, on Windows, resolve a
 // UNC path and leak an NTLM hash outbound.
-ipcMain.handle("onboarding:open-external", (_event, url: string) => {
+handleIpc("onboarding:open-external", (_event, url: string) => {
   if (!isSafeExternalUrl(url)) {
-    console.warn(`[security] refused openExternal for ${url}`);
+    errorDiagnostics.warn("desktop/main/index", `[security] refused openExternal for ${url}`);
     return;
   }
   shell.openExternal(url);
 });
 
-ipcMain.handle("onboarding:browse-file", async () => {
+handleIpc("onboarding:browse-file", async () => {
   if (!mainWindow) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     // showHiddenFiles or the dialog can't reach ~/.ssh, where the key it asks
@@ -1060,7 +1084,7 @@ ipcMain.handle("onboarding:browse-file", async () => {
   return canceled || !filePaths.length ? null : filePaths[0];
 });
 
-ipcMain.handle("system:browse-folder", async () => {
+handleIpc("system:browse-folder", async () => {
   if (!mainWindow) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: "Select Project Folder",
@@ -1074,7 +1098,7 @@ ipcMain.handle("system:browse-folder", async () => {
 // machine, so a native dialog is the only picker that makes sense — the API reads
 // the path off this same filesystem. `showHiddenFiles` because the key lives in
 // ~/.ssh, which the dialog hides by default.
-ipcMain.handle("system:browse-file", async () => {
+handleIpc("system:browse-file", async () => {
   if (!mainWindow) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: "Select SSH Key",
@@ -1095,7 +1119,7 @@ ipcMain.handle("system:browse-file", async () => {
 
 // ─── IPC: Reset (for settings → re-onboard) ─────────────────────────────────
 
-ipcMain.handle("app:reset", () => {
+handleIpc("app:reset", () => {
   store.set("onboardingComplete", false);
   store.set("apiUrl", "");
   store.set("dashboardUrl", "");

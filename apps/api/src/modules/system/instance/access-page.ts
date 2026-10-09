@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Hono } from "hono";
 import { html } from "hono/html";
 import { desktopInstanceLink } from "@repo/core";
@@ -22,7 +23,8 @@ for (const path of ["/", "/login", "/accept-invite/:id"]) {
     const origin = requestApiPublicUrl(c.req.raw);
     const address = id ? `${origin}/accept-invite/${encodeURIComponent(id)}` : origin;
     let desktopLink: string | null = null;
-    try { desktopLink = desktopInstanceLink(address); } catch { /* Keep manual instructions for an unconfigured HTTPS URL. */ }
+    try { desktopLink = desktopInstanceLink(address); } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/modules/system/instance/access-page"); /* Keep manual instructions for an unconfigured HTTPS URL. */ }
     c.header(
       "Content-Security-Policy",
       "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",

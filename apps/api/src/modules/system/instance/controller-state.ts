@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { randomUUID } from "node:crypto";
 import { db, eq, schema, sql, type DatabaseTransaction } from "@repo/db";
 import {
@@ -77,7 +78,9 @@ let lifecycle: { start: () => Promise<void>; stop: () => Promise<void> } | undef
 let lifecycleTail: Promise<void> = Promise.resolve();
 function sequenceLifecycle(work: () => Promise<void>): Promise<void> {
   const next = lifecycleTail.then(work);
-  lifecycleTail = next.catch(() => {});
+  lifecycleTail = next.catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "api/modules/system/instance/controller-state");
+  });
   return next;
 }
 let restart: (() => void) | undefined;

@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { api, ApiError, getApiBaseUrl, getActiveOrganizationId } from "./client";
 import {
   isResourceOutput,
@@ -848,7 +849,7 @@ export const systemApi = {
       signal,
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
+      const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/lib/api/system"); return ""; });
       throw new Error(text || `Update failed: ${res.status}`);
     }
 

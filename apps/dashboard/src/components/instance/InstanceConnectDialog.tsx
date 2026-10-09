@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,8 @@ export function InstanceConnectDialog({
     try {
       const target = parseInstanceAddress(address);
       if (target?.nextPath.startsWith("/accept-invite/")) invitationOrigin = target.origin;
-    } catch { /* The form shows an invalid address only after submission. */ }
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/instance/InstanceConnectDialog"); /* The form shows an invalid address only after submission. */ }
   }
 
   async function submit(event: FormEvent) {
@@ -53,7 +55,8 @@ export function InstanceConnectDialog({
       try {
         next = parseInstanceAddress(address);
         if (!next) throw new Error(copy.invalidAddress);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/instance/InstanceConnectDialog");
         setError(copy.invalidAddress);
         return;
       }

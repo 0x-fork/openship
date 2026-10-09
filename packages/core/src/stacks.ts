@@ -1268,6 +1268,8 @@ export function isServicesFramework(framework?: string | null): boolean {
   try {
     return getProjectType(framework as StackId) === "services";
   } catch {
+      /* diagnostics-ignore: Unknown framework identifiers intentionally use the Compose fallback. */
+
     return framework === "docker-compose";
   }
 }

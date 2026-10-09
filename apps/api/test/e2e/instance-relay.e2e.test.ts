@@ -69,6 +69,14 @@ it("relays streams and terminal frames to one authenticated peer without leaking
       }),
     ).toString("base64url");
     await post("/api/system/instance/connect", { code });
+
+    // Browser reports stay with the local UI through a remote-instance switch;
+    // they must not be delivered under whichever remote account is now active.
+    const diagnostic = await fetch(`${desktop.baseUrl}/api/diagnostics/client-errors`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events: [{ name: "Error", message: "local UI observation" }] }),
+    });
+    expect(diagnostic.status).toBe(204);
     const echo = await jsonRequest<{ headers: Record<string, string> }>(
       desktop.baseUrl,
       "/api/echo",

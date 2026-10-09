@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import "server-only";
 import { cookies, headers } from "next/headers";
 import { getApiOrigin, getRequestOriginFromHeaders } from "@/lib/api/urls";
@@ -79,6 +80,7 @@ export class ServerApiError extends Error {
     public status: number,
     public statusText: string,
     public body: unknown,
+    public requestId?: string,
   ) {
     super(`API ${status}: ${statusText}`);
     this.name = "ServerApiError";
@@ -228,19 +230,20 @@ async function request<T = unknown>(
           if (parsed) cookieStore.set(parsed.name, parsed.value, parsed.options);
         }
       }
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/lib/server/api");
       /* outside request context - no response to attach cookies to */
     }
 
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
+      const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/lib/server/api"); return ""; });
       let parsed: unknown = text;
       try {
         parsed = JSON.parse(text);
       } catch {
         /* keep as string */
       }
-      throw new ServerApiError(res.status, res.statusText, parsed);
+      throw new ServerApiError(res.status, res.statusText, parsed, res.headers.get("X-Request-ID") ?? undefined);
     }
 
     if (res.status === 204) return undefined as T;

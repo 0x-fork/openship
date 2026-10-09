@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import { useI18n } from "@/components/i18n-provider";
 import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
@@ -32,7 +33,9 @@ export function ServiceTerminalPanel({ status, checking, error, onRefresh, onSet
   const refreshAfterConnect = useCallback(() => {
     // Verify from the same runtime status endpoint; terminal access alone must
     // not optimistically relabel the service. A failed read cannot close the shell.
-    void Promise.resolve().then(onRefresh).catch(() => {});
+    void Promise.resolve().then(onRefresh).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/services/ServiceTerminalPanel");
+    });
   }, [onRefresh]);
 
   // A status read is advisory. Keep an open shell through checking/unknown,

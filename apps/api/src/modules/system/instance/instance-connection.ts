@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, eq, and, gt, schema, withAdvisoryLock } from "@repo/db";
@@ -208,11 +209,12 @@ export async function connectedSourceHosts(): Promise<Array<{ id: string; name: 
     headers: remoteSessionHeaders(connection),
     redirect: "error",
     signal: AbortSignal.timeout(15_000),
-  }).catch(() => {
+  }).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "api/modules/system/instance/instance-connection");
     throw new AppError("Could not reach the connected instance. Check its connection and retry.", 502);
   });
   if (!response.ok) {
-    const error = (await response.json().catch(() => ({}))) as { error?: string };
+    const error = (await response.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/instance/instance-connection"); return ({}); })) as { error?: string };
     throw new AppError(
       error.error ?? "The remote administrator must authorize this move.",
       response.status,
@@ -250,7 +252,7 @@ export async function returnToDesktop(
     signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) {
-    const error = (await response.json().catch(() => ({}))) as { error?: string };
+    const error = (await response.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/instance/instance-connection"); return ({}); })) as { error?: string };
     throw new AppError(
       error.error ??
         "The remote administrator must authorize this move. Create a move code on the remote instance.",

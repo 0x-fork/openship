@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { isInvitationClaimPath, type DesktopInstanceLinkRequest } from "@repo/core";
@@ -34,7 +35,8 @@ export function DesktopInstanceLinks() {
         if (!mounted || active.current || !pending) return;
         active.current = pending;
         setRequest(pending);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/components/instance/DesktopInstanceLinks");
         // Manual connection remains available if the native bridge is closing.
       }
     };
@@ -59,7 +61,8 @@ export function DesktopInstanceLinks() {
         setRequest(null);
         refresh.current();
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/components/instance/DesktopInstanceLinks");
         /* Keep the confirmation available if the native bridge is closing. */
       });
   }, [acknowledge]);

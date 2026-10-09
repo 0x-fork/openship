@@ -679,6 +679,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/deployments/:id/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/deployments/ssl/renew` | Legacy hostname renewal; use POST /api/domains/:id/renew for managed domain identity and ownership. |
 | `POST /api/deployments/ssl/status` | Legacy hostname probe; use the managed domain detail/status tools for scoped routing and certificate evidence. |
+| `POST /api/diagnostics/client-errors` | Browser error intake; no user operation or data access. |
 | `POST /api/domains/:id/verify/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/github/connect/redirect` | GitHub OAuth callback - no session yet during redirect |
 | `POST /api/github/disconnect` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |

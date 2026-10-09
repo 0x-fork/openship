@@ -14,6 +14,7 @@
  * is never called — servers run via `bun dev` on the fixed ports.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { app, net, utilityProcess } from "electron";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -46,7 +47,8 @@ function killService(p: NodeService, signal?: NodeJS.Signals): void {
   try {
     if ("postMessage" in p) (p as ReturnType<typeof utilityProcess.fork>).kill();
     else (p as ChildProcess).kill(signal);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/services");
     // already gone
   }
 }
@@ -83,7 +85,8 @@ function loadStoredPorts(): { api?: number; dashboard?: number } {
 function saveStoredPorts(api: number, dashboard: number): void {
   try {
     writeFileSync(portsFile(), JSON.stringify({ api, dashboard }));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/services");
     // best-effort
   }
 }
@@ -126,7 +129,8 @@ function loadOrCreateAuthSecret(): string {
   try {
     const existing = readFileSync(file, "utf-8").trim();
     if (existing) return existing;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/services");
     // not created yet
   }
   const secret = randomBytes(32).toString("base64url");
@@ -155,7 +159,8 @@ async function waitForPort(
     try {
       const res = await net.fetch(url, { signal: AbortSignal.timeout(2000) });
       if (res.status > 0) return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "desktop/main/services");
       // not listening yet
     }
     await new Promise((r) => setTimeout(r, intervalMs));
@@ -206,7 +211,8 @@ async function startDashboard(
   // 2. Fallback — ELECTRON_RUN_AS_NODE spawn (works, but tiles the Dock).
   try {
     up.kill();
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "desktop/main/services");
     // already gone
   }
   if (!isCurrent()) return null;
@@ -451,11 +457,11 @@ export async function startLocalServices(internalToken: string): Promise<void> {
               apiProc = next;
               if (next) supervise(next);
               else
-                console.error(
+                errorDiagnostics.error("desktop/main/services",
                   "[openship] API reload failed; reopen Desktop to resume the saved instance move.",
                 );
             })
-            .catch((error) => console.error("[openship] API reload failed", error));
+            .catch((error) => errorDiagnostics.error("desktop/main/services", "[openship] API reload failed", error));
         };
         (child as unknown as NodeJS.EventEmitter).once("exit", onExit);
       };
@@ -504,7 +510,8 @@ export function stopLocalServices(invalidate = true): void {
   if (dashboardProc) {
     try {
       dashboardProc.kill();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "desktop/main/services");
       // already gone
     }
   }
@@ -536,7 +543,8 @@ export async function stopLocalServicesAndWait(graceMs = 8000): Promise<void> {
   if (dashboardProc) {
     try {
       dashboardProc.kill();
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "desktop/main/services");
       // already gone
     }
   }

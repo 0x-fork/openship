@@ -1,4 +1,6 @@
 "use client";
+
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
 
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
@@ -557,7 +559,8 @@ function ServerDetail({ serverId }: { serverId: string }) {
           setActiveTab("components");
           void setupStream.attachToSession(session.sessionId);
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/[serverId]/page");
         // No active session
       }
     })();

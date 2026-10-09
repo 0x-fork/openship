@@ -11,6 +11,9 @@ import {
 export const instanceAuthorityGuard: MiddlewareHandler = async (c, next) => {
   if (
     env.CLOUD_MODE ||
+    // UI diagnostics belong to this instance even while Desktop is relaying
+    // operations elsewhere. Never forward a queued report to a new account.
+    c.req.path === "/api/diagnostics/client-errors" ||
     c.req.path.startsWith("/api/system/instance/") ||
     c.req.path === "/api/system/instance" ||
     c.req.path === "/api/health"

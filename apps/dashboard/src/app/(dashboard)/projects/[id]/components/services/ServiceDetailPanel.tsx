@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -530,6 +531,7 @@ export function ServiceDetailPanel({
       onDeleted?.();
       await onRefresh();
     } catch (error) {
+      observeCaughtError(error, "dashboard/app/(dashboard)/projects/[id]/components/services/ServiceDetailPanel");
       showToast(
         error instanceof Error ? error.message : t.projectDetail.services.detail.toast.deleteFailed,
         "error",

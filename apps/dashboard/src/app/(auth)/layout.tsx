@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { getSession, getDeploymentInfoOrNull, needsOrgSelection } from "@/lib/server/session";
@@ -101,7 +102,7 @@ export default async function AuthLayout({
   const deploymentInfo = await getDeploymentInfoOrNull();
   if (!deploymentInfo) return <ApiUnavailable />;
   const controller = deploymentInfo.selfHosted
-    ? await serverApi.get<InstanceStatus>("system/instance", { cache: "no-store" }).catch(() => null)
+    ? await serverApi.get<InstanceStatus>("system/instance", { cache: "no-store" }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(auth)/layout"); return null; })
     : null;
   const remoteInstance = controller?.desktop && ["connected", "retired"].includes(controller.role)
     ? controller.connection?.origin : undefined;

@@ -13,6 +13,11 @@
  *   3. `index.ts`: `injectWebSocket(server)` after `serve()` returns
  *      the http.Server handle.
  */
+import {
+  currentErrorContext,
+  withErrorContext,
+} from "@repo/core/diagnostics/node";
+import { reportError } from "@repo/core/diagnostics";
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { Hono, Context } from "hono";
 import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
@@ -33,7 +38,8 @@ export function resumeControllerSockets(): void {
 }
 export function closeControllerSockets(): void {
   accepting = false;
-  for (const ws of connections) ws.close(1012, "Instance is moving; reconnect after the handoff");
+  for (const ws of connections)
+    ws.close(1012, "Instance is moving; reconnect after the handoff");
   connections.clear();
 }
 
@@ -55,6 +61,23 @@ export function upgradeWebSocket(
   }
   return _upgrade(async (c) => {
     const hooks = await factory(c);
+    const context = currentErrorContext();
+    const invoke = (name: string, work: () => unknown) => {
+      // Keep synchronous hook ordering; both throws and async rejections are
+      // observed without letting an EventEmitter callback crash the server.
+      withErrorContext(
+        { ...context, component: "websocket", operation: name },
+        () => {
+          try {
+            void trackBackgroundWork(Promise.resolve(work())).catch(() => {
+              // diagnostics-ignore: trackBackgroundWork already records rejection.
+            });
+          } catch (error) {
+            reportError(error, { kind: "operation", handled: true });
+          }
+        },
+      );
+    };
     return {
       ...hooks,
       onOpen: (event, ws) => {
@@ -63,17 +86,24 @@ export function upgradeWebSocket(
           return;
         }
         connections.add(ws);
-        void trackBackgroundWork(Promise.resolve(hooks.onOpen?.(event, ws)));
+        invoke("websocket.open", () => hooks.onOpen?.(event, ws));
       },
       onMessage: (event, ws) => {
-        if (accepting) void trackBackgroundWork(Promise.resolve(hooks.onMessage?.(event, ws)));
+        if (accepting)
+          invoke("websocket.message", () => hooks.onMessage?.(event, ws));
       },
       onClose: (event, ws) => {
         connections.delete(ws);
-        void trackBackgroundWork(Promise.resolve(hooks.onClose?.(event, ws)));
+        invoke("websocket.close", () => hooks.onClose?.(event, ws));
       },
       onError: (event, ws) => {
-        void trackBackgroundWork(Promise.resolve(hooks.onError?.(event, ws)));
+        reportError(event, {
+          ...context,
+          kind: "operation",
+          component: "websocket",
+          handled: true,
+        });
+        invoke("websocket.error", () => hooks.onError?.(event, ws));
       },
     };
   }, options);

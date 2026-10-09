@@ -22,6 +22,7 @@
  * place. Nothing else owns lifecycle.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
 import { env } from "@repo/platform/engine/config/env";
 import type { ShellSession } from "@repo/adapters";
@@ -305,7 +306,8 @@ export function attachWs(
   // on chunk N, the underlying WS is likely already gone and we want
   // to bail before swapping the handler in.
   for (const chunk of session.scrollback) {
-    try { onData(chunk); } catch { /* WS gone mid-replay */ }
+    try { onData(chunk); } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "api/lib/terminal-session-manager"); /* WS gone mid-replay */ }
   }
 
   session.attachedDataHandler = onData;
@@ -340,14 +342,16 @@ export function dispatchStdout(sessionId: string, chunk: Buffer): void {
 
   const handler = session.attachedDataHandler;
   if (!handler) return; // parked
-  try { handler(chunk); } catch { /* peer gone */ }
+  try { handler(chunk); } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-session-manager"); /* peer gone */ }
 }
 
 function fireTimeout(session: ActiveSession, reason: TerminalExitReason): void {
   if (session.closed) return;
   // Drop from registry first so the controller's cleanup can't double-fire.
   unregisterSession(session.sessionId);
-  try { session.onTimeout(session.sessionId, reason); } catch { /* timeout hook is best-effort */ }
+  try { session.onTimeout(session.sessionId, reason); } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "api/lib/terminal-session-manager"); /* timeout hook is best-effort */ }
 }
 
 /**
@@ -381,7 +385,7 @@ export function unregisterSession(sessionId: string): boolean {
   // A connection is owned by the whole terminal session, including park/resume.
   // The provider-specific release is idempotent and runs only at final teardown.
   void trackBackgroundWork(Promise.resolve().then(() => session.release?.()).catch((error) => {
-    console.warn("[terminal] failed to release server connection", error instanceof Error ? error.message : "unknown error");
+    errorDiagnostics.warn("api/lib/terminal-session-manager", "[terminal] failed to release server connection", error instanceof Error ? error.message : "unknown error", error);
   }));
 
   clearTimeout(session.idleTimer);

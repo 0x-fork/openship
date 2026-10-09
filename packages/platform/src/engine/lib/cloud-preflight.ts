@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { createPlatform, type CloudInfraProvider } from "@repo/adapters";
 import { ensureNamespace, getOblienClient, issueNamespaceToken } from "./openship-cloud";
 import { env } from "../config/env";
@@ -28,7 +29,8 @@ async function ownsManagedSlug(organizationId: string, rawSlug: string, workspac
     const { data } = await getOblienClient().domain.routes({ namespace });
     const hostname = `${slug}.${getRoutingBaseDomain()}`;
     return data.some((route) => route.namespace === namespace && route.hostname.toLowerCase() === hostname);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/lib/cloud-preflight");
     return false;
   }
 }
@@ -99,6 +101,7 @@ export async function runCloudPreflight(
     });
     cloud = cloudPlatform.routing as CloudInfraProvider;
   } catch (err) {
+    observeCaughtError(err, "platform/engine/lib/cloud-preflight");
     runtimeError = safeErrorMessage(err);
   }
 
@@ -125,7 +128,7 @@ export async function runCloudPreflight(
             };
     } catch (err) {
       const message = safeErrorMessage(err);
-      console.error("[CLOUD] Preflight slug check failed", { slug: opts.slug, error: message });
+      errorDiagnostics.error("platform/engine/lib/cloud-preflight", "[CLOUD] Preflight slug check failed", { slug: opts.slug, error: message }, err);
       // Fail closed — the user should pick a different slug rather than
       // discover the conflict mid-build.
       result.slug = {
@@ -175,7 +178,7 @@ export async function runCloudPreflight(
       }
     } catch (err) {
       const message = safeErrorMessage(err);
-      console.error("[CLOUD] Preflight custom domain check failed", { domain: opts.customDomain, error: message });
+      errorDiagnostics.error("platform/engine/lib/cloud-preflight", "[CLOUD] Preflight custom domain check failed", { domain: opts.customDomain, error: message }, err);
       result.customDomain = {
         verified: false,
         message: `Couldn't verify ${opts.customDomain}. Try again or fix DNS first.`,

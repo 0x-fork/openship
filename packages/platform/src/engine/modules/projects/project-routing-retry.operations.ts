@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { randomUUID } from "node:crypto";
 import { AppError, safeErrorMessage } from "@repo/core";
 import type { ProjectRoutingRetry, ProjectRoutingStreamOptions } from "@repo/contracts";
@@ -126,7 +127,8 @@ function startRoutingRetry(
   };
   try {
     sessions.set(session.sessionId, session, Infinity);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-routing-retry.operations");
     throw new AppError(
       "Routing repairs are busy. Please retry shortly.",
       503,
@@ -164,7 +166,9 @@ function startRoutingRetry(
   );
   // Streaming callers observe the recorded failure, while JSON callers still
   // receive the original rejection. Do not leave an unhandled background promise.
-  void session.done.catch(() => {});
+  void session.done.catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-routing-retry.operations");
+  });
   return session;
 }
 

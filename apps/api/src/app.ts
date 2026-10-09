@@ -1,8 +1,10 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { handleApiError } from "./middleware/error-handler";
+import { observeRequestErrors } from "./middleware/error-observation";
 import { authRouteLimiter, floodGuard } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
 import { betterAuthShield } from "./middleware/better-auth-shield";
@@ -43,6 +45,7 @@ import { domainRoutes } from "./modules/domains/domain.routes";
 import { dnsRoutes } from "./modules/dns/dns.routes";
 import { credentialRoutes } from "./modules/credentials/credential.routes";
 import { issuesRoutes } from "./modules/issues/issues.routes";
+import { diagnosticsRoutes } from "./modules/diagnostics/diagnostics.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
 import { serviceRoutes } from "./modules/services/service.routes";
@@ -118,11 +121,13 @@ const serveAuthServerMetadata = requestScopedMetadata(oauthAuthServerMetadata);
 const serveProtectedResourceMetadata = requestScopedMetadata(oauthProtectedResourceMetadata);
 
 /* ---------- Global middleware ---------- */
+app.use("*", observeRequestErrors);
 app.use(
   "*",
   cors({
     origin: trustedOrigins,
     credentials: true,
+    exposeHeaders: ["X-Request-ID"],
   }),
 );
 // Hono's default logger includes the raw query string and path. Invitation ids
@@ -192,6 +197,7 @@ app.use("/api/auth/mcp/authorize", forceMcpConsent);
 
 /* ---------- Shared routes (self-hosted + cloud + desktop) ---------- */
 app.route("/api/health", healthRoutes);
+app.route("/api/diagnostics", diagnosticsRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/projects", projectRoutes);
 app.route("/api/apps", appRoutes);
@@ -446,7 +452,7 @@ async function startControllerBackground(): Promise<void> {
       void trackBackgroundWork(
         reconcileJobs()
           .then((stats) => console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`))
-          .catch((err) => console.warn("[boot] reconcileJobs failed:", err)),
+          .catch((err) => errorDiagnostics.warn("api/app", "[boot] reconcileJobs failed:", err)),
       );
 
       // Self-hosted (single box): any job_run still "running" at boot was orphaned
@@ -458,28 +464,28 @@ async function startControllerBackground(): Promise<void> {
           repos.jobRun
             .failStaleRunning()
             .then((n) => n > 0 && console.log(`[boot] reconciled ${n} orphaned job run(s)`))
-            .catch((err) => console.warn("[boot] failStaleRunning failed:", err)),
+            .catch((err) => errorDiagnostics.warn("api/app", "[boot] failStaleRunning failed:", err)),
         );
       }
 
       // Refresh entitlement mirrors every five minutes; Oblien owns renewals.
       void trackBackgroundWork(
         scheduleBillingAnniversary().catch((err) =>
-          console.warn("[boot] scheduleBillingAnniversary failed:", err),
+          errorDiagnostics.warn("api/app", "[boot] scheduleBillingAnniversary failed:", err),
         ),
       );
 
       // Register signed payment, entitlement, and credit notifications.
       void trackBackgroundWork(
         ensureOblienWebhook().catch((err) =>
-          console.warn("[boot] ensureOblienWebhook failed:", err),
+          errorDiagnostics.warn("api/app", "[boot] ensureOblienWebhook failed:", err),
         ),
       );
 
       // Validate onboarding policy without modifying provider quotas or grants.
       void trackBackgroundWork(
         ensureOblienDefaultQuota().catch((err) =>
-          console.warn("[boot] ensureOblienDefaultQuota failed:", err),
+          errorDiagnostics.warn("api/app", "[boot] ensureOblienDefaultQuota failed:", err),
         ),
       );
 
@@ -487,17 +493,17 @@ async function startControllerBackground(): Promise<void> {
         void import("@repo/platform/engine/modules/cloud-support/index")
           .then(({ startCloudSupport }) => startCloudSupport())
           .catch(() =>
-            console.warn(
+            errorDiagnostics.warn("api/app",
               "[cloud-support] Background delivery could not start; requests remain saved.",
             ),
           );
         void import("@repo/platform/engine/modules/cloud-analytics/index")
           .then(({ startCloudAnalytics }) => startCloudAnalytics())
-          .catch(() => console.warn("[cloud-analytics] Background delivery could not start."));
+          .catch(() => errorDiagnostics.warn("api/app", "[cloud-analytics] Background delivery could not start."));
         void import("@repo/platform/engine/lib/oblien-client")
           .then(({ getOblienBillingApi }) => getOblienBillingApi().assertResellerSupport())
           .catch((error) =>
-            console.error("[boot] Oblien reseller billing contract unavailable:", error),
+            errorDiagnostics.error("api/app", "[boot] Oblien reseller billing contract unavailable:", error),
           );
       }
 
@@ -507,7 +513,7 @@ async function startControllerBackground(): Promise<void> {
       // that followed the "GITHUB_WEBHOOK_SECRET is ignored" guidance.
       void trackBackgroundWork(
         backfillWebhookSecrets().catch((err) =>
-          console.warn("[boot] backfillWebhookSecrets failed:", err),
+          errorDiagnostics.warn("api/app", "[boot] backfillWebhookSecrets failed:", err),
         ),
       );
 

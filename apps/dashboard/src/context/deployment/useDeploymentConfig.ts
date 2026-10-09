@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { EnvironmentVariable, FrameworkId } from "@/components/import-project/types";
 import { deployApi, projectsApi, servicesApi, serviceKind } from "@/lib/api";
@@ -694,7 +695,8 @@ export function useDeploymentConfig() {
       .then((res) => {
         if (res?.buildMode) userBuildPref.current = res.buildMode;
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/context/deployment/useDeploymentConfig");
         /* non-critical - fall back to stack default */
       });
   }, []);
@@ -727,7 +729,9 @@ export function useDeploymentConfig() {
         // rather than writing an empty string that would look resolved.
         if (name) setConfig((prev) => (prev.serverName ? prev : { ...prev, serverName: name }));
       })
-      .catch(() => {});
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/context/deployment/useDeploymentConfig");
+      });
     return () => {
       live = false;
     };
@@ -1441,7 +1445,7 @@ export function useDeploymentConfig() {
         // whether this is a services/monorepo project (buildSavedProjectResponse
         // derives the shape from them). Fetching for a plain app is a cheap empty
         // list and removes any dependency on the getInfo-derived projectType.
-        const svcRes = await servicesApi.list(projectId).catch(() => null);
+        const svcRes = await servicesApi.list(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/context/deployment/useDeploymentConfig"); return null; });
         const serviceRows: Service[] = svcRes?.services ?? [];
 
         // The shared loader makes this a data-loss-sensitive boundary: a failed

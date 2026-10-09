@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { getCloudApiOrigin, getCloudDashboardUrl } from "@/lib/api/urls";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { isInvitationClaimPath } from "@repo/core";
@@ -106,7 +107,8 @@ export async function preparePkceFlow(): Promise<{ state: string; codeChallenge:
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(CONNECT_PKCE_STORAGE_PREFIX + flowId, verifier);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/lib/cloud-auth");
       /* localStorage disabled — callback round trip will fail, but at
        * least the URL is PKCE-bound so a bearer code can't be replayed. */
     }

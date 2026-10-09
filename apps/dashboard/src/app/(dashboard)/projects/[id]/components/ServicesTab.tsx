@@ -1,5 +1,6 @@
 "use client";
 
+import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
@@ -91,10 +92,10 @@ export const ServicesTab = () => {
       // surfaces as a bare runtime error overlay instead of this component's
       // error state. The container read is also the one that can time out
       // (it reflects live runtime state), so it must not take the tab down.
-      const [, containersResult] = await Promise.allSettled([
+      const [, containersResult] = await observedAllSettled([
         refreshServices(),
         servicesApi.containers(id),
-      ]);
+      ], "dashboard/app/(dashboard)/projects/[id]/components/ServicesTab");
       if (request !== runtimeRequest.current) return;
       if (containersResult.status === "rejected") throw containersResult.reason;
       const ctRes = containersResult.value;
@@ -106,6 +107,7 @@ export const ServicesTab = () => {
         error: null,
       });
     } catch (e) {
+      observeCaughtError(e, "dashboard/app/(dashboard)/projects/[id]/components/ServicesTab");
       if (request !== runtimeRequest.current) return;
       // An aborted request's message is "signal is aborted without reason" —
       // useless to a user, so fall back to the generic copy for it.
@@ -218,6 +220,7 @@ export const ServicesTab = () => {
         );
         await fetchData();
       } catch (e) {
+        observeCaughtError(e, "dashboard/app/(dashboard)/projects/[id]/components/ServicesTab");
         showToast(e instanceof Error ? e.message : t.projects.services.failedResolveDrift, "error", name);
       } finally {
         setDriftBusy(null);

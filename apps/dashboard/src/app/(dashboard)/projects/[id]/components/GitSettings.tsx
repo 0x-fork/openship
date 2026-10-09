@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -155,7 +156,8 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
     try {
       const res = await projectsApi.getCloneToken(id);
       setCloneToken(res);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/GitSettings");
       setCloneToken({ hasToken: false, setAt: null });
     } finally {
       setCloneTokenLoading(false);

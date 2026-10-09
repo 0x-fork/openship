@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { Suspense, useState } from "react";
@@ -74,6 +75,7 @@ function RegisterPageInner() {
         router.push(next.href);
       }
     } catch (err) {
+      observeCaughtError(err, "dashboard/app/(auth)/register/page");
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);

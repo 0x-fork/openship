@@ -279,6 +279,9 @@
     "packages/onboarding": {
       "name": "@repo/onboarding",
       "version": "0.1.0",
+      "dependencies": {
+        "@repo/core": "workspace:*",
+      },
       "devDependencies": {
         "@types/node": "^22.13.0",
         "tsup": "^8.5.1",
