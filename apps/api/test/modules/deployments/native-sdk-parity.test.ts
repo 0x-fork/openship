@@ -323,7 +323,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async importOriginal => 
 
 vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({ ensureLocalServer: vi.fn(async () => null), localServerHostChannel: vi.fn(async () => null) }));
 vi.mock("@repo/platform/engine/lib/geo-ip", () => ({ primeGeo: vi.fn(async () => {}), countryForIp: () => null }));
-vi.mock("@repo/platform/engine/lib/host-capacity", () => ({ invalidateHostCapacity: vi.fn(async () => {}), getTrustedHostCapacity: h.hostCapacity }));
+vi.mock("@repo/platform/engine/lib/host-capacity", () => ({ invalidateHostCapacity: vi.fn(async () => {}), getTrustedHostCapacity: h.hostCapacity, getHostCapacity: vi.fn(async () => ({ cpuCores: 0, memoryMb: 0, source: "unknown" })) }));
 vi.mock("@repo/platform/engine/lib/openresty-paths", () => ({
   invalidateOpenRestyPaths: vi.fn(async () => {}),
   withOpenRestyRouting: async (_id: string, work: (routing: unknown) => unknown) => work({ getRateLimitConfig: h.serverRateRead, applyRateLimit: h.serverRateApply }),
