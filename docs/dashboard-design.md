@@ -490,6 +490,14 @@ check retryable before starting the move.
 
 ## Typography and copy
 
+Managed server navigation leads with Overview, Terminal and SSH access. Group listener inspection
+under Networking, and component health and Runtime API under Settings; preserve existing tab links.
+The managed terminal uses the full content width. Other views keep the shared 340px plan sidebar.
+Network controls separate the outbound connection from internet policy, with one explicit save per
+operation. Show the current connection separately from the draft, use filled controls and responsive
+field pairs, and keep private address/ingress diagnostics in a disclosure. Failed reads retain a
+status retry; they must not appear as an empty pool or trigger a mutation.
+
 Account protection lives in **Settings → Security**, using the existing settings
 navigation and section cards. Keep authenticator setup, recovery codes, and
 passkeys together for accounts hosted on that instance. Enrollment verifies a

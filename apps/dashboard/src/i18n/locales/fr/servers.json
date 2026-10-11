@@ -1108,7 +1108,44 @@
       "rulesUnavailable": "Les règles sortantes sont indisponibles. Actualisez avant de les modifier.",
       "invalidRules": "Saisissez 1 à 50 destinations. Utilisez * seul ou des noms d’hôte/IP sans URL, port ni chemin.",
       "confirm": "Appliquer ces règles sortantes à tous les projets du serveur ? Désactiver Internet efface la liste des destinations autorisées. Sa réactivation utilise les destinations affichées ci-dessus.",
-      "routingHint": "Les domaines publics, TLS et les réseaux privés utilisent les outils de projets et de réseaux d’Openship. Ce formulaire ne modifie ni leurs routes, ni les règles entrantes, ni les identifiants de proxy."
+      "routingHint": "Les domaines publics, TLS et les réseaux privés utilisent les outils de projets et de réseaux d’Openship. Ce formulaire ne modifie ni leurs routes, ni les règles entrantes, ni les identifiants de proxy.",
+      "policyTitle": "Accès Internet",
+      "policyHint": "Contrôlez les destinations accessibles aux applications et aux builds.",
+      "addresses": "Adresse privée et trafic entrant"
+    },
+    "outbound": {
+      "title": "Connexion sortante",
+      "description": "Choisissez comment ce serveur accède à Internet.",
+      "currentIp": "IP sortante actuelle",
+      "managed": "Géré par Openship",
+      "custom": "Proxy personnalisé",
+      "unavailable": "Les réglages actuels n’ont pas pu être vérifiés. Actualisez avant toute modification.",
+      "connection": "Type de connexion",
+      "address": "Adresse IP gérée",
+      "search": "Rechercher une IP ou un pays",
+      "optionsFailed": "Impossible de charger les adresses disponibles.",
+      "managedHint": "Choisissez une IP gérée. Automatique conserve l’adresse gérée actuelle ou en attribue une lors du remplacement d’un proxy personnalisé.",
+      "host": "Adresse IPv4 du proxy",
+      "port": "Port",
+      "protocol": "Protocole",
+      "proxyHint": "Utilisez un proxy HTTP/HTTPS avec une IPv4 publique. Le fournisseur le vérifie avant de l’appliquer.",
+      "authentication": "Authentification du proxy",
+      "username": "Nom d’utilisateur",
+      "password": "Mot de passe",
+      "savedCredentials": "Les identifiants sont enregistrés. Saisissez les deux champs à nouveau pour remplacer ce proxy.",
+      "credentialsHint": "Renseignez les deux champs, avec 256 caractères visibles maximum chacun, sans espaces ni : @ / ?.",
+      "impact": "Les modifications concernent les connexions sortantes de tous les projets de ce serveur.",
+      "applying": "Application…",
+      "apply": "Appliquer la connexion",
+      "current": "Actuelle",
+      "automatic": "Automatique",
+      "invalid": "Vérifiez l’adresse IPv4 et le port (1–65535). Si l’authentification est activée, saisissez les deux identifiants."
+    },
+    "navigation": {
+      "connection": "Sortie et accès",
+      "listeners": "Ports en écoute",
+      "general": "Général",
+      "ssh": "SSH"
     }
   }
 }

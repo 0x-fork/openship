@@ -1089,7 +1089,44 @@
       "rulesUnavailable": "Çıkış kuralları kullanılamıyor. Düzenlemeden önce yenileyin.",
       "invalidRules": "1–50 hedef girin. Yalnızca * veya URL, port ve yol içermeyen ana bilgisayar adı/IP kullanın.",
       "confirm": "Bu çıkış kuralları sunucudaki tüm projelere uygulansın mı? İnterneti devre dışı bırakmak izin listesini temizler. Yeniden etkinleştirme yukarıda gösterilen hedefleri kullanır.",
-      "routingHint": "Herkese açık alan adları, TLS ve özel ağlar Openship’in proje ve ağ kontrollerini kullanır. Bu form rotaları, giriş kurallarını veya proxy kimlik bilgilerini değiştirmez."
+      "routingHint": "Herkese açık alan adları, TLS ve özel ağlar Openship’in proje ve ağ kontrollerini kullanır. Bu form rotaları, giriş kurallarını veya proxy kimlik bilgilerini değiştirmez.",
+      "policyTitle": "İnternet erişimi",
+      "policyHint": "Uygulamaların ve derlemelerin ulaşabileceği hedefleri yönetin.",
+      "addresses": "Özel adres ve gelen trafik"
+    },
+    "outbound": {
+      "title": "Giden bağlantı",
+      "description": "Bu sunucunun internete nasıl bağlanacağını seçin.",
+      "currentIp": "Geçerli giden IP",
+      "managed": "Openship tarafından yönetiliyor",
+      "custom": "Özel proxy",
+      "unavailable": "Geçerli ayarlar doğrulanamadı. Değişiklik yapmadan önce yenileyin.",
+      "connection": "Bağlantı türü",
+      "address": "Yönetilen IP adresi",
+      "search": "IP veya ülke ara",
+      "optionsFailed": "Kullanılabilir adresler yüklenemedi.",
+      "managedHint": "Yönetilen bir IP seçin. Otomatik, mevcut yönetilen adresi korur veya özel proxy’den geçişte bir adres atar.",
+      "host": "Proxy IPv4 adresi",
+      "port": "Port",
+      "protocol": "Protokol",
+      "proxyHint": "Genel IPv4 adresli bir HTTP/HTTPS proxy kullanın. Sağlayıcı uygulamadan önce denetler.",
+      "authentication": "Proxy kimlik doğrulaması",
+      "username": "Kullanıcı adı",
+      "password": "Parola",
+      "savedCredentials": "Kimlik bilgileri kayıtlı. Bu proxy’yi değiştirirken iki alanı da yeniden doldurun.",
+      "credentialsHint": "Her iki alanı da en fazla 256 görünür karakterle doldurun; boşluk veya : @ / ? kullanmayın.",
+      "impact": "Değişiklikler bu sunucudaki tüm projelerin giden bağlantılarını etkiler.",
+      "applying": "Uygulanıyor…",
+      "apply": "Bağlantıyı uygula",
+      "current": "Geçerli",
+      "automatic": "Otomatik",
+      "invalid": "IPv4 adresini ve portu (1–65535) kontrol edin. Kimlik doğrulaması açıksa iki kimlik bilgisini de girin."
+    },
+    "navigation": {
+      "connection": "Giden trafik ve erişim",
+      "listeners": "Dinlenen portlar",
+      "general": "Genel",
+      "ssh": "SSH"
     }
   }
 }

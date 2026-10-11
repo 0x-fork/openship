@@ -1108,7 +1108,44 @@
       "rulesUnavailable": "Ausgehende Regeln sind nicht verfügbar. Aktualisiere sie vor dem Bearbeiten.",
       "invalidRules": "Gib 1–50 Ziele an. Verwende * allein oder Hostnamen/IPs ohne URL, Port oder Pfad.",
       "confirm": "Diese ausgehenden Regeln auf alle Projekte dieses Servers anwenden? Das Deaktivieren des Internets leert die Freigabeliste. Beim erneuten Aktivieren werden die oben gezeigten Ziele verwendet.",
-      "routingHint": "Öffentliche Domains, TLS und private Netzwerke werden über Openships Projekt- und Netzwerksteuerung verwaltet. Dieses Formular ändert keine Routen, Eingangsregeln oder Proxy-Zugangsdaten."
+      "routingHint": "Öffentliche Domains, TLS und private Netzwerke werden über Openships Projekt- und Netzwerksteuerung verwaltet. Dieses Formular ändert keine Routen, Eingangsregeln oder Proxy-Zugangsdaten.",
+      "policyTitle": "Internetzugriff",
+      "policyHint": "Lege fest, welche Ziele Apps und Builds erreichen können.",
+      "addresses": "Private Adresse und eingehende Verbindungen"
+    },
+    "outbound": {
+      "title": "Ausgehende Verbindung",
+      "description": "Wähle, wie dieser Server auf das Internet zugreift.",
+      "currentIp": "Aktuelle ausgehende IP",
+      "managed": "Von Openship verwaltet",
+      "custom": "Eigener Proxy",
+      "unavailable": "Die aktuellen Einstellungen konnten nicht überprüft werden. Vor Änderungen aktualisieren.",
+      "connection": "Verbindungstyp",
+      "address": "Verwaltete IP-Adresse",
+      "search": "IP oder Land suchen",
+      "optionsFailed": "Verfügbare Adressen konnten nicht geladen werden.",
+      "managedHint": "Wähle eine verwaltete IP. Automatisch behält die aktuelle verwaltete Adresse bei oder weist beim Wechsel von einem eigenen Proxy eine zu.",
+      "host": "IPv4-Adresse des Proxys",
+      "port": "Port",
+      "protocol": "Protokoll",
+      "proxyHint": "Verwende einen HTTP/HTTPS-Proxy mit öffentlicher IPv4-Adresse. Der Anbieter prüft ihn vor der Übernahme.",
+      "authentication": "Proxy-Authentifizierung",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "savedCredentials": "Zugangsdaten sind gespeichert. Beim Ersetzen des Proxys beide Felder erneut eingeben.",
+      "credentialsHint": "Beide Felder ausfüllen: jeweils bis zu 256 sichtbare Zeichen, ohne Leerzeichen oder : @ / ?.",
+      "impact": "Änderungen betreffen ausgehende Verbindungen aller Projekte auf diesem Server.",
+      "applying": "Wird angewendet…",
+      "apply": "Verbindung anwenden",
+      "current": "Aktuell",
+      "automatic": "Automatisch",
+      "invalid": "IPv4-Adresse und Port (1–65535) prüfen. Bei aktivierter Authentifizierung beide Zugangsdaten eingeben."
+    },
+    "navigation": {
+      "connection": "Ausgehend und Zugriff",
+      "listeners": "Lauschende Ports",
+      "general": "Allgemein",
+      "ssh": "SSH"
     }
   }
 }
