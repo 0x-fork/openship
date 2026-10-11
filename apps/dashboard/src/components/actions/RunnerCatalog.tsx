@@ -32,7 +32,8 @@ export function applyRunnerPreset(
     ...config,
     mode: native ? "native" : "container",
     image: native ? null : preset === "ubuntu" ? UBUNTU_RUNNER_IMAGE : "",
-    labels: preset === "ubuntu" ? ["ubuntu-latest", "ubuntu-22.04"] : [],
+    // The preset selects an image, not an OS/architecture capability or a hosted-runner alias.
+    labels: [],
   };
 }
 
@@ -57,14 +58,7 @@ export function RunnerLogo({
   className?: string;
 }) {
   if (preset === "ubuntu") return <AppLogo slug="ubuntu" icon="docker" className={className} />;
-  if (preset === "linux")
-    return (
-      <AppLogo
-        slug="linux/000000"
-        icon="server"
-        className={`${className} dark:invert dim:invert`}
-      />
-    );
+  if (preset === "linux") return <AppLogo slug="linux" icon="server" className={className} />;
   return <Icon name={preset === "macos" ? "apple" : "docker"} className={className} />;
 }
 

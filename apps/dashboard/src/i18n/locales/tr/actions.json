@@ -508,5 +508,14 @@
       "allowed": "Çalıştırıcı erişimi onaylandı.",
       "destinations_changed": "İzin verilen kullanılabilir bir hedef yok. Seçili çalıştırıcıları kontrol edip bu çalıştırmayı yenileyin."
     }
+  },
+  "runnerDetails": {
+    "details": "Ortam ve etiketler",
+    "host": "Ana makine",
+    "defaultImage": "Varsayılan imaj",
+    "unchecked": "Yetenekler kontrol edilmedi",
+    "checkFailed": "Kontrol başarısız",
+    "imageHint": "Her iş, ayarlarından farklı bir Linux konteyner imajı kullanabilir.",
+    "labelsHint": "Etiketler işleri buraya yönlendirir; imajı veya yüklü araçları değiştirmez."
   }
 }

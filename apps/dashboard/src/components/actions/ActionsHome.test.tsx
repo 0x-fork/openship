@@ -30,6 +30,24 @@ const runner = {
   enabled: true,
   error: null,
   labels: ["linux"],
+  capabilities: {
+    os: "linux",
+    architecture: "x64",
+    docker: true,
+    git: true,
+    node: true,
+    distribution: null,
+    version: null,
+  },
+  config: {
+    mode: "container",
+    image: "node:22",
+    labels: [],
+    cpu: 1,
+    memoryMb: 2048,
+    maxParallel: 1,
+    allowDockerSocket: false,
+  },
 };
 const workflow = {
   id: "ci",

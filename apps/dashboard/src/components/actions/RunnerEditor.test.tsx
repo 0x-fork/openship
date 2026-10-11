@@ -148,7 +148,7 @@ describe("capability-based runner setup", () => {
       config: { mode: "container" },
     });
   });
-  it("restores container defaults when moving from Mac to Linux", async () => {
+  it("uses a default container image without Ubuntu routing aliases when moving from Mac to Linux", async () => {
     await click("mac");
     await click("linux");
     await submit();
@@ -157,7 +157,8 @@ describe("capability-based runner setup", () => {
         serverId: "linux",
         config: expect.objectContaining({
           mode: "container",
-          labels: ["ubuntu-latest", "ubuntu-22.04"],
+          image: "catthehacker/ubuntu:act-22.04",
+          labels: [],
         }),
       }),
       undefined,
@@ -230,7 +231,7 @@ describe("capability-based runner setup", () => {
       image: "catthehacker/ubuntu:act-22.04",
       cpu: 3,
       memoryMb: 4096,
-      labels: ["ubuntu-latest", "ubuntu-22.04"],
+      labels: [],
     });
   });
   it("preserves the chosen environment when reselecting the same server", async () => {
@@ -266,37 +267,43 @@ describe("capability-based runner setup", () => {
     await submit();
     expect(h.save.mock.calls[0]![0].config).toMatchObject({ mode: "native", image: null });
   });
-  it("preserves an existing runner's custom image, labels and limits during inspection", async () => {
-    const config = {
-      mode: "container",
-      image: "registry.example/ci:stable",
-      labels: ["private-ci"],
-      cpu: 4,
-      memoryMb: 8192,
-      maxParallel: 2,
-      allowDockerSocket: false,
-    };
-    h.runners.mockResolvedValue([
-      {
-        id: "saved",
-        serverId: "linux",
-        name: "Existing runner",
-        kind: "server",
-        config,
-        enabled: false,
-      },
-    ]);
-    await act(async () =>
-      root.render(
-        <I18nProvider>
-          <RunnerEditor id="saved" />
-        </I18nProvider>,
-      ),
-    );
-    await submit();
-    expect(h.save).toHaveBeenCalledWith(
-      { serverId: "linux", name: "Existing runner", config, enabled: false },
-      "saved",
-    );
-  });
+  it.each([
+    ["registry.example/ci:stable", ["private-ci"]],
+    ["catthehacker/ubuntu:act-22.04", ["ubuntu-latest", "ubuntu-22.04"]],
+  ])(
+    "preserves an existing runner's image %s, labels and limits during inspection",
+    async (image, labels) => {
+      const config = {
+        mode: "container",
+        image,
+        labels,
+        cpu: 4,
+        memoryMb: 8192,
+        maxParallel: 2,
+        allowDockerSocket: false,
+      };
+      h.runners.mockResolvedValue([
+        {
+          id: "saved",
+          serverId: "linux",
+          name: "Existing runner",
+          kind: "server",
+          config,
+          enabled: false,
+        },
+      ]);
+      await act(async () =>
+        root.render(
+          <I18nProvider>
+            <RunnerEditor id="saved" />
+          </I18nProvider>,
+        ),
+      );
+      await submit();
+      expect(h.save).toHaveBeenCalledWith(
+        { serverId: "linux", name: "Existing runner", config, enabled: false },
+        "saved",
+      );
+    },
+  );
 });

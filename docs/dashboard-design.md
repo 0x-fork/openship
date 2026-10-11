@@ -135,7 +135,12 @@ Project and deployment entry points keep their project association implicit; the
 editor puts additional project links in a closed disclosure and preserves links when untouched.
 Run settings leads with the required runner destination. Selecting an empty runner field
 opens the shared runner form in a modal; saving returns to the same workflow draft and selects
-the new runner. Existing runners use a compact picker. Cloud funding opens the shared budget
+the new runner. Existing runners use a compact picker. Its rows, selected value and runner
+cards share an execution summary: OS, Docker/native mode and verified native/emulated CPU
+architectures. Do not infer capabilities from custom labels. Put the host OS/version,
+default image, resource limits and routing labels in a closed details disclosure; opening
+details must not change selection. Keep unverified and failed probes visible.
+Cloud funding opens the shared budget
 in a dialog; only hosted payment opens separately so the draft survives.
 Access replaces the blanket runner-consent checkbox with a policy: who may run,
 whether each run needs approval, and whether fork pull requests may use disposable
@@ -175,7 +180,9 @@ to native execution and clear incompatible labels when the destination changes.
 Runner setup starts with the shared server picker and a compact environment summary.
 Browse catalog opens visual Ubuntu, native macOS/Linux and custom-image presets using
 the shared logos and option cards. Only offer presets compatible with the inspected
-server. Presets fill the existing runner configuration and keep resource limits; they
+server. Presets fill the existing runner configuration and keep resource limits; new
+connected runners get OS/architecture labels from the capability probe, without implicit
+Ubuntu-version aliases. Preserve saved runner labels during inspection. Presets
 do not create another execution path. Keep image, labels and resource overrides under
 Advanced settings, with the current configuration and matched labels in the sidebar.
 Retain saved runner settings on inspection, and make missing-tool checks retryable.

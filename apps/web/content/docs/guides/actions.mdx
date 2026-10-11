@@ -58,6 +58,16 @@ architecture, Git, Node and Docker capabilities before enabling a runtime.
 - **Temporary Cloud runners:** each job receives a disposable Linux VM. Its funding
   is separate from managed application-server subscriptions.
 
+The runner picker shows its execution OS, Docker/native mode and verified CPU
+architectures. Expand **Environment & labels** to see the host version, default image,
+per-job limits and routing labels. For example, an Ubuntu 24.04 host can use an
+Ubuntu 22.04 default container image; these are separate environments.
+
+New connected runners use their verified OS and architecture labels. The Ubuntu
+image preset does not add `ubuntu-latest` or a version alias. Existing saved labels
+remain intact. Add a custom routing label only when your workflow needs it; a label
+does not select a different image or install tools.
+
 Only run trusted code on persistent destinations. Enabling a native runner gives
 its workflows the same host access as the connected user. Runner labels select
 compatible capabilities; adding `macos` to a Linux runner does not make it a Mac.

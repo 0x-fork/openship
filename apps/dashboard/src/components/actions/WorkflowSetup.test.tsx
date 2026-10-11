@@ -120,6 +120,7 @@ async function chooseTriggerFile(name: string) {
 }
 const checkbox = (name: string) =>
   document.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${name}"]`) ??
+  document.querySelector<HTMLButtonElement>(`[role="checkbox"][aria-label="${name}"]`) ??
   [...document.querySelectorAll<HTMLLabelElement>("label")]
     .find((label) => label.textContent?.startsWith(name))!
     .querySelector<HTMLButtonElement>('[role="checkbox"]')!;
@@ -207,6 +208,24 @@ beforeEach(() => {
       kind: "server",
       labels: ["self-hosted", "linux"],
       enabled: true,
+      capabilities: {
+        os: "linux",
+        architecture: "x64",
+        docker: true,
+        git: true,
+        node: true,
+        distribution: null,
+        version: null,
+      },
+      config: {
+        mode: "container",
+        image: "node:22",
+        labels: [],
+        cpu: 1,
+        memoryMb: 2048,
+        maxParallel: 1,
+        allowDockerSocket: false,
+      },
     },
   ]);
   h.projects.mockResolvedValue([{ id: "project", name: "Storefront" }]);

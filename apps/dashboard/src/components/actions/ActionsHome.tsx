@@ -15,6 +15,7 @@ import { ActionError, ActionStatus } from "./ActionStatus";
 import { ActionsEmptyState } from "./ActionsEmptyState";
 import { ActionsSidebar } from "./ActionsSidebar";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
+import { RunnerCapabilities, RunnerDetails, RunnerIdentity } from "./RunnerPresentation";
 
 const load = async () => {
   const [workflows, runs, runners] = await Promise.all([
@@ -276,12 +277,7 @@ function Home() {
                   {data.runners.map((runner) => (
                     <article key={runner.id} className="rounded-2xl bg-card p-5">
                       <div className="flex items-center gap-3">
-                        <span className="rounded-xl bg-muted/50 p-2.5 text-muted-foreground">
-                          <Icon
-                            name={runner.kind === "cloud" ? "cloud" : "server"}
-                            className="size-5"
-                          />
-                        </span>
+                        <RunnerIdentity runner={runner} />
                         <div className="min-w-0 flex-1">
                           <h2 className="truncate text-base font-medium text-foreground">
                             {runner.name}
@@ -295,15 +291,11 @@ function Home() {
                           aria-label={runner.enabled ? a.enabled : a.disabled}
                         />
                       </div>
-                      <div className="mt-4 flex flex-wrap gap-1.5">
-                        {runner.labels.map((label) => (
-                          <code
-                            key={label}
-                            className="rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground"
-                          >
-                            {label}
-                          </code>
-                        ))}
+                      <div className="mt-4">
+                        <RunnerCapabilities runner={runner} />
+                      </div>
+                      <div className="mt-3">
+                        <RunnerDetails runner={runner} />
                       </div>
                       <ActionError message={runner.error} />
                       <div className="mt-4 flex flex-wrap items-center justify-end gap-2">

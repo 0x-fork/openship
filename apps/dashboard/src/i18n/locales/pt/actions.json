@@ -508,5 +508,14 @@
       "allowed": "Acesso ao runner aprovado.",
       "destinations_changed": "Nenhum destino permitido está disponível. Revise os runners selecionados e atualize esta execução."
     }
+  },
+  "runnerDetails": {
+    "details": "Ambiente e rótulos",
+    "host": "Host",
+    "defaultImage": "Imagem padrão",
+    "unchecked": "Capacidades não verificadas",
+    "checkFailed": "Falha na verificação",
+    "imageHint": "Cada job pode usar outra imagem de contêiner Linux nas suas configurações.",
+    "labelsHint": "Os rótulos direcionam os jobs para cá; não alteram a imagem nem as ferramentas instaladas."
   }
 }

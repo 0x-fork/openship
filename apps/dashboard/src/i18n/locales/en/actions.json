@@ -508,5 +508,14 @@
     },
     "destinationsUnavailable": "Some destinations could not be loaded. Refresh this review or update the workflow's runners before approving.",
     "reviewerRequired": "An administrator with access to these destinations must approve this run."
+  },
+  "runnerDetails": {
+    "details": "Environment & labels",
+    "host": "Host",
+    "defaultImage": "Default image",
+    "unchecked": "Capabilities not checked",
+    "checkFailed": "Check failed",
+    "imageHint": "Jobs can use a different Linux container image in Job settings.",
+    "labelsHint": "Labels route jobs here; they do not change the image or installed tools."
   }
 }

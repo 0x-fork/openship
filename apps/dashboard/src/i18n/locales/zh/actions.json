@@ -508,5 +508,14 @@
       "allowed": "运行器访问已批准。",
       "destinations_changed": "没有可用的授权目标。请检查所选运行器并刷新此次运行。"
     }
+  },
+  "runnerDetails": {
+    "details": "环境与标签",
+    "host": "主机",
+    "defaultImage": "默认镜像",
+    "unchecked": "尚未检查能力",
+    "checkFailed": "检查失败",
+    "imageHint": "每个作业都可在作业设置中选择其他 Linux 容器镜像。",
+    "labelsHint": "标签将作业路由到此运行器，不会更改镜像或已安装的工具。"
   }
 }

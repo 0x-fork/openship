@@ -508,5 +508,14 @@
       "allowed": "Accès au runner approuvé.",
       "destinations_changed": "Aucune destination autorisée n’est disponible. Vérifiez les runners sélectionnés et actualisez cette exécution."
     }
+  },
+  "runnerDetails": {
+    "details": "Environnement et labels",
+    "host": "Hôte",
+    "defaultImage": "Image par défaut",
+    "unchecked": "Capacités non vérifiées",
+    "checkFailed": "Vérification échouée",
+    "imageHint": "Chaque job peut utiliser une autre image de conteneur Linux dans ses paramètres.",
+    "labelsHint": "Les labels dirigent les jobs ici ; ils ne changent ni l’image ni les outils installés."
   }
 }

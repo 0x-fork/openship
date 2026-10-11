@@ -508,5 +508,14 @@
       "allowed": "Runner-Zugriff freigegeben.",
       "destinations_changed": "Kein zugelassenes Ziel ist verfügbar. Prüfe die gewählten Runner und aktualisiere diesen Lauf."
     }
+  },
+  "runnerDetails": {
+    "details": "Umgebung & Labels",
+    "host": "Host",
+    "defaultImage": "Standard-Image",
+    "unchecked": "Funktionen nicht geprüft",
+    "checkFailed": "Prüfung fehlgeschlagen",
+    "imageHint": "Jobs können in ihren Einstellungen ein anderes Linux-Container-Image wählen.",
+    "labelsHint": "Labels leiten Jobs hierher; sie ändern weder das Image noch die installierten Tools."
   }
 }

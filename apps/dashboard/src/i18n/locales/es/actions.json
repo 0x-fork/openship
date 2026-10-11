@@ -508,5 +508,14 @@
       "allowed": "Acceso al runner aprobado.",
       "destinations_changed": "No hay ningún destino permitido disponible. Revisa los runners seleccionados y actualiza esta ejecución."
     }
+  },
+  "runnerDetails": {
+    "details": "Entorno y etiquetas",
+    "host": "Host",
+    "defaultImage": "Imagen predeterminada",
+    "unchecked": "Capacidades sin verificar",
+    "checkFailed": "Falló la verificación",
+    "imageHint": "Cada trabajo puede usar otra imagen de contenedor Linux en sus ajustes.",
+    "labelsHint": "Las etiquetas dirigen los trabajos aquí; no cambian la imagen ni las herramientas instaladas."
   }
 }
