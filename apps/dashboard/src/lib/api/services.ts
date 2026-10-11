@@ -194,6 +194,7 @@ export type ServiceInput = {
   environment?: Record<string, string | null> | null;
   volumes?: string[];
   command?: string;
+  commandArgv?: string[];
   restart?: string;
   advanced?: ComposeAdvancedPatch;
   exposed?: boolean;

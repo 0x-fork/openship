@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { AddServiceModal } from "./AddServiceModal";
+import { getAppTemplate } from "@repo/core";
 
 const h = vi.hoisted(() => ({ mode: "cloud", submit: vi.fn(), close: vi.fn() }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ deployMode: h.mode }) }));
@@ -55,6 +56,25 @@ it.each(["cloud", "local", "linked"])("adds Redis with its persistent volume thr
   await act(async () => { submit(); });
   expect(h.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ image: "redis:7-alpine", volumes: ["redis_data:/data"] }));
   expect(h.close).toHaveBeenCalledOnce();
+});
+it.each(["cloud", "local", "linked"])("keeps MinIO's entrypoint argv and generates credentials (%s)", async mode => {
+  h.mode = mode === "cloud" ? "cloud" : "local";
+  const minio = getAppTemplate("minio")!.services![0]!;
+  await render(mode === "linked");
+  await pick(minio.image!);
+  await act(async () => { submit(); });
+  expect(h.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    image: minio.image, command: "", commandArgv: ["server", "/data", "--console-address", ":9001"],
+    volumes: ["minio_data:/data"],
+    environment: expect.objectContaining({ MINIO_ROOT_PASSWORD: expect.stringMatching(/^[a-f0-9]{48}$/) }),
+  }));
+});
+it("does not apply catalog argv to a user-selected replacement image", async () => {
+  await render();
+  await pick(getAppTemplate("minio")!.services![0]!.image!);
+  await edit("postgres:16-alpine", "example/custom-storage:v1");
+  await act(async () => { submit(); });
+  expect(h.submit.mock.calls[0]![0]).not.toHaveProperty("commandArgv");
 });
 it("validates a custom service name and image before submitting", async () => {
   await render();
