@@ -25,6 +25,8 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { cacheStore } from "../../lib/cache-store/index";
+import { GitHubApiError } from "./github.error";
+export { GitHubApiError, isGitHubCredentialRejected } from "./github.error";
 
 export interface GhRequest {
   url: string;
@@ -34,38 +36,6 @@ export interface GhRequest {
   headers?: Record<string, string>;
   /** Signed artifact links and completed Actions logs use the same auth boundary. */
   response?: "json" | "redirect";
-}
-
-/** Shared by credential health checks and request fallback. GitHub also uses
- * 403 for rate limits, which say nothing about whether a token is valid. */
-export function isGitHubCredentialRejected(
-  status: number,
-  headers: Headers,
-  message?: unknown,
-): boolean {
-  return (
-    status === 401 ||
-    (status === 403 &&
-      headers.get("x-ratelimit-remaining") !== "0" &&
-      !headers.has("retry-after") &&
-      !(typeof message === "string" && /rate limit|abuse detection/i.test(message)))
-  );
-}
-
-/** Machine-readable failure details; callers must not infer retry policy from
- * translated/upstream error text or retry mutations after an auth failure. */
-export class GitHubApiError extends Error {
-  readonly credentialRejected: boolean;
-
-  constructor(
-    readonly status: number,
-    message: string,
-    headers: Headers,
-  ) {
-    super(`GitHub API error (${status}): ${message}`);
-    this.name = "GitHubApiError";
-    this.credentialRejected = isGitHubCredentialRejected(status, headers, message);
-  }
 }
 
 function ghHeaders(token: string, extra?: Record<string, string>): Record<string, string> {

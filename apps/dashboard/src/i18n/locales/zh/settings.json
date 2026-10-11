@@ -588,7 +588,8 @@
       "addChannel": "添加渠道",
       "confirmDelete": "删除此渠道？使用它的订阅将停止。",
       "channelRemoved": "渠道已移除",
-      "channelAdded": "渠道已添加"
+      "channelAdded": "渠道已添加",
+      "updated": "渠道已更新"
     },
     "describe": {
       "slackWebhook": "Slack webhook",
@@ -617,7 +618,19 @@
       "telegramHint": "先用 @BotFather 创建机器人，然后向它发送一条消息（或把它加入群组），它才能回复。",
       "adding": "正在添加…",
       "addChannel": "添加渠道",
-      "labelRequired": "标签为必填项"
+      "labelRequired": "标签为必填项",
+      "labels": {
+        "name": "名称",
+        "address": "电子邮件地址",
+        "url": "Webhook 地址",
+        "botToken": "机器人令牌",
+        "chatId": "聊天 ID"
+      },
+      "secretHint": "请立即复制此密钥以验证 Webhook 签名。密钥仅显示一次。",
+      "editHint": "凭据字段留空可保留已存储的密钥。更改目标后需要重新测试以验证发送。",
+      "channelType": "渠道类型",
+      "saving": "正在保存…",
+      "signingSecret": "签名密钥"
     },
     "subscriptions": {
       "title": "要接收哪些通知",

@@ -34,6 +34,11 @@ export function createRemoteActionOperations(http: HttpClient): ActionOperations
       },
       preview: { method: "POST", path: () => "/actions/preview", envelope: "data" },
       discover: { method: "GET", path: () => "/actions/discover", envelope: "data" },
+      repositoryChecks: {
+        method: "GET",
+        path: () => "/actions/repository-checks",
+        envelope: "data",
+      },
       repositorySource: {
         method: "GET",
         path: () => "/actions/repository-source",

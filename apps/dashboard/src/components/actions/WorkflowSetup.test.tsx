@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   channels: vi.fn(),
   saveRunner: vi.fn(),
   inspect: vi.fn(),
+  repositoryChecks: vi.fn(),
 }));
 vi.mock("@/lib/api/actions", () => ({
   actionsApi: {
@@ -34,6 +35,7 @@ vi.mock("@/lib/api/actions", () => ({
     importWorkflows: h.importWorkflows,
     saveRunner: h.saveRunner,
     inspectDestination: h.inspect,
+    repositoryChecks: h.repositoryChecks,
   },
 }));
 vi.mock("@/lib/api/notifications", () => ({ notificationsApi: { listChannels: h.channels } }));
@@ -173,6 +175,11 @@ async function render(id?: string) {
 beforeEach(() => {
   (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
   vi.resetAllMocks();
+  h.repositoryChecks.mockResolvedValue({
+    repository: "acme/app",
+    account: { login: "owner", avatarUrl: "", kind: "account" },
+    status: "connected",
+  });
   vi.useFakeTimers();
   const workflow = {
     id: "ci",
@@ -321,7 +328,8 @@ describe("shared workflow setup", () => {
     await click("Run settings");
     expect(host.textContent).not.toContain("Linked projects");
     await click("Checks");
-    expect(host.textContent).toContain("GitHub App");
+    expect(host.textContent).toContain("acme/app");
+    expect(host.textContent).toContain("Connected");
     await act(async () => checkbox("Succeeded").click());
     await act(async () => checkbox("Ops email").click());
     await click("Save workflow");

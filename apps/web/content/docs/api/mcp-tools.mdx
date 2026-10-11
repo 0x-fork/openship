@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **490 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **491 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -19,6 +19,7 @@ The current API has **490 unique tools**. Permission tags below describe the rou
 | `get_actions_jobs_by_id_events`<br />`GET /api/actions/jobs/:id/events` | Read masked job logs after a durable cursor. Resume with next after reconnecting. | `job:read` |
 | `get_actions_project`<br />`GET /api/actions/project` | Read project workflows and deployment automation. | `job:read` |
 | `get_actions_projects`<br />`GET /api/actions/projects` | List projects available for linking to workflows. | `job:read` |
+| `get_actions_repository_checks`<br />`GET /api/actions/repository-checks` | Read the connected account and verify Checks access for the selected repository without starting a workflow or publishing a Check. | `job:read` |
 | `get_actions_repository_source`<br />`GET /api/actions/repository-source` | Read a repository workflow and preview its topology. | `job:read` |
 | `get_actions_runners`<br />`GET /api/actions/runners` | List Actions runners and their verified OS, architecture and Docker capabilities. | `job:read` |
 | `get_actions_runs`<br />`GET /api/actions/runs` | List durable workflow runs and their job states. | `job:read` |

@@ -121,6 +121,24 @@ describe("githubFetch — threads op + repo into tokenFor (GHSA-hp2g-hw7g-f3vm)"
     expect(tokenForSpy.mock.calls[0][2]).toMatchObject({ op: "read", repo: "production-api" });
   });
 
+  it("requires write authority for a management probe and never falls back to public access", async () => {
+    tokenForSpy.mockResolvedValue(null);
+    getLocalGhToken.mockResolvedValue("ambient-token");
+    await expect(githubFetch({
+      ctx,
+      url: "https://api.github.com/repos/acme/production-api/actions/runners",
+      owner: "acme",
+      repo: "production-api",
+      authorizeAs: "write",
+    })).rejects.toThrow(/No GitHub access token/);
+    expect(tokenForSpy).toHaveBeenCalledWith(ctx, "local", expect.objectContaining({
+      owner: "acme", repo: "production-api", op: "write",
+    }));
+    expect(getLocalGhToken).not.toHaveBeenCalled();
+    expect(ghFetchPublicSpy).not.toHaveBeenCalled();
+    expect(ghFetchSpy).not.toHaveBeenCalled();
+  });
+
   it("authorizeAs does not let a management call widen itself by default", async () => {
     // No override → DELETE is still a write. Pinned so the escape hatch above
     // cannot quietly become the default.

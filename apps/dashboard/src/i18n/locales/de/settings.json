@@ -588,7 +588,8 @@
       "addChannel": "Kanal hinzufügen",
       "confirmDelete": "Diesen Kanal löschen? Abonnements, die ihn verwenden, werden gestoppt.",
       "channelRemoved": "Kanal entfernt",
-      "channelAdded": "Kanal hinzugefügt"
+      "channelAdded": "Kanal hinzugefügt",
+      "updated": "Kanal aktualisiert"
     },
     "describe": {
       "slackWebhook": "Slack-Webhook",
@@ -617,7 +618,19 @@
       "telegramHint": "Erstelle mit @BotFather einen Bot und schreibe ihm dann eine Nachricht (oder füge ihn deiner Gruppe hinzu), damit er antworten darf.",
       "adding": "Wird hinzugefügt…",
       "addChannel": "Kanal hinzufügen",
-      "labelRequired": "Bezeichnung ist erforderlich"
+      "labelRequired": "Bezeichnung ist erforderlich",
+      "labels": {
+        "name": "Name",
+        "address": "E-Mail-Adresse",
+        "url": "Webhook-URL",
+        "botToken": "Bot-Token",
+        "chatId": "Chat-ID"
+      },
+      "secretHint": "Kopieren Sie dieses Geheimnis jetzt, um Webhook-Signaturen zu prüfen. Es wird nur einmal angezeigt.",
+      "editHint": "Lassen Sie Zugangsdaten leer, um gespeicherte Geheimnisse zu behalten. Änderungen am Ziel erfordern einen neuen Zustellungstest.",
+      "channelType": "Kanaltyp",
+      "saving": "Wird gespeichert…",
+      "signingSecret": "Signaturgeheimnis"
     },
     "subscriptions": {
       "title": "Worüber benachrichtigt werden",

@@ -26,6 +26,18 @@ vi.mock("@repo/platform/engine/modules/github/github.service", async (original) 
   ...(await original<typeof import("@repo/platform/engine/modules/github/github.service")>()),
   resolveWebhookStrategy: async () => "app",
 }));
+vi.mock("@repo/platform/engine/modules/github/sources/index", async (original) => ({
+  ...(await original<typeof import("@repo/platform/engine/modules/github/sources/index")>()),
+  createGitHubSource: async () => ({
+    getConnectionStatus: async () => ({
+      state: {
+        primary: "gh-cli",
+        sources: { openshipApp: { connected: false }, ghCli: { available: true, login: "owner" } },
+      },
+      accounts: [],
+    }),
+  }),
+}));
 vi.mock("@repo/platform/engine/config/env", async (original) => {
   const actual = await original<typeof import("@repo/platform/engine/config/env")>();
   return {
@@ -63,6 +75,7 @@ vi.mock("@repo/platform/engine/lib/server-execution", async (original) => ({
 vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/github/github.auth")>()),
   getUserStatus: async () => ({ connected: true, id: 42, login: "owner" }),
+  getInstallationToken: async () => null,
   githubFetch: async (input: {
     url: string;
     method?: string;
@@ -72,6 +85,8 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => 
     traffic.requests.push(input);
     if (url === "https://api.github.com/users/contributor") return { id: 77, login: "contributor" };
     if (url.endsWith("/actions/runners/downloads")) return [];
+    if (url.endsWith("/actions/permissions")) return { enabled: true };
+    if (url.endsWith("/actions/runners")) return { total_count: 0, runners: [] };
     if (url.includes("/actions/workflows/"))
       return {
         id: 42,
@@ -202,6 +217,55 @@ async function fixture() {
 }
 
 describe("Actions HTTP, native SDK and authorization", () => {
+  it("reports repository Checks through both clients without dispatching or changing GitHub", async () => {
+    const owner = await seedOwner();
+    const c = await clients(owner);
+    const start = traffic.requests.length;
+    const commands = traffic.commands.length;
+    for (const client of [c.remote, c.native]) {
+      expect(
+        await client.repositoryChecks({ owner: "acme", repo: "app", controller: "github" }),
+      ).toMatchObject({
+        repository: "acme/app",
+        status: "connected",
+        account: { login: "owner", kind: "account" },
+      });
+      expect(
+        await client.repositoryChecks({ owner: "acme", repo: "app", controller: "openship" }),
+      ).toMatchObject({
+        repository: "acme/app",
+        status: "app_required",
+      });
+    }
+    expect(traffic.commands).toHaveLength(commands);
+    expect(traffic.requests.slice(start)).toHaveLength(4);
+    expect(
+      traffic.requests.slice(start).every((request) => !request.method || request.method === "GET"),
+    ).toBe(true);
+    expect(await c.remote.listRuns()).toEqual([]);
+    await db
+      .update(schema.member)
+      .set({ role: "restricted" })
+      .where(eq(schema.member.userId, owner.userId));
+    await repos.resourceGrant.upsert({
+      organizationId: owner.orgId,
+      userId: owner.userId,
+      resourceType: "job",
+      resourceId: "*",
+      permissions: ["read"],
+      grantedByUserId: null,
+    });
+    const beforeDenied = traffic.requests.length;
+    for (const client of [c.remote, c.native]) {
+      expect(
+        await client.repositoryChecks({ owner: "acme", repo: "app", controller: "github" }),
+      ).toMatchObject({ status: "access_required" });
+      await expect(
+        client.repositoryChecks({ owner: "../acme", repo: "app", controller: "github" }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+    expect(traffic.requests).toHaveLength(beforeDenied);
+  });
   async function channel(userId: string, verified = true) {
     const [row] = await db
       .insert(schema.notificationChannel)
@@ -509,7 +573,12 @@ describe("Actions HTTP, native SDK and authorization", () => {
 
   it("passes the production route scanner and rejects anonymous API and runtime requests", async () => {
     expect(scanRoutes(app).errors).toEqual([]);
-    for (const path of ["/api/actions/workflows", "/api/actions/runners", "/api/actions/runs"])
+    for (const path of [
+      "/api/actions/workflows",
+      "/api/actions/runners",
+      "/api/actions/runs",
+      "/api/actions/repository-checks?owner=acme&repo=app&controller=github",
+    ])
       expect((await app.request(path)).status).toBe(401);
     for (const path of [
       "/api/actions/runners/emulation",

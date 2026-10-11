@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { ActionCollectionSchemas, parseInput } from "@repo/contracts";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { param } from "../../lib/controller-helpers";
 import { operationContext, operationData } from "../../lib/operation-context";
@@ -72,6 +73,17 @@ export async function discover(c: Context) {
 export async function get(c: Context) {
   return c.json({
     data: await operationData(c, actions().get(operationContext(c), param(c, "id"))),
+  });
+}
+export async function repositoryChecks(c: Context) {
+  return c.json({
+    data: await operationData(
+      c,
+      actions().repositoryChecks(
+        operationContext(c),
+        parseInput(ActionCollectionSchemas.repositoryChecks.input, c.req.query()),
+      ),
+    ),
   });
 }
 export async function repositorySource(c: Context) {

@@ -126,11 +126,14 @@ the deployment wizard. These entry points share the same setup:
    allow only your connected account, require approval for each run and block forks.
    Choose specific GitHub users or repository collaborators with write access to
    extend access. These settings apply to the selected files.
-5. In **Checks**, review the automatic GitHub Checks integration and optionally
-   select verified notification channels for failures, successes or cancellations.
-   GitHub-owned workflows retain their original Checks; independent repository
-   workflows publish Checks through a connected GitHub App. Choose required workflows
-   in the project's **Deployment automation** tab.
+5. In **Checks**, review the connected GitHub account and the selected repository's
+   access. **Connect GitHub** or **Review access** opens setup without leaving your
+   draft; unavailable checks can be retried. GitHub workflows retain their original
+   Checks. Independent repository workflows need a GitHub App with **Checks: write**.
+   For notifications, choose **Add channel**, enter its destination and select
+   **Send test & use**. Failed verification stays retryable in the same dialog.
+   Select failures, successes or cancellations; notifications remain optional.
+   Choose required workflows in the project's **Deployment automation** tab.
 6. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
    expressions. Before writing back to GitHub, review the changes and choose
    **Commit and save**. `.openship/workflows` also offers **Save Openship copy**.

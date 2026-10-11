@@ -351,6 +351,26 @@ export const ActionProjectPolicySchema = Type.Object({
   requiredWorkflowIds: Type.Array(id),
   requests: Type.Array(ActionDeploymentRequestSchema),
 });
+export const ActionRepositoryChecksSchema = Type.Object({
+  repository: Type.String(),
+  account: Type.Union([
+    Type.Object({
+      login: Type.String(),
+      avatarUrl: Type.String(),
+      kind: Type.Union([Type.Literal("account"), Type.Literal("installation")]),
+    }),
+    Type.Null(),
+  ]),
+  status: Type.Union([
+    Type.Literal("connected"),
+    Type.Literal("not_connected"),
+    Type.Literal("app_required"),
+    Type.Literal("access_required"),
+    Type.Literal("actions_disabled"),
+    Type.Literal("unavailable"),
+  ]),
+});
+export type ActionRepositoryChecks = Static<typeof ActionRepositoryChecksSchema>;
 export const ActionCollectionSchemas = {
   list: {
     action: "read",
@@ -394,6 +414,11 @@ export const ActionCollectionSchemas = {
     action: "read",
     input: Type.Object({ owner, repo, ref }),
     output: Type.Array(Type.Object({ path: Type.String(), name: Type.String() })),
+  },
+  repositoryChecks: {
+    action: "read",
+    input: Type.Object({ owner, repo, controller: ActionControllerSchema }),
+    output: ActionRepositoryChecksSchema,
   },
   importWorkflows: {
     action: "write",

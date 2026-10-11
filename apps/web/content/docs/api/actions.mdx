@@ -182,6 +182,7 @@ Preserve both paths when configuring an external reverse proxy.
 | Read linked workflows, required checks and pending deployment requests for a project. | `actions.projectPolicy(input)` | `GET /api/actions/project`<br />`job:read` |
 | Choose manual, push or required-check deployments and link existing workflows. | `actions.updateProjectPolicy(input)` | `PUT /api/actions/project`<br />`job:write` |
 | Retry or cancel an unaccepted required-check deployment request without duplicating deployment. | `actions.updateDeploymentRequest(input)` | `POST /api/actions/project/requests`<br />`job:write` |
+| Read the connected GitHub account and verify repository Checks access without starting a workflow or publishing a Check. | `actions.repositoryChecks(input)` | `GET /api/actions/repository-checks`<br />`job:read` |
 
 ### Job runtime protocols
 

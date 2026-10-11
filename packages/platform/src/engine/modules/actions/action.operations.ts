@@ -35,6 +35,7 @@ import {
 import { readActionRepositorySource, updateActionRepositorySource } from "./repository-source";
 import { refreshActionRunAdmission } from "./run-access";
 import { authorization } from "../../lib/authorization";
+import { actionRepositoryChecks } from "./repository-checks";
 
 function record(ctx: ExecutionContext, id: string, operation: string) {
   audit.recordAsync(operationAuditContext(ctx), {
@@ -147,6 +148,7 @@ export const actionDependencies: ActionDependencies = {
     },
     discover: (ctx, input) =>
       service.discoverActionWorkflows(ctx, input.owner, input.repo, input.ref),
+    repositoryChecks: actionRepositoryChecks,
     repositorySource: readActionRepositorySource,
     async updateRepositorySource(ctx, input) {
       const result = await updateActionRepositorySource(ctx, input);

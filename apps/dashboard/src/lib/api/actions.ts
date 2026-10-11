@@ -58,6 +58,10 @@ export const actionsApi = {
     data<"updateDeploymentRequest">(api.post("actions/project/requests", input)),
   repositorySource: (input: Input<"repositorySource">[0]) =>
     data<"repositorySource">(api.get(`actions/repository-source?${new URLSearchParams(input)}`)),
+  repositoryChecks: (input: Input<"repositoryChecks">[0]) =>
+    data<"repositoryChecks">(
+      api.get(`actions/repository-checks?${new URLSearchParams(input)}`, { dedupe: false }),
+    ),
   updateRepositorySource: (input: Input<"updateRepositorySource">[0]) =>
     data<"updateRepositorySource">(api.put("actions/repository-source", input)),
   discover: (owner: string, repo: string, ref: string) =>

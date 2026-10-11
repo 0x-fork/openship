@@ -860,9 +860,9 @@ function SetupForm({
                       />
                     ) : step === "checks" ? (
                       <WorkflowChecks
-                        repository={!standalone}
-                        github={native}
-                        projectScoped={projectScoped}
+                        repository={!standalone && repositoryValid ? repository.trim() : null}
+                        github={hasNative}
+                        independent={hasIndependent}
                         value={notifications}
                         onChange={setNotifications}
                       />

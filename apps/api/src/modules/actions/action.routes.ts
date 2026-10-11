@@ -129,6 +129,19 @@ r.post(
   ctrl.importWorkflows,
 );
 r.get(
+  "/repository-checks",
+  {
+    authorizationHandledByOperation: true,
+    tag: "job:read",
+    query: C.repositoryChecks.input,
+    mcp: {
+      description:
+        "Read the connected account and verify Checks access for the selected repository without starting a workflow or publishing a Check.",
+    },
+  },
+  ctrl.repositoryChecks,
+);
+r.get(
   "/workflows/:id",
   {
     authorizationHandledByOperation: true,

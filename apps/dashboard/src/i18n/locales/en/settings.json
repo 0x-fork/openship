@@ -760,7 +760,8 @@
       "addChannel": "Add channel",
       "confirmDelete": "Delete this channel? Subscriptions using it will stop.",
       "channelRemoved": "Channel removed",
-      "channelAdded": "Channel added"
+      "channelAdded": "Channel added",
+      "updated": "Channel updated"
     },
     "describe": {
       "slackWebhook": "Slack webhook",
@@ -792,7 +793,19 @@
       "labelRequired": "Label is required",
       "noEmailTransport": "No email server is set up on this instance, so email notifications won't be delivered.",
       "setUpSmtp": "Set up SMTP →",
-      "otherAddress": "Other address…"
+      "otherAddress": "Other address…",
+      "labels": {
+        "name": "Name",
+        "address": "Email address",
+        "url": "Webhook URL",
+        "botToken": "Bot token",
+        "chatId": "Chat ID"
+      },
+      "secretHint": "Copy this secret now to verify webhook signatures. It is shown only once.",
+      "editHint": "Leave credential fields blank to keep stored secrets. Destination changes require a new test to verify delivery.",
+      "channelType": "Channel type",
+      "saving": "Saving…",
+      "signingSecret": "Signing secret"
     },
     "subscriptions": {
       "title": "What to be notified about",

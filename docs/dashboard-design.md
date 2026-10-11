@@ -147,8 +147,13 @@ Run approval shows the commit, attempt, requester and destinations before execut
 Missing destination details remain retryable; readers see who can approve instead of a
 button they cannot use. After a rejected approval, refresh the run so an old review cannot
 remain actionable. Blocked access links back to workflow settings.
-Checks describes the existing automatic GitHub integration and offers optional workflow
-notifications through verified account channels. Keep outcomes and channel logos compact.
+Checks shows the connected GitHub identity, selected repository and verified reporting
+availability in a compact row. Keep account connection distinct from repository permission;
+show a direct Connect, Review access or Retry action instead of assuming automatic reporting.
+Use the existing GitHub connection controls in a dialog without discarding the workflow draft.
+Notification channels are added and verified in an inline dialog using the shared Settings
+form. Show a single Add channel action, use the created channel only after verification,
+and keep optional outcome choices compact. Do not send users to another page to finish setup.
 Account-wide subscriptions and workflow choices share one durable delivery identity per run
 and channel; changing notification choices affects future runs, not runs already in progress.
 Project Actions owns one deployment policy: Manual, Push, or After required Actions

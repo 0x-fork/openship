@@ -624,8 +624,8 @@ export interface GitHubFetchOptions {
    *  GHSA-hp2g-hw7g-f3vm, so pass it whenever the URL names a repo. */
   repo?: string;
   /**
-   * Narrow the mint gate's tier to "read". Defaults to the HTTP method: GET →
-   * "read", anything else → "write".
+   * Override the mint gate's required tier. Defaults to the HTTP method:
+   * GET → "read", anything else → "write".
    *
    * The method is only a PROXY for the tier — the tier is a property of what the
    * operation MEANS, and two mutating calls can sit on different sides of it.
@@ -633,12 +633,12 @@ export interface GitHubFetchOptions {
    * "deploy this repo", which a read grant authorizes; deleting the repo or
    * managing its webhooks is repo ADMINISTRATION, which it must not.
    *
-   * Deliberately typed `"read"` and not `GitHubAccessOp`: the only sound use is
-   * narrowing, so the type — not a comment someone has to obey — is what stops this
-   * from becoming a way to declare a management call harmless. Widening is what
-   * GHSA-hp2g-hw7g-f3vm did by accident.
+   * "write" on a GET requires management authority for a setup probe. It also
+   * disables anonymous/alternate-credential fallback so a public read cannot
+   * appear to confirm the credentials that will administer this repository.
+   * This raises the requirement; it never grants additional caller authority.
    */
-  authorizeAs?: "read";
+  authorizeAs?: "read" | "write";
   /**
    * Pin resolution to specific credential kinds, for an endpoint only ONE
    * credential can satisfy. Orthogonal to `authorizeAs`: that is AUTHORITY

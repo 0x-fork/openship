@@ -588,7 +588,8 @@
       "addChannel": "チャンネルを追加",
       "confirmDelete": "このチャンネルを削除しますか？これを使用しているサブスクリプションは停止します。",
       "channelRemoved": "チャンネルを削除しました",
-      "channelAdded": "チャンネルを追加しました"
+      "channelAdded": "チャンネルを追加しました",
+      "updated": "チャネルを更新しました"
     },
     "describe": {
       "slackWebhook": "Slack Webhook",
@@ -617,7 +618,19 @@
       "telegramHint": "@BotFather でボットを作成し、返信を許可するためにボットにメッセージを送る（またはグループに追加する）必要があります。",
       "adding": "追加中…",
       "addChannel": "チャンネルを追加",
-      "labelRequired": "ラベルは必須です"
+      "labelRequired": "ラベルは必須です",
+      "labels": {
+        "name": "名前",
+        "address": "メールアドレス",
+        "url": "Webhook の URL",
+        "botToken": "ボットトークン",
+        "chatId": "チャットID"
+      },
+      "secretHint": "Webhookの署名を検証するため、このシークレットを今コピーしてください。表示されるのは一度だけです。",
+      "editHint": "認証情報を空欄にすると保存済みのシークレットを保持します。送信先の変更後は再テストが必要です。",
+      "channelType": "チャネルの種類",
+      "saving": "保存中…",
+      "signingSecret": "署名シークレット"
     },
     "subscriptions": {
       "title": "通知を受け取る対象",

@@ -3577,6 +3577,12 @@
       "section": "Project integration",
       "route": "POST /api/actions/project/requests",
       "description": "Retry or cancel an unaccepted required-check deployment request without duplicating deployment."
+    },
+    "actions.repositoryChecks": {
+      "page": "actions",
+      "section": "Project integration",
+      "route": "GET /api/actions/repository-checks",
+      "description": "Read the connected GitHub account and verify repository Checks access without starting a workflow or publishing a Check."
     }
   },
   "http": {
