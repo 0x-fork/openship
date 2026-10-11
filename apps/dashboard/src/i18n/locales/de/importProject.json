@@ -349,7 +349,16 @@
     "detailFramework": "Framework",
     "detailBranch": "Branch",
     "detailDomains": "Domains",
-    "detailDomain": "Domain"
+    "detailDomain": "Domain",
+    "portAdvisory": {
+      "loopbackTitle": "Die App kann keinen weitergeleiteten Datenverkehr empfangen",
+      "loopbackNote": "Die Bereitstellung läuft, aber ein weitergeleiteter Port erfordert Aufmerksamkeit.",
+      "loopbackBody": "Port {port} lauscht nur innerhalb des Containers.",
+      "loopbackBodyService": "Dienst \"{service}\" lauscht nur innerhalb des Containers auf Port {port}.",
+      "loopbackHelp": "Für eine App mit weitergeleitetem Datenverkehr: auf 0.0.0.0 lauschen und erneut bereitstellen oder den vorgesehenen Proxy als Ziel verwenden.",
+      "openSettings": "Einstellungen öffnen",
+      "skipError": "Dieser Hinweis konnte nicht ausgeblendet werden. Bitte erneut versuchen."
+    }
   },
   "composeDeployment": {
     "title": {

@@ -425,6 +425,7 @@ export const ProjectControlSchemas = {
         port: Type.Number(),
         listening: Type.Boolean(),
         checked: Type.Boolean(),
+        loopbackOnly: Type.Optional(Type.Boolean()),
         serviceId: Type.Optional(Type.String()),
         serviceName: Type.Optional(Type.String()),
         skippedReason: Type.Optional(Type.String()),

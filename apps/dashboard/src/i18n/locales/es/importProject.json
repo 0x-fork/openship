@@ -349,7 +349,16 @@
     "detailFramework": "Framework",
     "detailBranch": "Rama",
     "detailDomains": "Dominios",
-    "detailDomain": "Dominio"
+    "detailDomain": "Dominio",
+    "portAdvisory": {
+      "loopbackTitle": "La app no puede recibir tráfico enrutado",
+      "loopbackNote": "El despliegue está en ejecución, pero un puerto enrutado requiere atención.",
+      "loopbackBody": "El puerto {port} solo escucha dentro del contenedor.",
+      "loopbackBodyService": "El servicio \"{service}\" solo escucha dentro del contenedor en el puerto {port}.",
+      "loopbackHelp": "Para una app que recibe tráfico enrutado, escucha en 0.0.0.0 y vuelve a desplegar, o dirige el tráfico a su proxy previsto.",
+      "openSettings": "Abrir ajustes",
+      "skipError": "No se pudo descartar este aviso. Inténtalo de nuevo."
+    }
   },
   "composeDeployment": {
     "title": {

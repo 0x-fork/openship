@@ -127,6 +127,32 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+describe("persisted port review", () => {
+  it("restores the binding finding and scopes a late dismissal to its original deployment", async () => {
+    const portCheck = [{ port: 3000, checked: true, listening: true, loopbackOnly: true }];
+    await mount();
+    await load({ status: "ready", is_active: false, portCheck });
+    expect(build.state.portCheck).toEqual(portCheck);
+    expect(build.deploymentStatus).toBe("ready");
+    await act(async () => build.resolvePortCheck("dep-old", 3000));
+    expect(build.state.portCheckSkipped).toEqual([3000]);
+    await load({ status: "ready", is_active: false, portCheck, portCheckSkipped: [3000] });
+    expect(build.state.portCheckSkipped).toEqual([3000]);
+
+    api.status.mockResolvedValue(
+      snapshot({ deployment_id: "dep-new", status: "ready", is_active: false, portCheck }),
+    );
+    await act(async () => {
+      await build.loadBuildSession("dep-new");
+    });
+    await act(async () => build.resolvePortCheck("dep-old", 3000));
+    expect(build.state.deploymentId).toBe("dep-new");
+    expect(build.state.portCheckSkipped).toEqual([]);
+    expect(build.state.deploymentSuccess).toBe(true);
+    expect(build.state.decisionPending).toBe(false);
+  });
+});
+
 describe("held backup decisions", () => {
   const prompt = (attempt: number) => ({
     promptId: `backup:${attempt}`,
