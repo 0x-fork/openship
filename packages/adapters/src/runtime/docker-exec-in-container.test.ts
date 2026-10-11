@@ -295,38 +295,44 @@ describe("buildInContainerExecCmd — the container enforces the deadline", () =
     expect(r.elapsedMs).toBeLessThan(2_000);
   });
 
-  it("reaps the timer before a successful command returns", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "openship-watchdog-"));
-    const pidFile = join(dir, "timer.pid");
-    let timerPid: number | undefined;
-    try {
-      await writeFile(
-        join(dir, "sleep"),
-        '#!/bin/sh\nprintf "%s\\n" "$$" > "$OPENSHIP_WATCHDOG_TEST_PID_FILE"\nexec /bin/sleep "$@"\n',
-        { mode: 0o700 },
-      );
-      const result = await runWatchdog(
-        'while [ ! -s "$OPENSHIP_WATCHDOG_TEST_PID_FILE" ]; do /bin/sleep 0.01; done',
-        5_000,
-        {
-          ...process.env,
-          PATH: `${dir}:${process.env.PATH}`,
-          OPENSHIP_WATCHDOG_TEST_PID_FILE: pidFile,
-        },
-      );
-      expect(result.code).toBe(0);
-      const pid = Number((await readFile(pidFile, "utf8")).trim());
-      timerPid = pid;
-      expect(() => process.kill(pid, 0)).toThrow();
-    } finally {
-      if (timerPid) {
-        try {
-          process.kill(timerPid);
-        } catch {}
+  it.each([false, true])(
+    "reaps the timer promptly even if TERM is ignored: %s",
+    async (ignoreTerm) => {
+      const dir = await mkdtemp(join(tmpdir(), "openship-watchdog-"));
+      const pidFile = join(dir, "timer.pid");
+      let timerPid: number | undefined;
+      try {
+        await writeFile(
+          join(dir, "sleep"),
+          // Model cancellation arriving while a shell child cannot act on TERM.
+          // BusyBox can hit that startup window for an immediately completed command.
+          `#!/bin/sh\n${ignoreTerm ? 'trap "" TERM\n' : ""}printf "%s\\n" "$$" > "$OPENSHIP_WATCHDOG_TEST_PID_FILE"\nexec /bin/sleep "$@"\n`,
+          { mode: 0o700 },
+        );
+        const result = await runWatchdog(
+          'while [ ! -s "$OPENSHIP_WATCHDOG_TEST_PID_FILE" ]; do /bin/sleep 0.01; done',
+          5_000,
+          {
+            ...process.env,
+            PATH: `${dir}:${process.env.PATH}`,
+            OPENSHIP_WATCHDOG_TEST_PID_FILE: pidFile,
+          },
+        );
+        expect(result.code).toBe(0);
+        expect(result.elapsedMs).toBeLessThan(2_000);
+        const pid = Number((await readFile(pidFile, "utf8")).trim());
+        timerPid = pid;
+        expect(() => process.kill(pid, 0)).toThrow();
+      } finally {
+        if (timerPid) {
+          try {
+            process.kill(timerPid, "SIGKILL");
+          } catch {}
+        }
+        await rm(dir, { recursive: true, force: true });
       }
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   it("kills the command in-container at the deadline instead of orphaning it", async () => {
     const r = await runWatchdog("sleep 30", 1_000);
