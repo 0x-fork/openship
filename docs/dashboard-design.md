@@ -116,6 +116,8 @@ preserves deployment fields while the editor is open and links selected workflow
 when the project is saved.
 Repository setup offers a compact file checklist with Select all. Keep a separate
 draft and undo history for each file while previewing them on the same canvas.
+Keep repository entry, the picker and refresh on one row, with icon buttons
+and accessible labels; branch/tag selection follows underneath.
 Runner destinations, enabled state and project links apply to the selected files;
 trigger edits belong to the previewed file. Review every changed file before a
 repository commit. Import files and links in one transaction; a retry reuses saved

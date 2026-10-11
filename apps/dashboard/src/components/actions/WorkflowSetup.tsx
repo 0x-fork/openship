@@ -676,30 +676,33 @@ function SetupForm({
                             </p>
                           ) : (
                             <>
-                              <ActionField label={a.repository}>
-                                <Input
-                                  variant="filled"
-                                  value={repository}
-                                  onChange={(event) => {
-                                    setRepository(event.target.value);
-                                    setTrusted(false);
-                                    setOriginal(null);
-                                  }}
-                                  placeholder={a.repositoryHint}
-                                />
-                              </ActionField>
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-end gap-2">
+                                <ActionField label={a.repository} className="flex-1">
+                                  <Input
+                                    variant="filled"
+                                    value={repository}
+                                    onChange={(event) => {
+                                      setRepository(event.target.value);
+                                      setTrusted(false);
+                                      setOriginal(null);
+                                    }}
+                                    placeholder={a.repositoryHint}
+                                  />
+                                </ActionField>
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   variant="secondary"
+                                  className="size-11 shrink-0"
                                   onClick={() => setPicker(true)}
+                                  aria-label={c.chooseRepo}
+                                  title={c.chooseRepo}
                                 >
                                   <Icon name="github" />
-                                  {c.chooseRepo}
                                 </Button>
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  className="size-11 shrink-0"
                                   onClick={() => {
                                     files.refresh();
                                     file.refresh();
