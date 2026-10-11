@@ -26,8 +26,8 @@ describe("auditPorts with a loopback-only listener", () => {
       logger,
     );
 
-    // Still a listener, so the dashboard's "nothing is listening" advisory stays quiet.
-    expect(results).toEqual([{ port: 3000, listening: true, checked: true }]);
+    // Persist the binding diagnosis without claiming there is no listener.
+    expect(results).toEqual([{ port: 3000, listening: true, checked: true, loopbackOnly: true }]);
     expect(logger.log).toHaveBeenCalledWith(
       expect.stringContaining("only listening on loopback"),
       "warn",
@@ -38,8 +38,14 @@ describe("auditPorts with a loopback-only listener", () => {
   it("keeps the listening line on the bare runtime, where the edge dials the host's loopback", async () => {
     const logger = { log: vi.fn() } as unknown as BuildLogger;
 
-    await auditPorts(runtimeListening("bare", LOOPBACK_ONLY_3000), "proc_1", [3000], logger);
+    const results = await auditPorts(
+      runtimeListening("bare", LOOPBACK_ONLY_3000),
+      "proc_1",
+      [3000],
+      logger,
+    );
 
+    expect(results).toEqual([{ port: 3000, listening: true, checked: true }]);
     expect(logger.log).toHaveBeenCalledWith("Port check: port 3000 is listening.\n", "info");
   });
 });

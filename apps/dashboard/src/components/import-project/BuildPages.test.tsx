@@ -111,6 +111,29 @@ async function select(label: string) { await act(async () => tab(label).click())
 
 describe("build pages", () => {
   it.each([true, false])(
+    "shows Action required for a loopback bind without holding the live deployment (Compose: %s)",
+    async (compose) => {
+      deployment.state.portCheck = [
+        { port: 4010, serviceId: "svc-api", checked: true, listening: true, loopbackOnly: true },
+      ];
+      await render(compose);
+
+      expect(host.querySelector("header [role=status]")?.textContent).toBe(
+        composeCopy.title.actionRequired,
+      );
+      expect(mocks.showModal).not.toHaveBeenCalled();
+      expect(mocks.stop).not.toHaveBeenCalled();
+      expect(redeploy).not.toHaveBeenCalled();
+      expect(deployment.state.decisionPending).toBe(false);
+      expect(deployment.state.deploymentSuccess).toBe(true);
+
+      deployment.state.portCheckSkipped = [compose ? "svc-api" : 4010];
+      await render(compose);
+      expect(host.querySelector("header [role=status]")?.textContent).toBe(copy.status.ready);
+    },
+  );
+
+  it.each([true, false])(
     "keeps a failed-backup decision usable through a network error and closes it on replacement or completion (Compose: %s)",
     async (compose) => {
       deployment.deploymentStatus = "building";

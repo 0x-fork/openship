@@ -160,6 +160,26 @@ describe("waitForPortListening", () => {
     });
   });
 
+  test.each(["tcp", "tcp6"])(
+    "does not claim loopback exclusivity when /proc/net/%s could not be read",
+    async (unreadable) => {
+      const executor: PortProbeExecutor = {
+        exec: async (command) => {
+          const family = command.includes("tcp6") ? "tcp6" : "tcp";
+          if (family === unreadable) throw new Error("socket table unavailable");
+          return family === "tcp" ? IPV4_LOOPBACK_LISTEN_3000 : IPV6_LOOPBACK_LISTEN_3000;
+        },
+      };
+
+      // The observed socket is real, but the unreadable family may have a
+      // wildcard listener. Keep occupancy without inventing a bind diagnosis.
+      expect(await waitForPortListening(executor, 3000, { timeoutMs: 0 })).toEqual({
+        listening: true,
+        checked: true,
+      });
+    },
+  );
+
   test("never rejects and returns {checked:false} when every attempt errors", async () => {
     const exec = stubExecutor(async () => {
       throw new Error("no such container");

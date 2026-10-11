@@ -38,7 +38,7 @@ export interface PortProbeResult {
   /**
    * True when every LISTEN socket on the port is bound to a loopback address, so
    * only a client in the same network namespace can connect. Set only from a
-   * procfs reading; the lsof/ss fallbacks don't report the bind address.
+   * complete procfs reading; the lsof/ss fallbacks don't report the bind address.
    */
   loopbackOnly?: boolean;
 }
@@ -201,7 +201,10 @@ async function readPortListener(
     const procText = readable.join("\n");
     return {
       listening: parseListeningPorts(procText).has(port),
-      loopbackOnly: parseLoopbackOnlyPorts(procText).has(port),
+      // A socket in the unreadable family might bind to a routable address.
+      // Positive occupancy survives a partial read; exclusivity does not.
+      loopbackOnly:
+        readable.length === PROC_NET_TCP_FILES.length && parseLoopbackOnlyPorts(procText).has(port),
     };
   }
 

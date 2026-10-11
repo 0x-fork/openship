@@ -21,8 +21,15 @@ interface DeploymentProcessingProps {
 }
 
 const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy }) => {
-  const { config, state, terminalRef, onTerminalReady, respondToPrompt, deploymentStatus } =
-    useDeployment();
+  const {
+    config,
+    state,
+    terminalRef,
+    onTerminalReady,
+    respondToPrompt,
+    resolvePortCheck,
+    deploymentStatus,
+  } = useDeployment();
   const { resolvedTheme } = useTheme();
   const { t } = useI18n();
   const dp = t.importProject.deploymentProcessing;
@@ -56,11 +63,13 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
 
         {deploymentStatus === "ready" && (
           <PortAdvisoryModal
+            key={state.deploymentId}
             deploymentId={state.deploymentId}
             projectId={state.projectId ?? config.projectId}
             checks={state.portCheck}
             skipped={state.portCheckSkipped}
             isCompose={false}
+            onResolved={resolvePortCheck}
             publicEndpoints={config.publicEndpoints}
           />
         )}

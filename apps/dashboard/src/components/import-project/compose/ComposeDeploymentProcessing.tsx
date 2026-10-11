@@ -43,7 +43,7 @@ interface Props {
 }
 
 const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
-  const { config, state, onTerminalReady, respondToPrompt, deploymentStatus } =
+  const { config, state, onTerminalReady, respondToPrompt, resolvePortCheck, deploymentStatus } =
     useDeployment();
   const showCloudPricing = useCloudDeployPricing(config.workspaceId);
   const { showToast } = useToast();
@@ -256,7 +256,12 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
 
   return (
     <PageContainer>
-      <DeploymentHeader onRedeploy={onRedeploy} serviceCount={total} decisionPending={showDecision} />
+      <DeploymentHeader
+        onRedeploy={onRedeploy}
+        serviceCount={total}
+        decisionPending={showDecision}
+        isCompose
+      />
 
       <ComposeDeploymentBody
         logs={state.buildLogs}
@@ -309,11 +314,13 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
 
         {deploymentStatus === "ready" && (
           <PortAdvisoryModal
+            key={state.deploymentId}
             deploymentId={state.deploymentId}
             projectId={state.projectId || config.projectId}
             checks={state.portCheck}
             skipped={state.portCheckSkipped}
             isCompose
+            onResolved={resolvePortCheck}
           />
         )}
       </ComposeDeploymentBody>

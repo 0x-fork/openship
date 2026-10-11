@@ -364,7 +364,14 @@
       "changePort": "Changer le port",
       "skip": "Ignorer",
       "applied": "Routage mis à jour vers le port {port}.",
-      "changeError": "Impossible de mettre à jour le port. Veuillez réessayer."
+      "changeError": "Impossible de mettre à jour le port. Veuillez réessayer.",
+      "loopbackTitle": "L’app ne peut pas recevoir le trafic routé",
+      "loopbackNote": "Le déploiement est en cours d’exécution, mais un port routé nécessite votre attention.",
+      "loopbackBody": "Le port {port} écoute uniquement à l’intérieur du conteneur.",
+      "loopbackBodyService": "Le service \"{service}\" écoute uniquement à l’intérieur du conteneur sur le port {port}.",
+      "loopbackHelp": "Pour une app recevant du trafic routé, écoutez sur 0.0.0.0 et redéployez, ou dirigez le trafic vers le proxy prévu.",
+      "openSettings": "Ouvrir les paramètres",
+      "skipError": "Impossible de masquer cet avertissement. Veuillez réessayer."
     }
   },
   "composeDeployment": {

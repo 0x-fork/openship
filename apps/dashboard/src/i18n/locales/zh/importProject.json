@@ -349,7 +349,16 @@
     "detailFramework": "框架",
     "detailBranch": "分支",
     "detailDomains": "域名",
-    "detailDomain": "域名"
+    "detailDomain": "域名",
+    "portAdvisory": {
+      "loopbackTitle": "应用无法接收路由流量",
+      "loopbackNote": "部署仍在运行，但有一个路由端口需要处理。",
+      "loopbackBody": "端口 {port} 仅接受容器内部的连接。",
+      "loopbackBodyService": "服务“{service}”的端口 {port} 仅接受容器内部的连接。",
+      "loopbackHelp": "对于需要接收路由流量的应用，请监听 0.0.0.0 后重新部署，或将流量路由到其预期的代理。",
+      "openSettings": "打开设置",
+      "skipError": "无法忽略此警告，请重试。"
+    }
   },
   "composeDeployment": {
     "title": {

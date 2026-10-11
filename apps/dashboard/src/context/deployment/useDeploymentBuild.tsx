@@ -1585,6 +1585,14 @@ export function useDeploymentBuild(
     flushPendingLogs();
   }, [flushPendingLogs]);
 
+  const resolvePortCheck = useCallback((deploymentId: string, target: number | string) => {
+    setState((prev) =>
+      prev.deploymentId === deploymentId && !prev.portCheckSkipped.includes(target)
+        ? { ...prev, portCheckSkipped: [...prev.portCheckSkipped, target] }
+        : prev,
+    );
+  }, []);
+
   const _setContainerFailed = useCallback((message: string) => {
     setState((prev) => ({
       ...prev,
@@ -1635,6 +1643,7 @@ export function useDeploymentBuild(
     reset,
     onTerminalReady,
     respondToPrompt,
+    resolvePortCheck,
     maybeOpenCredentialModal,
     _setContainerFailed,
   };
