@@ -6,12 +6,14 @@ vi.mock("../../lib/execution-authority", () => ({ resolveExecutionAuthority: h.r
 vi.mock("../github/github.auth", () => ({ getInstallationToken: h.token, githubFetch: h.request }));
 vi.mock("../../config/env", () => ({ localDashboardUrl: "https://app.example.test" }));
 import { syncActionCheck } from "./github-checks";
+import { actionRunView } from "./views";
+import { parseActionWorkflow } from "./workflow";
 const run = {
   id: "run-one",
   revision: "a".repeat(40),
   authority: {},
   configuration: { owner: "acme", repo: "app" },
-  plan: { name: "CI" },
+  plan: { name: "CI", triggers: {}, jobs: [] },
 } as ActionRun;
 const job = {
   id: "job-one",
@@ -28,6 +30,36 @@ beforeEach(() => {
 });
 
 describe("Actions GitHub Checks delivery", () => {
+  it.each(["skipped", "cancelled", "failure"] as const)(
+    "keeps the declared job name in the UI and Checks when %s before expansion",
+    async (status) => {
+      const plan = await parseActionWorkflow(`name: CI
+on: workflow_dispatch
+jobs:
+  build:
+    name: Build after tests
+    runs-on: self-hosted
+    steps:
+      - run: echo build
+`);
+      const attempt = { ...run, plan };
+      const unexpanded = { ...job, jobKey: "build", status, spec: null };
+      h.request.mockImplementation(async ({ method }: { method: string }) =>
+        method === "GET" ? { check_runs: [], total_count: 0 } : { id: 42 },
+      );
+      expect(actionRunView(attempt, [unexpanded]).jobs[0]?.name).toBe("Build after tests");
+      expect(await syncActionCheck(attempt, unexpanded)).toEqual({ id: "42", error: null });
+      expect(h.request.mock.calls.at(-1)?.[0]).toMatchObject({
+        method: "POST",
+        params: {
+          name: "Openship / CI / Build after tests",
+          conclusion: status,
+          output: { title: "CI · Build after tests" },
+        },
+      });
+    },
+  );
+
   it("never publishes an independent Check for a GitHub-owned run", async () => {
     await syncActionCheck({ ...run, controller: "github" }, { ...job, checkRunId: "github-check" });
     expect(h.resolve).not.toHaveBeenCalled();

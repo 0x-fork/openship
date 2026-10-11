@@ -22,7 +22,47 @@ and run history stay together.
   jobs with act, using its scoped credentials and configured storage. The
   compatibility limits below apply to these independent workflows.
 
-Repository workflows require runner-management access: a GitHub App with
+## Run only in Openship
+
+Store the workflow in `.openship/workflows/ci.yml`. GitHub ignores this directory:
+using GitHub's YAML syntax does not start GitHub Actions. Openship discovers the
+file, schedules its declared triggers and executes jobs on your allowed runners.
+This also works when GitHub Actions is disabled for the repository.
+
+1. Add the file to the repository. When moving CI from GitHub, move the file out
+   of `.github/workflows/`; leaving a copy there keeps its GitHub triggers active.
+2. Open the project's **Actions** tab, select the repository and import the file.
+3. Choose the runners, access policy and notifications, then save.
+4. Run it manually or push a commit matching its `on: push` rules. Automatic GitHub
+   events require a connected App subscribed to those events and a reachable webhook.
+
+For example, this workflow checks out a private repository and runs its Node tests
+on an allowed Linux runner with Git and Node available:
+
+```yaml title=".openship/workflows/ci.yml"
+name: CI
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: [self-hosted, openship, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - run: node --test
+```
+
+Private checkout uses a repository-scoped App token. Publishing results needs the
+App's **Checks: write** permission. An Openship Check on a commit is a status report;
+it does not create a GitHub Actions run. Follow execution and live logs in Openship.
+The independent-workflow compatibility limits below still apply.
+
+## Use GitHub-coordinated workflows
+
+Files in `.github/workflows/` require runner-management access: a GitHub App with
 **Actions: write** and **Administration: write**, or a suitable repository token.
 Existing App installations may need to approve these permissions. Editing workflow
 files also needs **Contents: write** and **Workflows: write**; new Openship App

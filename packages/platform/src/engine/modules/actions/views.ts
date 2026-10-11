@@ -1,6 +1,7 @@
 import { actionFinished, actionRunnerLabels, type ActionWorkflowPlan } from "@repo/core";
 import type { ActionJob, ActionRun, ActionRunner, ActionWorkflow } from "@repo/db";
 import { record } from "./workflow";
+import { actionJobName } from "./job-name";
 
 export function actionPlanView(plan: ActionWorkflowPlan) {
   return {
@@ -129,7 +130,7 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
       id: job.id,
       externalUrl: job.github?.url ?? null,
       jobKey: job.jobKey,
-      name: job.spec?.name ?? job.jobKey,
+      name: actionJobName(run.plan, job),
       matrixIndex: job.matrixIndex,
       matrix: job.spec?.matrix ?? {},
       labels: job.spec?.labels ?? [],
