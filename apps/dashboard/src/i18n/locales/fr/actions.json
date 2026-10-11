@@ -458,9 +458,9 @@
     "connectionHints": {
       "not_connected": "Connectez GitHub pour exécuter les workflows de ce dépôt et publier les résultats.",
       "app_required": "Installez une GitHub App avec le droit d’écriture sur Checks pour publier les résultats.",
-      "access_required": "Vérifiez l’accès et les autorisations de ce dépôt sur GitHub.",
+      "access_required": "Vérifiez votre connexion GitHub et les autorisations de ce dépôt.",
       "actions_disabled": "Activez GitHub Actions pour ce dépôt.",
-      "unavailable": "Impossible de vérifier l’accès. Réessayez."
+      "unavailable": "Impossible de vérifier l’accès au dépôt."
     }
   },
   "access": {

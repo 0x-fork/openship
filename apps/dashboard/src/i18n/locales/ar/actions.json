@@ -458,9 +458,9 @@
     "connectionHints": {
       "not_connected": "اربط GitHub لتشغيل سير عمل هذا المستودع ونشر النتائج.",
       "app_required": "ثبّت تطبيق GitHub بصلاحية كتابة Checks لنشر النتائج.",
-      "access_required": "راجع صلاحيات الوصول إلى هذا المستودع في GitHub.",
+      "access_required": "راجع اتصال GitHub وأذونات هذا المستودع.",
       "actions_disabled": "فعّل GitHub Actions لهذا المستودع.",
-      "unavailable": "تعذّر التحقق من الوصول. حاول مجددًا."
+      "unavailable": "تعذّر التحقق من الوصول إلى المستودع."
     }
   },
   "access": {

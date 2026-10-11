@@ -458,9 +458,9 @@
     "connectionHints": {
       "not_connected": "Connect GitHub to run this repository’s workflows and report results.",
       "app_required": "Install a GitHub App with Checks write access to publish results.",
-      "access_required": "Review this repository’s access and permissions on GitHub.",
+      "access_required": "Review your GitHub connection and this repository’s permissions.",
       "actions_disabled": "Enable GitHub Actions for this repository.",
-      "unavailable": "Could not verify access. Try again."
+      "unavailable": "Could not verify repository access."
     }
   },
   "access": {

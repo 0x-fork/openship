@@ -458,9 +458,9 @@
     "connectionHints": {
       "not_connected": "连接 GitHub 以运行此仓库的工作流并发布结果。",
       "app_required": "安装具有 Checks 写入权限的 GitHub App 以发布结果。",
-      "access_required": "请在 GitHub 上检查此仓库的访问权限。",
+      "access_required": "请检查 GitHub 连接和此仓库的权限。",
       "actions_disabled": "为此仓库启用 GitHub Actions。",
-      "unavailable": "无法验证访问权限，请重试。"
+      "unavailable": "无法验证仓库访问权限。"
     }
   },
   "access": {

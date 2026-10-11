@@ -130,7 +130,7 @@ describe("githubFetch — threads op + repo into tokenFor (GHSA-hp2g-hw7g-f3vm)"
       owner: "acme",
       repo: "production-api",
       authorizeAs: "write",
-    })).rejects.toThrow(/No GitHub access token/);
+    })).rejects.toMatchObject({ statusCode: 403, code: "GITHUB_TOKEN_REQUIRED" });
     expect(tokenForSpy).toHaveBeenCalledWith(ctx, "local", expect.objectContaining({
       owner: "acme", repo: "production-api", op: "write",
     }));
@@ -162,7 +162,7 @@ describe("githubFetch — threads op + repo into tokenFor (GHSA-hp2g-hw7g-f3vm)"
         owner: "acme",
         repo: "production-api",
       }),
-    ).rejects.toThrow(/No GitHub access token/);
+    ).rejects.toMatchObject({ statusCode: 403, code: "GITHUB_TOKEN_REQUIRED" });
     // A denied write must not fall back to an unauthenticated public request.
     expect(ghFetchPublicSpy).not.toHaveBeenCalled();
     expect(ghFetchSpy).not.toHaveBeenCalled();

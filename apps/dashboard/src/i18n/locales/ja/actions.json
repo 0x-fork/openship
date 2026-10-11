@@ -458,9 +458,9 @@
     "connectionHints": {
       "not_connected": "GitHub を接続してこのリポジトリのワークフローを実行し、結果を公開してください。",
       "app_required": "結果を公開するには Checks の書き込み権限を持つ GitHub App をインストールしてください。",
-      "access_required": "GitHub でこのリポジトリへのアクセスと権限を確認してください。",
+      "access_required": "GitHub 接続とこのリポジトリの権限を確認してください。",
       "actions_disabled": "このリポジトリで GitHub Actions を有効にしてください。",
-      "unavailable": "アクセスを確認できませんでした。再試行してください。"
+      "unavailable": "リポジトリへのアクセスを確認できませんでした。"
     }
   },
   "access": {

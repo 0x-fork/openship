@@ -458,9 +458,9 @@
     "connectionHints": {
       "not_connected": "Bu deponun iş akışlarını çalıştırmak ve sonuçları bildirmek için GitHub’ı bağlayın.",
       "app_required": "Sonuçları yayımlamak için Checks yazma izni olan bir GitHub App yükleyin.",
-      "access_required": "GitHub üzerinde bu deponun erişim ve izinlerini gözden geçirin.",
+      "access_required": "GitHub bağlantınızı ve bu deponun izinlerini gözden geçirin.",
       "actions_disabled": "Bu depo için GitHub Actions’ı etkinleştirin.",
-      "unavailable": "Erişim doğrulanamadı. Yeniden deneyin."
+      "unavailable": "Depoya erişim doğrulanamadı."
     }
   },
   "access": {

@@ -755,7 +755,11 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
     if (publicData !== null) return publicData;
   }
   if (authError) throw authError;
-  throw new Error("No GitHub access token available. Please connect your GitHub account.");
+  throw new AppError(
+    "No GitHub credential is available for this repository and operation. Review your GitHub connection and repository access.",
+    403,
+    "GITHUB_TOKEN_REQUIRED",
+  );
 }
 
 // ─── User status helpers ─────────────────────────────────────────────────────

@@ -96,6 +96,7 @@ describe("repository Checks setup", () => {
     expect(await actionRepositoryChecks(ctx, input)).toMatchObject({ status: "unavailable" });
   });
   it.each([
+    [new AppError("No authorized repository credential", 403, "GITHUB_TOKEN_REQUIRED"), "access_required"],
     [new GitHubApiError(403, "Permission denied", new Headers()), "access_required"],
     [
       new GitHubApiError(403, "Rate limited", new Headers({ "x-ratelimit-remaining": "0" })),

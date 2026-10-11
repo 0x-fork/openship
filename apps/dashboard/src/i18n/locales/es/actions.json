@@ -458,9 +458,9 @@
     "connectionHints": {
       "not_connected": "Conecta GitHub para ejecutar los flujos de este repositorio y publicar resultados.",
       "app_required": "Instala una GitHub App con permiso de escritura en Checks para publicar resultados.",
-      "access_required": "Revisa el acceso y los permisos de este repositorio en GitHub.",
+      "access_required": "Revisa tu conexión con GitHub y los permisos de este repositorio.",
       "actions_disabled": "Activa GitHub Actions para este repositorio.",
-      "unavailable": "No se pudo verificar el acceso. Inténtalo de nuevo."
+      "unavailable": "No se pudo verificar el acceso al repositorio."
     }
   },
   "access": {

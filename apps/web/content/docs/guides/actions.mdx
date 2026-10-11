@@ -140,6 +140,17 @@ the deployment wizard. These entry points share the same setup:
    `.github/workflows` always runs committed YAML. A changed file on GitHub rejects
    the commit instead of overwriting someone else's changes.
 
+GitHub workflow management uses the instance's existing credential resolver: an
+authorized local CLI login, personal token, or repository-scoped GitHub App
+(including an App connected through Openship Cloud). A detected CLI login can
+read repository information before you authorize it for management. Choose
+**Review access → Change method → Use gh CLI** to select it explicitly.
+Repository Actions and runner-management permissions still apply; signing into
+GitHub alone does not grant them. Cloud uses the connected user's credentials or
+App installation and never the Cloud host's CLI login. Independent Checks use a
+GitHub App with Checks write access. Actions currently supports github.com, not
+GitHub Enterprise destinations.
+
 All selected files are validated before their workflow records and project links
 are saved in one transaction. Retrying an import reuses existing records, retains
 their settings and adds any new project links; it does not duplicate workflows or

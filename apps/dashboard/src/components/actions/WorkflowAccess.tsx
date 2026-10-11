@@ -39,13 +39,7 @@ export function WorkflowAccess({
   const c = t.actions.access;
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="flex items-center gap-2 text-sm font-medium">
-          <Icon name="shield" className="size-4 text-muted-foreground" />
-          {c.title}
-        </h2>
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{c.hint}</p>
-      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">{c.hint}</p>
       <ActionField label={c.audience}>
         <CustomSelect
           variant="filled"
