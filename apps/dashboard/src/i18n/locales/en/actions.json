@@ -342,7 +342,8 @@
     "collapseJob": "Hide steps",
     "expandAll": "Expand all",
     "collapseAll": "Collapse all",
-    "editStep": "Edit step"
+    "editStep": "Edit step",
+    "arrange": "Arrange workflow"
   },
   "runnerSetup": {
     "subtitle": "Choose a server and a ready-to-use environment.",
@@ -517,5 +518,14 @@
     "checkFailed": "Check failed",
     "imageHint": "Jobs can use a different Linux container image in Job settings.",
     "labelsHint": "Labels route jobs here; they do not change the image or installed tools."
+  },
+  "runView": {
+    "jobs": "Jobs",
+    "jobLogs": "Job logs",
+    "stepLogs": "View step logs",
+    "allLogs": "All job logs",
+    "loadingLogs": "Loading logs…",
+    "noStepLogs": "No output recorded for this step.",
+    "fullJobLog": "Showing the complete job log."
   }
 }

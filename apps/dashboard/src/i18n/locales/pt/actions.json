@@ -342,7 +342,8 @@
     "collapseJob": "Ocultar etapas",
     "expandAll": "Expandir tudo",
     "collapseAll": "Recolher tudo",
-    "editStep": "Editar etapa"
+    "editStep": "Editar etapa",
+    "arrange": "Organizar workflow"
   },
   "runnerSetup": {
     "subtitle": "Escolha um servidor e um ambiente pronto para usar.",
@@ -517,5 +518,14 @@
     "checkFailed": "Falha na verificação",
     "imageHint": "Cada job pode usar outra imagem de contêiner Linux nas suas configurações.",
     "labelsHint": "Os rótulos direcionam os jobs para cá; não alteram a imagem nem as ferramentas instaladas."
+  },
+  "runView": {
+    "jobs": "Jobs",
+    "jobLogs": "Logs do job",
+    "stepLogs": "Ver logs da etapa",
+    "allLogs": "Todos os logs do job",
+    "loadingLogs": "Carregando logs…",
+    "noStepLogs": "Nenhuma saída registrada para esta etapa.",
+    "fullJobLog": "Exibindo o log completo do job."
   }
 }

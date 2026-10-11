@@ -1,4 +1,5 @@
 import type { ActionJobView, ActionPlanView, ActionRunView } from "@repo/contracts";
+import type { ActionStatus } from "@repo/core";
 import type {
   ProjectTopologyGraph,
   TopologyState,
@@ -6,7 +7,7 @@ import type {
   TopologyResource,
 } from "@/components/topology/model";
 import { topologyPositions } from "@/components/topology/model";
-import { workflowStepTitle, type workflowJobs } from "./workflow-editor";
+import { workflowStepTitle } from "./workflow-editor";
 import { workflowEventConfig as object } from "./workflow-yaml";
 
 export const WORKFLOW_NODE_LAYOUT: TopologyNodeLayout = {
@@ -24,6 +25,7 @@ export const WORKFLOW_STEP_LAYOUT = {
   top: 112,
 };
 type WorkflowViewport = { width: number; height: number };
+export type WorkflowGraphJob = { id: string; value: { steps?: unknown } };
 export const workflowStepNodeId = (jobId: string, index: number) => `${jobId}:step:${index}`;
 
 export function workflowJobTargetLabel(
@@ -75,6 +77,16 @@ function workflowPlacement(
   const height = Math.max(WORKFLOW_NODE_LAYOUT.height, viewport.height - 96);
   const largest = Math.max(0, ...counts.values());
   const candidates = Math.max(1, Math.min(largest, Math.ceil(Math.sqrt(largest) * 2)));
+  const connected = new Set(graph.edges.flatMap((edge) => [edge.source, edge.target]));
+  const largestColumn = Math.max(1, graph.nodes.filter((node) => !connected.has(node.id)).length);
+  const rowOptions = [
+    ...new Set(
+      Array.from({ length: Math.min(12, largestColumn) }, (_, index) => [
+        index + 1,
+        Math.ceil(largestColumn / (index + 1)),
+      ]).flat(),
+    ),
+  ];
   let best:
     | {
         columns: number;
@@ -88,20 +100,28 @@ function workflowPlacement(
       const size = workflowJobSize(counts.get(node.id) ?? 0, columns);
       return { ...node, layoutWidth: size.width, layoutHeight: size.height };
     });
-    const positions = topologyPositions({ ...graph, nodes: footprints }, WORKFLOW_NODE_LAYOUT);
-    const left = Math.min(0, ...footprints.map((node) => positions[node.id].x));
-    const top = Math.min(0, ...footprints.map((node) => positions[node.id].y));
-    const right = Math.max(0, ...footprints.map((node) => positions[node.id].x + node.layoutWidth));
-    const bottom = Math.max(
-      0,
-      ...footprints.map((node) => positions[node.id].y + node.layoutHeight),
-    );
-    const graphWidth = Math.max(1, right - left);
-    const graphHeight = Math.max(1, bottom - top);
-    const zoom = Math.min(1, width / graphWidth, height / graphHeight);
-    const shape = Math.abs(Math.log(graphWidth / graphHeight / (width / height)));
-    if (!best || zoom > best.zoom || (zoom === best.zoom && shape < best.shape))
-      best = { columns, positions, zoom, shape };
+    for (const rows of rowOptions) {
+      const positions = topologyPositions(
+        { ...graph, nodes: footprints },
+        { ...WORKFLOW_NODE_LAYOUT, maxIndependentRows: rows },
+      );
+      const left = Math.min(0, ...footprints.map((node) => positions[node.id].x));
+      const top = Math.min(0, ...footprints.map((node) => positions[node.id].y));
+      const right = Math.max(
+        0,
+        ...footprints.map((node) => positions[node.id].x + node.layoutWidth),
+      );
+      const bottom = Math.max(
+        0,
+        ...footprints.map((node) => positions[node.id].y + node.layoutHeight),
+      );
+      const graphWidth = Math.max(1, right - left);
+      const graphHeight = Math.max(1, bottom - top);
+      const zoom = Math.min(1, width / graphWidth, height / graphHeight);
+      const shape = Math.abs(Math.log(graphWidth / graphHeight / (width / height)));
+      if (!best || zoom > best.zoom || (zoom === best.zoom && shape < best.shape))
+        best = { columns, positions, zoom, shape };
+    }
   }
   return best!;
 }
@@ -109,10 +129,11 @@ function workflowPlacement(
 /** Step order is projected from YAML; only job-to-job dependencies are editable edges. */
 export function workflowDetailGraph(
   graph: ProjectTopologyGraph,
-  jobs: ReturnType<typeof workflowJobs>,
+  jobs: readonly WorkflowGraphJob[],
   expanded: readonly string[],
   fallback: string,
   viewport: WorkflowViewport = { width: 900, height: 640 },
+  stepStatuses?: Readonly<Record<string, ActionStatus>>,
 ): ProjectTopologyGraph {
   const definitions = new Map(jobs.map((job) => [job.id, job.value]));
   const counts = new Map(
@@ -139,7 +160,7 @@ export function workflowDetailGraph(
         name: workflowStepTitle(raw, fallback),
         description: "",
         tone: "service",
-        state: "configured",
+        state: stepStatuses?.[id] ? states[stepStatuses[id]] : "configured",
         layoutPosition: {
           x: positions[node.id].x + position.x,
           y: positions[node.id].y + position.y,
@@ -197,6 +218,21 @@ export function workflowGroupStatus(jobs: ActionJobView[]): string | undefined {
   if (jobs.some((job) => job.status === "queued" || job.status === "waiting")) return "queued";
   for (const status of ["failure", "timed_out", "cancelled", "success", "skipped"])
     if (jobs.some((job) => job.status === status)) return status;
+}
+
+/** Keep a matrix selection stable; otherwise inspect the active or failed execution first. */
+export function workflowVisibleJob(
+  jobs: ActionJobView[],
+  jobKey: string,
+  selected?: string | null,
+) {
+  const group = jobs.filter((job) => job.jobKey === jobKey);
+  return (
+    group.find((job) => job.id === selected) ??
+    group.find((job) => job.status === "running") ??
+    group.find((job) => job.status === "failure") ??
+    group[0]
+  );
 }
 
 /** One node per workflow job. Matrix executions stay inspectable in the job

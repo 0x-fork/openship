@@ -136,6 +136,10 @@ function WorkflowStepNode({ data }: TopologyNodeProps) {
   const step = resource.workflowStep!;
   const { t } = useI18n();
   const type = step.kind === "action" ? t.actions.editor.action : t.actions.editor.command;
+  const active = ["running", "starting", "restarting"].includes(resource.state);
+  const success = resource.state === "succeeded";
+  const failed = resource.state === "failed";
+  const configured = resource.state === "configured";
   return (
     <article
       className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 text-start transition-colors ${action?.selected ? "border-info/50 ring-2 ring-info/10" : "border-border/80 hover:border-info/40"}`}
@@ -146,16 +150,34 @@ function WorkflowStepNode({ data }: TopologyNodeProps) {
       }}
       data-workflow-step={`${step.jobId}:${step.index}`}
       data-picked={action?.selected || undefined}
-      aria-label={`${t.actions.editor.editStep}: ${resource.name}`}
+      aria-label={action?.ariaLabel ?? `${t.actions.editor.editStep}: ${resource.name}`}
+      data-workflow-state={resource.state}
     >
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-info/10 text-info/80">
-        <Icon name={step.kind === "action" ? "bolt" : "terminal"} className="size-3.5" />
+      <span
+        className={`flex size-6 shrink-0 items-center justify-center rounded-md ${configured ? "bg-info/10 text-info/80" : success ? "text-success" : failed ? "text-danger" : active ? "text-info" : "text-muted-foreground"}`}
+      >
+        <Icon
+          name={
+            configured
+              ? step.kind === "action"
+                ? "bolt"
+                : "terminal"
+              : active
+                ? "spinner"
+                : success
+                  ? "check-circle"
+                  : failed
+                    ? "x-circle"
+                    : "circle"
+          }
+          className={`size-3.5 ${active ? "motion-safe:animate-spin" : ""}`}
+        />
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium text-foreground" title={resource.name}>
           {resource.name}
         </p>
-        <p className="mt-0.5 text-[10px] text-muted-foreground">{type}</p>
+        <p className="mt-0.5 text-[10px] text-muted-foreground">{action?.statusLabel ?? type}</p>
       </div>
       <span className="text-[10px] tabular-nums text-muted-foreground">{step.index + 1}</span>
       {Object.entries({

@@ -45,6 +45,17 @@ worker stops, and show cleanup while its destination remains occupied.
 Expected cancellation uses its status badge; keep engine cancellation details in
 the logs rather than displaying them as a second error alert.
 
+Run details defaults to a collapsible job-and-step list beside the selected log.
+Keep each job's expansion independent, and share selection and one resumable log
+loader with the optional Topology view. Store the selected job, step and view in
+the URL so refresh restores them. Topology reuses the editor's Arrange, fit/zoom
+and Expand all / Collapse all controls. Pack disconnected jobs across the available
+space; preserve dependency columns and arrows. A single job shows its connected
+step cards immediately. Keep the log beside the graph on wide screens and stack
+the navigation above it on narrow screens. GitHub's completed log is supplied for
+the whole job; label that scope when a step is selected instead of inventing step
+boundaries. Independent step logs use their recorded step IDs.
+
 Key remote data by instance, user and organization. Clear private results on a
 scope switch while loading the new scope; stale requests must not populate it.
 Preserve already loaded logs while polling. Surface capability mismatches beside

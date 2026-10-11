@@ -342,7 +342,8 @@
     "collapseJob": "Ocultar pasos",
     "expandAll": "Expandir todo",
     "collapseAll": "Contraer todo",
-    "editStep": "Editar paso"
+    "editStep": "Editar paso",
+    "arrange": "Organizar flujo de trabajo"
   },
   "runnerSetup": {
     "subtitle": "Elige un servidor y un entorno listo para usar.",
@@ -517,5 +518,14 @@
     "checkFailed": "Falló la verificación",
     "imageHint": "Cada trabajo puede usar otra imagen de contenedor Linux en sus ajustes.",
     "labelsHint": "Las etiquetas dirigen los trabajos aquí; no cambian la imagen ni las herramientas instaladas."
+  },
+  "runView": {
+    "jobs": "Trabajos",
+    "jobLogs": "Registros del trabajo",
+    "stepLogs": "Ver registros del paso",
+    "allLogs": "Todos los registros",
+    "loadingLogs": "Cargando registros…",
+    "noStepLogs": "No hay salida registrada para este paso.",
+    "fullJobLog": "Se muestra el registro completo del trabajo."
   }
 }

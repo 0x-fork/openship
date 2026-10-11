@@ -13,12 +13,20 @@ export function actionTone(status: string) {
         ? "text-warning"
         : "text-muted-foreground";
 }
-export function ActionStatus({ status }: { status: Status | "provisioning" }) {
+export function ActionStatus({
+  status,
+  iconOnly = false,
+}: {
+  status: Status | "provisioning";
+  iconOnly?: boolean;
+}) {
   const { t } = useI18n();
   const active = ["running", "cancelling", "provisioning"].includes(status);
   return (
     <span
       className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium ${actionTone(status)}`}
+      aria-label={iconOnly ? t.actions.status[status] : undefined}
+      title={iconOnly ? t.actions.status[status] : undefined}
     >
       <Icon
         name={
@@ -32,7 +40,7 @@ export function ActionStatus({ status }: { status: Status | "provisioning" }) {
         }
         className={`size-3.5 ${active ? "motion-safe:animate-spin" : ""}`}
       />
-      {t.actions.status[status]}
+      {!iconOnly && t.actions.status[status]}
     </span>
   );
 }

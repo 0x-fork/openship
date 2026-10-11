@@ -250,9 +250,18 @@ Every run records the resolved commit and workflow definition. Rerunning creates
 new attempt of that recorded revision. A controller restart resumes inspection of
 the same worker; it does not replay a job whose start was already accepted.
 
-The run page shows jobs, dependencies and step state. Independent logs resume from
-their persisted cursor. For GitHub workflows, step state is synchronized from GitHub,
-live logs open in GitHub, and completed logs and artifacts are available in Openship.
+The run page opens with a collapsible job-and-step list on the left and logs on the
+right. Select a job for all its output, or a step for its recorded output. Jobs
+expand independently. Switching to **Topology** keeps the same selection and logs;
+use **Expand all**, **Collapse all**, zoom, fit or **Arrange workflow** to inspect
+the connected steps. Independent jobs wrap across the graph rather than forming
+one long column. A single job shows its step nodes immediately. The selected job,
+step and view are preserved in the URL when you refresh or share the page.
+
+Independent logs resume from their persisted cursor. For GitHub workflows, step
+state is synchronized from GitHub, live logs open in GitHub, and completed logs and
+artifacts are available in Openship. GitHub supplies a complete job log, so selecting
+a step keeps that full output visible with a scope label.
 GitHub owns the Check IDs and conclusions; Openship does not publish duplicate Checks.
 
 ## Triggers and Jobs

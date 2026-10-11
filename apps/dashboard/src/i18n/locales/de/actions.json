@@ -342,7 +342,8 @@
     "collapseJob": "Schritte ausblenden",
     "expandAll": "Alle aufklappen",
     "collapseAll": "Alle zuklappen",
-    "editStep": "Schritt bearbeiten"
+    "editStep": "Schritt bearbeiten",
+    "arrange": "Workflow anordnen"
   },
   "runnerSetup": {
     "subtitle": "Wähle einen Server und eine einsatzbereite Umgebung.",
@@ -517,5 +518,14 @@
     "checkFailed": "Prüfung fehlgeschlagen",
     "imageHint": "Jobs können in ihren Einstellungen ein anderes Linux-Container-Image wählen.",
     "labelsHint": "Labels leiten Jobs hierher; sie ändern weder das Image noch die installierten Tools."
+  },
+  "runView": {
+    "jobs": "Jobs",
+    "jobLogs": "Job-Logs",
+    "stepLogs": "Schritt-Logs anzeigen",
+    "allLogs": "Alle Job-Logs",
+    "loadingLogs": "Logs werden geladen…",
+    "noStepLogs": "Für diesen Schritt wurde keine Ausgabe aufgezeichnet.",
+    "fullJobLog": "Das vollständige Job-Log wird angezeigt."
   }
 }

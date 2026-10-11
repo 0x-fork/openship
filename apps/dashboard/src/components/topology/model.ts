@@ -546,6 +546,8 @@ export interface TopologyNodeLayout {
   gapX: number;
   gapY: number;
   align?: "center" | "start";
+  /** Pack disconnected nodes beside the dependency columns, without routing edges through peers. */
+  maxIndependentRows?: number;
 }
 
 export const DEFAULT_TOPOLOGY_NODE_LAYOUT: TopologyNodeLayout = {
@@ -560,7 +562,7 @@ export function topologyPositions(
   graph: ProjectTopologyGraph,
   layout = DEFAULT_TOPOLOGY_NODE_LAYOUT,
 ): Record<string, { x: number; y: number }> {
-  const columns = new Map<number, TopologyResource[]>();
+  let columns = new Map<number, TopologyResource[]>();
   const positions: Record<string, { x: number; y: number }> = {};
   for (const node of graph.nodes) {
     if (node.parentId || node.layoutPosition) {
@@ -577,6 +579,21 @@ export function topologyPositions(
             ? 2
             : 1);
     columns.set(column, [...(columns.get(column) ?? []), node]);
+  }
+  if (layout.maxIndependentRows && layout.maxIndependentRows > 0) {
+    const rows = Math.max(1, Math.floor(layout.maxIndependentRows));
+    const connected = new Set(graph.edges.flatMap((edge) => [edge.source, edge.target]));
+    const wrapped = new Map<number, TopologyResource[]>();
+    const independent: TopologyResource[] = [];
+    for (const [column, nodes] of [...columns].sort(([a], [b]) => a - b)) {
+      const linked = nodes.filter((node) => connected.has(node.id));
+      if (linked.length) wrapped.set(column, linked);
+      independent.push(...nodes.filter((node) => !connected.has(node.id)));
+    }
+    const start = Math.max(-1, ...wrapped.keys()) + 1;
+    for (let index = 0; index * rows < independent.length; index++)
+      wrapped.set(start + index, independent.slice(index * rows, (index + 1) * rows));
+    columns = wrapped;
   }
   const widths = new Map(
     [...columns].map(([column, nodes]) => [

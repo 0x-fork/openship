@@ -342,7 +342,8 @@
     "collapseJob": "ステップを非表示",
     "expandAll": "すべて展開",
     "collapseAll": "すべて折りたたむ",
-    "editStep": "ステップを編集"
+    "editStep": "ステップを編集",
+    "arrange": "ワークフローを整列"
   },
   "runnerSetup": {
     "subtitle": "サーバーとすぐに使える実行環境を選択します。",
@@ -517,5 +518,14 @@
     "checkFailed": "確認に失敗",
     "imageHint": "ジョブ設定で別の Linux コンテナイメージを選択できます。",
     "labelsHint": "ラベルはジョブの実行先を指定します。イメージやインストール済みツールは変更しません。"
+  },
+  "runView": {
+    "jobs": "ジョブ",
+    "jobLogs": "ジョブログ",
+    "stepLogs": "ステップのログを表示",
+    "allLogs": "ジョブの全ログ",
+    "loadingLogs": "ログを読み込み中…",
+    "noStepLogs": "このステップの出力は記録されていません。",
+    "fullJobLog": "ジョブのログ全体を表示しています。"
   }
 }

@@ -342,7 +342,8 @@
     "collapseJob": "Adımları gizle",
     "expandAll": "Tümünü genişlet",
     "collapseAll": "Tümünü daralt",
-    "editStep": "Adımı düzenle"
+    "editStep": "Adımı düzenle",
+    "arrange": "İş akışını düzenle"
   },
   "runnerSetup": {
     "subtitle": "Bir sunucu ve kullanıma hazır ortam seçin.",
@@ -517,5 +518,14 @@
     "checkFailed": "Kontrol başarısız",
     "imageHint": "Her iş, ayarlarından farklı bir Linux konteyner imajı kullanabilir.",
     "labelsHint": "Etiketler işleri buraya yönlendirir; imajı veya yüklü araçları değiştirmez."
+  },
+  "runView": {
+    "jobs": "İşler",
+    "jobLogs": "İş günlükleri",
+    "stepLogs": "Adım günlüklerini görüntüle",
+    "allLogs": "Tüm iş günlükleri",
+    "loadingLogs": "Günlükler yükleniyor…",
+    "noStepLogs": "Bu adım için kayıtlı çıktı yok.",
+    "fullJobLog": "İş günlüğünün tamamı gösteriliyor."
   }
 }

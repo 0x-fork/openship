@@ -257,9 +257,11 @@ const defaultEdgeOptions = {
 function CanvasTools({
   onArrange,
   fitOptions,
+  arrangeLabel,
 }: {
   onArrange: () => void;
   fitOptions: FitViewOptions;
+  arrangeLabel: string;
 }) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { zoom } = useViewport();
@@ -290,8 +292,8 @@ function CanvasTools({
       <Button
         variant="ghost"
         size="icon"
-        title="Arrange services"
-        aria-label="Arrange services"
+        title={arrangeLabel}
+        aria-label={arrangeLabel}
         onClick={onArrange}
       >
         <UiIcon name="topology" />
@@ -342,6 +344,7 @@ interface TopologyCanvasProps {
   nodeLayout?: TopologyNodeLayout;
   ariaLabel?: string;
   nodeDescription?: string;
+  arrangeLabel?: string;
 }
 
 function Canvas({
@@ -358,6 +361,7 @@ function Canvas({
   nodeLayout = DEFAULT_TOPOLOGY_NODE_LAYOUT,
   ariaLabel = "Project topology",
   nodeDescription,
+  arrangeLabel = "Arrange services",
 }: TopologyCanvasProps) {
   const fitOptions = nodeActions ? selectionFitViewOptions : fitViewOptions;
   const positions = useMemo(() => topologyPositions(graph, nodeLayout), [graph, nodeLayout]);
@@ -537,6 +541,7 @@ function Canvas({
         <FitOnChange revision={fitRevision} fullscreen={fullscreen} fitOptions={fitOptions} />
         <CanvasTools
           fitOptions={fitOptions}
+          arrangeLabel={arrangeLabel}
           onArrange={() => {
             storedPositions.current = positions;
             if (layoutKey) saveTopologyPositions(layoutKey, positions);

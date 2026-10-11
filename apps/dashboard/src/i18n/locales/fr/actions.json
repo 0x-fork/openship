@@ -342,7 +342,8 @@
     "collapseJob": "Masquer les étapes",
     "expandAll": "Tout développer",
     "collapseAll": "Tout réduire",
-    "editStep": "Modifier l’étape"
+    "editStep": "Modifier l’étape",
+    "arrange": "Organiser le workflow"
   },
   "runnerSetup": {
     "subtitle": "Choisissez un serveur et un environnement prêt à l’emploi.",
@@ -517,5 +518,14 @@
     "checkFailed": "Vérification échouée",
     "imageHint": "Chaque job peut utiliser une autre image de conteneur Linux dans ses paramètres.",
     "labelsHint": "Les labels dirigent les jobs ici ; ils ne changent ni l’image ni les outils installés."
+  },
+  "runView": {
+    "jobs": "Jobs",
+    "jobLogs": "Journaux du job",
+    "stepLogs": "Voir les journaux de l’étape",
+    "allLogs": "Tous les journaux du job",
+    "loadingLogs": "Chargement des journaux…",
+    "noStepLogs": "Aucune sortie enregistrée pour cette étape.",
+    "fullJobLog": "Le journal complet du job est affiché."
   }
 }

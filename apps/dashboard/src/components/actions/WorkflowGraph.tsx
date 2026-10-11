@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@repo/ui/icons";
 import dynamic from "next/dynamic";
 import type { ActionPlanView, ActionRunView } from "@repo/contracts";
+import type { ActionStatus } from "@repo/core";
 import type { Connection } from "@xyflow/react";
 import type { TopologyNodeAction, TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
@@ -14,9 +15,10 @@ import {
   workflowGroupStatus,
   workflowStepNodeId,
   WORKFLOW_NODE_LAYOUT,
+  workflowVisibleJob,
+  type WorkflowGraphJob,
 } from "./workflow-graph";
 import { WorkflowJobNode, WorkflowNodeDetails } from "./WorkflowJobNode";
-import type { workflowJobs } from "./workflow-editor";
 import type { WorkflowStepTarget } from "./WorkflowSteps";
 
 const Canvas = dynamic(
@@ -45,11 +47,12 @@ export function WorkflowGraph({
     onConnect: (connection: Connection) => void;
   };
   jobDetails?: {
-    jobs: ReturnType<typeof workflowJobs>;
+    jobs: readonly WorkflowGraphJob[];
     expandedJobs: string[];
     onToggleJob: (id: string) => void;
     onSelectStep: (jobId: string, index: number) => void;
-    selectedStep: WorkflowStepTarget | null;
+    selectedStep: Pick<WorkflowStepTarget, "jobId" | "index"> | null;
+    stepStatuses?: Readonly<Record<string, ActionStatus>>;
   };
   className?: string;
 }) {
@@ -90,15 +93,14 @@ export function WorkflowGraph({
   );
   const graph = useMemo(() => {
     const graph = workflowGraph(plan, run, t.actions.matrix, t.actions.controller.reusable);
-    return jobDetails
-      ? workflowDetailGraph(
-          graph,
-          jobDetails.jobs,
-          jobDetails.expandedJobs,
-          t.actions.editor.command,
-          viewport,
-        )
-      : graph;
+    return workflowDetailGraph(
+      graph,
+      jobDetails?.jobs ?? [],
+      jobDetails?.expandedJobs ?? [],
+      t.actions.editor.command,
+      viewport,
+      jobDetails?.stepStatuses,
+    );
   }, [
     plan,
     run,
@@ -111,23 +113,29 @@ export function WorkflowGraph({
   const selectedNode = run?.jobs.find((job) => job.id === selected)?.jobKey;
   const step = jobDetails?.selectedStep;
   const selectedStepId = step && workflowStepNodeId(step.jobId, step.index);
-  const selection: TopologySelection = editor
-    ? editor.selection?.kind === "node" &&
-      step?.jobId === editor.selection.id &&
-      graph.nodes.some((node) => node.id === selectedStepId)
-      ? { kind: "node", id: selectedStepId! }
-      : editor.selection
+  const jobSelection: TopologySelection = editor
+    ? editor.selection
     : selectedNode
       ? { kind: "node", id: selectedNode }
       : null;
+  const selection: TopologySelection =
+    jobSelection?.kind === "node" &&
+    step?.jobId === jobSelection.id &&
+    graph.nodes.some((node) => node.id === selectedStepId)
+      ? { kind: "node", id: selectedStepId! }
+      : jobSelection;
   const actions = useMemo(
     () =>
       Object.fromEntries(
         graph.nodes.map((node) => {
           const jobs = run?.jobs.filter((job) => job.jobKey === node.id) ?? [];
-          const status = workflowGroupStatus(jobs);
+          const status = node.workflowStep
+            ? jobDetails?.stepStatuses?.[node.id]
+            : workflowGroupStatus(jobs);
           const label = node.workflowStep
-            ? t.actions.editor.editStep
+            ? editor
+              ? t.actions.editor.editStep
+              : t.actions.runView.stepLogs
             : editor
               ? t.actions.editor.editJob
               : t.actions.openJob;
@@ -138,7 +146,7 @@ export function WorkflowGraph({
               label,
               ariaLabel: `${label}: ${node.name}`,
               selected: selection?.kind === "node" && selection.id === node.id,
-              readOnly: !editor && (!jobs.length || !onSelect),
+              readOnly: !editor && (node.workflowStep ? !jobDetails : !jobs.length || !onSelect),
               connectable: !!editor && !node.workflowStep,
               statusLabel: status
                 ? t.actions.status[status as keyof typeof t.actions.status]
@@ -149,7 +157,7 @@ export function WorkflowGraph({
           ];
         }),
       ),
-    [graph, run, selection?.kind, selection?.id, onSelect, editor, t.actions],
+    [graph, run, selection?.kind, selection?.id, onSelect, editor, jobDetails, t.actions],
   );
   const open = (id: string) => {
     const step = graph.nodes.find((node) => node.id === id)?.workflowStep;
@@ -161,12 +169,7 @@ export function WorkflowGraph({
       editor.onSelect({ kind: "node", id });
       return;
     }
-    const jobs = run?.jobs.filter((job) => job.jobKey === id) ?? [];
-    const job =
-      jobs.find((job) => job.id === selected) ??
-      jobs.find((job) => job.status === "running") ??
-      jobs.find((job) => job.status === "failure") ??
-      jobs[0];
+    const job = workflowVisibleJob(run?.jobs ?? [], id, selected);
     if (job) onSelect?.(job.id);
   };
   const select = (selection: TopologySelection) => {
@@ -193,6 +196,7 @@ export function WorkflowGraph({
           nodeComponent={WorkflowJobNode}
           nodeLayout={WORKFLOW_NODE_LAYOUT}
           ariaLabel={t.actions.graph}
+          arrangeLabel={t.actions.editor.arrange}
         />
       </WorkflowNodeDetails.Provider>
     </div>

@@ -9,6 +9,7 @@ import type { TopologySelection } from "@/components/topology/TopologyCanvas";
 import { useI18n } from "@/components/i18n-provider";
 import { WorkflowGraph } from "./WorkflowGraph";
 import { WorkflowJobList } from "./WorkflowJobList";
+import { WorkflowExpandButton } from "./WorkflowExpandButton";
 import { TopologySkeleton } from "@/components/topology/TopologySkeleton";
 import { workflowJobs, workflowJobOffset, type WorkflowEdit } from "./workflow-editor";
 import type { useWorkflowDraft } from "./useWorkflowDraft";
@@ -143,10 +144,7 @@ export function WorkflowWorkspace({
         />
         <div className="flex items-center gap-1 pb-1">
           {view !== "yaml" && expandable.length > 0 && (
-            <Button size="sm" variant="ghost" onClick={toggleAll}>
-              <Icon name={allExpanded ? "chevron-up" : "chevron-down"} />
-              {allExpanded ? e.collapseAll : e.expandAll}
-            </Button>
+            <WorkflowExpandButton expanded={allExpanded} onClick={toggleAll} />
           )}
           <Button
             size="icon"

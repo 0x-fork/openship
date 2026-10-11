@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
@@ -9,11 +9,9 @@ import type { ActionRunView } from "@repo/contracts";
 import { actionsApi } from "@/lib/api/actions";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
-import { Tabs } from "@/components/ui/Tabs";
 import { useI18n } from "@/components/i18n-provider";
 import { ActionError, ActionStatus } from "./ActionStatus";
-import { WorkflowGraph } from "./WorkflowGraph";
-import { ActionLogs } from "./ActionLogs";
+import { RunWorkspace, type RunWorkspaceView } from "./RunWorkspace";
 import { RunArtifacts } from "./RunArtifacts";
 import { RunApproval } from "./RunApproval";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
@@ -29,7 +27,10 @@ function Detail({ id }: { id: string }) {
   const resource = useActionResource(fetcher, pollingDelay);
   const mutation = useActionMutation();
   const [selected, setSelected] = useState<string | null>(query.get("job"));
-  const [view, setView] = useState<"graph" | "list">("graph");
+  const [view, setView] = useState<RunWorkspaceView>(
+    query.get("view") === "graph" ? "graph" : "list",
+  );
+  const [selectedStep, setSelectedStep] = useState<string | null>(query.get("step"));
   const [rerunKey] = useState(() => crypto.randomUUID());
   const run = resource.data;
   const job =
@@ -37,10 +38,23 @@ function Detail({ id }: { id: string }) {
     run?.jobs.find((job) => job.status === "failure") ??
     run?.jobs.find((job) => job.status === "running") ??
     run?.jobs[0];
-  const select = (id: string) => {
+  useEffect(() => {
+    if (!selected && job) setSelected(job.id);
+  }, [selected, job?.id]);
+  const select = (id: string, step?: string | null) => {
     setSelected(id);
+    setSelectedStep(step ?? null);
     const url = new URL(window.location.href);
     url.searchParams.set("job", id);
+    if (step) url.searchParams.set("step", step);
+    else url.searchParams.delete("step");
+    window.history.replaceState(null, "", url);
+  };
+  const changeView = (view: RunWorkspaceView) => {
+    setView(view);
+    const url = new URL(window.location.href);
+    if (view === "graph") url.searchParams.set("view", view);
+    else url.searchParams.delete("view");
     window.history.replaceState(null, "", url);
   };
   return (
@@ -72,7 +86,7 @@ function Detail({ id }: { id: string }) {
                 </bdi>
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {run.externalUrl && (
                 <Button asChild variant="secondary">
                   <a href={run.externalUrl} target="_blank" rel="noopener noreferrer">
@@ -152,70 +166,14 @@ function Detail({ id }: { id: string }) {
               {a.cleaning}
             </p>
           )}
-          <Tabs
-            tabs={[
-              { key: "graph", label: a.graph, icon: "topology" },
-              { key: "list", label: a.list, icon: "list" },
-            ]}
-            value={view}
-            onChange={setView}
-            idPrefix="workflow-view"
+          <RunWorkspace
+            run={run}
+            job={job}
+            selectedStep={selectedStep}
+            view={view}
+            onSelect={select}
+            onViewChange={changeView}
           />
-          <div
-            role="tabpanel"
-            id={`workflow-view-panel-${view}`}
-            aria-labelledby={`workflow-view-tab-${view}`}
-          >
-            {view === "graph" ? (
-              <WorkflowGraph plan={run.plan} run={run} selected={job?.id} onSelect={select} />
-            ) : (
-              <div className="divide-y divide-border/40 overflow-hidden rounded-2xl bg-card">
-                {run.jobs.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className={`flex w-full items-center justify-between gap-3 px-5 py-4 text-start hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring ${row.id === job?.id ? "bg-muted/40" : ""}`}
-                    onClick={() => select(row.id)}
-                  >
-                    <span className="text-sm font-medium">{row.name}</span>
-                    <ActionStatus
-                      status={
-                        row.phase === "provisioning" && row.status === "running"
-                          ? "provisioning"
-                          : row.status
-                      }
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {job ? (
-            <section className="min-w-0 space-y-4 rounded-2xl bg-card p-5">
-              <header className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">{job.name}</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">{job.labels.join(" · ")}</p>
-                </div>
-                <ActionStatus
-                  status={
-                    job.phase === "provisioning" && job.status === "running"
-                      ? "provisioning"
-                      : job.status
-                  }
-                />
-              </header>
-              <ActionError message={job.status === "cancelled" ? null : job.error} />
-              {job.checkError && (
-                <p className="text-xs text-muted-foreground" title={job.checkError}>
-                  {a.checkPending}
-                </p>
-              )}
-              <ActionLogs key={job.id} job={job} />
-            </section>
-          ) : (
-            <p className="py-5 text-center text-sm text-muted-foreground">{a.selectJob}</p>
-          )}
           <RunArtifacts runId={run.id} settled={!!run.settledAt} />
         </>
       ) : resource.loading ? (
@@ -226,5 +184,15 @@ function Detail({ id }: { id: string }) {
 }
 export function RunDetails({ id }: { id: string }) {
   const scope = useActionScope();
-  return <Detail key={`${scope}:${id}`} id={id} />;
+  return (
+    <Suspense
+      fallback={
+        <PageContainer>
+          <div className="h-72 animate-pulse rounded-2xl bg-card" />
+        </PageContainer>
+      }
+    >
+      <Detail key={`${scope}:${id}`} id={id} />
+    </Suspense>
+  );
 }

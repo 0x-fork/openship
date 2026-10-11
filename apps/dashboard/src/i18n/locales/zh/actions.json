@@ -342,7 +342,8 @@
     "collapseJob": "隐藏步骤",
     "expandAll": "全部展开",
     "collapseAll": "全部折叠",
-    "editStep": "编辑步骤"
+    "editStep": "编辑步骤",
+    "arrange": "排列工作流"
   },
   "runnerSetup": {
     "subtitle": "选择服务器和可直接使用的运行环境。",
@@ -517,5 +518,14 @@
     "checkFailed": "检查失败",
     "imageHint": "每个作业都可在作业设置中选择其他 Linux 容器镜像。",
     "labelsHint": "标签将作业路由到此运行器，不会更改镜像或已安装的工具。"
+  },
+  "runView": {
+    "jobs": "作业",
+    "jobLogs": "作业日志",
+    "stepLogs": "查看步骤日志",
+    "allLogs": "全部作业日志",
+    "loadingLogs": "正在加载日志…",
+    "noStepLogs": "此步骤没有记录的输出。",
+    "fullJobLog": "正在显示完整的作业日志。"
   }
 }

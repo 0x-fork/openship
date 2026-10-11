@@ -104,6 +104,68 @@ describe("workflow presentation from durable state", () => {
       { id: "3", name: "Release", status: "queued" },
     ]);
   });
+
+  it("packs independent run jobs across the viewport instead of shrinking a single vertical column", () => {
+    const plan: ActionPlanView = {
+      name: "CI",
+      triggers: ["push"],
+      inputs: [],
+      jobs: Array.from({ length: 13 }, (_, index) => ({
+        id: `test-${index}`,
+        name: `Test ${index}`,
+        runsOn: "linux",
+        needs: [],
+        requiresDocker: false,
+      })),
+    };
+    const graph = workflowDetailGraph(workflowGraph(plan), [], [], "Command", {
+      width: 1200,
+      height: 640,
+    });
+    const positions = topologyPositions(graph, WORKFLOW_NODE_LAYOUT);
+    expect(new Set(Object.values(positions).map((point) => point.x)).size).toBeGreaterThan(1);
+    expect(new Set(Object.values(positions).map((point) => point.y)).size).toBeGreaterThan(1);
+    expect(
+      Math.max(...Object.values(positions).map((point) => point.y + WORKFLOW_NODE_LAYOUT.height)),
+    ).toBeLessThan(640);
+    expect(graph.edges).toEqual([]);
+    expect(
+      workflowDetailGraph(workflowGraph(plan), [], [], "Command", { width: 1200, height: 640 }),
+    ).toEqual(graph);
+  });
+
+  it("keeps dependency columns clear while packing unrelated jobs beside them", () => {
+    const plan: ActionPlanView = {
+      name: "CI",
+      triggers: [],
+      inputs: [],
+      jobs: [
+        { id: "build", name: "Build", runsOn: "linux", needs: [], requiresDocker: false },
+        {
+          id: "publish",
+          name: "Publish",
+          runsOn: "linux",
+          needs: ["build"],
+          requiresDocker: false,
+        },
+        ...Array.from({ length: 13 }, (_, index) => ({
+          id: `other-${index}`,
+          name: `Other ${index}`,
+          runsOn: "linux",
+          needs: [],
+          requiresDocker: false,
+        })),
+      ],
+    };
+    const base = workflowGraph(plan);
+    const graph = workflowDetailGraph(base, [], [], "Command", { width: 1500, height: 800 });
+    const positions = topologyPositions(graph, WORKFLOW_NODE_LAYOUT);
+    expect(graph.edges).toEqual(base.edges);
+    expect(positions.publish.x).toBeGreaterThan(positions.build.x);
+    expect(positions.publish.y).toBe(positions.build.y);
+    for (const node of plan.jobs.slice(2))
+      expect(positions[node.id].x).toBeGreaterThan(positions.publish.x);
+  });
 });
 
 describe("workflow step topology", () => {
@@ -194,6 +256,21 @@ describe("workflow step topology", () => {
     expect(collapsed.nodes.find((node) => node.id === "test")).toMatchObject(base.nodes[0]);
   });
 
+  it("renders the persisted step states through the same connected step layout", () => {
+    const graph = workflowDetailGraph(
+      workflowGraph(plan),
+      workflowJobs(source),
+      ["test"],
+      "Command",
+      { width: 1100, height: 700 },
+      { "test:step:0": "success", "test:step:1": "failure", "test:step:2": "skipped" },
+    );
+    expect(graph.nodes.find((node) => node.id === "test:step:0")?.state).toBe("succeeded");
+    expect(graph.nodes.find((node) => node.id === "test:step:1")?.state).toBe("failed");
+    expect(graph.nodes.find((node) => node.id === "test:step:2")?.state).toBe("skipped");
+    expect(graph.edges.filter((edge) => edge.kind === "sequence")).toHaveLength(5);
+  });
+
   it("keeps jobs compact, positions steps beneath them and leaves every card clear of its neighbors", () => {
     const base = workflowGraph(plan);
     const expanded = workflowDetailGraph(base, workflowJobs(source), ["test", "docs"], "Command");
@@ -223,9 +300,11 @@ describe("workflow step topology", () => {
       }
     }
     const collapsed = workflowDetailGraph(base, workflowJobs(source), [], "Command");
-    expect(topologyPositions(collapsed, WORKFLOW_NODE_LAYOUT)).toEqual(
-      topologyPositions(base, WORKFLOW_NODE_LAYOUT),
-    );
+    expect(collapsed.nodes.map(({ layoutPosition, ...node }) => node)).toEqual(base.nodes);
+    expect(collapsed.edges).toEqual(base.edges);
+    const collapsedPositions = topologyPositions(collapsed, WORKFLOW_NODE_LAYOUT);
+    expect(collapsedPositions.build.x).toBeGreaterThan(collapsedPositions.test.x);
+    expect(collapsedPositions.build.y).toBe(collapsedPositions.test.y);
   });
 
   it("reflows a long single job into the available aspect ratio without changing its steps or dependencies", () => {
