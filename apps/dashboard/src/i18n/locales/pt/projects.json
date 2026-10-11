@@ -243,7 +243,10 @@
     "noTransfer": "Ainda não há transferência"
   },
   "analytics": {
-    "loadFailed": "Não foi possível carregar as análises de tráfego"
+    "loadFailed": "Não foi possível carregar as análises de tráfego",
+    "loadFailedDescription": "Tente novamente para carregar os dados mais recentes.",
+    "sectionsUnavailable": "Indisponível: {sections}.",
+    "staleData": "Exibindo os últimos dados disponíveis."
   },
   "monitoring": {
     "noDataTitle": "Ainda não há dados de monitorização",
@@ -308,7 +311,11 @@
       "disable": "Desativar principais caminhos"
     },
     "liveFeed": "Solicitações recentes",
-    "liveFeedHint": "Mostrar a lista de solicitações recentes no mapa (o detalhe completo está em Logs)"
+    "liveFeedHint": "Mostrar a lista de solicitações recentes no mapa (o detalhe completo está em Logs)",
+    "dataUnavailable": "Alguns dados de monitoramento estão indisponíveis",
+    "connecting": "Conectando…",
+    "liveUnavailable": "Requisições ao vivo indisponíveis",
+    "liveUnavailableDescription": "O tráfego histórico continua visível. Reconecte para ver as requisições ao vivo."
   },
   "services": {
     "failedLoad": "Falha ao carregar os serviços",
