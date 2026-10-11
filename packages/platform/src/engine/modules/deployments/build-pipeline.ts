@@ -36,6 +36,7 @@ import {
   sharedMountExecutor,
   resolveStaticOutputPath,
   ensurePortAvailable,
+  isDockerHostPortAvailable,
   allocateHostPort,
   runDeployPipeline,
   isMultiServiceRuntime,
@@ -112,6 +113,7 @@ import {
 import { auditPorts } from "./port-audit.service";
 import {
   allocateAndReservePinnedHostPort,
+  suggestAlternativePinnedHostPort,
   convergeTargetHostPortClaims,
   convergeTargetHostPortClaimsUnlocked,
   findOwnedPinnedHostPort,
@@ -2028,7 +2030,30 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
                   .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline"); return undefined; })
               : undefined;
             if (previousHostPort !== cfg.hostPort) {
-              await ensurePortAvailable(executor, cfg.hostPort, logger, promptUser);
+              const allocation = initialHostPortAllocation;
+              const target = phase.hostPortTarget;
+              await ensurePortAvailable(executor, cfg.hostPort, logger, promptUser, {
+                suggestAlternative:
+                  allocation && target && phase.hostPortTargetLockHeld
+                    ? (excluded) =>
+                        suggestAlternativePinnedHostPort({
+                          target,
+                          allocation,
+                          excluded,
+                          readClaims: () =>
+                            prepareTargetPinnedHostPorts({
+                              target,
+                              edgeProxy: edgeProxyFor(executor, "openresty", { ours: true }),
+                            }),
+                          allocate: (options) => allocateHostPort(executor, options),
+                          isAvailable: (port) => isDockerHostPortAvailable(executor, port),
+                          onSelected: (allocation) => {
+                            attemptedHostPortAllocations.push(allocation);
+                            pinnedHostPort = cfg.hostPort = allocation.port;
+                          },
+                        })
+                    : undefined,
+              });
             }
             return;
           }
@@ -2109,6 +2134,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     : baseServe;
 
   let pinnedHostPort: number | undefined;
+  let initialHostPortAllocation: AllocatedPinnedHostPort | undefined;
   const attemptedHostPortAllocations: Array<
     Pick<AllocatedPinnedHostPort, "claim" | "previousClaim" | "claimWasCreated">
   > = [];
@@ -2155,6 +2181,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
               allocate: (allocationOptions) => allocateHostPort(executor, allocationOptions),
             });
             attemptedHostPortAllocations.push(allocation);
+            initialHostPortAllocation = allocation;
             pinnedHostPort = allocation.port;
             // A scan that couldn't RUN is not "nothing is listening". Say so
             // here or the bind failure blames Docker for a host we couldn't read.

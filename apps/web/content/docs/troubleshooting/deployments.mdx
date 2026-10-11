@@ -173,11 +173,20 @@ on. Correct it in the [deploy wizard](/docs/dashboard/deploy-wizard) if it doesn
 </Steps>
 
 <Callout type="warn" title="A different “port” problem: the port is already taken">
-On a Local or Server deploy, if another process already holds the port, the deploy pauses and asks what
-to do — a **Port In Use** prompt saying *"Port 3000 is occupied by … This may not be a previous
-deployment."* with **Free Port & Continue** or **Cancel Deploy**. Choose *Free Port* only if you
-recognize the occupant as a stale deployment; otherwise cancel and change the port. If it can't be freed
-you'll see *"Deploy aborted: port 3000 is in use by …"*.
+On a Local or Server deploy, if another workload already holds the port, the deploy pauses with a
+**Port In Use** dialog. For a single-app Docker deployment using a loopback host port, it also offers
+**Use port 20002** (the number varies) when another port can be verified as available. This leaves the
+existing workload running and continues with the built image. The app's internal port stays the same;
+the selected host port is saved after a successful deployment for future redeploys.
+
+Openship checks both live listeners and saved port reservations, then checks the exact suggestion again
+when you choose it. If it is no longer available, the dialog asks again. It never substitutes another
+port without your choice. If availability cannot be verified, the alternative is not offered.
+
+The existing **Stop … & Continue**, **I Freed It — Re-check**, and **Cancel Deploy** actions remain
+available where appropriate. Choose a stop action only if you recognize the occupant and intend to
+stop it. Direct (Bare) apps still use their configured application ports; change those in configuration
+if needed. Cancelling preserves the current port.
 </Callout>
 
 ## The app needs a bigger machine than this one
